@@ -1,7 +1,24 @@
 import Foundation
 import SwiftUI
 
-/// Every measurement the iOS task row varies, as a function of **width alone**.
+/// Which primary task row a figure is for.
+///
+/// `.compact` and `.regular` are iOS's two size classes. `.desktop` is macOS, and it is a third
+/// tier rather than an alias for `.regular` for the same measured reason `CadencePageHeaderSurface`
+/// has three: a Mac window is wider than an iPad and yet sets its rows *tighter*, because a pointer
+/// can land on an 8pt-padded row and a finger cannot. `CadenceSidebarRowMetrics.rowHeight` is the
+/// same split one column over, at 32 against 44.
+///
+/// It is a *tier*, not a knob: a host cannot pick one. A view gets the tier its platform and size
+/// class report, which is the whole point of `CadenceTaskRowMetrics` having no density parameter.
+nonisolated enum CadenceTaskRowSurface: String, CaseIterable, Sendable {
+    case compact
+    case regular
+    case desktop
+}
+
+/// Every measurement a Cadence **primary task row** draws itself with: `iOSTaskRow` at either size
+/// class, and `MacTaskRow` at `.desktop`.
 ///
 /// This replaces `iOSTaskRowDensity`, a second axis each call site picked for itself. The two were
 /// nearly the same thing: on a phone `.compact` and `.regular` resolved to the same horizontal
@@ -13,30 +30,63 @@ import SwiftUI
 /// than `.regular` did at that width (64), so Today showed less of the title and more of the note
 /// about it.
 ///
-/// There is deliberately **no density and no surface parameter here**, for the mirror of the
-/// reason `CadenceTaskSurfaceOptions` has no size class: "iPhone Today's rows differ from iPhone
-/// Inbox's rows" is no longer expressible. A host that wants a tighter row is describing a
-/// narrower *pane*, and the pane is what size class already reports.
+/// There is deliberately **no density parameter here**, for the mirror of the reason
+/// `CadenceTaskSurfaceOptions` has no size class: "iPhone Today's rows differ from iPhone Inbox's
+/// rows" is no longer expressible. A host that wants a tighter row is describing a narrower *pane*,
+/// and the pane is what size class already reports.
 ///
 /// The cost, taken deliberately: the two hosts that passed `.compact` at *regular* width — the
 /// calendar day inspector and the month agenda — now draw iPad-width rows in a fairly narrow pane.
 /// That is one style at one width rather than a third setting, and they were the same rows that
 /// made the iPad disagree with itself between its Today column and its Calendar tab.
 ///
+/// **macOS reads six of these figures and pointedly not the rest, and that split is the finding.**
+/// T-175 brought `MacTaskRow` onto this type; until then it hardcoded its own 14 / 8 / 15 / 11 / 6
+/// inline while a shared metrics type sat here with five iOS readers and none on macOS — the same
+/// shape `iOSPageHeaderMetrics` had before `5aa11dc` renamed it and gave macOS a tier. What macOS
+/// takes: `horizontalPadding`, `verticalPadding`, `contentSpacing`, `badgeSpacing`,
+/// `secondaryFontSize`, `titleFontSize`. What it deliberately does not, with the reason each time:
+///
+/// - **`titleLineLimit`.** macOS's row is a single `HStack` — title, `Spacer`, trailing metadata —
+///   so its height is fixed and a two-line title reflows the entire row; iOS's is a `VStack` built
+///   to grow. `titleLineLimit`'s own doc says "every surface", and it means every surface that
+///   stacks. `MacTaskRow` is the exception it never named, so it is named here.
+/// - **`completionGlyphSize` and `completionCircleDiameter`.** Not shared because they are not the
+///   same measurement. iOS draws a real 16pt disc and ramps a *frame* around it to reach a 44pt
+///   touch target, so the number is a layout box. macOS passes an SF Symbol **point size** to
+///   `TaskCompletionProgressGlyph` — which is also its frame, and which its four macOS call sites
+///   already set to 12 / 13 / 15 / 18 as a type ramp per surface. Folding them would push an iOS
+///   touch-target ramp into a macOS type ramp and quietly resize four other controls. This is the
+///   `cdf0896` pattern: an apparent fork that is two different jobs wearing one name.
+/// - **`summarySpacing`, `secondaryLineLimit`, `notesPreviewLimit`.** The macOS row has no second
+///   line and no notes preview, so nothing reads these on `.desktop`. They are still stated, at
+///   `.compact`'s answers, because a macOS Today task column is a narrow pane and that is the tier
+///   it would belong to — not left as a hole for the next agent to guess at.
+///
 /// `nonisolated` for the same reason `TaskOrdering` is: the project compiles with
 /// `-default-isolation MainActor`, which would otherwise make even the synthesized `==`
 /// main-actor isolated, and a value type describing paddings should not need an actor to compare.
 nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
-    /// How many lines a task title gets. **One number, at every width and on every surface** — it
-    /// is the thing T-78 was actually about. Two, because a truncated title on the screen you plan
-    /// your day from is the worse of the two failures, and because it is what every task surface
-    /// other than Today already showed.
+    /// How many lines a task title gets. **One number, at every width and on every surface that
+    /// stacks** — it is the thing T-78 was actually about. Two, because a truncated title on the
+    /// screen you plan your day from is the worse of the two failures, and because it is what every
+    /// task surface other than Today already showed. `MacTaskRow` is the one row that does not read
+    /// it; the type's own doc above says why, and a test pins that the exception stays deliberate.
     static let titleLineLimit = 2
 
     /// The completion circle's drawn diameter. Constant: only its 44pt-reaching *frame* ramps.
+    ///
+    /// iOS only, and not because macOS was overlooked — macOS has no equivalent number to share.
+    /// `TaskCompletionProgressGlyph` draws an SF Symbol, so the disc's diameter is a property of
+    /// the glyph rather than a figure anybody sets.
     static let completionCircleDiameter: CGFloat = 16
 
     let horizontalPadding: CGFloat
+    /// **The figure that has to stay split**, and the reason `.desktop` is a tier rather than a
+    /// relabelling of `.regular`. 8pt is right under a pointer; a finger needs the 9–12 that keeps
+    /// the row past 44pt tall. Flattening this to 12 would be the legible tidy-up and a real
+    /// density regression on a Mac window showing three task columns at once — exactly what
+    /// `CadenceSidebarRowMetrics.rowHeight` says about 32 against 44.
     let verticalPadding: CGFloat
     /// Between the completion circle, the task, and the estimate chip.
     let contentSpacing: CGFloat
@@ -47,11 +97,30 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
     let badgeSpacing: CGFloat
     /// The layout size the completion glyph takes; its touch target is expanded to 44pt on top.
     let completionGlyphSize: CGFloat
+    /// The task title.
+    ///
+    /// **15 on macOS against 13 on iOS, which reads inverted and is not.** 15pt is what every other
+    /// macOS primary row and section title in this app is already set at (`InboxSupportViews`,
+    /// `TasksPanelSectionViews`, `GlobalSearchSupportViews`), and 13 is what both iOS widths draw
+    /// and what the chip ramp under it is measured against — `iOSTaskAttributeChipSize.row` is 11pt
+    /// *because* the title above it is 13. Each platform's row title is in tune with its own type
+    /// scale; one number would put it out of tune with one of them.
+    let titleFontSize: CGFloat
     let secondaryFontSize: CGFloat
     let secondaryLineLimit: Int
     /// How many characters of the notes preview the secondary line asks for.
     let notesPreviewLimit: Int
 
+    static func metrics(for surface: CadenceTaskRowSurface) -> CadenceTaskRowMetrics {
+        switch surface {
+        case .compact: return .compactWidth
+        case .regular: return .regularWidth
+        case .desktop: return .desktop
+        }
+    }
+
+    /// iOS's spelling: the two size classes, as the boolean every iOS row already has to hand. The
+    /// same pairing `CadencePageHeaderMetrics` keeps beside its three-case surface.
     static func metrics(isRegularWidth: Bool) -> CadenceTaskRowMetrics {
         isRegularWidth ? .regularWidth : .compactWidth
     }
@@ -63,6 +132,7 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
         summarySpacing: 8,
         badgeSpacing: 6,
         completionGlyphSize: 24,
+        titleFontSize: 13,
         secondaryFontSize: 12,
         secondaryLineLimit: 2,
         notesPreviewLimit: 120
@@ -75,6 +145,29 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
         summarySpacing: 6,
         badgeSpacing: 5,
         completionGlyphSize: 20,
+        titleFontSize: 13,
+        secondaryFontSize: 11,
+        secondaryLineLimit: 1,
+        notesPreviewLimit: 64
+    )
+
+    /// macOS. Three of these ten figures land on `.regular`'s answer exactly —
+    /// `horizontalPadding`, `badgeSpacing` and, in effect, `.compact`'s `secondaryFontSize` — which
+    /// is the argument for stating all three tiers in one place: those are now literally one number
+    /// each, and the two that had to differ say so beside themselves rather than being discovered
+    /// later as drift.
+    static let desktop = CadenceTaskRowMetrics(
+        horizontalPadding: 14,
+        verticalPadding: 8,
+        contentSpacing: 8,
+        // Stated, not read: the macOS row has no second line. See the type's doc comment.
+        summarySpacing: 6,
+        badgeSpacing: 6,
+        // Stated, not read either, and for a sharper reason — on macOS this same number would also
+        // be an SF Symbol point size. `MacTaskRow` leaves `TaskCompletionProgressGlyph`'s own
+        // default alone, and a test pins that it keeps doing so.
+        completionGlyphSize: 18,
+        titleFontSize: 15,
         secondaryFontSize: 11,
         secondaryLineLimit: 1,
         notesPreviewLimit: 64

@@ -160,7 +160,7 @@ private struct iOSInboxReminderRow: View {
 
             VStack(alignment: .leading, spacing: metrics.summarySpacing) {
                 Text(reminder.title.isEmpty ? "Untitled Reminder" : reminder.title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: metrics.titleFontSize, weight: .medium))
                     .foregroundStyle(isCompleting ? Theme.dim : Theme.text)
                     .strikethrough(isCompleting, color: Theme.dim)
                     .lineLimit(CadenceTaskRowMetrics.titleLineLimit)

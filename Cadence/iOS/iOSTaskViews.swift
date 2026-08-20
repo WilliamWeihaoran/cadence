@@ -158,7 +158,7 @@ struct iOSTaskRow: View {
             // to truncate to one line while the next tab along wrapped to two, and it is the day's
             // planning screen that could least afford to hide half a title.
             Text(task.title.isEmpty ? "Untitled" : task.title)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: metrics.titleFontSize, weight: .medium))
                 .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                 .strikethrough(task.isDone, color: Theme.dim)
                 .lineLimit(CadenceTaskRowMetrics.titleLineLimit)

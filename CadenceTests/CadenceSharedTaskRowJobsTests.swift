@@ -518,6 +518,138 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(code.contains("checkmark.square.fill"))
     }
 
+    // MARK: - T-175: the primary row's metrics, and the macOS reader that was missing
+
+    /// **The thing T-175 was actually about.** `CadenceTaskRowMetrics` had five iOS readers and
+    /// zero macOS ones while `MacTaskRow` hardcoded the same figures inline — a shared metrics type
+    /// that one platform never adopted, which is precisely the shape `iOSPageHeaderMetrics` had
+    /// before `5aa11dc` renamed it and gave macOS a third tier.
+    @Test func thereIsAThirdRowTierAndItIsNotRegularRelabelled() {
+        #expect(CadenceTaskRowSurface.allCases.count == 3)
+        #expect(CadenceTaskRowMetrics.metrics(for: .compact) == .compactWidth)
+        #expect(CadenceTaskRowMetrics.metrics(for: .regular) == .regularWidth)
+        #expect(CadenceTaskRowMetrics.metrics(for: .desktop) == .desktop)
+
+        // iOS's boolean spelling still resolves to the two width tiers and never to desktop.
+        #expect(CadenceTaskRowMetrics.metrics(isRegularWidth: true) == .regularWidth)
+        #expect(CadenceTaskRowMetrics.metrics(isRegularWidth: false) == .compactWidth)
+        #expect(CadenceTaskRowMetrics.metrics(isRegularWidth: true) != .desktop)
+    }
+
+    /// The two figures that had to stay split, and the reason each is a real difference rather than
+    /// drift: a pointer can land on a row a finger cannot, and each platform's row title is tuned to
+    /// its own type scale. Averaging either would read as a tidy-up and ship a regression.
+    @Test func theTwoSplitFiguresStaySplitInTheDirectionThatIsEarned() {
+        // Tighter than *both* touch tiers, not a point on a compact→regular ramp.
+        #expect(CadenceTaskRowMetrics.desktop.verticalPadding == 8)
+        #expect(CadenceTaskRowMetrics.desktop.verticalPadding < CadenceTaskRowMetrics.compactWidth.verticalPadding)
+        #expect(CadenceTaskRowMetrics.desktop.verticalPadding < CadenceTaskRowMetrics.regularWidth.verticalPadding)
+
+        // Louder than either iOS width, and one size across both of those.
+        #expect(CadenceTaskRowMetrics.desktop.titleFontSize == 15)
+        #expect(CadenceTaskRowMetrics.compactWidth.titleFontSize == CadenceTaskRowMetrics.regularWidth.titleFontSize)
+        #expect(CadenceTaskRowMetrics.desktop.titleFontSize > CadenceTaskRowMetrics.regularWidth.titleFontSize)
+    }
+
+    /// And the figures that turned out to be one number after all — the payoff for stating three
+    /// tiers in one place rather than two of them in a shared type and one set inline.
+    @Test func desktopAndRegularAgreeWhereThereWasNothingToDisagreeAbout() {
+        #expect(CadenceTaskRowMetrics.desktop.horizontalPadding == CadenceTaskRowMetrics.regularWidth.horizontalPadding)
+        #expect(CadenceTaskRowMetrics.desktop.badgeSpacing == CadenceTaskRowMetrics.regularWidth.badgeSpacing)
+
+        // The three the macOS row cannot use are stated at compact's answers — a narrow pane's — so
+        // the tier is total rather than holed. Nothing reads them; the test below pins that.
+        #expect(CadenceTaskRowMetrics.desktop.summarySpacing == CadenceTaskRowMetrics.compactWidth.summarySpacing)
+        #expect(CadenceTaskRowMetrics.desktop.secondaryLineLimit == CadenceTaskRowMetrics.compactWidth.secondaryLineLimit)
+        #expect(CadenceTaskRowMetrics.desktop.notesPreviewLimit == CadenceTaskRowMetrics.compactWidth.notesPreviewLimit)
+    }
+
+    /// **The call-site half, and the reason this file exists.** T-161 is the standing example: a
+    /// committed fix was revertible with the whole suite green because the tests pinned a helper
+    /// while nothing observed the call site. Exact counts, so restoring *one* inline literal fails.
+    @Test func theMacRowDrawsItselfFromTheSharedFiguresRatherThanItsOwn() throws {
+        try expectOccurrences(
+            of: "CadenceTaskRowMetrics { .desktop }",
+            // The row and its estimate chip. The chip is its own `View` struct so its popover
+            // `@State` cannot invalidate the row; it reads the tier directly for the same reason.
+            at: ["Cadence/macOS/Views/TasksPanelComponents.swift": 2]
+        )
+
+        for (figure, count) in [
+            ("metrics.horizontalPadding", 1),
+            ("metrics.verticalPadding", 1),
+            ("metrics.contentSpacing", 3),
+            ("metrics.badgeSpacing", 7),
+            ("metrics.titleFontSize", 1),
+            ("metrics.secondaryFontSize", 5)
+        ] {
+            try expectOccurrences(of: figure, at: ["Cadence/macOS/Views/TasksPanelComponents.swift": count])
+        }
+    }
+
+    /// The inline literals the row used to carry. Zero expectations are the point: this is what
+    /// fails if someone "simplifies" a `metrics.` read back to the number it resolves to.
+    @Test func theMacRowsOwnCopiesOfThoseFiguresAreGone() throws {
+        for literal in [
+            ".font(.system(size: 15))",
+            ".padding(.vertical, 8)",
+            ".padding(.leading, 14)",
+            "size: 11, weight: .medium"
+        ] {
+            try expectOccurrences(of: literal, at: ["Cadence/macOS/Views/TasksPanelComponents.swift": 0])
+        }
+    }
+
+    /// The three figures macOS deliberately does **not** read, pinned so the exception cannot decay
+    /// into an oversight — and pinned positively on iOS so a zero here means "macOS abstains", not
+    /// "the scan found nothing".
+    ///
+    /// `titleLineLimit`: the macOS row is one `HStack` with a `Spacer` and trailing metadata, so its
+    /// height is fixed; iOS's is a `VStack` built to grow. `completionGlyphSize`: not the same
+    /// measurement — iOS's is a layout box around a 16pt disc, expanded to a 44pt touch target,
+    /// while macOS's would also be an SF Symbol point size, and its four macOS call sites already
+    /// use that as a per-surface type ramp (12 / 13 / 15 / 18).
+    @Test func theMacRowAbstainsFromTheThreeFiguresThatAreNotItsMeasurements() throws {
+        for figure in ["titleLineLimit", "completionGlyphSize", "completionCircleDiameter", "summarySpacing", "secondaryLineLimit", "notesPreviewLimit"] {
+            try expectOccurrences(of: figure, at: ["Cadence/macOS/Views/TasksPanelComponents.swift": 0])
+        }
+
+        try expectOccurrences(
+            of: "CadenceTaskRowMetrics.titleLineLimit",
+            at: ["Cadence/iOS/iOSTaskViews.swift": 1, "Cadence/iOS/iOSInboxRemindersSection.swift": 1]
+        )
+        try expectOccurrences(
+            of: "metrics.completionGlyphSize",
+            at: ["Cadence/iOS/iOSTaskViews.swift": 3, "Cadence/iOS/iOSInboxRemindersSection.swift": 3]
+        )
+    }
+
+    /// Both iOS rows had the title size typed out too, in the file that reads the metrics for
+    /// everything else. One figure, three readers.
+    @Test func bothIOSRowsTakeTheirTitleSizeFromTheSharedFigureAsWell() throws {
+        try expectOccurrences(
+            of: "metrics.titleFontSize",
+            at: ["Cadence/iOS/iOSTaskViews.swift": 1, "Cadence/iOS/iOSInboxRemindersSection.swift": 1]
+        )
+        try expectOccurrences(
+            of: "size: 13, weight: .medium",
+            at: ["Cadence/iOS/iOSTaskViews.swift": 0, "Cadence/iOS/iOSInboxRemindersSection.swift": 0]
+        )
+    }
+
+    /// The hard constraint that predates T-175 and survives it. `MacTaskRow` gained a `metrics`
+    /// property and lost five literals; neither it nor the estimate chip may start observing the
+    /// animation manager, because a `TimelineView(.animation)` tick in the row body re-renders every
+    /// visible row rather than one glyph. `CadenceTodayUnificationTests` pins the environment count;
+    /// this pins that the extraction the property depends on is still there to hold it.
+    @Test func theRowsAnimatedPartsAreStillExtractedIntoTheirOwnSubViews() throws {
+        let code = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+
+        #expect(code.contains("private struct TaskCompletionButton: View"))
+        #expect(code.contains("private struct TaskRowBackground: View"))
+        #expect(code.components(separatedBy: "@Environment(TaskCompletionAnimationManager.self)").count - 1 == 2)
+    }
+
     // MARK: - The scan itself
 
     /// The absence assertions above are only worth anything if the scan actually reads files, and a
@@ -540,11 +672,18 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(files.contains("Cadence/macOS/Views/CalendarBoardRailSupportViews.swift"))
         #expect(files.contains("Cadence/iOS/iOSCalendarBoardView.swift"))
         #expect(files.contains("Cadence/Shared/Components/CadenceTagChip.swift"))
+        // T-175 reaches these three; without them its zero expectations are vacuous.
+        #expect(files.contains("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        #expect(files.contains("Cadence/iOS/iOSTaskViews.swift"))
+        #expect(files.contains("Cadence/iOS/iOSInboxRemindersSection.swift"))
 
         // And it must be reading *code*, not an empty string: a positive assertion over the same
         // reader the absence checks use.
         let card = try strippingComments(sourceFile("Cadence/iOS/iOSBoardCards.swift"))
         #expect(card.contains("struct iOSBoardTaskCard"))
+
+        let macRow = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        #expect(macRow.contains("struct MacTaskRow: View"))
     }
 
     /// T-136's method: strip the platform prefix from every top-level type in `Cadence/iOS/` and

@@ -82,6 +82,75 @@ Two axes:
   desktop body is 13pt against the phone's 15–17. Folding the two would put a 30pt title over 13pt
   rows. Do not "simplify" the enum to two cases; the third one is the finding.
 
+## The Primary Task Row: What Is Shared, And What Is Earned
+
+`MacTaskRow` (`macOS/Views/TasksPanelComponents.swift`) and `iOSTaskRow` (`iOS/iOSTaskViews.swift`)
+are **not** being merged, and this section exists so the next agent does not re-derive that survey
+from scratch. Four passes have now taken the parts that were forks; what is left is platform-bound
+for reasons that are measurable rather than historical.
+
+**Shared, and must stay shared:** `CadenceTaskPresentationSupport` (notes preview, subtask list and
+its cap, tag cap, estimate label), `CadenceTaskMutationSupport`, `CadenceTaskCompletionGlyph` (the
+state → symbol/tint decision, 3 macOS readers and 1 iOS), `CompactTagStrip`,
+`CadenceBoardCardMetadata`, and — since T-175 — **`CadenceTaskRowMetrics`**.
+
+`CadenceTaskRowMetrics` had five iOS readers and zero macOS ones while `MacTaskRow` hardcoded the
+same figures inline; that is the shape `iOSPageHeaderMetrics` had before `5aa11dc`. It now has three
+tiers, `CadenceTaskRowSurface.compact` / `.regular` / **`.desktop`**, for the same reason
+`CadencePageHeaderSurface` has three and `CadenceSidebarSurface` has two: the platforms differ in
+*input device*, not in taste. `horizontalPadding` and `badgeSpacing` turned out to be literally one
+number across `.regular` and `.desktop`; `verticalPadding` (8 pointer against 9–12 touch) and
+`titleFontSize` (15 macOS against 13 iOS) stay split and say why beside themselves. Do not flatten
+the enum to two cases and do not average those two figures.
+
+**Three figures macOS deliberately does not read**, each pinned by a test in
+`CadenceTests/CadenceSharedTaskRowJobsTests.swift` so the exception cannot decay into an oversight:
+
+- `titleLineLimit` — macOS's row is one `HStack` with a `Spacer` and trailing metadata, so its
+  height is fixed; iOS's is a `VStack` built to grow.
+- `completionGlyphSize` / `completionCircleDiameter` — **not the same measurement.** iOS draws a
+  16pt disc and ramps a *frame* around it to reach 44pt, so the number is a layout box. macOS passes
+  an SF Symbol **point size** to `TaskCompletionProgressGlyph`, which is also its frame, and whose
+  four macOS call sites already use it as a per-surface type ramp (12 / 13 / 15 / 18). This is
+  `cdf0896`'s finding again: an apparent fork that is two different jobs under one name.
+- The badge/chip geometry — iOS's row chips are `iOSTaskAttributeChipSize.row`, 30pt plates
+  hit-expanded to 44pt; macOS's are bare text with a hover underline and a radius-4 wash. Same
+  information, different control.
+
+**Platform-bound interaction machinery — do not attempt to unify.** Counts measured at this commit,
+and reproducible, so a future claim can be re-checked rather than believed:
+
+```sh
+for pat in '\.onHover' '\.onKeyPress' '\.keyboardShortcut' '\.swipeActions' \
+           '\.draggable' '\.dropDestination' '\.onDrag' '\.onDrop' 'DropDelegate'; do
+  printf "%-20s mac=%s ios=%s\n" "$pat" \
+    "$(grep -roE "$pat" Cadence/macOS | wc -l)" "$(grep -roE "$pat" Cadence/iOS | wc -l)"
+done
+```
+
+| API | macOS | iOS |
+| --- | --- | --- |
+| `.onHover` | 56 | 0 |
+| `.onKeyPress` | 18 | 0 |
+| `.keyboardShortcut` | 10 | 0 |
+| `.swipeActions` | 0 | 9 |
+| `.draggable` / `.dropDestination` | 15 / 16 | 7 / 3 |
+| `.onDrag` / `.onDrop` / `DropDelegate` | 6 / 6 / 15 | 6 / 3 / 1 |
+
+Those are four one-sided distributions, not four forks. Hover is the *only* way macOS's row exposes
+its focus button, its date nudges and its whole hovered-task shortcut set — a pointer has a resting
+position and a finger does not. iOS's equivalent is the swipe tray (`iOSTaskRowActionViews`, ~800
+lines with no macOS counterpart). The T-175 ticket in `docs/TODO.md` quotes larger absolute figures
+for the same four APIs; the *shape* reproduces and the absolute numbers do not, which is the reason
+the command is printed here rather than only its output.
+
+One thing that is **not** earned and must not regress: `MacTaskRow` and `MacTaskRowEstimateChip`
+must never read `TaskCompletionAnimationManager`. The completion button and the animated background
+are extracted into `TaskCompletionButton` and `TaskRowBackground` with their own `@Environment`
+precisely so a `TimelineView(.animation)` tick re-renders those two sub-views instead of every
+visible row. `CadenceTodayUnificationTests.theTaskRowStillDoesNotObserveTheCompletionAnimationManager`
+pins exactly two environments in that file.
+
 ## Component Expectations
 
 - Components should be reusable through explicit props and bindings.

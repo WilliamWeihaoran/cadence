@@ -27,19 +27,26 @@ struct MacTaskRow: View {
     @State private var isDoDateHovered    = false
     @State private var isDueDateHovered   = false
 
+    /// **The row's figures, from the type five iOS files already read.** This row hardcoded its own
+    /// 14 / 8 / 15 / 11 / 6 while `CadenceTaskRowMetrics` sat in `Shared/` with no macOS reader at
+    /// all — which is how the two primary rows were free to drift a padding at a time. `.desktop`
+    /// is a third tier rather than `.regular` relabelled, and the type's doc comment carries both
+    /// the figures macOS keeps to itself and the ones it deliberately does not read.
+    private var metrics: CadenceTaskRowMetrics { .desktop }
+
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
             TaskCompletionButton(task: task)
-                .padding(.leading, 14)
-                .padding(.trailing, 8)
+                .padding(.leading, metrics.horizontalPadding)
+                .padding(.trailing, metrics.contentSpacing)
 
             if style != .todayGrouped && !task.scheduledDate.isEmpty {
                 doDatePill
-                    .padding(.trailing, 8)
+                    .padding(.trailing, metrics.contentSpacing)
             }
 
             Text(task.title.isEmpty ? "Untitled" : task.title)
-                .font(.system(size: 15))
+                .font(.system(size: metrics.titleFontSize))
                 .foregroundStyle(task.isDone || task.isCancelled ? Theme.dim : Theme.text)
                 .strikethrough(task.isDone || task.isCancelled, color: Theme.dim)
                 .lineLimit(1)
@@ -49,7 +56,7 @@ struct MacTaskRow: View {
             // to a bare `+N` when the column is genuinely narrow, so a fixed 2 was hiding a tag
             // the row had room for.
             CompactTagStrip(tags: task.sortedTags, limit: CadenceTaskPresentationSupport.rowTagLimit)
-                .padding(.leading, task.sortedTags.isEmpty ? 0 : 6)
+                .padding(.leading, task.sortedTags.isEmpty ? 0 : metrics.badgeSpacing)
 
             if task.isCancelled {
                 Text("Cancelled")
@@ -59,7 +66,7 @@ struct MacTaskRow: View {
                     .padding(.vertical, 3)
                     .background(Theme.dim.opacity(0.14))
                     .clipShape(Capsule())
-                    .padding(.leading, 6)
+                    .padding(.leading, metrics.badgeSpacing)
             }
 
             Spacer(minLength: 4)
@@ -87,11 +94,11 @@ struct MacTaskRow: View {
                     compact: true,
                     flat: true
                 )
-                .padding(.leading, 6)
-                .padding(.trailing, 6)
+                .padding(.leading, metrics.badgeSpacing)
+                .padding(.trailing, metrics.badgeSpacing)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, metrics.verticalPadding)
         .contentShape(Rectangle())
         .onTapGesture { showTaskInspector = true }
         .overlay {
@@ -198,7 +205,7 @@ struct MacTaskRow: View {
             }
         }
         .frame(width: 26, height: 20)
-        .padding(.trailing, 6)
+        .padding(.trailing, metrics.badgeSpacing)
     }
 
     private var doDatePill: some View {
@@ -213,11 +220,11 @@ struct MacTaskRow: View {
 
                 ZStack {
                     Text("Tomorrow")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: metrics.secondaryFontSize, weight: .medium))
                         .opacity(0)
 
                     Text(DateFormatters.relativeDate(from: task.scheduledDate))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: metrics.secondaryFontSize, weight: .medium))
                         .foregroundStyle(
                             isOverdo
                                 ? Theme.red
@@ -255,7 +262,7 @@ struct MacTaskRow: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(isOverdue ? Theme.red : Theme.dim.opacity(0.68))
                 Text(DateFormatters.relativeDate(from: task.dueDate))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: metrics.secondaryFontSize, weight: .medium))
                     .foregroundStyle(isOverdue ? Theme.red : Theme.dim.opacity(0.68))
             }
             .underline(isDueDateHovered)
@@ -265,7 +272,7 @@ struct MacTaskRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.cadencePlain)
-        .padding(.trailing, 8)
+        .padding(.trailing, metrics.contentSpacing)
         .onHover { hovering in
             guard isDueDateHovered != hovering else { return }
             isDueDateHovered = hovering
@@ -283,11 +290,11 @@ struct MacTaskRow: View {
             Image(systemName: "square.stack")
                 .font(.system(size: 9, weight: .semibold))
             Text(TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin))
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: metrics.secondaryFontSize, weight: .medium))
                 .lineLimit(1)
         }
         .foregroundStyle(Theme.amber.opacity(0.85))
-        .padding(.leading, 6)
+        .padding(.leading, metrics.badgeSpacing)
     }
 
     private var dueDatePickerPopover: some View {
@@ -420,6 +427,11 @@ private struct MacTaskRowEstimateChip: View {
     @Environment(\.modelContext) private var modelContext
     @State private var showPicker = false
 
+    /// Reads `.desktop` itself rather than taking it as a prop: it is a macOS-only chip that can
+    /// only ever be on a macOS row, and threading the value through would imply a caller gets to
+    /// choose the tier.
+    private var metrics: CadenceTaskRowMetrics { .desktop }
+
     var body: some View {
         Button {
             showPicker.toggle()
@@ -428,7 +440,7 @@ private struct MacTaskRowEstimateChip: View {
                 Image(systemName: "clock")
                     .font(.system(size: 9, weight: .semibold))
                 Text(CadenceTaskPresentationSupport.estimateLabel(minutes: task.estimatedMinutes))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: metrics.secondaryFontSize, weight: .medium))
                     .lineLimit(1)
             }
             .foregroundStyle(Theme.dim.opacity(0.68))
@@ -438,7 +450,7 @@ private struct MacTaskRowEstimateChip: View {
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.cadencePlain)
-        .padding(.trailing, 6)
+        .padding(.trailing, metrics.badgeSpacing)
         .onHover { isHovered = $0 }
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
             EstimatePickerPopoverContent(
