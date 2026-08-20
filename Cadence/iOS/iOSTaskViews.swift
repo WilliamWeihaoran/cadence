@@ -33,6 +33,19 @@ struct iOSTaskRow: View {
         .metrics(isRegularWidth: isRegularWidth)
     }
 
+    /// T-147. "Over, however it ended" — the shared `CadenceTaskCompletionState.isSettled`, which
+    /// is also what tints the circle beside this title, so the ring and the title cannot disagree
+    /// about whether a task is finished.
+    ///
+    /// It was `task.isDone` alone, so a **cancelled** task drew full-contrast and un-struck: the
+    /// glyph said `xmark.circle.fill` in `Theme.dim` while the title beside it read exactly like
+    /// live work. `MacTaskRow` has spelled this `isDone || isCancelled` all along. The difference
+    /// mattered nowhere until the completed queries started admitting cancelled tasks, at which
+    /// point a Completed section would have shown one row struck through and the next one not.
+    private var isSettled: Bool {
+        CadenceTaskCompletionState.resolve(task: task).isSettled
+    }
+
     var body: some View {
         rowContent
             .padding(.horizontal, metrics.horizontalPadding)
@@ -159,15 +172,15 @@ struct iOSTaskRow: View {
             // planning screen that could least afford to hide half a title.
             Text(task.title.isEmpty ? "Untitled" : task.title)
                 .font(.system(size: metrics.titleFontSize, weight: .medium))
-                .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
-                .strikethrough(task.isDone, color: Theme.dim)
+                .foregroundStyle(isSettled ? Theme.dim : Theme.text)
+                .strikethrough(isSettled, color: Theme.dim)
                 .lineLimit(CadenceTaskRowMetrics.titleLineLimit)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if let secondaryLine {
                 Text(secondaryLine)
                     .font(.system(size: metrics.secondaryFontSize, weight: .medium))
-                    .foregroundStyle(Theme.dim.opacity(task.isDone ? 0.58 : 0.82))
+                    .foregroundStyle(Theme.dim.opacity(isSettled ? 0.58 : 0.82))
                     .lineLimit(metrics.secondaryLineLimit)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

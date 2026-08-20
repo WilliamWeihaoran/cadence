@@ -28,10 +28,12 @@ enum CadenceTaskQuerySupport {
             .sorted { sortTodayTasks($0, $1, todayKey: todayKey, sortMode: sortMode) }
     }
 
+    /// Today's Completed section — including cancelled work. `isFinishedTask` carries the whole
+    /// account of why; the three `completed*` queries below are its only callers on this surface.
     static func completedTodayTasks(from tasks: [AppTask], todayKey: String) -> [AppTask] {
         tasks
             .filter { task in
-                guard task.isDone && !task.isCancelled else { return false }
+                guard isFinishedTask(task) else { return false }
                 if task.scheduledDate == todayKey || task.dueDate == todayKey { return true }
                 if let completedAt = task.completedAt {
                     return DateFormatters.dateKey(from: completedAt) == todayKey
@@ -73,7 +75,7 @@ enum CadenceTaskQuerySupport {
 
     static func completedInboxTasks(from tasks: [AppTask]) -> [AppTask] {
         tasks
-            .filter { $0.area == nil && $0.project == nil && $0.isDone && !$0.isCancelled }
+            .filter { $0.area == nil && $0.project == nil && isFinishedTask($0) }
             .taskCompletionSorted()
     }
 
@@ -89,7 +91,7 @@ enum CadenceTaskQuerySupport {
 
     static func completedTasks(from tasks: [AppTask]) -> [AppTask] {
         tasks
-            .filter { $0.isDone && !$0.isCancelled }
+            .filter { isFinishedTask($0) }
             .taskCompletionSorted()
     }
 

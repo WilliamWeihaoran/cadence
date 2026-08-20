@@ -30,8 +30,12 @@ struct iOSTaskEditorTitleCard: View {
 
     /// Done and cancelled are both "settled": the title reads as struck through and stops being
     /// the loudest text in the sheet.
+    ///
+    /// Read from `CadenceTaskCompletionState`, the same decision the circle to its left resolves,
+    /// rather than restated as `isDone || isCancelled` — this sheet and `iOSTaskRow` had two
+    /// spellings of it and only one of them included cancelled.
     private var isSettled: Bool {
-        task.isDone || task.isCancelled
+        CadenceTaskCompletionState.resolve(task: task).isSettled
     }
 
     var body: some View {

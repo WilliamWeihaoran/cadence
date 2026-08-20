@@ -57,6 +57,32 @@ as a macOS service after it had moved. Grep for the declaration, not for the fil
 component is a second declaration inside another component's file, say so in `CLAUDE.md`'s inventory,
 because that inventory is a list of *files* and a reader counting it will not see you.
 
+## One Predicate For "This Task Is Over"
+
+`CadenceTaskQuerySupport.isFinishedTask(_:)` / `finishedTasks(from:)`
+(`CadenceTaskQuerySharedSupport.swift`) is **the** completed/logbook filter, and the exact
+complement of the private `isOpenTask` the active filters read. Every Completed section goes
+through it; the active lists keep their own `!isDone && !isCancelled`.
+
+It exists because the two filters used not to partition the set. Active asked
+`!isDone && !isCancelled` and Completed asked `isDone && !isCancelled` — and a **cancelled** task
+satisfies neither, so it dropped out of every list in the app (T-147). macOS had independently
+arrived at `isDone || isCancelled` in three view files; naming it once is what stops a fourth
+Completed surface getting it wrong. `CadenceCancelledTaskReachabilityTests` pins both the predicate
+and the call sites, including exact per-file counts of what may still say `isCancelled`.
+
+Two neighbours are deliberately *not* it, and both are pinned:
+- `completedTaskCount` counts `isDone` only. It backs the "N done" summary line and the Settings
+  Completed tile; a cancellation is not an accomplishment. Reachability is what a Completed
+  *section* owes you, not credit.
+- `CadenceScheduleSupport`'s slot queries, `CalendarBoardPlannerSupport`'s rails and day buckets,
+  and `CadenceSidebarLayout.overdueTaskCount` all still exclude cancelled work outright — a
+  cancelled task holds no timeline slot, sits on no rail, and is not work you are late on.
+
+For the *row*, the matching decision is `CadenceTaskCompletionState.isSettled`, read by
+`iOSTaskRow` and `iOSTaskEditorTitleCard`. Do not restate either as `isDone || isCancelled`
+inline.
+
 ## One Page Header Per Platform
 
 `DesktopPageHeader` (`macOS/Views/macOSRootSupportViews.swift`) and `iOSPageHeader`
