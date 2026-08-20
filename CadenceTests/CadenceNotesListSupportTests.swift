@@ -402,7 +402,7 @@ struct CadenceNotesListSupportTests {
 
         let declarations = [
             "NoteMonthGroup", "CadenceNotesListSection", "NotesListGrouping", "NotesListVisibility",
-            "NotesListMetrics", "CadenceNotesListMetrics", "CadenceNotesFoldState",
+            "NotesListMetrics", "CadenceNotesListMetrics", "CadenceNotesFoldState", "CadenceNotesLayout",
             "NotesMonthHeader", "NotesGroupedListColumn", "NotesFoldableListColumn", "NoteListDayRow",
             "DailyNoteListRow", "WeeklyNoteListRow", "MeetingNoteListRow", "NotepadNoteListRow",
             // The two iOS spellings this replaced. Neither may come back.
@@ -496,4 +496,136 @@ private func notesStrippingComments(_ source: String) throws -> String {
         }
     }
     return result
+}
+
+// MARK: - T-177: two columns or one
+
+/// **The notes split had no floor.** It branched on the horizontal size class alone — no width input
+/// at all — so every regular-width host got two columns however little room it had, and the list
+/// took `regularColumnWidth` off the top of it as a fixed frame. On an iPad Air 13" in portrait with
+/// the shell sidebar out, Today's inspector is 320pt wide, which left the markdown editor
+/// **320 − 280 − 1 = 39pt**: one character per line.
+///
+/// Two kinds of test again, and the second kind is again the point. The arithmetic below proves the
+/// floor is derived rather than picked; `theNotesSplitReadsTheFloorRatherThanTheSizeClass` proves
+/// the view *asks*. T-161 is the standing example of why the first without the second is not enough.
+@MainActor
+struct CadenceNotesTwoColumnFloorTests {
+    /// The shell sidebar, spelled out because `iOSSidebarMetrics` lives under `Cadence/iOS/` inside
+    /// `#if os(iOS)` and this target builds for macOS.
+    private static let sidebarWidth: CGFloat = 188
+
+    private func layout(hostWidth: CGFloat) -> CadenceNotesLayout {
+        CadenceNotesListMetrics.layout(isRegularWidth: true, hostWidth: hostWidth)
+    }
+
+    /// **The derivation, not the number.** Stated in terms of the parts on both sides, so raising
+    /// `regularColumnWidth` moves the boundary with it and a hand-typed `601` fails here the moment
+    /// any part changes.
+    @Test func theFloorIsTheSumOfItsPartsAndTheBoundaryFollowsThem() {
+        let sum = CadenceNotesListMetrics.regularColumnWidth
+            + CadenceNotesListMetrics.columnDividerWidth
+            + CadenceNotesListMetrics.minimumEditorWidth
+        #expect(CadenceNotesListMetrics.twoColumnMinimumWidth == sum)
+        #expect(layout(hostWidth: sum) == .twoColumn)
+        #expect(layout(hostWidth: sum - 1) == .oneColumn)
+        #expect(CadenceNotesListMetrics.supportsTwoColumns(hostWidth: sum))
+        #expect(CadenceNotesListMetrics.supportsTwoColumns(hostWidth: sum - 1) == false)
+    }
+
+    /// The minimum editor width is the one figure that had to be chosen, and it is chosen by
+    /// reference: `CadenceTodayLayoutSupport.inspectorPaneMinWidth`, which that file already
+    /// describes as the least the notes/timeline inspector will accept before its own content
+    /// clips. Requiring the editor *half* to clear the whole pane's stated floor is the stronger
+    /// reading of it, on purpose.
+    @Test func theMinimumEditorWidthIsBorrowedRatherThanInvented() {
+        #expect(CadenceNotesListMetrics.minimumEditorWidth == CadenceTodayLayoutSupport.inspectorPaneMinWidth)
+        #expect(CadenceNotesListMetrics.columnDividerWidth == CadenceTodayLayoutSupport.paneDividerWidth)
+    }
+
+    /// The reported bug width. 320pt is the inspector at its floor, and it is the width that used to
+    /// draw a 39pt editor.
+    @Test func theWidthThatDrewAFortyPointEditorNowFallsBack() {
+        let inspector = CadenceTodayLayoutSupport.inspectorPaneMinWidth
+        #expect(layout(hostWidth: inspector) == .oneColumn)
+        // What the two-column form would have left the editor there, kept as the record of the bug.
+        #expect(
+            inspector
+                - CadenceNotesListMetrics.regularColumnWidth
+                - CadenceNotesListMetrics.columnDividerWidth == 39
+        )
+        // And the widest the Today inspector ever gets — a 13" iPad in landscape with the sidebar
+        // folded — is still under the floor, so that host is one-column at every size.
+        #expect(layout(hostWidth: 545) == .oneColumn)
+    }
+
+    /// **The hosts that must not change.** Every pane the Notes *tab* is handed on a target iPad,
+    /// sidebar out and folded, in both orientations. The narrowest is an 11" in portrait at
+    /// 834 − 188 = 646, which clears the floor by 45pt and keeps a 365pt editor — that margin is
+    /// exactly why the floor is 601 and not the 656 an iPhone-width anchor would have given.
+    @Test func everyNotesTabPaneOnATargetIPadKeepsItsTwoColumns() {
+        for window in [CGFloat(834), 1_210, 1_024, 1_366] {
+            for pane in [window - Self.sidebarWidth, window] {
+                #expect(layout(hostWidth: pane) == .twoColumn, "pane \(pane)")
+            }
+        }
+    }
+
+    /// Compact is compact however much room is behind it — the phone's form is not a fallback there,
+    /// it is the form. Same guarantee `CadenceTodayLayoutSupport` gives.
+    @Test func compactWidthIsAlwaysOneColumnHoweverWideTheHost() {
+        for hostWidth in [CGFloat(0), 375, 393, 1_024, 4_000] {
+            #expect(CadenceNotesListMetrics.layout(isRegularWidth: false, hostWidth: hostWidth) == .oneColumn)
+        }
+    }
+
+    /// An unmeasured host answers with the size class rather than with `.oneColumn`. `onGeometryChange`
+    /// lands after the first layout pass, so a regular host reads 0 for one frame; resolving that to
+    /// the phone's form would flash it on every appearance of the iPad Notes tab.
+    @Test func anUnmeasuredHostAssumesTheAnswerItAlmostAlwaysResolvesTo() {
+        #expect(layout(hostWidth: 0) == .twoColumn)
+        #expect(layout(hostWidth: -1) == .twoColumn)
+    }
+
+    @Test func theRangeIsExactlyTwoCases() {
+        for hostWidth in stride(from: CGFloat(0), through: 4_000, by: 13) {
+            for isRegularWidth in [true, false] {
+                let resolved = CadenceNotesListMetrics.layout(isRegularWidth: isRegularWidth, hostWidth: hostWidth)
+                #expect(resolved == .oneColumn || resolved == .twoColumn)
+            }
+        }
+    }
+
+    // MARK: - The call site
+
+    /// **The half that T-161 says has to exist.** A floor nothing reads is revertible with the whole
+    /// suite green: the arithmetic above would pass unchanged if `iOSNotesView` went back to
+    /// `if isCompactWidth { sidebar } else { HStack … }`. `Cadence/iOS/` is inside `#if os(iOS)` and
+    /// invisible to this macOS-built target, so the call site is read out of the source text — the
+    /// same tool `everyNotesListOnBothPlatformsDrawsTheSharedFoldableColumn` uses.
+    ///
+    /// The counts are exact on purpose, and the split between the two symbols is the assertion:
+    /// `notesLayout` is every decision about *how many columns*, and `isCompactWidth` is only the
+    /// two things that are genuinely about the size class — the back control on a pushed compact
+    /// screen, and the row metrics' touch tier. Move a layout branch back onto the size class and
+    /// both counts move.
+    @Test func theNotesSplitReadsTheFloorRatherThanTheSizeClass() throws {
+        try expectNotesCallSites(
+            of: "CadenceNotesListMetrics.layout",
+            at: ["Cadence/iOS/iOSNotesView.swift": 1]
+        )
+
+        let code = try notesStrippingComments(notesSource("Cadence/iOS/iOSNotesView.swift"))
+
+        // Declaration, plus the three decisions: the column split, whether a tapped row presents the
+        // editor over the list, and where the template control lives.
+        #expect(code.components(separatedBy: "notesLayout").count - 1 == 4)
+        // Declaration, the `!isCompactWidth` inside `notesLayout`, the back control, the row metrics.
+        #expect(code.components(separatedBy: "isCompactWidth").count - 1 == 4)
+        // Measured rather than wrapped in a `GeometryReader`, and measured exactly once.
+        #expect(code.components(separatedBy: "onGeometryChange").count - 1 == 1)
+        // The one-column form is reused, not rebuilt: the editor is still presented over the list by
+        // the same `fullScreenCover` the phone has always used.
+        #expect(code.contains("fullScreenCover(item: $presentedNote)"))
+    }
 }

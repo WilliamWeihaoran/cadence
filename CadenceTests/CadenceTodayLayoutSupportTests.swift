@@ -101,3 +101,78 @@ struct CadenceTodayLayoutModeRemovalTests {
         )
     }
 }
+
+/// **T-177.** The Today inspector is the host that broke, and it broke on arithmetic this file
+/// already owned: at its own floor the inspector is 320pt wide, and `iOSNotesView` was splitting
+/// that into a 280pt list, a 1pt divider and a 39pt editor — a markdown body wrapping one character
+/// per line.
+///
+/// The fix went into the notes split (`CadenceNotesListMetrics.twoColumnMinimumWidth`), which fixes
+/// every narrow host at once. These tests pin the two things that are this file's business: that the
+/// widths it hands the inspector really do land under that floor on every target device, and that
+/// `inspectorPaneFloor` was **not** raised to fit two notes columns instead.
+@MainActor
+struct CadenceTodayInspectorNotesWidthTests {
+    /// The shell sidebar, spelled out for the reason `CadenceTodayTwoPaneFloorTests` gives: the
+    /// metrics live under `Cadence/iOS/`, inside `#if os(iOS)`.
+    private static let sidebarWidth: CGFloat = 188
+
+    /// What the inspector is actually handed at a given pane width — the pane, less the task column,
+    /// less the divider. The same subtraction `iPadTodayView.twoPaneTodayLayout` performs by putting
+    /// a fixed-width column and a flexible one in an `HStack`.
+    private func inspectorWidth(paneWidth: CGFloat) -> CGFloat {
+        paneWidth
+            - CadenceTodayLayoutSupport.taskPaneWidth(forPaneWidth: paneWidth)
+            - CadenceTodayLayoutSupport.paneDividerWidth
+    }
+
+    @Test func theReportedFortyPointEditorIsExactlyWhatTheArithmeticProduces() {
+        // iPad Air 13" (M4) in portrait with the shell sidebar out: 1024 − 188 = 836pt of pane.
+        #expect(inspectorWidth(paneWidth: 836) == CadenceTodayLayoutSupport.inspectorPaneMinWidth)
+        #expect(
+            inspectorWidth(paneWidth: 836)
+                - CadenceNotesListMetrics.regularColumnWidth
+                - CadenceNotesListMetrics.columnDividerWidth == 39
+        )
+    }
+
+    /// Every pane the two target iPads can hand Today, in both orientations, with the shell sidebar
+    /// out and folded. **Not one of them clears the notes floor** — so the inspector always renders
+    /// the one-column form, and the editor always gets the whole 320–545pt rather than 39–265.
+    @Test func everyInspectorWidthTheTargetIPadsProduceFallsBackToOneNotesColumn() {
+        // 11" Pro portrait/landscape, then 13" Air portrait/landscape.
+        for window in [CGFloat(834), 1_210, 1_024, 1_366] {
+            for pane in [window - Self.sidebarWidth, window]
+            where CadenceTodayLayoutSupport.supportsTwoPane(paneWidth: pane) {
+                let inspector = inspectorWidth(paneWidth: pane)
+                #expect(
+                    CadenceNotesListMetrics.layout(isRegularWidth: true, hostWidth: inspector) == .oneColumn,
+                    "pane \(pane) hands the inspector \(inspector)pt"
+                )
+            }
+        }
+    }
+
+    /// **`inspectorPaneFloor` was deliberately not raised, and this is the reason.** Raising it to
+    /// `twoColumnMinimumWidth` so the pane could never be handed less than the notes split needs
+    /// would push `twoPaneMinimumWidth` to 440 + 601 + 1 = 1042 — over every pane a target iPad
+    /// produces except an 11" or 13" in landscape with the sidebar folded. Today would lose its
+    /// second pane, and with it the task column that is the page's subject, on a 13" iPad in
+    /// portrait.
+    ///
+    /// It would also be sizing the pane for the worse of two tenants. The switcher offers Notes
+    /// **or** Timeline, and only Notes has a 280pt fixed column in it; `iOSSchedulePanel` is
+    /// perfectly happy at 320. And the notes fallback at 320 is not a degraded surface — it is the
+    /// phone's, editor over list, which is what the 39pt column never was.
+    @Test func theInspectorFloorWasNotRaisedToFitTwoNotesColumns() {
+        #expect(CadenceTodayLayoutSupport.inspectorPaneFloor(forPaneWidth: 836) == 320)
+        #expect(CadenceTodayLayoutSupport.twoPaneMinimumWidth == 761)
+
+        // What the alternative would have cost, stated as arithmetic rather than as a claim.
+        let raisedTwoPaneFloor = CadenceTodayLayoutSupport.taskPaneMinWidth
+            + CadenceNotesListMetrics.twoColumnMinimumWidth
+            + CadenceTodayLayoutSupport.paneDividerWidth
+        #expect(raisedTwoPaneFloor > 836)
+        #expect(CadenceTodayLayoutSupport.layout(isRegularWidth: true, paneWidth: 836) == .twoPane)
+    }
+}

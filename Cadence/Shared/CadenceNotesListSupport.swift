@@ -14,6 +14,23 @@ import SwiftUI
 // pin the figures and the fold arithmetic. `Cadence/iOS/` is entirely inside `#if os(iOS)` and is
 // invisible to that target, so any value type an iOS view needs asserted has to live out here.
 
+// MARK: - Layout
+
+/// One column or two — which form the iOS Notes surface renders, and the only thing that separates
+/// iPhone from iPad there.
+///
+/// **The size class is not enough to decide it.** A host can be horizontally regular and still be
+/// narrower than a 280pt list column plus a readable editor: the iPad Today inspector is exactly
+/// that, and it rendered a ~40pt editor for as long as this branched on the size class alone. See
+/// `CadenceNotesListMetrics.twoColumnMinimumWidth`.
+nonisolated enum CadenceNotesLayout: Equatable, Sendable {
+    /// The list is the whole surface and the editor is presented over it. The phone's form, and the
+    /// form any regular-width host too narrow to split falls back to — it is reused, not rebuilt.
+    case oneColumn
+    /// List beside editor.
+    case twoColumn
+}
+
 // MARK: - Metrics
 
 /// Every figure the grouped note list draws itself with, in one value, for one surface.
@@ -106,6 +123,72 @@ nonisolated struct CadenceNotesListMetrics: Equatable, Sendable {
     /// sidebar's split rather than beside a window edge. 280 gives the same ~25-character preview
     /// at the larger type that 224 gives macOS at 12pt.
     static let regularColumnWidth: CGFloat = 280
+
+    // MARK: Two columns or one
+    //
+    // The split branched on the horizontal size class **alone**, with no width input and no floor,
+    // so every regular-width host got two columns however little room it had — and the list took
+    // `regularColumnWidth` off the top of it as a fixed frame. Today's inspector is 320pt wide at
+    // its own floor (`CadenceTodayLayoutSupport.inspectorPaneMinWidth`), which left the editor
+    // **320 − 280 − 1 = 39pt**: a markdown body wrapping one character per line.
+    //
+    // The same rule for the other regular-width splits is in `CadenceRegularPaneLayout.swift`
+    // (`CadenceRegularSplitLayout`, `CadenceCalendarPaneLayout.showsInspector`), stated there three
+    // times over. This one lives beside `regularColumnWidth` because that is the part it is derived
+    // from; a new split surface belongs in that file rather than in a fourth copy of this
+    // arithmetic.
+
+    /// The 1pt `Divider()` between the two columns. Counted, because a floor that forgets it is a
+    /// floor that is one point wrong — the mistake `CadenceTodayLayoutSupport.taskPaneWidth`
+    /// records at length.
+    static let columnDividerWidth: CGFloat = 1
+
+    /// The least the editor half may be handed before two columns is worse than one.
+    ///
+    /// **Not picked, and not local.** It is `CadenceTodayLayoutSupport.inspectorPaneMinWidth` — the
+    /// figure that file already states as "the least the notes/timeline inspector will accept before
+    /// its own content starts clipping". That sentence is about *this* content, and spending it on
+    /// the editor half alone is deliberately the stronger requirement: the editor must clear on its
+    /// own what the whole pane's stated floor is. Spelled as a reference rather than a literal so
+    /// the two cannot drift.
+    ///
+    /// The corroborating anchor is the phone, and it is the reason this is not larger. The
+    /// one-column fallback *is* the phone's form, so "at least as wide as the editor already runs at
+    /// as a whole screen" is the other defensible reading — 375pt, the narrowest screen the app
+    /// ships on (iPhone SE 3rd gen / 13 mini; a 26.2 deployment target drops everything narrower),
+    /// which would put the floor at 656. That is 10pt over an 11" iPad's portrait Notes pane
+    /// (834 − 188 = 646), where the editor would have had 365 — tight, not broken. A floor's job is
+    /// to name the width below which two columns is *worse* than one, not the width above which it
+    /// is ideal, so the lower anchor wins and the only hosts whose layout changes are the ones that
+    /// were unreadable.
+    static var minimumEditorWidth: CGFloat { CadenceTodayLayoutSupport.inspectorPaneMinWidth }
+
+    /// 601pt of host. **A sum, not a constant** — raise `regularColumnWidth` and this moves with it,
+    /// which is the entire reason it is spelled this way rather than typed. Same construction, and
+    /// the same history, as `CadenceTodayLayoutSupport.twoPaneMinimumWidth`: two panes with no floor
+    /// at all until one host proved they needed one.
+    static var twoColumnMinimumWidth: CGFloat {
+        regularColumnWidth + columnDividerWidth + minimumEditorWidth
+    }
+
+    static func supportsTwoColumns(hostWidth: CGFloat) -> Bool {
+        hostWidth >= twoColumnMinimumWidth
+    }
+
+    /// The form the iOS Notes surface renders, given the width its host actually handed it.
+    ///
+    /// **`hostWidth <= 0` means "not measured yet" and answers with the size class alone.** The
+    /// width arrives from `onGeometryChange`, which lands after the first layout pass, so a regular
+    /// host reads 0 for one frame; resolving that to `.oneColumn` would flash the phone's form on
+    /// every appearance of the iPad Notes tab. This is the opposite call from
+    /// `CadenceCalendarPaneLayout`'s, and for the same reason it gives: there, the pane opening
+    /// full-width and *gaining* an inspector reads as the inspector arriving. Here the two-column
+    /// form is the one the host almost always resolves to, so assuming it is what avoids the flash.
+    static func layout(isRegularWidth: Bool, hostWidth: CGFloat) -> CadenceNotesLayout {
+        guard isRegularWidth else { return .oneColumn }
+        guard hostWidth > 0 else { return .twoColumn }
+        return supportsTwoColumns(hostWidth: hostWidth) ? .twoColumn : .oneColumn
+    }
 
     static func metrics(for surface: CadencePageHeaderSurface) -> CadenceNotesListMetrics {
         switch surface {

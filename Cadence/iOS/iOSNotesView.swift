@@ -105,8 +105,21 @@ struct iOSNotesView: View {
     /// cannot mislead you about which note you are writing in. See `CadenceNotesFoldState`.
     @State private var selectedDayKey = DateFormatters.todayKey()
 
+    /// The width this view has actually been handed, which is **not** what the size class says
+    /// about it. Zero until the first measurement lands — see `CadenceNotesListMetrics.layout`.
+    @State private var hostWidth: CGFloat = 0
+
+    /// The size class only, and deliberately: this is read by the *back control*, which exists
+    /// because a pushed compact screen hides its navigation bar, and by the row metrics, which are
+    /// a touch tier. Neither is a layout question. Every layout question goes through `notesLayout`.
     private var isCompactWidth: Bool {
         horizontalSizeClass == .compact
+    }
+
+    /// One column or two. The size class *and* the width — a regular-width host can still be too
+    /// narrow to split, which is what Today's inspector is.
+    private var notesLayout: CadenceNotesLayout {
+        CadenceNotesListMetrics.layout(isRegularWidth: !isCompactWidth, hostWidth: hostWidth)
     }
 
     /// The template menu sits in the header where there is room for it, and in the editor's format
@@ -118,8 +131,14 @@ struct iOSNotesView: View {
     /// One spelling, deliberately. The two views carried this rule twice — as
     /// `horizontalSizeClass == .regular` in one and `!isCompactWidth` in the other — which is how a
     /// gate drifts without anyone changing it.
+    ///
+    /// It hangs off the *layout* rather than the size class, because the rule is "is there room on
+    /// this row", and a 320pt regular-width inspector has less of it than the 390pt phone the note
+    /// above measures. In the one-column form the editor is `iOSNoteEditorCover`, whose format row
+    /// already carries the template control unconditionally, so the header dropping it moves the
+    /// control rather than removing it.
     private var showsHeaderTemplateMenu: Bool {
-        !isCompactWidth
+        notesLayout == .twoColumn
     }
 
     private var listMetrics: CadenceNotesListMetrics {
@@ -133,6 +152,15 @@ struct iOSNotesView: View {
             Divider().background(Theme.borderSubtle)
 
             content
+        }
+        // Measured, not wrapped — the same call `iOSCalendarView` makes and for the same reason. A
+        // `GeometryReader` around this `VStack` reads the same width but also becomes the layout
+        // container, and this stack holds an editor and a scrolling list that size themselves from
+        // what is left over.
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newWidth in
+            hostWidth = newWidth
         }
         .background(Theme.surface.ignoresSafeArea())
         .iOSHidesCompactNavigationBar()
@@ -218,12 +246,19 @@ struct iOSNotesView: View {
         .background(Theme.surface)
     }
 
-    /// One pane or two — the only thing that separates iPhone from iPad here.
+    /// One pane or two — the only thing that separates iPhone from iPad here, and the only thing
+    /// that separates a wide iPad host from a narrow one.
+    ///
+    /// **The list is a fixed frame, so whatever is left over is the editor**, and until T-177
+    /// nothing checked that anything *was* left over: this branched on the size class with no width
+    /// input, and the Today inspector at its 320pt floor drew a 39pt editor. The floor is
+    /// `CadenceNotesListMetrics.twoColumnMinimumWidth`, derived from this column and this divider.
     @ViewBuilder
     private var content: some View {
-        if isCompactWidth {
+        switch notesLayout {
+        case .oneColumn:
             sidebar
-        } else {
+        case .twoColumn:
             HStack(spacing: 0) {
                 sidebar
                     .frame(width: CadenceNotesListMetrics.regularColumnWidth)
@@ -404,9 +439,15 @@ struct iOSNotesView: View {
 
     // MARK: - Selection and creation
 
+    /// In the two-column form selecting a row *is* opening it — `editorPane` beside the list is
+    /// already showing it. In the one-column form there is no pane, so the editor is presented over
+    /// the list. That form is now reachable at regular width too (a host under
+    /// `CadenceNotesListMetrics.twoColumnMinimumWidth`), and this guard has to follow the layout
+    /// rather than the size class or a tapped row in Today's inspector would set `selectedNoteID`
+    /// and show nothing at all.
     private func open(_ note: Note) {
         selectedNoteID = note.id
-        guard isCompactWidth else { return }
+        guard notesLayout == .oneColumn else { return }
         // One branch, and it is deliberate: an event note is bound to a calendar event, and
         // `iOSEventNoteEditorSheet` is the editor that carries that event's title and refreshes its
         // metadata. The other three kinds have no such attachment and open in the plain editor.
