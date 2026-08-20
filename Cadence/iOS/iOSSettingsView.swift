@@ -1,5 +1,4 @@
 #if os(iOS)
-import CloudKit
 import SwiftData
 import SwiftUI
 
@@ -22,10 +21,7 @@ struct iOSSettingsView: View {
     @Query private var projects: [Project]
     @Query private var notes: [Note]
     @Query(sort: \Tag.order) private var tags: [Tag]
-    @State private var accountStatus: CKAccountStatus?
-    @State private var accountError: String?
-    @State private var isCheckingAccount = false
-    @State private var lastChecked: Date?
+    @State private var cloudAccount = CadenceCloudAccountProbe()
     @State private var contextEditorMode: iOSContextEditorMode?
     /// What the iPad rail is pointing at. On iPad a category is always selected — the rail is
     /// beside the content, so there is no "no category" state to be in.
@@ -75,11 +71,7 @@ struct iOSSettingsView: View {
         .sheet(item: $contextEditorMode) { mode in
             iOSContextEditorSheet(mode: mode)
         }
-        .onAppear {
-            if accountStatus == nil && !isCheckingAccount {
-                refreshAccountStatus()
-            }
-        }
+        .onAppear { cloudAccount.refreshIfNeeded() }
     }
 
     /// iPhone: a list of categories, and one category at a time when you pick one.
@@ -168,13 +160,7 @@ struct iOSSettingsView: View {
                 calendarZoomLevel: $calendarZoomLevel
             )
         case .sync:
-            iOSSyncSettingsSection(
-                accountStatus: accountStatus,
-                accountError: accountError,
-                isCheckingAccount: isCheckingAccount,
-                lastChecked: lastChecked,
-                refreshAccountStatus: refreshAccountStatus
-            )
+            iOSSyncSettingsSection(probe: cloudAccount)
         case .calendar:
             iOSCalendarSettingsSection(
                 calendarManager: calendarManager,
@@ -361,20 +347,6 @@ struct iOSSettingsView: View {
 
     private var activeProjectCount: Int {
         projects.filter(\.isActive).count
-    }
-
-    private func refreshAccountStatus() {
-        isCheckingAccount = true
-        accountError = nil
-
-        CKContainer.default().accountStatus { status, error in
-            Task { @MainActor in
-                accountStatus = status
-                accountError = error?.localizedDescription
-                isCheckingAccount = false
-                lastChecked = Date()
-            }
-        }
     }
 
     #if DEBUG

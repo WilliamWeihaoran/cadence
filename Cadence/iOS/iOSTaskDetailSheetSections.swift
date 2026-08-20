@@ -107,6 +107,13 @@ struct iOSTaskPropertiesSection: View {
 struct iOSTaskScheduleSection: View {
     @Bindable var task: AppTask
     let recurrenceSelection: Binding<TaskRecurrenceRule>
+    /// The one way this section writes an end condition, and deliberately a callback rather than
+    /// three bindings: every end edit has to reach
+    /// `CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd` — which normalizes the values that
+    /// do not belong to the chosen mode and propagates across the series — and it has to ask the
+    /// same scope question the rule edit asks. Writing `task.recurrenceEndMode` from here would
+    /// bypass both, and silently: the fields are plain stored properties.
+    let applyRecurrenceEnd: (TaskRecurrenceEndMode, String, Int) -> Void
     let hasScheduledDate: Binding<Bool>
     let scheduledDate: Binding<Date>
     let hasDueDate: Binding<Bool>
@@ -116,6 +123,8 @@ struct iOSTaskScheduleSection: View {
 
     @State private var showRepeatPicker = false
     @State private var showTimePicker = false
+    @State private var showEndModePicker = false
+    @State private var showEndCountPicker = false
 
     /// Colour is spent only on what is wrong. A do date in the past and an overdue deadline are the
     /// two things in this well that are, so everything else — including a do date of *today*, which
@@ -173,6 +182,27 @@ struct iOSTaskScheduleSection: View {
 
             iOSEditorDivider()
             repeatRow
+
+            // A recurring task created here used to repeat forever with no way to bound it, while
+            // correctly honouring a bound set on a Mac — the end condition has been in the model
+            // and in `applyRecurrenceEnd` all along and only macOS's inspector offered it (T-188).
+            // The rows are hidden outright for a one-off task: an end condition on something that
+            // does not repeat has nothing to end.
+            if CadenceTaskRecurrenceEndPresentation.showsEndControls(rule: task.recurrenceRule) {
+                iOSEditorDivider()
+                endsRow
+
+                switch CadenceTaskRecurrenceEndPresentation.detail(for: task.effectiveRecurrenceEndMode) {
+                case .none:
+                    EmptyView()
+                case .date:
+                    iOSEditorDivider()
+                    endDateRow
+                case .count:
+                    iOSEditorDivider()
+                    endCountRow
+                }
+            }
 
             // Logged time is **measured**, not typed: the focus timer writes it. This row used to
             // be an editable minutes picker, which invited a user to overwrite a measurement by
@@ -258,6 +288,121 @@ struct iOSTaskScheduleSection: View {
                 )
             }
         }
+    }
+
+    // MARK: - Ends
+
+    /// States the bound and opens the mode picker. The value is
+    /// `CadenceTaskRecurrenceEndPresentation.valueLabel`, which is the same sentence macOS's
+    /// inspector puts under its Repeat row — including "3 of 5", which is the one fact about a
+    /// counted series that this sheet has nowhere else to say.
+    ///
+    /// It reads `effectiveRecurrenceEndMode`, not `recurrenceEndMode`: a mode whose value cannot
+    /// be honoured (an `.onDate` with no date) already behaves as `.never` everywhere else, so
+    /// showing it as selected here would be the control disagreeing with the series.
+    private var endsRow: some View {
+        iOSEditorFieldRow(
+            label: "Ends",
+            systemImage: task.effectiveRecurrenceEndMode.systemImage,
+            color: Theme.dim
+        ) {
+            iOSChoiceValueButton(
+                title: CadenceTaskRecurrenceEndPresentation.valueLabel(
+                    mode: task.effectiveRecurrenceEndMode,
+                    endDateKey: task.recurrenceEndDate,
+                    occurrenceNumber: task.recurrenceOccurrenceNumber,
+                    endCount: task.recurrenceEndCount
+                ),
+                color: task.effectiveRecurrenceEndMode == .never ? Theme.dim : Theme.text,
+                minHeight: 44
+            ) {
+                showEndModePicker = true
+            }
+            .popover(isPresented: $showEndModePicker) {
+                iOSChoicePopoverList(
+                    rows: TaskRecurrenceEndMode.allCases.map { mode in
+                        iOSChoiceRow(
+                            value: mode,
+                            title: mode.label,
+                            systemImage: mode.systemImage,
+                            color: Theme.dim
+                        )
+                    },
+                    selection: endModeSelection,
+                    isPresented: $showEndModePicker
+                )
+            }
+        }
+    }
+
+    private var endDateRow: some View {
+        iOSEditorFieldRow(label: "End date", systemImage: "calendar", color: Theme.dim) {
+            CadenceDatePicker(selection: endDateSelection, minHeight: 44)
+        }
+    }
+
+    private var endCountRow: some View {
+        iOSEditorFieldRow(label: "Occurrences", systemImage: "number", color: Theme.dim) {
+            iOSChoiceValueButton(
+                title: "\(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(task.recurrenceEndCount))",
+                color: Theme.text,
+                minHeight: 44
+            ) {
+                showEndCountPicker = true
+            }
+            .popover(isPresented: $showEndCountPicker) {
+                iOSChoicePopoverList(
+                    rows: CadenceTaskRecurrenceEndPresentation.endCountChoices.map { count in
+                        iOSChoiceRow(value: count, title: "\(count)", color: Theme.blue, id: AnyHashable(count))
+                    },
+                    selection: endCountSelection,
+                    isPresented: $showEndCountPicker
+                )
+            }
+        }
+    }
+
+    /// Selecting a mode has to arrive with that mode's value already usable.
+    ///
+    /// `.onDate` with an empty key and `.afterCount` with a stored `0` both degrade straight back
+    /// to `.never` in `effectiveRecurrenceEndMode`, so writing the bare mode would look like the
+    /// picker refusing the tap. Seeding here is the same fix macOS's `selectOnDate` makes, from the
+    /// same two constants.
+    private var endModeSelection: Binding<TaskRecurrenceEndMode> {
+        Binding(
+            get: { task.effectiveRecurrenceEndMode },
+            set: { mode in
+                switch CadenceTaskRecurrenceEndPresentation.detail(for: mode) {
+                case .none:
+                    applyRecurrenceEnd(mode, "", 0)
+                case .date:
+                    let key = task.recurrenceEndDate.isEmpty
+                        ? CadenceTaskRecurrenceEndPresentation.defaultEndDateKey()
+                        : task.recurrenceEndDate
+                    applyRecurrenceEnd(mode, key, 0)
+                case .count:
+                    applyRecurrenceEnd(
+                        mode,
+                        "",
+                        CadenceTaskRecurrenceEndPresentation.resolvedEndCount(task.recurrenceEndCount)
+                    )
+                }
+            }
+        )
+    }
+
+    private var endDateSelection: Binding<Date> {
+        Binding(
+            get: { CadenceTaskRecurrenceEndPresentation.resolvedEndDate(task.recurrenceEndDate) },
+            set: { applyRecurrenceEnd(.onDate, DateFormatters.dateKey(from: $0), 0) }
+        )
+    }
+
+    private var endCountSelection: Binding<Int> {
+        Binding(
+            get: { CadenceTaskRecurrenceEndPresentation.resolvedEndCount(task.recurrenceEndCount) },
+            set: { applyRecurrenceEnd(.afterCount, "", CadenceTaskRecurrenceEndPresentation.normalizedEndCount($0)) }
+        )
     }
 }
 

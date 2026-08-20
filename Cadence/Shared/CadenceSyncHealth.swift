@@ -158,6 +158,27 @@ enum CadenceSyncHealthLevel: Int, Comparable, CaseIterable {
     case notSyncing = 4
 
     static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+
+    /// Two or three words for a status pill, where the full `title`/`detail` pair does not fit.
+    ///
+    /// macOS's settings rail puts one of these beside the category name, next to "Connected" for
+    /// Calendar and "Enabled" for Notifications. It lives here rather than as a `switch` in that
+    /// header for the reason the rest of this file exists: the previous macOS-side summary of
+    /// whether sync worked was prose written at the call site, and it said sync was fine when it
+    /// was not.
+    var badgeTitle: String {
+        switch self {
+        case .syncing: return "Syncing"
+        case .checking: return "Checking"
+        case .unknown: return "Unknown"
+        case .degraded: return "Needs attention"
+        case .notSyncing: return "Not syncing"
+        }
+    }
+
+    /// Whether the pill should read as a working connection. Only the top state qualifies —
+    /// "the account check has not finished" is not good news, it is no news.
+    var isHealthy: Bool { self == .syncing }
 }
 
 /// The single "is sync actually working" answer, shared by the startup banner and iOS Settings.

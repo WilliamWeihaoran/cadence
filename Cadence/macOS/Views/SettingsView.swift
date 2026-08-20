@@ -26,6 +26,9 @@ struct SettingsView: View {
     @State private var showCreateContext = false
     @State private var editingSidebarTab: SidebarStaticDestination?
     @State private var aiAPIKeyDraft = ""
+    /// The CloudKit account check behind Settings → Account & Sync, shared with iOS's own sync
+    /// section rather than re-rolled here — see `CadenceCloudAccountProbe`.
+    @State private var cloudAccount = CadenceCloudAccountProbe()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -98,6 +101,7 @@ struct SettingsView: View {
         } message: {
             Text("This permanently deletes the context and all its areas, projects, tasks, milestones, and habits.")
         }
+        .onAppear { cloudAccount.refreshIfNeeded() }
         .sheet(isPresented: $showCreateContext) {
             CreateContextSheet()
         }
@@ -139,6 +143,11 @@ struct SettingsView: View {
                 )
             case .account:
                 SettingsStatusBadge(title: appleAccountManager.isSignedIn ? "Signed in" : "Signed out", isActive: appleAccountManager.isSignedIn)
+            case .sync:
+                // Two or three words from the shared level, not prose written here. The last
+                // macOS-side summary of whether sync worked was invented at its call site.
+                let syncLevel = SettingsSyncSection.health(for: cloudAccount.state).level
+                SettingsStatusBadge(title: syncLevel.badgeTitle, isActive: syncLevel.isHealthy)
             case .dataSafety:
                 SettingsStatusBadge(title: "\(StoreBackupManager.listBackups().count) backups", isActive: !StoreBackupManager.listBackups().isEmpty)
             case .ai:
@@ -165,6 +174,8 @@ struct SettingsView: View {
             )
         case .dataSafety:
             SettingsDataSafetySection()
+        case .sync:
+            SettingsSyncSection(probe: cloudAccount)
         case .navigation:
             SettingsNavigationSection(listDetailDefaultPage: $listDetailDefaultPage)
         case .sidebar:

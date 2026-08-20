@@ -90,23 +90,18 @@ struct TaskInspectorRecurrenceControl: View {
 
     /// Second line under the row. Only meaningful for a repeating task.
     ///
-    /// `.never` deliberately shows nothing: the only next-occurrence date math in the app
-    /// (`plannedNextDates` / `nextRecurrenceDateKey` in `CadenceTaskRecurrenceWorkflowSupport`) is
-    /// private to the spawn path and can't be reused from here, and reimplementing the shift
-    /// rules in a view is exactly the kind of drift that makes the row lie about the series.
+    /// The wording is `CadenceTaskRecurrenceEndPresentation.summary` rather than a `switch` here,
+    /// because iOS's Schedule well now states the same bound and two inline spellings of "3 of 5"
+    /// is how they drift apart. See that type for why "N of M" over "M left", and why `.never`
+    /// says nothing at all.
     private var endSummary: String? {
         guard task.isRecurring else { return nil }
-        switch task.effectiveRecurrenceEndMode {
-        case .never:
-            return nil
-        case .onDate:
-            return "Until \(DateFormatters.shortDateString(from: task.recurrenceEndDate))"
-        case .afterCount:
-            // "N of M" over "M left": the inspector describes *this* occurrence, and the position
-            // in the series is the fact the user can't get anywhere else. "M left" throws away
-            // where you are and can't be reconstructed from the row.
-            return "\(task.recurrenceOccurrenceNumber) of \(task.recurrenceEndCount)"
-        }
+        return CadenceTaskRecurrenceEndPresentation.summary(
+            mode: task.effectiveRecurrenceEndMode,
+            endDateKey: task.recurrenceEndDate,
+            occurrenceNumber: task.recurrenceOccurrenceNumber,
+            endCount: task.recurrenceEndCount
+        )
     }
 
     // MARK: - Edits
@@ -118,7 +113,7 @@ struct TaskInspectorRecurrenceControl: View {
 
     private func selectEnd(mode: TaskRecurrenceEndMode, dateKey: String, count: Int, scope: TaskRecurrenceEditScope) {
         let normalizedDate = mode == .onDate ? dateKey : ""
-        let normalizedCount = mode == .afterCount ? max(1, count) : 0
+        let normalizedCount = mode == .afterCount ? CadenceTaskRecurrenceEndPresentation.normalizedEndCount(count) : 0
         guard mode != task.recurrenceEndMode
                 || normalizedDate != task.recurrenceEndDate
                 || normalizedCount != task.recurrenceEndCount else { return }
@@ -229,7 +224,9 @@ private struct TaskRecurrencePickerPanel: View {
 
     private let cal = Calendar.current
 
-    private var isRepeating: Bool { rule != .none }
+    private var isRepeating: Bool {
+        CadenceTaskRecurrenceEndPresentation.showsEndControls(rule: rule)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -513,25 +510,28 @@ private struct TaskRecurrencePickerPanel: View {
     }
 
     private var defaultEndDateKey: String {
-        let target = cal.date(byAdding: .month, value: 1, to: cal.startOfDay(for: Date())) ?? Date()
-        return DateFormatters.dateKey(from: target)
+        CadenceTaskRecurrenceEndPresentation.defaultEndDateKey(calendar: cal)
     }
 
     private var resolvedEndDate: Date {
-        DateFormatters.date(from: endDateKey)
-            ?? DateFormatters.date(from: defaultEndDateKey)
-            ?? Date()
+        CadenceTaskRecurrenceEndPresentation.resolvedEndDate(endDateKey, calendar: cal)
     }
 
     /// A stored 0 means "never configured"; 1 would end the series on its very first occurrence,
-    /// so seeding the field with the clamp value would be a trap.
-    private var resolvedCount: Int { endCount >= 1 ? endCount : 10 }
+    /// so seeding the field with the clamp value would be a trap. Both figures — the seed and the
+    /// floor — are `CadenceTaskRecurrenceEndPresentation`'s, so iOS's stepper starts where this
+    /// field does.
+    private var resolvedCount: Int {
+        CadenceTaskRecurrenceEndPresentation.resolvedEndCount(endCount)
+    }
 
     /// `force` is Enter — an unambiguous "use this number", which also selects `.afterCount` if it
     /// wasn't already the mode. A blur or a closing popover only commits when the text actually
     /// changed while focused.
     private func commitCount(force: Bool) {
-        let parsed = max(1, Int(countText.filter(\.isNumber)) ?? resolvedCount)
+        let parsed = CadenceTaskRecurrenceEndPresentation.normalizedEndCount(
+            Int(countText.filter(\.isNumber)) ?? resolvedCount
+        )
         let normalized = String(parsed)
         let textChanged = countText != countTextAtFocus
         if countText != normalized { countText = normalized }

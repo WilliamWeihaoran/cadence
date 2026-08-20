@@ -10,6 +10,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case tags
     case calendar
     case reminders
+    case sync
     case notifications
     case ai
     case dataSafety
@@ -27,6 +28,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .tags: return .tags
         case .calendar: return .calendar
         case .reminders: return .reminders
+        case .sync: return .sync
         case .notifications: return .notifications
         case .ai: return .ai
         case .dataSafety: return .dataSafety
@@ -64,7 +66,13 @@ private struct SettingsCategoryGroup: Identifiable {
         ),
         SettingsCategoryGroup(
             title: "Connections",
-            categories: [.calendar, .reminders, .notifications, .ai]
+            // `.sync` sits with Calendar and Reminders — the system services the app talks to —
+            // rather than next to `.account` under "Account & Safety", even though its shared
+            // title reads "Account & Sync". `.account` is Sign in with Apple, macOS-only and
+            // titled "Account"; the two filed adjacently would read as one setting listed twice.
+            // Mobile files `.sync` beside `.calendar`/`.reminders` in its "System" group for the
+            // same reason, so this is the same shape rather than a second opinion.
+            categories: [.calendar, .reminders, .sync, .notifications, .ai]
         ),
         SettingsCategoryGroup(
             title: "Account & Safety",
@@ -99,7 +107,7 @@ enum SettingsRailMetrics {
     static let labelFontSize: CGFloat = SidebarMetrics.listLabelFontSize
     static let trailingGap: CGFloat = SidebarMetrics.listTrailingGap
     /// Between the sidebar's list glyph (12) and its nav glyph (15): these rows are
-    /// destinations, but there are eleven of them, so they stay under the nav weight.
+    /// destinations, but there are thirteen of them, so they stay under the nav weight.
     static let iconSize: CGFloat = 14
 
     // MARK: Group headers
@@ -151,7 +159,7 @@ struct SettingsRail: View {
                 .foregroundStyle(Theme.text)
                 .padding(.horizontal, SettingsRailMetrics.rowHorizontalPadding)
 
-            // Still a ScrollView: the eleven rows fit in a normal window, but this is
+            // Still a ScrollView: the thirteen rows fit in a normal window, but this is
             // the only thing keeping the last group reachable in a very short one.
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: SettingsRailMetrics.groupSpacing) {

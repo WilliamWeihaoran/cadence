@@ -1,13 +1,11 @@
 #if os(iOS)
-import CloudKit
 import SwiftUI
 
 struct iOSSyncSettingsSection: View {
-    let accountStatus: CKAccountStatus?
-    let accountError: String?
-    let isCheckingAccount: Bool
-    let lastChecked: Date?
-    let refreshAccountStatus: () -> Void
+    /// The account check itself, shared with macOS's `SettingsSyncSection`. This used to be four
+    /// `@State` properties in `iOSSettingsView` handed down as four `let`s, which is the copy
+    /// macOS would have had to make to gain a sync surface at all — see `CadenceCloudAccountProbe`.
+    let probe: CadenceCloudAccountProbe
 
     /// The shared answer, not a second opinion.
     ///
@@ -18,11 +16,7 @@ struct iOSSyncSettingsSection: View {
     private var health: CadenceSyncHealth {
         CadenceSyncHealth.resolve(
             startupIssue: PersistenceController.startupIssue,
-            account: CadenceCloudAccountState(
-                accountStatus: accountStatus,
-                accountError: accountError,
-                isChecking: isCheckingAccount
-            )
+            account: probe.state
         )
     }
 
@@ -51,7 +45,7 @@ struct iOSSyncSettingsSection: View {
 
                         Spacer(minLength: 0)
 
-                        if isCheckingAccount {
+                        if probe.isChecking {
                             ProgressView()
                                 .tint(Theme.blue)
                         }
@@ -63,13 +57,13 @@ struct iOSSyncSettingsSection: View {
                             systemImage: "arrow.clockwise",
                             role: .primary,
                             size: .compact,
-                            isDisabled: isCheckingAccount,
-                            action: refreshAccountStatus
+                            isDisabled: probe.isChecking,
+                            action: probe.refresh
                         )
 
                         Spacer()
 
-                        if let lastChecked {
+                        if let lastChecked = probe.lastChecked {
                             Text("Last checked \(lastChecked.formatted(date: .abbreviated, time: .shortened))")
                                 .font(.system(size: 11))
                                 .foregroundStyle(Theme.dim)

@@ -22,7 +22,7 @@ struct iOSTaskDetailSheet: View {
     @State private var containerSelection = "inbox"
     @State private var showDeleteConfirmation = false
     @State private var isNotesFocused = false
-    @State private var pendingRecurrenceRule: TaskRecurrenceRule?
+    @State private var pendingRecurrenceChange: PendingRecurrenceChange?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
 
@@ -114,13 +114,13 @@ struct iOSTaskDetailSheet: View {
             titleVisibility: .visible
         ) {
             Button(CadenceTaskRecurrenceEditScope.thisTask.label) {
-                applyPendingRecurrenceRule(scope: .thisTask)
+                applyPendingRecurrenceChange(scope: .thisTask)
             }
             Button(CadenceTaskRecurrenceEditScope.thisAndFuture.label) {
-                applyPendingRecurrenceRule(scope: .thisAndFuture)
+                applyPendingRecurrenceChange(scope: .thisAndFuture)
             }
             Button("Cancel", role: .cancel) {
-                pendingRecurrenceRule = nil
+                pendingRecurrenceChange = nil
             }
         } message: {
             Text("Choose whether this repeat change applies only here or to this task and future instances.")
@@ -213,6 +213,7 @@ struct iOSTaskDetailSheet: View {
         iOSTaskScheduleSection(
             task: task,
             recurrenceSelection: recurrenceSelection,
+            applyRecurrenceEnd: selectRecurrenceEnd,
             hasScheduledDate: $hasScheduledDate,
             scheduledDate: $scheduledDate,
             hasDueDate: $hasDueDate,
@@ -267,10 +268,10 @@ struct iOSTaskDetailSheet: View {
 
     private var recurrenceScopeDialogPresentation: Binding<Bool> {
         Binding(
-            get: { pendingRecurrenceRule != nil },
+            get: { pendingRecurrenceChange != nil },
             set: { isPresented in
                 if !isPresented {
-                    pendingRecurrenceRule = nil
+                    pendingRecurrenceChange = nil
                 }
             }
         )
@@ -409,30 +410,80 @@ struct iOSTaskDetailSheet: View {
 
     private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {
         guard task.recurrenceRule != rule else { return }
-        if task.isRecurrenceSeriesMember {
-            pendingRecurrenceRule = rule
-        } else {
+        stage(.rule(rule))
+    }
+
+    /// The Ends rows' one write path. Same shape as the rule edit above, and deliberately the same
+    /// scope question: an end condition belongs to the series, so "only this one" against "this and
+    /// future" is exactly as meaningful here as it is for the frequency, and it would be strange
+    /// for one of the two edits in the same well to ask and the other to decide silently.
+    private func selectRecurrenceEnd(mode: TaskRecurrenceEndMode, dateKey: String, count: Int) {
+        let normalizedDate = mode == .onDate ? dateKey : ""
+        let normalizedCount = mode == .afterCount
+            ? CadenceTaskRecurrenceEndPresentation.normalizedEndCount(count)
+            : 0
+        guard mode != task.recurrenceEndMode
+                || normalizedDate != task.recurrenceEndDate
+                || normalizedCount != task.recurrenceEndCount else { return }
+        stage(.end(mode: mode, dateKey: normalizedDate, count: normalizedCount))
+    }
+
+    /// A task with no siblings has nothing to propagate to, so there is no scope to ask about and
+    /// the edit lands immediately. One staging function for both edits, so a future change to how
+    /// the scope is asked — the inline "APPLY TO" row macOS uses instead of this dialog — has one
+    /// place to land rather than two.
+    private func stage(_ change: PendingRecurrenceChange) {
+        guard task.isRecurrenceSeriesMember else {
+            apply(change, scope: .thisTask)
+            return
+        }
+        pendingRecurrenceChange = change
+    }
+
+    private func applyPendingRecurrenceChange(scope: CadenceTaskRecurrenceEditScope) {
+        guard let pendingRecurrenceChange else { return }
+        apply(pendingRecurrenceChange, scope: scope)
+        self.pendingRecurrenceChange = nil
+    }
+
+    private func apply(_ change: PendingRecurrenceChange, scope: CadenceTaskRecurrenceEditScope) {
+        switch change {
+        case .rule(let rule):
             CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
                 rule,
                 to: task,
                 allTasks: allTasks,
-                scope: .thisTask
+                scope: scope
             )
-            try? modelContext.save()
+            if rule == .none {
+                // An end condition on a task that no longer repeats is meaningless, and leaving it
+                // behind would re-arm the moment repeating is switched back on.
+                CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd(
+                    mode: .never,
+                    to: task,
+                    allTasks: allTasks,
+                    scope: scope
+                )
+            }
+        case .end(let mode, let dateKey, let count):
+            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd(
+                mode: mode,
+                endDateKey: dateKey,
+                endCount: count,
+                to: task,
+                allTasks: allTasks,
+                scope: scope
+            )
         }
-    }
-
-    private func applyPendingRecurrenceRule(scope: CadenceTaskRecurrenceEditScope) {
-        guard let pendingRecurrenceRule else { return }
-        CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
-            pendingRecurrenceRule,
-            to: task,
-            allTasks: allTasks,
-            scope: scope
-        )
-        self.pendingRecurrenceRule = nil
         try? modelContext.save()
     }
+}
+
+/// One recurrence edit awaiting its scope. Rule and end changes share a single case list — the
+/// same shape macOS's inspector uses — so neither can grow a path that forgets the scope.
+private enum PendingRecurrenceChange {
+    case rule(TaskRecurrenceRule)
+    case end(mode: TaskRecurrenceEndMode, dateKey: String, count: Int)
 }
 
 #endif
