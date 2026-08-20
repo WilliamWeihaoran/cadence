@@ -390,7 +390,9 @@ struct iOSTaskRow: View {
         CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)
     }
 
-    private var visibleTagLimit: Int { 3 }
+    /// `CadenceTaskPresentationSupport.rowTagLimit`, not a local 3. macOS's row capped at 2, and a
+    /// figure that lives in one row's `private var` is a figure the other row cannot read.
+    private var visibleTagLimit: Int { CadenceTaskPresentationSupport.rowTagLimit }
 
     private func toggleCompletion() {
         CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
@@ -456,12 +458,18 @@ struct iOSTaskListRow: View {
 /// this was a byte-for-byte copy of it with a tint, which is what the shared component's `tint`
 /// parameter is for.
 struct iOSTaskSectionHeader: View {
+    /// The inset between a group's rows and the eyebrow of the next group. Exposed because
+    /// `iOSTaskGroupHeader` draws the shared `CadenceTaskGroupHeading` and has to apply this
+    /// itself — it is the *host's* spacing, not the heading's, which is why the shared component
+    /// does not carry it.
+    static let topPadding: CGFloat = 6
+
     let title: String
     let color: Color
 
     var body: some View {
         SectionEyebrowLabel(text: title, tint: color)
-            .padding(.top, 6)
+            .padding(.top, Self.topPadding)
     }
 }
 

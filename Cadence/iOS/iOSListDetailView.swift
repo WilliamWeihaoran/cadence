@@ -66,10 +66,6 @@ struct iOSListDetailView: View {
         area?.colorHex ?? project?.colorHex ?? Theme.blueHex
     }
 
-    private var icon: String {
-        area?.icon ?? project?.icon ?? "folder.fill"
-    }
-
     private var accent: Color {
         Color(hex: colorHex)
     }
@@ -123,7 +119,6 @@ struct iOSListDetailView: View {
             iOSListDetailHeader(
                 eyebrow: subtitle.isEmpty ? (area == nil ? "Project" : "Area") : subtitle,
                 title: title,
-                icon: icon,
                 colorHex: colorHex,
                 onBack: horizontalSizeClass == .compact ? { dismiss() } : nil,
                 onEdit: presentEditor
@@ -329,9 +324,8 @@ private enum iOSListDetailTaskMetrics {
     static let bottomPadding: CGFloat = 16
 }
 
-/// The one place this page names itself: the back control on iPhone, an identity tile in the list's
-/// own colour, the context path it lives under, its name, and the control that opens the list
-/// editor.
+/// The one place this page names itself: the back control on iPhone, the context path it lives
+/// under, its name in the list's own colour, and the control that opens the list editor.
 ///
 /// It replaces a `.navigationBarTitleDisplayMode(.large)` title *plus* a second `iOSPanelHeader`
 /// inside the Tasks tab that repeated the same name and context one row lower, and it carries the
@@ -339,19 +333,18 @@ private enum iOSListDetailTaskMetrics {
 private struct iOSListDetailHeader: View {
     let eyebrow: String
     let title: String
-    let icon: String
     let colorHex: String
     var onBack: (() -> Void)? = nil
     let onEdit: () -> Void
 
     var body: some View {
-        // The list's own `colorHex` on the tile is the only thing this header adds to the shared
-        // one; the edit control rides in the single trailing slot, which is where it has to be —
-        // a `ToolbarItem` cannot render it on iPad.
+        // The list's own `colorHex` is the only thing this header adds to the shared one; the edit
+        // control rides in the single trailing slot, which is where it has to be — a `ToolbarItem`
+        // cannot render it on iPad. The colour used to sit on an identity tile, which is gone from
+        // every page header on both platforms; it lands on the count capsule now, same as macOS.
         iOSPageHeader(
             eyebrow: eyebrow,
             title: title.isEmpty ? "Untitled" : title,
-            systemImage: icon,
             color: Color(hex: colorHex),
             onBack: onBack
         ) {

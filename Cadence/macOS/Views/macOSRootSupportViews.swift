@@ -3,14 +3,21 @@ import SwiftUI
 import SwiftData
 import AppKit
 
-/// **The** macOS header row: an eyebrow, a title, and optionally an identity tile, a count and
-/// one trailing control.
+/// **The** macOS header row: an eyebrow, a title, and optionally a count and one trailing control.
 ///
 /// It replaces four of these. `DesktopPageHeader`, `PanelHeader`, `CommitmentPageHeader` and
 /// `CadenceSettingsHeader` each drew the same idea and had drifted into three title spellings, three
 /// identity tiles (32/15, 32/13 and 42/17 — three glyph ratios for one shape) and three tile fill
 /// opacities. The three other names survive as thin wrappers over this; none of them decides
 /// anything about appearance any more.
+///
+/// **No identity tile.** The rounded glyph square this used to lead with named the page you were
+/// already looking at — the same argument as the deleted subtitle, one row higher — and the user
+/// asked for it dropped on every page, on both platforms. The `systemImage` parameter is *deleted*
+/// rather than left inert: the settings header, the list header and every feature page passed one,
+/// and a parameter that still compiles and draws nothing is how `subtitle` survived three separate
+/// removals. `CommitmentIconTile` is untouched — tiles inside rows, cards and pickers are not page
+/// identity and keep doing their job.
 ///
 /// What survives as a parameter is `role`, and only that: a column inside a split legitimately
 /// speaks more quietly than a whole screen. Everything else is `CadencePageHeaderMetrics`, which is
@@ -26,15 +33,26 @@ import AppKit
 ///   edge because a phone header is 340pt wide and the two ends read as one row. A macOS page
 ///   header is the window less the sidebar — 1100pt and up — and a number parked at x=1150 does
 ///   not read as the count of a title at x=18.
-/// - **The count takes the page tint**, so an area's tally is the area's colour. iOS counts in blue
-///   everywhere because its list rows already carry colour; macOS headers do not.
+/// - **The count takes the page tint**, so an area's tally is the area's colour. This is now the
+///   *only* thing the tint colours, which is what keeps a list's own `colorHex` on its own page
+///   after the tile went; `iOSPageHeader` was hardcoding `Theme.blue` and ignoring its `color`
+///   parameter, and now reads the tint as well.
 struct DesktopPageHeader<TrailingContent: View>: View {
     /// What this row is the top of. See `CadencePageHeaderRole`.
     let role: CadencePageHeaderRole
     let eyebrow: String?
+    /// A second, sentence-case clause after the eyebrow, separated by a middle dot — Today's day
+    /// summary. Shared with `iOSPageHeader.eyebrowDetail`, including the rule that it is the half
+    /// that gives way: the eyebrow proper keeps the layout priority, so a squeezed column truncates
+    /// "· 3 timed" before "WEDNESDAY, AUGUST 19".
+    let eyebrowDetail: String?
     let title: String
     let count: Int?
-    let systemImage: String?
+    /// The page's accent. **The count capsule is now its only renderer**, which is deliberate and
+    /// is why the parameter survived the tile: on a list's header `tint` is the user's own
+    /// `colorHex`, so dropping it with the glyph would have taken a list's identity colour off its
+    /// own page. `iOSPageHeader` hardcoded `Theme.blue` here and ignored its `color` parameter,
+    /// which is the same fork the other way round; both read the header's tint now.
     let tint: Color
     /// `false` where the host supplies the gutter — a settings card, or a header that pads this
     /// row and a controls row underneath it as one block.
@@ -50,9 +68,9 @@ struct DesktopPageHeader<TrailingContent: View>: View {
     init(
         role: CadencePageHeaderRole = .page,
         eyebrow: String? = nil,
+        eyebrowDetail: String? = nil,
         title: String,
         count: Int? = nil,
-        systemImage: String? = nil,
         tint: Color = Theme.blue,
         padded: Bool = true,
         background: Color? = Theme.surface,
@@ -61,9 +79,9 @@ struct DesktopPageHeader<TrailingContent: View>: View {
     ) {
         self.role = role
         self.eyebrow = eyebrow
+        self.eyebrowDetail = eyebrowDetail
         self.title = title
         self.count = count
-        self.systemImage = systemImage
         self.tint = tint
         self.padded = padded
         self.background = background
@@ -77,32 +95,21 @@ struct DesktopPageHeader<TrailingContent: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
-            HStack(alignment: .center, spacing: metrics.rowSpacing) {
-                if let systemImage {
-                    CommitmentIconTile(
-                        systemImage: systemImage,
-                        color: tint,
-                        size: metrics.tileSize,
-                        iconSize: metrics.iconSize
-                    )
+            VStack(alignment: .leading, spacing: 2) {
+                if eyebrow != nil || eyebrowDetail != nil {
+                    eyebrowLine
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    if let eyebrow {
-                        SectionEyebrowLabel(text: eyebrow)
-                    }
+                HStack(alignment: .firstTextBaseline, spacing: 9) {
+                    Text(title)
+                        .font(.system(size: metrics.titleSize, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
 
-                    HStack(alignment: .firstTextBaseline, spacing: 9) {
-                        Text(title)
-                            .font(.system(size: metrics.titleSize, weight: .bold))
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-
-                        // A zero is chrome: the absence of a badge is the zero state, the same
-                        // rule the sidebar counts follow.
-                        if let count, count > 0 {
-                            countBadge(count)
-                        }
+                    // A zero is chrome: the absence of a badge is the zero state, the same
+                    // rule the sidebar counts follow.
+                    if let count, count > 0 {
+                        countBadge(count)
                     }
                 }
             }
@@ -119,6 +126,24 @@ struct DesktopPageHeader<TrailingContent: View>: View {
         // the deprecated `background(_ view:)` overload rather than the `ShapeStyle` one, which
         // compiles and is not what this means.
         .background { if let background { background } }
+    }
+
+    /// Same two runs, same separator and same give-way rule as `iOSPageHeader.eyebrowLine`.
+    private var eyebrowLine: some View {
+        HStack(spacing: 6) {
+            if let eyebrow {
+                SectionEyebrowLabel(text: eyebrow)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+            }
+
+            if let eyebrowDetail, !eyebrowDetail.isEmpty {
+                Text("· \(eyebrowDetail)")
+                    .font(.system(size: metrics.eyebrowSize, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+            }
+        }
     }
 
     private func countBadge(_ count: Int) -> some View {

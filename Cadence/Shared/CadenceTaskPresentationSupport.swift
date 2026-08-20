@@ -117,6 +117,16 @@ enum CadenceTaskPresentationSupport {
     /// wrong; it just stops naming at three.
     static let rowSubtaskLimit = 3
 
+    /// How many tags a task row shows before collapsing the rest into a `+N`.
+    ///
+    /// **Three, and iOS had it.** macOS's `MacTaskRow` capped at two and iOS at three for the same
+    /// strip of the same chips on the same task; neither number was argued for, and the narrower
+    /// surface is not the one that was showing fewer — macOS's `CompactTagStrip` wraps the whole
+    /// decision in `ViewThatFits`, so it already drops to one chip or to a bare `+N` when the row
+    /// is genuinely tight. A fixed cap below the point where the row can no longer fit them is
+    /// hiding a tag the row had room for.
+    static let rowTagLimit = 3
+
     /// The subtasks a task row lists **beneath** itself, in `order`, capped at `rowSubtaskLimit`.
     ///
     /// Unfinished only. The iOS row used to say `0/3` in a chip, which named a number of things to

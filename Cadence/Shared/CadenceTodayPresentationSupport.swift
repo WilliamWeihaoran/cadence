@@ -50,6 +50,15 @@ enum CadenceTodayPresentationSupport {
         }
     }
 
+    /// The heading over the day's finished work, on every Today. macOS said "Completed" and iOS
+    /// said "Completed Today" for the same section over the same predicate — `completedAt` inside
+    /// today, on both — so one of them was describing a logbook it was not showing.
+    static let completedSectionTitle = "Completed Today"
+
+    /// And its accent. `Theme.green` is `Theme.doneFill`'s hue and the completion circle's, so the
+    /// heading agrees with the glyphs under it.
+    static let completedSectionAccent = Theme.green
+
     static func symbol(for groupKind: CadenceTodayTaskGroupKind) -> String {
         switch groupKind {
         case .overdue:
@@ -63,17 +72,24 @@ enum CadenceTodayPresentationSupport {
         }
     }
 
-    /// Today's empty state, at both widths — `iOSCompactTodayEmptyState` is the only reader and it
-    /// is the only empty state Today has.
+    /// Today's empty state, on every platform. `iOSCompactTodayEmptyState` draws it on iOS and
+    /// macOS's `TasksPanel` passes the same two strings to `EmptyStateView`; it is the only empty
+    /// state Today has.
     ///
-    /// There used to be an `emptyTitle` beside this reading "Nothing planned for today", left over
-    /// from the iPad's own five-card empty deck; nothing had read it since that deck was deleted.
-    /// Two spellings of one sentence, one of them unreachable, is how the two hosts start saying
-    /// different things again.
-    static let emptyCompactTitle = "Nothing planned"
-    /// It said "Add a task above…" while the field it pointed at no longer existed on either width:
-    /// compact capture is the tab bar's centre `+` and the iPad's is the floating one on this page.
-    /// A subtitle naming a control that is not on screen is worse than none.
+    /// macOS said "Nothing for today" over "Due-today and do-today tasks will appear here", which
+    /// is a restatement of the page's scope rather than a next step. The name lost its `compact`
+    /// qualifier when the third reader arrived — a shared constant named for one of its callers
+    /// reads as that caller's private copy.
+    ///
+    /// The name is reused deliberately: an `emptyTitle` reading "Nothing planned for today" used to
+    /// sit beside this, left over from the iPad's own five-card empty deck, and nothing had read it
+    /// since that deck was deleted. Two spellings of one sentence, one of them unreachable, is how
+    /// the hosts start saying different things again — so there is one, and it is this.
+    static let emptyTitle = "Nothing planned"
+    /// It said "Add a task above…" while the field it pointed at no longer existed on any width:
+    /// compact capture is the tab bar's centre `+`, the iPad's is the floating one on this page,
+    /// and macOS's is the `+ New Task` button on the task column's own header. A subtitle naming a
+    /// control that is not on screen is worse than none.
     static let emptySubtitle = "Add a task with +, or schedule one from Inbox."
 
     /// The schedule pane's whole empty state: one line, and the one line teaches the gesture.

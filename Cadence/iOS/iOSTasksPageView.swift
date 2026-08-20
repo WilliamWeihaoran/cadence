@@ -52,7 +52,6 @@ struct iOSTasksPageView: View {
             iOSPageHeader(
                 eyebrow: "Tasks",
                 title: scope.pageTitle,
-                systemImage: CadenceFeatureDestination.allTasks.systemImage,
                 color: Theme.blue
             )
 

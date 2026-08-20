@@ -74,7 +74,6 @@ struct iOSFocusView: View {
                 iOSCompactPageHeader(
                     eyebrow: statusEyebrow,
                     title: "Focus",
-                    systemImage: "timer",
                     color: Theme.red,
                     onBack: { dismiss() }
                 )

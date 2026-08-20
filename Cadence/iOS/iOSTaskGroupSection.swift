@@ -8,6 +8,11 @@ import SwiftUI
 /// drew the eyebrow with no count at all. So "Active" told you how many on the phone and not on
 /// the tablet, and the two phone screens that agreed only agreed by coincidence.
 ///
+/// macOS was the fourth copy and the furthest out: its Today drew section titles in sentence case
+/// at 11pt in neutral `Theme.dim`, with a red/neutral "3 / 7" pair beside them, so the same group
+/// neither said the same thing nor looked the same. The row is `CadenceTaskGroupHeading` now and
+/// both platforms draw it; only the drop target below is iOS's.
+///
 /// Usable as a `List` section header as well as inside a `VStack`, which is what lets the
 /// `List`-hosted iPad panels and the `ScrollView`-hosted compact ones share it.
 struct iOSTaskGroupHeader: View {
@@ -20,18 +25,12 @@ struct iOSTaskGroupHeader: View {
     var dropIdentity: CadenceTaskGroupDropIdentity?
 
     var body: some View {
-        HStack {
-            iOSTaskSectionHeader(title: title, color: color)
-            Spacer()
-            Text("\(count)")
-                .font(.system(size: 11, weight: .bold))
-                .monospacedDigit()
-                .foregroundStyle(color)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(color.opacity(0.11))
-                .clipShape(Capsule())
-        }
+        // `CadenceTaskGroupHeading`, in `Shared/Components/`, is the row itself now — macOS's Today
+        // draws the same one. What stays here is the drop target below, which is iOS's alone.
+        // The eyebrow keeps `iOSTaskSectionHeader`'s 6pt top inset, which the shared heading does
+        // not carry because it is this host's spacing and not the heading's.
+        CadenceTaskGroupHeading(title: title, tint: color, count: count)
+            .padding(.top, iOSTaskSectionHeader.topPadding)
         // The second half of drag-to-create, and the half that reaches an **empty** group. A row
         // carries its group's attribute by construction, which covers every grouping — but a group
         // with no rows has no row to point at, and that is precisely the group you most want to put

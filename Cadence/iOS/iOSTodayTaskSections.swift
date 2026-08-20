@@ -88,8 +88,8 @@ struct iOSTodayTaskSections: View {
 
             if showsCompleted {
                 iOSTaskGroupSection(
-                    title: "Completed Today",
-                    color: Theme.green,
+                    title: CadenceTodayPresentationSupport.completedSectionTitle,
+                    color: CadenceTodayPresentationSupport.completedSectionAccent,
                     tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks),
                     showsContainer: showsContainer,
                     opacity: 0.62,

@@ -111,19 +111,6 @@ struct iOSCalendarMetricsTests {
 
     // MARK: - The toolbar
 
-    /// The toolbar's title block is a page header's leading run — back control, identity tile,
-    /// title — and it had its own 34/15 tile, drawn at regular width only. Reading the shared
-    /// metrics is what makes that unrepeatable; this pins the property that mattered, which is that
-    /// the tile is a size the shared type states rather than a literal beside it.
-    @Test func theToolbarTileIsThePageHeaderTile() {
-        for isRegular in Self.widths {
-            let page = CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegular)
-
-            #expect(page.iconSize == page.tileSize * 0.44)
-            #expect(page.tileSize >= 32, "tile \(page.tileSize) at isRegular=\(isRegular)")
-        }
-    }
-
     /// The band's vertical padding used to ramp the wrong way: 12 on the phone against 10 on the
     /// iPad, so the device with less vertical room spent more of it on chrome, above a day-header
     /// band already over 100pt tall.
@@ -135,13 +122,17 @@ struct iOSCalendarMetricsTests {
     /// The single-row layout is reachable at compact width now — an iPhone in landscape has room for
     /// it — so the title floor has to be the one with a reason on it rather than the phone's old
     /// 116, which was a floor for a title that always had a row to itself.
-    @Test func theTitleFloorLeavesRoomForTheTileBesideIt() {
+    ///
+    /// This used to measure the floor against `CadencePageHeaderMetrics.tileSize`, the identity
+    /// tile the toolbar drew beside the title. Page headers no longer draw one on either platform
+    /// (the user asked for them dropped everywhere), and `tileSize` went with the tile — so what is
+    /// left beside the title is the row's own spacing, and the floor has to clear that.
+    @Test func theTitleFloorLeavesRoomForWhatSitsBesideIt() {
         for isRegular in Self.widths {
             let page = CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegular)
-            let chrome = page.tileSize + page.rowSpacing
 
             #expect(
-                iOSCalendarToolbarMetrics.titleMinWidth - chrome > 120,
+                iOSCalendarToolbarMetrics.titleMinWidth - page.rowSpacing > 120,
                 "title floor at isRegular=\(isRegular)"
             )
         }

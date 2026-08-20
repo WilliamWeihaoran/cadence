@@ -53,36 +53,37 @@ nonisolated struct CadencePageHeaderMetrics: Equatable, Sendable {
     let countSize: CGFloat
     let countPaddingH: CGFloat
     let countPaddingV: CGFloat
-    /// The identity tile the row leads with, when it has one.
-    let tileSize: CGFloat
     let rowSpacing: CGFloat
     let horizontalPadding: CGFloat
     let topPadding: CGFloat
     let bottomPadding: CGFloat
 
-    /// The glyph inside the identity tile, as one ratio of the tile. Stated here rather than passed
-    /// so a tile can never be resized without its glyph — which is exactly how `iOSIconTile` at
-    /// 32/15 and `iOSListIconBadge` at 32/14.08 became two tiles that were meant to be one, and how
-    /// `DesktopPageHeader` was still drawing 32/15 against `CommitmentIconTile`'s 32/13 and
-    /// `CadenceSettingsHeader`'s 42/17.
-    var iconSize: CGFloat { tileSize * Self.tileGlyphRatio }
-
+    /// **No page header draws an identity tile any more.** `DesktopPageHeader` and `iOSPageHeader`
+    /// each led with a rounded glyph square naming the page you were already looking at; the user
+    /// asked for them dropped everywhere, so the `systemImage` parameter that fed them is deleted
+    /// rather than left inert — a parameter kept but not rendered is how `subtitle` survived long
+    /// enough to need deleting three times. `tileSize` and the `iconSize` derived from it went with
+    /// it.
+    ///
+    /// These two survive because tiles that are *not* page identity survive: `CommitmentIconTile`
+    /// still reads both for the tiles inside rows, cards and pickers. They are stated here rather
+    /// than on that view because `iOSIconTile` is the other half of the same vocabulary.
+    ///
     /// One glyph-to-tile ratio for the whole app, so a tile can never be resized without its glyph.
     static let tileGlyphRatio: CGFloat = 0.44
 
-    /// The fill behind the identity tile, as an opacity of its tint. One value: the three macOS
-    /// tiles were at 0.12, 0.14 and 0.18, which is drift, not a ramp.
+    /// The fill behind a tile, as an opacity of its tint. One value: the three macOS tiles were at
+    /// 0.12, 0.14 and 0.18, which is drift, not a ramp.
     static let tileFillOpacity: Double = 0.14
 
     /// The fill behind the count capsule, as an opacity of the tint it counts in. iOS drew 0.11
     /// and macOS 0.12 for the same capsule; neither was chosen.
     static let countFillOpacity: Double = 0.12
 
-    /// The count capsule and the tile are the two places `.desktop` deliberately answers with
-    /// `.compact`'s figures rather than a third set. That is not laziness about the third tier: a
-    /// 12pt count in an 8/4 capsule and a 32pt tile are what macOS already drew, and they are the
-    /// same *physical* size as the phone's at their own viewing distances. Only the title and the
-    /// paddings needed a desktop answer of their own.
+    /// The count capsule is where `.desktop` deliberately answers with `.compact`'s figures rather
+    /// than a third set. That is not laziness about the third tier: a 12pt count in an 8/4 capsule
+    /// is what macOS already drew, and it is the same *physical* size as the phone's at their own
+    /// viewing distances. Only the title and the paddings needed a desktop answer of their own.
     static func metrics(role: CadencePageHeaderRole, surface: CadencePageHeaderSurface) -> CadencePageHeaderMetrics {
         CadencePageHeaderMetrics(
             titleSize: titleSize(role: role, surface: surface),
@@ -90,7 +91,6 @@ nonisolated struct CadencePageHeaderMetrics: Equatable, Sendable {
             countSize: surface == .regular ? 13 : 12,
             countPaddingH: surface == .regular ? 10 : 8,
             countPaddingV: surface == .regular ? 6 : 4,
-            tileSize: tileSize(role: role, surface: surface),
             rowSpacing: rowSpacing(surface: surface),
             horizontalPadding: horizontalPadding(surface: surface),
             topPadding: topPadding(surface: surface),
@@ -116,15 +116,6 @@ nonisolated struct CadencePageHeaderMetrics: Equatable, Sendable {
         // drew its Today columns at the full 22 — three column headers shouting at page volume on
         // a screen with no page title above them.
         case (.pane, .desktop): return 16
-        }
-    }
-
-    private static func tileSize(role: CadencePageHeaderRole, surface: CadencePageHeaderSurface) -> CGFloat {
-        switch (role, surface) {
-        case (.page, .compact), (.page, .desktop): return 32
-        case (.page, .regular): return 36
-        case (.pane, .compact), (.pane, .desktop): return 28
-        case (.pane, .regular): return 32
         }
     }
 

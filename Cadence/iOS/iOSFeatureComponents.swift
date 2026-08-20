@@ -228,9 +228,11 @@ struct iOSPageHeader<Trailing: View>: View {
     /// column truncates "· 3 timed" rather than the date.
     var eyebrowDetail: String? = nil
     let title: String
-    /// The identity tile the row leads with. A list passes its own glyph and `colorHex`; a page
-    /// passes its feature glyph.
-    var systemImage: String? = nil
+    /// The header's accent. **The count capsule is its only renderer** now that the identity tile
+    /// is gone — and it renders it at all only because this parameter was otherwise about to become
+    /// dead: a list header passes its own `colorHex`, which is the user's choice and the one thing
+    /// on that page that was still theirs. It used to be ignored here, the badge hardcoding
+    /// `Theme.blue` while `DesktopPageHeader`'s took its tint; both read the tint now.
     var color: Color = Theme.blue
     var count: Int? = nil
     /// Set on a pushed compact screen whose navigation bar is hidden, so the back control sits on
@@ -257,15 +259,6 @@ struct iOSPageHeader<Trailing: View>: View {
                     .padding(.leading, -8)
             }
 
-            if let systemImage {
-                iOSIconTile(
-                    systemImage: systemImage,
-                    color: color,
-                    size: metrics.tileSize,
-                    iconSize: metrics.iconSize
-                )
-            }
-
             VStack(alignment: .leading, spacing: 3) {
                 if eyebrow != nil || eyebrowDetail != nil {
                     eyebrowLine(metrics)
@@ -281,7 +274,7 @@ struct iOSPageHeader<Trailing: View>: View {
             Spacer(minLength: 8)
 
             if let count {
-                iOSPageHeaderCountBadge(count: count, metrics: metrics)
+                iOSPageHeaderCountBadge(count: count, tint: color, metrics: metrics)
             }
 
             // Sized before the text column, so a narrow column truncates the title rather than
@@ -320,7 +313,6 @@ extension iOSPageHeader where Trailing == EmptyView {
         eyebrow: String? = nil,
         eyebrowDetail: String? = nil,
         title: String,
-        systemImage: String? = nil,
         color: Color = Theme.blue,
         count: Int? = nil,
         onBack: (() -> Void)? = nil,
@@ -331,7 +323,6 @@ extension iOSPageHeader where Trailing == EmptyView {
             eyebrow: eyebrow,
             eyebrowDetail: eyebrowDetail,
             title: title,
-            systemImage: systemImage,
             color: color,
             count: count,
             onBack: onBack,
@@ -343,22 +334,26 @@ extension iOSPageHeader where Trailing == EmptyView {
 
 /// The one count badge. `iOSListsPageHeader` used the neutral `iOSListCountBadge` instead, whose
 /// reasoning ("a second coloured element per row turns a page of lists into a page of colours") is
-/// about a *row* in a list of rows — there is one header per screen, and every other one of them
-/// counts in blue.
+/// about a *row* in a list of rows — there is one header per screen.
+///
+/// It counted in `Theme.blue` regardless of the `color` its header was handed, which was invisible
+/// while the identity tile beside it was spending that colour. With the tile gone this is where the
+/// tint lands, and it is the same rule `DesktopPageHeader` already followed.
 private struct iOSPageHeaderCountBadge: View {
     let count: Int
+    let tint: Color
     let metrics: CadencePageHeaderMetrics
 
     var body: some View {
         Text("\(count)")
             .font(.system(size: metrics.countSize, weight: .bold))
-            .foregroundStyle(Theme.blue)
+            .foregroundStyle(tint)
             .monospacedDigit()
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, metrics.countPaddingH)
             .padding(.vertical, metrics.countPaddingV)
-            .background(Theme.blue.opacity(CadencePageHeaderMetrics.countFillOpacity))
+            .background(tint.opacity(CadencePageHeaderMetrics.countFillOpacity))
             .clipShape(Capsule())
     }
 }
@@ -371,7 +366,6 @@ struct iOSCompactPageHeader: View {
     /// both widths, having previously drawn it on the tablet and nowhere else.
     var eyebrowDetail: String? = nil
     let title: String
-    var systemImage: String? = nil
     var color: Color = Theme.blue
     var count: Int? = nil
     var onBack: (() -> Void)? = nil
@@ -382,7 +376,6 @@ struct iOSCompactPageHeader: View {
             eyebrow: eyebrow,
             eyebrowDetail: eyebrowDetail,
             title: title,
-            systemImage: systemImage,
             color: color,
             count: count,
             onBack: onBack,

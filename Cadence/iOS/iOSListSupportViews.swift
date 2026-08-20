@@ -141,7 +141,6 @@ struct iOSListsPageHeader: View {
             role: onBack == nil ? .pane : .page,
             eyebrow: CadenceListsSummary.eyebrow(areaCount: areaCount, projectCount: projectCount),
             title: "Lists",
-            systemImage: "folder.fill",
             color: Theme.blue,
             count: totalCount > 0 ? totalCount : nil,
             onBack: onBack

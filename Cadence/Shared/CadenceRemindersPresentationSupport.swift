@@ -55,11 +55,16 @@ enum RemindersConnectionState: Equatable {
         }
     }
 
-    /// The only genuinely platform-split strings in this type, and they are split because they
-    /// name things that differ: macOS reads reminders in the Inbox and iOS does not (yet), and
-    /// the privacy pane is reached through "System Settings" on macOS and "Settings" on iOS.
-    /// Telling an iPhone user their reminders will appear in an Inbox they do not have is the
-    /// kind of copy that outlives the feature it described.
+    /// The only genuinely platform-split strings in this type, and the split is smaller than it
+    /// was. The privacy pane is still reached through "System Settings" on macOS and "Settings" on
+    /// iOS, which is a real difference in what the sentence has to name.
+    ///
+    /// The `.connected` pair is **not** that any more. It used to be split because macOS read
+    /// reminders in the Inbox and iOS did not, so telling an iPhone user their reminders would
+    /// appear in an Inbox they did not have was copy that outlived the feature it described. T-163
+    /// built that Inbox surface on iOS, so both platforms now show reminders in the Inbox; the two
+    /// sentences differ only because this screen — Settings — shows a per-list summary underneath
+    /// itself on iOS and does not on macOS, which is what each is describing.
     var accessMessage: String {
         switch self {
         case .connected:
@@ -123,5 +128,40 @@ enum RemindersSyncSummary {
                 if $0.count != $1.count { return $0.count > $1.count }
                 return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
             }
+    }
+}
+
+/// The two tints an Apple Reminder row draws, as pure functions of the reminder.
+///
+/// Both were written out inside macOS's `AppleReminderTaskRow` and would have been written out a
+/// second time the moment iOS grew a reminders row — which is what T-163 is. They are here for the
+/// same reason `RemindersConnectionState` is: outside every platform guard, so the macOS-built test
+/// target can pin them, and in one place, so the two rows cannot disagree about what "urgent" or
+/// "late" looks like.
+enum AppleReminderRowPresentation {
+    /// EventKit's priority is 0 (unset) or 1–9, **low number = high priority** — the inverse of
+    /// how it reads. 1–4 is "high", 5 is "medium", 6–9 is "low", and 0 has no opinion, so it draws
+    /// as ordinary chrome rather than as a fourth priority.
+    ///
+    /// The colours are `Theme.priorityColor`'s, not a second ramp: an Apple Reminder marked high
+    /// should look exactly as high as a Cadence task marked high, in a list that mixes the two.
+    static func priorityTint(_ priority: Int) -> Color {
+        switch priority {
+        case 1...4: return Theme.priorityColor(.high)
+        case 5: return Theme.priorityColor(.medium)
+        case 6...9: return Theme.priorityColor(.low)
+        default: return Theme.priorityColor(.none)
+        }
+    }
+
+    /// Red for a due date that has gone by, amber for today, and neutral for anything still ahead.
+    /// `nil` — an unparseable date key — is neutral rather than late.
+    ///
+    /// The same three stops the task row uses, and the same rule behind them: colour is reserved
+    /// for the exceptional, so a reminder due next week is chrome.
+    static func dueTint(dayOffset: Int?) -> Color {
+        guard let dayOffset else { return Theme.dim }
+        if dayOffset < 0 { return Theme.red }
+        return dayOffset == 0 ? Theme.amber : Theme.dim
     }
 }

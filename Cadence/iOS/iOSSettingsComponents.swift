@@ -610,7 +610,6 @@ struct iOSSettingsPageHeader: View {
     /// category name and an eyebrow would just label the label.
     var eyebrow: String? = nil
     let title: String
-    let icon: String
     let tint: Color
     /// Set on iPhone, where this row is the top of the screen. See
     /// `iOSHidesCompactNavigationBar()`.
@@ -625,7 +624,6 @@ struct iOSSettingsPageHeader: View {
             iOSPageHeader(
                 eyebrow: eyebrow,
                 title: title,
-                systemImage: icon,
                 color: tint,
                 onBack: onBack,
                 padded: false

@@ -70,7 +70,6 @@ struct iOSCompactTodayView: View {
             eyebrow: DateFormatters.longDate.string(from: Date()),
             eyebrowDetail: summary.line,
             title: "Today",
-            systemImage: "sun.max.fill",
             color: Theme.amber,
             count: summary.activeCount,
             onBack: horizontalSizeClass == .compact ? { dismiss() } : nil
@@ -155,7 +154,7 @@ struct iOSCompactTodayEmptyState: View {
                 }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(CadenceTodayPresentationSupport.emptyCompactTitle)
+                Text(CadenceTodayPresentationSupport.emptyTitle)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)

@@ -40,7 +40,6 @@ struct CadencePageHeaderMetricsTests {
             let pane = Self.metrics(.pane, surface)
 
             #expect(page.titleSize > pane.titleSize, "\(surface.rawValue)")
-            #expect(page.tileSize > pane.tileSize, "\(surface.rawValue)")
         }
     }
 
@@ -53,7 +52,6 @@ struct CadencePageHeaderMetricsTests {
             let compact = Self.metrics(role, false)
 
             #expect(regular.titleSize > compact.titleSize, "\(role.rawValue)")
-            #expect(regular.tileSize > compact.tileSize, "\(role.rawValue)")
             #expect(regular.countSize >= compact.countSize, "\(role.rawValue)")
             #expect(regular.horizontalPadding >= compact.horizontalPadding, "\(role.rawValue)")
             #expect(regular.topPadding >= compact.topPadding, "\(role.rawValue)")
@@ -138,16 +136,17 @@ struct CadencePageHeaderMetricsTests {
     /// `iOSIconTile` at 32/15, `iOSListIconBadge` at 32/14.08, `DesktopPageHeader` at 32/15,
     /// `CommitmentIconTile` at 32/13 and `CadenceSettingsHeader` at 42/17 were five tiles meant to
     /// be one — tiles resized without their glyphs. The ratio is stated once, so it cannot happen
-    /// again, and `CommitmentIconTile` now defaults its glyph from it.
-    @Test func theGlyphAlwaysScalesWithItsTile() {
-        for role in CadencePageHeaderRole.allCases {
-            for surface in Self.surfaces {
-                let metrics = Self.metrics(role, surface)
-
-                #expect(metrics.iconSize == metrics.tileSize * CadencePageHeaderMetrics.tileGlyphRatio, "\(role.rawValue) \(surface.rawValue)")
-                #expect(metrics.iconSize < metrics.tileSize, "\(role.rawValue) \(surface.rawValue)")
-            }
-        }
+    /// again, and `CommitmentIconTile` defaults its glyph from it.
+    ///
+    /// **Two of those five were page headers, and page headers no longer draw a tile at all** —
+    /// the user asked for the identity tile dropped everywhere, so `tileSize` and the `iconSize`
+    /// derived from it are gone from this type. The ratio stays because the tiles inside rows,
+    /// cards and pickers stay, and it is those that this now pins.
+    /// `CadenceTodayUnificationTests` guards that no header takes a `systemImage` again.
+    @Test func theGlyphRatioIsStatedOnceForEveryTileThatIsLeft() {
+        #expect(CadencePageHeaderMetrics.tileGlyphRatio == 0.44)
+        #expect(CadencePageHeaderMetrics.tileGlyphRatio < 1)
+        #expect(CadencePageHeaderMetrics.tileFillOpacity == 0.14)
     }
 
     /// A header with a zero anywhere in it draws as a collapsed row rather than as an error, which
@@ -160,7 +159,6 @@ struct CadencePageHeaderMetricsTests {
                 #expect(metrics.titleSize > 0)
                 #expect(metrics.eyebrowSize > 0)
                 #expect(metrics.countSize > 0)
-                #expect(metrics.tileSize > 0)
                 #expect(metrics.rowSpacing > 0)
                 #expect(metrics.horizontalPadding > 0)
                 #expect(metrics.topPadding > 0)

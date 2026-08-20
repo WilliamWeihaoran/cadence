@@ -200,7 +200,6 @@ private struct ListDetailChromeView: View {
 
     private var name: String { area?.name ?? project?.name ?? "" }
     private var colorHex: String { area?.colorHex ?? project?.colorHex ?? Theme.blueHex }
-    private var icon: String { area?.icon ?? project?.icon ?? "folder.fill" }
     private var tasks: [AppTask] { area?.tasks ?? project?.tasks ?? [] }
     private var allowsSectionEditing: Bool { area != nil || project != nil }
     private var editableHoverID: String {
@@ -242,9 +241,11 @@ private struct ListDetailChromeView: View {
     }
 
     private var header: some View {
+        // The list's own `colorHex` is what this header adds to the shared one. It used to spend
+        // it on an identity tile; with page tiles gone it lands on the count capsule, which is the
+        // only thing `tint` colours now.
         DesktopPageHeader(
             title: name,
-            systemImage: icon,
             tint: Color(hex: colorHex)
         ) {
             HStack(spacing: 8) {

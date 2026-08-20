@@ -62,18 +62,15 @@ struct CadenceSettingsStatusBadge: View {
 /// name, and a fourth glyph ratio. The card supplies the padding, hence `padded: false`.
 struct CadenceSettingsHeader<TrailingContent: View>: View {
     let title: String
-    let icon: String
     let tint: Color
     @ViewBuilder let trailingContent: TrailingContent
 
     init(
         title: String,
-        icon: String,
         tint: Color,
         @ViewBuilder trailingContent: () -> TrailingContent = { EmptyView() }
     ) {
         self.title = title
-        self.icon = icon
         self.tint = tint
         self.trailingContent = trailingContent()
     }
@@ -83,7 +80,6 @@ struct CadenceSettingsHeader<TrailingContent: View>: View {
             DesktopPageHeader(
                 role: .page,
                 title: title,
-                systemImage: icon,
                 tint: tint,
                 padded: false,
                 background: nil

@@ -43,9 +43,29 @@ struct iOSTaskCollectionPage: View {
     @Binding var showCompleted: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(RemindersManager.self) private var remindersManager
+    @Environment(\.scenePhase) private var scenePhase
 
     private var metrics: iOSTaskCollectionMetrics {
         .metrics(isRegularWidth: horizontalSizeClass == .regular)
+    }
+
+    /// **The Reminders section is the Inbox's and only the Inbox's**, decided by the same function
+    /// macOS's `TasksListView` asks — not by a `collection == .inbox` written out a second time
+    /// here. `CadenceTasksPageScope.showsRemindersStrip` is the tested gate; a second condition
+    /// beside it is exactly how the two platforms would come to disagree about when the strip
+    /// appears.
+    ///
+    /// It reaches every route into the Inbox because it is on the *page*: the iPhone's Tasks tab,
+    /// the iPad shell's Tasks destination, the More tab and Search all render `iPadInboxView`,
+    /// which is this page. All Tasks answers `false` and is untouched.
+    private var showsRemindersSection: Bool {
+        CadenceTasksPageScope.showsRemindersStrip(
+            scope: CadenceTasksPageScope(collection: collection),
+            isAuthorized: remindersManager.isAuthorized,
+            isLoading: remindersManager.isLoading,
+            hasReminders: !remindersManager.reminders.isEmpty
+        )
     }
 
     var body: some View {
@@ -62,8 +82,20 @@ struct iOSTaskCollectionPage: View {
                     activeTasks: activeTasks,
                     completedTasks: completedTasks,
                     showsCompleted: showCompleted,
-                    metrics: metrics
+                    metrics: metrics,
+                    // The empty state and this section are alternatives, not neighbours: "Inbox is
+                    // clear" over a list of open reminders says the opposite of what the screen is
+                    // showing. macOS spells the same rule as an extra clause on its `isEmpty`, and
+                    // the two are the same statement — its clause is the negation of this gate.
+                    hidesEmptyState: showsRemindersSection
                 )
+
+                if showsRemindersSection {
+                    iOSInboxRemindersSection(
+                        remindersManager: remindersManager,
+                        metrics: metrics
+                    )
+                }
             }
             .padding(.horizontal, metrics.horizontalPadding)
             .padding(.top, metrics.topPadding)
@@ -71,6 +103,26 @@ struct iOSTaskCollectionPage: View {
         }
         .scrollIndicators(.hidden)
         .background(Theme.bg.ignoresSafeArea())
+        // **Access can change while this page is on screen, and on iOS it changes somewhere else.**
+        // `onAppear` alone is macOS's answer and is not enough here: revoking Reminders access
+        // happens in the Settings app, so coming back to a page that never disappeared is a
+        // foreground transition rather than an appearance. Both paths call the same method.
+        //
+        // `refreshAuthorizationState()` re-reads `EKEventStore.authorizationStatus`, which is the
+        // right thing *here* and the wrong thing straight after a grant — see the comment on
+        // `iOSInboxRemindersSection.perform(_:)`. It is never called on that path.
+        .onAppear(perform: refreshRemindersAccess)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            refreshRemindersAccess()
+        }
+    }
+
+    /// Skipped entirely on All Tasks: that page never shows reminders, so touching EventKit from it
+    /// would be work with no surface behind it.
+    private func refreshRemindersAccess() {
+        guard CadenceTasksPageScope(collection: collection) == .inbox else { return }
+        remindersManager.refreshAuthorizationState()
     }
 
     /// **The header scrolls with the content, at both widths.** The `List` hosts pinned it — header,
@@ -91,7 +143,6 @@ struct iOSTaskCollectionPage: View {
         iOSCompactPageHeader(
             eyebrow: collection.eyebrow,
             title: collection.title,
-            systemImage: collection.systemImage,
             color: Theme.blue,
             count: activeTasks.count,
             onBack: horizontalSizeClass == .compact ? { dismiss() } : nil
@@ -130,9 +181,15 @@ struct iOSTaskCollectionSections: View {
     let completedTasks: [AppTask]
     let showsCompleted: Bool
     let metrics: iOSTaskCollectionMetrics
+    /// Set when the host is drawing something else in this collection's place — today that is the
+    /// Inbox's Apple Reminders section, which is not a task group and so cannot be counted by
+    /// `isEmpty`, but is very much content. Without it a cleared Inbox with three open reminders
+    /// under it announced "Inbox is clear" directly above them.
+    var hidesEmptyState = false
 
     private var isEmpty: Bool {
-        activeTasks.isEmpty && (!showsCompleted || completedTasks.isEmpty)
+        guard !hidesEmptyState else { return false }
+        return activeTasks.isEmpty && (!showsCompleted || completedTasks.isEmpty)
     }
 
     var body: some View {

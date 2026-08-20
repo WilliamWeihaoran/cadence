@@ -90,7 +90,6 @@ struct iOSSettingsView: View {
                 if let category = drilledCategory {
                     iOSSettingsPageHeader(
                         title: category.title,
-                        icon: category.icon,
                         tint: category.tint,
                         onBack: { drilledCategory = nil }
                     )
@@ -99,7 +98,6 @@ struct iOSSettingsView: View {
                 } else {
                     iOSSettingsPageHeader(
                         title: "Settings",
-                        icon: CadenceFeatureDestination.settings.systemImage,
                         tint: Theme.blue,
                         onBack: { dismiss() }
                     )
@@ -140,7 +138,6 @@ struct iOSSettingsView: View {
                 // so the header here is the category's own title and glyph and nothing more.
                 iOSSettingsPageHeader(
                     title: selectedCategory.title,
-                    icon: selectedCategory.icon,
                     tint: selectedCategory.tint
                 )
 

@@ -45,7 +45,6 @@ struct iPadTodayTaskHeader: View {
             // priority, so a squeezed header truncates "· 3 timed" before "SUNDAY, AUGUST 17".
             eyebrowDetail: summary.line,
             title: title,
-            systemImage: "sun.max.fill",
             color: Theme.amber,
             count: summary.activeCount
         ) {

@@ -75,9 +75,12 @@ Cadence/
 │   ├── CalendarVisibilityPreferences (in CadenceCalendarVisibilityPreferences.swift) and
 │   │                   # CalendarWorkHoursPreferences — both shared, NOT macOS-only. The file name
 │   │                   # carries the Cadence prefix; the type does not.
-│   └── Components/     # 15 files: CadenceButtons, CadenceContextPicker, CadenceDatePicker,
-│                       # CadenceScrollElasticity, CadenceSidebarCountLabel,
-│                       # CadenceStartupIssueBanner, CadenceTagChip, CadenceValueTile,
+│   └── Components/     # 19 files: CadenceBoardColumnHeader, CadenceBoardMetadataChip,
+│                       # CadenceButtons, CadenceContextPicker, CadenceDatePicker,
+│                       # CadenceInlineEmpty, CadenceScrollElasticity, CadenceSidebarCountLabel,
+│                       # CadenceStartupIssueBanner, CadenceTagChip,
+│                       # CadenceTaskGroupHeading (Today's section eyebrow + count, both
+│                       # platforms), CadenceValueTile,
 │                       # CadenceWrappingHStack, CommitmentSharedViews (CommitmentPageHeader +
 │                       # CommitmentIconTile), EmptyStateView,
 │                       # EstimatePickerControl (iOS chip; its popover is shared),
@@ -86,7 +89,8 @@ Cadence/
 │                       # Check this list before writing a new shared view — the no-near-copies
 │                       # rule is only as good as the inventory an agent can see. Which is why
 │                       # the count is load-bearing and kept going stale: it read 12 across
-│                       # `49c1797`, `5aa11dc` and `3dd09ca`, each of which added one file here.
+│                       # `49c1797`, `5aa11dc` and `3dd09ca`, and 15 across `7e5459c`, which
+│                       # added three of the files above at once.
 │                       # Re-count the directory when you add to it; a stale number reads as a
 │                       # complete inventory and sends the next agent off to write a near-copy.
 ├── iOS/                # Large adaptive iOS/iPadOS surface (79 files) — see "What's Built (iOS)"
@@ -353,9 +357,21 @@ Color(hex: "#4a9eff")  // initializer exists for USER colorHex values — not fo
 ```
 
 ### Other standing UI rules
-- **Page headers do not describe the page you are already on.** The `subtitle` parameter was
-  deleted. Search result rows, empty states, and picker rows *keep* their subtitles — those say
-  something the screen does not. Since `5aa11dc` there is one header view per platform —
+- **Page headers do not describe the page you are already on, and carry no identity tile.** The
+  `subtitle` parameter was deleted; the `systemImage` parameter behind the leading glyph tile is
+  now deleted too, on **both** platforms and every page — **the user's call**, and it reversed a
+  plan to bring macOS *into line with* iOS's tile. A rounded glyph square at the top of Today
+  saying "sun" is the subtitle's mistake one row up. It is deleted rather than left unrendered
+  because a parameter that still compiles and draws nothing is exactly how `subtitle` survived
+  long enough to need removing three separate times; `CadencePageHeaderMetrics.tileSize` and the
+  `iconSize` derived from it went with it. `CommitmentIconTile` / `iOSIconTile` are untouched —
+  tiles inside rows, cards and pickers are not page identity — and `tileGlyphRatio` /
+  `tileFillOpacity` stay for them.
+  What the tint now colours is the **count capsule**, and only that, which is what keeps a list's
+  own `colorHex` on its own page. `iOSPageHeader` had been hardcoding `Theme.blue` there and
+  ignoring the `color` it was handed; both headers read the tint now.
+  Search result rows, empty states, and picker rows *keep* their subtitles — those say something
+  the screen does not. Since `5aa11dc` there is one header view per platform —
   `DesktopPageHeader` and `iOSPageHeader` — and `PanelHeader`, `CommitmentPageHeader` and
   `CadenceSettingsHeader` are name-only wrappers over the first, not peers of it as this line
   used to imply. Account and metric ramp: `Cadence/Shared/AGENTS.md`.
@@ -414,11 +430,15 @@ iOS still has its own vocabulary — `CadenceTaskSortMode` + `CadenceTaskQuerySu
 
 **The tie-break is not.** This file used to add "and tie-breaks on `order` alone … the remaining half of the consolidation"; that was fixed in `6277539` and every one of `sortTasks`' five branches now ends in `TaskOrdering.fallbackPrecedes`. Do not pick this up as outstanding work and do not "fix" a comparator that `TaskOrderingTests` and `MobileTaskSortStabilityTests` already pin. (The doc comment above `CadenceTaskQuerySupport.sortTasks` carried the same stale sentence for longer than this file did, directly under a first line saying the opposite; it was corrected under T-151.)
 
-**Where controls appear:** Today’s task column (`TasksPanel`), Inbox, All Tasks **list** mode, Area/Project **Tasks** tab, and All Tasks / list-detail **Kanban** (sort only — Kanban **does not** offer grouping; columns stay section-based). UI uses custom “picker badge” controls (not `Menu`), consistent with All Tasks. There is **no** global task **filter** UI (do date / list / priority filters were removed).
+**Where controls appear:** Today’s task column (`TasksPanel`), Inbox, All Tasks **list** mode, Area/Project **Tasks** tab, and All Tasks / list-detail **Kanban**. Two of those offer **sort only**: Kanban (columns stay section-based) and now **Today** (sections are the day's four intents — see "Today view task scope"). UI uses custom “picker badge” controls (not `Menu`), consistent with All Tasks. There is **no** global task **filter** UI (do date / list / priority filters were removed).
 
 **Drag across groups:** Dropping a task into another group/section can update the relevant attribute (e.g. do date, list, priority, kanban section) and `order`.
 
-**`MacTaskRow` (TasksPanelComponents.swift):** Container (area/project/inbox) uses pill styling; do/due dates are smaller, lower-contrast metadata (icons + text) with hover affordances, not pills. Due date badge only renders when `!task.dueDate.isEmpty` — no empty clickable badge. Overdue tasks can show red emphasis; “over-do” (past do date) is not amber-tinted on the row. The row has **no** estimate control — trailing metadata is the focus button, due-date badge, optional bundle badge, and a `ContainerPickerBadge(compact: true, flat: true)` list chip. Priority strip height is slightly less than the row; the focus control sits beside the title when hovered.
+**`MacTaskRow` (TasksPanelComponents.swift):** Container (area/project/inbox) uses pill styling; do/due dates are smaller, lower-contrast metadata (icons + text) with hover affordances, not pills. Due date badge only renders when `!task.dueDate.isEmpty` — no empty clickable badge. Overdue tasks can show red emphasis; “over-do” (past do date) is not amber-tinted on the row. Trailing metadata is the **estimate chip**, the focus button, the due-date badge, an optional bundle badge, and a `ContainerPickerBadge(compact: true, flat: true)` list chip. Priority strip height is slightly less than the row; the focus control sits beside the title when hovered.
+
+**The estimate chip is new, and this passage used to say the opposite.** It read "the row has **no** estimate control" and described the trailing metadata as a deliberate omission, which is what kept the gap open through two row passes while `iOSTaskRow` carried one the whole time. **The user decided the iOS row wins**, so the chip crossed over: it renders only when `estimatedMinutes > 0`, labels itself through `CadenceTaskPresentationSupport.estimateLabel`, and opens the one shared `EstimatePickerPopoverContent`. The tag strip crossed the other way round — both rows had one, at two different caps — and now reads `CadenceTaskPresentationSupport.rowTagLimit` (3, iOS's figure; macOS's `ViewThatFits` already collapses the strip when the column is genuinely narrow).
+
+`MacTaskRowEstimateChip` is its own `View` struct for the same reason `TaskCompletionButton` and `TaskRowBackground` are — see **Performance** below. It must not read `TaskCompletionAnimationManager`, and `CadenceTodayUnificationTests` fails if either it or `MacTaskRow` starts to.
 
 `EstimatePickerPopoverContent` (Shared/Components) is **the** estimate picker on both platforms —
 a two-column roller with preset chips above it. `TaskInspectorEstimateRollerPopover` is now a
@@ -443,7 +463,25 @@ When unfinished tasks are rolled from yesterday into today, Cadence clears their
 - `scheduledStartMin` is reset to `-1`
 - any linked timed calendar event is removed first
 
-Today’s by-list organization is now explicitly grouped by **context** rather than one flat stream of lists.
+**Today groups by intent, on every platform.** The sections are `CadenceTodayTaskGroupKind`'s four — **Overdue**, **Past Do**, **Due Today**, **Planned Today** — plus **Completed Today**, each headed by the shared `CadenceTaskGroupHeading` (eyebrow in the group's accent, count capsule in the same). They come from `CadenceTaskQuerySupport.todayGroups`, the one function both platforms call.
+
+This passage used to read "Today's by-list organization is now explicitly grouped by **context** rather than one flat stream of lists", which described macOS only: both iOS Todays had grouped by intent all along, so the same day read as an inventory on the desktop and as a plan on the phone. **The user decided iOS's vocabulary wins** — a section on the day's page should say *why* a task is in front of you, not where it lives. macOS's `todayListSections` and `todayDateSections` (the same four buckets under the names "Past Due" and "Do Today") are deleted, and Today no longer offers a **Group** picker at all: sort and order still apply, and they apply inside each group. All Tasks (`.byDoDate`) keeps its full grouping control.
+
+Because the group header no longer names the list, macOS's Today rows are `.standard` rather than `.todayGrouped` — the list chip and the do-date pill are the only things left that can say where a task lives and when it was meant to be done, which is exactly what the iOS Today row already showed.
+
+**The task column heads itself with the day, on every platform.** `TASKS / Today` became
+`THURSDAY, AUGUST 20 · 1 done / Today [5]` — the date as the eyebrow, `CadenceTodaySummary.line`
+as the `eyebrowDetail` beside it (the half that gives way when the column is squeezed), and the
+day's open count in a capsule. macOS's `TasksPanelHeader` is `iPadTodayTaskHeader`'s row now, minus
+the identity tile that neither platform draws any more. The empty day says
+`CadenceTodayPresentationSupport.emptyTitle` / `emptySubtitle` on both.
+
+**Pane structure stays per-size, deliberately.** macOS keeps three panes (notes │ tasks │ schedule),
+iPad two (task column + switchable Notes/Timeline inspector), iPhone one column. Only what is
+*inside* the panes is shared. Do not restore a Mac-shaped three-pane layout on iPad —
+`Cadence/Shared/CadenceTodayLayoutSupport.swift` records that it and its picker were deleted at the
+user's direction, and `CadenceTodayLayoutSupportTests` pins `layout(...)`'s range to `.compact` and
+`.twoPane`.
 
 **Layout:** `TodayView` uses an `HSplitView` with tuned `minWidth` / `idealWidth` / `layoutPriority` so notepad and schedule get more default space than the task column (user-adjustable dividers).
 
@@ -466,17 +504,23 @@ source cannot rely on its prefix to reject a foreign drop. Real prefix isolation
 `TaskDragPayload`'s consumers get.
 
 ## Task Creation
-There are exactly **three** creation affordances on macOS, and which one a surface gets is decided
+There are exactly **four** creation affordances on macOS, and which one a surface gets is decided
 by whether the surface already answers "where does this go":
 1. **A floating circular `+`** on every task *page* — All Tasks (list mode), Inbox, and an
    area/project's Tasks tab (`FloatingNewTaskButton`, `.floatingNewTaskButton()`). It opens the full
    `CreateTaskSheet`. There is no "New task" header pill any more; `DesktopPrimaryActionButton` was
    deleted with it.
-2. **A column ghost row** on every board column — kanban section columns, the All Tasks board's list
+2. **A circular `+` in Today's task-column header** (`TasksPanelHeader`), which opens the same
+   `CreateTaskSheet` seeded with today's do date. Today's task column is inside an `HSplitView` and
+   has no floating `+` over it, so this is the same affordance in the only place it fits. This list
+   said "three" while that button existed as a `+ New Task` pill — the last survivor of the header
+   pills item 1 claims are gone — so both halves were wrong at once. It is a glyph now: at the
+   column's 300pt minimum the pill's ~100pt truncated the header's own date eyebrow.
+3. **A column ghost row** on every board column — kanban section columns, the All Tasks board's list
    columns, and the Calendar Board's day columns. It opens the **inline composer**
    (`InlineTaskComposer`), not the sheet. The Calendar Board's day column used to insert an
    untitled "New Task" card with no prompt; it does not any more.
-3. **The calendar week tab's** drag-to-create task/event popover, unchanged.
+4. **The calendar week tab's** drag-to-create task/event popover, unchanged.
 
 The inline composer is **one** view for all those columns, parameterised by
 `InlineTaskComposerSurface` (`.column(container:sectionName:)` / `.day(dateKey:startMin:)`).

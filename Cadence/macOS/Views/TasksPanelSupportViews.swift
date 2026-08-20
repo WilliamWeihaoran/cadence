@@ -3,8 +3,31 @@ import SwiftUI
 import SwiftData
 import AppKit
 
+/// Today's task column header, and the one place macOS says what day it is.
+///
+/// **This is `iPadTodayTaskHeader`'s row, on macOS.** It read `TASKS / Today` — an eyebrow naming
+/// the column and a title naming the page, neither of which the day changes — while iOS read
+/// `WEDNESDAY, AUGUST 19 · 1 done / Today` with the day's open count beside it. The date and the
+/// summary win: they are the two facts about *this* day, and a column headed "TASKS" on a screen
+/// whose only content is tasks is the header-describes-its-own-page rule one row down.
+///
+/// There is **no identity tile**, here or anywhere else. macOS was about to gain one from iOS's
+/// header; the user's call went the other way — drop them everywhere — so `DesktopPageHeader` and
+/// `iOSPageHeader` no longer draw one at all.
+///
+/// The capture button stays in the trailing slot — Today's task column is the one macOS task
+/// surface with no floating `+` over it, so this is its affordance rather than a second one, and
+/// `CadenceTodayPresentationSupport.emptySubtitle` points at it by name.
+///
+/// **It is a glyph now, not a `+ New Task` pill.** Measured, not preferred: the task column's
+/// declared minimum is 300pt, and at that width the pill left ~150pt for an eyebrow that needs
+/// ~130 — so "THURSDAY, AUGUST 20" truncated to "THURSDAY, AUGU…" the moment the divider was
+/// dragged left. It is also the last survivor of the header pills `DesktopPrimaryActionButton`
+/// was deleted with; every other macOS task surface captures through a circular `+`.
 struct TasksPanelHeader: View {
     let mode: TasksPanelMode
+    /// `nil` outside `.todayOverview`. The day's counts only mean anything on the day's page.
+    var summary: CadenceTodaySummary? = nil
 
     @Environment(TaskCreationManager.self) private var taskCreationManager
 
@@ -15,32 +38,51 @@ struct TasksPanelHeader: View {
         }
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                PanelHeader(eyebrow: "Tasks", title: title)
-                Spacer()
-                Button {
-                    switch mode {
-                    case .todayOverview: taskCreationManager.present(doDateKey: DateFormatters.todayKey())
-                    case .byDoDate:      taskCreationManager.present()
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "plus").font(.system(size: 11, weight: .semibold))
-                        Text("New Task").font(.system(size: 13, weight: .semibold))
-                    }
-                    .foregroundStyle(Theme.onColor)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.cadencePlain)
-                .padding(.top, 15)
-                .padding(.trailing, 16)
-            }
+    /// The day itself on Today — `DateFormatters.longDate`, uppercased by `SectionEyebrowLabel`,
+    /// exactly as both iOS Todays spell it.
+    private var eyebrow: String {
+        switch mode {
+        case .todayOverview: return DateFormatters.longDate.string(from: Date())
+        case .byDoDate:      return "Tasks"
         }
+    }
+
+    var body: some View {
+        DesktopPageHeader(
+            role: .pane,
+            eyebrow: eyebrow,
+            // The half that gives way: the eyebrow proper holds the layout priority, so a narrow
+            // task column truncates "· 3 timed" before it truncates the date.
+            eyebrowDetail: summary?.line,
+            title: title,
+            count: summary?.activeCount,
+            // Today's colour, and with the tile gone the count capsule is the only thing wearing
+            // it. iPad Today passes the same `Theme.amber` for the same badge.
+            tint: mode == .todayOverview ? Theme.amber : Theme.blue,
+            // The panel paints its own plate behind the header band.
+            background: nil
+        ) {
+            newTaskButton
+        }
+    }
+
+    private var newTaskButton: some View {
+        Button {
+            switch mode {
+            case .todayOverview: taskCreationManager.present(doDateKey: DateFormatters.todayKey())
+            case .byDoDate:      taskCreationManager.present()
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Theme.onColor)
+                .frame(width: 28, height: 28)
+                .background(Theme.blue)
+                .clipShape(Circle())
+        }
+        .buttonStyle(.cadencePlain)
+        .help("New task for today")
+        .accessibilityLabel("New task")
     }
 }
 

@@ -179,7 +179,7 @@ struct TasksPanel: View {
     private func panelShell(derived: TasksPanelDerivedState) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if showsHeader {
-                headerSection
+                headerSection(derived: derived)
             }
 
             ScrollView {
@@ -195,10 +195,10 @@ struct TasksPanel: View {
         }
     }
 
-    private var headerSection: some View {
+    private func headerSection(derived: TasksPanelDerivedState) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                TasksPanelHeader(mode: mode)
+                TasksPanelHeader(mode: mode, summary: todaySummary(derived: derived))
                 if enableControls {
                     controlsBar
                 }
@@ -234,51 +234,72 @@ struct TasksPanel: View {
             overdueSectionsSection(summaries: derived.overdueSectionSummaries)
         }
 
-        if enableControls {
-            todayControlledSections(derived: derived)
-        } else {
-            let groups = groupedTasks(derived.todayGroupedTaskItems(showRolloverNotice: showsRollover))
-            if !groups.isEmpty {
-                todayListSections(groups: groups)
-            }
-        }
+        todayIntentSections(derived: derived, showsRollover: showsRollover)
     }
 
+    /// Today's groups, and the whole of them: Overdue, Past Do, Due Today, Planned Today.
+    ///
+    /// **The buckets come from `CadenceTaskQuerySupport.todayGroups`** — the shared function both
+    /// iOS Todays already called — rather than from a fourth macOS re-derivation of the same four
+    /// predicates. `todayDateSections` was that re-derivation, spelling the same buckets "Past Due"
+    /// and "Do Today", and it sat behind a Group picker that also offered by-list and by-priority
+    /// while Today defaulted to by-list. A day's page groups by *why*, so there is nothing left for
+    /// the picker to choose between and Today no longer draws one; sort and order still apply, and
+    /// they apply *inside* each group.
+    ///
+    /// The rollover banner still withholds the over-do tasks it is offering to roll, so `.pastDo`
+    /// is simply empty while the banner is up and `todayGroups` drops it.
     @ViewBuilder
-    private func todayControlledSections(derived: TasksPanelDerivedState) -> some View {
-        let showsRollover = shouldShowRolloverNotice(derived)
-        let todayTasks = showsRollover
-            ? derived.todayGroupedTaskItems(showRolloverNotice: true)
-            : derived.todayEligibleTasks
-        let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+    private func todayIntentSections(derived: TasksPanelDerivedState, showsRollover: Bool) -> some View {
+        let tasks = applyFreeze(
+            derived.todayGroupedTaskItems(showRolloverNotice: showsRollover)
+                .sorted(by: compareTasksForCurrentSort)
+        )
 
-        switch activeGroupingMode {
-        case .none:
-            frozenOrSingleFlatSection(
-                frozenSections: resolvedFrozenFlatSections,
-                tasksByID: tasksByID,
-                label: "Today Tasks",
-                tasks: todayTasks
+        ForEach(CadenceTaskQuerySupport.todayGroups(from: tasks, todayKey: todayKey)) { group in
+            let dropKey = CadenceTaskDropSupport.dropKey(forGroup: .todayDate(group.kind))
+
+            TasksPanelIntentSectionView(
+                title: group.title,
+                accent: CadenceTodayPresentationSupport.accent(for: group.kind),
+                tasks: group.tasks,
+                contexts: contexts,
+                areas: areas,
+                projects: projects,
+                isCollapsed: collapsedGroupIDs.contains(intentGroupID(group.kind)),
+                dragOverTaskID: $dragOverTaskID,
+                onToggle: { toggleGroup(intentGroupID(group.kind)) },
+                taskDragPayload: taskDragPayload,
+                onDropOnSectionPayload: dropCoordinator.sectionDropHandler(for: dropKey),
+                onDropOnTaskPayload: { payload, targetTask in
+                    dropCoordinator.handleTaskDrop(
+                        payload: payload,
+                        targetTask: targetTask,
+                        scopeTasks: group.tasks,
+                        dropKey: dropKey
+                    )
+                }
             )
-        case .byDate:
-            if let frozenSections = resolvedFrozenFlatSections {
-                frozenFlatSections(frozenSections, tasksByID: tasksByID)
-            } else {
-                todayDateSections(derived: derived)
-            }
-        case .byList:
-            todayListSections(groups: groupedTasks(todayTasks))
-        case .byPriority:
-            prioritySections(tasks: todayTasks, frozenSections: resolvedFrozenFlatSections, tasksByID: tasksByID)
         }
     }
 
-    @ViewBuilder
-    private func todayDateSections(derived: TasksPanelDerivedState) -> some View {
-        if !derived.overdue.isEmpty { liveFlatSection(label: "Past Due", tasks: derived.overdue) }
-        if !derived.overdoTasks.isEmpty { liveFlatSection(label: "Past Do", tasks: derived.overdoTasks) }
-        if !derived.dueTodayTasks.isEmpty { liveFlatSection(label: "Due Today", tasks: derived.dueTodayTasks) }
-        if !derived.doTodayTasks.isEmpty { liveFlatSection(label: "Do Today", tasks: derived.doTodayTasks) }
+    private func intentGroupID(_ kind: CadenceTodayTaskGroupKind) -> String {
+        "today-intent-\(kind.rawValue)"
+    }
+
+    private func todaySummary(derived: TasksPanelDerivedState) -> CadenceTodaySummary? {
+        guard mode == .todayOverview else { return nil }
+        return CadenceTodayPresentationSupport.summary(
+            activeTasks: derived.todayEligibleTasks,
+            timedTasks: CadenceScheduleSupport.scheduledTasks(
+                on: todayKey,
+                from: allTasks,
+                includeCompleted: false,
+                excludeBundled: false
+            )
+            .filter { $0.scheduledStartMin >= 0 },
+            completedTasks: derived.doneTasks
+        )
     }
 
     @ViewBuilder
@@ -417,9 +438,13 @@ struct TasksPanel: View {
     @ViewBuilder
     private func emptyStateSection(derived: TasksPanelDerivedState) -> some View {
         if derived.isEmptyState(for: mode) {
+            // Today's copy is `CadenceTodayPresentationSupport`'s, which is what iOS's
+            // `iOSCompactTodayEmptyState` draws. macOS said "Nothing for today" over
+            // "Due-today and do-today tasks will appear here" — a restatement of the page's scope
+            // where the shared subtitle names the next thing to do.
             EmptyStateView(
-                message: mode == .byDoDate ? "No tasks yet" : "Nothing for today",
-                subtitle: mode == .byDoDate ? "Add a task above to get started" : "Due-today and do-today tasks will appear here",
+                message: mode == .byDoDate ? "No tasks yet" : CadenceTodayPresentationSupport.emptyTitle,
+                subtitle: mode == .byDoDate ? "Add a task above to get started" : CadenceTodayPresentationSupport.emptySubtitle,
                 icon: "checkmark.circle"
             )
             .padding(.top, 40)
@@ -442,14 +467,12 @@ struct TasksPanel: View {
         )
     }
 
+    /// List-group snapshots are a `.byDoDate` concern only: Today groups by intent and has no
+    /// by-list mode to freeze. `frozenTaskOrder` still holds the row order steady under the
+    /// pointer on both, which is what the freeze is for.
     private func currentFrozenListSnapshotForHover(_ derived: TasksPanelDerivedState) -> [FrozenTodayTaskGroup] {
-        guard activeGroupingMode == .byList else { return [] }
-        let snapshotTasks = mode == .todayOverview
-            ? (shouldShowRolloverNotice(derived)
-                ? derived.todayGroupedTaskItems(showRolloverNotice: true)
-                : derived.todayEligibleTasks)
-            : byDoDateSortedTasks(derived)
-        return currentFrozenListGroupSnapshot(for: snapshotTasks)
+        guard mode == .byDoDate, activeGroupingMode == .byList else { return [] }
+        return currentFrozenListGroupSnapshot(for: byDoDateSortedTasks(derived))
     }
 
     private func rollOverPastDoTasks() {
@@ -492,8 +515,14 @@ struct TasksPanel: View {
         HStack(spacing: 8) {
             CadenceEnumPickerBadge(title: "Sort", selection: $localSortField)
             CadenceEnumPickerBadge(title: "Order", selection: $localSortDirection)
-            CadenceEnumPickerBadge(title: "Group", selection: $localGroupingMode,
-                                   excluded: mode == .todayOverview ? [.byDate] : [])
+            // No grouping control on Today. Its sections are the day's four intents — see
+            // `todayIntentSections` — and a picker offering "by list" beside them would be
+            // offering to answer a different question than the page asks. It used to exclude
+            // `.byDate` here for the mirror-image reason: Today's by-date grouping *was* the
+            // intent grouping, spelled differently and reachable only by not choosing it.
+            if mode != .todayOverview {
+                CadenceEnumPickerBadge(title: "Group", selection: $localGroupingMode)
+            }
             Spacer()
         }
         .padding(.horizontal, 16)
@@ -549,49 +578,6 @@ struct TasksPanel: View {
 
     // MARK: - Grouping
 
-    /// Today's "by list" organization is a **single, flat tier of list groups** — no
-    /// context headers. Group order comes straight out of
-    /// `TasksPanelSupport.listGroups`, which orders by `sidebarListOrder`
-    /// (Inbox pinned first, then contexts in their sidebar order, and within each
-    /// context its areas then its projects in their own order). That keeps the
-    /// sequence stable as counts and dates change.
-    ///
-    /// Scoped to Today only: All Tasks (`.byDoDate`) still renders its own
-    /// `byDoDateListSections`, and `TasksListView` keeps its context-icon
-    /// affordance — neither goes through this path.
-    @ViewBuilder
-    private func todayListSections(groups: [TodayTaskGroup]) -> some View {
-        ForEach(groups) { group in
-            VStack(alignment: .leading, spacing: 0) {
-                TasksPanelGroupSectionView(
-                    group: group,
-                    dragOverTaskID: $dragOverTaskID,
-                    contexts: contexts,
-                    areas: areas,
-                    projects: projects,
-                    allTasks: allTasks,
-                    showsContextIcon: false,
-                    isCollapsed: collapsedGroupIDs.contains(group.id),
-                    overdueCount: overdueCount(in: group.tasks),
-                    regularCount: regularCount(in: group.tasks),
-                    onToggle: { toggleGroup(group.id) },
-                    taskDragPayload: taskDragPayload,
-                    onDropOnGroupPayload: { payload in
-                        dropCoordinator.handleSectionDrop(payload: payload, dropKey: "list:\(group.id)")
-                    },
-                    onDropOnTaskPayload: { payload, targetTask in
-                        dropCoordinator.handleTaskDrop(
-                            payload: payload,
-                            targetTask: targetTask,
-                            scopeTasks: group.tasks,
-                            dropKey: "list:\(group.id)"
-                        )
-                    }
-                )
-            }
-        }
-    }
-
     private func groupedTasks(_ tasks: [AppTask]) -> [TodayTaskGroup] {
         if let resolvedFrozenListGroups {
             return resolvedFrozenListGroups
@@ -637,30 +623,21 @@ struct TasksPanel: View {
     private func currentFrozenFlatSectionSnapshot(derived: TasksPanelDerivedState) -> [FrozenFlatTaskSection] {
         switch mode {
         case .todayOverview:
-            let todayTasks = shouldShowRolloverNotice(derived)
-                ? derived.todayGroupedTaskItems(showRolloverNotice: true)
-                : derived.todayEligibleTasks
-            switch activeGroupingMode {
-            case .none:
-                return [makeFlatSection(id: "today-tasks", title: "Today Tasks", tasks: todayTasks)].compactMap { $0 }
-            case .byDate:
-                return [
-                    makeFlatSection(id: "past-due", title: "Past Due", tasks: derived.overdue),
-                    makeFlatSection(id: "past-do", title: "Past Do", tasks: derived.overdoTasks),
-                    makeFlatSection(id: "due-today", title: "Due Today", tasks: derived.dueTodayTasks),
-                    makeFlatSection(id: "do-today", title: "Do Today", tasks: derived.doTodayTasks)
-                ].compactMap { $0 }
-            case .byList:
-                return []
-            case .byPriority:
-                return TaskPriority.allCases.reversed().compactMap { priority in
-                    makeFlatSection(
-                        id: "priority-\(priority.rawValue)",
-                        title: priority.label,
-                        tasks: todayTasks.filter { $0.priority == priority },
-                        dropKey: "priority:\(priority.rawValue)"
-                    )
-                }
+            // Today has one grouping — the day's four intents — so there is no switch here any
+            // more. The buckets are `CadenceTaskQuerySupport.todayGroups`', the same ones
+            // `todayIntentSections` draws, rather than a second list of the same predicates under
+            // the names "Past Due" and "Do Today".
+            let todayTasks = applyFreeze(
+                derived.todayGroupedTaskItems(showRolloverNotice: shouldShowRolloverNotice(derived))
+                    .sorted(by: compareTasksForCurrentSort)
+            )
+            return CadenceTaskQuerySupport.todayGroups(from: todayTasks, todayKey: todayKey).compactMap { group in
+                makeFlatSection(
+                    id: intentGroupID(group.kind),
+                    title: group.title,
+                    tasks: group.tasks,
+                    dropKey: CadenceTaskDropSupport.dropKey(forGroup: .todayDate(group.kind))
+                )
             }
         case .byDoDate:
             let todayK = todayKey

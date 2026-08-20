@@ -3,11 +3,17 @@ import SwiftUI
 
 /// Apple Reminders, inline in the Inbox view of the Tasks page.
 ///
-/// **This is the only place in the app that shows Apple Reminders**, and it is what makes the
-/// Inbox an *inbox* rather than a filter: unprocessed things, including ones captured outside
-/// Cadence. It survived All Tasks and Inbox being merged into one page precisely because losing it
-/// would have turned that merge into a deletion — `TasksListView.showsRemindersSection` gates it on
-/// the **scope**, not on the destination.
+/// This is what makes the Inbox an *inbox* rather than a filter: unprocessed things, including
+/// ones captured outside Cadence. It survived All Tasks and Inbox being merged into one page
+/// precisely because losing it would have turned that merge into a deletion —
+/// `TasksListView.showsRemindersSection` gates it on the **scope**, not on the destination.
+///
+/// It was "the only place in the app that shows Apple Reminders" until T-163, which built
+/// `iOSInboxRemindersSection` against the same `CadenceTasksPageScope.showsRemindersStrip` gate and
+/// the same `AppleReminderRowPresentation` tints. The two rows are drawn in their own platform's
+/// vocabulary and share every decision behind them; change one of those decisions here and change
+/// it for both, or the shipped `NSRemindersFullAccessUsageDescription` goes back to being true on
+/// one platform only.
 ///
 /// It is a `VStack` rather than a `Group` of `List` rows now. It used to carry
 /// `.listRowBackground(.clear)`, `.listRowSeparator(.hidden)` and `.listRowInsets(.init())` on
@@ -144,19 +150,20 @@ private struct AppleReminderTaskRow: View {
         .animation(.easeOut(duration: 0.16), value: isCompleting)
     }
 
+    /// Both tints are `AppleReminderRowPresentation`'s rather than this row's own. They were
+    /// written out here — an inverted 1...4 / 5 / 6...9 ramp and a three-stop date rule — and iOS
+    /// growing its own reminders row (T-163) is exactly the moment a private ramp becomes two
+    /// ramps. The values are unchanged: the priority stops resolve through `Theme.priorityColor`,
+    /// which is red / amber / blue / dim.
     private var priorityColor: Color {
-        switch reminder.priority {
-        case 1...4: return Theme.red
-        case 5: return Theme.amber
-        case 6...9: return Theme.blue
-        default: return Theme.dim
-        }
+        AppleReminderRowPresentation.priorityTint(reminder.priority)
     }
 
     private func reminderDueDateBadge(_ date: Date) -> some View {
         let dateKey = DateFormatters.dateKey(from: date)
-        let dayOffset = DateFormatters.dayOffset(from: dateKey)
-        let color = (dayOffset ?? 0) < 0 ? Theme.red : ((dayOffset ?? 1) == 0 ? Theme.amber : Theme.dim)
+        let color = AppleReminderRowPresentation.dueTint(
+            dayOffset: DateFormatters.dayOffset(from: dateKey)
+        )
 
         return HStack(spacing: 4) {
             Image(systemName: "calendar")

@@ -198,6 +198,129 @@ struct TasksPanelFlatSectionView: View {
     }
 }
 
+/// One of Today's intent groups — Overdue / Past Do / Due Today / Planned Today — and the day's
+/// Completed group under them.
+///
+/// **The sections say why a task is in front of you, not where it lives.** macOS's Today grouped by
+/// list (one flat tier of area/project groups in sidebar order) while both iOS Todays grouped by
+/// intent, so the same day read as an inventory on one platform and as a plan on the other. The
+/// intent vocabulary wins, and it wins from `CadenceTaskQuerySupport.todayGroups` — the function
+/// iOS already called — rather than from a second macOS copy of the same four predicates, which is
+/// what `todayDateSections` was: the same buckets under the names "Past Due" and "Do Today".
+///
+/// The disclosure chevron is kept, and is the one thing iOS's group header does not have. It is a
+/// pointer affordance over persisted per-section state (`collapsedGroupIDs`), not a difference in
+/// how the row is *drawn* — the heading itself is `CadenceTaskGroupHeading`, shared.
+struct TasksPanelIntentSectionView: View {
+    let title: String
+    let accent: Color
+    let tasks: [AppTask]
+    let contexts: [Context]
+    let areas: [Area]
+    let projects: [Project]
+    let isCollapsed: Bool
+    /// Dimmed as a whole rather than row by row, the way iOS dims its Completed group.
+    var opacity: Double = 1
+    @Binding var dragOverTaskID: UUID?
+    let onToggle: () -> Void
+    let taskDragPayload: (AppTask) -> String
+    /// `nil` for a group defined by a day that has already gone by — there is nothing a drop could
+    /// mean for "Overdue". `CadenceTaskDropSupport.dropKey(forGroup:)` decides, for both platforms.
+    let onDropOnSectionPayload: ((String) -> Bool)?
+    let onDropOnTaskPayload: (String, AppTask) -> Bool
+
+    var body: some View {
+        Section {
+            header
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 5)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .dropDestination(for: String.self) { items, _ in
+                    guard let onDropOnSectionPayload, let payload = items.first else { return false }
+                    return onDropOnSectionPayload(payload)
+                }
+
+            if !isCollapsed {
+                ForEach(tasks) { task in
+                    // `.standard`, not `.todayGrouped`: that style suppresses the do-date pill and
+                    // the list chip because the *group header* used to name the list. Today groups
+                    // by intent now, so the row is the only thing that can say where a task lives
+                    // and when it was meant to be done — which is what iOS's Today row already
+                    // said, chip for chip.
+                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
+                        .opacity(opacity)
+                        .draggable(taskDragPayload(task))
+                        .dropDestination(for: String.self) { items, _ in
+                            guard let payload = items.first else { return false }
+                            return onDropOnTaskPayload(payload, task)
+                        } isTargeted: { isOver in
+                            if isOver { dragOverTaskID = task.id }
+                            else if dragOverTaskID == task.id { dragOverTaskID = nil }
+                        }
+                        .overlay(alignment: .top) {
+                            if dragOverTaskID == task.id {
+                                Rectangle().fill(Theme.blue).frame(height: 2).padding(.leading, 16).transition(.opacity)
+                            }
+                        }
+                        .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
+                        .padding(.leading, 16)
+                        .transition(.asymmetric(
+                            insertion: .opacity,
+                            removal: .opacity.combined(with: .move(edge: .top))
+                        ))
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        TasksPanelIntentSectionHeader(
+            title: title,
+            accent: accent,
+            count: tasks.count,
+            isCollapsed: isCollapsed,
+            onToggle: onToggle
+        )
+    }
+}
+
+/// Chevron, then `CadenceTaskGroupHeading`. One hover layer, at `CollapsibleTaskGroupHeader`'s
+/// radius and fill — the same neutral wash the rows below take, and the only one on this row.
+struct TasksPanelIntentSectionHeader: View {
+    let title: String
+    let accent: Color
+    let count: Int
+    let isCollapsed: Bool
+    let onToggle: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: 8) {
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+
+                CadenceTaskGroupHeading(title: title, tint: accent, count: count)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(shape.fill(TaskHoverVisuals.hoverFill(isHovered: isHovered)))
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+    }
+}
+
 struct TasksPanelCompletedSectionView: View {
     let tasks: [AppTask]
     let mode: TasksPanelMode
@@ -211,18 +334,34 @@ struct TasksPanelCompletedSectionView: View {
 
     var body: some View {
         Section {
-            CompletedSectionHeader(
-                count: tasks.count,
-                isCollapsed: isCollapsed,
-                onToggle: onToggle
-            )
+            // On Today this is the day's finished work, headed and tinted like every other Today
+            // group: `CadenceTodayPresentationSupport` owns both, and iOS reads the same two
+            // constants. The `.byDoDate` logbook is a different thing — everything ever finished —
+            // and keeps its neutral "Completed".
+            Group {
+                if mode == .todayOverview {
+                    TasksPanelIntentSectionHeader(
+                        title: CadenceTodayPresentationSupport.completedSectionTitle,
+                        accent: CadenceTodayPresentationSupport.completedSectionAccent,
+                        count: tasks.count,
+                        isCollapsed: isCollapsed,
+                        onToggle: onToggle
+                    )
+                } else {
+                    CompletedSectionHeader(
+                        count: tasks.count,
+                        isCollapsed: isCollapsed,
+                        onToggle: onToggle
+                    )
+                }
+            }
             .padding(.horizontal, 16)
             .padding(.top, 16)
             .padding(.bottom, 6)
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: mode == .todayOverview ? .todayGrouped : .standard, contexts: contexts, areas: areas, projects: projects)
+                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
                         .draggable(taskDragPayload(task))
                         .padding(.leading, 16)
                         .transition(.asymmetric(

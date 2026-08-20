@@ -261,7 +261,6 @@ struct SettingsDetailHeader<TrailingContent: View>: View {
     var body: some View {
         CadenceSettingsHeader(
             title: category.title,
-            icon: category.icon,
             tint: category.tint
         ) {
             trailingContent

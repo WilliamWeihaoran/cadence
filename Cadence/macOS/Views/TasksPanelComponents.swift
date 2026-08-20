@@ -44,7 +44,11 @@ struct MacTaskRow: View {
                 .strikethrough(task.isDone || task.isCancelled, color: Theme.dim)
                 .lineLimit(1)
 
-            CompactTagStrip(tags: task.sortedTags, limit: 2)
+            // `CadenceTaskPresentationSupport.rowTagLimit`, not a local 2. iOS showed three tags
+            // on the same row of the same task; `ViewThatFits` here already drops to one chip or
+            // to a bare `+N` when the column is genuinely narrow, so a fixed 2 was hiding a tag
+            // the row had room for.
+            CompactTagStrip(tags: task.sortedTags, limit: CadenceTaskPresentationSupport.rowTagLimit)
                 .padding(.leading, task.sortedTags.isEmpty ? 0 : 6)
 
             if task.isCancelled {
@@ -59,6 +63,10 @@ struct MacTaskRow: View {
             }
 
             Spacer(minLength: 4)
+
+            if task.estimatedMinutes > 0 {
+                MacTaskRowEstimateChip(task: task)
+            }
 
             focusButtonSlot
 
@@ -391,6 +399,62 @@ struct MacTaskRow: View {
         deepLinkManager.clearPendingTask(task.id)
     }
 
+}
+
+/// The row's estimate, and the picker for it.
+///
+/// **macOS's task row had no estimate control and iOS's did** — `CLAUDE.md` recorded the absence as
+/// deliberate ("the row has **no** estimate control"), which is what kept the gap open through two
+/// row passes. The user's call is that the iOS row wins, so it comes across: same figure from
+/// `CadenceTaskPresentationSupport.estimateLabel`, same `EstimatePickerPopoverContent` the
+/// inspector chip, the kanban card and every iOS surface open.
+///
+/// **Its own `View` struct, like `TaskCompletionButton` and `TaskRowBackground` beside it.** Not
+/// for `TaskCompletionAnimationManager` — this reads nothing from it, and must not start — but for
+/// the same reason those two are extracted: the popover's `@State` lives here rather than on
+/// `MacTaskRow`, so opening or dismissing it invalidates a chip instead of a whole row of
+/// sub-views. `NoteEditorPerformanceRegressionTests`' sibling in `CadenceTodayUnificationTests`
+/// pins that this file's only `TaskCompletionAnimationManager` environments stay in those two.
+private struct MacTaskRowEstimateChip: View {
+    @Bindable var task: AppTask
+    @Environment(\.modelContext) private var modelContext
+    @State private var showPicker = false
+
+    var body: some View {
+        Button {
+            showPicker.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "clock")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(CadenceTaskPresentationSupport.estimateLabel(minutes: task.estimatedMinutes))
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(Theme.dim.opacity(0.68))
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(isHovered ? Theme.surfaceElevated.opacity(0.55) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+        .buttonStyle(.cadencePlain)
+        .padding(.trailing, 6)
+        .onHover { isHovered = $0 }
+        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+            EstimatePickerPopoverContent(
+                value: Binding(
+                    get: { task.estimatedMinutes },
+                    set: { CadenceTaskMutationSupport.setEstimatedMinutes($0, for: task, modelContext: modelContext) }
+                )
+            ) {
+                showPicker = false
+            }
+        }
+    }
+
+    /// The same hover treatment the do/due badges beside it take: a wash at radius 4, and nothing
+    /// else. One layer, one radius.
+    @State private var isHovered = false
 }
 
 // MARK: - Isolated sub-views to prevent full-row re-renders on animation state changes
