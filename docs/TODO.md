@@ -29,22 +29,27 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-- [T-164] **Merge All Tasks and Inbox into one "Tasks" sidebar destination.** In progress. The user
-  asked whether All Tasks could be deleted; it cannot — it is the only view of every open task (a
-  task with a list and no date otherwise appears on exactly one page in the app), the only
-  cross-list logbook (Today's Completed is scoped to today, a list's to that list), and the only
-  board whose columns are lists. They proposed merging it with Inbox instead, which is right and
-  half-built already: Inbox *is* All Tasks with one predicate, and `KanbanBoardSupport` has rendered
-  Inbox as a column of the All Tasks board all along. Shape: one `Tasks` row, view `All | Inbox`,
-  mode `List | Kanban`. Today deliberately stays top-level — it is a three-pane dashboard, not a
-  task filter. Lands on the macOS **and** iPad sidebars (both read
-  `CadenceSidebarLayout.primaryDestinations`); iPhone is untouched because its Tasks tab already is
-  this design in segment form. Highest-risk regression: Inbox is the only surface showing Apple
-  Reminders inline, and that strip has to survive.
-
-_Nothing in flight._
 
 ## Open — decided, not started
+
+- [T-165] **Calendar and Focus now share one tint in the sidebar.** `.calendar` was changed to
+  `#FF6B6B` at the user's request, which is byte-identical to `.focus`. Shipped literally and
+  flagged rather than resolved, because retinting Focus is a liberty the user did not ask for. The
+  agent's suggestion: give Focus a different tint (amber is unclaimed in the secondary group) since
+  it is the quieter of the two — a footer glyph at 0.8 opacity. Two near-identical reds would make
+  the per-destination tint stop identifying anything.
+
+- [T-166] **`defaultColorHex` is eleven hand-typed hex literals feeding `Color(hex:)`.** Exactly the
+  pattern `AGENTS.md` bans outside `Theme.swift` and genuinely user-owned `colorHex`. These are
+  app-defined defaults, so they are a standing exception that predates the rule. Adding a
+  `Theme.redHex` for one of the eleven would make the exception *less* consistent — it wants one
+  pass over all of them or none.
+
+- [T-167] **The iOS Reminders usage string describes a surface iOS does not have.** The shipped
+  `NSRemindersFullAccessUsageDescription` says reminders appear "in Inbox and mark them complete
+  when you check them off", and `completeReminder(id:)` has no iOS caller. Either build the iOS
+  Inbox surface ([[T-163]]) or reword the string. A permission prompt that describes the wrong app
+  is the kind of thing App Review reads.
 
 - [T-163] **iOS Inbox does not surface Apple Reminders; macOS does.** macOS `InboxView` reads
   `RemindersManager` and shows open reminders inline (`InboxView.swift:8`). The iOS Settings
@@ -276,6 +281,19 @@ _Nothing in flight._
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-116] `7e5459c` Six parallel workstreams landed as one commit (T-136, T-164, plus the
+  Reminders, image, month-grid and notes-list requests). Committed whole because that is the unit
+  verified: 86 files, several carrying two agents' edits, so per-agent commits would have been
+  intermediate states nobody built. macOS + iOS green, 1817 tests, 0 compiler warnings.
+  T-136's re-derived inventory was **worse** than recorded — 41 exact pairs and 79 near pairs
+  against ~30/~50 — and two of the forks documented their own duplication in a doc comment and
+  shipped anyway. Deliberately **no** surface axis on the shared board chrome: a board column is
+  fixed-width on every device, so unlike the page header it earns no third `.desktop` tier. The
+  Reminders work turned up a second bug only a screenshot could find: `requestAccess` discarded the
+  grant and re-read a per-process cached authorization status, so connecting appeared to fail until
+  relaunch. The image squash was a height cap applied without touching width — a 600x1200 image drew
+  at aspect 1.503 instead of 2.000.
 
 - [D-115] `c970c5c` A failed calendar save left the edit on screen, and tag order was a coin flip
   (T-159, T-160). `EKEvent` is a reference type held by the timeline, and a failed save emits no
