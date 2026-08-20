@@ -200,7 +200,6 @@ struct iOSTaskCollectionSections: View {
                 subtitle: collection.emptySubtitle
             )
             .frame(minHeight: metrics.emptyStateMinHeight)
-            .cadenceCard()
             // **An empty collection still accepts a dropped `+` when it has a placement to give.**
             // `iOSTaskGroupSection.isVisible` already says a group you can add to does not vanish
             // when it empties — but this branch runs *first* and replaces the groups wholesale, so
@@ -254,7 +253,6 @@ struct iOSTaskCollectionSections: View {
             }
         }
         .padding(metrics.cardPadding)
-        .cadenceCard()
     }
 }
 #endif

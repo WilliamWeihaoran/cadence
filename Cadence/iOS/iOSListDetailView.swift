@@ -305,7 +305,6 @@ struct iOSListDetailView: View {
                 }
             }
             .padding(iOSListDetailTaskMetrics.cardPadding)
-            .cadenceCard()
             .padding(.horizontal, iOSListDetailTaskMetrics.horizontalPadding)
             .padding(.bottom, iOSListDetailTaskMetrics.bottomPadding)
         }

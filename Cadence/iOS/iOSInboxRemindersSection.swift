@@ -54,7 +54,6 @@ struct iOSInboxRemindersSection: View {
             }
         }
         .padding(metrics.cardPadding)
-        .cadenceCard()
     }
 
     @ViewBuilder

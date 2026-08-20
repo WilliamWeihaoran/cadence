@@ -101,7 +101,6 @@ struct iOSTodayTaskSections: View {
         if metrics.drawsCard {
             stack
                 .padding(metrics.cardPadding)
-                .cadenceCard()
         } else {
             stack
         }

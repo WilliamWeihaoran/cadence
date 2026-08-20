@@ -59,9 +59,14 @@ nonisolated enum CadenceCompactTab: String, CaseIterable, Identifiable, Hashable
 /// header — deliberately the same control the Calendar tab uses for Week/Month/Board, so the two
 /// are learned once.
 nonisolated enum CadenceTasksSection: String, CaseIterable, Identifiable, Hashable {
+    // Order is the segmented control's order, and it is a narrowing: today, then the unfiled
+    // things you might pull into today, then everything. `all` last because it is the widest
+    // and the least often wanted. Raw values are persisted (`ios.compact.tasksSection`) and
+    // are unchanged by the reordering — `allCases` order is presentation, `rawValue` is
+    // storage, and only the first of those moved.
     case today
-    case all
     case inbox
+    case all
 
     var id: String { rawValue }
 

@@ -144,12 +144,26 @@ struct CadenceCompactTabTests {
     ///
     /// Spelled as literal raw values rather than derived from the enum: a test that reads
     /// `allCases` agrees with any rename by construction, which is the failure mode this is for.
+    /// Order and storage are pinned separately on purpose, because only one of them is allowed to
+    /// move. The segments were reordered at the user's request from `today, all, inbox` to
+    /// `today, inbox, all` — a narrowing, with the widest slice last — and this test failed on that
+    /// change, which is what it is for. What must **not** move is the raw values: they are
+    /// persisted as `ios.compact.tasksSection`, so reordering the cases has to be presentation
+    /// only. A change that alters the second assertion is a change that silently resets which tab
+    /// every existing install opens on.
     @Test func theThreeTasksSegmentsAndTheirStoredSpellingsAreFixed() {
-        #expect(CadenceTasksSection.allCases == [.today, .all, .inbox])
-        #expect(CadenceTasksSection.allCases.map(\.rawValue) == ["today", "all", "inbox"])
-        #expect(CadenceTasksSection.allCases.map(\.title) == ["Today", "All", "Inbox"])
-        #expect(CadenceTasksSection.allCases.map(\.destination) == [.today, .allTasks, .inbox])
+        #expect(CadenceTasksSection.allCases == [.today, .inbox, .all])
+        #expect(Set(CadenceTasksSection.allCases.map(\.rawValue)) == ["today", "all", "inbox"])
+        #expect(CadenceTasksSection.allCases.map(\.title) == ["Today", "Inbox", "All"])
+        #expect(CadenceTasksSection.allCases.map(\.destination) == [.today, .inbox, .allTasks])
         #expect(CadenceTasksSection.defaultSection == .today)
+
+        // The spelling each case stores, independent of where it sits in the control.
+        #expect(CadenceTasksSection.today.rawValue == "today")
+        #expect(CadenceTasksSection.inbox.rawValue == "inbox")
+        #expect(CadenceTasksSection.all.rawValue == "all")
+        #expect(CadenceTasksSection.resolved("all") == .all)
+        #expect(CadenceTasksSection.resolved("inbox") == .inbox)
     }
 
     /// The desktop and iPad **Tasks** destination hosts two of those three views. It borrows its
