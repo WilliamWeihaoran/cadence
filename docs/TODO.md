@@ -32,6 +32,21 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-180] **Three disagreeing heading ramps, and an H5 with no case.** Found by T-121 and
+  deliberately not fixed there, because changing behaviour inside a relocation makes the diff
+  unreviewable. macOS editor `30/26/22/19/17/15`, iOS editor `28/24/21/18/16/15`, and
+  `iOSMarkdownPreview.headingSize` `25/21/18/16/15` — **no level-5 case at all**. So the same note's
+  H1 is 28pt while editing and 25pt in the read-only preview, and an H5 falls through to the default.
+  This is the "canvas and preview render the same block differently" class that
+  `MarkdownRenderedBlockLimits` exists to stop.
+
+- [T-181] **macOS re-derives `hasVisibleHeadingContent` inline, and trims the wrong set.**
+  `MarkdownEditorSupport.heading` trims `.whitespaces` where the now-shared Services function trims
+  `.whitespacesAndNewlines`. Not fixed by T-121 because `macOS/Editor/*` was outside its scope. Also
+  worth checking: `inlineStyleExclusionRanges` trims `.whitespaces` rather than going through
+  `MarkdownSourceLines.classificationText`, against the convention that file documents — it reaches
+  the same answer today only because a line holding a stray `\r` fails all three predicates anyway.
+
 - [T-177] **iPad portrait Today Notes pane leaves the editor ~40pt.** Found during T-148's
   verification. With the shell sidebar open, Today's Notes pane hands `iOSNotesView` ~321pt; it
   spends a fixed 280pt (`CadenceNotesListMetrics.regularColumnWidth`) on the note list, leaving the
@@ -161,11 +176,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   diagnostics are gone, which is not app code. So macOS could plausibly flip first; iOS cannot until
   the toolchain moves. `CadenceMCPServer` has been on 6.0 all along.
 
-- [T-121] **`iOSMarkdownStylingSupport.swift` is 1,058 lines in 3 types**, and it is the layer whose
-  breakage was invisible: the entire iOS rendered-block system drew nothing for a while because
-  attachments were hung on characters TextKit does not paint. Worth the same treatment as [T-120],
-  and now genuinely verifiable — block rendering can be screenshotted on device. Not started; queued
-  behind the current batch to keep concurrent `xcodebuild` runs down (see [T-117]).
 
 - [T-119] **Not reproduced — and the obvious fix breaks scrolling.** Reported by the drag sweep as a
   Week-view task block opening the Edit Task sheet after a 700ms press and 250pt of travel. Five
@@ -288,6 +298,16 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-124] `7c964a6` The markdown styling layer split, and 14% of it was logic tests could not see
+  (T-121). ~150 of 1,067 lines were decisions about what a string means, now in `Services/` with 40
+  tests: the hidden-marker arithmetic for image refs, `[label](url)` links and `[[wiki]]` refs (pure
+  inline math nothing could observe, and when wrong it swallows a line's first character), and
+  `MarkdownStyleSignature`, the gate in front of the whole rendering pass. Two duplicates closed —
+  the table-grouping walk existed **three** times, two of them the same walk down to the delimiter
+  filter, and the unanchored image-reference regex was written out verbatim twice. Relocation proven
+  inert rather than asserted: 0 of 3,125,760 pixels differ between pre- and post-change builds of the
+  same probe note.
 
 - [D-121] `dd66f51` The settle test waits for a gate it opens (T-176). Injected sleep rather than a
   longer interval, because an interval only moves the threshold. Both wall-clock waits gone; the two
