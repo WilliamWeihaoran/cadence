@@ -32,30 +32,21 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
-- [T-172] **Tasks are rendered by ~13 views doing ~5 jobs, and only some of the differences are
-  earned.** Raised by the user while Today was being unified: the drift is not confined to Today.
-  Surveyed inventory, by job:
-  - *Primary list row* — `MacTaskRow` (`TasksPanelComponents`), `iOSTaskRow` + `iOSTaskListRow`
-    (`iOSTaskViews`). Three spellings, one job. The Today unification is already converging part of
-    this; finish it rather than starting over.
-  - *Board card* — `KanbanCard` (macOS) / `iOSBoardTaskCard` (iOS). A [[T-136]] pair; their chrome
-    (column header, metadata chip, inline empty) is already shared as of `7e5459c`, the cards
-    themselves are not. Their interaction shells are legitimately different — drag APIs, hover vs
-    swipe — so share the *content*, not the shell.
-  - *Bundle member row* — `BundleTaskPopoverRow`, `FocusBundleTaskRow`, `iOSCalendarBundleTaskRow`.
-  - *Focus / schedule picker row* — `FocusSidebarTaskRow`, `iOSScheduleReadyTaskRow`.
-  - *Task reference inside a note* — `TaskNoteListRow`, `iOSMarkdownTaskReferenceRow`.
+- [T-173] **macOS board cards list tags and subtasks; iOS board cards do not.** Surfaced by T-172
+  and deliberately left: this is a layout decision about what fits a 300pt column, not a
+  de-duplication, so it does not belong in a sweep. Decide whether iOS cards should carry them.
 
-  **Do not fold these in** — they look like the same job and are not, and a sweep that eats them
-  makes the app worse: `AppleReminderTaskRow` renders an EventKit reminder, not an `AppTask`;
-  `AITaskDraftRow` is an unsaved draft with review affordances; `GoalTaskContributorRow` shows a
-  task's *contribution* to a goal rather than its state; `iOSNewTaskGhostRow` and
-  `KanbanColumnAddTaskRow` are composer affordances. The user's own framing was that some of these
-  differences are good and some are bad — the value of this ticket is telling them apart, not
-  reducing the count.
+- [T-174] **Both platforms' Calendar Board day columns now show a do-date chip that repeats the
+  column header.** Pre-existing macOS behaviour that iOS inherited when the board-card metadata
+  descriptor was shared (`cdf0896`). Suppressing it needs a second knob on the descriptor — "omit
+  the do date when the surface already states the day" — which is a new design call rather than a
+  fix, so it was flagged instead of guessed at.
 
-  Sequencing: blocked until the Today unification lands, because that agent currently owns
-  `iOSTaskViews.swift`, `TasksPanelComponents.swift` and `CadenceTaskPresentationSupport.swift`.
+- [T-175] **The remaining primary-row fork is `MacTaskRow`'s interaction machinery.** `d330f5e`
+  took the presentation half. What is left is hover, keyboard, drag and the completion-animation
+  observation scoping — high risk, low remaining value, and mostly *earned* difference (`.onHover`
+  94 macOS / 0 iOS, swipe actions 0 / 57). Recorded so nobody re-opens it expecting easy wins.
+
 
 - [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
   *(a)* A widget showing the running timer plus what is being worked on, and a second showing the
@@ -352,6 +343,20 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-117] `cdf0896` Two task-row jobs unified, two proved misfiled, three rows were lying (T-172).
+  Bundle rows: `BundleTaskPopoverRow` rendered `max(estimatedMinutes, 5)m` — an invented estimate
+  in raw minutes, using the exact floor `AppTask.timelineDurationMinutes` documents as rejected —
+  and `iOSCalendarBundleTaskRow` spent its one secondary line on priority, so an overdue task in a
+  timeline block said nothing about being overdue. `FocusBundleTaskRow` drew the completion glyph in
+  the completion colour for an action that adds to the *time log*, beside two rows where that glyph
+  means completion. Board cards: iOS had silently dropped the do date, so one task read "planned for
+  today" on a Mac and undated on an iPad.
+  **My own inventory was wrong in three places** and the corrections are the durable part:
+  `TaskNoteListRow`/`iOSMarkdownTaskReferenceRow` are a navigation row and an insertion-picker row —
+  same silhouette, different jobs; `FocusSidebarTaskRow`/`iOSScheduleReadyTaskRow` pick a task and
+  pick a *time* respectively; and `iOSTaskListRow` is not a third primary row, it is six lines
+  wrapping `iOSTaskRow`. Two spellings, not three. Nothing on the exclusion list was misfiled.
 
 - [D-116] `7e5459c` Six parallel workstreams landed as one commit (T-136, T-164, plus the
   Reminders, image, month-grid and notes-list requests). Committed whole because that is the unit
