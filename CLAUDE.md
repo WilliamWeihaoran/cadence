@@ -78,25 +78,28 @@ Cadence/
 │   └── Components/     # 20 files: CadenceBoardColumnHeader, CadenceBoardMetadataChip,
 │                       # CadenceButtons, CadenceContextPicker, CadenceDatePicker,
 │                       # CadenceInlineEmpty, CadenceScrollElasticity, CadenceSidebarCountLabel,
-│                       # CadenceStartupIssueBanner, CadenceTagChip,
-│                       # CadenceTaskDetailLineLabel (the one-line "45/60m / Overdue Aug 17"
-│                       # detail under a focus, bundle-picker or bundle-member row's title —
-│                       # was `TaskDetailLineLabel` inside `#if os(macOS)`, which is why iOS's
-│                       # bundle row wrote its own and left the due date out),
-│                       # CadenceTaskGroupHeading (Today's section eyebrow + count, both
-│                       # platforms), CadenceValueTile,
-│                       # CadenceWrappingHStack, CommitmentSharedViews (CommitmentPageHeader +
-│                       # CommitmentIconTile), EmptyStateView,
-│                       # EstimatePickerControl (iOS chip; its popover is shared),
+│                       # CadenceStartupIssueBanner, CadenceTagChip (also declares
+│                       #   CompactTagStrip — see below), CadenceTaskDetailLineLabel,
+│                       # CadenceTaskGroupHeading, CadenceValueTile, CadenceWrappingHStack,
+│                       # CommitmentSharedViews (CommitmentPageHeader + CommitmentIconTile),
+│                       # EmptyStateView, EstimatePickerControl (iOS chip; its popover is shared),
 │                       # GoalProgressBar, HabitProgressViews (holds the 52-week HabitHeatmap),
 │                       # SectionEyebrowLabel.
+│                       #
+│                       # This is a list of FILES, and one shared view is not one: CompactTagStrip,
+│                       # the read-only compact tag strip used by task rows, board cards and note
+│                       # rows on both platforms, is declared inside CadenceTagChip.swift. A
+│                       # `find -name CompactTagStrip.swift` comes back empty. See
+│                       # Cadence/Shared/AGENTS.md, "The File Name Is Not The Type Name".
+│                       #
 │                       # Check this list before writing a new shared view — the no-near-copies
-│                       # rule is only as good as the inventory an agent can see. Which is why
-│                       # the count is load-bearing and kept going stale: it read 12 across
-│                       # `49c1797`, `5aa11dc` and `3dd09ca`, and 15 across `7e5459c`, which
-│                       # added three of the files above at once.
-│                       # Re-count the directory when you add to it; a stale number reads as a
-│                       # complete inventory and sends the next agent off to write a near-copy.
+│                       # rule is only as good as the inventory an agent can see. Which is why the
+│                       # count is load-bearing and keeps going stale: it read 12 across `49c1797`,
+│                       # `5aa11dc` and `3dd09ca`, then 15 across `7e5459c` (+3) and `cdf0896` (+2),
+│                       # each of which added files here. Re-count the directory when you add to
+│                       # it; a stale number reads as a complete inventory and sends the next agent
+│                       # off to write a near-copy. That is not hypothetical — T-173 had to delete
+│                       # a third hand-written copy of CompactTagStrip for exactly this reason.
 ├── iOS/                # Large adaptive iOS/iPadOS surface (79 files) — see "What's Built (iOS)"
 │   ├── iOSRootView.swift        # Adaptive root shell: iPad sidebar / iPhone tab bar; deep links, widget refresh
 │   ├── iOSCompactTabShell.swift # iPhone bottom bar, per-tab paths, centre capture button

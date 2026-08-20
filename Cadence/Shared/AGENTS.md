@@ -41,9 +41,21 @@ in `CadenceListDetailPage.swift`. Others are the reverse of where a reader expec
 `CalendarWorkHoursPreferences`, `TaskDragPayload` and `CadenceCompactTab` are all here rather than
 under a platform folder, precisely because both platforms use them.
 
+Some shared views are not top-level files at all. **`CompactTagStrip` — the read-only compact tag
+strip used by task rows, board cards and note rows on both platforms — is declared inside
+`Components/CadenceTagChip.swift`**, beside the chip and overflow badge it is built from. There is
+no `CompactTagStrip.swift`, so `find` finds nothing.
+
+That one is worth naming because it has already cost twice. `CompactTagStrip` used to be inside
+`#if os(macOS)`, so `CadenceNotesListSupport` grew a private `NoteRowTagStrip` that was it line for
+line, and iOS's board card was about to become a third copy before `3c8de23` moved the strip here
+and deleted the duplicate.
+
 A `find . -name TypeName.swift` that comes back empty is therefore not evidence the type is
 elsewhere, and this exact mismatch is what left two docs describing `CalendarVisibilityPreferences`
-as a macOS service after it had moved. Grep for the declaration, not for the filename.
+as a macOS service after it had moved. Grep for the declaration, not for the filename — and when a
+component is a second declaration inside another component's file, say so in `CLAUDE.md`'s inventory,
+because that inventory is a list of *files* and a reader counting it will not see you.
 
 ## One Page Header Per Platform
 
