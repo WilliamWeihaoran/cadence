@@ -700,7 +700,13 @@ when it is granted and later revoked while a page is open — both sections re-d
 This manager lived in `macOS/Services/` behind an `#if os(macOS)` for a long time despite
 touching no AppKit, and `iOSSettingsCategory` classified `.reminders` as "a macOS-shell concern",
 which is what kept Apple Reminders unreachable from iOS Settings. **macOS also surfaces reminders
-in its Inbox (`InboxView`) and iOS does not** — that parity gap is real and still open.
+in its Inbox (`InboxView`), and **iOS does too** since `d330f5e` —
+`iOSInboxRemindersSection` is rendered from `iOSTaskCollectionPage` under the Inbox scope, gated on
+the same tested `CadenceTasksPageScope.showsRemindersStrip` and drawing its tints from the same
+`AppleReminderRowPresentation` macOS reads. This line said the gap was "real and still open" for
+some time after it was closed, which is worth more than the correction: the section had a dedicated
+call-site test (`CadenceInboxRemindersSurfaceTests`) the whole time, so the code was pinned and the
+prose was not. Trust the test, not this file.
 
 ## Account, Privacy, and Data Safety
 - **Sign in with Apple** is optional and entitlement-gated (`AppleAccountManager`); Settings → Account.
@@ -856,7 +862,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Notes with its own markdown editor stack (styling, preview, slash commands, task/wiki references)
 - [x] Lists (Area/Project detail, editors)
 - [x] Search
-- [x] Settings (overview, contexts, tags, templates + lists, calendar, notifications, reminders, **data safety** — including the account-and-data delete action the shipped privacy policy promises, behind a typed-phrase confirmation sheet). Reminders is Settings-only on iOS — there is no iOS Inbox showing reminders the way macOS has.
+- [x] Settings (overview, contexts, tags, templates + lists, calendar, notifications, reminders, **data safety** — including the account-and-data delete action the shipped privacy policy promises, behind a typed-phrase confirmation sheet). Reminders appears in **both** iOS Settings and the iOS Inbox, matching macOS.
 - [x] Notification scheduling wiring (see "What's Built (macOS)" above — shared logic, not iOS-specific)
 - [x] `EstimatePickerPopoverContent` in `Shared/Components` is the estimate picker for **both** platforms; `EstimatePickerControl` is the iOS chip wrapper around it
 
