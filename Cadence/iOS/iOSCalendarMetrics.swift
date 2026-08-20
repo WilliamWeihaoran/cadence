@@ -116,11 +116,12 @@ nonisolated enum iOSCalendarTimelineMetrics {
 /// The calendar's top row: the date title that is also the date control, and the presentation
 /// switch.
 ///
-/// This row **is** a page header — it leads with the feature's identity tile and the page's title —
-/// so its gutter, its row spacing and its tile are `CadencePageHeaderMetrics`' rather than a fourth
-/// private spelling of them. It had one: a 34/15 icon tile, which is exactly the drift
-/// `CadencePageHeaderMetrics.iconSize` was written to stop, and it drew that tile on iPad only, so the
-/// one page in the app whose header changed identity depending on the device was this one.
+/// This row **is** a page header, so its gutter and its row spacing are `CadencePageHeaderMetrics`'
+/// rather than a fourth private spelling of them. It carries no identity tile — see `titleBlock` in
+/// `iOSCalendarChromeViews.swift` for why the calendar is the one header without one. It used to
+/// draw a private 34/15 tile, which is exactly the drift `CadencePageHeaderMetrics.iconSize` was
+/// written to stop, and it drew it on iPad only, so the one page in the app whose header changed
+/// identity depending on the device was this one.
 nonisolated enum iOSCalendarToolbarMetrics {
     /// Above and below the row. One number, where it was `regular ? 10 : 12` — a ramp pointing the
     /// wrong way, giving the phone a *taller* band of chrome than the iPad above a day-header band

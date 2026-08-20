@@ -29,8 +29,14 @@ enum CadenceCalendarDateTitleSupport {
         switch format {
         case .day:
             return DateFormatters.shortDate.string(from: date)
+        // `shortMonthYear`, not `monthYear`: "Aug 2026". This control is also the Notes header, and
+        // every other reading it shows abbreviates the month — `shortDate`'s "Aug 17" on the day
+        // formats here, "Aug 17–23" on Notes' week. The long form was the one label in the shared
+        // control still spelling a month out, so the same button read in two month vocabularies
+        // depending on the surface. macOS's calendar title and the notes list's month headings keep
+        // `monthYear`; they are not this control.
         case .month:
-            return DateFormatters.monthYear.string(
+            return DateFormatters.shortMonthYear.string(
                 from: CadenceCalendarMonthWindow.displayedMonth(topRowStart: date, calendar: calendar)
             )
         }

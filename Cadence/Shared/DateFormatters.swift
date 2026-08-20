@@ -55,6 +55,26 @@ nonisolated enum DateFormatters {
         return f
     }()
 
+    /// `MMM yyyy` — "Mar 2026". The month spelling the **iOS date selectors** read in.
+    ///
+    /// `monthYear` above is the long form and stays long: it renders the macOS calendar title, the
+    /// notes list's month headings and `MonthCalendarPanel`'s header, none of which are this
+    /// control. What this one exists for is `iOSDateJumpTitle` — the title-as-date-button shared by
+    /// the four iOS calendar surfaces and the Notes header. Every other reading that control shows
+    /// already abbreviates the month (`shortDate`'s "Aug 17", the notes week range's "Aug 17–23"),
+    /// because it is a phone-width row that also holds a back chevron and two pill groups; the
+    /// month grid was the one label in it still spelling "August 2026" in full, so one control read
+    /// in two month vocabularies depending on which surface you were on.
+    ///
+    /// Locale-pinned for the same reason as `ymd` and `monthYear`: the app is English-only, so
+    /// without it a French Mac or phone would read "août 2026" beside otherwise-English chrome.
+    static let shortMonthYear: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MMM yyyy"
+        return f
+    }()
+
     /// `MMM d` — "Mar 28"
     static let shortDate: DateFormatter = {
         let f = DateFormatter()

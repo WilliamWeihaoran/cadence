@@ -184,8 +184,11 @@ struct CalendarMonthScrollWindowTests {
         #expect(calendar.component(.month, from: top) == 7)
         let displayed = CadenceCalendarMonthWindow.displayedMonth(topRowStart: top, calendar: calendar)
         #expect(DateFormatters.monthYear.string(from: displayed) == "August 2026")
+        // The title abbreviates: `shortMonthYear`, the month spelling `iOSDateJumpTitle` reads in on
+        // every surface it appears on. `displayedMonth` above is still checked in the long form
+        // because that assertion is about *which* month, not about how the title spells it.
         #expect(
-            CadenceCalendarDateTitleSupport.label(for: top, format: .month, calendar: calendar) == "August 2026"
+            CadenceCalendarDateTitleSupport.label(for: top, format: .month, calendar: calendar) == "Aug 2026"
         )
     }
 
@@ -231,7 +234,7 @@ struct CalendarMonthScrollWindowTests {
         let anchor = CadenceCalendarDateTitleSupport.anchor(forPicked: picked, format: .month, calendar: calendar)
         #expect(key(anchor) == key(CadenceCalendarMonthWindow.topRow(forMonthContaining: picked, calendar: calendar)))
         #expect(
-            CadenceCalendarDateTitleSupport.label(for: anchor, format: .month, calendar: calendar) == "September 2026"
+            CadenceCalendarDateTitleSupport.label(for: anchor, format: .month, calendar: calendar) == "Sep 2026"
         )
     }
 
@@ -256,7 +259,7 @@ struct CalendarMonthScrollWindowTests {
         let monthAnchor = CadenceCalendarDateTitleSupport.nowAnchor(format: .month, now: now, calendar: calendar)
         #expect(CadenceCalendarDateTitleSupport.isAtNow(monthAnchor, format: .month, now: now, calendar: calendar))
         #expect(
-            CadenceCalendarDateTitleSupport.label(for: monthAnchor, format: .month, calendar: calendar) == "August 2026"
+            CadenceCalendarDateTitleSupport.label(for: monthAnchor, format: .month, calendar: calendar) == "Aug 2026"
         )
     }
 

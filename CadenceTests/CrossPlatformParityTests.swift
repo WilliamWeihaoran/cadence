@@ -43,7 +43,8 @@ struct CrossPlatformParityTests {
     @Test func displayFormattersPinTheirLocaleSoOutputDoesNotFollowTheHostRegion() throws {
         let formatters: [(String, DateFormatter)] = [
             ("ymd", DateFormatters.ymd),
-            ("monthYear", DateFormatters.monthYear)
+            ("monthYear", DateFormatters.monthYear),
+            ("shortMonthYear", DateFormatters.shortMonthYear)
         ]
 
         for (name, formatter) in formatters {
@@ -55,6 +56,10 @@ struct CrossPlatformParityTests {
 
         let august = try #require(DateFormatters.date(from: "2026-08-01"))
         #expect(DateFormatters.monthYear.string(from: august) == "August 2026")
+        // The two spellings, side by side, so neither can quietly become the other: the long one
+        // renders the macOS calendar title and the notes list's month headings, the short one
+        // renders `iOSDateJumpTitle` on every surface that control appears on.
+        #expect(DateFormatters.shortMonthYear.string(from: august) == "Aug 2026")
     }
 
     /// The key must round-trip: the parse side is what resolves a stored key back to a day, and it

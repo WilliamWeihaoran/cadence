@@ -147,13 +147,17 @@ struct iOSCalendarToolbar: View {
     /// Title only. This used to carry a "CALENDAR" eyebrow above the date — a page header naming
     /// the page you are already looking at, which the tab bar and sidebar both already say.
     ///
-    /// The run of it — optional back control, identity tile, title — **is** `iOSPageHeader`'s, so it
-    /// is drawn at `CadencePageHeaderMetrics`' figures rather than at a private copy of them. It had a
-    /// private copy: a 34/15 tile, which is a third spelling of the tile
-    /// `CadencePageHeaderMetrics.iconSize` exists to keep singular, drawn at regular width only. A page
-    /// whose header carries the feature's glyph on one device and not the other is the divergence
-    /// this slice is about, in its plainest form — there is no width at which a 32pt tile does not
-    /// fit a row that already holds a 30pt back chevron and a 208pt title.
+    /// **And no identity tile.** The run was `iOSPageHeader`'s — optional back control, tile, title
+    /// — and the tile is gone from this one surface deliberately. The calendar's title is not a
+    /// label, it is a *control* (`iOSDateJumpTitle`, chevron and popover), and a filled purple
+    /// calendar glyph sitting immediately to its left reads as the button's leading icon rather
+    /// than as the page's identity — an identity the tab bar and the sidebar are already carrying.
+    /// Today and the Notes headers keep their tiles: this is a considered difference on the one
+    /// header whose title is a button, not an inconsistency to go and resolve.
+    ///
+    /// What remains is still drawn at `CadencePageHeaderMetrics`' figures rather than at a private
+    /// copy of them — it had a private copy, a 34/15 tile at regular width only — so the back
+    /// chevron and the gap after it stay in step with every other header.
     private var titleBlock: some View {
         let metrics = headerMetrics
 
@@ -162,13 +166,6 @@ struct iOSCalendarToolbar: View {
                 iOSHeaderBackButton(action: onBack)
                     .padding(.leading, -8)
             }
-
-            iOSIconTile(
-                systemImage: CadenceFeatureDestination.calendar.systemImage,
-                color: CadenceFeatureDestination.calendar.tint,
-                size: metrics.tileSize,
-                iconSize: metrics.iconSize
-            )
 
             dateTitle
         }
