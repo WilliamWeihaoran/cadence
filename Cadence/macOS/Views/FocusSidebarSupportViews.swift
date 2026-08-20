@@ -1,60 +1,10 @@
 #if os(macOS)
 import SwiftUI
 
-/// One-line task detail shared by the focus rows and the bundle task rows. Renders as a single
-/// `Text` so it still collapses under `lineLimit(1)`, while tinting only the due segment — an
-/// overdue task should read red on the deadline, not on the scheduling note next to it.
-struct TaskDetailLineLabel: View {
-    let parts: CadenceTaskDetailLine
-    var fontSize: CGFloat = 10
-
-    init(parts: CadenceTaskDetailLine, fontSize: CGFloat = 10) {
-        self.parts = parts
-        self.fontSize = fontSize
-    }
-
-    init(task: AppTask, fallback: String, fontSize: CGFloat = 10) {
-        self.init(
-            parts: CadenceFocusSupport.sidebarDetailParts(
-                for: task,
-                todayKey: DateFormatters.todayKey(),
-                fallback: fallback
-            ),
-            fontSize: fontSize
-        )
-    }
-
-    var body: some View {
-        composed
-            .font(.system(size: fontSize))
-            .lineLimit(1)
-    }
-
-    /// One `Text`, not concatenated ones: `lineLimit(1)` has to collapse the whole line, and only
-    /// the due segment is tinted so an overdue task cannot make its scheduling half look urgent too.
-    private var composed: Text {
-        var line = AttributedString()
-
-        if let lead = parts.lead {
-            var segment = AttributedString(lead)
-            segment.foregroundColor = Theme.dim
-            line += segment
-        }
-
-        if let due = parts.due {
-            if !line.characters.isEmpty {
-                var separator = AttributedString(" / ")
-                separator.foregroundColor = Theme.dim
-                line += separator
-            }
-            var segment = AttributedString(due)
-            segment.foregroundColor = parts.isOverdue ? Theme.red : Theme.dim
-            line += segment
-        }
-
-        return Text(line)
-    }
-}
+// `TaskDetailLineLabel` moved to `Shared/Components/CadenceTaskDetailLineLabel.swift`, unchanged,
+// as `CadenceTaskDetailLineLabel`. It contained no AppKit and never had; sitting inside this file's
+// `#if os(macOS)` is the whole reason iOS's bundle member row wrote its own secondary line, and
+// that copy had no due date in it.
 
 private struct FocusStatusChip: View {
     let title: String
@@ -174,7 +124,7 @@ struct FocusSidebarTaskRow: View {
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
 
-                    TaskDetailLineLabel(task: task, fallback: "Ready")
+                    CadenceTaskDetailLineLabel(task: task, fallback: "Ready")
                 }
 
                 Spacer(minLength: 8)

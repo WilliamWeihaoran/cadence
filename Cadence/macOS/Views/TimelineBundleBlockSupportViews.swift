@@ -366,27 +366,20 @@ private struct BundleTaskPopoverRow: View {
                 .foregroundStyle(task.isDone ? Theme.green : Theme.dim)
                 .frame(width: 18)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: CadenceBundleTaskRowMetrics.summarySpacing) {
                 Text(task.title.isEmpty ? "Untitled" : task.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: CadenceBundleTaskRowMetrics.titleSize, weight: CadenceBundleTaskRowMetrics.titleWeight))
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
-                    .lineLimit(1)
+                    .lineLimit(CadenceBundleTaskRowMetrics.titleLineLimit)
                     .strikethrough(task.isDone, color: Theme.dim.opacity(0.75))
 
-                HStack(spacing: 6) {
-                    Label("\(max(task.estimatedMinutes, 5))m", systemImage: "timer")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .labelStyle(.titleAndIcon)
-
-                    if let dueLabel {
-                        Label(dueLabel, systemImage: isOverdue ? "exclamationmark.triangle.fill" : "calendar")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(isOverdue ? Theme.red : Theme.dim)
-                            .labelStyle(.titleAndIcon)
-                            .lineLimit(1)
-                    }
-                }
+                // Was `max(estimatedMinutes, 5)m` beside a due label — a five-minute estimate
+                // invented for a task that had none, in raw minutes, for a field the rest of the
+                // app renders `1h 30m`. `CadenceBundleTaskRowSupport` is that decision, once.
+                CadenceTaskDetailLineLabel(
+                    parts: CadenceBundleTaskRowSupport.detailParts(for: task),
+                    fontSize: CadenceBundleTaskRowMetrics.detailSize
+                )
             }
 
             Spacer(minLength: 10)
@@ -404,14 +397,6 @@ private struct BundleTaskPopoverRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
         .cadenceCard(background: Theme.surfaceElevated.opacity(0.62), cornerRadius: Theme.radiusCard, shadowRadius: 6, shadowY: 2)
-    }
-
-    private var dueLabel: String? {
-        CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: DateFormatters.todayKey())
-    }
-
-    private var isOverdue: Bool {
-        task.isOverdue(todayKey: DateFormatters.todayKey())
     }
 
     private func rowIconButton(

@@ -243,23 +243,21 @@ private struct iOSCalendarBundleTaskRow: View {
             .buttonStyle(.iosPressable)
             .accessibilityLabel(task.isDone ? "Mark not done" : "Mark done")
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: CadenceBundleTaskRowMetrics.summarySpacing) {
                 Text(task.title.isEmpty ? "Untitled Task" : task.title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: CadenceBundleTaskRowMetrics.titleSize, weight: CadenceBundleTaskRowMetrics.titleWeight))
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                     .strikethrough(task.isDone, color: Theme.dim)
-                    .lineLimit(2)
+                    .lineLimit(CadenceBundleTaskRowMetrics.titleLineLimit)
 
-                HStack(spacing: 7) {
-                    Label(task.priority.label, systemImage: "flag.fill")
-                        .foregroundStyle(Theme.priorityColor(task.priority))
-                    if task.estimatedMinutes > 0 {
-                        Label("\(task.estimatedMinutes)m", systemImage: "clock")
-                            .foregroundStyle(Theme.dim)
-                    }
-                }
-                .font(.system(size: 11, weight: .semibold))
-                .lineLimit(1)
+                // Was priority and a raw `\(est)m`, and **no due date** — so a task three days
+                // late inside a calendar block said nothing about it here while both macOS bundle
+                // rows did. Priority is not what a bundle is ordered by; it was spending the only
+                // secondary line on the one fact this row does not need.
+                CadenceTaskDetailLineLabel(
+                    parts: CadenceBundleTaskRowSupport.detailParts(for: task),
+                    fontSize: CadenceBundleTaskRowMetrics.detailSize
+                )
             }
 
             Spacer(minLength: 8)

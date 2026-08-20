@@ -247,7 +247,7 @@ struct TaskBundleTaskPickerPanel: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
-                    TaskDetailLineLabel(parts: candidateDetail(task))
+                    CadenceTaskDetailLineLabel(parts: candidateDetail(task))
                 }
                 Spacer(minLength: 8)
                 Text("\(max(task.estimatedMinutes, 5))m")

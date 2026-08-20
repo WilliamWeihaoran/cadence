@@ -88,22 +88,33 @@ struct FocusBundleTaskRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            // **Not a completion circle.** This control includes the task in the session's time
+            // log; it does not finish it. It used to draw `checkmark.circle.fill` in `Theme.green`
+            // — the app's completion glyph, in the app's completion colour — beside two other
+            // bundle member rows where that same glyph *is* completion state, so the one row in
+            // the app where the leading circle means something else was the one you could not
+            // tell apart. A square reads as a checkbox, and the amber is this panel's own accent,
+            // the tint on the "Bundle tasks" header above it.
             Button(action: onToggle) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .font(.system(size: 14))
-                    .foregroundStyle(isSelected ? Theme.green : Theme.dim)
+                    .foregroundStyle(isSelected ? Theme.amber : Theme.dim)
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
             .help(isSelected ? "Exclude from time log" : "Include in time log")
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: CadenceBundleTaskRowMetrics.summarySpacing) {
                 Text(task.title.isEmpty ? "Untitled" : task.title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: CadenceBundleTaskRowMetrics.titleSize, weight: CadenceBundleTaskRowMetrics.titleWeight))
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
-                    .lineLimit(1)
-                TaskDetailLineLabel(parts: detailParts)
+                    .lineLimit(CadenceBundleTaskRowMetrics.titleLineLimit)
+                    .strikethrough(task.isDone, color: Theme.dim.opacity(0.75))
+                CadenceTaskDetailLineLabel(
+                    parts: detailParts,
+                    fontSize: CadenceBundleTaskRowMetrics.detailSize
+                )
             }
 
             Spacer(minLength: 8)
@@ -128,13 +139,11 @@ struct FocusBundleTaskRow: View {
         }
     }
 
+    /// The one row that asks for `includesLoggedTime`. This panel hands the session's minutes to
+    /// the tasks you tick, so `45/60m` — logged against estimate — is the number it is about; every
+    /// other bundle member row states the estimate alone.
     private var detailParts: CadenceTaskDetailLine {
-        let todayKey = DateFormatters.todayKey()
-        return CadenceTaskDetailLine(
-            lead: TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes),
-            due: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey),
-            isOverdue: task.isOverdue(todayKey: todayKey)
-        )
+        CadenceBundleTaskRowSupport.detailParts(for: task, includesLoggedTime: true)
     }
 
     private func focusRowIconButton(_ systemName: String, isDisabled: Bool, action: @escaping () -> Void) -> some View {

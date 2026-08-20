@@ -75,10 +75,14 @@ Cadence/
 │   ├── CalendarVisibilityPreferences (in CadenceCalendarVisibilityPreferences.swift) and
 │   │                   # CalendarWorkHoursPreferences — both shared, NOT macOS-only. The file name
 │   │                   # carries the Cadence prefix; the type does not.
-│   └── Components/     # 19 files: CadenceBoardColumnHeader, CadenceBoardMetadataChip,
+│   └── Components/     # 20 files: CadenceBoardColumnHeader, CadenceBoardMetadataChip,
 │                       # CadenceButtons, CadenceContextPicker, CadenceDatePicker,
 │                       # CadenceInlineEmpty, CadenceScrollElasticity, CadenceSidebarCountLabel,
 │                       # CadenceStartupIssueBanner, CadenceTagChip,
+│                       # CadenceTaskDetailLineLabel (the one-line "45/60m / Overdue Aug 17"
+│                       # detail under a focus, bundle-picker or bundle-member row's title —
+│                       # was `TaskDetailLineLabel` inside `#if os(macOS)`, which is why iOS's
+│                       # bundle row wrote its own and left the due date out),
 │                       # CadenceTaskGroupHeading (Today's section eyebrow + count, both
 │                       # platforms), CadenceValueTile,
 │                       # CadenceWrappingHStack, CommitmentSharedViews (CommitmentPageHeader +

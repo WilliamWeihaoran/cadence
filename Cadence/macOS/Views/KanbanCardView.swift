@@ -154,58 +154,69 @@ struct KanbanCard: View {
 
     /// One layout for every board. Row 1 is the date pair, row 2 the list chip when the board
     /// isn't already scoped to a single list.
+    ///
+    /// **What is in the strip is `CadenceBoardCardMetadata`'s decision, not this file's.** The
+    /// arrangement below — two rows, dates then list — stays here, and so does everything that
+    /// makes each chip a picker. The iOS card builds its grid from the same three descriptors; it
+    /// used to build its own list and had quietly dropped the do date from it.
     private var metadataRows: [[KanbanMetaItem]] {
         var rows: [[KanbanMetaItem]] = []
+        let chips = CadenceBoardCardMetadata.chips(for: task, showsContainer: showsContainerChip)
 
-        var dateRow: [KanbanMetaItem] = []
-        if let doDateMetaItem { dateRow.append(doDateMetaItem) }
-        if let dueDateMetaItem { dateRow.append(dueDateMetaItem) }
+        var dateRow: [KanbanMetaItem] = chips
+            .filter { $0.kind != .list }
+            .map(dateMetaItem)
+        // The empty-due affordance, and only macOS has one: this chip *is* the due-date picker, so
+        // a card in a list that does not hide empty due dates keeps a `Due` chip with no date on
+        // it. An empty chip states nothing, which is why the shared descriptor does not produce it.
+        if !chips.contains(where: { $0.kind == .dueDate }), task.shouldShowDueDateField {
+            dateRow.append(emptyDueDateMetaItem)
+        }
         if !dateRow.isEmpty { rows.append(dateRow) }
 
-        if showsContainerChip { rows.append([contextMetaItem]) }
+        if let listChip = chips.first(where: { $0.kind == .list }) {
+            rows.append([listMetaItem(listChip)])
+        }
 
         return rows
     }
 
-    private var doDateMetaItem: KanbanMetaItem? {
-        guard !task.scheduledDate.isEmpty else { return nil }
-        // Amber is semantic here — it means "do date", not "this task's list".
-        let tint = task.scheduledDate.isEmpty ? Theme.dim : Theme.amber
+    private func dateMetaItem(_ chip: CadenceBoardCardChip) -> KanbanMetaItem {
+        // Amber and red are semantic here — they mean "do date" and "due date", not "this task's
+        // list". The identity tint never varies with urgency; only the label's colour does.
+        let tint = chip.identityColor
         return KanbanMetaItem(
-            id: "do-date",
-            icon: "sun.max.fill",
-            text: task.scheduledDate.isEmpty ? "Do" : DateFormatters.relativeDate(from: task.scheduledDate),
+            id: chip.kind == .doDate ? "do-date" : "due-date",
+            icon: chip.icon,
+            text: chip.text,
             tint: tint,
-            textColor: task.scheduledDate.isEmpty ? Theme.dim : (isOverdo ? Theme.red : (isDoToday ? Theme.amber : Theme.dim)),
+            textColor: chip.labelColor,
             hoverStyle: .semantic(tint),
-            action: .doDate
+            action: chip.kind == .doDate ? .doDate : .dueDate
         )
     }
 
-    private var dueDateMetaItem: KanbanMetaItem? {
-        guard task.shouldShowDueDateField else { return nil }
-        // Red is semantic here — it means "due date".
-        let tint = task.dueDate.isEmpty ? Theme.dim : Theme.red
-        return KanbanMetaItem(
+    private var emptyDueDateMetaItem: KanbanMetaItem {
+        KanbanMetaItem(
             id: "due-date",
-            icon: "flag.fill",
-            text: task.dueDate.isEmpty ? "Due" : DateFormatters.relativeDate(from: task.dueDate),
-            tint: tint,
-            textColor: task.dueDate.isEmpty ? Theme.dim : (isOverdue ? Theme.red : Theme.dim),
-            hoverStyle: .semantic(tint),
+            icon: CadenceBoardCardMetadata.dueDateIcon,
+            text: "Due",
+            tint: Theme.dim,
+            textColor: Theme.dim,
+            hoverStyle: .semantic(Theme.dim),
             action: .dueDate
         )
     }
 
-    private var contextMetaItem: KanbanMetaItem {
+    private func listMetaItem(_ chip: CadenceBoardCardChip) -> KanbanMetaItem {
         KanbanMetaItem(
             id: "list",
-            icon: task.project?.icon ?? task.area?.icon ?? "tray.fill",
-            text: task.containerName.isEmpty ? "Inbox" : task.containerName,
+            icon: chip.icon,
+            text: chip.text,
             // The container color stays on the icon — that is the list's identity. It must not
             // become the hover color, or the chip hovers in whatever hue this list happens to be,
             // which is the container-color bleed already removed from the row hover.
-            tint: Color(hex: task.containerColor),
+            tint: chip.identityColor,
             textColor: Theme.dim,
             hoverStyle: .neutral,
             action: .container
@@ -382,17 +393,10 @@ struct KanbanCard: View {
         )
     }
 
-    private var isOverdue: Bool {
-        KanbanCardComputedSupport.isOverdue(task: task)
-    }
-
-    private var isOverdo: Bool {
-        KanbanCardComputedSupport.isOverdo(task: task)
-    }
-
-    private var isDoToday: Bool {
-        KanbanCardComputedSupport.isDoToday(task: task)
-    }
+    // `isOverdue` / `isOverdo` / `isDoToday` are gone from this card. They were the three-way
+    // urgency choice behind the do and due chips' label colour, and that choice is now
+    // `CadenceBoardCardChip.Emphasis`, made once for both platforms. `KanbanCardComputedSupport`
+    // still declares them for its other callers.
 
     private var isPendingCompletion: Bool {
         taskCompletionAnimationManager.isPending(task)

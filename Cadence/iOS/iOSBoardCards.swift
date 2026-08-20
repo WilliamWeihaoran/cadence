@@ -283,6 +283,15 @@ struct iOSBoardTaskCard: View {
         }
     }
 
+    /// **What the card states is `CadenceBoardCardMetadata`'s decision, not this file's.** This card
+    /// used to build its own list and had quietly dropped the **do date** from it: the same task
+    /// read as planned-for-today on a Mac board and as undated here. The do, due and list chips now
+    /// come from the one descriptor macOS's `KanbanCard.metadataRows` reads.
+    ///
+    /// The **time** chip stays local, and it is the one genuine arrangement difference between the
+    /// two cards. macOS states the slot as a start (`9am`) in a top row beside an *editable*
+    /// duration badge; this card has no pointer to hover a badge with, so it states the whole range
+    /// in a chip and reaches the estimate through the detail sheet. Same fact, two shapes.
     private var metadataChips: [iOSCalendarBoardMetadataItem] {
         var chips: [iOSCalendarBoardMetadataItem] = []
 
@@ -300,24 +309,18 @@ struct iOSBoardTaskCard: View {
             )
         }
 
-        if !task.dueDate.isEmpty {
+        // One colour per chip rather than macOS's identity/label pair: this chip is inert, and a
+        // tinted glyph beside grey text on a grey pill reads as disabled — the reason
+        // `CadenceBoardMetadataChip` tints both. `labelColor` is the loud half of the pair, so an
+        // ordinary date stays `Theme.dim` here and an overdue one goes red exactly as it does on
+        // the Mac.
+        for chip in CadenceBoardCardMetadata.chips(for: task, showsContainer: showsContainerChip) {
             chips.append(
                 .init(
-                    id: "due",
-                    icon: "flag.fill",
-                    title: CadenceTaskPresentationSupport.dueDateLabel(for: task),
-                    color: task.isOverdue(todayKey: DateFormatters.todayKey()) ? Theme.red : Theme.dim
-                )
-            )
-        }
-
-        if showsContainerChip {
-            chips.append(
-                .init(
-                    id: "list",
-                    icon: task.project?.icon ?? task.area?.icon ?? "tray.fill",
-                    title: task.containerName.isEmpty ? "Inbox" : task.containerName,
-                    color: Color(hex: task.containerColor)
+                    id: chip.id,
+                    icon: chip.icon,
+                    title: chip.text,
+                    color: chip.kind == .list ? chip.identityColor : chip.labelColor
                 )
             )
         }

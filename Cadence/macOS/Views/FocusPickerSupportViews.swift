@@ -331,7 +331,7 @@ private struct FocusPickItemRow: View {
     private var detailLine: some View {
         switch item {
         case .task(let task):
-            TaskDetailLineLabel(task: task, fallback: "Ready to focus", fontSize: 11)
+            CadenceTaskDetailLineLabel(task: task, fallback: "Ready to focus", fontSize: 11)
         case .bundle(let bundle):
             Text(bundleDetail(bundle))
                 .font(.system(size: 11))
