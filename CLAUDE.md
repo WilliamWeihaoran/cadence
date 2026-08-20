@@ -21,7 +21,7 @@ The user does not write code. Claude handles all implementation. When something 
 
 ## Platform Strategy
 - **macOS**: purpose-built sidebar + multi-column layout (`macOS/`). Fully featured, the primary product surface.
-- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 85 files), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
+- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 86 files), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
 - **watchOS**: not started
 - Use `#if os(macOS)` / `#if os(iOS)` for platform-specific branches
 
@@ -47,11 +47,12 @@ Use the scoped `AGENTS.md` in each folder as the working map.
 Cadence/
 ├── CadenceApp.swift    # App entry, ModelContainer + CloudKit setup + error recovery
 ├── Models/             # 100% shared. See "Data Models" below and Models/AGENTS.md
-├── Services/           # 46 shared, cross-platform services (re-count when you add one):
+├── Services/           # 47 shared, cross-platform services (re-count when you add one):
 │   │                   #   CadenceSchema / CadenceStoreSupport / PersistenceController (legacy shim)
 │   │                   #   NoteMigrationService, PursuitToGoalMigration, DataIntegrityRepairService
 │   │                   #   NotificationScheduling + NotificationManager (reconciliation, see "Notifications")
 │   │                   #   RemindersManager (EventKit reminders, both platforms)
+│   │                   #   PrivacyDataResetService (in CadencePrivacyDataResetService.swift)
 │   │                   #   Cadence*WidgetSupport, CadenceWidgetIntents, CadenceWidgetRefreshCenter, CadenceDeepLink
 │   │                   #   TagSupport, TaskCreationService, NoteReferenceSupport
 │   ├── Markdown*Support.swift   # 26 files: ALL markdown parsing/mutation logic lives HERE, not in macOS/Editor/
@@ -100,7 +101,7 @@ Cadence/
 │                       # it; a stale number reads as a complete inventory and sends the next agent
 │                       # off to write a near-copy. That is not hypothetical — T-173 had to delete
 │                       # a third hand-written copy of CompactTagStrip for exactly this reason.
-├── iOS/                # Large adaptive iOS/iPadOS surface (85 files) — see "What's Built (iOS)"
+├── iOS/                # Large adaptive iOS/iPadOS surface (86 files) — see "What's Built (iOS)"
 │   ├── iOSRootView.swift        # Adaptive root shell: iPad sidebar / iPhone tab bar; deep links, widget refresh
 │   ├── iOSCompactTabShell.swift # iPhone bottom bar, per-tab paths, centre capture button
 │   ├── iOSTasksTabView.swift    # Tasks tab: date + greeting header, Today/All/Inbox switcher
@@ -135,6 +136,8 @@ Cadence/
                         #   CalendarManager (EventKit events). RemindersManager is NOT here —
                         #   it is cross-platform in Services/; macOS/Services holds only a
                         #   2-line tombstone comment recording the move.
+                        #   PrivacyDataResetService is NOT here either, same reason and same
+                        #   shape of tombstone: Services/CadencePrivacyDataResetService.swift.
                         #   (CalendarVisibilityPreferences and CalendarWorkHoursPreferences are NOT
                         #    here — both live in Shared/; see above. macOS/Services still holds a
                         #    2-line CalendarVisibilityPreferences.swift that is only a tombstone
@@ -701,7 +704,11 @@ in its Inbox (`InboxView`) and iOS does not** — that parity gap is real and st
 
 ## Account, Privacy, and Data Safety
 - **Sign in with Apple** is optional and entitlement-gated (`AppleAccountManager`); Settings → Account.
-- **Privacy data reset** (`PrivacyDataResetService`, Settings → Data Safety) wipes every model — including the legacy note types and `Pursuit`. Add new `@Model` types here whenever you add them to the schema, or a reset leaves orphans.
+- **Privacy data reset** (`PrivacyDataResetService`, in `Services/CadencePrivacyDataResetService.swift`, **cross-platform**) wipes every model — including the legacy note types and `Pursuit` — and cancels pending Cadence notifications. Add new `@Model` types here whenever you add them to the schema, or a reset leaves orphans; `CadencePrivacyDataResetSurfaceTests` drives that check off `CadenceSchema`, so an omission fails the suite rather than waiting to be noticed.
+  `deleteCadenceDataAndLocalArtifacts` is the full sweep **both** platforms run — store, OpenAI key, widget snapshot, pending restore, local backups — and returns `PrivacyDataResetOutcome`, whose `statusMessage` is the one sentence both surfaces show. Neither view may re-spell the sequence.
+  **macOS**: Settings → Account or Settings → Data Safety, gated by a window-modal `confirmationDialog` that enumerates what goes. It additionally calls `AppleAccountManager.signOut()`, which is macOS-only.
+  **iOS/iPadOS**: Settings → Data Safety (`iOSDataResetSettingsSection`). The card's button only *presents*; the destructive control lives in a modal sheet and stays disabled until `PrivacyDataResetConfirmation.authorizes(_:)` accepts the typed phrase (`DELETE`). The mechanism differs from macOS on purpose — a mobile `confirmationDialog` is a bottom action sheet, i.e. one thumb-reachable tap — and the *bar* is the same or higher. There is no Account category on iOS, so there is no account profile to clear, and the copy does not claim one.
+  This service lived under `macOS/Services/` behind an `#if os(macOS)` it never needed, which is why `docs/privacy.html` and `docs/app-review-notes.md` shipped promising iOS a deletion route that did not exist. Both documents now state the routes per platform.
 - `DataIntegrityRepairService` is the conservative, idempotent repair pass for stale relationships.
 - `docs/privacy.html` and `docs/app-review-notes.md` are the shipped privacy/App Review material.
 
@@ -837,7 +844,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Widget extensions (`CadenceWidgets` target): calendar/today/habit/milestone widgets with app-intent support and a refresh checkpoint (`CadenceWidgetRefreshCenter`) triggered on scenePhase changes — not documented further here yet; check `Cadence/Services/Cadence*WidgetSupport.swift` and `CadenceWidgets/` directly
 
 ## What's Built (iOS)
-`Cadence/iOS/` is a large, actively-developed surface (85 files), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
+`Cadence/iOS/` is a large, actively-developed surface (86 files), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
 - [x] **iPhone tab bar**: `[ Tasks ] [ Calendar ] ( + ) [ Notes ] [ More ]`. The centre `+` is **not a tab** — it presents task capture and never renders a selected state. Each tab owns its own type-erased `NavigationPath`, so switching tabs preserves position; the selected tab and Tasks segment persist across launches (`ios.compact.selectedTab`, `ios.compact.tasksSection`). Replaced `iOSCompactHomeView`, a grid of eight tiles that was standing in for navigation the app did not have.
 - [x] Tasks tab (`iOSTasksTabView`): date eyebrow + greeting, a **Today / All / Inbox** segmented switcher (the same control Calendar uses for Week/Month/Board), and a search shortcut
 - [x] Today (`iPadTodayView` + compact/schedule/support variants). The compact Today has **no capture bar of its own** — the tab bar's `+` is the capture affordance
@@ -849,7 +856,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Notes with its own markdown editor stack (styling, preview, slash commands, task/wiki references)
 - [x] Lists (Area/Project detail, editors)
 - [x] Search
-- [x] Settings (overview, contexts, tags, templates + lists, calendar, notifications, reminders). Reminders is Settings-only on iOS — there is no iOS Inbox showing reminders the way macOS has.
+- [x] Settings (overview, contexts, tags, templates + lists, calendar, notifications, reminders, **data safety** — including the account-and-data delete action the shipped privacy policy promises, behind a typed-phrase confirmation sheet). Reminders is Settings-only on iOS — there is no iOS Inbox showing reminders the way macOS has.
 - [x] Notification scheduling wiring (see "What's Built (macOS)" above — shared logic, not iOS-specific)
 - [x] `EstimatePickerPopoverContent` in `Shared/Components` is the estimate picker for **both** platforms; `EstimatePickerControl` is the iOS chip wrapper around it
 

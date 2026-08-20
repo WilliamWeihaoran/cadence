@@ -203,6 +203,24 @@ struct iOSSettingsView: View {
                 aiAPIKeyDraft: $aiAPIKeyDraft
             )
         case .data:
+            dataSafetySection
+        case .coverage:
+            iOSMobileCoverageSettingsSection()
+        case .about:
+            iOSAboutSettingsSection(
+                appVersion: appVersion,
+                buildNumber: buildNumber,
+                bundleID: bundleID
+            )
+        }
+    }
+
+    /// Data Safety: what the store holds, and the route out of it.
+    ///
+    /// The delete action is the second half deliberately — the shipped privacy policy and App
+    /// Review notes both promise it here, and for a long time this screen was count tiles alone.
+    private var dataSafetySection: some View {
+        VStack(alignment: .leading, spacing: 18) {
             #if DEBUG
             iOSLocalDataSettingsSection(
                 activeTaskCount: activeTaskCount,
@@ -226,14 +244,8 @@ struct iOSSettingsView: View {
                 noteCount: notes.count
             )
             #endif
-        case .coverage:
-            iOSMobileCoverageSettingsSection()
-        case .about:
-            iOSAboutSettingsSection(
-                appVersion: appVersion,
-                buildNumber: buildNumber,
-                bundleID: bundleID
-            )
+
+            iOSDataResetSettingsSection()
         }
     }
 

@@ -56,13 +56,13 @@ past a `grep "/Cadence/"` entirely.
 
 - `Cadence/CadenceApp.swift` - app entry, model container, CloudKit setup, recovery.
 - `Cadence/Models/` - shared SwiftData models. Read this before changing persistence or relationships.
-- `Cadence/Services/` - 46 shared services: schema, migrations, notifications, widget support, the 26 `Markdown*Support` parsing/mutation files, plus `AI/` and `MCPReadOnly/`. Note the markdown *logic* lives here, not in `macOS/Editor/`.
+- `Cadence/Services/` - 47 shared services: schema, migrations, notifications, widget support, the 26 `Markdown*Support` parsing/mutation files, plus `AI/` and `MCPReadOnly/`. Note the markdown *logic* lives here, not in `macOS/Editor/`.
 - `Cadence/Shared/` - design tokens (`Theme.swift`), shared components, date/time utilities, hover styling, and cross-platform presentation/query support (`Cadence*Support.swift`).
 - `Cadence/macOS/` - main product surface. Most active work happens here.
 - `Cadence/macOS/Views/` - macOS feature screens and support views (~168 files).
-- `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, hotkeys, task creation, hover state, deletion, scheduling, note export, privacy reset, Apple account. **Not** reminders: `RemindersManager` is cross-platform and lives in `Cadence/Services/`.
+- `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, hotkeys, task creation, hover state, deletion, scheduling, note export, Apple account. **Not** reminders and **not** the privacy data reset: `RemindersManager` and `PrivacyDataResetService` are both cross-platform and live in `Cadence/Services/` (`CadenceRemindersManager.swift`, `CadencePrivacyDataResetService.swift`), each leaving a tombstone under its old unprefixed name.
 - `Cadence/macOS/Editor/` - AppKit-backed markdown editor bridge (11 files since the T-105 split). High risk; preserve NSTextView behavior carefully.
-- `Cadence/iOS/` - large, real iOS/iPadOS surface (85 files: Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings). iPhone runs a four-tab bottom bar (`iOSCompactTabShell`); iPad keeps its sidebar. Do not assume feature parity with macOS.
+- `Cadence/iOS/` - large, real iOS/iPadOS surface (86 files: Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings). iPhone runs a four-tab bottom bar (`iOSCompactTabShell`); iPad keeps its sidebar. Do not assume feature parity with macOS.
 - `CadenceWidgets/` - widget extension. Compiles a subset of app sources (models, `Theme.swift`, `Cadence*WidgetSupport.swift`) directly into the extension target.
 - `CadenceMCPServer/` and `plugins/cadence-mcp/` - MCP server/plugin surfaces. Separate integration boundaries with their own build and verification procedure — read `CadenceMCPServer/AGENTS.md` before changing shared models or services that they compile.
 - `CadenceTests/`, `CadenceUITests/` - test targets. `CadenceTests/` is ~140 flat `.swift` files; look for an existing file before adding one.

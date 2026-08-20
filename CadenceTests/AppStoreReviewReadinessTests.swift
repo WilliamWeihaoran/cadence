@@ -110,12 +110,25 @@ struct AppStoreReviewReadinessTests {
             }
         )
 
+        // The steps that outlive the store — the local backups and the widget snapshot — used to
+        // be written out in this view. They are `PrivacyDataResetService`'s now, because iOS runs
+        // the same reset and a second hand-written copy is how the two platforms drift; so this
+        // asserts the pane reaches the shared sequence, and that the sequence still does the work.
+        let resetService = try String(
+            contentsOf: repositoryRoot().appendingPathComponent("Cadence/Services/CadencePrivacyDataResetService.swift"),
+            encoding: .utf8
+        )
+
         #expect(accountSettings.contains("Delete Account..."))
         #expect(dataSafetySettings.contains("Delete Account & Data"))
-        #expect(deletionBody.contains("StoreBackupManager.deleteAllBackups"))
-        #expect(deletionBody.contains("CadenceWidgetRefreshCenter.clearStoredState"))
+        #expect(deletionBody.contains("PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts"))
+        #expect(resetService.contains("StoreBackupManager.deleteAllBackups"))
+        #expect(resetService.contains("CadenceWidgetRefreshCenter.clearStoredState"))
         #expect(!deletionBody.contains("createBackupIfStoreExists"))
         #expect(reviewNotes.contains("Settings > Account"))
+        // The iOS route the shipped documents promise, and did not have. See
+        // `CadencePrivacyDataResetSurfaceTests` for the code behind it.
+        #expect(reviewNotes.contains("Settings > Data Safety"))
         #expect(privacyPolicy.contains("Account and Data Deletion"))
         #expect(privacyPolicy.contains("removes local Cadence backups"))
     }

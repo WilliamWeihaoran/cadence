@@ -2,7 +2,7 @@
 
 These services coordinate desktop-only behavior: EventKit calendar, focus timers,
 global hotkeys, hover-driven shortcuts, deletion overlays, scheduling, navigation, quick task
-panels, note export, Sign in with Apple, and the privacy data reset.
+panels, note export, and Sign in with Apple.
 
 Beyond the long-standing managers, note:
 
@@ -24,12 +24,19 @@ Beyond the long-standing managers, note:
   `nonisolated` because the drop delegates that parse it run in `@Sendable` closures.
 - `NoteExportService.swift` - markdown + rendered-PDF export. Presents the save panel off the blocking `runModal()` path; keep it that way.
 - `AppleAccountManager.swift` - optional Sign in with Apple identity, entitlement-gated.
-- `PrivacyDataResetService.swift` - wipes every model including the legacy note types and `Pursuit`. Add new `@Model` types here when you add them to the schema, or a reset will leave orphans.
+- **`PrivacyDataResetService` is not here any more either.** It moved to
+  `Cadence/Services/CadencePrivacyDataResetService.swift` when iOS gained its own
+  Settings -> Data Safety delete action — 45 lines importing only Foundation and SwiftData, with
+  zero AppKit references, so the `#if os(macOS)` was an accident of where it was written. The
+  consequence was not academic: `docs/privacy.html` and `docs/app-review-notes.md` both promised
+  in-app account and data deletion that iOS had no route to. A comment-only tombstone
+  `PrivacyDataResetService.swift` remains here recording the move. Add new `@Model` types to the
+  service at its new path when you add them to `CadenceSchema`, or a reset leaves orphans.
 - `CadenceMCPRefreshCoordinator.swift` - watches a `.cadence-mcp-refresh` marker file beside the
   store so the app reloads after the MCP server writes to it from another process. See
   `CadenceMCPServer/AGENTS.md`.
-- Also here and previously unlisted: `NoteExportService.swift`, `PrivacyDataResetService.swift`,
-  `AppleAccountManager.swift`, `GlobalSearchManager.swift`.
+- Also here and previously unlisted: `NoteExportService.swift`, `AppleAccountManager.swift`,
+  `GlobalSearchManager.swift`.
 
 ## Working Rules
 

@@ -21,12 +21,12 @@
     <section>
       <h2>Data Cadence Stores</h2>
       <p>Cadence may store the content you create in the app, including tasks, subtasks, task bundles, notes, documents, saved links, lists, contexts, projects, goals, habits, focus information, and calendar-link metadata.</p>
-      <p>If you choose to sign in with Apple, Cadence stores the Apple user identifier and any name or email address Apple returns to the app. This identity is optional and can be removed by signing out or deleting your Cadence account and data in Settings.</p>
+      <p>If you choose to sign in with Apple on macOS, Cadence stores the Apple user identifier and any name or email address Apple returns to the app. Sign in with Apple is a macOS feature, so no Cadence account profile is stored on iPhone or iPad. This identity is optional and can be removed by signing out or by deleting your Cadence account and data in Settings.</p>
     </section>
 
     <section>
       <h2>Calendar Access</h2>
-      <p>Cadence requests Calendar access so it can show calendar events and create, update, or delete scheduled task events when you ask it to. Calendar events are accessed through Apple's EventKit APIs. You can revoke Calendar access at any time in macOS System Settings.</p>
+      <p>Cadence requests Calendar access so it can show calendar events and create, update, or delete scheduled task events when you ask it to. Calendar events are accessed through Apple's EventKit APIs. You can revoke Calendar access at any time in System Settings on macOS, or in the Settings app on iPhone and iPad.</p>
     </section>
 
     <section>
@@ -47,7 +47,9 @@
 
     <section>
       <h2>Account and Data Deletion</h2>
-      <p>You can delete your Cadence account and data in the app from Settings, Account or Settings, Data Safety. This removes Cadence-created content from the current store, removes local Cadence backups and pending restores, removes the saved OpenAI API key, and clears the local Apple account profile.</p>
+      <p>On macOS you can delete your Cadence account and data in the app from Settings, Account or Settings, Data Safety. On iPhone and iPad the same deletion is in Settings, Data Safety.</p>
+      <p>Either route removes Cadence-created content from the current store, removes local Cadence backups and pending restores, and removes the saved OpenAI API key. On macOS it also clears the local Apple account profile; on iPhone and iPad there is no Cadence account profile to clear. Because Cadence syncs through your private iCloud database, these deletions reach your other devices.</p>
+      <p>Deletion always asks you to confirm first, and it cannot be undone.</p>
       <p>Apple Calendar events that already exist in Calendar are managed by Calendar. You can delete those events directly in Calendar or through Cadence calendar features where available.</p>
     </section>
 

@@ -176,15 +176,16 @@ struct SettingsDataSafetySection: View {
 
     private func deleteCadenceData() {
         do {
-            try PrivacyDataResetService.deleteCadenceData(in: modelContext)
-            try? aiSettingsManager.removeAPIKey()
-            CadenceWidgetRefreshCenter.clearStoredState()
+            // The sequence itself is in `PrivacyDataResetService` rather than here, so iOS's
+            // Data Safety screen runs the same reset instead of a second hand-written copy of it.
+            let outcome = try PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts(
+                in: modelContext,
+                aiSettingsManager: aiSettingsManager
+            )
+            // Sign in with Apple is entitlement-gated and macOS-only (`AppleAccountManager` is
+            // inside `#if os(macOS)`), so this is the one step the shared sweep cannot take.
             appleAccountManager.signOut()
-            StoreBackupManager.clearPendingRestore()
-            let removedBackupCount = try StoreBackupManager.deleteAllBackups()
-            statusMessage = removedBackupCount == 0
-                ? "Cadence account and data were deleted."
-                : "Cadence account, data, and \(removedBackupCount) backup\(removedBackupCount == 1 ? "" : "s") were deleted."
+            statusMessage = outcome.statusMessage
             refreshBackups()
         } catch {
             statusMessage = "Could not delete Cadence account and data: \(error.localizedDescription)"
