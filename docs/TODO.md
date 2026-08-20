@@ -85,31 +85,12 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
     inventing a Mac gesture to match. macOS creation today is the floating `+`, the column ghost
     row, and the calendar drag-create popover.
 
-- [T-165] **Calendar and Focus now share one tint in the sidebar.** `.calendar` was changed to
-  `#FF6B6B` at the user's request, which is byte-identical to `.focus`. Shipped literally and
-  flagged rather than resolved, because retinting Focus is a liberty the user did not ask for. The
-  agent's suggestion: give Focus a different tint (amber is unclaimed in the secondary group) since
-  it is the quieter of the two — a footer glyph at 0.8 opacity. Two near-identical reds would make
-  the per-destination tint stop identifying anything.
 
 - [T-166] **`defaultColorHex` is eleven hand-typed hex literals feeding `Color(hex:)`.** Exactly the
   pattern `AGENTS.md` bans outside `Theme.swift` and genuinely user-owned `colorHex`. These are
   app-defined defaults, so they are a standing exception that predates the rule. Adding a
   `Theme.redHex` for one of the eleven would make the exception *less* consistent — it wants one
   pass over all of them or none.
-
-- [T-167] **The iOS Reminders usage string describes a surface iOS does not have.** The shipped
-  `NSRemindersFullAccessUsageDescription` says reminders appear "in Inbox and mark them complete
-  when you check them off", and `completeReminder(id:)` has no iOS caller. Either build the iOS
-  Inbox surface ([[T-163]]) or reword the string. A permission prompt that describes the wrong app
-  is the kind of thing App Review reads.
-
-- [T-163] **iOS Inbox does not surface Apple Reminders; macOS does.** macOS `InboxView` reads
-  `RemindersManager` and shows open reminders inline (`InboxView.swift:8`). The iOS Settings
-  connection is being built now, which makes the manager cross-platform and removes the only real
-  obstacle — but the Inbox surface itself was deliberately left out of that change as unrequested
-  scope. Decide whether iOS Inbox should show them too; the parity direction the user stated
-  ("more similar on all 3 platforms") suggests yes.
 
 
 - [T-161] **Tests pin helpers, not wiring.** The T-149 verifier proved by mutation that reverting the
@@ -146,28 +127,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   mechanism rather than the host-level reset it used to carry. Both need a look on iPad before this
   is called done.
 
-
-- [T-142] **`Goal.dependsOnGoalIDsJSON` is persisted, has zero readers, and is undocumented.**
-  Exactly the hazard `AppTask.calendarEventID` gets five lines of warning about — a stored SwiftData
-  property with no `SchemaMigrationPlan`, so removing it drops data rather than cleaning up. It needs
-  either the same documented treatment or a decision to migrate it out.
-
-- [T-136] **The `iOS` prefix hides forks from review — 30 exact pairs, ~50 near pairs.** Stripping the
-  `iOS`/`iPad` prefix from every top-level type and intersecting with macOS finds an order of
-  magnitude more duplication than the nine files that share a *filename*. The method is itself the
-  finding: a fork named `iOSFoo` reads as "an iOS thing" in a diff, so no reviewer sees it as a copy.
-  Two sidebar rows even carry the same warning comment verbatim, one word changed. Worth running this
-  intersection as a standing check.
-
-- [T-124] **32 orphaned `CadenceMCPServer` processes are holding the live store open**, the oldest
-  running **74 days**. Confirmed directly with `ps`. `main.swift` loops forever with no shutdown path
-  when a client disconnects, so every Codex session that ever started the server leaked one. Each
-  holds the app-group store (`~/Library/Group Containers/group.com.haoranwei.Cadence/…/default.store`)
-  open. Worse, `plugins/cadence-mcp/scripts/run-cadence-mcp.sh` rebuilds into `.codex-build` with a
-  **hardcoded, non-overridable** `DERIVED_DATA_PATH` — i.e. it replaces the binary underneath running
-  processes, which is exactly [T-86]'s shape. This is a plausible contributor to the build and store
-  weirdness fought all session. Two fixes, separable: a shutdown path on client disconnect, and a
-  private derived-data path for the launcher. Killing the existing 32 is the user's call.
 
 - [T-126] **The MCP smoke test can be run from here, and is data-safe** — it verifies read-only mode
   then drives a temp fixture store via `CADENCE_MCP_STORE_URL`, never the app-group store. SPM
@@ -334,6 +293,19 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-119] Six entries reconciled as already done, found while picking the next batch of work.
+  `T-163` iOS Inbox reminders — `iOSInboxRemindersSection.swift` shipped in `d330f5e`, and with it
+  `T-167`, since the shipped usage string promising reminders "in Inbox and mark them complete" now
+  describes a surface that exists on both platforms. `T-165` Calendar/Focus sharing one red — closed
+  by `830f476`, which gave Focus `Theme.teal` rather than taking Calendar's red back. `T-136` the
+  prefix-hidden forks — closed by `7e5459c` and recorded in `D-116`, but the entry was never removed.
+  `T-124` 32 orphaned `CadenceMCPServer` processes — one remains, which is the expected number.
+  `T-142` `Goal.dependsOnGoalIDsJSON` — the ticket asked for "the same documented treatment or a
+  decision to migrate it out"; `CLAUDE.md` now carries the full warning, so it has the former.
+  Worth noting the failure mode rather than just the fix: I closed `T-164` by script and left
+  `T-136` in the same commit, so a list whose job is routing work was pointing four agents at
+  finished tickets.
 
 - [D-118] `3c8de23` Board cards stop repeating their column, gain tags, stop listing every subtask
   (T-173, T-174). Both were recorded as design calls; both had a defect behind them.
