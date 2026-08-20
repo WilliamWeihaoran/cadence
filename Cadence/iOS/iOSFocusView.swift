@@ -301,18 +301,38 @@ struct iOSFocusView: View {
         }
     }
 
+    /// Picking another task banks the seconds the one being left earned, before the clock is
+    /// cleared for the new one. This used to be `selectedTaskID = task.id; resetTimer()`, which
+    /// dropped them — see `CadenceFocusSupport.commitElapsed(leaving:switchingTo:state:...)`.
     private func select(_ task: AppTask) {
+        timerState = CadenceFocusSupport.commitElapsed(
+            leaving: selectedTask,
+            switchingTo: task.id,
+            state: timerState,
+            modelContext: modelContext
+        )
         selectedTaskID = task.id
-        resetTimer()
     }
 
-    /// Start, or pause, from the row itself. The reset-on-switch rule lives in
-    /// `CadenceFocusSupport.timerState(afterPlayTapOn:selectedTaskID:state:now:)` so it can be
-    /// asserted on — carrying another task's elapsed seconds across would log them onto this one.
+    /// Start, or pause, from the row itself — the second way the selection can move, so it commits
+    /// the outgoing task's seconds first for the same reason `select(_:)` does. The reset-on-switch
+    /// rule lives in `CadenceFocusSupport.timerState(afterPlayTapOn:selectedTaskID:state:now:)` so
+    /// it can be asserted on; carrying another task's elapsed seconds across would log them onto
+    /// this one.
+    ///
+    /// Both read `selectedTask`, not `selectedTaskID`: with nothing explicitly picked the session
+    /// runs against `readyTasks.first`, and passing the `nil` id would treat leaving that task as
+    /// leaving nothing.
     private func toggleSession(for task: AppTask) {
+        timerState = CadenceFocusSupport.commitElapsed(
+            leaving: selectedTask,
+            switchingTo: task.id,
+            state: timerState,
+            modelContext: modelContext
+        )
         timerState = CadenceFocusSupport.timerState(
             afterPlayTapOn: task.id,
-            selectedTaskID: selectedTaskID,
+            selectedTaskID: selectedTask?.id,
             state: timerState
         )
         selectedTaskID = task.id

@@ -168,6 +168,41 @@ enum CadenceFocusSupport {
         }
     }
 
+    /// Leave one task for another the way macOS's `FocusManager` does: bank the seconds the
+    /// outgoing task earned, then hand the incoming task a clock at zero. Returns the state the
+    /// stopwatch carries into `nextTaskID`.
+    ///
+    /// iOS reset the clock on a switch instead of committing it, on **both** of its switch paths —
+    /// the picker row's select and the row's own play control — so every minute measured before a
+    /// switch was dropped. The visible consequence was that a goal with
+    /// `progressType == "hours"` could only be advanced from a Mac, because `loggedMinutes` on the
+    /// list behind it only ever moved through this helper.
+    ///
+    /// Re-selecting the task already focused returns the state untouched: that is not leaving a
+    /// session, and zeroing the clock there was the other half of the same discard. Under a whole
+    /// minute nothing is written — `logElapsedSeconds` rounds to the nearest minute, and a zero is
+    /// not worth a `save()`.
+    static func commitElapsed(
+        leaving outgoingTask: AppTask?,
+        switchingTo nextTaskID: UUID,
+        state: CadenceFocusTimerState,
+        modelContext: ModelContext,
+        now: Date = Date()
+    ) -> CadenceFocusTimerState {
+        guard outgoingTask?.id != nextTaskID else { return state }
+
+        var next = state
+        next.reset()
+
+        guard let outgoingTask else { return next }
+        let seconds = state.elapsedSeconds(now: now)
+        guard minutes(fromElapsedSeconds: seconds) > 0 else { return next }
+
+        logElapsedSeconds(seconds, to: outgoingTask)
+        try? modelContext.save()
+        return next
+    }
+
     /// Completion must route through `CadenceTaskRecurrenceWorkflowSupport` rather than setting
     /// `status`/`completedAt` inline: a recurring task finished here would otherwise go done with no
     /// successor, silently ending the series on whichever platform happened to use this helper.
