@@ -381,17 +381,17 @@ enum MarkdownStylist {
         if let tableRowStyle {
             applyTableRow(storage: storage, line: line, lineRange: lineRange, lineStart: lineStart, style: tableRowStyle)
         } else if line.hasPrefix("###### ") {
-            heading(storage, lineRange, lineStart, prefixLen: 7, size: 15)
+            heading(storage, line, lineRange, lineStart, prefixLen: 7, size: 15)
         } else if line.hasPrefix("##### ") {
-            heading(storage, lineRange, lineStart, prefixLen: 6, size: 17)
+            heading(storage, line, lineRange, lineStart, prefixLen: 6, size: 17)
         } else if line.hasPrefix("#### ") {
-            heading(storage, lineRange, lineStart, prefixLen: 5, size: 19)
+            heading(storage, line, lineRange, lineStart, prefixLen: 5, size: 19)
         } else if line.hasPrefix("### ") {
-            heading(storage, lineRange, lineStart, prefixLen: 4, size: 22)
+            heading(storage, line, lineRange, lineStart, prefixLen: 4, size: 22)
         } else if line.hasPrefix("## ") {
-            heading(storage, lineRange, lineStart, prefixLen: 3, size: 26)
+            heading(storage, line, lineRange, lineStart, prefixLen: 3, size: 26)
         } else if line.hasPrefix("# ") {
-            heading(storage, lineRange, lineStart, prefixLen: 2, size: 30)
+            heading(storage, line, lineRange, lineStart, prefixLen: 2, size: 30)
         } else if let quote = blockquoteMatch(in: line) {
             let paragraph = NSMutableParagraphStyle()
             let levelInset = CGFloat(max(quote.depth - 1, 0)) * 12
@@ -674,12 +674,21 @@ enum MarkdownStylist {
         MarkdownBlockSupport.isDividerLine(line)
     }
 
-    private static func heading(_ storage: NSTextStorage, _ lineRange: NSRange, _ lineStart: Int, prefixLen: Int, size: CGFloat) {
-        let markerRange = NSRange(location: lineStart, length: min(prefixLen, lineRange.length))
-        let contentLength = max(0, lineRange.length - prefixLen)
-        let contentRange = NSRange(location: lineStart + prefixLen, length: contentLength)
-        let content = contentLength > 0 ? (storage.string as NSString).substring(with: contentRange) : ""
-        let hasVisibleContent = !content.trimmingCharacters(in: .whitespaces).isEmpty
+    /// The visible-content test is `MarkdownStyleRanges.hasVisibleHeadingContent`, not a local
+    /// re-derivation of it: this pass used to trim `.whitespaces` where the shared, tested function
+    /// trims `.whitespacesAndNewlines`, and the difference is reachable rather than academic. Lines
+    /// here come from `components(separatedBy: "\n")`, so a CRLF note leaves the `\r` as the line's
+    /// last character (see `MarkdownSourceLines`) — `"# \r"` therefore read as *having* content, and
+    /// the marker was hidden and the line set in 30pt bold, leaving a tall blank row with nothing
+    /// left on screen to click the caret back into. `NSTextView` does not normalise line endings on
+    /// paste, so that content arrives intact.
+    private static func heading(_ storage: NSTextStorage, _ line: String, _ lineRange: NSRange, _ lineStart: Int, prefixLen: Int, size: CGFloat) {
+        let markerLength = min(prefixLen, lineRange.length)
+        let markerRange = NSRange(location: lineStart, length: markerLength)
+        let hasVisibleContent = MarkdownStyleRanges.hasVisibleHeadingContent(
+            in: line,
+            markerRange: NSRange(location: 0, length: markerLength)
+        )
 
         guard hasVisibleContent else {
             storage.addAttribute(.font, value: baseFont, range: lineRange)

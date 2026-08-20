@@ -9,9 +9,10 @@ import Foundation
 /// caret is inside it, an inline pass that styles a table cell's pipes) was the one layer with no
 /// coverage at all.
 ///
-/// macOS's styler makes several of the same decisions with its own spelling — `MarkdownEditorSupport`
-/// re-derives the heading's visible-content test inline, for one — so these are written to be
-/// callable from either platform rather than shaped around iOS's call sites.
+/// These are written to be callable from either platform rather than shaped around iOS's call
+/// sites, and macOS has since taken them up: `MarkdownEditorSupport.heading` re-derived the
+/// visible-content test inline — with the *wrong* character set — until T-181 routed it through
+/// `hasVisibleHeadingContent` here.
 nonisolated enum MarkdownStyleRanges {
     /// Whether an ATX heading has anything after its marker that a reader would see.
     ///
@@ -63,10 +64,16 @@ nonisolated enum MarkdownStyleRanges {
     /// standalone image/task-embed line — whose whole range is already replaced by a drawn canvas —
     /// gets a second, conflicting set of attributes.
     ///
-    /// The emptiness test trims `.whitespaces` only — moved verbatim from the iOS styler, and
-    /// deliberately not "corrected" to `MarkdownSourceLines.classificationText` in the same pass
-    /// that relocated it. It reaches the same answer either way today, because a line left holding
-    /// only a stray `\r` fails all three predicates below anyway.
+    /// The emptiness test goes through `MarkdownSourceLines.classificationText`, which is the
+    /// convention that file documents: lines are split on `"\n"` alone, so a CRLF line keeps its
+    /// `\r` and a line *predicate* has to trim `.whitespacesAndNewlines`. T-121 moved a
+    /// `.whitespaces`-only spelling here verbatim rather than correcting it in a relocation pass,
+    /// with a note that it reached the same answer anyway; **that was checked under T-181 and it
+    /// does — this switch is inert, not a fix.** The two spellings differ only on a line made
+    /// entirely of whitespace plus at least one newline-class character (`"\r"`, `" \u{2028} "`),
+    /// and every such line fails all three predicates below: neither standalone reference can match
+    /// without brackets, and `isDividerLine` trims `.whitespacesAndNewlines` itself before requiring
+    /// three of `-`/`*`/`_`. `MarkdownStyleRangeSupportTests` pins that.
     static func inlineStyleExclusionRanges(
         lineRecords: [MarkdownSourceLine],
         tableRows: [Int: MarkdownTableRowStyle],
@@ -80,7 +87,7 @@ nonisolated enum MarkdownStyleRanges {
         ranges += tableRows.keys.compactMap { recordsByIndex[$0]?.range }
 
         for record in lineRecords {
-            let trimmed = record.text.trimmingCharacters(in: .whitespaces)
+            let trimmed = MarkdownSourceLines.classificationText(of: record.text)
             guard !trimmed.isEmpty else { continue }
             if MarkdownBlockSupport.standaloneImageReference(in: record.text) != nil ||
                 MarkdownTaskEmbedParser.standaloneTaskReference(in: record.text) != nil ||

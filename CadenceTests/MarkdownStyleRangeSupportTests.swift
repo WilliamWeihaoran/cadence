@@ -1,5 +1,8 @@
 import Foundation
 import Testing
+#if os(macOS)
+import AppKit
+#endif
 @testable import Cadence
 
 /// The styling decisions that used to live under `#if os(iOS)`.
@@ -167,6 +170,30 @@ struct MarkdownStyleRangeSupportTests {
         let ranges = exclusions(in: markdown)
         #expect(ranges.isEmpty)
     }
+
+    /// **The `.whitespaces` → `classificationText` switch in `inlineStyleExclusionRanges` is inert.**
+    ///
+    /// The two spellings can only disagree about a line made of whitespace plus a newline-class
+    /// character, which is what a CRLF note's blank line looks like once the source is split on
+    /// `"\n"` alone. Under the old spelling such a line was not skipped and was then rejected by all
+    /// three predicates; under the new one it is skipped up front. Same output — this pins that
+    /// rather than trusting the comment saying so.
+    @Test
+    func aCRLFBlankLineIsNotExcludedUnderEitherEmptinessSpelling() {
+        let markdown = "text\r\n \r\nmore\r\n\u{2028}\r\ntail"
+        #expect(exclusions(in: markdown).isEmpty)
+    }
+
+    /// And the divider it *does* have to keep finding still carries its `\r`.
+    ///
+    /// `isDividerLine` trims `.whitespacesAndNewlines` itself, so it reaches the same answer whether
+    /// it is handed the raw line or either trimming of it. That internal trim is the load-bearing
+    /// half; a "simplification" that removed it would drop every divider in a CRLF note.
+    @Test
+    func aCRLFDividerLineIsStillExcluded() {
+        let markdown = "text\r\n***\r\nmore"
+        #expect(covers(exclusions(in: markdown), "***", in: markdown))
+    }
 }
 
 /// Which characters of an inline marker disappear.
@@ -276,3 +303,71 @@ struct MarkdownInlineMarkerRangeTests {
         #expect(NSRange(location: 3, length: 4).shifted(by: 0) == NSRange(location: 3, length: 4))
     }
 }
+
+#if os(macOS)
+/// **macOS's styler goes through `MarkdownStyleRanges.hasVisibleHeadingContent`.**
+///
+/// `MarkdownEditorSupport.heading` had its own copy of the test, trimming `.whitespaces` where the
+/// shared function trims `.whitespacesAndNewlines`. That is not a cosmetic difference: the styler
+/// splits the document on `"\n"` alone (`MarkdownSourceLines` explains why), so a CRLF note leaves
+/// the `\r` as the last character of every line, and `"# \r"` therefore looked like a heading *with*
+/// content — marker hidden, line set in 30pt bold, nothing left on screen to click the caret back
+/// into. `NSTextView` does not normalise line endings on paste, so that content arrives intact.
+///
+/// The heading pass is `private`, so these observe it through `MarkdownStylist.apply(to:)` on the
+/// attributed string, the same way `MarkdownFrontmatterDividerTests` does. Reverting the call site
+/// to the inline `.whitespaces` copy fails the first test here.
+struct MacMarkdownHeadingVisibleContentTests {
+    @MainActor
+    private func styled(_ text: String) throws -> NSTextStorage {
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
+        textView.string = text
+        MarkdownStylist.apply(to: textView)
+        return try #require(textView.textStorage)
+    }
+
+    @MainActor
+    private func isHidden(_ storage: NSTextStorage, at location: Int) -> Bool {
+        (storage.attribute(.cadenceMarkdownHidden, at: location, effectiveRange: nil) as? Bool) == true
+    }
+
+    @MainActor
+    private func font(_ storage: NSTextStorage, at location: Int) throws -> NSFont {
+        try #require(storage.attribute(.font, at: location, effectiveRange: nil) as? NSFont)
+    }
+
+    /// The mutation target: a CRLF heading holding only its terminator keeps a visible, dimmed `#`.
+    @MainActor
+    @Test func aCRLFHeadingWithNothingAfterTheMarkerKeepsItsMarkerVisible() throws {
+        let storage = try styled("# \r\nBody")
+
+        #expect(isHidden(storage, at: 0) == false)
+        #expect(try font(storage, at: 0) == MarkdownStylist.baseFont)
+        #expect(
+            storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+                == MarkdownStylist.dimColor
+        )
+    }
+
+    /// Non-vacuity: a heading with real content still hides its marker and goes bold.
+    @MainActor
+    @Test func aHeadingWithContentStillHidesItsMarker() throws {
+        let storage = try styled("# Title\nBody")
+
+        #expect(isHidden(storage, at: 0))
+        let titleFont = try font(storage, at: 2)
+        #expect(titleFont.pointSize == 30)
+        #expect(titleFont.fontDescriptor.symbolicTraits.contains(.bold))
+    }
+
+    /// The LF case both spellings already agreed on, so the CRLF expectation above is not just
+    /// "empty headings dim their marker" restated.
+    @MainActor
+    @Test func anLFHeadingWithNothingAfterTheMarkerAlsoKeepsItsMarkerVisible() throws {
+        let storage = try styled("# \nBody")
+
+        #expect(isHidden(storage, at: 0) == false)
+        #expect(try font(storage, at: 0) == MarkdownStylist.baseFont)
+    }
+}
+#endif
