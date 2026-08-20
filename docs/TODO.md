@@ -32,6 +32,62 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-205] **`docs/app-review-notes.md` says "Cadence does not use push notifications" and that is
+  false.** Submission-facing. `Cadence/Cadence.entitlements` ships
+  `com.apple.developer.aps-environment` (`$(APS_ENVIRONMENT)`, resolving to development/production in
+  `project.pbxproj`), and `CadenceAppDelegate.swift:32` calls `registerForRemoteNotifications()` at
+  launch. **The repo's own test contradicts the doc**: `AppStoreReviewReadinessTests
+  .appEntitlementsIncludeCloudKitPushSandboxNetworkCalendarAndAppGroupAccess` asserts that entitlement
+  is present. It is CloudKit's silent push, which is a perfectly good thing to say — saying the app
+  does not use push is not. Fix the sentence, and consider making that test also assert the doc says
+  something true, since it currently pins the entitlement while the prose denies it.
+
+- [T-206] **Apple Reminders access is in neither shipped document.** Submission-facing.
+  `INFOPLIST_KEY_NSRemindersFullAccessUsageDescription` ships on both platform configs and
+  `RemindersManager` reads EventKit reminders, but `docs/privacy.html` has a Calendar Access section
+  with no Reminders counterpart and `docs/app-review-notes.md` lists calendar access only. **A user
+  gets a permission prompt the privacy policy never mentions.** While there: privacy.html's "Data
+  Cadence Stores" list omits tags and `MarkdownImageAsset` — imprecise rather than false, since it
+  says "including", but worth completing in the same pass.
+
+- [T-207] **Four stale doc claims found by the HEAD verification.** Each re-verify before editing.
+  `CadenceTests/` is described as "**~140** flat files" (`AGENTS.md`, `CLAUDE.md`) and is **164** —
+  this is the number the guides cite when telling an agent to look for an existing test file first.
+  `Cadence/iOS/` says **86** in five places, actual **87**. `macOS/Views/` is inconsistent *within*
+  the docs — `AGENTS.md` and `CLAUDE.md` say ~168, `CLAUDE.md` elsewhere says ~165; actual **165**.
+  macOS Settings is described as **twelve** categories and is now **thirteen** (`592b967`). Also
+  `CLAUDE.md`'s enumeration of `AppTask.calendarEventID` clearing sites ("`SchedulingService` ×7,
+  `CalendarLinkedTaskSupport`") omits `CadenceTaskMutationSupport.swift:367`, so the count is
+  incomplete while the claim itself stays true.
+
+- [T-208] **Today's Completed section lists cancelled tasks but the header's "N done" does not count
+  them.** Introduced deliberately by `9d11135` and documented at `CadenceTaskQuerySharedSupport.swift`
+  — a cancellation is not an accomplishment — but it is a *visible* inconsistency: the section can
+  show three rows above a count of two. Decide whether the count should say something else
+  ("3 settled"), the section should label its cancelled rows, or the mismatch is fine.
+
+- [T-209] **Parallel `xcodebuild` runs in *separate* private DerivedData paths still contend, and it
+  looks exactly like a real failure.** The verifier's first test run exited **65** with hundreds of
+  `external macro implementation type 'SwiftDataMacros.PersistentModelMacro' could not be found …
+  swift-plugin-server could not be loaded: Resource temporarily unavailable`. Serial re-run: exit 0.
+  Two other agents hit the same thing today (one saw 650 `error:` lines, clean on retry).
+  `AGENTS.md` warns about *shared* DerivedData; it says nothing about concurrent invocations in
+  private paths. Add it, because the failure mode is a plausible-looking compile error that a careless
+  agent would report as a regression.
+
+- [T-210] **macOS's settings category list is a private local enum with no analogue of mobile's
+  `desktopOnly`.** Mobile states its deliberate omissions positively and tests them, which is why a
+  missing mobile category fails a test; macOS has nothing equivalent, so `.coverage` and `.about` are
+  absent there with nothing to notice it. Making it symmetric means moving macOS's list into
+  `Shared/`. Note [[T-197]] will delete `.coverage` entirely, which shrinks this.
+
+- [T-211] **On iOS, H5 (16pt) and H6 (15pt) render *below* the editor's body text.** Found by
+  `d513e72` and recorded rather than fixed. The iOS body is
+  `UIFont.preferredFont(forTextStyle: .body)` — 17pt by default and larger at accessibility sizes —
+  so no fixed point size can stay above it. Fixing it means making the iOS ramp relative to
+  `preferredFont(.body).pointSize` rather than absolute, which is a different change from unifying
+  the ramps.
+
 - [T-204] **Agents leak simulators and MCP servers, and it is measurably starving the machine.**
   Found on 2026-08-21 at the user's prompting. **Ten** simulators were booted at once, each running
   Cadence, two of them for over a day and one for nine hours — 54 `SimMetalHost`/`MTLCompilerService`
@@ -91,20 +147,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   of un-guarding the helper would orphan tasks, notes, links and nested projects. Un-guard; do not
   reimplement.
 
-- [T-188] **Recurrence end conditions cannot be set on iOS.** `recurrenceEndMode` /
-  `recurrenceEndCount` UI exists in exactly one file, `macOS/Views/TaskInspectorWorkflowSupportViews
-  .swift`; iOS's Repeat row (`iOSTaskDetailSheetSections.swift:243`) is a rule-only picker. The logic
-  is **already shared** — `CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd`
-  (`Shared/CadenceTaskRecurrenceWorkflowSupport.swift:120`), which macOS's inspector calls directly.
-  So a recurring task created on iOS repeats forever with no way to bound it, while correctly
-  honouring a bound set on a Mac. One picker row over existing logic.
-
-- [T-189] **macOS has no iCloud sync-status surface; iOS does.** Reverse direction.
-  `Shared/CadenceSyncHealth.swift` folds `startupIssue` and `CKAccountStatus` into one verdict, is
-  pinned by `CadenceSyncHealthTests`, and has **exactly one reader** — `iOSSyncSettingsSection`.
-  macOS reads `CKAccountStatus` nowhere and its `SettingsCategory` has no `.sync` case. Both root
-  views do show `cadenceStartupIssueBanner`, so the store half is covered; the **account** half
-  (signed out of iCloud, restricted) has no macOS surface at all, on the primary platform.
 
 - [T-190] **Task bundles can be viewed, edited and deleted on iOS but never created.** `TaskBundle(`
   is constructed only at `macOS/Services/SchedulingService.swift:32` and `:125`, inside
@@ -220,34 +262,12 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   every one of the filter sites rather than the two obvious ones.
 
 
-- [T-182] **The "derive a pane decision from handed width" rule now exists in four places, and
-  `CadenceRegularPaneLayout.swift` is its house file.** That file already holds
-  `CadenceRegularSplitLayout`, `CadenceCalendarWeekGridLayout` and `CadenceCalendarPaneLayout`, and
-  its own doc records the *same bug shape* — an 11" iPad splitting 632 into 312 + 320. `D-125` added a
-  fourth in `CadenceNotesListSupport.swift` because I told it to put the floor beside
-  `regularColumnWidth`; that was the weaker call and the agent flagged it, leaving a pointer comment.
-  Consolidate, or state in that file why notes is deliberately separate. The failure mode is a fifth
-  split surface writing a near-copy.
-
 - [T-183] **Audit the remaining fixed-width columns for missing floors.** `T-177` and Today's own
   `twoPaneMinimumWidth` are the same defect twice: a fixed `.frame(width:)` beside a flexing pane,
   with nothing asserting the flexing side stays usable. Worth one sweep for other fixed column widths
   — `CadenceRegularSplitLayout.listPaneWidth`, the calendar rails, the settings rail — asking in each
   case what the other side gets at the narrowest host that reaches it.
 
-- [T-180] **Three disagreeing heading ramps, and an H5 with no case.** Found by T-121 and
-  deliberately not fixed there, because changing behaviour inside a relocation makes the diff
-  unreviewable. macOS editor `30/26/22/19/17/15`, iOS editor `28/24/21/18/16/15`, and
-  `iOSMarkdownPreview.headingSize` `25/21/18/16/15` — **no level-5 case at all**. So the same note's
-  H1 is 28pt while editing and 25pt in the read-only preview, and an H5 falls through to the default.
-  This is the "canvas and preview render the same block differently" class that
-  `MarkdownRenderedBlockLimits` exists to stop.
-
-
-- [T-178] **`CommitmentIconTile` and `iOSIconTile` still disagree about corner radius.**
-  `min(12, size * 0.28)`, circular, against `Theme.radiusControl` (10), `.continuous`. Same pair
-  `c94edb5` converged on the border, deliberately left because it changes geometry rather than adding
-  a hairline. Decide it as its own call.
 
 - [T-179] **`control action=detach` ignores the `udid` argument and closes every simulator panel.**
   An agent detaching its own device closed three other agents' panels (iPhone 17e, iPhone 17 Pro Max,
@@ -468,6 +488,41 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-132] `d513e72` One heading ramp per platform; the tile corner was never size-relative
+  (T-180, T-178). The same note showed an H1 at 28pt editing and 25pt in preview, and preview's
+  `default:` swallowed levels **5 and 6**. iOS took the editor's ramp because it was the only one of
+  the two already complete at six levels — adopting preview's meant *inventing* the H5/H6 the ticket
+  exists to supply. macOS stayed separate on a better argument than "tiers": a ramp only means
+  something against the body under it, and 14pt fixed `NSFont` vs a 17pt-and-growing Dynamic Type
+  body makes macOS's *larger* ramp the *steeper* one.
+  T-178's renders **overturned the premise**: `min(12, size * 0.28)` saturates at 42.86pt so it only
+  ever evaluated 8.96 and 12 — both within 2pt of the token, and at 32/34pt the token reads rounder.
+  The visible work was the *curve*, not the radius; `.continuous` is what makes the token safe at 56pt.
+
+- [D-133] `29bb223` Six expressions of the pane-width rule, left in five files (T-182). My own debt,
+  and my count was short by two — `CadenceCalendarWeekGridLayout` (already in the house file) and all
+  of `CadenceRootShellLayout`, whose doc cites the rule without being counted as holding it.
+  Left separate because **co-location was never what prevented this**: three of the six already
+  cross-reference each other by name across file boundaries and a fourth copy still got written.
+  Comment-only diff over five files. The guard test asserts *placement* and *that each floor is
+  spelled as a sum*, because the existing numeric pins cannot fail when a sixth floor appears in a
+  new file — which is what happened at `d0adfdc` with the suite green.
+
+- [D-134] `592b967` A recurring task made on iPhone repeated forever; macOS could not see iCloud
+  (T-188, T-189). Both were shared-logic-with-a-missing-surface. The subtlety: selecting an end mode
+  must **seed** its value, because `effectiveRecurrenceEndMode` degrades an empty date or zero count
+  back to `.never`, so without the seed the picker looks like it refused the tap. macOS needed no new
+  category — `.sync` already existed and macOS never offered it. `CKContainer` is now called in
+  exactly one file app-wide, verified independently.
+
+- [D-135] Independent verification of HEAD. All five runs exit 0 with **0 compiler warnings**
+  (`Cadence` macOS + iOS, `CadenceWidgets`, `CadenceMCPServer`, `CadenceTests`), and all six claims
+  attacked held — including two mutations at exit 65 with **0 compile errors**. The composition risk
+  I was worried about did not materialise: ~15 changes each verified as HEAD-plus-its-own-files do
+  compose. Two document falsehoods found ([[T-205]], [[T-206]]) and several stale counts ([[T-207]]).
+  **The verifier itself got one thing wrong** — it reported the Inbox reminders strip as macOS-only;
+  it is at `iOSTaskCollectionPage.swift:94`, shipped in `d330f5e`. Verify the verifier too.
 
 - [D-131] `1136558` The Board's Completed split was right only by accident (T-203). Both day columns
   spelled it `!$0.isDone` / `$0.isDone`, so a cancelled task — not `isDone` — would have landed in
