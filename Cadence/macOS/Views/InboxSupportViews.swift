@@ -1,28 +1,19 @@
 #if os(macOS)
 import SwiftUI
 
-struct InboxTaskGroup: Identifiable {
-    let id: String
-    let title: String
-    let tasks: [AppTask]
-    let color: Color
-}
-
-struct InboxHeaderView: View {
-    let activeTaskCount: Int
-
-    /// No trailing action: Inbox's "new task" affordance is the floating circle over the list,
-    /// the same one every other task page uses. The header pill that used to live here was the
-    /// second shape for one action.
-    var body: some View {
-        DesktopPageHeader(
-            eyebrow: "Tasks",
-            title: "Inbox",
-            count: activeTaskCount
-        )
-    }
-}
-
+/// Apple Reminders, inline in the Inbox view of the Tasks page.
+///
+/// **This is the only place in the app that shows Apple Reminders**, and it is what makes the
+/// Inbox an *inbox* rather than a filter: unprocessed things, including ones captured outside
+/// Cadence. It survived All Tasks and Inbox being merged into one page precisely because losing it
+/// would have turned that merge into a deletion — `TasksListView.showsRemindersSection` gates it on
+/// the **scope**, not on the destination.
+///
+/// It is a `VStack` rather than a `Group` of `List` rows now. It used to carry
+/// `.listRowBackground(.clear)`, `.listRowSeparator(.hidden)` and `.listRowInsets(.init())` on
+/// every child — three modifiers switching off services the host was providing — and the merged
+/// list is a `LazyVStack`, where they do nothing at all. The rows draw their own hairline and
+/// hover, as they always did.
 struct InboxAppleRemindersSectionView: View {
     let reminders: [AppleReminderItem]
     let isAuthorized: Bool
@@ -33,7 +24,7 @@ struct InboxAppleRemindersSectionView: View {
     let onComplete: (String) -> Void
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
             TaskListGroupHeader(
                 title: "Apple Reminders",
                 isCollapsed: false,
@@ -45,9 +36,6 @@ struct InboxAppleRemindersSectionView: View {
             .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
             .padding(.top, 16)
             .padding(.bottom, 8)
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-            .listRowInsets(.init())
 
             if isAuthorized {
                 if isLoading && reminders.isEmpty {
@@ -59,17 +47,11 @@ struct InboxAppleRemindersSectionView: View {
                     }
                     .padding(.leading, TaskListDisplayMetrics.taskLeadingInset)
                     .padding(.vertical, 12)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(.init())
                 } else {
                     ForEach(reminders) { reminder in
                         AppleReminderTaskRow(reminder: reminder, onComplete: onComplete)
                             .padding(.leading, TaskListDisplayMetrics.taskLeadingInset)
                             .padding(.trailing, TaskListDisplayMetrics.taskTrailingInset)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(.init())
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
@@ -80,9 +62,6 @@ struct InboxAppleRemindersSectionView: View {
                 )
                 .padding(.leading, TaskListDisplayMetrics.taskLeadingInset)
                 .padding(.trailing, TaskListDisplayMetrics.taskTrailingInset)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .listRowInsets(.init())
             }
         }
     }
@@ -241,111 +220,11 @@ private struct AppleRemindersAccessRow: View {
     }
 }
 
-struct InboxControlsBarView: View {
-    @Binding var sortField: TaskSortField
-    @Binding var sortDirection: TaskSortDirection
-    @Binding var groupingMode: TaskGroupingMode
 
-    var body: some View {
-        DesktopControlBar {
-            CadenceEnumPickerBadge(title: "Sort", selection: $sortField)
-            CadenceEnumPickerBadge(title: "Order", selection: $sortDirection)
-            CadenceEnumPickerBadge(title: "Group", selection: $groupingMode)
-        }
-    }
-}
-
-struct InboxTaskGroupSectionView: View {
-    let group: InboxTaskGroup
-    let contexts: [Context]
-    let areas: [Area]
-    let projects: [Project]
-    let allTasks: [AppTask]
-    @Binding var dragOverTaskID: UUID?
-    let onReorderTask: (UUID, UUID) -> Void
-
-    var body: some View {
-        Group {
-            TaskListGroupHeader(
-                title: group.title,
-                isCollapsed: false,
-                overdueCount: nil,
-                regularCount: group.tasks.count,
-                accent: group.color,
-                isToggleEnabled: false,
-                onToggle: { }
-            )
-            .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
-            .padding(.top, 16)
-            .padding(.bottom, 8)
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-            .listRowInsets(.init())
-
-            ForEach(group.tasks) { task in
-                TaskListInteractiveRow(
-                    task: task,
-                    style: .standard,
-                    contexts: contexts,
-                    areas: areas,
-                    projects: projects,
-                    dragOverTaskID: $dragOverTaskID,
-                    taskDragPayload: { TaskDragPayload.string(for: $0.id) },
-                    onDropOnTaskPayload: { payload, targetTask in
-                        guard let droppedID = TaskDragPayload.listTaskID(from: payload),
-                              droppedID != targetTask.id else { return false }
-                        onReorderTask(droppedID, targetTask.id)
-                        return true
-                    }
-                )
-            }
-        }
-    }
-}
-
-struct InboxCompletedSectionView: View {
-    let tasks: [AppTask]
-    let contexts: [Context]
-    let areas: [Area]
-    let projects: [Project]
-    let allTasks: [AppTask]
-    let isCollapsed: Bool
-    let onToggle: () -> Void
-
-    var body: some View {
-        Group {
-            TaskListGroupHeader(
-                title: "Completed",
-                count: tasks.count,
-                isCollapsed: isCollapsed,
-                accent: Theme.green,
-                onToggle: onToggle
-            )
-            .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
-            .padding(.top, 16)
-            .padding(.bottom, 8)
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-            .listRowInsets(.init())
-
-            if !isCollapsed {
-                ForEach(tasks) { task in
-                    TaskListDisplayRow(
-                        task: task,
-                        style: .standard,
-                        contexts: contexts,
-                        areas: areas,
-                        projects: projects
-                    )
-                }
-            }
-        }
-    }
-}
-
-/// The empty state carries no button of its own: the floating "+" is on screen behind it, so a
-/// second create control here would be a third shape for the same action. The copy still says
-/// what the screen is for, which the page header deliberately does not.
+/// The Inbox scope's empty state. Carries no button of its own: the floating "+" is on screen
+/// behind it, so a second create control here would be a third shape for the same action. The copy
+/// still says what the screen is for, which the page header deliberately does not — and it says
+/// "Apple Reminders" too, which the All Tasks scope's empty state must not.
 struct InboxEmptyStateView: View {
     var body: some View {
         ZStack {

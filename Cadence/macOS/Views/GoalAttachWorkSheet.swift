@@ -89,7 +89,7 @@ struct AttachWorkSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             GoalSectionHeading(title: "Lists", count: groupedLists.reduce(0) { $0 + $1.areas.count + $1.projects.count })
             if groupedLists.isEmpty {
-                GoalInlineEmpty(text: "No matching lists.")
+                CadenceInlineEmpty(text: "No matching lists.", surface: .desktop)
             } else {
                 ForEach(Array(groupedLists.enumerated()), id: \.offset) { _, group in
                     VStack(alignment: .leading, spacing: 6) {

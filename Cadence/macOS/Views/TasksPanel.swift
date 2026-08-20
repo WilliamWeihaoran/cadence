@@ -557,7 +557,7 @@ struct TasksPanel: View {
     /// sequence stable as counts and dates change.
     ///
     /// Scoped to Today only: All Tasks (`.byDoDate`) still renders its own
-    /// `byDoDateListSections`, and `AllTasksListView` keeps its context-icon
+    /// `byDoDateListSections`, and `TasksListView` keeps its context-icon
     /// affordance — neither goes through this path.
     @ViewBuilder
     private func todayListSections(groups: [TodayTaskGroup]) -> some View {

@@ -31,6 +31,11 @@ struct CalendarPageView: View {
     // Index of the *block* MonthGridView renders, not of a calendar month — the two differ for
     // the days before a month's first Sunday. See `CalendarPageStateSupport.visibleMonthLabel`.
     @State private var visibleMonthIdx: Int = CalendarPageStateSupport.monthIndexForToday(calendar: .current)
+    // The month the month grid is *showing*, reported back from its scroll position — what its
+    // cells are tinted against and what the title reads, one value for both. `nil` until the grid
+    // has measured itself, where `visibleMonthIdx` is the fallback. See
+    // `CalendarPageLifecycleSupport.calendarTitleLabel`.
+    @State private var monthDisplayedMonth: Date?
     @State private var monthGridResetNonce: Int = 0
     @State private var isRestoringVerticalScroll = true
     @State private var isRestoringHorizontalScroll = true
@@ -92,6 +97,7 @@ struct CalendarPageView: View {
                     bundlesByDate: bundlesByDate,
                     eventCache: calendarEventDayCache,
                     visibleMonthIdx: $visibleMonthIdx,
+                    displayedMonth: $monthDisplayedMonth,
                     scrollToTodayTrigger: scrollToTodayTrigger
                 )
                 .id("month-grid-\(monthGridResetNonce)")
@@ -181,6 +187,7 @@ struct CalendarPageView: View {
         return CalendarPageLifecycleSupport.calendarTitleLabel(
             viewMode: viewMode,
             visibleMonthIdx: visibleMonthIdx,
+            displayedMonth: monthDisplayedMonth,
             visibleTimelineDayIndex: visibleTimelineDayIndex,
             anchorDateKey: anchorDateKey,
             bufferStart: bufferStart,

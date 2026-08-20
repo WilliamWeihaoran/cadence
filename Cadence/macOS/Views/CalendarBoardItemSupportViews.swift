@@ -72,15 +72,17 @@ struct CalendarBoardBundleCard: View {
 
     private var metadata: some View {
         HStack(spacing: 6) {
-            CalendarBoardMetadataChip(
+            CadenceBoardMetadataChip(
                 title: TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin),
                 systemImage: "clock",
-                tint: Theme.amber
+                tint: Theme.amber,
+                cardCornerRadius: kanbanCardCornerRadius
             )
-            CalendarBoardMetadataChip(
+            CadenceBoardMetadataChip(
                 title: "\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")",
                 systemImage: "checklist",
-                tint: Theme.dim
+                tint: Theme.dim,
+                cardCornerRadius: kanbanCardCornerRadius
             )
         }
     }
@@ -203,9 +205,19 @@ struct CalendarBoardEventCard: View {
                     .lineLimit(2)
 
                 HStack(spacing: 6) {
-                    CalendarBoardMetadataChip(title: subtitle, systemImage: item.isAllDay ? "sun.max" : "clock", tint: tint)
+                    CadenceBoardMetadataChip(
+                        title: subtitle,
+                        systemImage: item.isAllDay ? "sun.max" : "clock",
+                        tint: tint,
+                        cardCornerRadius: kanbanCardCornerRadius
+                    )
                     if item.isRecurringSeriesMember {
-                        CalendarBoardMetadataChip(title: "Repeats", systemImage: "repeat", tint: tint)
+                        CadenceBoardMetadataChip(
+                            title: "Repeats",
+                            systemImage: "repeat",
+                            tint: tint,
+                            cardCornerRadius: kanbanCardCornerRadius
+                        )
                     }
                 }
             }
@@ -240,32 +252,9 @@ struct CalendarBoardEventCard: View {
     }
 }
 
-/// The event/bundle chip. Deliberately **not** a `KanbanMetaChip`: an event has no completion
-/// circle, no list, no estimate, and cannot be edited field-by-field from the card, so its chips
-/// stay read-only and carry the calendar's own colour. It borrows the task chip's geometry —
-/// same corner radius, same padding, same icon/label sizes — so the two read as one family
-/// without pretending an event is a task.
-struct CalendarBoardMetadataChip: View {
-    let title: String
-    let systemImage: String
-    let tint: Color
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: systemImage)
-                .font(.system(size: 9, weight: .semibold))
-                .frame(width: 10)
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-        }
-        .foregroundStyle(tint)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(tint.opacity(CalendarEventVisualStyle.chipTintOpacity()))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-}
+// The event/bundle chip is `CadenceBoardMetadataChip` in
+// `Shared/Components/CadenceBoardMetadataChip.swift`. `CalendarBoardMetadataChip` was declared
+// here beside a `private iOSCalendarBoardMetadataChip` in `Cadence/iOS/iOSBoardCards.swift` that
+// said "Matches macOS's `CalendarBoardMetadataChip`" and had no way to keep matching it.
 
 #endif

@@ -61,6 +61,7 @@ struct CadenceApp: App {
                 .environment(AISettingsManager.shared)
                 .environment(iOSCalendarManager.shared)
                 .environment(NotificationManager.shared)
+                .environment(RemindersManager.shared)
 #endif
         }
         .modelContainer(sharedModelContainer)

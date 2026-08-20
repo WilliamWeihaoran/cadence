@@ -68,10 +68,20 @@ struct MarkdownImageLayoutInfo {
     let displayWidth: CGFloat
     let pixelSize: CGSize
 
+    /// The size the image draws at, and the size its line fragment reserves — one function so the
+    /// two cannot disagree (see `applyImageBlock`).
+    ///
+    /// The arithmetic is `MarkdownImageAssetService.fittedSize`, shared with the iOS renderer, so
+    /// the aspect is derived in exactly one place. This used to end in `max(60, width * aspect)`: a
+    /// height floor applied without touching the width, which stretched a wide banner (1600 × 100
+    /// at 520pt wide wants 32.5pt of height and was drawn at 60 — 85% too tall). The iOS twin of
+    /// that line also had a *ceiling*, which is what squashed portrait photos.
     func fittedSize(maxWidth: CGFloat) -> CGSize {
-        let width = min(max(1, displayWidth), max(1, maxWidth))
-        let aspect = pixelSize.height / max(pixelSize.width, 1)
-        return CGSize(width: width, height: max(60, width * aspect))
+        MarkdownImageAssetService.fittedSize(
+            displayWidth: displayWidth,
+            pixelSize: pixelSize,
+            maxWidth: maxWidth
+        )
     }
 }
 

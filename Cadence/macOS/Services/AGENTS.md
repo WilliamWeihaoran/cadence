@@ -1,12 +1,17 @@
 # macOS Services Guide
 
-These services coordinate desktop-only behavior: EventKit calendar *and* reminders, focus timers,
+These services coordinate desktop-only behavior: EventKit calendar, focus timers,
 global hotkeys, hover-driven shortcuts, deletion overlays, scheduling, navigation, quick task
 panels, note export, Sign in with Apple, and the privacy data reset.
 
 Beyond the long-standing managers, note:
 
-- `RemindersManager.swift` - EventKit **reminders** (separate authorization from calendar), surfaced through Settings -> Reminders.
+- **`RemindersManager` is not here either.** EventKit **reminders** (separate authorization from
+  calendar) moved to `Cadence/Services/CadenceRemindersManager.swift` when iOS gained its own
+  Settings -> Reminders screen. Nothing in it was ever AppKit-bound — the `#if os(macOS)` guard
+  and the folder were an accident of where it was written, and that accident is what made
+  Apple Reminders unreachable from iOS Settings. A 2-line tombstone `RemindersManager.swift`
+  remains here recording the move.
 - **`CalendarVisibilityPreferences` and `CalendarWorkHoursPreferences` are not here.** Both are
   cross-platform and live in `Cadence/Shared/` (`CadenceCalendarVisibilityPreferences.swift` — the
   *file* carries the `Cadence` prefix, the *type* does not — and `CalendarWorkHoursPreferences.swift`),

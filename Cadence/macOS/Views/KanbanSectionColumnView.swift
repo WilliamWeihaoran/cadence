@@ -83,7 +83,7 @@ struct ListSectionKanbanColumn: View {
 
     private var columnBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // The hairline under the header is part of `BoardColumnHeader` itself, so all three
+            // The hairline under the header is part of `CadenceBoardColumnHeader` itself, so all three
             // boards close their header the same way without each column remembering to.
             columnHeader
 

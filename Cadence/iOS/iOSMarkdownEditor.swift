@@ -16,6 +16,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     var onOpenEmbeddedTask: ((UUID) -> Void)?
     var onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)?
     var onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])?
+    var onResizeImage: ((UUID, CGFloat) -> Void)?
 
     init(
         text: Binding<String>,
@@ -29,7 +30,8 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         onCreateEmbeddedTask: ((String) -> String?)? = nil,
         onOpenEmbeddedTask: ((UUID) -> Void)? = nil,
         onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)? = nil,
-        onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])? = nil
+        onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])? = nil,
+        onResizeImage: ((UUID, CGFloat) -> Void)? = nil
     ) {
         _text = text
         _isFocused = isFocused
@@ -43,6 +45,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         self.onOpenEmbeddedTask = onOpenEmbeddedTask
         self.onOpenReference = onOpenReference
         self.onCreatePastedImages = onCreatePastedImages
+        self.onResizeImage = onResizeImage
     }
 
     func makeUIView(context: UIViewRepresentableContext<iOSMarkdownEditor>) -> UITextView {
@@ -98,6 +101,28 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         referenceTap.require(toFail: renderedBlockTap)
         textView.addGestureRecognizer(renderedBlockTap)
         textView.addGestureRecognizer(referenceTap)
+
+        let imageResize = iOSMarkdownImageResizeGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleImageResize(_:))
+        )
+        imageResize.name = Coordinator.imageResizeName
+        imageResize.maximumNumberOfTouches = 1
+        imageResize.delaysTouchesBegan = false
+        // The touch belongs to the handle once this recognizer has taken it; letting the text view
+        // also see it would place a caret under the finger mid-drag.
+        imageResize.cancelsTouchesInView = true
+        imageResize.delegate = context.coordinator
+        imageResize.handleHitTest = { [weak textView, weak coordinator = context.coordinator] point in
+            guard let textView, let coordinator else { return nil }
+            return coordinator.imageResizeHit(at: point, in: textView)
+        }
+        // Safe precisely because the recognizer above fails inside `touchesBegan` for every touch
+        // that is not on a handle: the requirement is satisfied in the same event, so scrolling is
+        // not delayed anywhere else in the note.
+        textView.panGestureRecognizer.require(toFail: imageResize)
+        textView.addGestureRecognizer(imageResize)
+
         textView.backgroundColor = .clear
         // No `inputAccessoryView`. A "Done" bar used to sit above the keyboard here, and its only
         // job was to resign first responder — a permanent 44pt strip of chrome across every editor
@@ -625,10 +650,107 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
-            true
+            // A resize owns its touch outright. Recognising alongside the text view's selection
+            // press or its scroll pan would mean two gestures acting on one finger — the picture
+            // resizing while a loupe follows the same drag.
+            if gestureRecognizer.name == Self.imageResizeName || otherGestureRecognizer.name == Self.imageResizeName {
+                return false
+            }
+            return true
         }
 
         static let renderedBlockTapName = "cadence.markdown.renderedBlockTap"
+        static let imageResizeName = "cadence.markdown.imageResize"
+
+        // MARK: - Image resize
+
+        /// Live width of the picture when the current drag started.
+        private var imageResizeStartWidth: CGFloat = 0
+
+        @objc func handleImageResize(_ recognizer: UIPanGestureRecognizer) {
+            guard let textView = recognizer.view as? UITextView,
+                  let hit = (recognizer as? iOSMarkdownImageResizeGestureRecognizer)?.hit
+            else { return }
+
+            switch recognizer.state {
+            case .began:
+                imageResizeStartWidth = hit.startWidth
+            case .changed:
+                let width = MarkdownImageAssetService.resolvedDisplayWidth(
+                    startWidth: imageResizeStartWidth,
+                    translation: recognizer.translation(in: textView).x
+                )
+                parent.onResizeImage?(hit.id, width)
+                restyleForImageResize(textView)
+            default:
+                break
+            }
+        }
+
+        /// Re-lays the note at the new width without the caret or the scroll position moving.
+        ///
+        /// The paragraph style reserves the card's height, so a resize changes the document's
+        /// layout — `UITextView` would otherwise keep its content offset against a document that
+        /// grew or shrank above it and the note would appear to slide under the finger.
+        private func restyleForImageResize(_ textView: UITextView) {
+            let offset = textView.contentOffset
+            refreshStylingIfNeeded(on: textView)
+            if textView.contentOffset != offset {
+                textView.setContentOffset(offset, animated: false)
+            }
+        }
+
+        /// The image whose resize handle is under `point`, and the width it is drawn at now.
+        ///
+        /// Measured against the rect the block canvas was actually painted into
+        /// (`iOSMarkdownBlockCanvas.blockRect`, the same function the layout manager draws from),
+        /// then converted to card-local coordinates and asked of `MarkdownImageBlockLayout` — the
+        /// same value that produced the handle in the rendered canvas. Drawing and hit testing
+        /// therefore cannot disagree about where the grip is.
+        func imageResizeHit(at point: CGPoint, in textView: UITextView) -> iOSMarkdownImageResizeGestureRecognizer.Hit? {
+            guard textView.bounds.contains(point), textView.textStorage.length > 0 else { return nil }
+
+            let layoutManager = textView.layoutManager
+            layoutManager.ensureLayout(for: textView.textContainer)
+
+            var textPoint = point
+            textPoint.x -= textView.textContainerInset.left
+            textPoint.y -= textView.textContainerInset.top
+
+            let contentWidth = textView.markdownContentWidth
+            var result: iOSMarkdownImageResizeGestureRecognizer.Hit?
+            let fullRange = NSRange(location: 0, length: textView.textStorage.length)
+            textView.textStorage.enumerateAttribute(.cadenceMarkdownImage, in: fullRange, options: []) { value, range, stop in
+                guard let info = value as? iOSMarkdownImageLayoutInfo,
+                      range.location < textView.textStorage.length,
+                      let canvas = textView.textStorage.attribute(
+                        .cadenceMarkdownBlockCanvas,
+                        at: range.location,
+                        effectiveRange: nil
+                      ) as? iOSMarkdownBlockCanvas else { return }
+
+                let glyphIndex = layoutManager.glyphIndexForCharacter(at: range.location)
+                guard glyphIndex < layoutManager.numberOfGlyphs else { return }
+                let fragment = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+                let cardRect = iOSMarkdownBlockCanvas.blockRect(
+                    inLineFragment: fragment,
+                    size: canvas.image.size,
+                    leadingInset: canvas.leadingInset,
+                    yOffset: canvas.yOffset
+                )
+
+                let layout = info.layout(maxWidth: contentWidth)
+                let localPoint = CGPoint(x: textPoint.x - cardRect.minX, y: textPoint.y - cardRect.minY)
+                guard layout.isResizeHandle(localPoint: localPoint) else { return }
+
+                result = iOSMarkdownImageResizeGestureRecognizer.Hit(
+                    id: info.id,
+                    startWidth: layout.imageRect.width
+                )
+                stop.pointee = true
+            }
+            return result
+        }
 
         /// Keeps the rendered-block double tap from beginning anywhere it has nothing to do.
         ///

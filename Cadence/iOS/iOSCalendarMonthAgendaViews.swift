@@ -81,12 +81,17 @@ struct iOSCalendarMonthStack<Detail: View>: View {
     }
 }
 
-/// Every day the month grid draws, in sequence, with what each one holds.
+/// One section per day of the month grid that **holds something**, in sequence.
 ///
 /// The grid and this list are one selection, both ways: tapping a grid day scrolls the list to that
 /// day's section, and scrolling the list moves the grid's selection to whichever day is at the top.
 /// The rules that keep those two from driving each other in a loop are
 /// `CadenceCalendarMonthAgendaSupport.scrollTarget` / `selectionTarget`, in `Shared/` and tested.
+///
+/// Quiet days are not listed, so most of the grid's cells have no section of their own and a tap on
+/// one is resolved to the nearest that does — `CadenceCalendarMonthAgendaSupport.nearestListedDayKey`,
+/// applied inside `scrollTarget(forSelectedDay:…)` so the resolution and the loop guard cannot be
+/// composed in the wrong order.
 ///
 /// There is no add control here. Capture on a compact Calendar tab is the tab bar's centre `+`, the
 /// same as compact Today.
@@ -132,31 +137,62 @@ struct iOSCalendarMonthAgendaList: View {
         self.eventsByDate = eventsByDate
         self._scrolledDayKey = State(
             initialValue: CadenceCalendarMonthAgendaSupport.initialScrollTarget(
-                selectedKey: DateFormatters.dateKey(from: selectedDate.wrappedValue),
-                agendaDayKeys: CadenceCalendarMonthAgendaSupport.agendaDayKeys(forMonthContaining: monthDate)
+                forSelectedDay: DateFormatters.dateKey(from: selectedDate.wrappedValue),
+                listedDayKeys: Self.sections(
+                    monthDate: monthDate,
+                    calendar: .current,
+                    monthTasksByDate: monthTasksByDate,
+                    bundlesByDate: bundlesByDate,
+                    eventsByDate: eventsByDate
+                ).map(\.key)
             )
         )
     }
 
-    private var agendaDays: [Date] {
+    /// The sections this view draws, and the **only** source of the key list that drives
+    /// `.scrollPosition(id:)`.
+    ///
+    /// One array read two ways, deliberately: a key list assembled separately from the rendered
+    /// list is free to name a day the stack has no section for, and `scrollPosition(id:)` drops a
+    /// scroll to an id it cannot find without saying so.
+    ///
+    /// `static` because `init` needs it too — the seeded scroll position has to be resolved against
+    /// the same list the first layout will build.
+    private static func sections(
+        monthDate: Date,
+        calendar: Calendar,
+        monthTasksByDate: [String: [AppTask]],
+        bundlesByDate: [String: [TaskBundle]],
+        eventsByDate: [String: [EKEvent]]
+    ) -> [iOSCalendarAgendaDaySection] {
         CadenceCalendarMonthAgendaSupport.agendaDays(forMonthContaining: monthDate, calendar: calendar)
+            .compactMap { date in
+                let key = DateFormatters.dateKey(from: date, calendar: calendar)
+                let items = agendaItems(
+                    on: key,
+                    date: date,
+                    calendar: calendar,
+                    monthTasksByDate: monthTasksByDate,
+                    bundlesByDate: bundlesByDate,
+                    eventsByDate: eventsByDate
+                )
+                guard !items.isEmpty else { return nil }
+                return iOSCalendarAgendaDaySection(date: date, key: key, items: items)
+            }
     }
 
-    private var agendaDayKeys: [String] {
-        CadenceCalendarMonthAgendaSupport.agendaDayKeys(forMonthContaining: monthDate, calendar: calendar)
-    }
-
-    /// The section the agenda opens on, re-read every pass so the one-shot assertion below uses the
-    /// selection as it stands at first layout rather than as it stood in `init`.
-    private var initialScrollTarget: String? {
-        CadenceCalendarMonthAgendaSupport.initialScrollTarget(
-            selectedKey: DateFormatters.dateKey(from: selectedDate),
-            agendaDayKeys: agendaDayKeys
+    private var sections: [iOSCalendarAgendaDaySection] {
+        Self.sections(
+            monthDate: monthDate,
+            calendar: calendar,
+            monthTasksByDate: monthTasksByDate,
+            bundlesByDate: bundlesByDate,
+            eventsByDate: eventsByDate
         )
     }
 
     var body: some View {
-        agenda
+        content
             .background(Theme.bg)
             .sheet(item: $selectedBundle) { bundle in
                 iOSCalendarBundleDetailSheet(bundle: bundle)
@@ -166,12 +202,38 @@ struct iOSCalendarMonthAgendaList: View {
             }
     }
 
-    private var agenda: some View {
-        ScrollView {
+    /// A month holding nothing draws no scroll view at all.
+    ///
+    /// Not a nicety: an empty `LazyVStack` under a live `.scrollPosition(id:)` binding is a
+    /// position pointing at a stack with no ids, which is the state every scroll bug on this
+    /// surface has started from. There is nothing to place, so there is nothing to place it with.
+    @ViewBuilder
+    private var content: some View {
+        let sections = self.sections
+        if sections.isEmpty {
+            EmptyStateView(
+                message: "Nothing this month",
+                subtitle: "Days with events, blocks or tasks show up here.",
+                icon: "calendar"
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            agenda(sections)
+        }
+    }
+
+    private func agenda(_ sections: [iOSCalendarAgendaDaySection]) -> some View {
+        let listedDayKeys = sections.map(\.key)
+        let initialScrollTarget = CadenceCalendarMonthAgendaSupport.initialScrollTarget(
+            forSelectedDay: DateFormatters.dateKey(from: selectedDate),
+            listedDayKeys: listedDayKeys
+        )
+
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
-                ForEach(agendaDays, id: \.self) { date in
-                    daySection(for: date)
-                        .id(DateFormatters.dateKey(from: date))
+                ForEach(sections) { section in
+                    daySection(section)
+                        .id(section.key)
                 }
             }
             .scrollTargetLayout()
@@ -184,7 +246,7 @@ struct iOSCalendarMonthAgendaList: View {
         .scrollPosition(id: $scrolledDayKey, anchor: .top)
         .cadenceLazyScrollAnchor($scrolledDayKey, target: initialScrollTarget)
         .onChange(of: selectedDate) { _, newValue in
-            scrollAgenda(toSelected: DateFormatters.dateKey(from: newValue))
+            scrollAgenda(toSelected: DateFormatters.dateKey(from: newValue), listedDayKeys: listedDayKeys)
         }
         .onChange(of: scrolledDayKey) { _, newValue in
             // The same gate the month grid above this agenda already applies, and for the same
@@ -206,33 +268,33 @@ struct iOSCalendarMonthAgendaList: View {
             }
         }
         .onChange(of: monthDate) { _, _ in
-            realignAgendaWithMonth()
+            realignAgendaWithMonth(listedDayKeys: listedDayKeys)
         }
     }
 
-    @ViewBuilder
-    private func daySection(for date: Date) -> some View {
-        let key = DateFormatters.dateKey(from: date)
-        let items = agendaItems(on: key, date: date)
-        let isToday = calendar.isDateInToday(date)
-        let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
+    private func daySection(_ section: iOSCalendarAgendaDaySection) -> some View {
+        let isToday = calendar.isDateInToday(section.date)
+        let isSelected = calendar.isDate(section.date, inSameDayAs: selectedDate)
 
-        VStack(alignment: .leading, spacing: 10) {
-            // The same header every board column gets. An empty day is the header on its own: the
-            // count says nothing is there, and a "Nothing scheduled" card repeated down thirty
-            // quiet days would be more chrome than the chrome this view removed.
-            iOSBoardColumnHeader(
+        return VStack(alignment: .leading, spacing: 10) {
+            // The same header every board column gets — and now only over days that have something
+            // under it. This used to draw for every day of the month, on the argument that a bare
+            // header says "nothing here" more quietly than a "Nothing scheduled" card would. That
+            // was the right comparison and the wrong conclusion: it only ranked two kinds of
+            // chrome against each other, and the user, looking at thirty quiet headers, asked for
+            // the third option. A day with nothing on it is now not a section at all.
+            CadenceBoardColumnHeader(
                 dotColor: isToday ? Theme.amber : isSelected ? Theme.blue : Theme.dim,
-                title: CadenceCalendarMonthAgendaSupport.dayHeaderLabel(for: date),
-                count: items.count,
+                title: CadenceCalendarMonthAgendaSupport.dayHeaderLabel(for: section.date),
+                count: section.items.count,
                 accentRule: isToday ? Theme.amber : nil
             )
 
-            ForEach(items) { item in
+            ForEach(section.items) { item in
                 agendaRow(item)
             }
         }
-        .opacity(calendar.isDate(date, equalTo: monthDate, toGranularity: .month) ? 1 : 0.55)
+        .opacity(calendar.isDate(section.date, equalTo: monthDate, toGranularity: .month) ? 1 : 0.55)
     }
 
     @ViewBuilder
@@ -274,7 +336,14 @@ struct iOSCalendarMonthAgendaList: View {
     ///
     /// Tasks come from the **same** `monthTasksByDate` the grid dots are drawn from, so a day the
     /// grid marks is never a day the agenda shows as empty.
-    private func agendaItems(on key: String, date: Date) -> [iOSCalendarBoardColumnItem] {
+    private static func agendaItems(
+        on key: String,
+        date: Date,
+        calendar: Calendar,
+        monthTasksByDate: [String: [AppTask]],
+        bundlesByDate: [String: [TaskBundle]],
+        eventsByDate: [String: [EKEvent]]
+    ) -> [iOSCalendarBoardColumnItem] {
         let events = iOSCalendarBoardEventItem
             .items(
                 from: CadenceScheduleSupport.items(on: key, in: eventsByDate),
@@ -290,11 +359,14 @@ struct iOSCalendarMonthAgendaList: View {
         return (events + bundles + tasks).sorted { $0.sortKey < $1.sortKey }
     }
 
-    private func scrollAgenda(toSelected key: String) {
+    /// A tap on a grid day. Most days have no section of their own now, so the resolution to the
+    /// nearest one that does is part of this decision rather than something the caller layers on
+    /// top — see `CadenceCalendarMonthAgendaSupport.scrollTarget(forSelectedDay:…)`.
+    private func scrollAgenda(toSelected key: String, listedDayKeys: [String]) {
         guard let target = CadenceCalendarMonthAgendaSupport.scrollTarget(
-            selectedKey: key,
+            forSelectedDay: key,
             scrolledKey: scrolledDayKey,
-            agendaDayKeys: agendaDayKeys
+            listedDayKeys: listedDayKeys
         ) else { return }
         withAnimation(.snappy(duration: 0.24)) {
             scrolledDayKey = target
@@ -313,11 +385,27 @@ struct iOSCalendarMonthAgendaList: View {
     /// remembered section can be a day the new month does not list, and `scrollPosition(id:)` drops
     /// a scroll to an id that is not there — leaving the grid and the agenda pointing at different
     /// days with no gesture that puts them back.
-    private func realignAgendaWithMonth() {
-        let keys = agendaDayKeys
-        let selectedKey = DateFormatters.dateKey(from: selectedDate)
-        scrolledDayKey = keys.contains(selectedKey) ? selectedKey : keys.first
+    ///
+    /// Doubly so now that a quiet day is not listed at all: the same day can be a section in one
+    /// month's list and absent from the next month's for no reason the user did anything about.
+    private func realignAgendaWithMonth(listedDayKeys: [String]) {
+        scrolledDayKey = CadenceCalendarMonthAgendaSupport.initialScrollTarget(
+            forSelectedDay: DateFormatters.dateKey(from: selectedDate),
+            listedDayKeys: listedDayKeys
+        )
     }
+}
+
+/// One drawn day of the agenda: the day, its key, and the items that made it worth drawing.
+///
+/// A value type rather than a tuple so `ForEach` has an identity to use, and so "the sections" and
+/// "the section keys" are provably the same list.
+private struct iOSCalendarAgendaDaySection: Identifiable {
+    let date: Date
+    let key: String
+    let items: [iOSCalendarBoardColumnItem]
+
+    var id: String { key }
 }
 
 /// The month grid in its compact form: a day number and, when the day holds anything at all, a dot.

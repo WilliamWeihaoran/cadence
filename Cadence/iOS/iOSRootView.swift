@@ -90,12 +90,13 @@ struct iOSRootView: View {
         switch item {
         case .today:
             iPadTodayView()
-        case .allTasks:
-            iOSAllTasksView()
+        // One branch, one view: All Tasks and Inbox are two views of one page now, and separate
+        // `switch` arms would give SwiftUI two identities and reset the page every time something
+        // navigated between them.
+        case .allTasks, .inbox:
+            iOSTasksPageView(requestedScope: item == .inbox ? .inbox : nil)
         case .focus:
             iOSFocusView()
-        case .inbox:
-            iPadInboxView()
         case .calendar:
             iOSCalendarView()
         case .goals:

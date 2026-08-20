@@ -170,6 +170,89 @@ struct SidebarNavRow: View {
     }
 }
 
+/// Settings and Focus, one row, pushed to opposite ends.
+///
+/// The same shape the iPad column has drawn since `CadenceSidebarLayout.footerGlyphDestinations`
+/// was introduced. That property's comment used to say it was deliberately a *view* of
+/// `secondaryDestinations` because "macOS reads that list too, and its sidebar still wants four
+/// labelled rows" — the user looked at the two columns side by side and said the Mac's separate
+/// Settings and Focus buttons were wrong and should match iOS. So macOS reads it now as well, and
+/// these two spend a glyph of height between them instead of a labelled row each.
+///
+/// **The glyphs keep their destination tint**, unlike the iPad's original ghost treatment, and
+/// selection is the same `Theme.surfaceHighlight` plate at the same radius the nav rows above use
+/// — one layer at one radius. Brightening the glyph to `Theme.text` was how the iPad carried
+/// selection here, and it cannot survive a tinted glyph: the colour is the destination's identity
+/// and overwriting it to say "selected" would say two things with one channel.
+struct SidebarFooterGlyphRow: View {
+    let items: [SidebarNavItem]
+    let selection: SidebarItem?
+    let onSelect: (SidebarItem) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                if index > 0 {
+                    Spacer(minLength: 8)
+                }
+
+                SidebarGlyphButton(
+                    icon: item.icon,
+                    label: item.label,
+                    tint: item.tint,
+                    isSelected: selection == item.item,
+                    accessibilityID: item.accessibilityID
+                ) {
+                    onSelect(item.item)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// One glyph in the sidebar's footer row: a tinted symbol on the column's own hover/selection
+/// plate, sized off `SidebarMetrics` so it lines up with the rows above rather than with itself.
+struct SidebarGlyphButton: View {
+    let icon: String
+    let label: String
+    let tint: Color
+    let isSelected: Bool
+    let accessibilityID: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: SidebarMetrics.rowCornerRadius, style: .continuous)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: SidebarMetrics.iconSize, weight: .semibold))
+                .foregroundStyle(tint.opacity(SidebarMetrics.secondaryIconOpacity))
+                .frame(width: SidebarMetrics.footerGlyphSize, height: SidebarMetrics.footerGlyphSize)
+                .background(shape.fill(backgroundFill))
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityIdentifier(accessibilityID)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .animation(.easeOut(duration: 0.12), value: isSelected)
+    }
+
+    private var backgroundFill: Color {
+        if isSelected { return Theme.surfaceHighlight }
+        if isHovered { return Theme.surfaceElevated }
+        return Color.clear
+    }
+}
+
 /// Hairline splitting the column into nav / lists / nav.
 struct SidebarSectionDivider: View {
     var body: some View {

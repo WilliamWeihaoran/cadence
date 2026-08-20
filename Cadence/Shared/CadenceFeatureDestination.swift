@@ -39,11 +39,14 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
 
     var id: String { rawValue }
 
+    /// The default order of the rows Settings → Sidebar offers a handle for, which is also
+    /// `SidebarStaticDestination.defaultOrder`. `.inbox` is not among them any more: it is a view
+    /// inside the Tasks row rather than a row, so offering it a place in the row order would be
+    /// offering a control that moves nothing.
     static let desktopSidebarOrder: [CadenceFeatureDestination] = [
         .today,
         .allTasks,
         .focus,
-        .inbox,
         .calendar,
         .goals,
         .habits
@@ -98,6 +101,11 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         }
     }
 
+    /// The short label, for a sidebar row, an iPad column and an iPhone tab.
+    ///
+    /// `.allTasks` reads **Tasks** because the destination hosts both All and Inbox
+    /// (`CadenceTasksPageScope`) — a row labelled "All Tasks" would be naming one of its own two
+    /// views. `CadenceSidebarLayout.rowTitle(for:)` is how the sidebars ask for it.
     var compactTitle: String {
         switch self {
         case .allTasks: return "Tasks"
@@ -194,7 +202,13 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         case .allTasks: return "#5AA2FF"
         case .focus: return "#FF6B6B"
         case .inbox: return "#5AA2FF"
-        case .calendar: return "#9E8CFF"
+        // Red, at the user's request. **This is the same hex as `.focus`**, which was already
+        // `#FF6B6B`, so the sidebar now carries one hue for two destinations — the one thing a
+        // per-destination tint exists to avoid. Flagged rather than resolved here: giving Focus a
+        // different colour is a change to a destination the user did not ask about, and picking a
+        // second, near-identical red would make the tints stop identifying anything. Left for them
+        // to settle.
+        case .calendar: return "#FF6B6B"
         case .notes: return "#9E8CFF"
         case .lists: return "#4ECB71"
         case .goals: return "#4ECB71"

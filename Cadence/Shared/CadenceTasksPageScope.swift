@@ -1,0 +1,84 @@
+import Foundation
+
+/// The two views the **Tasks** destination switches between.
+///
+/// All Tasks and Inbox were two sidebar rows and two pages for one universe of work: Inbox is
+/// All Tasks with a single predicate (`area == nil && project == nil`), and the All Tasks *board*
+/// had already merged them — Inbox is one of its list columns. They are one destination now, with
+/// this enum as the switch inside it. `.today` is deliberately absent: Today is a three-pane
+/// dashboard, not a filter over the same rows.
+///
+/// It lives in `Shared/` because both sidebar shells route into the merged page, and because the
+/// mapping to `CadenceFeatureDestination` is what keeps the command palette's two entries and the
+/// widgets' deep links landing on the right view — a mapping that has to be testable.
+///
+/// **Its labels are `CadenceTasksSection`'s**, not a second set. The iPhone's Tasks tab has been
+/// this design in tab-bar form for a while, with three segments rather than two; borrowing its
+/// words is what stops the phone saying "All" while the Mac says "All Tasks" in the same control.
+nonisolated enum CadenceTasksPageScope: String, CaseIterable, Identifiable, Hashable {
+    case all
+    case inbox
+
+    var id: String { rawValue }
+
+    static let defaultScope: CadenceTasksPageScope = .all
+
+    /// Persisted values are read back through here so an unknown or empty string lands on the
+    /// default instead of leaving the page with no view selected.
+    static func resolved(_ rawValue: String) -> CadenceTasksPageScope {
+        CadenceTasksPageScope(rawValue: rawValue) ?? defaultScope
+    }
+
+    /// The iPhone segment this scope is the desktop spelling of. The single source for both the
+    /// switcher's label and the destination it opens.
+    var section: CadenceTasksSection {
+        switch self {
+        case .all: return .all
+        case .inbox: return .inbox
+        }
+    }
+
+    /// The switcher's label — "All" / "Inbox". Short, because the page header one row up already
+    /// says Tasks.
+    var title: String { section.title }
+
+    /// The page header's title, which is the full name: the header is the one place with room to
+    /// say "All Tasks" rather than "All".
+    var pageTitle: String { destination.title }
+
+    var destination: CadenceFeatureDestination { section.destination }
+
+    /// The scope a destination opens, or `nil` for the destinations this page does not host.
+    init?(destination: CadenceFeatureDestination) {
+        switch destination {
+        case .allTasks: self = .all
+        case .inbox: self = .inbox
+        case .today, .focus, .calendar, .notes, .lists, .goals, .habits, .search, .settings:
+            return nil
+        }
+    }
+}
+
+extension CadenceTasksPageScope {
+    /// Whether the Apple Reminders strip belongs on this view of the Tasks page.
+    ///
+    /// **This is the highest-risk line in the All Tasks / Inbox merge.** The strip is the only
+    /// place in the app that shows Apple Reminders, and it is what makes the Inbox an *inbox*
+    /// rather than a filter — unprocessed things, including ones captured outside Cadence. Merging
+    /// two pages into one is exactly the change that deletes something like it by omission, so the
+    /// rule is a function with a test rather than a `guard` inside a view body nothing can observe.
+    ///
+    /// Inbox and only Inbox: `.all` answers `false` for every combination of the other three
+    /// arguments. The rest is the gate the Inbox page already had — the strip appears when there
+    /// are reminders to show, *or* when there is something to say about there not being any:
+    /// access has not been granted (so the row is a Connect button) or the fetch is still running.
+    static func showsRemindersStrip(
+        scope: CadenceTasksPageScope,
+        isAuthorized: Bool,
+        isLoading: Bool,
+        hasReminders: Bool
+    ) -> Bool {
+        guard scope == .inbox else { return false }
+        return !isAuthorized || isLoading || hasReminders
+    }
+}

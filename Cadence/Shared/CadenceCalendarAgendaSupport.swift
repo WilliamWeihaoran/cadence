@@ -17,14 +17,12 @@ enum CadenceCalendarMonthAgendaSupport {
 
     // MARK: - Which days the agenda lists
 
-    /// The days the agenda lists, in order: **exactly** the days the grid draws.
+    /// The days the agenda **considers**, in order: exactly the days the grid draws.
     ///
-    /// Not the calendar month, and not just the days that hold something. The grid and the agenda
-    /// are two views of one list, so every cell has a section to jump to and every section has a
-    /// cell to light up. Listing only the month proper would leave the grid's leading and trailing
-    /// cells as controls that look tappable and scroll nowhere; listing only non-empty days would
-    /// do the same to every empty day, which is most of them — and would leave a quiet month with
-    /// too little agenda to scroll, which is the other half of the two-way sync.
+    /// Not the calendar month — the grid pads out to whole weeks, so its leading and trailing
+    /// cells belong to the neighbouring months and still need somewhere to jump to. This is the
+    /// candidate list; what the agenda actually *draws* is this list minus the quiet days, and the
+    /// difference is `nearestListedDayKey`'s whole reason to exist.
     static func agendaDays(forMonthContaining monthDate: Date, calendar: Calendar = .current) -> [Date] {
         CadenceScheduleSupport.monthGridDays(for: monthDate, calendar: calendar)
     }
@@ -33,6 +31,50 @@ enum CadenceCalendarMonthAgendaSupport {
         agendaDays(forMonthContaining: monthDate, calendar: calendar).map {
             DateFormatters.dateKey(from: $0, calendar: calendar)
         }
+    }
+
+    // MARK: - Quiet days
+
+    /// The section a tap on `dayKey` resolves to, given the days the agenda actually lists.
+    ///
+    /// A quiet day draws nothing at all now, so most of the grid's cells have no section of their
+    /// own — and `.scrollPosition(id:)` drops a scroll to an id the stack does not contain,
+    /// silently, leaving the lit cell and the parked agenda pointing at different days with no
+    /// gesture that reconciles them. That is the same failure `scrollTarget`'s containment guard
+    /// catches; this is what turns "no section" from a dead tap into a live one.
+    ///
+    /// **Forward first.** A tap on a quiet day is a question about what is happening around it, and
+    /// the next thing on the calendar is the more useful answer than the last one — the agenda
+    /// reads forward, so landing before what you asked about would scroll away from it. The
+    /// preceding day is the fallback for a tap after the last populated day, where there is no
+    /// following one; `nil` only for a month holding nothing at all, which draws no scroll view.
+    ///
+    /// `listedDayKeys` must be ascending, which `yyyy-MM-dd` keys are lexicographically — that is
+    /// the whole reason this repo stores dates that way.
+    static func nearestListedDayKey(to dayKey: String, listedDayKeys: [String]) -> String? {
+        guard !listedDayKeys.isEmpty else { return nil }
+        return listedDayKeys.first { $0 >= dayKey } ?? listedDayKeys.last
+    }
+
+    /// What a **selection change** does to the agenda once quiet days draw nothing: resolve the day
+    /// to a section that exists, then apply the ordinary loop guard.
+    ///
+    /// One function rather than two steps at the call site, because the two steps compose in an
+    /// order that matters — resolving after the guard would compare a key against a list it is not
+    /// in and always answer `nil`, which is the dead tap this exists to remove.
+    static func scrollTarget(
+        forSelectedDay dayKey: String,
+        scrolledKey: String?,
+        listedDayKeys: [String]
+    ) -> String? {
+        guard let resolved = nearestListedDayKey(to: dayKey, listedDayKeys: listedDayKeys) else { return nil }
+        return scrollTarget(selectedKey: resolved, scrolledKey: scrolledKey, agendaDayKeys: listedDayKeys)
+    }
+
+    /// The section the agenda **opens** on, resolved the same way.
+    static func initialScrollTarget(forSelectedDay dayKey: String, listedDayKeys: [String]) -> String? {
+        guard let resolved = nearestListedDayKey(to: dayKey, listedDayKeys: listedDayKeys) else { return nil }
+        return initialScrollTarget(selectedKey: resolved, agendaDayKeys: listedDayKeys)
     }
 
     /// A day section's heading — `Sat · Aug 15`, which the shared board column header uppercases to
@@ -321,9 +363,93 @@ enum CadenceCalendarMonthWindow {
         )
     }
 
+    // MARK: Recentring, and when it is allowed to happen
+
+    /// Whether the window is owed a recentre, and whether **now** is the moment to perform one.
+    ///
+    /// Recentring is the most expensive thing this grid does: it reassigns `windowStart`, which
+    /// re-dates every row in the lazy stack, and then writes the scroll position to the row's new
+    /// index. Both of those inside a scroll callback means SwiftUI relaying out the whole stack and
+    /// having its scroll position reassigned underneath live momentum — a visible hitch, on the one
+    /// gesture where a dropped frame reads as the app stalling.
+    ///
+    /// So it waits. **`isScrolling` is a signal, not a delay** — it is `ScrollPhase.isScrolling`,
+    /// which the scroll view reports, and the settle that follows is the scroll view saying it has
+    /// stopped rather than a timer guessing that it has. `ecaf80f` had already paid for the guess:
+    /// a 0.08s guard expired before the settle arrived and wrote a garbage day into persisted
+    /// state. `CadenceLazyScrollAnchor` is emphatic about this and it applies here unchanged.
+    ///
+    /// Waiting is only safe while there is runway. Inside `hardEdgeRowCount` of either end of the
+    /// rendered run the scroll is about to hit the end of the content and stop dead at a date the
+    /// user did not choose to stop at — the failure mode of deferring forever — so there the
+    /// recentre happens mid-gesture and a hitch is the better of the two.
+    ///
+    /// Note the ordering: `.none` outranks everything, so a grid resting in the middle of its
+    /// window — where every ordinary fling lives, the soft threshold being 168 rows away — never
+    /// reaches either of the other two cases at all.
+    nonisolated enum RecenterTiming: Equatable {
+        /// The window is fine where it is.
+        case none
+        /// Owed, but the scroll is live and there is runway. Perform it when the scroll settles.
+        case whenScrollSettles
+        /// Perform it now.
+        case now
+    }
+
+    /// How close to an end of the rendered run "about to run out" is. Comfortably more than a
+    /// single fling can cover from the point the soft threshold first answers true, so the wait is
+    /// almost always allowed to end at the settle instead.
+    static let hardEdgeRowCount = 8
+
+    static func recenterTiming(
+        topIndex: Int,
+        isScrolling: Bool,
+        renderRowCount: Int = renderRowCount,
+        visibleRowCount: Int = visibleRowCount
+    ) -> RecenterTiming {
+        guard CalendarBoardPlannerSupport.shouldRecenter(
+            dayIndex: topIndex,
+            renderDays: renderRowCount
+        ) else { return .none }
+        guard isScrolling else { return .now }
+        return isAgainstWindowEdge(
+            topIndex: topIndex,
+            renderRowCount: renderRowCount,
+            visibleRowCount: visibleRowCount
+        ) ? .now : .whenScrollSettles
+    }
+
+    /// Rows of scrolling left before the run is exhausted, in whichever direction is closer.
+    ///
+    /// Measured against the *bottom* of the viewport at the trailing end, not the top row: the last
+    /// `visibleRowCount` rows cannot become the top row at all, so counting them as runway would
+    /// promise a screenful of scrolling that does not exist.
+    static func rowsOfRunway(
+        topIndex: Int,
+        renderRowCount: Int = renderRowCount,
+        visibleRowCount: Int = visibleRowCount
+    ) -> Int {
+        let lastTopRow = max(0, renderRowCount - max(1, visibleRowCount))
+        return max(0, min(topIndex, lastTopRow - topIndex))
+    }
+
+    static func isAgainstWindowEdge(
+        topIndex: Int,
+        renderRowCount: Int = renderRowCount,
+        visibleRowCount: Int = visibleRowCount
+    ) -> Bool {
+        rowsOfRunway(
+            topIndex: topIndex,
+            renderRowCount: renderRowCount,
+            visibleRowCount: visibleRowCount
+        ) <= hardEdgeRowCount
+    }
+
     /// The window to adopt when the top row nears an end of the rendered run, or `nil` to leave it
     /// alone. Same threshold and the same no-op guard as the Board and the timed grids — without the
     /// guard the grid re-scrolls under a finger that is still moving.
+    ///
+    /// This answers *whether*; `recenterTiming` answers *when*. Callers ask both.
     static func recenteredWindowStart(
         topIndex: Int,
         topDate: Date,

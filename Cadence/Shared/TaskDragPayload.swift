@@ -40,8 +40,8 @@ nonisolated enum TaskDragPayload {
         return UUID(uuidString: payload)
     }
 
-    /// The strict `listTask:` decode, for the two task-list reorder surfaces — `InboxView`'s and
-    /// `ListDetailView`'s rows. They cannot use `taskID(from:)`: that one accepts a **bare UUID** by
+    /// The strict `listTask:` decode. `ListDetailView`'s rows are the remaining caller: it cannot
+    /// use `taskID(from:)`, because that one accepts a **bare UUID** by
     /// design, and two surfaces really do emit one — the kanban card
     /// (`KanbanColumnSupportViews.swift:371`) and the month-grid task chip
     /// (`CalendarPageMonthSupportViews.swift:482`), both `.draggable(task.id.uuidString)`. A strict
@@ -52,6 +52,10 @@ nonisolated enum TaskDragPayload {
     /// prefixed. That error came out of `CLAUDE.md`'s drag-prefix table, which is stale on this
     /// point — a wrong doc propagating into source, which is the whole argument for checking a
     /// claim against the code before repeating it.
+    ///
+    /// The other caller was `InboxView`, which is gone: All Tasks and Inbox are one page
+    /// (`TasksListView`) and it takes the lenient decode, because it then looks the id up in its
+    /// own task universe — a stronger check than the prefix, since a foreign task fails the lookup.
     ///
     /// Both call sites hand-spelled the prefix and `dropFirst(9)` instead — the prefix's length as
     /// a literal, which is precisely the silent break this type exists to prevent.

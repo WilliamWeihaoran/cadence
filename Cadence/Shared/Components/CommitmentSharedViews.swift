@@ -174,19 +174,10 @@ struct CommitmentMetaChip: View {
     }
 }
 
-struct CommitmentInlineEmpty: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(.system(size: 12))
-            .foregroundStyle(Theme.dim)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(Theme.surfaceElevated.opacity(0.38))
-            .clipShape(RoundedRectangle(cornerRadius: 9))
-    }
-}
+// The one-line "nothing here" inside a section is `CadenceInlineEmpty` in
+// `Shared/Components/CadenceInlineEmpty.swift`, and unlike this file it is not walled behind
+// `#if os(macOS)`. `CommitmentInlineEmpty` was declared here — inside `Shared/`, and therefore
+// invisible to iOS, which wrote `iOSInlineEmpty` instead.
 
 struct CommitmentEmptyDetail: View {
     let icon: String

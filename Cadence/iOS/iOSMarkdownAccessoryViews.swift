@@ -4,7 +4,7 @@ import SwiftUI
 // The chrome around the iOS markdown editor: the reference picker sheet, the `[[reference]]` and
 // `/command` suggestion strips, the format toolbar, the empty-body placeholder and the status bar.
 //
-// Everything here is built out of `iOSDesignSystem.swift` (`iOSIconTile`, `iOSInlineEmpty`,
+// Everything here is built out of `iOSDesignSystem.swift` (`iOSIconTile`, `CadenceInlineEmpty`,
 // `.iosPressable`) and the shared tokens (`Theme`, `SectionEyebrowLabel`) rather than assembling
 // another plate inline — these surfaces had each grown their own radius, their own border alpha
 // and their own accent for the same job.
@@ -321,7 +321,7 @@ struct iOSMarkdownSuggestionStrip<Content: View>: View {
             }
 
             if isEmpty {
-                iOSInlineEmpty(text: emptyText)
+                CadenceInlineEmpty(text: emptyText, surface: .touch)
                     .frame(height: iOSMarkdownChromeMetrics.pillHeight)
             } else {
                 ScrollView(.horizontal) {

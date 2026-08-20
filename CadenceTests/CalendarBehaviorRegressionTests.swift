@@ -660,9 +660,15 @@ struct CalendarBehaviorRegressionTests {
         }
     }
 
-    @Test func handleScrollLeavesVisibleMonthIdxUntouchedUntilSettledOrDuringProgrammaticJump() {
+    /// The guard covers the grid's **tint** as well as its header now — `handleScroll` reports both
+    /// — so the extra arguments here are the same callback answering one more question. A report
+    /// older than the placement would flash the wrong month across every cell, not just the label.
+    @Test func handleScrollLeavesVisibleMonthIdxUntouchedUntilSettledOrDuringProgrammaticJump() throws {
         var visibleMonthIdx = CalendarMonthGridMetrics.todayMonthIndex
+        var displayedMonth: Date?
         let offsets: [CGFloat] = stride(from: CGFloat(0), through: CGFloat(1200), by: 100).map { $0 }
+        let calendar = Self.gridCalendar()
+        let currentMonthStart = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 1)))
 
         // Before the initial scroll position has settled, scroll-geometry callbacks must not
         // move visibleMonthIdx (this is what let the header show the wrong month transiently).
@@ -670,7 +676,10 @@ struct CalendarBehaviorRegressionTests {
             y: 500,
             offsets: offsets,
             totalMonths: offsets.count,
+            currentMonthStart: currentMonthStart,
+            calendar: calendar,
             visibleMonthIdx: &visibleMonthIdx,
+            displayedMonth: &displayedMonth,
             didInitialPosition: false,
             isProgrammaticScroll: false
         )
@@ -682,7 +691,10 @@ struct CalendarBehaviorRegressionTests {
             y: 500,
             offsets: offsets,
             totalMonths: offsets.count,
+            currentMonthStart: currentMonthStart,
+            calendar: calendar,
             visibleMonthIdx: &visibleMonthIdx,
+            displayedMonth: &displayedMonth,
             didInitialPosition: true,
             isProgrammaticScroll: true
         )
@@ -693,11 +705,16 @@ struct CalendarBehaviorRegressionTests {
             y: 500,
             offsets: offsets,
             totalMonths: offsets.count,
+            currentMonthStart: currentMonthStart,
+            calendar: calendar,
             visibleMonthIdx: &visibleMonthIdx,
+            displayedMonth: &displayedMonth,
             didInitialPosition: true,
             isProgrammaticScroll: false
         )
         #expect(visibleMonthIdx == 5)
+        // ...and only then does the grid have a month to tint against.
+        #expect(displayedMonth != nil)
     }
 
     // MARK: - Month header / row height

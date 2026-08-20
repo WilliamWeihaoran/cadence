@@ -121,7 +121,7 @@ struct CalendarBoardDayColumn: View {
     /// board's rails are the label text (weekday + date) and — for today only — the amber rule in
     /// place of the neutral hairline, which is the single sanctioned exception to the treatment.
     private var header: some View {
-        BoardColumnHeader(
+        CadenceBoardColumnHeader(
             dotColor: isToday ? Theme.amber : Theme.dim,
             title: "\(DateFormatters.dayOfWeek.string(from: date)) · \(DateFormatters.shortDate.string(from: date))",
             count: activeItems.count,

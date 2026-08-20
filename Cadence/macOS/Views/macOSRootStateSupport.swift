@@ -10,10 +10,11 @@ struct RootDetailContent: View {
         switch selection {
         case .today, .none:
             TodayView()
-        case .allTasks:
-            AllTasksPageView()
-        case .inbox:
-            InboxView()
+        // One branch, one view: All Tasks and Inbox are two views of one page now, and giving them
+        // separate `switch` arms would give SwiftUI two identities and reset the page's state every
+        // time the command palette crossed between them.
+        case .allTasks, .inbox:
+            TasksPageView(requestedScope: selection == .inbox ? .inbox : nil)
         case .area(let id):
             AreaDetailLoader(id: id)
         case .project(let id):

@@ -75,7 +75,8 @@ struct iOSCalendarMonthGrid: View {
 ///   this view has placed itself is whatever the layout started at, and adopting it writes a month
 ///   the user never chose into persisted state.
 /// - **The window slides** when the top row nears either end of the rendered run, which is what makes
-///   "without end" true rather than merely large.
+///   "without end" true rather than merely large — but never *during* a scroll, unless the run is
+///   about to be exhausted. See `CadenceCalendarMonthWindow.recenterTiming`, and `isScrolling` below.
 struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
     @Binding var topRowDate: Date
     let rowHeight: CGFloat
@@ -95,6 +96,15 @@ struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
     /// re-scroll the grid under the finger that caused it. The timed grid and the Board carry the
     /// same latch.
     @State private var isReportingTopRow = false
+    /// Whether the scroll view says it is moving — `ScrollPhase.isScrolling`, so a drag, its
+    /// momentum, and a programmatic animation all read as `true` and idle reads as `false`.
+    ///
+    /// This is the gate on recentring, and it is a **signal**: the transition to idle is the scroll
+    /// view reporting that it has stopped, which is the thing a settle delay was only ever guessing
+    /// at. `CadenceLazyScrollAnchor` records what the guess cost (`ecaf80f`: a 0.08s guard that
+    /// expired before the settle arrived and wrote a garbage day into persisted state), and the
+    /// same objection would apply to any timer put here.
+    @State private var isScrolling = false
 
     private let calendar = Calendar.current
 
@@ -168,6 +178,15 @@ struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
         .scrollIndicators(.hidden)
         .scrollPosition(id: $scrolledRowIndex, anchor: .top)
         .cadenceLazyScrollAnchor($scrolledRowIndex, target: targetIndex, axis: .vertical)
+        // The settle, from the scroll view itself. A recentre deferred during a fling is performed
+        // here, on the transition to idle — so a deferral that would otherwise never be redeemed
+        // cannot leave the grid parked near the end of its rendered run.
+        .onScrollPhaseChange { _, phase in
+            guard phase.isScrolling != isScrolling else { return }
+            isScrolling = phase.isScrolling
+            guard !isScrolling else { return }
+            recenterWindowIfOwed()
+        }
         .onChange(of: scrolledRowIndex) { _, index in
             guard let index else { return }
             // The first reading this view believes is the one that **confirms its own assertion**;
@@ -235,7 +254,29 @@ struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
         recenterWindowIfNeeded(topIndex: index, topDate: date)
     }
 
+    /// Re-asks the question for wherever the grid currently sits. Called on the scroll settling,
+    /// where `isScrolling` is `false` and a deferred recentre therefore resolves to `.now`.
+    private func recenterWindowIfOwed() {
+        guard let index = scrolledRowIndex else { return }
+        let date = CadenceCalendarMonthWindow.date(at: index, windowStart: activeWindowStart, calendar: calendar)
+        recenterWindowIfNeeded(topIndex: index, topDate: date)
+    }
+
+    /// Rebuilds the rendered run around the top row — the expensive half of this view, and the
+    /// reason it is gated.
+    ///
+    /// Assigning `windowStart` re-dates all `renderRowCount` rows and then the scroll position is
+    /// written to the row's new index; doing that inside a scroll callback relayouts the stack and
+    /// reassigns the position underneath live momentum. `recenterTiming` is what says whether this
+    /// moment is one where that is acceptable.
     private func recenterWindowIfNeeded(topIndex index: Int, topDate date: Date) {
+        switch CadenceCalendarMonthWindow.recenterTiming(topIndex: index, isScrolling: isScrolling) {
+        case .none, .whenScrollSettles:
+            return
+        case .now:
+            break
+        }
+
         guard let start = CadenceCalendarMonthWindow.recenteredWindowStart(
             topIndex: index,
             topDate: date,
@@ -261,7 +302,6 @@ private struct iOSCalendarMonthDayCell: View {
     private let calendar = Calendar.current
     private var isToday: Bool { calendar.isDateInToday(date) }
     private var isCurrentMonth: Bool { calendar.isDate(date, equalTo: displayMonth, toGranularity: .month) }
-    private var isFirstDayOfMonth: Bool { calendar.component(.day, from: date) == 1 }
     private var visibleBundles: [TaskBundle] { Array(bundles.prefix(3)) }
     private var visibleEvents: [EKEvent] { Array(events.prefix(max(0, 4 - visibleBundles.count))) }
     private var visibleTasks: [AppTask] { Array(tasks.prefix(max(0, 5 - visibleBundles.count - visibleEvents.count))) }
@@ -289,14 +329,14 @@ private struct iOSCalendarMonthDayCell: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 5) {
+                // No month abbreviation beside the 1st. The toolbar heading names the month, and
+                // now that it is derived from the middle of the visible window rather than from the
+                // top row it names the month the grid is actually showing — so a cell repeating it
+                // was the second answer to a question already answered, in the one place with the
+                // least room for it. (macOS keeps its abbreviation, for a reason that does not
+                // apply here: its grid tiles discrete month blocks, so a day can be drawn on
+                // another month's page and needs to say so. These rows are one continuous run.)
                 HStack(spacing: 6) {
-                    if isFirstDayOfMonth {
-                        Text(DateFormatters.monthAbbrev.string(from: date))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(dateLabelColor)
-                            .lineLimit(1)
-                    }
-
                     Text(DateFormatters.dayNumber.string(from: date))
                         .font(.system(size: 12, weight: dateLabelWeight))
                         .foregroundStyle(dateLabelColor)

@@ -423,7 +423,7 @@ struct iOSListCompletedPanel: View {
 }
 
 /// The list's kanban board, in the vocabulary the three macOS boards share
-/// (`BoardColumnHeader` / `KanbanColumnScroll` / `KanbanCard`): a containerless column — no fill,
+/// (`CadenceBoardColumnHeader` / `KanbanColumnScroll` / `KanbanCard`): a containerless column — no fill,
 /// no stroke — opened by a section-coloured dot, an uppercase name, a count and a closing
 /// hairline, with `iOSBoardTaskCard`s under it — the same card the Calendar Board's day columns
 /// use, at the same width.
@@ -519,7 +519,7 @@ private struct iOSListKanbanColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSBoardColumnHeader(dotColor: dotColor, title: title, count: tasks.count)
+            CadenceBoardColumnHeader(dotColor: dotColor, title: title, count: tasks.count)
                 .iOSNewTaskDropTarget(group: dropIdentity)
 
             // The card stack scrolls inside the column, as `KanbanColumnScroll` does on macOS. The

@@ -17,21 +17,33 @@ enum CadenceSidebarLayout {
         var id: String { rawValue }
     }
 
+    /// Four rows, not five. `.inbox` used to sit here, stranded at the bottom of the group with
+    /// Calendar and Notes between it and the other task list — and it was never a separate
+    /// universe: Inbox is All Tasks with one predicate, and the All Tasks *board* had already
+    /// merged the two by rendering Inbox as one of its list columns. The two are one destination
+    /// now (`CadenceTasksPageScope`), reached through this one row.
+    ///
+    /// Today stays its own row: it is a three-pane dashboard, not a filter over the same rows.
     static let primaryDestinations: [CadenceFeatureDestination] = [
-        .today, .allTasks, .calendar, .notes, .inbox
+        .today, .allTasks, .calendar, .notes
     ]
 
     static let secondaryDestinations: [CadenceFeatureDestination] = [
         .goals, .habits, .focus, .settings
     ]
 
-    /// The two the iPad sidebar renders as glyphs in one footer row rather than as labelled rows —
+    /// The two **both** sidebars render as glyphs in one footer row rather than as labelled rows —
     /// Settings leading, Focus trailing.
     ///
-    /// Deliberately a *view* of `secondaryDestinations` rather than a change to it: macOS reads
-    /// that list too, and its sidebar still wants four labelled rows. Splitting here keeps the two
-    /// platforms agreeing about which destinations exist and in what order, while letting one of
-    /// them spend less height on the last two.
+    /// This used to say it was deliberately a *view* of `secondaryDestinations` rather than a
+    /// change to it because "macOS reads that list too, and its sidebar still wants four labelled
+    /// rows". That is no longer true and the reason is not a refactor: the user compared the two
+    /// columns and said the Mac keeping Settings and Focus as separate labelled buttons was wrong
+    /// and should match iOS. `SidebarView` honours this list now, exactly as `iOSSidebar` does.
+    ///
+    /// It stays a *view* of `secondaryDestinations` for the half of the original reasoning that
+    /// still holds: both platforms have to agree about which destinations exist and in what order,
+    /// and the footer split is a rendering decision on top of that, not a second list.
     static let footerGlyphDestinations: [CadenceFeatureDestination] = [.settings, .focus]
 
     /// `secondaryDestinations` minus the two that become footer glyphs, in the original order.
@@ -49,12 +61,13 @@ enum CadenceSidebarLayout {
     /// Every destination the sidebar renders a nav row for, in top-to-bottom order.
     ///
     /// Deliberately not all of `CadenceFeatureDestination`: `.lists` is the scrolling region
-    /// between the two groups rather than a row, and `.search` is the header's button.
+    /// between the two groups rather than a row, `.search` is the header's button, and `.inbox` is
+    /// a view inside the Tasks row rather than a row of its own — see `navRow(for:)`.
     ///
-    /// `.inbox` **is** a row, in the primary group. It was briefly dropped from this layout, which
-    /// also left Settings → Sidebar offering it a visibility toggle and a colour picker that
-    /// changed nothing — a destination removed from here silently turns its Settings entry into a
-    /// dead control, so anything taken out of this list has to come out of that screen too.
+    /// A destination removed from here silently turns its Settings → Sidebar entry into a dead
+    /// control: the toggle and the colour picker keep drawing and change nothing. So anything
+    /// taken out of this list has to come out of `SidebarStaticDestination` too, which is what
+    /// `everyRowSettingsLetsYouCustomiseIsActuallyRendered` pins.
     static var navigationDestinations: [CadenceFeatureDestination] {
         primaryDestinations + secondaryDestinations
     }
@@ -63,6 +76,29 @@ enum CadenceSidebarLayout {
         if primaryDestinations.contains(destination) { return .primary }
         if secondaryDestinations.contains(destination) { return .secondary }
         return nil
+    }
+
+    /// The nav row a destination is reached through.
+    ///
+    /// `.inbox` has no row of its own — it is one of the two views inside the Tasks destination —
+    /// so a selection of Inbox lights the **Tasks** row rather than lighting nothing at all. That
+    /// happens for real: the command palette still offers "Inbox" as its own entry, and it should,
+    /// because it is still its own view.
+    ///
+    /// Every other destination is its own row, including the two that have none: `.lists` and
+    /// `.search` answer themselves here and are simply absent from `navigationDestinations`.
+    static func navRow(for destination: CadenceFeatureDestination) -> CadenceFeatureDestination {
+        destination == .inbox ? .allTasks : destination
+    }
+
+    /// The label a nav row carries, which is not always the destination's own `title`.
+    ///
+    /// The row that opens `.allTasks` reads **Tasks**, because half of what it opens is the Inbox
+    /// — a row labelled "All Tasks" would be naming one of its own two views. That string is
+    /// `compactTitle`, which already said exactly this for the iPad column and the iPhone tab;
+    /// reading it from here rather than re-spelling it is what keeps the two sidebars agreeing.
+    static func rowTitle(for destination: CadenceFeatureDestination) -> String {
+        destination.compactTitle
     }
 
     /// One group's rows, with the user's Settings → Sidebar order and hidden set applied.

@@ -555,6 +555,15 @@ enum iOSMarkdownStyler {
 
         storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
         drawCanvas(storage, canvas, over: lineRange, isBlock: true, yOffset: 0)
+        // Marks the block so the editor's resize pan can find the image under a touch, the same way
+        // `.cadenceMarkdownTaskEmbed` below lets it find a card. One character is enough: the hit
+        // test reads the block canvas from the same location and measures against the rect the
+        // canvas was painted into.
+        storage.addAttribute(
+            .cadenceMarkdownImage,
+            value: image,
+            range: NSRange(location: lineRange.location, length: 1)
+        )
     }
 
     private static func standaloneTaskEmbed(

@@ -2,8 +2,9 @@
 import SwiftUI
 import SwiftData
 
-/// The sidebar is one column, top to bottom: app header, primary nav (Today, All Tasks,
-/// Calendar, Notes), lists, secondary nav (Goals, Habits, Focus, Settings).
+/// The sidebar is one column, top to bottom: app header, primary nav (Today, Tasks,
+/// Calendar, Notes), lists, secondary nav (Goals, Habits) and a footer row of two glyphs
+/// (Settings leading, Focus trailing).
 ///
 /// **Only the lists region scrolls.** Everything else is pinned. Navigation and lists
 /// share a column, and if the whole column scrolled, a long list collection would push
@@ -96,7 +97,7 @@ struct SidebarView: View {
                     label: entry.label,
                     tint: entry.tint,
                     count: entry.count,
-                    isSelected: selection == entry.item,
+                    isSelected: rowSelection == entry.item,
                     emphasis: emphasis,
                     accessibilityID: entry.accessibilityID
                 ) {
@@ -106,16 +107,54 @@ struct SidebarView: View {
         }
     }
 
-    /// The secondary group, Settings included. Pinned to the bottom of the column by the
-    /// lists region above it, which is the only part that flexes.
+    /// The secondary group: Goals and Habits as labelled rows, then Settings and Focus as one
+    /// row of two glyphs. Pinned to the bottom of the column by the lists region above it,
+    /// which is the only part that flexes.
     ///
-    /// Settings used to be appended here by hand, outside the group it belongs to; it is a
-    /// member of `CadenceSidebarLayout.secondaryDestinations` now, and the layout keeps it
-    /// last because it is one of the rows the stored order cannot move.
+    /// **The glyph row is `CadenceSidebarLayout.footerGlyphDestinations`, which macOS now honours
+    /// too.** It drew four labelled rows here until the user asked for the two columns to match,
+    /// and the split is worth keeping either way: these are the two least-travelled destinations
+    /// in the column, and giving each of them a full row of height above the window's bottom edge
+    /// spent the column's scarcest space on its quietest entries.
+    ///
+    /// The user's Settings → Sidebar order and hidden set are applied *before* the split, so
+    /// hiding Focus leaves Settings alone in the footer rather than leaving a gap.
     private func bottomGroup(secondaryItems: [SidebarNavItem]) -> some View {
-        navGroup(secondaryItems, emphasis: .secondary)
-            .padding(.top, SidebarMetrics.groupSpacing)
-            .padding(.bottom, SidebarMetrics.bottomInset)
+        let footerIDs = Set(CadenceSidebarLayout.footerGlyphDestinations.map(\.rawValue))
+        let rowItems = secondaryItems.filter { !footerIDs.contains($0.id) }
+        let glyphItems = CadenceSidebarLayout.footerGlyphDestinations.compactMap { destination in
+            secondaryItems.first { $0.id == destination.rawValue }
+        }
+
+        return VStack(alignment: .leading, spacing: 0) {
+            if !rowItems.isEmpty {
+                navGroup(rowItems, emphasis: .secondary)
+            }
+
+            if !glyphItems.isEmpty {
+                SidebarFooterGlyphRow(items: glyphItems, selection: selection) { item in
+                    selection = item
+                }
+                .padding(.horizontal, SidebarMetrics.rowHorizontalPadding)
+                .padding(.top, SidebarMetrics.rowSpacing)
+            }
+        }
+        .padding(.top, SidebarMetrics.groupSpacing)
+        .padding(.bottom, SidebarMetrics.bottomInset)
+    }
+
+    /// The selection as the *rows* see it.
+    ///
+    /// Inbox has no row of its own — it is one of the two views inside the Tasks destination — so
+    /// a `.inbox` selection, which the command palette still produces, has to light the Tasks row
+    /// rather than lighting nothing. `CadenceSidebarLayout.navRow(for:)` is the rule; this walks
+    /// the destinations to get from a `SidebarItem` back to one, and passes area/project
+    /// selections straight through because no destination claims them.
+    private var rowSelection: SidebarItem? {
+        guard let selection else { return nil }
+        guard let destination = CadenceFeatureDestination.allCases.first(where: { $0.macSidebarItem == selection })
+        else { return selection }
+        return CadenceSidebarLayout.navRow(for: destination).macSidebarItem
     }
 
     // MARK: - Lists
@@ -173,7 +212,9 @@ struct SidebarView: View {
         in group: CadenceSidebarLayout.NavGroup,
         counts: CadenceSidebarCountInputs
     ) -> [SidebarNavItem] {
-        CadenceSidebarLayout.resolvedDestinations(
+        let tintOverrides = CadenceSidebarTint.overrides(from: sidebarTabColorsRaw)
+
+        return CadenceSidebarLayout.resolvedDestinations(
             in: group,
             customisable: Self.customisableDestinations,
             storedOrder: storedOrder,
@@ -185,13 +226,13 @@ struct SidebarView: View {
                 id: destination.rawValue,
                 item: item,
                 icon: destination.systemImage,
-                label: destination.title,
+                // "Tasks", not "All Tasks": the row opens both All and Inbox now.
+                label: CadenceSidebarLayout.rowTitle(for: destination),
                 // Notes and Settings have no `SidebarStaticDestination` case, so Settings →
-                // Sidebar offers them no colour picker and they fall back to the shared feature
-                // tint. Every row that *does* have one keeps the user's override.
-                tint: destination.sidebarStaticDestination
-                    .map { Color(hex: $0.resolvedColorHex(from: sidebarTabColorsRaw)) }
-                    ?? destination.tint,
+                // Sidebar offers them no colour picker and they fall back to the destination's
+                // default. Every row that *does* have one keeps the user's override. The rule is
+                // `CadenceSidebarTint`'s, so the iPad column reads the same preference.
+                tint: Color(hex: tintOverrides[destination] ?? destination.defaultColorHex),
                 count: CadenceSidebarLayout.count(for: destination, counts: counts),
                 accessibilityID: "sidebar.destination.\(destination.rawValue)"
             )

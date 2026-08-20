@@ -60,7 +60,7 @@ past a `grep "/Cadence/"` entirely.
 - `Cadence/Shared/` - design tokens (`Theme.swift`), shared components, date/time utilities, hover styling, and cross-platform presentation/query support (`Cadence*Support.swift`).
 - `Cadence/macOS/` - main product surface. Most active work happens here.
 - `Cadence/macOS/Views/` - macOS feature screens and support views (~168 files).
-- `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, reminders, hotkeys, task creation, hover state, deletion, scheduling, note export, privacy reset, Apple account.
+- `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, hotkeys, task creation, hover state, deletion, scheduling, note export, privacy reset, Apple account. **Not** reminders: `RemindersManager` is cross-platform and lives in `Cadence/Services/`.
 - `Cadence/macOS/Editor/` - AppKit-backed markdown editor bridge (11 files since the T-105 split). High risk; preserve NSTextView behavior carefully.
 - `Cadence/iOS/` - large, real iOS/iPadOS surface (79 files: Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings). iPhone runs a four-tab bottom bar (`iOSCompactTabShell`); iPad keeps its sidebar. Do not assume feature parity with macOS.
 - `CadenceWidgets/` - widget extension. Compiles a subset of app sources (models, `Theme.swift`, `Cadence*WidgetSupport.swift`) directly into the extension target.

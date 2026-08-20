@@ -54,6 +54,78 @@ enum CalendarMonthGridSupport {
         return calendar.date(byAdding: .month, value: -1, to: ownMonth) ?? ownMonth
     }
 
+    // MARK: - Which month the grid is *showing*
+
+    /// The month the grid reads as at a given scroll position — the month its cells are tinted
+    /// against, and the one iOS's Month grid has always used.
+    ///
+    /// **Not the block's own month.** The grid stacks discrete month blocks, and each block used to
+    /// tint against itself: scrolled half a block down you saw lit August rows, a dim stripe of
+    /// August's carried Sep 1–5, then lit September rows — two months lit at once, and nothing on
+    /// screen saying which one you were reading. iOS's continuous grid has never had that, because
+    /// its tint comes from where the scroll is rather than from which rows happen to be drawn
+    /// together, and the user asked for macOS to match it.
+    ///
+    /// The rule itself is **not restated here**: it is
+    /// `CadenceCalendarMonthWindow.displayedMonth`, in `Shared/`, which takes the middle of the
+    /// visible window and flips when half the rows have become the next month. All this function
+    /// does is turn a macOS scroll offset into that function's two arguments — the date of the top
+    /// visible **week row**, and how many rows fit — which is the part the two platforms genuinely
+    /// do differently. A second copy of the middle-of-window arithmetic here is the thing to avoid:
+    /// it would be free to drift, and "which month am I looking at" would then have two answers.
+    ///
+    /// The top row is found through `blockFirstDay(of:)` — a block opens on its month's first
+    /// Sunday, so counting rows from the 1st would be off by one row for most months. That is a
+    /// *layout* question, which is the `blockMonthStart`/`monthStart` distinction: this reads the
+    /// tiling to find a row, and then names a month for the reader out of what it finds.
+    ///
+    /// Falls back to the block's own month where there is nothing to measure — an unmeasured
+    /// viewport, an empty offset table — which is the answer the grid had before and is right at
+    /// the moment a block is anchored at the top anyway.
+    static func displayedMonth(
+        topY: CGFloat,
+        viewportHeight: CGFloat,
+        offsets: [CGFloat],
+        totalMonths: Int,
+        todayMonthIdx: Int,
+        currentMonthStart: Date,
+        calendar: Calendar
+    ) -> Date {
+        let monthCount = min(offsets.count, max(totalMonths, 0))
+        guard monthCount > 0 else { return currentMonthStart }
+
+        let top = max(topY, 0)
+        let blockIdx = monthIndexForOffset(y: top, offsets: offsets, totalMonths: totalMonths)
+        let blockMonth = calendar.date(
+            byAdding: .month,
+            value: blockIdx - todayMonthIdx,
+            to: currentMonthStart
+        ) ?? currentMonthStart
+        guard viewportHeight > 0 else { return blockMonth }
+
+        let weeks = weeksInMonth(blockMonth, calendar: calendar)
+        let rowHeight = CalendarMonthGridMetrics.rowHeight(
+            weeksInMonth: weeks,
+            viewportHeight: viewportHeight
+        )
+        guard rowHeight > 0 else { return blockMonth }
+
+        let rowsScrolled = Int(((top - offsets[blockIdx]) / rowHeight).rounded(.down))
+        let topRowIndex = min(max(rowsScrolled, 0), max(0, weeks - 1))
+        let blockStart = blockFirstDay(of: blockMonth, calendar: calendar)
+        let topRowStart = calendar.date(
+            byAdding: .day,
+            value: topRowIndex * CadenceCalendarMonthWindow.daysPerRow,
+            to: blockStart
+        ) ?? blockStart
+
+        return CadenceCalendarMonthWindow.displayedMonth(
+            topRowStart: topRowStart,
+            visibleRowCount: max(1, Int((viewportHeight / rowHeight).rounded())),
+            calendar: calendar
+        )
+    }
+
     static func weeksInMonth(_ month: Date, calendar: Calendar) -> Int {
         guard let first = calendar.date(from: calendar.dateComponents([.year, .month], from: month)),
               let range = calendar.range(of: .day, in: .month, for: first) else { return 5 }

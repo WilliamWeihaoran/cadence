@@ -82,19 +82,45 @@ struct MobileSettingsLayoutTests {
         #expect(filed == CadenceMobileSettingsLayout.categories)
     }
 
-    /// Twelve categories, all reachable by scrolling down a single list — the count is what the
-    /// brief's "every one of the twelve reachable without scrolling sideways" is measured against.
-    @Test func mobileOffersTwelveCategories() {
-        #expect(CadenceMobileSettingsLayout.categories.count == 12)
+    /// Every category, all reachable by scrolling down a single list — the brief this list was
+    /// built for asked for all of them reachable without scrolling sideways, so the count is
+    /// derived from the shared enum rather than typed in. It used to be a literal `12`, which
+    /// meant the count and the exclusion list could only ever agree by coincidence.
+    @Test func mobileOffersEveryCategoryItDoesNotDeliberatelyExclude() {
+        let expected = CadenceSettingsCategoryKind.allCases.count - CadenceMobileSettingsLayout.desktopOnly.count
+        #expect(CadenceMobileSettingsLayout.categories.count == expected)
+        #expect(CadenceMobileSettingsLayout.categories.count == 13)
     }
 
-    /// The categories mobile deliberately does not offer: `sidebar` and `account` are macOS shell
-    /// concerns, and `reminders` is macOS-only EventKit reminders.
-    @Test func desktopOnlyCategoriesAreExcluded() {
+    /// The categories mobile deliberately does not offer, and the only two it may omit.
+    ///
+    /// This test used to assert `!mobile.contains(.reminders)` alongside these, which is how the
+    /// bug it encoded survived: Apple Reminders were unreachable from iOS Settings, and the suite
+    /// asserted that was correct. EventKit reminders are fully available on iOS and
+    /// `NSRemindersFullAccessUsageDescription` already shipped in the app's `Info.plist`; nothing
+    /// about the platform justified the omission.
+    @Test func onlyTheTwoDesktopShellCategoriesAreExcluded() {
         let mobile = Set(CadenceMobileSettingsLayout.categories)
-        #expect(!mobile.contains(.sidebar))
-        #expect(!mobile.contains(.reminders))
-        #expect(!mobile.contains(.account))
+        #expect(CadenceMobileSettingsLayout.desktopOnly == [.sidebar, .account])
+        #expect(mobile.isDisjoint(with: CadenceMobileSettingsLayout.desktopOnly))
+        // The strong half: not "these two are absent" but "nothing else is". A category dropped
+        // from `groups` fails here even if nobody remembered to add an assertion for it.
+        #expect(mobile == Set(CadenceSettingsCategoryKind.allCases).subtracting(CadenceMobileSettingsLayout.desktopOnly))
+    }
+
+    /// The bug this suite is being rewritten around, pinned on its own so a regression names
+    /// itself. Reminders is the one integration on iOS whose settings screen is the *whole*
+    /// surface — there is no iOS Inbox showing reminders — so if it falls out of the category
+    /// list there is no other way to connect Apple Reminders on iPhone or iPad at all.
+    @Test func remindersIsReachableFromMobileSettings() {
+        #expect(CadenceMobileSettingsLayout.categories.contains(.reminders))
+        #expect(!CadenceMobileSettingsLayout.desktopOnly.contains(.reminders))
+
+        let systemGroup = CadenceMobileSettingsLayout.groups.first { $0.title == "System" }
+        #expect(systemGroup?.kinds.contains(.reminders) == true)
+        // Beside Calendar, not filed under App or Content: both are separately-authorized
+        // EventKit stores the app reads, and they should read as the same kind of thing.
+        #expect(systemGroup?.kinds.contains(.calendar) == true)
     }
 
     @Test func groupsHaveDistinctNonEmptyTitlesAndAreNeverEmpty() {

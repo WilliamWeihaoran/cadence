@@ -303,6 +303,8 @@ struct CadenceTests {
         let label = CalendarPageLifecycleSupport.calendarTitleLabel(
             viewMode: .week,
             visibleMonthIdx: 60,
+            // Week has no month grid to report one; the title comes off the timeline anchor.
+            displayedMonth: nil,
             visibleTimelineDayIndex: 12,
             anchorDateKey: "2026-04-20",
             bufferStart: bufferStart,

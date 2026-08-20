@@ -6,10 +6,13 @@ struct TaskListsKanbanView: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    /// The Tasks page's All / Inbox switch. `.inbox` leaves the board's Inbox column and drops the
+    /// rest — see `KanbanBoardSupport.listColumns`.
+    var scope: CadenceTasksPageScope = .all
     var sortField: TaskSortField = .date
     var sortDirection: TaskSortDirection = .ascending
 
-    /// Kanban mode has no grouping picker — the All Tasks board is always one column per list.
+    /// Kanban mode has no grouping picker — the board is always one column per list.
     var body: some View {
         taskListColumnsBoard
     }
@@ -48,7 +51,8 @@ struct TaskListsKanbanView: View {
             projects: projects,
             activeTasks: activeTasks,
             sortField: sortField,
-            sortDirection: sortDirection
+            sortDirection: sortDirection,
+            scope: scope
         )
     }
 }

@@ -15,7 +15,7 @@ The user does not write code. Claude handles all implementation. When something 
 - SwiftUI + SwiftData (no UIKit, no third-party dependencies)
 - CloudKit sync via SwiftData (`cloudKitDatabase: .private("iCloud.com.haoranwei.Cadence")`)
 - Targets: macOS (fully built, primary surface), iOS/iPadOS (large, actively-developed surface — see "What's Built (iOS)"), watchOS (not started)
-- Apple Calendar integration via `CalendarManager.swift` (EventKit). Apple Reminders integration via `RemindersManager.swift` (EventKit reminders).
+- Apple Calendar integration via `CalendarManager.swift` (EventKit, macOS). Apple Reminders integration via `Services/CadenceRemindersManager.swift` (EventKit reminders, both platforms).
 - Bundle ID: `com.haoranwei.Cadence`
 - Deployment: TestFlight for personal use
 
@@ -51,6 +51,7 @@ Cadence/
 │   │                   #   CadenceSchema / CadenceStoreSupport / PersistenceController (legacy shim)
 │   │                   #   NoteMigrationService, PursuitToGoalMigration, DataIntegrityRepairService
 │   │                   #   NotificationScheduling + NotificationManager (reconciliation, see "Notifications")
+│   │                   #   RemindersManager (EventKit reminders, both platforms)
 │   │                   #   Cadence*WidgetSupport, CadenceWidgetIntents, CadenceWidgetRefreshCenter, CadenceDeepLink
 │   │                   #   TagSupport, TaskCreationService, NoteReferenceSupport
 │   ├── Markdown*Support.swift   # 22 files: ALL markdown parsing/mutation logic lives HERE, not in macOS/Editor/
@@ -120,7 +121,9 @@ Cadence/
     │                   # MarkdownSlashCommandSupport, MarkdownTaskEmbedDrawingSupport,
     │                   # MarkdownKeyboardShortcutSupport. See Editor/AGENTS.md for the roles.
     └── Services/       # macOS-only managers:
-                        #   CalendarManager (EventKit events), RemindersManager (EventKit reminders)
+                        #   CalendarManager (EventKit events). RemindersManager is NOT here —
+                        #   it is cross-platform in Services/; macOS/Services holds only a
+                        #   2-line tombstone comment recording the move.
                         #   (CalendarVisibilityPreferences and CalendarWorkHoursPreferences are NOT
                         #    here — both live in Shared/; see above. macOS/Services still holds a
                         #    2-line CalendarVisibilityPreferences.swift that is only a tombstone
@@ -629,10 +632,21 @@ Managed from Settings → Templates (`SettingsTemplatesSection`,
 `iOSSettingsTemplateAndListSections`); applied from the note editor accessory strip.
 
 ## Apple Reminders
-Separate from Calendar and separately authorized. `RemindersManager` (macOS,
-`@Observable` singleton) reads EventKit reminders and exposes them through the
-Settings → **Reminders** category (`SettingsRemindersSection`). Cadence must keep working when
-reminders access is not granted.
+Separate from Calendar and separately authorized. `RemindersManager`
+(`Cadence/Services/CadenceRemindersManager.swift` — prefixed file, unprefixed type;
+`@Observable` singleton, **cross-platform**) reads
+EventKit reminders and exposes them through the Settings → **Reminders** category —
+`SettingsRemindersSection` on macOS, `iOSRemindersSettingsSection` on iOS. The pure
+authorization-state and list-summary logic both read is
+`Shared/CadenceRemindersPresentationSupport.swift` (`RemindersConnectionState`,
+`RemindersSyncSummary`). Cadence must keep working when reminders access is not granted, and
+when it is granted and later revoked while a page is open — both sections re-derive in
+`.onAppear`.
+
+This manager lived in `macOS/Services/` behind an `#if os(macOS)` for a long time despite
+touching no AppKit, and `iOSSettingsCategory` classified `.reminders` as "a macOS-shell concern",
+which is what kept Apple Reminders unreachable from iOS Settings. **macOS also surfaces reminders
+in its Inbox (`InboxView`) and iOS does not** — that parity gap is real and still open.
 
 ## Account, Privacy, and Data Safety
 - **Sign in with Apple** is optional and entitlement-gated (`AppleAccountManager`); Settings → Account.
@@ -759,7 +773,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Sections due today surfaced in Today view
 - [x] Apple Calendar sync (EventKit): create, update, delete, observe; event editor can **move event to another calendar**
 - [x] Calendar week/2W view: all-day banner shows all-day events + unscheduled tasks as draggable chips; chips are scrollable and clickable (opens task inspector); dragging a chip onto a day column schedules it at the dropped time
-- [x] Apple Reminders (EventKit reminders, separately authorized) surfaced through Settings → Reminders
+- [x] Apple Reminders (EventKit reminders, separately authorized) surfaced through Settings → Reminders and the Inbox
 - [x] Tags on tasks and notes, with inline `#` entry and a Settings category
 - [x] Task bundles: several tasks grouped into one timeline block
 - [x] Optional Sign in with Apple; privacy data reset that wipes every model
@@ -784,7 +798,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Notes with its own markdown editor stack (styling, preview, slash commands, task/wiki references)
 - [x] Lists (Area/Project detail, editors)
 - [x] Search
-- [x] Settings (overview, contexts, tags, templates + lists, calendar, notifications)
+- [x] Settings (overview, contexts, tags, templates + lists, calendar, notifications, reminders). Reminders is Settings-only on iOS — there is no iOS Inbox showing reminders the way macOS has.
 - [x] Notification scheduling wiring (see "What's Built (macOS)" above — shared logic, not iOS-specific)
 - [x] `EstimatePickerPopoverContent` in `Shared/Components` is the estimate picker for **both** platforms; `EstimatePickerControl` is the iOS chip wrapper around it
 

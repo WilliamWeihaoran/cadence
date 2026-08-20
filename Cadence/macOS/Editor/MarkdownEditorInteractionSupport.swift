@@ -170,17 +170,18 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         }
 
         let point = convert(event.locationInWindow, from: nil)
-        let newWidth = resizeStartWidth + (point.x - resizeStartX)
+        // One resolver, shared with the iOS pan: start width plus travel, clamped once. The local
+        // re-clamp that used to sit below was a second copy of the same bounds.
+        let newWidth = MarkdownImageAssetService.resolvedDisplayWidth(
+            startWidth: resizeStartWidth,
+            translation: point.x - resizeStartX
+        )
         onResizeMarkdownImage?(resizingImageID, newWidth)
         if let current = markdownImageAssets[resizingImageID] {
-            let clamped = min(
-                max(newWidth, MarkdownImageAssetService.minDisplayWidth),
-                MarkdownImageAssetService.maxDisplayWidth
-            )
             markdownImageAssets[resizingImageID] = MarkdownImageRenderAsset(
                 id: current.id,
                 image: current.image,
-                displayWidth: clamped,
+                displayWidth: newWidth,
                 pixelSize: current.pixelSize
             )
         }

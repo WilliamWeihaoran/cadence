@@ -364,16 +364,26 @@ enum CalendarMonthDayLabelSupport {
     /// the 1st. Every day drawn outside its block's month therefore names its month — the same
     /// convention, adapted to a grid where the 1st is not a reliable landmark.
     ///
-    /// Takes the already-resolved `emphasis` rather than re-deriving "is this out of month":
-    /// the grid draws hundreds of these, and one month comparison per cell is enough.
+    /// Whether `date` is drawn on a block whose month it does not belong to.
+    ///
+    /// A fact about the **tiling**, and deliberately not about the tint: since the grid started
+    /// reading its displayed month off the scroll position, "outside the month being shown" is true
+    /// of whole blocks at a time, while "carried onto another month's page" stays true of the same
+    /// 0–6 days it always was.
+    static func isCarried(_ date: Date, ontoBlock blockMonth: Date, calendar: Calendar) -> Bool {
+        !calendar.isDate(date, equalTo: blockMonth, toGranularity: .month)
+    }
+
+    /// Takes the already-resolved carried-ness rather than re-deriving it: the grid draws hundreds
+    /// of these, and one month comparison per cell is enough.
     static func monthAbbreviation(
         for date: Date,
-        emphasis: CalendarMonthDayEmphasis,
+        isCarriedOntoAnotherBlock: Bool,
         calendar: Calendar
     ) -> String? {
         let day = calendar.component(.day, from: date)
-        // The in-month 1st keeps the marker it has always had; out-of-month days all gain one.
-        guard emphasis.isOutOfMonth || day == 1 else { return nil }
+        // The in-month 1st keeps the marker it has always had; carried days all gain one.
+        guard isCarriedOntoAnotherBlock || day == 1 else { return nil }
 
         // Month name taken from the same calendar the cell is measured in. A shared
         // `DateFormatter` carries the *system* zone, so a grid running in another calendar would
@@ -382,6 +392,23 @@ enum CalendarMonthDayLabelSupport {
         let symbols = calendar.shortMonthSymbols
         guard month >= 1, month <= symbols.count else { return nil }
         return symbols[month - 1]
+    }
+
+    /// The spelling that reads carried-ness off an emphasis.
+    ///
+    /// Correct only where the emphasis was resolved against the **block's** month, which is what
+    /// every caller did before the tint moved to the viewport. Kept because that is still the
+    /// question the rule is about, and because it is how the rule is pinned.
+    static func monthAbbreviation(
+        for date: Date,
+        emphasis: CalendarMonthDayEmphasis,
+        calendar: Calendar
+    ) -> String? {
+        monthAbbreviation(
+            for: date,
+            isCarriedOntoAnotherBlock: emphasis.isOutOfMonth,
+            calendar: calendar
+        )
     }
 }
 

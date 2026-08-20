@@ -12,7 +12,7 @@ let kanbanColumnWidth: CGFloat = 236
 /// events and bundle blocks above the task cards, not task cards alone.
 let calendarBoardDayColumnWidth: CGFloat = 306
 /// The Overdue / Unscheduled rails are inboxes rather than days, so they sit narrower than a day
-/// column. `BoardColumnHeader` fills whatever width it is handed, so the narrower rail still lines
+/// column. `CadenceBoardColumnHeader` fills whatever width it is handed, so the narrower rail still lines
 /// its dot, label, count and closing hairline up with the day columns beside it.
 let calendarBoardRailWidth: CGFloat = 248
 let calendarBoardColumnSpacing: CGFloat = 14
@@ -30,8 +30,8 @@ let kanbanCardCornerRadius: CGFloat = 7
 // values. Nothing should re-spell these literals inline — that is exactly how the two columns
 // drifted apart before.
 
-/// The single dot of color that survives in an otherwise containerless column header.
-let kanbanColumnDotSize: CGFloat = 7
+// The single dot of colour that survives in an otherwise containerless column header is
+// `CadenceBoardColumnHeaderMetrics.dotSize`, in `Shared/`, because the iOS boards draw it too.
 /// Transient drag-over wash behind a targeted column.
 let kanbanColumnDropFillOpacity: Double = 0.07
 /// Transient drag-over dashed outline around a targeted column.
@@ -92,12 +92,20 @@ enum KanbanBoardSupport {
         }
     }
 
+    /// The board's columns, one per list, Inbox first.
+    ///
+    /// `scope` is the Tasks page's All / Inbox switch applied to the board. Inbox is *already* one
+    /// of these columns — it has been since the board shipped, which is the strongest evidence that
+    /// All Tasks and Inbox were one surface all along — so the Inbox scope is this same board with
+    /// the other columns dropped rather than a second board. A one-column board is the honest
+    /// rendering of "the Inbox, as a board"; it is not a degenerate case to be special-cased away.
     static func listColumns(
         areas: [Area],
         projects: [Project],
         activeTasks: [AppTask],
         sortField: TaskSortField,
-        sortDirection: TaskSortDirection
+        sortDirection: TaskSortDirection,
+        scope: CadenceTasksPageScope = .all
     ) -> [KanbanListColumnModel] {
         let groupedAreas = groupedTasksByAreaID(from: activeTasks, sortField: sortField, sortDirection: sortDirection)
         let groupedProjects = groupedTasksByProjectID(from: activeTasks, sortField: sortField, sortDirection: sortDirection)
@@ -146,7 +154,7 @@ enum KanbanBoardSupport {
             )
         }
 
-        return columns
+        return scope == .inbox ? Array(columns.prefix(1)) : columns
     }
 
     /// Reassigns `order` across a column after a card was dropped into it.

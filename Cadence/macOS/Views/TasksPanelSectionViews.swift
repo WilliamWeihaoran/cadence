@@ -4,7 +4,7 @@ import SwiftUI
 /// A single list-level task group (one area / project / Inbox).
 ///
 /// `contextIcon` / `contextColor` are **not** used by Today, which groups by list
-/// only. They exist for `AllTasksListView` (and `TasksPanel`'s `.byDoDate` list
+/// only. They exist for `TasksListView` (and `TasksPanel`'s `.byDoDate` list
 /// grouping), which still shows a small context glyph beside the list icon.
 struct TodayTaskGroup: Identifiable {
     let id: String

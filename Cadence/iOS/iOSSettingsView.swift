@@ -8,6 +8,7 @@ struct iOSSettingsView: View {
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Environment(NotificationManager.self) private var notificationManager
+    @Environment(RemindersManager.self) private var remindersManager
     @Environment(\.modelContext) private var modelContext
     @AppStorage(NotificationManager.notificationsEnabledDefaultsKey) private var notificationsEnabled = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -184,6 +185,8 @@ struct iOSSettingsView: View {
                 projects: projects,
                 modelContext: modelContext
             )
+        case .reminders:
+            iOSRemindersSettingsSection(remindersManager: remindersManager)
         case .notifications:
             iOSNotificationsSettingsSection(
                 notificationManager: notificationManager,

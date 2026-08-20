@@ -36,10 +36,15 @@ struct CalendarMonthAgendaTests {
         #expect(!agendaDays.isEmpty)
     }
 
-    /// Empty days are listed too. Listing only days that hold something would leave a quiet month
-    /// with three sections and nothing to scroll, and the grid's other twenty-eight cells with
-    /// nowhere to jump to.
-    @Test func agendaListsDaysWhateverTheyHold() {
+    /// `agendaDays` is the **candidate** list — every day of the grid, whatever it holds. What the
+    /// agenda draws is this minus the quiet days (see the quiet-day section below); keeping the
+    /// candidate list complete is what gives `nearestListedDayKey` something to resolve against.
+    ///
+    /// This test used to be called `agendaListsDaysWhateverTheyHold` and argued that listing only
+    /// populated days would leave a quiet month with nothing to scroll. That is now the shipped
+    /// behaviour: the user looked at thirty bare headers and decided a header that says "nothing"
+    /// is still chrome. The function is unchanged; only what is done with its result is.
+    @Test func agendaDaysCoversEveryDayTheGridDrawsWhateverItHolds() {
         let keys = CadenceCalendarMonthAgendaSupport.agendaDayKeys(
             forMonthContaining: date("2026-02-10"),
             calendar: calendar
@@ -145,6 +150,133 @@ struct CalendarMonthAgendaTests {
                 selectedKey: "2026-08-15"
             ) == nil
         )
+    }
+
+    // MARK: - Quiet days draw nothing
+
+    /// August 2026's grid runs Jul 26 → Sep 5. Three populated days, chosen to sit apart so
+    /// "nearest" has something to be nearest to.
+    private let listed = ["2026-08-05", "2026-08-14", "2026-08-27"]
+
+    /// A tap on a quiet day is a live control, not a dead one.
+    ///
+    /// Most of the grid's cells have no section of their own now. `.scrollPosition(id:)` drops a
+    /// scroll to an id the stack does not contain — silently — so without this the grid would light
+    /// a day and the agenda would stay where it was, with no gesture that puts them back.
+    @Test func aTapOnAQuietDayResolvesToTheNextDayThatHasSomething() {
+        #expect(CadenceCalendarMonthAgendaSupport.nearestListedDayKey(to: "2026-08-06", listedDayKeys: listed) == "2026-08-14")
+        #expect(CadenceCalendarMonthAgendaSupport.nearestListedDayKey(to: "2026-08-13", listedDayKeys: listed) == "2026-08-14")
+        // A day before every populated one still reads forward.
+        #expect(CadenceCalendarMonthAgendaSupport.nearestListedDayKey(to: "2026-07-26", listedDayKeys: listed) == "2026-08-05")
+    }
+
+    /// A populated day resolves to itself — the resolution is not allowed to round a real section
+    /// away to a neighbour.
+    @Test func aDayThatHasASectionResolvesToItself() {
+        for key in listed {
+            #expect(CadenceCalendarMonthAgendaSupport.nearestListedDayKey(to: key, listedDayKeys: listed) == key)
+        }
+    }
+
+    /// Past the last populated day there is no following section, so the preceding one is the
+    /// fallback. Forward is the preference, not the only direction.
+    @Test func aTapAfterTheLastPopulatedDayFallsBackToThePrecedingOne() {
+        #expect(CadenceCalendarMonthAgendaSupport.nearestListedDayKey(to: "2026-08-28", listedDayKeys: listed) == "2026-08-27")
+        #expect(CadenceCalendarMonthAgendaSupport.nearestListedDayKey(to: "2026-09-05", listedDayKeys: listed) == "2026-08-27")
+    }
+
+    /// The month that holds nothing at all. Every other case has a section to land on; this one has
+    /// none, and answering with anything would be inventing a scroll target. The view draws no
+    /// scroll view here at all, so there is nothing for a position to point at.
+    @Test func aMonthHoldingNothingResolvesToNoSectionAtAll() {
+        #expect(CadenceCalendarMonthAgendaSupport.nearestListedDayKey(to: "2026-08-15", listedDayKeys: []) == nil)
+        #expect(
+            CadenceCalendarMonthAgendaSupport.scrollTarget(
+                forSelectedDay: "2026-08-15",
+                scrolledKey: nil,
+                listedDayKeys: []
+            ) == nil
+        )
+        #expect(
+            CadenceCalendarMonthAgendaSupport.initialScrollTarget(
+                forSelectedDay: "2026-08-15",
+                listedDayKeys: []
+            ) == nil
+        )
+    }
+
+    /// **This is the call site's decision, not a helper's.** `iOSCalendarMonthAgendaList` calls
+    /// exactly this on a selection change, so a version that skipped the resolution — the old
+    /// `scrollTarget(selectedKey:scrolledKey:agendaDayKeys:)`, which answers `nil` for any day the
+    /// agenda does not list — fails here.
+    ///
+    /// The composition order is the reason the two steps are one function: resolving *after* the
+    /// containment guard would compare an unlisted key against the list and always answer `nil`,
+    /// which is the dead tap this exists to remove.
+    @Test func theSelectionScrollTargetResolvesBeforeItGuards() {
+        // The dead-tap answer, from the un-resolved spelling that is still the backstop.
+        #expect(
+            CadenceCalendarMonthAgendaSupport.scrollTarget(
+                selectedKey: "2026-08-06",
+                scrolledKey: "2026-08-05",
+                agendaDayKeys: listed
+            ) == nil
+        )
+        // The live one.
+        #expect(
+            CadenceCalendarMonthAgendaSupport.scrollTarget(
+                forSelectedDay: "2026-08-06",
+                scrolledKey: "2026-08-05",
+                listedDayKeys: listed
+            ) == "2026-08-14"
+        )
+    }
+
+    /// The loop guard survives the resolution: a quiet day that resolves to the section the agenda
+    /// is already parked on issues no scroll, so a selection arriving *from* a scroll cannot bounce
+    /// back and fight the finger.
+    @Test func aQuietDayResolvingToWhereTheAgendaAlreadyIsIssuesNoScroll() {
+        #expect(
+            CadenceCalendarMonthAgendaSupport.scrollTarget(
+                forSelectedDay: "2026-08-13",
+                scrolledKey: "2026-08-14",
+                listedDayKeys: listed
+            ) == nil
+        )
+        #expect(
+            CadenceCalendarMonthAgendaSupport.scrollTarget(
+                forSelectedDay: "2026-08-14",
+                scrolledKey: "2026-08-14",
+                listedDayKeys: listed
+            ) == nil
+        )
+    }
+
+    /// The opening position resolves the same way the later taps do, so the first frame and the
+    /// first tap cannot disagree about which section a day belongs to.
+    @Test func theOpeningSectionResolvesLikeATap() {
+        for probe in ["2026-07-26", "2026-08-05", "2026-08-06", "2026-08-27", "2026-09-05"] {
+            #expect(
+                CadenceCalendarMonthAgendaSupport.initialScrollTarget(
+                    forSelectedDay: probe,
+                    listedDayKeys: listed
+                ) == CadenceCalendarMonthAgendaSupport.nearestListedDayKey(to: probe, listedDayKeys: listed)
+            )
+        }
+    }
+
+    /// Every resolution names a section that exists. The whole point is that a resolved key can be
+    /// handed to `.scrollPosition(id:)` without being dropped.
+    @Test func everyResolvedDayIsOneTheAgendaActuallyDraws() {
+        let grid = CadenceCalendarMonthAgendaSupport.agendaDayKeys(
+            forMonthContaining: date("2026-08-15"),
+            calendar: calendar
+        )
+        #expect(grid.count == 42)
+        for key in grid {
+            let resolved = CadenceCalendarMonthAgendaSupport.nearestListedDayKey(to: key, listedDayKeys: listed)
+            #expect(resolved.map(listed.contains) == true, "\(key) resolved to \(resolved ?? "nothing")")
+        }
     }
 
     // MARK: - Grid geometry

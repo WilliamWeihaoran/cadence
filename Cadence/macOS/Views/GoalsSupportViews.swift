@@ -137,7 +137,7 @@ struct GoalMissionGroupView: View {
 
             Group {
                 if group.goals.isEmpty {
-                    GoalInlineEmpty(text: group.emptyMilestonesText)
+                    CadenceInlineEmpty(text: group.emptyMilestonesText, surface: .desktop)
                 } else {
                     VStack(spacing: 10) {
                         ForEach(group.goals) { goal in
@@ -500,13 +500,6 @@ struct GoalStatusBadge: View {
     }
 }
 
-struct GoalInlineEmpty: View {
-    let text: String
-
-    var body: some View {
-        CommitmentInlineEmpty(text: text)
-    }
-}
 
 struct GoalsEmptyDetail: View {
     var body: some View {

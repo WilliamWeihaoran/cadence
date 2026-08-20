@@ -5,9 +5,14 @@ struct CalendarPageStateSupport {
     static let todayMonthIndex = CalendarMonthGridMetrics.todayMonthIndex
 
     /// `visibleMonthIdx` is a **block** index throughout the calendar page: it is what
-    /// `handleScroll` writes (via `dominantMonthIndex`), what `handleAppear` scrolls to, and
-    /// what the header is named from. Every write to it must therefore come from
+    /// `handleScroll` writes (via `dominantMonthIndex`), what `handleAppear` scrolls to, and what
+    /// the month -> timeline return path inverts. Every write to it must therefore come from
     /// `blockIndex(for:)`, never from `monthIndex(for:)`.
+    ///
+    /// It is no longer what the header is normally named from — that reads the grid's **displayed
+    /// month**, so the title and the highlight are one value (`CalendarPageLifecycleSupport
+    /// .calendarTitleLabel`). This label is the fallback for the frames before the grid has
+    /// measured itself, and everything below still holds of it.
     ///
     /// One consequence is deliberate: on a day before its month's first Sunday — Aug 1 2026,
     /// say — jumping to "today" anchors *July's* block, because that is the page the grid draws

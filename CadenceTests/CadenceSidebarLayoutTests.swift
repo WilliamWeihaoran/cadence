@@ -11,9 +11,74 @@ import Testing
 struct CadenceSidebarLayoutTests {
     // MARK: - Structure
 
-    @Test func theTwoGroupsAreTheChosenEightRowsInOrder() {
-        #expect(CadenceSidebarLayout.primaryDestinations == [.today, .allTasks, .calendar, .notes, .inbox])
+    @Test func theTwoGroupsAreTheChosenSevenRowsInOrder() {
+        #expect(CadenceSidebarLayout.primaryDestinations == [.today, .allTasks, .calendar, .notes])
         #expect(CadenceSidebarLayout.secondaryDestinations == [.goals, .habits, .focus, .settings])
+    }
+
+    /// **The merge, pinned.** All Tasks and Inbox are one destination reached through one row, so
+    /// the primary group is four rows and Inbox is not among them. Spelled as a count *and* as a
+    /// membership check because the two fail differently: a fifth row of any kind trips the first,
+    /// and Inbox specifically coming back trips the second even if something else left at the same
+    /// time.
+    ///
+    /// A verifier recently reverted a committed fix with the whole suite green, because the tests
+    /// pinned a helper while nothing observed the call site. This is the call site.
+    @Test func theTasksRowIsOneRowAndInboxIsNotASecondOne() {
+        #expect(CadenceSidebarLayout.primaryDestinations.count == 4)
+        #expect(!CadenceSidebarLayout.primaryDestinations.contains(.inbox))
+        #expect(!CadenceSidebarLayout.navigationDestinations.contains(.inbox))
+        #expect(CadenceSidebarLayout.navigationDestinations.count == 8)
+
+        // And the row that replaced them is reachable from both destinations.
+        #expect(CadenceSidebarLayout.navRow(for: .inbox) == .allTasks)
+        #expect(CadenceSidebarLayout.navRow(for: .allTasks) == .allTasks)
+        #expect(CadenceSidebarLayout.navigationDestinations.contains(CadenceSidebarLayout.navRow(for: .inbox)))
+    }
+
+    /// Every destination that has a page must land on a row that exists, or something is
+    /// unreachable from the column. `.lists` and `.search` are the two that answer "no row" on
+    /// purpose — the scrolling region and the header button.
+    @Test func everyDestinationFoldsOntoARowTheSidebarActuallyDraws() {
+        let rows = Set(CadenceSidebarLayout.navigationDestinations)
+
+        for destination in CadenceFeatureDestination.allCases {
+            let row = CadenceSidebarLayout.navRow(for: destination)
+            if destination == .lists || destination == .search {
+                #expect(!rows.contains(row), "\(destination.title) grew a row")
+                continue
+            }
+            #expect(rows.contains(row), "\(destination.title) folds onto a row nothing draws")
+        }
+    }
+
+    /// The row label is not always the destination's `title`: the Tasks row cannot read "All Tasks"
+    /// while half of what it opens is the Inbox.
+    @Test func theTasksRowIsLabelledTasks() {
+        #expect(CadenceSidebarLayout.rowTitle(for: .allTasks) == "Tasks")
+
+        for destination in CadenceSidebarLayout.navigationDestinations where destination != .allTasks {
+            #expect(
+                CadenceSidebarLayout.rowTitle(for: destination) == destination.title,
+                "\(destination.title) grew a second name"
+            )
+        }
+    }
+
+    /// Both columns render these two as one row of glyphs rather than two labelled rows. macOS drew
+    /// four labelled rows here until the user asked for the two sidebars to match; this is what
+    /// would have to change back if that were ever revisited.
+    @Test func theFooterGlyphsAreSettingsAndFocusInThatOrder() {
+        #expect(CadenceSidebarLayout.footerGlyphDestinations == [.settings, .focus])
+        #expect(CadenceSidebarLayout.secondaryRowDestinations == [.goals, .habits])
+
+        // A view of the secondary group, never a second list.
+        let secondary = Set(CadenceSidebarLayout.secondaryDestinations)
+        #expect(Set(CadenceSidebarLayout.footerGlyphDestinations).isSubset(of: secondary))
+        #expect(
+            Set(CadenceSidebarLayout.secondaryRowDestinations)
+                .union(CadenceSidebarLayout.footerGlyphDestinations) == secondary
+        )
     }
 
     @Test func noDestinationSitsInBothGroupsAndGroupLookupAgrees() {
@@ -34,21 +99,21 @@ struct CadenceSidebarLayoutTests {
     }
 
     /// The three destinations the sidebar deliberately renders as something other than a nav row —
-    /// Lists is the scrolling region, Search is the header button, Inbox has no row at all in this
-    /// layout. Pinned so that adding a destination and forgetting to place it is a test failure
+    /// Lists is the scrolling region, Search is the header button, and Inbox is a view inside the
+    /// Tasks row. Pinned so that adding a destination and forgetting to place it is a test failure
     /// rather than a screen nobody can reach.
     @Test func theDestinationsWithoutANavRowAreExactlyTheKnownThree() {
         let missing = Set(CadenceFeatureDestination.allCases)
             .subtracting(CadenceSidebarLayout.navigationDestinations)
 
-        #expect(missing == [.lists, .search])
+        #expect(missing == [.lists, .search, .inbox])
     }
 
     // MARK: - Ordering
 
     /// The rows Settings → Sidebar offers a handle for, on macOS.
     private let customisable: Set<CadenceFeatureDestination> = [
-        .today, .allTasks, .focus, .inbox, .calendar, .goals, .habits
+        .today, .allTasks, .focus, .calendar, .goals, .habits
     ]
 
     private func resolved(
@@ -75,7 +140,7 @@ struct CadenceSidebarLayoutTests {
     @Test func aStoredOrderNamingOnlySomeRowsLeavesTheRestWhereTheyWereDeclared() {
         #expect(resolved(.secondary, storedOrder: [.focus]) == [.focus, .goals, .habits, .settings])
         #expect(resolved(.secondary, storedOrder: [.habits]) == [.habits, .goals, .focus, .settings])
-        #expect(resolved(.primary, storedOrder: [.calendar]) == [.calendar, .today, .allTasks, .notes, .inbox])
+        #expect(resolved(.primary, storedOrder: [.calendar]) == [.calendar, .today, .allTasks, .notes])
     }
 
     /// A user who reorders in Settings must not lose that. The stored order sorts *within* a
@@ -83,10 +148,10 @@ struct CadenceSidebarLayoutTests {
     /// group.
     @Test func theStoredOrderSortsWithinAGroup() {
         let reordered: [CadenceFeatureDestination] = [
-            .calendar, .today, .allTasks, .habits, .goals, .focus, .inbox
+            .calendar, .today, .allTasks, .habits, .goals, .focus
         ]
 
-        #expect(resolved(.primary, storedOrder: reordered) == [.calendar, .today, .allTasks, .notes, .inbox])
+        #expect(resolved(.primary, storedOrder: reordered) == [.calendar, .today, .allTasks, .notes])
         #expect(resolved(.secondary, storedOrder: reordered) == [.habits, .goals, .focus, .settings])
     }
 
@@ -94,11 +159,11 @@ struct CadenceSidebarLayoutTests {
     /// instead of being swept to the front or the back of whatever the movable rows do.
     @Test func theRowsSettingsCannotMoveKeepTheirSlot() {
         let reversed: [CadenceFeatureDestination] = [
-            .habits, .goals, .calendar, .inbox, .focus, .allTasks, .today
+            .habits, .goals, .calendar, .focus, .allTasks, .today
         ]
 
-        // Notes sits at index 3 of the primary group and is not last — Inbox follows it. The
-        // assertion is that a fixed row holds its *declared slot*, not that it lands at an end.
+        // Notes sits at index 3 of the primary group, the last of the four, and holds that slot
+        // however the three movable rows above it are reordered.
         #expect(resolved(.primary, storedOrder: reversed)[3] == .notes)
         #expect(resolved(.secondary, storedOrder: reversed).last == .settings)
     }
@@ -106,7 +171,7 @@ struct CadenceSidebarLayoutTests {
     // MARK: - Visibility
 
     @Test func hidingARowRemovesItAndLeavesTheRestInOrder() {
-        #expect(resolved(.primary, hidden: [.allTasks]) == [.today, .calendar, .notes, .inbox])
+        #expect(resolved(.primary, hidden: [.allTasks]) == [.today, .calendar, .notes])
         #expect(resolved(.secondary, hidden: [.goals, .focus]) == [.habits, .settings])
     }
 
@@ -232,10 +297,6 @@ struct SidebarStaticDestinationBridgeTests {
         }
     }
 
-    /// Inbox is the one row Settings → Sidebar still offers a colour and a visibility toggle for
-    /// while the sidebar renders no row for it — its toggle is inert and its colour override is
-    /// stranded. Pinned deliberately: if Inbox comes back to the column, or if its Settings entry
-    /// goes away, this is the test that should be updated with it.
     /// Settings → Sidebar offers a visibility toggle and a colour picker for every
     /// `SidebarStaticDestination`. If one of them has no row in the layout, both of those controls
     /// silently do nothing — which is exactly what happened when Inbox was dropped from the

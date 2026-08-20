@@ -22,6 +22,17 @@ struct NotesView: View {
             case .meeting: return "Event Notes"
             }
         }
+
+        /// The kind this tab lists. The fold state is keyed by `NoteKind` so the four columns
+        /// remember their own folds — see `CadenceNotesFoldState`.
+        var noteKind: NoteKind {
+            switch self {
+            case .daily: return .daily
+            case .weekly: return .weekly
+            case .notepad: return .permanent
+            case .meeting: return .meeting
+            }
+        }
     }
 
     @Environment(NotesNavigationManager.self) private var notesNavigationManager
@@ -113,17 +124,19 @@ private struct DailyNotesPage: View {
                     )
                     Spacer()
                 } else {
-                    NotesGroupedListColumn(
-                        groups: NotesListGrouping.monthGroups(for: listedNotes, dateKey: { $0.dateKey })
+                    NotesFoldableListColumn(
+                        notes: listedNotes,
+                        kind: NotesView.NotesPage.daily.noteKind,
+                        dateKey: { $0.dateKey }
                     ) { note in
                         DailyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
                             .onTapGesture { selectedNoteID = note.id }
                     }
                 }
             }
-            .frame(minWidth: NotesListMetrics.columnMinWidth,
-                   idealWidth: NotesListMetrics.columnIdealWidth,
-                   maxWidth: NotesListMetrics.columnMaxWidth)
+            .frame(minWidth: CadenceNotesListMetrics.columnMinWidth,
+                   idealWidth: CadenceNotesListMetrics.columnIdealWidth,
+                   maxWidth: CadenceNotesListMetrics.columnMaxWidth)
             .background(Theme.surface)
 
             if let note = selectedNote {
@@ -205,20 +218,19 @@ private struct WeeklyNotesPage: View {
                     )
                     Spacer()
                 } else {
-                    NotesGroupedListColumn(
-                        groups: NotesListGrouping.monthGroups(
-                            for: listedNotes,
-                            dateKey: { NotesListGrouping.weekStartDateKey(forWeekKey: $0.weekKey) }
-                        )
+                    NotesFoldableListColumn(
+                        notes: listedNotes,
+                        kind: NotesView.NotesPage.weekly.noteKind,
+                        dateKey: { NotesListGrouping.weekStartDateKey(forWeekKey: $0.weekKey) }
                     ) { note in
                         WeeklyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
                             .onTapGesture { selectedNoteID = note.id }
                     }
                 }
             }
-            .frame(minWidth: NotesListMetrics.columnMinWidth,
-                   idealWidth: NotesListMetrics.columnIdealWidth,
-                   maxWidth: NotesListMetrics.columnMaxWidth)
+            .frame(minWidth: CadenceNotesListMetrics.columnMinWidth,
+                   idealWidth: CadenceNotesListMetrics.columnIdealWidth,
+                   maxWidth: CadenceNotesListMetrics.columnMaxWidth)
             .background(Theme.surface)
 
             if let note = selectedNote {
@@ -305,20 +317,19 @@ private struct NotepadPage: View {
                     )
                     Spacer()
                 } else {
-                    NotesGroupedListColumn(
-                        groups: NotesListGrouping.monthGroups(
-                            for: notes,
-                            dateKey: { DateFormatters.dateKey(from: $0.createdAt) }
-                        )
+                    NotesFoldableListColumn(
+                        notes: notes,
+                        kind: NotesView.NotesPage.notepad.noteKind,
+                        dateKey: { DateFormatters.dateKey(from: $0.createdAt) }
                     ) { note in
                         NotepadNoteListRow(note: note, isSelected: selectedNoteID == note.id)
                             .onTapGesture { selectedNoteID = note.id }
                     }
                 }
             }
-            .frame(minWidth: NotesListMetrics.columnMinWidth,
-                   idealWidth: NotesListMetrics.columnIdealWidth,
-                   maxWidth: NotesListMetrics.columnMaxWidth)
+            .frame(minWidth: CadenceNotesListMetrics.columnMinWidth,
+                   idealWidth: CadenceNotesListMetrics.columnIdealWidth,
+                   maxWidth: CadenceNotesListMetrics.columnMaxWidth)
             .background(Theme.surface)
 
             if let note = selectedNote {
@@ -388,20 +399,11 @@ private struct MeetingNotesPage: View {
     @Environment(CalendarManager.self) private var calendarManager
     @State private var selectedNoteID: UUID?
 
+    /// Filter *and* order both live in `NotesListVisibility` now, beside the other three tabs'
+    /// rules, so iOS's Event Notes list is the same list in the same order rather than a second
+    /// comparator that happens to agree.
     private var notes: [Note] {
-        allNotes
-            .filter { $0.kind == .meeting }
-            // Sorted by the meeting's own day, not by last edit: the list is grouped under month
-            // headers now, and an edit-ordered list would jump between months row to row.
-            .sorted {
-                let left = Self.dayKey(for: $0)
-                let right = Self.dayKey(for: $1)
-                return left == right ? $0.updatedAt > $1.updatedAt : left > right
-            }
-    }
-
-    private static func dayKey(for note: Note) -> String {
-        note.eventDateKey.isEmpty ? DateFormatters.dateKey(from: note.updatedAt) : note.eventDateKey
+        NotesListVisibility.meetingNotes(allNotes)
     }
 
     private var selectedNote: Note? {
@@ -429,8 +431,10 @@ private struct MeetingNotesPage: View {
                     )
                     Spacer()
                 } else {
-                    NotesGroupedListColumn(
-                        groups: NotesListGrouping.monthGroups(for: notes, dateKey: { Self.dayKey(for: $0) })
+                    NotesFoldableListColumn(
+                        notes: notes,
+                        kind: NotesView.NotesPage.meeting.noteKind,
+                        dateKey: { NotesListVisibility.meetingDayKey(for: $0) }
                     ) { note in
                         MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id, showsDate: false)
                             .onTapGesture {
@@ -440,9 +444,9 @@ private struct MeetingNotesPage: View {
                     }
                 }
             }
-            .frame(minWidth: NotesListMetrics.columnMinWidth,
-                   idealWidth: NotesListMetrics.columnIdealWidth,
-                   maxWidth: NotesListMetrics.columnMaxWidth)
+            .frame(minWidth: CadenceNotesListMetrics.columnMinWidth,
+                   idealWidth: CadenceNotesListMetrics.columnIdealWidth,
+                   maxWidth: CadenceNotesListMetrics.columnMaxWidth)
             .background(Theme.surface)
 
             if let note = selectedNote {

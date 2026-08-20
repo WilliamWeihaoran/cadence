@@ -583,80 +583,18 @@ struct iOSEditorFieldRow<Content: View>: View {
 
 // MARK: - Board column header
 
-/// iOS counterpart of macOS's `BoardColumnHeader` — the one header treatment every board column
-/// gets: a dot of colour, an uppercased label, the count, and a closing hairline.
-///
-/// `accentRule` swaps the neutral hairline for a coloured gradient one. The Calendar Board's
-/// *today* column is the only sanctioned user, exactly as on macOS.
-struct iOSBoardColumnHeader: View {
-    let dotColor: Color
-    let title: String
-    let count: Int
-    var accentRule: Color? = nil
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(dotColor)
-                    .frame(width: 7, height: 7)
-
-                Text(title.uppercased())
-                    .font(.system(size: 11, weight: .semibold))
-                    .kerning(0.4)
-                    .foregroundStyle(Theme.muted)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Spacer(minLength: 6)
-
-                Text("\(count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.dim)
-            }
-            .padding(.horizontal, 4)
-            .padding(.bottom, 8)
-
-            rule
-        }
-    }
-
-    @ViewBuilder
-    private var rule: some View {
-        if let accentRule {
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [accentRule.opacity(0.85), accentRule.opacity(0.45), accentRule.opacity(0.16)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(height: 1)
-        } else {
-            Rectangle()
-                .fill(Theme.borderSubtle)
-                .frame(height: 1)
-        }
-    }
-}
+// The board column header is `CadenceBoardColumnHeader` in
+// `Shared/Components/CadenceBoardColumnHeader.swift`. `iOSBoardColumnHeader` used to be declared
+// here and opened its own doc comment with "iOS counterpart of macOS's `BoardColumnHeader`" — a
+// fork that named the thing it was a copy of and survived review anyway, because `iOSFoo` reads
+// as an iOS thing in a diff rather than as a second `Foo`.
 
 // MARK: - Inline empty
 
-/// iOS counterpart of `CommitmentInlineEmpty`: the one-line "nothing here" that sits *inside* a
-/// section, as opposed to `iOSEmptyPanel`, which owns a whole pane.
-struct iOSInlineEmpty: View {
-    let text: String
+// The one-line "nothing here" inside a section is `CadenceInlineEmpty` in
+// `Shared/Components/CadenceInlineEmpty.swift`. `iOSInlineEmpty` was declared here, opening with
+// "iOS counterpart of `CommitmentInlineEmpty`" — a copy of a component that was already sitting in
+// `Shared/Components/`, unreachable only because the file around it was `#if os(macOS)`.
+// `iOSEmptyPanel`, which owns a whole pane rather than a row, is a different thing and stays.
 
-    var body: some View {
-        Text(text)
-            .font(.system(size: 13))
-            .foregroundStyle(Theme.dim)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(Theme.surfaceElevated.opacity(0.38))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-    }
-}
 #endif

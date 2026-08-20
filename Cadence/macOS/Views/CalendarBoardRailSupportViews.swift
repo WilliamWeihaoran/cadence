@@ -3,7 +3,7 @@ import SwiftUI
 
 /// One of the two rails pinned either side of the Calendar Board's day columns.
 ///
-/// Structurally this is a day column: the same `BoardColumnHeader`, the same `KanbanColumnScroll`,
+/// Structurally this is a day column: the same `CadenceBoardColumnHeader`, the same `KanbanColumnScroll`,
 /// the same `KanbanCard`. The one deliberate difference is the plate. Day columns sit straight on
 /// the board canvas (`Theme.bg`); a rail sits on `Theme.surfaceRecessed`, because a rail is an
 /// *inbox* — Overdue and Unscheduled are not dates, and must not read as though they were. The
@@ -22,7 +22,7 @@ struct CalendarBoardRailColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            BoardColumnHeader(dotColor: rail.dotColor, title: rail.label, count: tasks.count)
+            CadenceBoardColumnHeader(dotColor: rail.dotColor, title: rail.label, count: tasks.count)
 
             KanbanColumnScroll(isColumnHovered: isHovered, add: add) {
                 ForEach(tasks) { task in

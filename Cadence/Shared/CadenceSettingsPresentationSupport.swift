@@ -107,7 +107,7 @@ struct CadenceSettingsCategoryGroup: Identifiable, Hashable {
     var id: String { title }
 }
 
-/// The mobile settings surface's shape: which twelve categories it offers, and how they cluster.
+/// The mobile settings surface's shape: which categories it offers, and how they cluster.
 ///
 /// Both mobile presentations read from here — the iPad rail and the iPhone category list — so the
 /// two cannot drift into different groupings of the same destinations. It lives in `Shared` rather
@@ -118,8 +118,18 @@ enum CadenceMobileSettingsLayout {
     /// Every category mobile offers, in list order.
     static let categories: [CadenceSettingsCategoryKind] = groups.flatMap(\.kinds)
 
-    /// Three groups, not twelve loose rows: how the app behaves, what you organise with, and what
-    /// it talks to. macOS's own settings shell keeps its flat category list — this is the mobile
+    /// The categories mobile deliberately does not offer, and the *only* ones it may omit.
+    ///
+    /// `sidebar` configures a column iPhone does not have and iPad does not let you rearrange;
+    /// `account` is the entitlement-gated Sign in with Apple surface, macOS-only today. Stating
+    /// the exclusions positively is what makes "mobile is missing a category" a test failure
+    /// rather than something you find by opening the app: `reminders` sat outside this list for
+    /// months on the theory that EventKit reminders were a desktop concern, and nothing said
+    /// otherwise because absence looks exactly like a deliberate omission.
+    static let desktopOnly: Set<CadenceSettingsCategoryKind> = [.sidebar, .account]
+
+    /// Three groups, not one flat run of rows: how the app behaves, what you organise with, and
+    /// what it talks to. macOS's own settings shell keeps its flat category list — this is the mobile
     /// shape, where the list *is* the top level rather than a rail beside the content.
     static let groups: [CadenceSettingsCategoryGroup] = [
         CadenceSettingsCategoryGroup(
@@ -132,7 +142,12 @@ enum CadenceMobileSettingsLayout {
         ),
         CadenceSettingsCategoryGroup(
             title: "System",
-            kinds: [.calendar, .sync, .dataSafety, .coverage, .about]
+            // `.reminders` sits beside `.calendar` because they are the same kind of thing —
+            // a separately-authorized EventKit store the app reads. It was absent for a while
+            // on the theory that reminders were a macOS concern; EventKit reminders are fully
+            // available on iOS, and `NSRemindersFullAccessUsageDescription` already ships in
+            // the shared `Info.plist`, so the omission was the bug, not the boundary.
+            kinds: [.calendar, .reminders, .sync, .dataSafety, .coverage, .about]
         )
     ]
 }

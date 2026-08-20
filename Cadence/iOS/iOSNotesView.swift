@@ -48,6 +48,13 @@ let iOSNotesHeaderStandardHeight: CGFloat = 64
 /// Daily, the note that changes every day and the reason you opened this screen. The cost, stated
 /// rather than discovered: on the Today inspector, switching to Timeline and back now reopens on
 /// Daily instead of the tab you left.
+/// **The sidebar came second.** Until this change three of the four tabs had no list at all: Daily,
+/// Weekly and Notepad each opened straight into a single standing note, and the only way to reach
+/// an older one was the header's date picker. macOS has had a month-grouped index column for all
+/// four kinds the whole time. It has it here now too, from the same code — `NotesFoldableListColumn`
+/// in `Shared/CadenceNotesListSupport.swift`, the same rows, the same headings, the same fold.
+/// What differs is layout and only layout: iPad puts the column beside the editor, iPhone makes it
+/// the screen and opens the editor over it.
 struct iOSNotesView: View {
     /// Set when this is the Notes tab's root — see `iOSCalendarView.isCompactTabRoot`. It is what
     /// tells the header there is nothing to go back to.
@@ -73,9 +80,13 @@ struct iOSNotesView: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var activeTab: CadenceMobileNotesTab = .today
-    @State private var todayNote: Note?
-    @State private var weekNote: Note?
-    @State private var permanentNote: Note?
+    /// Which row is lit in the sidebar, and — at regular width — which note the pane beside it
+    /// holds. Resolved against the tab's **unfiltered** notes rather than the listed ones, exactly
+    /// as macOS's pages do: a day you jumped to from the date picker but have not written in yet
+    /// has no row, and must still stay open in the editor.
+    @State private var selectedNoteID: UUID?
+    /// Compact width only. The sidebar is the screen there, so the editor is presented over it.
+    @State private var presentedNote: Note?
     @State private var selectedMeetingNote: Note?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
@@ -84,11 +95,14 @@ struct iOSNotesView: View {
     // `@FocusState` had no view to move focus to and could not report focus back either. The
     // editor's own `isFocused` binding is what drives — and observes — the text view.
     @State private var isEditorFocused = false
-    /// Which day the Daily and Weekly tabs are showing. Deliberately **not** persisted: a stored
-    /// day would reopen the app on whatever date you last browsed to, which for a daily note is a
-    /// trap — you would write today's entry into a week-old page. It resets to today every launch,
-    /// and `scenePhase` re-reads from it rather than resetting it, so a session that is browsing
-    /// stays where it is.
+    /// Which day the Daily and Weekly tabs' date picker is pointing at. Deliberately **not**
+    /// persisted: a stored day would reopen the app on whatever date you last browsed to, which for
+    /// a daily note is a trap — you would write today's entry into a week-old page. It resets to
+    /// today every launch, and `scenePhase` re-reads from it rather than resetting it, so a session
+    /// that is browsing stays where it is.
+    ///
+    /// The fold state next to it *is* persisted, and the difference is the point: a collapsed month
+    /// cannot mislead you about which note you are writing in. See `CadenceNotesFoldState`.
     @State private var selectedDayKey = DateFormatters.todayKey()
 
     private var isCompactWidth: Bool {
@@ -108,35 +122,31 @@ struct iOSNotesView: View {
         !isCompactWidth
     }
 
+    private var listMetrics: CadenceNotesListMetrics {
+        CadenceNotesListMetrics.metrics(isRegularWidth: !isCompactWidth)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             notesHeader
 
             Divider().background(Theme.borderSubtle)
 
-            if activeTab == .events {
-                // The index is the only place on this screen that shows note *text*, so the title
-                // index is built here rather than in `body` — the other three tabs are editors and
-                // would pay for a map nothing reads. See `MarkdownTaskEmbedTitleCache`.
-                iOSMeetingNotesList(
-                    notes: meetingNotes,
-                    taskTitles: MarkdownTaskEmbedTitleCache.titles(for: allTasks)
-                ) { note in
-                    selectedMeetingNote = note
-                }
-            } else {
-                coreEditor
-            }
+            content
         }
         .background(Theme.surface.ignoresSafeArea())
         .iOSHidesCompactNavigationBar()
-        .onAppear(perform: loadNotes)
+        .onAppear {
+            loadCoreNotes()
+            selectDefaultNote()
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-            loadNotes()
+            loadCoreNotes()
         }
         .onChange(of: activeTab) { _, _ in
             isEditorFocused = false
+            selectDefaultNote()
         }
         // Dropping focus first is the same rule `apply(_:to:)` spells out: the editing surface
         // ignores external writes to its text binding while focused, and swapping to another day's
@@ -144,7 +154,17 @@ struct iOSNotesView: View {
         // would show the old day's text over the new day's note.
         .onChange(of: selectedDayKey) { _, _ in
             isEditorFocused = false
-            loadNotes()
+            openNoteForSelectedDay()
+        }
+        .onChange(of: listedNotes.map(\.id)) { _, _ in
+            normalizeSelection()
+        }
+        .fullScreenCover(item: $presentedNote) { note in
+            iOSNoteEditorCover(
+                note: note,
+                templateKind: activeTab.coreTab?.noteKind,
+                title: coverTitle(for: note)
+            )
         }
         .sheet(item: $selectedMeetingNote) { note in
             let event = calendarManager.event(withIdentifier: note.calendarEventID)
@@ -180,6 +200,12 @@ struct iOSNotesView: View {
                 iOSNotesDateTitle(tab: activeTab, dayKey: $selectedDayKey)
             }
         ) {
+            // Notepad is the one tab whose notes are not manufactured by a date, so it is the one
+            // tab that needs a way to say "make another". Same rule as macOS's `NotesListHeader`,
+            // which carries a date picker on the dated tabs and a `+` here.
+            if activeTab == .notepad {
+                iOSNotesHeaderIconButton(systemImage: "plus", label: "New note", action: createNotepadNote)
+            }
             // Regular width only — see `showsHeaderTemplateMenu`. At compact width it rides in the
             // editor's format row instead.
             if showsHeaderTemplateMenu, let coreTab = activeTab.coreTab, let note = selectedNote {
@@ -192,8 +218,73 @@ struct iOSNotesView: View {
         .background(Theme.surface)
     }
 
+    /// One pane or two — the only thing that separates iPhone from iPad here.
     @ViewBuilder
-    private var coreEditor: some View {
+    private var content: some View {
+        if isCompactWidth {
+            sidebar
+        } else {
+            HStack(spacing: 0) {
+                sidebar
+                    .frame(width: CadenceNotesListMetrics.regularColumnWidth)
+
+                Divider().background(Theme.borderSubtle)
+
+                editorPane
+            }
+        }
+    }
+
+    /// The month-grouped index column — the same one macOS draws, from the same file.
+    @ViewBuilder
+    private var sidebar: some View {
+        Group {
+            if listedNotes.isEmpty {
+                iOSEmptyPanel(
+                    systemImage: "doc.text",
+                    title: emptyStateTitle,
+                    subtitle: emptyStateSubtitle
+                )
+            } else {
+                NotesFoldableListColumn(
+                    notes: listedNotes,
+                    kind: activeTab.noteKind,
+                    metrics: listMetrics,
+                    dateKey: { listDateKey(for: $0) }
+                ) { note in
+                    Button {
+                        open(note)
+                    } label: {
+                        listRow(for: note)
+                    }
+                    .buttonStyle(.iosPressable)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.surface)
+    }
+
+    @ViewBuilder
+    private func listRow(for note: Note) -> some View {
+        switch activeTab {
+        case .today:
+            DailyNoteListRow(note: note, isSelected: isSelected(note), metrics: listMetrics)
+        case .week:
+            WeeklyNoteListRow(note: note, isSelected: isSelected(note), metrics: listMetrics)
+        case .notepad:
+            NotepadNoteListRow(note: note, isSelected: isSelected(note), metrics: listMetrics)
+        case .events:
+            // `showsDate: false` for the same reason macOS passes it: the month heading above and
+            // the day number beside have already said the date, so the detail line is the time.
+            MeetingNoteListRow(note: note, isSelected: isSelected(note), showsDate: false, metrics: listMetrics)
+        }
+    }
+
+    /// Regular width only. At compact width the editor is presented over the sidebar instead — see
+    /// `presentedNote`.
+    @ViewBuilder
+    private var editorPane: some View {
         if let note = selectedNote {
             iOSMarkdownEditingSurface(
                 text: Binding(
@@ -213,43 +304,154 @@ struct iOSNotesView: View {
             // `iOSMarkdownAccessoryViews` — the defect belonged to them, not to this host, and a
             // second host hit it independently. One mechanism, not one per host.
         } else {
-            ProgressView()
-                .tint(Theme.blue)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Title only, and macOS's exact wording. This is a "nothing selected" state, not an
+            // empty list — `NotesEditorPlaceholder` on macOS carries no subtitle for the same
+            // reason, and when the column beside it is *also* empty a subtitle here just prints the
+            // list's own empty-state line twice.
+            iOSEmptyPanel(systemImage: "doc.text", title: placeholderTitle, subtitle: "")
         }
     }
 
-    /// `nil` on Event Notes, the one tab that is a list rather than a single standing note.
+    /// macOS's three placeholders, tab for tab.
+    private var placeholderTitle: String {
+        switch activeTab {
+        case .today, .notepad: return "Select a note"
+        case .week: return "Select a week"
+        case .events: return "Select a meeting note"
+        }
+    }
+
+    // MARK: - The tab's notes
+
+    /// Every note of the active kind, unfiltered and in list order. Selection resolves against this
+    /// rather than `listedNotes` — see `selectedNoteID`.
+    private var notesForActiveTab: [Note] {
+        switch activeTab {
+        case .today:
+            return allNotes.filter { $0.kind == .daily }.sorted { $0.dateKey > $1.dateKey }
+        case .week:
+            return allNotes.filter { $0.kind == .weekly }.sorted { $0.weekKey > $1.weekKey }
+        case .notepad:
+            return NotesListVisibility.notepadNotes(allNotes)
+        case .events:
+            return NotesListVisibility.meetingNotes(allNotes)
+        }
+    }
+
+    /// What actually gets a row. The filters are `NotesListVisibility`'s, so the phone, the iPad and
+    /// the Mac list exactly the same notes — including the pinned current day and week, which are
+    /// listed even when blank because they are the way in to writing today.
+    private var listedNotes: [Note] {
+        switch activeTab {
+        case .today:
+            return NotesListVisibility.dailyNotes(notesForActiveTab, todayKey: DateFormatters.todayKey())
+        case .week:
+            return NotesListVisibility.weeklyNotes(notesForActiveTab, currentWeekKey: DateFormatters.currentWeekKey())
+        case .notepad, .events:
+            // Both are unfiltered by design — see `NotesListVisibility.notepadNotes` and
+            // `.meetingNotes`.
+            return notesForActiveTab
+        }
+    }
+
+    /// The `yyyy-MM-dd` key each row files under, per tab. Same four answers macOS's four pages
+    /// give, so a month heading holds the same notes on every platform.
+    private func listDateKey(for note: Note) -> String {
+        switch activeTab {
+        case .today: return note.dateKey
+        case .week: return NotesListGrouping.weekStartDateKey(forWeekKey: note.weekKey)
+        case .notepad: return DateFormatters.dateKey(from: note.createdAt)
+        case .events: return NotesListVisibility.meetingDayKey(for: note)
+        }
+    }
+
     private var selectedNote: Note? {
-        guard let coreTab = activeTab.coreTab else { return nil }
-        return notesSnapshot.note(for: coreTab)
+        guard let selectedNoteID else { return nil }
+        return notesForActiveTab.first { $0.id == selectedNoteID }
     }
 
-    private var meetingNotes: [Note] {
-        allNotes
-            .filter { $0.kind == .meeting }
-            .sorted { lhs, rhs in
-                if lhs.eventDateKey != rhs.eventDateKey {
-                    if lhs.eventDateKey.isEmpty { return false }
-                    if rhs.eventDateKey.isEmpty { return true }
-                    return lhs.eventDateKey > rhs.eventDateKey
-                }
-                if lhs.eventStartMin != rhs.eventStartMin {
-                    return lhs.eventStartMin < rhs.eventStartMin
-                }
-                return lhs.updatedAt > rhs.updatedAt
-            }
+    private func isSelected(_ note: Note) -> Bool {
+        selectedNoteID == note.id
     }
 
-    private var notesSnapshot: CadenceCoreNoteState {
-        CadenceCoreNoteState(today: todayNote, week: weekNote, notepad: permanentNote)
+    /// Same words macOS uses, tab for tab. "Exact same sidebar" is a claim about vocabulary before
+    /// it is one about point sizes.
+    private var emptyStateTitle: String {
+        switch activeTab {
+        case .today, .week: return "Nothing written yet"
+        case .notepad: return "No notes yet"
+        case .events: return "No meeting notes yet"
+        }
     }
 
-    private func loadNotes() {
-        let snapshot = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext, dayKey: selectedDayKey)
-        todayNote = snapshot.today
-        weekNote = snapshot.week
-        permanentNote = snapshot.notepad
+    private var emptyStateSubtitle: String {
+        switch activeTab {
+        case .today: return "Days you write on appear here. Pick a date above to open one."
+        case .week: return "Weeks you write in appear here. Pick a date above to open one."
+        case .notepad: return "Notepad holds notes that belong to no particular day."
+        case .events: return "Create one from a calendar event."
+        }
+    }
+
+    private func coverTitle(for note: Note) -> String {
+        switch activeTab {
+        case .today, .week:
+            return CadenceNoteDateNavigation.title(for: activeTab, dayKey: listDateKey(for: note)) ?? note.displayTitle
+        case .notepad, .events:
+            return note.displayTitle
+        }
+    }
+
+    // MARK: - Selection and creation
+
+    private func open(_ note: Note) {
+        selectedNoteID = note.id
+        guard isCompactWidth else { return }
+        // One branch, and it is deliberate: an event note is bound to a calendar event, and
+        // `iOSEventNoteEditorSheet` is the editor that carries that event's title and refreshes its
+        // metadata. The other three kinds have no such attachment and open in the plain editor.
+        if activeTab == .events {
+            selectedMeetingNote = note
+        } else {
+            presentedNote = note
+        }
+    }
+
+    /// Keeps the three standing notes for `selectedDayKey` on disk. Creating a day's note by
+    /// browsing to it is deliberate and matches macOS: a blank note is invisible in every list,
+    /// because the lists filter to notes with content.
+    @discardableResult
+    private func loadCoreNotes() -> CadenceCoreNoteState {
+        CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext, dayKey: selectedDayKey)
+    }
+
+    /// What a tab lands on when you arrive at it: the note for the day the header is pointing at on
+    /// the dated tabs, the newest row otherwise.
+    private func selectDefaultNote() {
+        if let coreTab = activeTab.coreTab, coreTab != .notepad,
+           let note = loadCoreNotes().note(for: coreTab) {
+            selectedNoteID = note.id
+            return
+        }
+        selectedNoteID = listedNotes.first?.id
+    }
+
+    /// The date picker is this surface's "go to date", the same job macOS's `NotesDateJumpButton`
+    /// does — so picking a day opens that day's note rather than only re-filtering the column.
+    private func openNoteForSelectedDay() {
+        guard let coreTab = activeTab.coreTab, coreTab != .notepad,
+              let note = loadCoreNotes().note(for: coreTab) else { return }
+        open(note)
+    }
+
+    private func normalizeSelection() {
+        guard selectedNoteID == nil || !notesForActiveTab.contains(where: { $0.id == selectedNoteID }) else { return }
+        selectedNoteID = listedNotes.first?.id
+    }
+
+    private func createNotepadNote() {
+        guard let note = try? NoteMigrationService.createPermanentNote(in: modelContext) else { return }
+        open(note)
     }
 
     private func update(_ note: Note, content: String) {
@@ -289,121 +491,107 @@ struct iOSNotesView: View {
     }
 }
 
-/// The Event Notes list.
+/// The Notes header's quiet trailing glyph — Notepad's "new note".
 ///
-/// It was a column of shadowed elevated cards; the note list is an *index*, and macOS rewrote its
-/// equivalent (`NoteListDayRow`) into flat rows for exactly that reason — a dozen cards fill the
-/// screen where a dozen index entries do not. These are the same rows: a day-number column on the
-/// left so the numbers line up, whatever the note says beside it, and one press fill at one
-/// radius.
-private struct iOSMeetingNotesList: View {
-    let notes: [Note]
-    /// Live task titles for the rows' excerpts, built once by the caller. See
-    /// `iOSMeetingNoteRow.preview`.
-    let taskTitles: [UUID: String]
-    let open: (Note) -> Void
+/// Same tile, size and ink as `iOSNoteTemplateMenu`'s label, because they sit side by side in the
+/// same row and are the same kind of control. Blue is reserved for the thing you came to do; making
+/// a second note is not it.
+private struct iOSNotesHeaderIconButton: View {
+    let systemImage: String
+    let label: String
+    let action: () -> Void
 
     var body: some View {
-        Group {
-            if notes.isEmpty {
-                iOSEmptyPanel(
-                    systemImage: "doc.text",
-                    title: "No meeting notes yet",
-                    subtitle: "Create one from a calendar event."
-                )
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(notes) { note in
-                            Button {
-                                open(note)
-                            } label: {
-                                iOSMeetingNoteRow(note: note, taskTitles: taskTitles)
-                            }
-                            .buttonStyle(.iosPressable)
-                        }
+        Button(action: action) {
+            iOSIconTile(systemImage: systemImage, color: Theme.muted, size: 34, iconSize: 13)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel(label)
+    }
+}
+
+/// The editor as a whole screen, for the width that has only one pane.
+///
+/// iPad shows the same editor as `iOSNotesView.editorPane`, inline beside the sidebar. This is the
+/// same surface with a navigation bar around it — the layout difference iPhone and iPad are allowed
+/// to have, and not a second editor: both are `iOSMarkdownEditingSurface` over the same binding,
+/// committing through `CadenceCoreNoteSupport.update`.
+///
+/// The template menu rides in the editor's own format row here, because at compact width the header
+/// row has no space for it. See `iOSNotesView.showsHeaderTemplateMenu`.
+private struct iOSNoteEditorCover: View {
+    let note: Note
+    let templateKind: NoteKind?
+    let title: String
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @State private var isEditorFocused = false
+    @State private var selectedReferenceNote: Note?
+    @State private var selectedReferenceTask: AppTask?
+
+    var body: some View {
+        NavigationStack {
+            iOSMarkdownEditingSurface(
+                text: Binding(
+                    get: { note.content },
+                    set: { CadenceCoreNoteSupport.update(note, content: $0, in: modelContext) }
+                ),
+                isFocused: $isEditorFocused,
+                placeholder: "Start writing...",
+                referenceNotes: allNotes,
+                referenceTasks: allTasks,
+                onOpenReference: openMarkdownReference,
+                templateKind: templateKind,
+                applyTemplate: templateKind == nil ? nil : { apply($0) }
+            )
+            .id(note.id)
+            .background(Theme.surface.ignoresSafeArea())
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        isEditorFocused = false
+                        dismiss()
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 10)
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.surface)
-    }
-}
-
-private struct iOSMeetingNoteRow: View {
-    let note: Note
-    /// Passed in rather than derived here: an index draws one map for all of its rows, and a
-    /// `@Query` per row would rebuild it once per row instead. See `preview`.
-    let taskTitles: [UUID: String]
-
-    /// The event's own day, falling back to the last edit so a note with no metadata still files
-    /// under a number rather than dropping out of the column.
-    private var dayLabel: String {
-        let date = DateFormatters.date(from: note.eventDateKey) ?? note.updatedAt
-        return DateFormatters.dayNumber.string(from: date)
+        .iOSMarkdownReferenceSheets(
+            selectedNote: $selectedReferenceNote,
+            selectedTask: $selectedReferenceTask,
+            referenceNotes: allNotes,
+            referenceTasks: allTasks
+        )
+        .preferredColorScheme(.dark)
     }
 
-    private var detail: String {
-        if let date = DateFormatters.date(from: note.eventDateKey) {
-            if note.eventStartMin >= 0, note.eventEndMin >= 0 {
-                return "\(DateFormatters.shortDate.string(from: date)) · \(TimeFormatters.timeRange(startMin: note.eventStartMin, endMin: note.eventEndMin))"
-            }
-            return DateFormatters.shortDate.string(from: date)
+    /// Same focus-drop rule as `iOSNotesView.apply(_:to:)`; see the note there.
+    private func apply(_ template: NoteTemplate) {
+        guard isEditorFocused else {
+            CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
+            return
         }
-        return "Updated \(DateFormatters.shortDate.string(from: note.updatedAt))"
-    }
 
-    /// The excerpt is taken from the note's text with every `[[task:UUID|Title]]` title replaced by
-    /// the task's current one — the title in the text is a cache, not the record, so a row that
-    /// excerpted the raw string named tasks by whatever they were called when they were embedded.
-    /// This covers both spellings at once: a standalone embed, which `plainPreviewText` excerpts
-    /// through its `.taskEmbed` branch, and an inline reference, which it excerpts as link text
-    /// through `MarkdownReferenceDisplaySupport`.
-    private var preview: String {
-        let resolved = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
-        let preview = CadenceMarkdownPresentationSupport.plainPreviewText(from: resolved, limit: 140)
-        return preview.isEmpty ? "Empty note" : preview
-    }
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: iOSNoteListRowMetrics.dayNumberSpacing) {
-            Text(dayLabel)
-                .font(.system(size: 13, weight: .medium).monospacedDigit())
-                .foregroundStyle(Theme.muted)
-                .frame(width: iOSNoteListRowMetrics.dayNumberWidth, alignment: .trailing)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(note.displayTitle)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                Text(detail)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.subdued)
-                    .lineLimit(1)
-                Text(preview)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(2)
-            }
-
-            Spacer(minLength: 0)
+        isEditorFocused = false
+        DispatchQueue.main.async {
+            CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: modelContext)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .contentShape(Rectangle())
     }
-}
 
-enum iOSNoteListRowMetrics {
-    /// Fixed leading slot for the day number, so one- and two-digit days line up as a column
-    /// instead of ragging against the title beside them.
-    static let dayNumberWidth: CGFloat = 22
-    static let dayNumberSpacing: CGFloat = 14
+    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
+        switch target.kind {
+        case .note:
+            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
+        case .task:
+            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
+        }
+    }
 }
 
 struct iOSNoteTemplateMenu: View {

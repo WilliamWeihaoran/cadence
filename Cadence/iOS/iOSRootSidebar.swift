@@ -131,6 +131,31 @@ struct iOSSidebar: View {
     @Query(sort: \Project.order) private var projects: [Project]
     @Query private var habits: [Habit]
     @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
+    /// The same preference macOS's Settings → Sidebar colour picker writes. This column has no
+    /// picker of its own, so in practice this is empty and every row falls back to its
+    /// destination's default — but reading it is what makes the two columns one sidebar rather
+    /// than two that happen to agree today.
+    @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = CadencePreferenceKeys.emptySidebarPreference
+
+    private var tintOverrides: [CadenceFeatureDestination: String] {
+        CadenceSidebarTint.overrides(from: sidebarTabColorsRaw)
+    }
+
+    private func tint(for destination: CadenceFeatureDestination) -> Color {
+        Color(hex: tintOverrides[destination] ?? destination.defaultColorHex)
+    }
+
+    /// The selection as the *rows* see it.
+    ///
+    /// Inbox has no row of its own — it is one of the two views inside the Tasks destination — so
+    /// a `.inbox` selection has to light the Tasks row rather than lighting nothing.
+    /// `CadenceSidebarLayout.navRow(for:)` is the rule, shared with `SidebarView`.
+    private var rowSelection: iOSSidebarItem? {
+        guard let selection else { return nil }
+        guard let destination = CadenceFeatureDestination.allCases.first(where: { $0.item == selection })
+        else { return selection }
+        return CadenceSidebarLayout.navRow(for: destination).item
+    }
 
     /// Built once per render and handed to every row, the same shape `SidebarView` uses. Each tally
     /// is one pass over the task list.
@@ -208,10 +233,11 @@ struct iOSSidebar: View {
 
     /// Settings and Focus, one row, pushed to opposite ends.
     ///
-    /// Ghost glyphs — no plate, no fill — because these are the two least-used destinations in the
-    /// column and a filled control here would out-shout the labelled rows above it. Selection is
-    /// carried by the glyph brightening to `Theme.text`, the same signal the rail rows use, rather
-    /// than by adding a second background layer at a second radius.
+    /// Tinted glyphs on the column's own hover/selection plate, at the nav rows' radius — the same
+    /// treatment `SidebarFooterGlyphRow` draws on macOS, which adopted this row's *structure* in
+    /// the same pass this row adopted macOS's *colouring*. These are the two least-travelled
+    /// destinations in the column, which is why they share one row's height rather than taking
+    /// one each; it is not a reason to strip their identity.
     private var footerGlyphRow: some View {
         HStack(spacing: 0) {
             ForEach(Array(CadenceSidebarLayout.footerGlyphDestinations.enumerated()), id: \.element) { index, destination in
@@ -221,8 +247,9 @@ struct iOSSidebar: View {
 
                 iOSSidebarGlyphButton(
                     systemImage: destination.systemImage,
-                    label: destination.compactTitle,
-                    isSelected: selection == destination.item
+                    label: CadenceSidebarLayout.rowTitle(for: destination),
+                    tint: tint(for: destination),
+                    isSelected: rowSelection == destination.item
                 ) {
                     selection = destination.item
                 }
@@ -240,10 +267,11 @@ struct iOSSidebar: View {
         VStack(alignment: .leading, spacing: iOSSidebarMetrics.rowSpacing) {
             ForEach(destinations) { destination in
                 iOSSidebarButton(
-                    title: destination.compactTitle,
+                    title: CadenceSidebarLayout.rowTitle(for: destination),
                     systemImage: destination.systemImage,
+                    tint: tint(for: destination),
                     count: CadenceSidebarLayout.count(for: destination, counts: counts),
-                    isSelected: selection == destination.item,
+                    isSelected: rowSelection == destination.item,
                     style: style
                 ) {
                     selection = destination.item
@@ -265,8 +293,9 @@ struct iOSSidebar: View {
     private var listsRegion: some View {
         VStack(alignment: .leading, spacing: 0) {
             iOSSidebarButton(
-                title: CadenceFeatureDestination.lists.compactTitle,
+                title: CadenceSidebarLayout.rowTitle(for: .lists),
                 systemImage: CadenceFeatureDestination.lists.systemImage,
+                tint: tint(for: .lists),
                 count: nil,
                 isSelected: selection == .lists,
                 style: style
@@ -417,35 +446,45 @@ enum iOSSidebarStyle: Equatable {
     }
 }
 
+/// The iPad column's spelling of `CadenceSidebarMetrics`.
+///
+/// **Every figure here is the shared one now.** The two columns had each been deciding for
+/// themselves and had drifted in five dimensions nobody chose — 13pt glyphs against macOS's 15,
+/// 14pt labels against 13, 9pt of icon-to-label against 10, a 16pt list colour bar against 14, and
+/// an 11pt due-date caption against 10. The user asked for one sidebar, so the numbers live in
+/// `Shared/` and both files read them.
+///
+/// `buttonHeight` is the single exception, and it is `CadenceSidebarMetrics`' exception rather than
+/// this file's: 44pt because a nav row is the most-tapped control in this shell, where macOS's 32
+/// is right under a pointer.
 enum iOSSidebarMetrics {
-    /// Also the touch floor: a nav row is the most-tapped control on the iPad shell, so it does
-    /// not get to be 40pt. macOS draws these at 32; a finger is not a pointer.
-    static let buttonHeight: CGFloat = 44
-    static let iconSize: CGFloat = 14
-    static let selectedCornerRadius: CGFloat = Theme.radiusControl
-    static let rowSpacing: CGFloat = 2
-    static let rowHorizontalPadding: CGFloat = 10
-    static let iconSlotWidth: CGFloat = 20
-    static let iconLabelSpacing: CGFloat = 9
-    static let labelFontSize: CGFloat = 14
-    /// Minimum gap held between a truncating label and its count.
-    static let badgeLeadingGap: CGFloat = 8
-    static let groupSpacing: CGFloat = 8
-    static let sectionSpacing: CGFloat = 12
+    private static let shared = CadenceSidebarMetrics.metrics(for: .tablet)
 
-    // MARK: List colour bar
+    static let buttonHeight: CGFloat = shared.rowHeight
+    static let iconSize: CGFloat = shared.iconSize
+    static let selectedCornerRadius: CGFloat = shared.cornerRadius
+    static let rowSpacing: CGFloat = shared.rowSpacing
+    static let rowHorizontalPadding: CGFloat = shared.horizontalPadding
+    static let iconSlotWidth: CGFloat = shared.iconSlotWidth
+    static let iconLabelSpacing: CGFloat = shared.iconLabelSpacing
+    static let labelFontSize: CGFloat = shared.labelFontSize
+    static let badgeLeadingGap: CGFloat = shared.badgeLeadingGap
+    static let groupSpacing: CGFloat = shared.groupSpacing
+    static let sectionSpacing: CGFloat = shared.sectionSpacing
+    static let secondaryIconOpacity: Double = shared.secondaryIconOpacity
 
-    /// Narrow enough to read as an edge marker rather than a swatch, and drawn *inside* the row's
-    /// leading padding — outside the text column — so every list name starts on the same x whatever
-    /// colour it carries. A dot would have had to sit in the text column and push the names off
-    /// that line. Same construction, and the same reasoning, as `SidebarListRow` on macOS.
-    static let listColorBarWidth: CGFloat = 2
-    static let listColorBarHeight: CGFloat = 16
-    static let listColorBarLeadingInset: CGFloat = 3
-    static let listDueDateIconSize: CGFloat = 9
-    static let listDueDateFontSize: CGFloat = 11
-    static let listDueDateSpacing: CGFloat = 4
-    static let listTrailingItemSpacing: CGFloat = 8
+    // MARK: List rows
+
+    static let listColorBarWidth: CGFloat = shared.listColorBarWidth
+    static let listColorBarHeight: CGFloat = shared.listColorBarHeight
+    static let listColorBarLeadingInset: CGFloat = shared.listColorBarLeadingInset
+    static let listDueDateIconSize: CGFloat = shared.listDueDateIconSize
+    static let listDueDateFontSize: CGFloat = shared.listDueDateFontSize
+    static let listDueDateSpacing: CGFloat = shared.listDueDateSpacing
+    static let listTrailingItemSpacing: CGFloat = shared.listTrailingItemSpacing
+
+    /// The footer row's two glyph plates, matching `SidebarMetrics.footerGlyphSize`.
+    static let footerGlyphSize: CGFloat = 28
 }
 
 struct iOSSidebarRailDivider: View {
@@ -517,28 +556,55 @@ struct iOSSidebarHeader: View {
     }
 }
 
-/// A 26pt plate with a 44pt hit area — `iOSIconButton`'s trick. The header has to hold a mark, a
+/// A small plate with a 44pt hit area — `iOSIconButton`'s trick. The header has to hold a mark, a
 /// wordmark and two controls inside 188pt, and padding either control out to 44pt in *layout* would
 /// push the wordmark off the row.
+///
+/// Two jobs, told apart by `tint`. The header's search and collapse controls are **actions**: they
+/// stay `Theme.dim` and can never be selected. The footer's Settings and Focus are
+/// **destinations**: they carry the same per-destination tint the nav rows above them do, and
+/// selection is the same `Theme.surfaceHighlight` plate at the same radius — one layer, one
+/// radius. Brightening the glyph to `Theme.text` was how this row used to carry selection, and it
+/// cannot survive a tinted glyph: the colour is the destination's identity, so overwriting it to
+/// mean "selected" would say two things through one channel.
 private struct iOSSidebarGlyphButton: View {
     let systemImage: String
     let label: String
-    /// Only the footer's Settings/Focus pass this; the header's search and collapse controls are
-    /// actions rather than destinations and can never be the selected one.
+    /// `nil` for the header's two action controls. See the type comment.
+    var tint: Color? = nil
     var isSelected = false
     let action: () -> Void
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous)
+    }
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? Theme.text : Theme.dim)
-                .frame(width: 26, height: 26)
-                .contentShape(Rectangle())
+                .font(.system(size: glyphSize, weight: .semibold))
+                .foregroundStyle(glyphColor)
+                .frame(width: plateSize, height: plateSize)
+                .background(shape.fill(isSelected ? Theme.surfaceHighlight : Color.clear))
+                .contentShape(shape)
                 .iOSExpandedHitArea(9)
         }
         .buttonStyle(.iosPressable)
         .accessibilityLabel(label)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var glyphSize: CGFloat {
+        tint == nil ? 13 : iOSSidebarMetrics.iconSize
+    }
+
+    private var plateSize: CGFloat {
+        tint == nil ? 26 : iOSSidebarMetrics.footerGlyphSize
+    }
+
+    private var glyphColor: Color {
+        guard let tint else { return Theme.dim }
+        return tint.opacity(iOSSidebarMetrics.secondaryIconOpacity)
     }
 }
 
@@ -588,28 +654,31 @@ struct iOSSidebarExpandHandle: View {
 
 /// A navigation row in the iPad shell's sidebar.
 ///
-/// **The glyph is chrome, not a colour code.** Every row used to draw its `CadenceFeatureDestination`
-/// tint — Today amber, Tasks blue, Calendar purple, Lists green, Focus red — which put six hues in
-/// one column encoding nothing a reader could act on. Colour in this app is reserved for the
-/// exceptional (overdue, past-do, in-progress) and for a `colorHex` the user chose on a list, tag,
-/// habit or calendar. macOS keeps its tinted sidebar glyphs precisely because there they *are* a
-/// user choice: `SidebarStaticDestination` persists a per-destination colour through
-/// `CadencePreferenceKeys.sidebarTabColors`. iPad has no such picker, so the hue was decoration.
+/// **The glyph carries its destination's tint**, the same one macOS draws. This file argued the
+/// opposite for a while — that six hues in one column encode nothing a reader can act on, and that
+/// macOS only keeps its tints because Settings → Sidebar has a per-destination colour picker there
+/// while iPad has none, so the hue was decoration here. The user compared the two columns and asked
+/// for iOS to match macOS's colouring, which settles it: `CadencePreferenceKeys.sidebarTabColors`
+/// is a plain preference string, `CadenceSidebarTint` parses it for both platforms, and this column
+/// honours an override written on the Mac whether or not it ever grows the picker itself.
 ///
-/// What carries state instead is the row: `Theme.surfaceHighlight` behind it, `Theme.text` on the
-/// glyph and label, semibold. One layer, one radius — `SidebarNavRow`'s rule, and the iPhone More
-/// tab's.
+/// What carries state is the row: `Theme.surfaceHighlight` behind it, `Theme.text` on the label,
+/// semibold. One layer, one radius — `SidebarNavRow`'s rule, and the iPhone More tab's.
 struct iOSSidebarButton: View {
     let title: String
     let systemImage: String
+    /// The destination's own colour, resolved through `CadenceSidebarTint` so this column reads
+    /// the same `sidebarTabColors` preference macOS's picker writes.
+    let tint: Color
     let count: CadenceSidebarCount?
     let isSelected: Bool
     let style: iOSSidebarStyle
     let action: () -> Void
 
-    /// The one place selection is spelled out, so the two label variants cannot drift.
+    /// The glyph keeps its destination tint selected or not, exactly as `SidebarNavRow` does:
+    /// selection is the plate and the heavier label, never the hue.
     private var glyphColor: Color {
-        isSelected ? Theme.text : Theme.dim
+        tint
     }
 
     var body: some View {
@@ -628,7 +697,7 @@ struct iOSSidebarButton: View {
     private var expandedLabel: some View {
         HStack(spacing: iOSSidebarMetrics.iconLabelSpacing) {
             Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: iOSSidebarMetrics.iconSize, weight: .semibold))
                 .foregroundStyle(glyphColor)
                 .frame(width: iOSSidebarMetrics.iconSlotWidth)
 

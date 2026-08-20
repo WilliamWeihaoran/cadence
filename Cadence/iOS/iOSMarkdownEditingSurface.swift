@@ -148,7 +148,8 @@ struct iOSMarkdownEditingSurface: View {
                         openEmbeddedTask(id: taskID)
                     },
                     onOpenReference: onOpenReference,
-                    onCreatePastedImages: createPastedImageAssets
+                    onCreatePastedImages: createPastedImageAssets,
+                    onResizeImage: resizeImageAsset
                 )
                 .background(Color.clear)
             }
@@ -272,6 +273,14 @@ struct iOSMarkdownEditingSurface: View {
             .map { MarkdownImageAssetService.markdown(for: $0) }
             .joined(separator: "\n\n")
         applyCommandToDraft(.insertMarkdown(markdown))
+    }
+
+    /// Persists a drag-resize. Same call the macOS editor makes from its mouse drag, so there is
+    /// one clamp and one write path; width is the only dimension stored and the height follows from
+    /// the pixel aspect wherever the image is drawn.
+    private func resizeImageAsset(id: UUID, width: CGFloat) {
+        MarkdownImageAssetService.setDisplayWidth(width, for: id, in: imageAssets)
+        try? modelContext.save()
     }
 
     private func createPastedImageAssets(_ images: [UIImage]) -> [MarkdownImageAsset] {

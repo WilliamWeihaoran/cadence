@@ -256,7 +256,7 @@ nonisolated struct TaskSectionConfig: Codable, Hashable, Identifiable {
     /// area, no project — is always reachable.
     ///
     /// This existed as four independent copies of the same six lines (`SidebarView`,
-    /// `AllTasksListView`, `KanbanBoardSupport`, and the goal resolver's Next Action filter). They
+    /// `TasksListView`, `KanbanBoardSupport`, and the goal resolver's Next Action filter). They
     /// agreed, which is exactly the state that precedes drift — every bug found this session came
     /// from one idea implemented more than once. `ProjectStatus` has five cases and `AreaStatus`
     /// three, so "which of them count as visible" is a real decision, made once, here.

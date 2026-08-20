@@ -83,7 +83,7 @@ struct TaskListKanbanColumn: View {
     }
 
     private var header: some View {
-        BoardColumnHeader(dotColor: color, title: title, count: sortedTasks.count)
+        CadenceBoardColumnHeader(dotColor: color, title: title, count: sortedTasks.count)
     }
 
     /// List columns intentionally do *not* name a section — only section columns do — so the

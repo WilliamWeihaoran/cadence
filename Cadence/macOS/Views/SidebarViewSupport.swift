@@ -1,11 +1,19 @@
 #if os(macOS)
 import SwiftUI
 
+/// The rows Settings → Sidebar offers a handle for: a visibility toggle, a place in the stored
+/// order, and a colour override.
+///
+/// **`.inbox` is not one of them any more.** Inbox is a view inside the Tasks destination now
+/// (`CadenceTasksPageScope`), not a row, and a case here whose row the sidebar does not render is a
+/// toggle and a colour picker that silently change nothing — see
+/// `everyRowSettingsLetsYouCustomiseIsActuallyRendered`. Stored `inbox` entries in
+/// `sidebarHiddenTabs` / `sidebarTabOrder` / `sidebarTabColors` now fail to decode and are dropped,
+/// which is the graceful outcome every reader here already handles with `compactMap`.
 enum SidebarStaticDestination: String, CaseIterable, Identifiable {
     case today
     case allTasks
     case focus
-    case inbox
     case calendar
     case goals
     case habits
@@ -17,7 +25,6 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .today: return .today
         case .allTasks: return .allTasks
         case .focus: return .focus
-        case .inbox: return .inbox
         case .calendar: return .calendar
         case .goals: return .goals
         case .habits: return .habits
@@ -29,7 +36,6 @@ enum SidebarStaticDestination: String, CaseIterable, Identifiable {
         case .today: return .today
         case .allTasks: return .allTasks
         case .focus: return .focus
-        case .inbox: return .inbox
         case .calendar: return .calendar
         case .goals: return .goals
         case .habits: return .habits
@@ -73,14 +79,15 @@ extension SidebarStaticDestination {
         destinations.map(\.rawValue).joined(separator: ",")
     }
 
+    /// Delegates to `CadenceSidebarTint`, which parses the same string keyed by
+    /// `CadenceFeatureDestination` raw values. The two enums share raw values by construction, so
+    /// this is the same map read through the enum this screen is written in — and the iPad column,
+    /// which has no `SidebarStaticDestination`, reads the shared spelling directly.
     static func colorHexMap(from raw: String) -> [SidebarStaticDestination: String] {
-        raw
-            .split(separator: ",")
-            .reduce(into: [SidebarStaticDestination: String]()) { partial, pair in
-                let parts = pair.split(separator: ":", maxSplits: 1).map(String.init)
-                guard parts.count == 2, let destination = SidebarStaticDestination(rawValue: parts[0]) else { return }
-                partial[destination] = parts[1]
-            }
+        CadenceSidebarTint.overrides(from: raw).reduce(into: [:]) { partial, entry in
+            guard let destination = SidebarStaticDestination(rawValue: entry.key.rawValue) else { return }
+            partial[destination] = entry.value
+        }
     }
 
     static func rawColorString(from colors: [SidebarStaticDestination: String]) -> String {
@@ -159,17 +166,22 @@ enum SidebarMetrics {
 
     // MARK: Nav rows
 
-    static let rowHeight: CGFloat = 32
-    static let rowCornerRadius: CGFloat = 10
-    static let rowSpacing: CGFloat = 2
-    static let rowHorizontalPadding: CGFloat = 10
-    static let iconSlotWidth: CGFloat = 20
-    static let iconSize: CGFloat = 15
-    static let iconLabelSpacing: CGFloat = 10
-    static let labelFontSize: CGFloat = 13
-    /// Icon opacity for the quieter bottom nav group. Kept well clear of a
-    /// disabled-looking wash — these are real destinations, just less-travelled ones.
-    static let secondaryIconOpacity: Double = 0.8
+    /// Every figure below is `CadenceSidebarMetrics`', not this file's. The two sidebar columns
+    /// had drifted in glyph size, label size, icon-to-label spacing, colour-bar height and
+    /// due-date caption size; the shared type is where those are decided now, and this enum is the
+    /// macOS spelling of it. Only `rowHeight` differs by surface, and only because a finger needs
+    /// 44pt where a pointer does not.
+    private static let shared = CadenceSidebarMetrics.metrics(for: .desktop)
+
+    static let rowHeight: CGFloat = shared.rowHeight
+    static let rowCornerRadius: CGFloat = shared.cornerRadius
+    static let rowSpacing: CGFloat = shared.rowSpacing
+    static let rowHorizontalPadding: CGFloat = shared.horizontalPadding
+    static let iconSlotWidth: CGFloat = shared.iconSlotWidth
+    static let iconSize: CGFloat = shared.iconSize
+    static let iconLabelSpacing: CGFloat = shared.iconLabelSpacing
+    static let labelFontSize: CGFloat = shared.labelFontSize
+    static let secondaryIconOpacity: Double = shared.secondaryIconOpacity
 
     // MARK: Lists section
 
@@ -187,20 +199,20 @@ enum SidebarMetrics {
     static let listRowSpacing: CGFloat = SidebarMetrics.rowSpacing
     /// Only the empty-state "Add first list" button still draws a glyph in this region.
     static let listIconSize: CGFloat = 12
-    static let listLabelFontSize: CGFloat = 13
+    static let listLabelFontSize: CGFloat = shared.listLabelFontSize
     static let listRowVerticalPadding: CGFloat = 7
     /// Minimum gap between a truncating list name and its trailing metadata.
     static let listTrailingGap: CGFloat = 8
     /// Gap between the trailing due-date flag and the trailing count.
-    static let listTrailingItemSpacing: CGFloat = 8
+    static let listTrailingItemSpacing: CGFloat = shared.listTrailingItemSpacing
 
     // MARK: List colour bar
 
     /// Narrow enough to read as an edge marker rather than a swatch. Sits in the row's
     /// leading padding, clear of both the rounded corners and the first letter of the name.
-    static let listColorBarWidth: CGFloat = 2
-    static let listColorBarHeight: CGFloat = 14
-    static let listColorBarLeadingInset: CGFloat = 3
+    static let listColorBarWidth: CGFloat = shared.listColorBarWidth
+    static let listColorBarHeight: CGFloat = shared.listColorBarHeight
+    static let listColorBarLeadingInset: CGFloat = shared.listColorBarLeadingInset
 
     // MARK: Context headers
 
@@ -214,9 +226,9 @@ enum SidebarMetrics {
 
     // MARK: List due-date flag
 
-    static let listDueDateIconSize: CGFloat = 9
-    static let listDueDateFontSize: CGFloat = 10
-    static let listDueDateSpacing: CGFloat = 4
+    static let listDueDateIconSize: CGFloat = shared.listDueDateIconSize
+    static let listDueDateFontSize: CGFloat = shared.listDueDateFontSize
+    static let listDueDateSpacing: CGFloat = shared.listDueDateSpacing
 
     // MARK: Counts
 
@@ -227,11 +239,15 @@ enum SidebarMetrics {
     /// Minimum gap held between a row's truncating label and its count. The count is
     /// fixed-size and wins layout priority, so this is the point at which the *label*
     /// starts truncating — a three-digit count never overlaps it.
-    static let badgeLeadingGap: CGFloat = 8
+    static let badgeLeadingGap: CGFloat = shared.badgeLeadingGap
 
     // MARK: Group separation
 
-    static let groupSpacing: CGFloat = 8
+    static let groupSpacing: CGFloat = shared.groupSpacing
+    /// The footer row's two glyph plates. Square, and smaller than a full nav row: these are the
+    /// column's two quietest destinations and the row exists to spend less height on them.
+    static let footerGlyphSize: CGFloat = 28
+    static let contextSectionSpacing: CGFloat = shared.sectionSpacing
     static let dividerInset: CGFloat = 2
 }
 

@@ -258,7 +258,19 @@ struct MonthDayCell: View {
     let tasks: [AppTask]
     let bundles: [TaskBundle]
     let allTasks: [AppTask]
+    /// The month the **grid** is reading as, from the scroll position. What decides whether this
+    /// cell is lit or dropped back onto the carried plate.
     let displayMonth: Date
+    /// The month of the block that **draws** this cell — a fact about the tiling, and independent
+    /// of the tint above.
+    ///
+    /// Only the month abbreviation reads it, and that is the point of keeping it separate. The
+    /// abbreviation exists because a block carries the 0–6 days before its successor's first Sunday
+    /// as trailing fill, so the 1st is not a reliable landmark and a carried day has to name itself.
+    /// That is still true of exactly those days, whatever month the viewport happens to be reading
+    /// — tying it to `displayMonth` instead would print "Aug" on all thirty-one August cells the
+    /// moment the grid tipped over into September.
+    let blockMonth: Date
     /// Shared with the timeline day columns. Without it every cell ran its own synchronous
     /// `EKEventStore.events(matching:)` — 42 cells per realized month block, re-run on every
     /// task edit and every month boundary crossed. The cache is keyed by
@@ -310,7 +322,11 @@ struct MonthDayCell: View {
                 dayNumber: DateFormatters.dayNumber.string(from: date),
                 monthAbbreviation: CalendarMonthDayLabelSupport.monthAbbreviation(
                     for: date,
-                    emphasis: emphasis,
+                    isCarriedOntoAnotherBlock: CalendarMonthDayLabelSupport.isCarried(
+                        date,
+                        ontoBlock: blockMonth,
+                        calendar: cal
+                    ),
                     calendar: cal
                 ),
                 emphasis: emphasis

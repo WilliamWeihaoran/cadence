@@ -267,7 +267,7 @@ private struct iOSCalendarBoardDayColumn: View {
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
 
     // No `horizontalSizeClass`. It was declared here and read by nothing: the column draws one way
-    // at every width, and has since its "today" treatment collapsed into `iOSBoardColumnHeader`.
+    // at every width, and has since its "today" treatment collapsed into `CadenceBoardColumnHeader`.
     @State private var isDropTargeted = false
     @State private var targetedBundleID: UUID?
     @State private var recentlyBundledTaskID: UUID?
@@ -329,12 +329,12 @@ private struct iOSCalendarBoardDayColumn: View {
 
     /// The same header treatment every board column gets, day columns included: dot, uppercased
     /// label, count, closing hairline — amber for today, which is the one sanctioned exception, the
-    /// same one macOS's `BoardColumnHeader` makes.
+    /// same one every other board column makes, on both platforms.
     ///
     /// This replaced three overlapping affordances that all said "today": a "Today" pill, an
     /// amber-tinted count badge, and a separate glowing gradient capsule under the header.
     private var header: some View {
-        iOSBoardColumnHeader(
+        CadenceBoardColumnHeader(
             dotColor: isToday ? Theme.amber : Theme.dim,
             title: "\(DateFormatters.dayOfWeek.string(from: date)) · \(DateFormatters.shortDate.string(from: date))",
             count: totalCount,
@@ -357,7 +357,7 @@ private struct iOSCalendarBoardDayColumn: View {
             // task, a time block and an Apple Calendar event are, and a button repeating the ghost
             // row — took roughly 40% of the phone screen to report that a day is empty.
             if completedTasks.isEmpty {
-                iOSInlineEmpty(text: "Nothing scheduled")
+                CadenceInlineEmpty(text: "Nothing scheduled", surface: .touch)
             }
         } else {
             ScrollView(.vertical) {

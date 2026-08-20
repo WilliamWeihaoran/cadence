@@ -127,17 +127,20 @@ struct iOSCalendarBoardEventCard: View {
                     .lineLimit(2)
 
                 HStack(spacing: 6) {
-                    iOSCalendarBoardMetadataChip(
-                        item: .init(
-                            id: "time",
-                            icon: item.isAllDay ? "sun.max" : "clock",
-                            title: subtitle,
-                            color: item.color
-                        )
+                    CadenceBoardMetadataChip(
+                        title: subtitle,
+                        systemImage: item.isAllDay ? "sun.max" : "clock",
+                        tint: item.color,
+                        cardCornerRadius: Theme.radiusCard,
+                        fillsWidth: true
                     )
                     if item.isRecurring {
-                        iOSCalendarBoardMetadataChip(
-                            item: .init(id: "repeat", icon: "repeat", title: "Repeats", color: item.color)
+                        CadenceBoardMetadataChip(
+                            title: "Repeats",
+                            systemImage: "repeat",
+                            tint: item.color,
+                            cardCornerRadius: Theme.radiusCard,
+                            fillsWidth: true
                         )
                     }
                 }
@@ -242,7 +245,13 @@ struct iOSBoardTaskCard: View {
             if !metadataChips.isEmpty {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
                     ForEach(metadataChips, id: \.id) { chip in
-                        iOSCalendarBoardMetadataChip(item: chip)
+                        CadenceBoardMetadataChip(
+                            title: chip.title,
+                            systemImage: chip.icon,
+                            tint: chip.color,
+                            cardCornerRadius: Theme.radiusCard,
+                            fillsWidth: true
+                        )
                     }
                 }
             }
@@ -359,13 +368,12 @@ struct iOSCalendarBoardBundleCard: View {
                             .foregroundStyle(Theme.subdued)
                     }
 
-                    iOSCalendarBoardMetadataChip(
-                        item: .init(
-                            id: "time",
-                            icon: "clock",
-                            title: TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin),
-                            color: allDone ? Theme.dim : Theme.amber
-                        )
+                    CadenceBoardMetadataChip(
+                        title: TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin),
+                        systemImage: "clock",
+                        tint: allDone ? Theme.dim : Theme.amber,
+                        cardCornerRadius: Theme.radiusCard,
+                        fillsWidth: true
                     )
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -432,29 +440,10 @@ private struct iOSCalendarBoardMetadataItem: Identifiable {
     let color: Color
 }
 
-/// Board-card metadata chip. Matches macOS's `CalendarBoardMetadataChip`: the glyph *and* the label
-/// carry the chip's own tint over a wash of the same colour, instead of a tinted glyph sitting next
-/// to grey text on a grey pill, which made every chip read as disabled.
-private struct iOSCalendarBoardMetadataChip: View {
-    let item: iOSCalendarBoardMetadataItem
+// The chip itself is `CadenceBoardMetadataChip` in
+// `Shared/Components/CadenceBoardMetadataChip.swift`. `iOSCalendarBoardMetadataChip` was declared
+// here and its doc comment opened "Matches macOS's `CalendarBoardMetadataChip`" — an obligation
+// written down with nothing to enforce it. `iOSCalendarBoardMetadataItem` above stays: it is this
+// board's display model, not a second copy of the chip.
 
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: item.icon)
-                .font(.system(size: 10, weight: .semibold))
-                .frame(width: 11)
-            Text(item.title)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-            Spacer(minLength: 0)
-        }
-        .foregroundStyle(item.color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(item.color.opacity(CadenceCalendarEventStyle.chipTintOpacity()))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-    }
-}
 #endif

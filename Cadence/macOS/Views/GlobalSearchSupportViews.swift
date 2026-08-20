@@ -119,7 +119,11 @@ extension GlobalSearchPageDefinition {
         [
             .init(label: "Today", item: .today, icon: "sun.max.fill", tintHex: Theme.amber.globalSearchHexString() ?? "#FFB84D", baseSubtitle: "Daily dashboard and timeline", aliases: "today dashboard daily", toggleable: .today),
             .init(label: "All Tasks", item: .allTasks, icon: "checklist", tintHex: Theme.blue.globalSearchHexString() ?? "#5AA2FF", baseSubtitle: "Everything across your workspace", aliases: "tasks all", toggleable: .allTasks),
-            .init(label: "Inbox", item: .inbox, icon: "tray.fill", tintHex: Theme.blue.globalSearchHexString() ?? "#5AA2FF", baseSubtitle: "Unsorted capture tasks", aliases: "inbox capture", toggleable: .inbox),
+            // `toggleable: nil`, unlike every other task page here: Inbox is a *view* inside the
+            // Tasks destination now, not a sidebar row, so there is no visibility toggle for this
+            // entry to report on. It stays its own palette entry because it is still its own view —
+            // selecting it opens the Tasks page with Inbox selected.
+            .init(label: "Inbox", item: .inbox, icon: "tray.fill", tintHex: Theme.blue.globalSearchHexString() ?? "#5AA2FF", baseSubtitle: "Unsorted capture tasks", aliases: "inbox capture", toggleable: nil),
             .init(label: "Focus", item: .focus, icon: "timer", tintHex: Theme.red.globalSearchHexString() ?? "#FF6B6B", baseSubtitle: "Focus timer and active task", aliases: "focus timer pomodoro", toggleable: .focus),
             .init(label: "Calendar", item: .calendar, icon: "calendar", tintHex: Theme.purple.globalSearchHexString() ?? "#9E8CFF", baseSubtitle: "Full calendar and time blocks", aliases: "calendar schedule events", toggleable: .calendar),
             .init(label: "Goals", item: .goals, icon: "flag.fill", tintHex: Theme.green.globalSearchHexString() ?? "#4ECB71", baseSubtitle: "Directions, milestones, and progress", aliases: "goals milestones targets stages directions", toggleable: .goals),

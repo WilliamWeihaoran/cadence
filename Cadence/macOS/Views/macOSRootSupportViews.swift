@@ -658,19 +658,84 @@ struct DeleteConfirmationOverlay: View {
     }
 }
 
-struct AllTasksPageView: View {
-    private enum AllTasksViewMode: String, CaseIterable {
+/// **The** Tasks page: All Tasks and Inbox, two axes, one implementation.
+///
+/// ```
+/// Tasks
+/// ├─ view:  All | Inbox      (CadenceTasksPageScope)
+/// └─ mode:  List | Kanban
+/// ```
+///
+/// The two were separate sidebar rows and separate pages over one universe of work. The axes are
+/// deliberately orthogonal — all four combinations exist — because the board's columns *are* lists
+/// and Inbox is one of them, so "the Inbox board" is the same board with one column rather than a
+/// special case. The alternative, hiding the mode switcher under one view, makes a control appear
+/// and disappear as you cross a filter.
+///
+/// **`.allTasks` and `.inbox` both survive as destinations.** They are distinct, deep-linkable, and
+/// named separately by the command palette, the iPhone's Tasks segments and the widgets; collapsing
+/// them would have been a far wider change than the sidebar asked for. What merged is the row and
+/// the page, not the vocabulary.
+struct TasksPageView: View {
+    private enum Mode: String, CaseIterable {
         case list = "List"
         case kanban = "Kanban"
     }
 
-    @AppStorage("allTasksViewMode") private var modeRaw: String = AllTasksViewMode.list.rawValue
-    @AppStorage("allTasksSortField") private var sortField: TaskSortField = .date
-    @AppStorage("allTasksSortDirection") private var sortDirection: TaskSortDirection = .ascending
-    @AppStorage("allTasksGroupingMode") private var groupingMode: TaskGroupingMode = .byDate
+    /// Non-`nil` when the selection named a view outright — the command palette's "Inbox" entry, or
+    /// an `.inbox` selection restored at launch. The sidebar's own row passes `nil`, which reopens
+    /// whichever view you last left the page on.
+    var requestedScope: CadenceTasksPageScope?
 
-    private var mode: AllTasksViewMode { AllTasksViewMode(rawValue: modeRaw) ?? .list }
+    @AppStorage("tasksPageScope") private var scopeRaw = CadenceTasksPageScope.defaultScope.rawValue
+    /// Still `allTasksViewMode`. The key is the *presentation*, which did not change meaning, and
+    /// renaming it would strand every existing user on the default — the hazard
+    /// `CadenceNotesEditorPreferences.purgeRetiredKeys()` exists to clean up after.
+    @AppStorage("allTasksViewMode") private var modeRaw: String = Mode.list.rawValue
+
+    // The two views keep their own sort/order/group preferences, under the keys each page already
+    // wrote. They are answering different questions — Inbox is a hand-ordered capture list, where
+    // `.custom` and drag-to-reorder are the point, and All Tasks is date-first — so folding them
+    // onto one key would have picked a winner *and* discarded whichever preference the user had
+    // stored on the other page.
+    @AppStorage("allTasksSortField") private var allSortField: TaskSortField = .date
+    @AppStorage("allTasksSortDirection") private var allSortDirection: TaskSortDirection = .ascending
+    @AppStorage("allTasksGroupingMode") private var allGroupingMode: TaskGroupingMode = .byDate
+    @AppStorage("inboxSortField") private var inboxSortField: TaskSortField = .custom
+    @AppStorage("inboxSortDirection") private var inboxSortDirection: TaskSortDirection = .ascending
+    @AppStorage("inboxGroupingMode") private var inboxGroupingMode: TaskGroupingMode = .none
+
     @Environment(TaskCreationManager.self) private var taskCreationManager
+    @Environment(RemindersManager.self) private var remindersManager
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+
+    private var scope: CadenceTasksPageScope { CadenceTasksPageScope.resolved(scopeRaw) }
+    private var mode: Mode { Mode(rawValue: modeRaw) ?? .list }
+
+    private var sortField: Binding<TaskSortField> {
+        scope == .inbox ? $inboxSortField : $allSortField
+    }
+
+    private var sortDirection: Binding<TaskSortDirection> {
+        scope == .inbox ? $inboxSortDirection : $allSortDirection
+    }
+
+    private var groupingMode: Binding<TaskGroupingMode> {
+        scope == .inbox ? $inboxGroupingMode : $allGroupingMode
+    }
+
+    /// The same number the sidebar's Tasks row shows, plus — in the Inbox view — the Apple
+    /// Reminders the strip below is about to draw. Inbox's header has always counted those; they
+    /// are items in the inbox whether or not Cadence owns them.
+    private var headerCount: Int {
+        switch scope {
+        case .all:
+            return CadenceTaskQuerySupport.openTaskCount(from: allTasks.filter(\.isInActiveContainer))
+        case .inbox:
+            return CadenceTaskQuerySupport.openTaskCount(from: CadenceTaskQuerySupport.inboxTasks(from: allTasks))
+                + remindersManager.reminders.count
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -678,26 +743,38 @@ struct AllTasksPageView: View {
             // list below, the same one an area/project's Tasks tab has always had.
             DesktopPageHeader(
                 eyebrow: "Tasks",
-                title: "All Tasks"
+                title: scope.pageTitle,
+                count: headerCount
             )
 
             Divider().background(Theme.borderSubtle)
 
             DesktopControlBar {
                 HStack(spacing: CadenceQuietPillMetrics.clusterSpacing) {
-                    ForEach(AllTasksViewMode.allCases, id: \.self) { viewMode in
+                    ForEach(CadenceTasksPageScope.allCases) { option in
+                        CadenceQuietTabButton(title: option.title, isSelected: scope == option) {
+                            scopeRaw = option.rawValue
+                        }
+                    }
+                }
+
+                // The two switchers are separate clusters, not one seven-wide strip: they are
+                // different questions — which tasks, and drawn how.
+                HStack(spacing: CadenceQuietPillMetrics.clusterSpacing) {
+                    ForEach(Mode.allCases, id: \.self) { viewMode in
                         CadenceQuietTabButton(title: viewMode.rawValue, isSelected: mode == viewMode) {
                             modeRaw = viewMode.rawValue
                         }
                     }
                 }
+                .padding(.leading, CadenceQuietPillMetrics.clusterSpacing * 2)
 
                 Spacer(minLength: 12)
 
-                CadenceEnumPickerBadge(title: "Sort", selection: $sortField)
-                CadenceEnumPickerBadge(title: "Order", selection: $sortDirection)
+                CadenceEnumPickerBadge(title: "Sort", selection: sortField)
+                CadenceEnumPickerBadge(title: "Order", selection: sortDirection)
                 if mode == .list {
-                    CadenceEnumPickerBadge(title: "Group", selection: $groupingMode)
+                    CadenceEnumPickerBadge(title: "Group", selection: groupingMode)
                 }
             }
 
@@ -706,10 +783,11 @@ struct AllTasksPageView: View {
             Group {
                 switch mode {
                 case .list:
-                    AllTasksListView(
-                        sortField: sortField,
-                        sortDirection: sortDirection,
-                        groupingMode: groupingMode
+                    TasksListView(
+                        scope: scope,
+                        sortField: sortField.wrappedValue,
+                        sortDirection: sortDirection.wrappedValue,
+                        groupingMode: groupingMode.wrappedValue
                     )
                     // The inset keeps the last row reachable from under the floating button.
                     .safeAreaInset(edge: .bottom) {
@@ -722,13 +800,18 @@ struct AllTasksPageView: View {
                     // No page-level button here, exactly as on a list's Kanban tab: every column
                     // has its own ghost row, and each of those knows which list the card lands in.
                     TaskListsKanbanView(
-                        sortField: sortField,
-                        sortDirection: sortDirection
+                        scope: scope,
+                        sortField: sortField.wrappedValue,
+                        sortDirection: sortDirection.wrappedValue
                     )
                 }
             }
         }
         .background(Theme.bg)
+        .onChange(of: requestedScope, initial: true) { _, requested in
+            guard let requested else { return }
+            scopeRaw = requested.rawValue
+        }
     }
 }
 #endif

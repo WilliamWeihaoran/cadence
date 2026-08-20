@@ -6,6 +6,7 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
     case sync
     case data
     case calendar
+    case reminders
     case notifications
     case organization
     case lists
@@ -21,8 +22,8 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
     /// declared once in `Shared` (`CadenceMobileSettingsLayout`) so the iPhone list and the iPad
     /// rail cannot end up filing the same destination under different headings.
     /// Computed rather than a `static let`: a stored static's initializer runs in a nonisolated
-    /// context, and everything in this target is main-actor by default. Twelve cases is not worth
-    /// a caching dance.
+    /// context, and everything in this target is main-actor by default. A dozen-odd cases is not
+    /// worth a caching dance.
     static var groups: [iOSSettingsCategoryGroup] {
         CadenceMobileSettingsLayout.groups.map { group in
             iOSSettingsCategoryGroup(
@@ -32,13 +33,39 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         }
     }
 
-    /// `nil` for the three categories that are macOS-shell concerns and have no mobile screen:
-    /// `sidebar`, `reminders`, `account`.
+    /// `nil` for the two categories that are genuinely macOS-shell concerns and have no mobile
+    /// screen: `sidebar` (there is no sidebar to configure on iPhone, and the iPad one is not
+    /// user-arranged) and `account` (Sign in with Apple is a macOS-only entitlement here).
+    ///
+    /// This comment used to name a third, `reminders`, and calling it a shell concern is what
+    /// kept Apple Reminders unreachable from iOS Settings: EventKit reminders are fully
+    /// available on iOS, `RemindersManager` never touched AppKit, and the usage-description key
+    /// already shipped in the shared `Info.plist`. Nothing was missing but this classification.
+    /// Deliberately an exhaustive `switch` rather than the reflective
+    /// `allCases.first(where: { $0.sharedKind == kind })` it used to be. That spelling turned a
+    /// missing mobile case into a silent `nil` — `groups` `compactMap`s, so the category just
+    /// stopped being drawn, with nothing to notice it. Written out, adding a
+    /// `CadenceSettingsCategoryKind` fails to build here until someone states whether mobile has
+    /// a screen for it. The macOS-built test target cannot see this file at all, so a compile
+    /// error is the only check available on this half; the shared half is pinned by
+    /// `CadenceMobileSettingsLayout.desktopOnly`.
     init?(kind: CadenceSettingsCategoryKind) {
-        guard let match = iOSSettingsCategory.allCases.first(where: { $0.sharedKind == kind }) else {
-            return nil
+        switch kind {
+        case .navigation: self = .navigation
+        case .sync: self = .sync
+        case .dataSafety: self = .data
+        case .calendar: self = .calendar
+        case .reminders: self = .reminders
+        case .notifications: self = .notifications
+        case .contexts: self = .organization
+        case .lists: self = .lists
+        case .tags: self = .tags
+        case .templates: self = .templates
+        case .ai: self = .ai
+        case .coverage: self = .coverage
+        case .about: self = .about
+        case .sidebar, .account: return nil
         }
-        self = match
     }
 
     var sharedKind: CadenceSettingsCategoryKind {
@@ -47,6 +74,7 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         case .sync: return .sync
         case .data: return .dataSafety
         case .calendar: return .calendar
+        case .reminders: return .reminders
         case .notifications: return .notifications
         case .organization: return .contexts
         case .lists: return .lists

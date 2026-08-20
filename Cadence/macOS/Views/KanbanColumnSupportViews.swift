@@ -9,150 +9,16 @@ import SwiftUI
 // rather than copy-pasted in each column is what makes that structural instead of accidental.
 // If you need to change column appearance, change it here — never in one column only.
 
-/// The 7pt dot + uppercased title + task count that opens every kanban column, on both boards.
-/// `trailing` is where a board adds its own controls (the section board puts the completion and
-/// ellipsis buttons there; the list board passes `EmptyView()`).
-struct KanbanColumnTitleRow<Trailing: View>: View {
-    let dotColor: Color
-    let title: String
-    let count: Int
-    @ViewBuilder let trailing: () -> Trailing
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: kanbanColumnDotSize, height: kanbanColumnDotSize)
-
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .kerning(0.4)
-                .foregroundStyle(Theme.muted)
-                .lineLimit(1)
-                .truncationMode(.tail)
-
-            Spacer(minLength: 6)
-
-            Text("\(count)")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(Theme.dim)
-                .monospacedDigit()
-
-            trailing()
-        }
-    }
-}
-
-extension KanbanColumnTitleRow where Trailing == EmptyView {
-    init(dotColor: Color, title: String, count: Int) {
-        self.init(dotColor: dotColor, title: title, count: count) { EmptyView() }
-    }
-}
-
-/// The **one** column-header treatment, shared by every board surface: the section/list kanban
-/// columns, and the Calendar Board's day columns and pinned rails. Same dot, same label size and
-/// casing, same count placement, same padding, same closing hairline. Paired with
-/// `KanbanColumnScroll`, which puts the add-task row in the same place on all of them.
-///
-/// It is width-agnostic on purpose: the Calendar Board's rails are narrower than its day columns
-/// and still line up, because the header fills whatever width its column hands it.
-///
-/// Exactly three things may differ per board, because they are genuinely different content:
-/// - `title` — bucket name / section name / weekday + date.
-/// - `trailing` — per-column controls (the section board's complete + overflow buttons).
-/// - `detail` — an optional second line (the section board's due-date row).
-///
-/// `accentRule` replaces the neutral hairline with a coloured one. The Calendar Board's *today*
-/// column is the single sanctioned user of it; nothing else should pass a colour here.
-struct BoardColumnHeader<Trailing: View, Detail: View>: View {
-    private let dotColor: Color
-    private let title: String
-    private let count: Int
-    private let accentRule: Color?
-    private let trailing: () -> Trailing
-    private let detail: () -> Detail
-
-    init(
-        dotColor: Color,
-        title: String,
-        count: Int,
-        accentRule: Color? = nil,
-        @ViewBuilder trailing: @escaping () -> Trailing,
-        @ViewBuilder detail: @escaping () -> Detail
-    ) {
-        self.dotColor = dotColor
-        self.title = title
-        self.count = count
-        self.accentRule = accentRule
-        self.trailing = trailing
-        self.detail = detail
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 5) {
-                KanbanColumnTitleRow(dotColor: dotColor, title: title, count: count, trailing: trailing)
-                detail()
-            }
-            .kanbanColumnHeaderPadding()
-
-            rule
-        }
-    }
-
-    @ViewBuilder
-    private var rule: some View {
-        if let accentRule {
-            // Same 1pt hairline slot as every other column — it just carries colour, so the
-            // exception costs no layout difference.
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [accentRule.opacity(0.85), accentRule.opacity(0.45), accentRule.opacity(0.16)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(height: 1)
-        } else {
-            Rectangle()
-                .fill(Theme.borderSubtle)
-                .frame(height: 1)
-        }
-    }
-}
-
-extension BoardColumnHeader where Detail == EmptyView {
-    init(
-        dotColor: Color,
-        title: String,
-        count: Int,
-        accentRule: Color? = nil,
-        @ViewBuilder trailing: @escaping () -> Trailing
-    ) {
-        self.init(
-            dotColor: dotColor,
-            title: title,
-            count: count,
-            accentRule: accentRule,
-            trailing: trailing,
-            detail: { EmptyView() }
-        )
-    }
-}
-
-extension BoardColumnHeader where Trailing == EmptyView, Detail == EmptyView {
-    init(dotColor: Color, title: String, count: Int, accentRule: Color? = nil) {
-        self.init(
-            dotColor: dotColor,
-            title: title,
-            count: count,
-            accentRule: accentRule,
-            trailing: { EmptyView() },
-            detail: { EmptyView() }
-        )
-    }
-}
+// The **one** column-header treatment is `CadenceBoardColumnHeader` in
+// `Shared/Components/CadenceBoardColumnHeader.swift`, and it is shared with iOS.
+//
+// `BoardColumnHeader` and `KanbanColumnTitleRow` used to be declared here, beside a
+// character-for-character `iOSBoardColumnHeader` in `Cadence/iOS/iOSDesignSystem.swift` that
+// differed only in its label size, its count size and a missing 2pt of top padding. This file's
+// own banner comment above — "the two boards must look identical; keeping the styling here rather
+// than copy-pasted in each column is what makes that structural instead of accidental" — was true
+// of the *three macOS boards* and quietly false of the two platforms. The header is in `Shared/`
+// now, so it is structural across both.
 
 /// The column is containerless at rest: no fill, no stroke. This layer only supplies a
 /// transparent-but-hit-testable region plus the *transient* drag-over wash, so a wall of
@@ -217,12 +83,6 @@ extension View {
         modifier(KanbanColumnChrome(tint: tint, isTargeted: isTargeted) { EmptyView() })
     }
 
-    /// Padding shared by both boards' column header blocks.
-    func kanbanColumnHeaderPadding() -> some View {
-        padding(.horizontal, 4)
-            .padding(.top, 2)
-            .padding(.bottom, 8)
-    }
 }
 
 /// What a board column's bottom-of-column add row does when it is pressed.
@@ -427,7 +287,7 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     }
 
     var body: some View {
-        BoardColumnHeader(
+        CadenceBoardColumnHeader(
             dotColor: dotColor,
             title: section.name,
             count: activeTaskCount,

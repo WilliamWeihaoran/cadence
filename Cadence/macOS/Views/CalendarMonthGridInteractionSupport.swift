@@ -7,18 +7,38 @@ enum CalendarMonthGridInteractionSupport {
     /// for the timeline view.
     static let scrollSettleDelay: TimeInterval = 0.12
 
+    /// The scroll's two products: the **block** the header is named from, and the **month the grid
+    /// is tinted against**.
+    ///
+    /// Both come from this one callback on purpose. They are near-identical readings of the same
+    /// scroll — the block that fills most of the viewport, and the month the middle of the viewport
+    /// falls in — and computing them anywhere apart is how a header and a grid end up naming
+    /// different months. `displayedMonth` is `nil` until the grid has placed itself, which is the
+    /// caller's cue to fall back to the anchored block's own month.
+    ///
+    /// `visibleMonthIdx` stays a **block** index and keeps every property `CalendarPageStateSupport`
+    /// documents for it — it is still what `handleAppear` scrolls to and what the month → timeline
+    /// return path inverts. The displayed month is deliberately *not* derived from it: a block index
+    /// cannot say which half of a block you are looking at, which is the whole difference this
+    /// change is about.
     static func handleScroll(
         y: CGFloat,
         offsets: [CGFloat],
         totalMonths: Int,
         viewportHeight: CGFloat = 0,
+        todayMonthIdx: Int = CalendarMonthGridMetrics.todayMonthIndex,
+        currentMonthStart: Date,
+        calendar: Calendar,
         visibleMonthIdx: inout Int,
+        displayedMonth: inout Date?,
         didInitialPosition: Bool,
         isProgrammaticScroll: Bool
     ) {
         // While a programmatic scroll (initial position restore or a "Today" jump) is in
         // flight, scroll-geometry callbacks reflect the stale pre-jump offset — ignore them
-        // so they can't stomp a value that was just set intentionally.
+        // so they can't stomp a value that was just set intentionally. The tint is under the same
+        // guard as the header: adopting a pre-jump offset there would flash the wrong month across
+        // the whole grid for as long as the jump takes.
         guard didInitialPosition, !isProgrammaticScroll else { return }
         let computed = dominantMonthIndex(
             topY: y,
@@ -28,6 +48,19 @@ enum CalendarMonthGridInteractionSupport {
         )
         if visibleMonthIdx != computed {
             visibleMonthIdx = computed
+        }
+
+        let month = CalendarMonthGridSupport.displayedMonth(
+            topY: y,
+            viewportHeight: viewportHeight,
+            offsets: offsets,
+            totalMonths: totalMonths,
+            todayMonthIdx: todayMonthIdx,
+            currentMonthStart: currentMonthStart,
+            calendar: calendar
+        )
+        if displayedMonth.map({ !calendar.isDate($0, equalTo: month, toGranularity: .month) }) ?? true {
+            displayedMonth = month
         }
     }
 

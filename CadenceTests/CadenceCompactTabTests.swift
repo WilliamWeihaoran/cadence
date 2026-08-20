@@ -135,6 +135,95 @@ struct CadenceCompactTabTests {
         }
     }
 
+    // MARK: - The desktop scope, against these segments
+
+    /// **The iPhone is out of scope for the All Tasks / Inbox merge and must stay that way.** Its
+    /// Tasks tab has been this design in tab-bar form since it shipped — three segments, Today
+    /// among them — and `ios.compact.tasksSection` persists these raw values, so a rename here
+    /// silently resets every phone to Today.
+    ///
+    /// Spelled as literal raw values rather than derived from the enum: a test that reads
+    /// `allCases` agrees with any rename by construction, which is the failure mode this is for.
+    @Test func theThreeTasksSegmentsAndTheirStoredSpellingsAreFixed() {
+        #expect(CadenceTasksSection.allCases == [.today, .all, .inbox])
+        #expect(CadenceTasksSection.allCases.map(\.rawValue) == ["today", "all", "inbox"])
+        #expect(CadenceTasksSection.allCases.map(\.title) == ["Today", "All", "Inbox"])
+        #expect(CadenceTasksSection.allCases.map(\.destination) == [.today, .allTasks, .inbox])
+        #expect(CadenceTasksSection.defaultSection == .today)
+    }
+
+    /// The desktop and iPad **Tasks** destination hosts two of those three views. It borrows its
+    /// labels rather than writing a second set, so the phone cannot end up saying "All" while the
+    /// Mac says "All Tasks" in the same control — and `.today` is deliberately absent, because
+    /// Today is a three-pane dashboard rather than a filter over the same rows.
+    @Test func theDesktopScopeIsTwoOfTheThreeSegmentsAndBorrowsTheirWords() {
+        #expect(CadenceTasksPageScope.allCases == [.all, .inbox])
+        #expect(CadenceTasksPageScope.allCases.map(\.section) == [.all, .inbox])
+        #expect(CadenceTasksPageScope.allCases.map(\.destination) == [.allTasks, .inbox])
+
+        for scope in CadenceTasksPageScope.allCases {
+            #expect(scope.title == scope.section.title)
+            #expect(scope.destination == scope.section.destination)
+            #expect(scope.pageTitle == scope.destination.title)
+            #expect(CadenceTasksPageScope(destination: scope.destination) == scope)
+        }
+
+        #expect(CadenceTasksPageScope(destination: .today) == nil)
+        #expect(CadenceTasksPageScope.allCases.map(\.pageTitle) == ["All Tasks", "Inbox"])
+    }
+
+    /// Both destinations still exist and still route on their own, which is the whole reason the
+    /// merge stayed a sidebar-and-page change: the command palette names them separately, the
+    /// phone's segments select them separately, and widgets deep-link to them.
+    @Test func theMergeDidNotCollapseTheTwoDestinations() {
+        #expect(CadenceFeatureDestination.allCases.contains(.allTasks))
+        #expect(CadenceFeatureDestination.allCases.contains(.inbox))
+        #expect(CadenceFeatureDestination.allTasks.compactTasksSection == .all)
+        #expect(CadenceFeatureDestination.inbox.compactTasksSection == .inbox)
+        #expect(CadenceFeatureDestination.inbox.compactTab == .tasks)
+    }
+
+    /// **The regression the merge could most easily have shipped.**
+    ///
+    /// Inbox showed Apple Reminders inline and nothing else in the app does. Folding it into the
+    /// Tasks page is exactly the kind of change that drops a section by omission, and it would look
+    /// like nothing at all until someone with reminders opened the Inbox. So the gate is a function
+    /// rather than a `guard` in a view body, and this is what fails if it goes.
+    @Test func theRemindersStripBelongsToInboxAndOnlyInbox() {
+        for isAuthorized in [true, false] {
+            for isLoading in [true, false] {
+                for hasReminders in [true, false] {
+                    #expect(
+                        CadenceTasksPageScope.showsRemindersStrip(
+                            scope: .all,
+                            isAuthorized: isAuthorized,
+                            isLoading: isLoading,
+                            hasReminders: hasReminders
+                        ) == false,
+                        "All Tasks grew an Apple Reminders strip"
+                    )
+                }
+            }
+        }
+
+        // Reminders to show.
+        #expect(CadenceTasksPageScope.showsRemindersStrip(scope: .inbox, isAuthorized: true, isLoading: false, hasReminders: true))
+        // Nothing to show, but something to say: the Connect row, and the loading row.
+        #expect(CadenceTasksPageScope.showsRemindersStrip(scope: .inbox, isAuthorized: false, isLoading: false, hasReminders: false))
+        #expect(CadenceTasksPageScope.showsRemindersStrip(scope: .inbox, isAuthorized: true, isLoading: true, hasReminders: false))
+        // Authorized, settled, and empty: the user has no active reminders, so the strip is a
+        // heading over nothing.
+        #expect(!CadenceTasksPageScope.showsRemindersStrip(scope: .inbox, isAuthorized: true, isLoading: false, hasReminders: false))
+    }
+
+    @Test func anUnknownStoredScopeFallsBackRatherThanLeavingNoView() {
+        #expect(CadenceTasksPageScope.resolved("inbox") == .inbox)
+        #expect(CadenceTasksPageScope.resolved("all") == .all)
+        #expect(CadenceTasksPageScope.resolved("") == CadenceTasksPageScope.defaultScope)
+        #expect(CadenceTasksPageScope.resolved("allTasks") == CadenceTasksPageScope.defaultScope)
+        #expect(CadenceTasksPageScope.defaultScope == .all)
+    }
+
     // MARK: - Persistence
 
     @Test func persistedTabAndSectionFallBackRatherThanLeavingNoSelection() {
