@@ -32,6 +32,52 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
+  *(a)* A widget showing the running timer plus what is being worked on, and a second showing the
+  task list — exact split is a design call, make a good one rather than shipping two widgets that
+  say the same thing. Two constraints to design around, both real: **WidgetKit timelines cannot
+  tick**, so a live count needs `Text(timerInterval:)` (the system animates it without waking the
+  extension) or ActivityKit for a Live Activity on the lock screen and Dynamic Island — a timeline
+  that reloads every second is not an option. And **`FocusManager` is `#if os(macOS)` only**
+  (`macOS/Services/FocusManager.swift`); iOS focus lives in `iOSFocusView.swift` with no shared
+  state object, so session state is in-memory and a widget process cannot see it. Persisting focus
+  state to the app-group store is the prerequisite, not a detail. Existing widgets to match:
+  `CalendarSnapshotWidget`, `HabitCheckInWidget`, `MilestoneMomentumWidget`, `TodayTasksWidget`.
+  *(b)* iPhone **landscape** layout for the running timer and its tasks. The compact shell
+  (`iOSCompactTabShell`) is built around a portrait tab bar; landscape focus wants the timer large
+  and the chrome gone, which is a different shape rather than the same one rotated.
+
+- [T-169] **iPhone "More" tab needs rethinking.** `iOSMoreTabView` is currently a flat list of the
+  six destinations that did not fit the four-slot tab bar — Focus, Goals, Habits, Lists, Search,
+  Settings. That is a description of the tab bar's overflow, not a design. It replaced
+  `iOSCompactHomeView` (a grid of eight tiles standing in for navigation the app did not have), so
+  the failure mode to avoid is recreating that grid under a new name.
+
+- [T-170] **Decide how far iPadOS and iPhone layout should converge.** Standing rule is that they
+  are one *style* and differ only in *layout* — sidebar vs tab bar, two panes vs one. The open
+  question is where that line actually falls now that Today, Tasks, Calendar and Notes have all
+  been unified internally. Wants a decision recorded, not a sweep: which surfaces are genuinely
+  shape-bound and which are iPad-only by accident.
+
+- [T-171] **The blue `+` button: short press, long-press palette, and drag.** Wanted behaviour:
+  - **Keep the existing drag.** It already exists — `iOSCompactTabShell.swift` (~:258) attaches
+    `.onDrag` to the centre control, and dropping it on a task row is already wired. Not new work;
+    work to *not* break.
+  - **Short press** presents the task creation sheet. Already the behaviour.
+  - **Long press / press-and-hold** opens a radial palette around the button — roughly a semicircle
+    of segments, with haptics — offering task, calendar, note, and possibly more.
+  - **The conflict that makes this non-trivial, and the reason it is recorded rather than guessed
+    at:** UIKit's drag lift *is* a long press. `UIDragInteraction`'s recognizer needs the touch
+    held stationary ~350ms before it begins (measured at 326–349ms in this repo's own simulator
+    work). So "hold to open a palette" and "hold to lift and drag" are the same gesture, and one
+    will eat the other. Resolving it needs a deliberate choice — different hold durations, a
+    direction test like the one `iOSMarkdownImageResizeGestureRecognizer` uses for resize-vs-scroll,
+    or moving the palette to a different trigger entirely. Do not start this without deciding that
+    first.
+  - **macOS is deliberately open.** No equivalent decided yet; leave it unspecified rather than
+    inventing a Mac gesture to match. macOS creation today is the floating `+`, the column ghost
+    row, and the calendar drag-create popover.
+
 - [T-165] **Calendar and Focus now share one tint in the sidebar.** `.calendar` was changed to
   `#FF6B6B` at the user's request, which is byte-identical to `.focus`. Shipped literally and
   flagged rather than resolved, because retinting Focus is a liberty the user did not ask for. The
