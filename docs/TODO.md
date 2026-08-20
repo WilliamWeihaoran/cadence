@@ -32,15 +32,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
-- [T-173] **macOS board cards list tags and subtasks; iOS board cards do not.** Surfaced by T-172
-  and deliberately left: this is a layout decision about what fits a 300pt column, not a
-  de-duplication, so it does not belong in a sweep. Decide whether iOS cards should carry them.
-
-- [T-174] **Both platforms' Calendar Board day columns now show a do-date chip that repeats the
-  column header.** Pre-existing macOS behaviour that iOS inherited when the board-card metadata
-  descriptor was shared (`cdf0896`). Suppressing it needs a second knob on the descriptor — "omit
-  the do date when the surface already states the day" — which is a new design call rather than a
-  fix, so it was flagged instead of guessed at.
 
 - [T-175] **The remaining primary-row fork is `MacTaskRow`'s interaction machinery.** `d330f5e`
   took the presentation half. What is left is hover, keyboard, drag and the completion-animation
@@ -343,6 +334,21 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-118] `3c8de23` Board cards stop repeating their column, gain tags, stop listing every subtask
+  (T-173, T-174). Both were recorded as design calls; both had a defect behind them.
+  The do-chip suppression is spelled as an **equality** — omit the day the surface already states —
+  not as "day columns omit do dates", because the chip's red is the card's only per-card over-do cue
+  and a rule keyed on column *kind* would keep hiding it silently if the bucketing ever widened.
+  `dayAlreadyStatedBySurface` defaults to `nil`, so forgetting to pass it shows the chip.
+  Tags: reaching them deleted a near-copy the codebase had already asked to have removed —
+  `CompactTagStrip` was inside `#if os(macOS)`, so `CadenceNotesListSupport` carried a private
+  `NoteRowTagStrip` that was it line for line, with a comment naming this exact move.
+  Subtasks: the answer was neither "give iOS the rows" nor "give both a count". `rowSubtaskLimit = 3`
+  already existed and was already *measured* (uncapped made one row ~290pt and cut iPhone Today from
+  ~5 visible tasks to 2.5; the `0/3` spelling was removed for naming a count of things to do without
+  naming any of them). macOS's card was listing **every** subtask including completed ones,
+  unbounded — that was the real defect, and macOS is the side that changed.
 
 - [D-117] `cdf0896` Two task-row jobs unified, two proved misfiled, three rows were lying (T-172).
   Bundle rows: `BundleTaskPopoverRow` rendered `max(estimatedMinutes, 5)m` — an invented estimate
