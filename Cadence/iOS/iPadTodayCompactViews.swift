@@ -129,15 +129,16 @@ struct iOSCompactTodayView: View {
 /// described the page it was drawn on. That is the mistake the deleted `iOSCompactHomeView` grid
 /// made. An empty day looks empty and says so once, in `Theme.dim`.
 ///
-/// **It draws its own card.** The two callers each wrapped it in one of their own and disagreed
-/// about the fill — `Theme.surface` on the phone, `Theme.surfaceElevated.opacity(0.36)` on the
-/// iPad — so one component had two looks. `Theme.surfaceElevated` is the one value that reads as a
-/// card against both hosts: the phone's page is `Theme.bg`, and the iPad's task column is itself
-/// `Theme.surface`, which a `Theme.surface` card disappears into.
+/// **It draws no card.** It used to: the two callers each wrapped it in one of their own and
+/// disagreed about the fill, so the component was pulled inward to draw one `Theme.surfaceElevated`
+/// card for both hosts. The user has since had the cards taken off task groups everywhere, and an
+/// empty state boxed on a page whose populated state is not boxed reads as a different kind of
+/// thing rather than the same list with nothing in it. So it is bare text on the page now, on both
+/// hosts. The fill reasoning is kept here only because it explains why a `Theme.surface` card would
+/// have been invisible on iPad if anyone reaches for one again.
 struct iOSCompactTodayEmptyState: View {
     var body: some View {
         emptyRow
-            .cadenceCard(background: Theme.surfaceElevated, cornerRadius: Theme.radiusCard)
     }
 
     private var emptyRow: some View {
@@ -207,9 +208,6 @@ struct iOSCompactSampleDataCard: View {
             .accessibilityLabel("Seed sample tasks")
         }
         .padding(12)
-        // Same fill as the empty-state card it sits under, for the same reason: on iPad both are
-        // drawn on a `Theme.surface` task column, where a `Theme.surface` card is invisible.
-        .cadenceCard(background: Theme.surfaceElevated, cornerRadius: Theme.radiusCard)
     }
 }
 #endif
