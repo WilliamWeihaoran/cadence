@@ -44,12 +44,16 @@ struct CalendarBoardDayColumn: View {
         dateKey == DateFormatters.todayKey()
     }
 
+    /// Split on `isFinishedTask`, not on `isDone`. A cancelled task is finished, and `!$0.isDone`
+    /// put it in the **active** half — the column of work you still intend to do. No card proves it
+    /// today, because `CalendarBoardPlannerSupport`'s day bucketing keeps cancelled work off the
+    /// Board upstream by policy; this split has to be right without depending on that (T-203).
     private var activeTasks: [AppTask] {
-        tasks.filter { !$0.isDone }
+        tasks.filter { !CadenceTaskQuerySupport.isFinishedTask($0) }
     }
 
     private var completedTasks: [AppTask] {
-        tasks.filter { $0.isDone }
+        tasks.filter { CadenceTaskQuerySupport.isFinishedTask($0) }
     }
 
     private var activeItems: [CalendarBoardColumnItem] {

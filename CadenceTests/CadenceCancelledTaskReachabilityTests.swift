@@ -284,6 +284,39 @@ struct CadenceCancelledTaskReachabilityTests {
         )
     }
 
+    /// T-203: both Calendar Board day columns split their cards on `isDone`, and a cancelled task
+    /// is not `isDone` — so it would have landed in the **active** half, the work you still intend
+    /// to do. It never arrived, only because `CalendarBoardPlannerSupport`'s day bucketing drops
+    /// cancelled work upstream as a matter of policy. The split reads `isFinishedTask` now, so the
+    /// classification is right by construction rather than by what happens to reach it.
+    ///
+    /// This is a **no-op today by design** — `aCancelledTaskIsStillOffTheScheduleTheRailsAndTheOverdueCount`
+    /// above pins that nothing moved — so no behavioural test can tell the fix from its absence.
+    /// A source scan is the only thing that can. The two retired spellings are chosen to match the
+    /// pre-fix text and not the post-fix one: `"filter { $0.isDone }"` is deliberately not a
+    /// substring of `"filter { !$0.isDone }"`, the trap a first draft of the test above fell into.
+    @Test func neitherCalendarBoardDayColumnStillSplitsOnDoneAlone() throws {
+        let columns = [
+            "Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift",
+            "Cadence/iOS/iOSCalendarBoardView.swift"
+        ]
+
+        for retired in ["tasks.filter { !$0.isDone }", "tasks.filter { $0.isDone }", "$0.isDone"] {
+            try expectOccurrences(of: retired, at: Dictionary(uniqueKeysWithValues: columns.map { ($0, 0) }))
+        }
+        try expectOccurrences(
+            of: "CadenceTaskQuerySupport.isFinishedTask($0)",
+            at: Dictionary(uniqueKeysWithValues: columns.map { ($0, 2) })
+        )
+
+        // And the upstream filter stays exactly where it was: the fix was the accident, not the
+        // policy. Cancelled work is still off the Board.
+        try expectOccurrences(
+            of: "guard !task.isCancelled, task.bundle == nil",
+            at: ["Cadence/Shared/CadenceCalendarPlanningSupport.swift": 1]
+        )
+    }
+
     /// Without this, every zero above could be a scan reading an empty string — the exact failure
     /// mode a `/tmp` against `/private/tmp` path mismatch produces on an isolated build tree.
     @Test func theSourceScanIsNotVacuous() throws {
@@ -295,12 +328,20 @@ struct CadenceCancelledTaskReachabilityTests {
         #expect(files.contains("Cadence/iOS/iOSTaskViews.swift"))
         #expect(files.contains("Cadence/iOS/iOSTaskDetailComponents.swift"))
         #expect(files.contains("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        #expect(files.contains("Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift"))
+        #expect(files.contains("Cadence/iOS/iOSCalendarBoardView.swift"))
 
         let queries = try strippingComments(sourceFile("Cadence/Shared/CadenceTaskQuerySharedSupport.swift"))
         #expect(queries.contains("static func isFinishedTask"))
 
         let row = try strippingComments(sourceFile("Cadence/iOS/iOSTaskViews.swift"))
         #expect(row.contains("struct iOSTaskRow: View"))
+
+        let macColumn = try strippingComments(sourceFile("Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift"))
+        #expect(macColumn.contains("struct CalendarBoardDayColumn: View"))
+
+        let iosColumn = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarBoardView.swift"))
+        #expect(iosColumn.contains("struct iOSCalendarBoardDayColumn: View"))
     }
 }
 
