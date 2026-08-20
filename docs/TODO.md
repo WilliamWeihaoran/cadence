@@ -29,15 +29,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-- [T-184] **The shipped privacy policy promises in-app data deletion iOS does not have.**
-  In progress. `docs/privacy.html:50` and `docs/app-review-notes.md:27-28` both tell the user they can
-  delete their account and data from Settings → Account or Settings → Data Safety; on iOS neither
-  route exists, and Data Safety is read-only count tiles. `PrivacyDataResetService` is ~45 lines
-  behind `#if os(macOS)` containing **zero** AppKit — the [[T-163]] `RemindersManager` shape exactly.
-  Also `docs/privacy.html:29` tells the reader to revoke Calendar access "in macOS System Settings",
-  wrong on iOS. Submission-facing: a category named Data Safety that offers no safety action, and a
-  policy statement App Review can check.
-
 
 ## Open — decided, not started
 
@@ -71,22 +62,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   row distinctly, so the row work exists; what is missing is letting them through the queries. Check
   every one of the filter sites rather than the two obvious ones.
 
-- [T-185] **Build AI actions on iOS.** User's call. `Cadence/Services/AI/AIActionService.swift` wraps
-  its body in `#if os(macOS)` and contains **zero** AppKit — the [[T-163]] `RemindersManager` shape
-  again; `AIProvider` and `AISettingsManager` are already cross-platform. Today iOS ships a full AI
-  settings screen (key entry, model ID, connection test) for a feature it cannot invoke, including a
-  disclosure reading "AI requests run only after you choose an AI command" when there is no iOS AI
-  command. Needs an iOS review sheet: drafts must go through review before anything is written, the
-  way `NoteActionReviewSheets` does on macOS. Never log the key or persist request bodies.
-
-- [T-186] **iOS discards focus time on task switch; commit it like macOS.** User's call.
-  `FocusManager.commitElapsed()` runs from both `startFocus(task:)` and `startFocus(bundle:)` before
-  switching and credits `actualMinutes` **and** the list's `loggedMinutes`. iOS's
-  `iOSFocusView.select(_:)` calls `resetTimer()` instead, and `CadenceFocusSupport.timerState(
-  afterPlayTapOn:)` resets on switch, so measured minutes are dropped — iOS's only path into
-  `logElapsedSeconds` is `complete(_:)`. Consequence: a goal with `progressType == "hours"` can only
-  be advanced from a Mac. The roll-up helper is already shared and already correct; this is one call
-  in the wrong order. macOS's `LogSessionPopover` was **not** requested — leave it.
 
 - [T-182] **The "derive a pane decision from handed width" rule now exists in four places, and
   `CadenceRegularPaneLayout.swift` is its house file.** That file already holds
@@ -340,6 +315,37 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-127] `7b48808` The privacy policy promised iOS a deletion it could not reach (T-184).
+  `PrivacyDataResetService` was 45 lines behind `#if os(macOS)` with **zero** AppKit — the
+  `RemindersManager` shape a third time, and this one made a submission-facing document false.
+  The confirmation matches macOS's *bar*, not its mechanism: the literal iOS translation of a
+  window-modal dialog is a bottom action sheet, which is one thumb-reachable tap and strictly weaker,
+  so the destructive control never appears on the settings screen at all and sits behind a typed
+  `DELETE`. The schema was already fully covered — 20 entities, 20 deletions — but **nothing was
+  checking**, so the check is the gain: a two-link chain off `CadenceSchema.entities` that fails if a
+  model is added without a deletion. Two further doc falsehoods fixed: the review notes claimed a
+  macOS-only target for an app that builds `iphoneos`, and the Apple-identity paragraph omitted that
+  Sign in with Apple is macOS-only.
+
+- [D-128] `2bf503b` AI actions reach iOS, and `normalizedDate` could hide a task (T-185).
+  The service needed only its guard removed — nothing moved, so none of the `.stringsdata` trouble.
+  **The bug:** `normalizedDate` validated by parsing and returned the string *as typed*, and
+  `DateFormatters.ymd` is lenient about single-digit months, so `"2026-8-20"` reached
+  `TaskCreationDraft.dueDateKey` verbatim. Every date comparison in Cadence is a string comparison
+  against canonical `yyyy-MM-dd`, so that task was due on a day no "due today" check, group heading
+  or sort key could see. `applyTaskDrafts` now has exactly one caller in the app, inside a gate that
+  guards on validity itself, so losing a `.disabled()` cannot write. Unexercised without a key and
+  said so: the HTTP round trip, `testConnection`, and the error alerts.
+
+- [D-129] `f1e3dc8` iOS banked focus time on switch instead of discarding it (T-186). Both entry
+  points were wrong — the row tap and the play button — and fixing one would have left the bug half
+  present. No new arithmetic; the roll-up was already shared and correct. Two deliberate
+  consequences documented at the call sites: re-selecting the focused task no longer zeroes its
+  clock, and both paths read `selectedTask?.id` because with nothing picked the session runs against
+  `readyTasks.first`. iOS has no bundle focus at all, pinned by a test so a future bundle path fails
+  until it commits too. Demonstrated on device: 02:46 → `3m/30m`, then 01:55 → `5m/30m`, with the
+  hours-mode goal reading FOCUS 5m.
 
 - [D-126] `fdd04a8` A heading holding only a carriage return went 30pt bold and lost its marker
   (T-181). macOS re-derived the visible-content test locally, trimming `.whitespaces` where the
