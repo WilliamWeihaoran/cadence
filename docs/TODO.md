@@ -41,6 +41,31 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-147] **A cancelled task is unreachable on iOS — decided: show them in Completed.** Every list
+  query filters cancelled out (`CadenceTaskQuerySupport` ×6, `CadenceCalendarPlanningSupport`,
+  `iOSSearchView` ×2, the note `[[task:` picker) and the inspector auto-dismisses on Cancel, so on iOS
+  cancelling is deleting without saying so. **User's call: cancelled tasks appear in Completed**,
+  visually distinct — strikethrough, not the green done treatment. macOS already renders a cancelled
+  row distinctly, so the row work exists; what is missing is letting them through the queries. Check
+  every one of the filter sites rather than the two obvious ones.
+
+- [T-185] **Build AI actions on iOS.** User's call. `Cadence/Services/AI/AIActionService.swift` wraps
+  its body in `#if os(macOS)` and contains **zero** AppKit — the [[T-163]] `RemindersManager` shape
+  again; `AIProvider` and `AISettingsManager` are already cross-platform. Today iOS ships a full AI
+  settings screen (key entry, model ID, connection test) for a feature it cannot invoke, including a
+  disclosure reading "AI requests run only after you choose an AI command" when there is no iOS AI
+  command. Needs an iOS review sheet: drafts must go through review before anything is written, the
+  way `NoteActionReviewSheets` does on macOS. Never log the key or persist request bodies.
+
+- [T-186] **iOS discards focus time on task switch; commit it like macOS.** User's call.
+  `FocusManager.commitElapsed()` runs from both `startFocus(task:)` and `startFocus(bundle:)` before
+  switching and credits `actualMinutes` **and** the list's `loggedMinutes`. iOS's
+  `iOSFocusView.select(_:)` calls `resetTimer()` instead, and `CadenceFocusSupport.timerState(
+  afterPlayTapOn:)` resets on switch, so measured minutes are dropped — iOS's only path into
+  `logElapsedSeconds` is `complete(_:)`. Consequence: a goal with `progressType == "hours"` can only
+  be advanced from a Mac. The roll-up helper is already shared and already correct; this is one call
+  in the wrong order. macOS's `LogSessionPopover` was **not** requested — leave it.
+
 - [T-182] **The "derive a pane decision from handed width" rule now exists in four places, and
   `CadenceRegularPaneLayout.swift` is its house file.** That file already holds
   `CadenceRegularSplitLayout`, `CadenceCalendarWeekGridLayout` and `CadenceCalendarPaneLayout`, and
@@ -138,15 +163,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   numbers are right. Worth applying that pattern to the two search fixes, and treating it as the
   default shape for consolidation work: a test that passes when the call site is reverted has not
   pinned the consolidation.
-
-
-- [T-147] **A cancelled task is unreachable on iOS.** Bigger than the glyph bug that surfaced it
-  (`D-105`): every list query filters cancelled out (`CadenceTaskQuerySupport` ×6,
-  `CadenceCalendarPlanningSupport`, `iOSSearchView` ×2, the note `[[task:` picker), and the inspector
-  auto-dismisses when you press Cancel. Verified by hand — after cancelling, the task vanished from
-  Active, Completed, search and the reference picker with no way back. So on iOS, cancelling is
-  effectively deleting without saying so. Decide whether cancelled work should be reachable (a filter,
-  a section, or the Completed list) — this is a product question, not a defect to patch.
 
 
 - [T-126] **The MCP smoke test can be run from here, and is data-safe** — it verifies read-only mode
