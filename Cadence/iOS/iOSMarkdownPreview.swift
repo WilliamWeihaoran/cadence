@@ -58,7 +58,7 @@ private struct iOSMarkdownPreviewBlockView: View {
         switch block {
         case .heading(let level, let text):
             iOSMarkdownPreviewInlineText(text: text, onOpenReference: onOpenReference)
-                .font(.system(size: headingSize(level), weight: .bold))
+                .font(.system(size: MarkdownHeadingRamp.size(level: level, surface: .mobile), weight: .bold))
                 .foregroundStyle(Theme.text)
                 .padding(.top, level <= 2 ? 4 : 1)
 
@@ -150,16 +150,6 @@ private struct iOSMarkdownPreviewBlockView: View {
                 .fill(Theme.borderSubtle.opacity(0.72))
                 .frame(height: 1)
                 .padding(.vertical, 6)
-        }
-    }
-
-    private func headingSize(_ level: Int) -> CGFloat {
-        switch level {
-        case 1: return 25
-        case 2: return 21
-        case 3: return 18
-        case 4: return 16
-        default: return 15
         }
     }
 

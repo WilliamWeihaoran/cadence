@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -226,6 +227,104 @@ struct CadencePageHeaderMetricsTests {
             #expect(!body.contains("0.20"), "\(name) restates the border opacity")
             #expect(!body.contains("0.14"), "\(name) restates the fill opacity")
         }
+    }
+
+    // MARK: - The tile corner, which was the genuinely last thing they disagreed about
+
+    /// T-178, the follow-on to T-157. The border converged there and the *corner* was deliberately
+    /// left, because a radius changes geometry rather than adding a hairline: `CommitmentIconTile`
+    /// computed `min(12, size * 0.28)` and drew it `.circular`, `iOSIconTile` read
+    /// `Theme.radiusControl` and drew it `.continuous`.
+    ///
+    /// The token won, decided off renders of all four combinations at 32/34/52/56pt. Two things the
+    /// renders showed that the argument did not: the formula saturates at 42.86pt, so the only
+    /// values it ever produced in this app were 8.96 (at 32) and 12 (at 56) — both within 2pt of the
+    /// token, and its one non-habit call site passed a literal `9` rather than trusting it; and the
+    /// worry about a 56pt hero reading square belonged to the *curve*, not the radius, since 10pt
+    /// `.circular` was clearly the most cornered of the four and 10pt `.continuous` the
+    /// second-roundest.
+    @Test func theTileCornerIsOneRadiusOnTheDeclaredScaleAndOneCurve() {
+        #expect(CadencePageHeaderMetrics.tileCornerRadius == Theme.radiusControl)
+        #expect(CadencePageHeaderMetrics.tileCornerStyle == .continuous)
+        // The point of a token is that it is *on* the scale. A formula returning 8.96 was not.
+        #expect([Theme.radiusControl, Theme.radiusCard, Theme.radiusPanel].contains(CadencePageHeaderMetrics.tileCornerRadius))
+    }
+
+    /// The call-site half, for the same reason as the border above: a shared radius with one reader
+    /// is not a convergence. The forbidden strings are the two spellings that were there — the
+    /// formula on macOS and the restated token plus literal curve on iOS.
+    @Test func bothTilesReadThatCornerAndNeitherKeepsItsOldGeometry() throws {
+        let tiles = [
+            ("CommitmentIconTile", "Cadence/Shared/Components/CommitmentSharedViews.swift"),
+            ("iOSIconTile", "Cadence/iOS/iOSDesignSystem.swift"),
+        ]
+
+        for (name, path) in tiles {
+            let body = try declarationBody(of: name, in: path)
+
+            #expect(body.contains("CadencePageHeaderMetrics.tileCornerRadius"), "\(name) does not read the shared tile radius")
+            #expect(body.contains("CadencePageHeaderMetrics.tileCornerStyle"), "\(name) does not read the shared tile curve")
+            #expect(!body.contains("0.28"), "\(name) still computes a size-relative radius")
+            #expect(!body.contains(".circular"), "\(name) still draws a circular corner")
+            #expect(!body.contains(".continuous"), "\(name) restates the corner curve")
+            #expect(!body.contains("Theme.radiusControl"), "\(name) restates the radius token instead of reading the tile figure")
+        }
+    }
+
+    /// **No call site overrides it.** Both tiles keep a `cornerRadius` escape hatch, and the history
+    /// says an escape hatch is how a third geometry arrives: the macOS goals row passed
+    /// `cornerRadius: 9` at 34pt while `HabitIconTile` next door computed 8.96, and one iOS call
+    /// site passed `Theme.radiusControl` — the default — back in by hand. Both are gone. A future
+    /// override is not forbidden, but it has to arrive as an edit to this list.
+    @Test func noTileCallSitePassesItsOwnCorner() throws {
+        var overrides: [String] = []
+
+        for path in try swiftFiles(under: "Cadence") {
+            let code = strippingComments(try sourceFile(path))
+            for name in ["CommitmentIconTile(", "iOSIconTile("] {
+                for arguments in argumentLists(after: name, in: code) where arguments.contains("cornerRadius:") {
+                    overrides.append("\(path): \(name)")
+                }
+            }
+        }
+
+        #expect(overrides.isEmpty, "these call sites still pick their own tile corner: \(overrides)")
+    }
+}
+
+/// Every balanced argument list following an occurrence of `opening` — so a `cornerRadius:` in the
+/// *next* call along cannot be attributed to this one.
+private func argumentLists(after opening: String, in source: String) -> [String] {
+    var results: [String] = []
+    var searchStart = source.startIndex
+
+    while let match = source.range(of: opening, range: searchStart..<source.endIndex) {
+        searchStart = match.upperBound
+        var depth = 1
+        var index = match.upperBound
+
+        while index < source.endIndex, depth > 0 {
+            if source[index] == "(" { depth += 1 }
+            if source[index] == ")" { depth -= 1 }
+            index = source.index(after: index)
+        }
+        results.append(String(source[match.upperBound..<index]))
+    }
+    return results
+}
+
+/// Enumerated by `enumerator(atPath:)` rather than `enumerator(at:)` on purpose: the URL variant
+/// yields absolute paths that `FileManager` has already resolved through the `/tmp` against
+/// `/private/tmp` symlink `#filePath` names literally.
+private func swiftFiles(under relativeDirectory: String) throws -> [String] {
+    let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let directory = root.appendingPathComponent(relativeDirectory)
+    guard let enumerator = FileManager.default.enumerator(atPath: directory.path) else { return [] }
+    return enumerator.compactMap { element in
+        guard let relativePath = element as? String, relativePath.hasSuffix(".swift") else { return nil }
+        return "\(relativeDirectory)/\(relativePath)"
     }
 }
 

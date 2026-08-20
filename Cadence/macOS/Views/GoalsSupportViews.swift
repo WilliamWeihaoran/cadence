@@ -180,8 +180,7 @@ struct GoalDirectionHeaderCard: View {
                     systemImage: goal.icon,
                     color: tint,
                     size: 34,
-                    iconSize: 15,
-                    cornerRadius: 9
+                    iconSize: 15
                 )
 
                 VStack(alignment: .leading, spacing: 5) {

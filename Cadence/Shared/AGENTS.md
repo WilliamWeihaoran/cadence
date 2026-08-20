@@ -108,6 +108,26 @@ Two axes:
   desktop body is 13pt against the phone's 15–17. Folding the two would put a 30pt title over 13pt
   rows. Do not "simplify" the enum to two cases; the third one is the finding.
 
+## The Two Icon Tiles Are One Vocabulary
+
+`CommitmentIconTile` (`Components/CommitmentSharedViews.swift`, macOS) and `iOSIconTile`
+(`iOS/iOSDesignSystem.swift`) are the same control on two platforms, and `HabitIconTile` proves it:
+that view's entire body is an `#if os(macOS)` picking between them, at 32/56pt on macOS against
+34/52pt on iOS. So a difference between them is a fork, not two contexts, and all four of their
+geometry figures now come from `CadencePageHeaderMetrics` — `tileGlyphRatio`, `tileFillOpacity`,
+`tileBorderOpacity`, and since T-178 `tileCornerRadius` / `tileCornerStyle`.
+
+The corner was the last one, and it went to the **token** (`Theme.radiusControl`, `.continuous`)
+rather than to macOS's `min(12, size * 0.28)`, `.circular`. It was settled by rendering all four
+combinations at 32/34/52/56pt with `ImageRenderer` from the test target, and the renders said two
+things the argument could not: the formula saturates at 42.86pt, so the only values it produced
+anywhere in this app were 8.96 and 12 — both within 2pt of the token, while its one non-habit call
+site passed a literal `9` rather than trusting it; and the fear that a 56pt hero would read square
+at radius 10 belonged to the **curve**, not the radius, since 10pt `.circular` was plainly the most
+cornered of the four while 10pt `.continuous` was the second-roundest. Neither tile takes a
+`cornerRadius` override at any call site now, and
+`CadencePageHeaderMetricsTests.noTileCallSitePassesItsOwnCorner` fails if one reappears.
+
 ## The Primary Task Row: What Is Shared, And What Is Earned
 
 `MacTaskRow` (`macOS/Views/TasksPanelComponents.swift`) and `iOSTaskRow` (`iOS/iOSTaskViews.swift`)

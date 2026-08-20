@@ -167,7 +167,7 @@ struct iOSGoalDetail: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 14) {
-                iOSIconTile(systemImage: goal.icon, color: tint, size: 48, iconSize: 22, cornerRadius: Theme.radiusControl)
+                iOSIconTile(systemImage: goal.icon, color: tint, size: 48, iconSize: 22)
 
                 VStack(alignment: .leading, spacing: 7) {
                     Text(goal.title.isEmpty ? "Untitled Goal" : goal.title)

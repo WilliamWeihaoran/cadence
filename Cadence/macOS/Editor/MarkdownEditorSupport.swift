@@ -381,17 +381,17 @@ enum MarkdownStylist {
         if let tableRowStyle {
             applyTableRow(storage: storage, line: line, lineRange: lineRange, lineStart: lineStart, style: tableRowStyle)
         } else if line.hasPrefix("###### ") {
-            heading(storage, line, lineRange, lineStart, prefixLen: 7, size: 15)
+            heading(storage, line, lineRange, lineStart, level: 6)
         } else if line.hasPrefix("##### ") {
-            heading(storage, line, lineRange, lineStart, prefixLen: 6, size: 17)
+            heading(storage, line, lineRange, lineStart, level: 5)
         } else if line.hasPrefix("#### ") {
-            heading(storage, line, lineRange, lineStart, prefixLen: 5, size: 19)
+            heading(storage, line, lineRange, lineStart, level: 4)
         } else if line.hasPrefix("### ") {
-            heading(storage, line, lineRange, lineStart, prefixLen: 4, size: 22)
+            heading(storage, line, lineRange, lineStart, level: 3)
         } else if line.hasPrefix("## ") {
-            heading(storage, line, lineRange, lineStart, prefixLen: 3, size: 26)
+            heading(storage, line, lineRange, lineStart, level: 2)
         } else if line.hasPrefix("# ") {
-            heading(storage, line, lineRange, lineStart, prefixLen: 2, size: 30)
+            heading(storage, line, lineRange, lineStart, level: 1)
         } else if let quote = blockquoteMatch(in: line) {
             let paragraph = NSMutableParagraphStyle()
             let levelInset = CGFloat(max(quote.depth - 1, 0)) * 12
@@ -682,8 +682,15 @@ enum MarkdownStylist {
     /// the marker was hidden and the line set in 30pt bold, leaving a tall blank row with nothing
     /// left on screen to click the caret back into. `NSTextView` does not normalise line endings on
     /// paste, so that content arrives intact.
-    private static func heading(_ storage: NSTextStorage, _ line: String, _ lineRange: NSRange, _ lineStart: Int, prefixLen: Int, size: CGFloat) {
-        let markerLength = min(prefixLen, lineRange.length)
+    ///
+    /// Takes the heading **level**, not a marker length and a point size. Those were two parameters
+    /// that had to agree — `prefixLen` was always `level + 1` (the hashes plus the space) and `size`
+    /// was a literal from a ramp spelled only here — and a call site could get either one wrong on
+    /// its own. The size now comes from `MarkdownHeadingRamp`, which the iOS canvas and the iOS
+    /// preview read too; see that file for why `.desktop` keeps its own figures.
+    private static func heading(_ storage: NSTextStorage, _ line: String, _ lineRange: NSRange, _ lineStart: Int, level: Int) {
+        let size = MarkdownHeadingRamp.size(level: level, surface: .desktop)
+        let markerLength = min(level + 1, lineRange.length)
         let markerRange = NSRange(location: lineStart, length: markerLength)
         let hasVisibleContent = MarkdownStyleRanges.hasVisibleHeadingContent(
             in: line,

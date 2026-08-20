@@ -86,6 +86,31 @@ nonisolated struct CadencePageHeaderMetrics: Equatable, Sendable {
     /// another plate rather than standing on the page.
     static let tileBorderOpacity: Double = 0.20
 
+    /// A tile's corner radius and curve, the last two figures the pair disagreed on (T-178).
+    ///
+    /// `CommitmentIconTile` computed `min(12, size * 0.28)` and drew it `.circular`;
+    /// `iOSIconTile` read `Theme.radiusControl` and drew it `.continuous`. So the *same* habit
+    /// tile — `HabitIconTile` picks the platform tile and nothing else — had a 8.96pt circular
+    /// corner in a 32pt macOS row against a 10pt continuous one in a 34pt iPad row, and 12pt
+    /// against 10pt at the two habit heroes.
+    ///
+    /// **The token won over the formula**, decided off renders of all four combinations at
+    /// 32/34/52/56pt rather than off the argument. Two findings from those renders:
+    ///
+    /// - The formula's size-relativity was mostly notional. `min(12, …)` saturates at 42.86pt, so
+    ///   above that it *is* a constant, and the only sizes `CommitmentIconTile` ever evaluated it
+    ///   at were 32 (8.96) and 56 (12) — its one non-habit call site passed `cornerRadius: 9`, a
+    ///   third value, rather than trusting it. Two live outputs, both within 2pt of the token, in
+    ///   exchange for a number that sits on no scale.
+    /// - The worry that a 56pt hero would read square at radius 10 was real but belonged to the
+    ///   *curve*, not the radius: 10pt `.circular` was clearly the most cornered of the four at
+    ///   56pt, and 10pt `.continuous` was the second-roundest, behind 12pt `.continuous` by a
+    ///   margin that needed the two side by side to see. `.continuous` is what makes the token
+    ///   safe at hero size, which is why it is stated here beside the radius instead of being left
+    ///   to each tile.
+    static let tileCornerRadius: CGFloat = Theme.radiusControl
+    static let tileCornerStyle: RoundedCornerStyle = .continuous
+
     /// The fill behind the count capsule, as an opacity of the tint it counts in. iOS drew 0.11
     /// and macOS 0.12 for the same capsule; neither was chosen.
     static let countFillOpacity: Double = 0.12

@@ -19,8 +19,10 @@ The macOS app is the primary product surface. iOS is a large, real, actively-dev
 
 - **`iOSMarkdownStylingSupport.swift`** — base attributes, `attributedString` (the pass order),
   `applyFrontmatter`, `styleLine` (the per-line dispatch), the font helpers, `drawCanvas`, `hide`.
-- **`iOSMarkdownStylingLineSupport.swift`** — quote/list/checkbox line styling, the matchers, the
-  heading type ramp, and `iOSMarkdownQuoteMatch` / `iOSMarkdownListMatch`.
+- **`iOSMarkdownStylingLineSupport.swift`** — quote/list/checkbox line styling, the matchers, and
+  `iOSMarkdownQuoteMatch` / `iOSMarkdownListMatch`. It held the heading type *ramp* until T-180;
+  that is `MarkdownHeadingRamp` in `Services/` now, because `iOSMarkdownPreview` had a second,
+  smaller ramp of its own and the same H1 rendered at two sizes on one platform.
 - **`iOSMarkdownStylingBlockSupport.swift`** — fenced code, tables, dividers, images, task-embed
   cards; `collapseLine`.
 - **`iOSMarkdownStylingInlineSupport.swift`** — emphasis spans, links, wiki/task references, image

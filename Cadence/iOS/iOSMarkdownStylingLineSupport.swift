@@ -126,17 +126,6 @@ extension iOSMarkdownStyler {
         return (heading.level, heading.markerRange)
     }
 
-    static func headingSize(for level: Int) -> CGFloat {
-        switch level {
-        case 1: return 28
-        case 2: return 24
-        case 3: return 21
-        case 4: return 18
-        case 5: return 16
-        default: return 15
-        }
-    }
-
     static func quoteMatch(in line: String) -> iOSMarkdownQuoteMatch? {
         guard let quote = MarkdownQuoteSupport.lineInfo(in: line) else { return nil }
         return iOSMarkdownQuoteMatch(prefixRange: quote.prefixRange, depth: quote.depth)

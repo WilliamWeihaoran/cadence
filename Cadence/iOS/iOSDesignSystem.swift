@@ -106,13 +106,15 @@ extension View {
 // MARK: - Icon tile
 
 /// iOS counterpart of `CommitmentIconTile`: a glyph on a tinted rounded square, on the shared
-/// radius scale rather than each call site picking 7, 8, 9 or 12.
+/// radius scale rather than each call site picking 7, 8, 9 or 12. Since T-178 the radius and the
+/// curve are the *same* two figures `CommitmentIconTile` reads, so the pair now agrees on all four
+/// of its geometry numbers rather than three.
 struct iOSIconTile: View {
     let systemImage: String
     let color: Color
     var size: CGFloat = 34
     var iconSize: CGFloat = 15
-    var cornerRadius: CGFloat = Theme.radiusControl
+    var cornerRadius: CGFloat = CadencePageHeaderMetrics.tileCornerRadius
     /// Both defaults come from the shared tile vocabulary rather than being restated here. They
     /// were literals — the same 0.14 `CommitmentIconTile` already read from the metrics, plus a
     /// 0.20 border that tile did not draw at all. One of those two numbers being spelled twice is
@@ -121,7 +123,7 @@ struct iOSIconTile: View {
     var bordered = true
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: CadencePageHeaderMetrics.tileCornerStyle)
 
         return Image(systemName: systemImage)
             .font(.system(size: iconSize, weight: .semibold))

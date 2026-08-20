@@ -47,7 +47,7 @@ Use the scoped `AGENTS.md` in each folder as the working map.
 Cadence/
 ├── CadenceApp.swift    # App entry, ModelContainer + CloudKit setup + error recovery
 ├── Models/             # 100% shared. See "Data Models" below and Models/AGENTS.md
-├── Services/           # 47 shared, cross-platform services (re-count when you add one):
+├── Services/           # 48 shared, cross-platform services (re-count when you add one):
 │   │                   #   CadenceSchema / CadenceStoreSupport / PersistenceController (legacy shim)
 │   │                   #   NoteMigrationService, PursuitToGoalMigration, DataIntegrityRepairService
 │   │                   #   NotificationScheduling + NotificationManager (reconciliation, see "Notifications")
@@ -55,7 +55,7 @@ Cadence/
 │   │                   #   PrivacyDataResetService (in CadencePrivacyDataResetService.swift)
 │   │                   #   Cadence*WidgetSupport, CadenceWidgetIntents, CadenceWidgetRefreshCenter, CadenceDeepLink
 │   │                   #   TagSupport, TaskCreationService, NoteReferenceSupport
-│   ├── Markdown*Support.swift   # 26 files: ALL markdown parsing/mutation logic lives HERE, not in macOS/Editor/
+│   ├── Markdown*Support.swift   # 27 files: ALL markdown parsing/mutation logic lives HERE, not in macOS/Editor/
 │   ├── AI/             # AIActionService, AIProvider, AISettingsManager (optional, user OpenAI key)
 │   └── MCPReadOnly/    # CadenceRead/WriteService, DTOs, search matcher, audit log, container factory
 ├── Shared/             # Cross-platform tokens, components, and presentation/query/mutation support
@@ -611,7 +611,7 @@ Shared behavior for the popovers:
 - One live model: `Note`, with `NoteKind` = daily / weekly / permanent / list / meeting. The macOS Notes page has four tabs: **Daily**, **Weekly**, **Notepad** (permanent), **Event Notes** (`.meeting` — the case name is persisted in `Note.kindRaw`, so only the *label* was renamed).
 - `NoteMigrationService` folds the legacy `DailyNote` / `WeeklyNote` / `PermNote` / `Document` / `EventNote` rows into `Note`, recording provenance in `legacySourceKindRaw` / `legacySourceID`.
 - Notes carry `tags`, an `area`/`project`, and a `folderPath`.
-- **All markdown logic lives in `Cadence/Services/Markdown*Support.swift`** (26 files, well covered by `CadenceTests/`). `macOS/Editor/` is only the AppKit bridge — and since T-121 the *iOS* styler is only the UIKit one. `iOSMarkdownStyler` was one 1,067-line file that made its own decisions about heading-marker visibility, block extents, inline exclusions, hidden marker runs and table grouping; it is now four files of pure attribute-setting over `MarkdownStyleRanges`, `MarkdownInlineMarkerRanges`, `MarkdownTableParser.tableBlock` and `MarkdownStyleSignature`. See `Cadence/iOS/AGENTS.md` for the per-file split.
+- **All markdown logic lives in `Cadence/Services/Markdown*Support.swift`** (27 files, well covered by `CadenceTests/`). `macOS/Editor/` is only the AppKit bridge — and since T-121 the *iOS* styler is only the UIKit one. `iOSMarkdownStyler` was one 1,067-line file that made its own decisions about heading-marker visibility, block extents, inline exclusions, hidden marker runs and table grouping; it is now four files of pure attribute-setting over `MarkdownStyleRanges`, `MarkdownInlineMarkerRanges`, `MarkdownTableParser.tableBlock` and `MarkdownStyleSignature`. See `Cadence/iOS/AGENTS.md` for the per-file split.
 - Notes support both Markdown export and rendered PDF export (`NoteExportService`)
 - The notes export flow avoids direct blocking `NSSavePanel.runModal()` usage
 - Notes can surface linked notes, backlinks, and embedded task references above the editor

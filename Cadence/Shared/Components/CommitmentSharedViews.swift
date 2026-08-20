@@ -44,7 +44,9 @@ struct CommitmentIconTile: View {
     /// the tile and forgets the glyph gets a proportional tile instead of a third ratio. See
     /// `CadencePageHeaderMetrics.iconSize`.
     var iconSize: CGFloat? = nil
-    var cornerRadius: CGFloat? = nil
+    /// Defaults to the shared tile radius rather than `min(12, size * 0.28)` — see
+    /// `CadencePageHeaderMetrics.tileCornerRadius` for the renders that settled it.
+    var cornerRadius: CGFloat = CadencePageHeaderMetrics.tileCornerRadius
     var fillOpacity: Double = CadencePageHeaderMetrics.tileFillOpacity
     /// Matches `iOSIconTile`. This tile used to draw no border at all, which made the *same* habit
     /// tile — `HabitIconTile` picks between the two platform tiles and nothing else — a plate on an
@@ -53,7 +55,7 @@ struct CommitmentIconTile: View {
     var bordered = true
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius ?? min(12, size * 0.28))
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: CadencePageHeaderMetrics.tileCornerStyle)
 
         return Image(systemName: systemImage)
             .font(.system(size: iconSize ?? size * CadencePageHeaderMetrics.tileGlyphRatio, weight: .semibold))
