@@ -32,6 +32,21 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-182] **The "derive a pane decision from handed width" rule now exists in four places, and
+  `CadenceRegularPaneLayout.swift` is its house file.** That file already holds
+  `CadenceRegularSplitLayout`, `CadenceCalendarWeekGridLayout` and `CadenceCalendarPaneLayout`, and
+  its own doc records the *same bug shape* — an 11" iPad splitting 632 into 312 + 320. `D-125` added a
+  fourth in `CadenceNotesListSupport.swift` because I told it to put the floor beside
+  `regularColumnWidth`; that was the weaker call and the agent flagged it, leaving a pointer comment.
+  Consolidate, or state in that file why notes is deliberately separate. The failure mode is a fifth
+  split surface writing a near-copy.
+
+- [T-183] **Audit the remaining fixed-width columns for missing floors.** `T-177` and Today's own
+  `twoPaneMinimumWidth` are the same defect twice: a fixed `.frame(width:)` beside a flexing pane,
+  with nothing asserting the flexing side stays usable. Worth one sweep for other fixed column widths
+  — `CadenceRegularSplitLayout.listPaneWidth`, the calendar rails, the settings rail — asking in each
+  case what the other side gets at the narrowest host that reaches it.
+
 - [T-180] **Three disagreeing heading ramps, and an H5 with no case.** Found by T-121 and
   deliberately not fixed there, because changing behaviour inside a relocation makes the diff
   unreviewable. macOS editor `30/26/22/19/17/15`, iOS editor `28/24/21/18/16/15`, and
@@ -47,12 +62,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `MarkdownSourceLines.classificationText`, against the convention that file documents — it reaches
   the same answer today only because a line holding a stray `\r` fails all three predicates anyway.
 
-- [T-177] **iPad portrait Today Notes pane leaves the editor ~40pt.** Found during T-148's
-  verification. With the shell sidebar open, Today's Notes pane hands `iOSNotesView` ~321pt; it
-  spends a fixed 280pt (`CadenceNotesListMetrics.regularColumnWidth`) on the note list, leaving the
-  editor about 40pt, so the body wraps one character per line. `iOSNotesView` splits on size class
-  with no width floor of its own — the same defect shape `CadenceTodayLayoutSupport.twoPaneMinimumWidth`
-  was added to fix for Today, which had "no floor" for two panes until `761pt` was introduced.
 
 - [T-178] **`CommitmentIconTile` and `iOSIconTile` still disagree about corner radius.**
   `min(12, size * 0.28)`, circular, against `Theme.radiusControl` (10), `.continuous`. Same pair
@@ -298,6 +307,18 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-125] `d0adfdc` The notes split asks how wide it is, not what size class it is in (T-177).
+  A 320pt inspector pane minus a fixed 280pt list and a 1pt divider left **39pt** of editor. The floor
+  is a sum (`regularColumnWidth + divider + minimumEditorWidth` = 601) so raising the list column
+  moves it automatically. The 320pt editor minimum was **borrowed** from `inspectorPaneMinWidth`,
+  already documented as "the least the notes/timeline inspector will accept before its own content
+  starts clipping"; the rejected alternative was the phone anchor at 375, which floors at 656 and
+  would have converted an 11" iPad's *tight* 365pt editor into a fallback. A floor names where two
+  columns is worse than one, not where it is ideal.
+  `inspectorPaneFloor` was deliberately **not** raised: that would push Today's two-pane minimum to
+  1042 and cost a 13" iPad in portrait its task column — the page's subject — to fix the pane's other
+  tenant, when Timeline is verifiably fine at 320.
 
 - [D-124] `7c964a6` The markdown styling layer split, and 14% of it was logic tests could not see
   (T-121). ~150 of 1,067 lines were decisions about what a string means, now in `Services/` with 40
