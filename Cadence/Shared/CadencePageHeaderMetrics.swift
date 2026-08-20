@@ -76,6 +76,16 @@ nonisolated struct CadencePageHeaderMetrics: Equatable, Sendable {
     /// 0.12, 0.14 and 0.18, which is drift, not a ramp.
     static let tileFillOpacity: Double = 0.14
 
+    /// The hairline around a tile, as an opacity of its tint. `iOSIconTile` stroked this and
+    /// `CommitmentIconTile` did not, so the *same* tile in the *same* card had an edge on an iPad
+    /// and none on a Mac — visible directly through `HabitIconTile`, which is one shared view whose
+    /// only job is to pick the platform tile, at 32/56pt on macOS against 34/52pt on iOS. A 0.14
+    /// fill needs the edge to read as a plate rather than a wash, and the sizes the two tiles are
+    /// used at overlap almost exactly, so there was no size at which one answer was right and the
+    /// other wrong. Both read it now; `bordered: false` is the opt-out for a tile that sits *inside*
+    /// another plate rather than standing on the page.
+    static let tileBorderOpacity: Double = 0.20
+
     /// The fill behind the count capsule, as an opacity of the tint it counts in. iOS drew 0.11
     /// and macOS 0.12 for the same capsule; neither was chosen.
     static let countFillOpacity: Double = 0.12

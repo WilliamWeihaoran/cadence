@@ -113,7 +113,11 @@ struct iOSIconTile: View {
     var size: CGFloat = 34
     var iconSize: CGFloat = 15
     var cornerRadius: CGFloat = Theme.radiusControl
-    var fillOpacity: Double = 0.14
+    /// Both defaults come from the shared tile vocabulary rather than being restated here. They
+    /// were literals — the same 0.14 `CommitmentIconTile` already read from the metrics, plus a
+    /// 0.20 border that tile did not draw at all. One of those two numbers being spelled twice is
+    /// how the pair drifted in the first place.
+    var fillOpacity: Double = CadencePageHeaderMetrics.tileFillOpacity
     var bordered = true
 
     var body: some View {
@@ -126,7 +130,7 @@ struct iOSIconTile: View {
             .background(shape.fill(color.opacity(fillOpacity)))
             .overlay {
                 if bordered {
-                    shape.strokeBorder(color.opacity(0.20), lineWidth: 1)
+                    shape.strokeBorder(color.opacity(CadencePageHeaderMetrics.tileBorderOpacity), lineWidth: 1)
                 }
             }
     }

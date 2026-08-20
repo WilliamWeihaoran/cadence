@@ -187,4 +187,82 @@ struct CadencePageHeaderMetricsTests {
         #expect(CadencePageHeaderMetrics.tileFillOpacity == 0.14)
         #expect(CadencePageHeaderMetrics.countFillOpacity == 0.12)
     }
+
+    // MARK: - The tile border, which was the last thing the two tiles disagreed about
+
+    /// T-157. `iOSIconTile` stroked `color.opacity(0.20)` and `CommitmentIconTile` stroked nothing,
+    /// so a 0.14 tinted fill read as a plate on an iPad and as a wash on a Mac. The reason that is
+    /// a fork rather than two contexts: `HabitIconTile` is a single shared view whose entire body is
+    /// an `#if os(macOS)` picking between these two tiles, at 32/56pt on macOS against 34/52pt on
+    /// iOS — the same tile, in the same card, within 4pt of the same size.
+    @Test func theTileBorderIsOneValueForBothPlatforms() {
+        #expect(CadencePageHeaderMetrics.tileBorderOpacity == 0.20)
+        // Fainter than the fill would be an edge you cannot see; heavier reads as a control.
+        #expect(CadencePageHeaderMetrics.tileBorderOpacity > CadencePageHeaderMetrics.tileFillOpacity)
+        #expect(CadencePageHeaderMetrics.tileBorderOpacity < 0.5)
+    }
+
+    /// The assertion that bites when the call site is reverted rather than the constant. A shared
+    /// number with one reader is not a convergence — `tileFillOpacity` was already 0.14 in the
+    /// metrics *and* spelled `0.14` again inside `iOSIconTile`, which is how the pair drifted.
+    ///
+    /// `Cadence/iOS/` is invisible to this macOS-built target, so `iOSIconTile` can only be pinned
+    /// as source text. `CommitmentIconTile` is read the same way deliberately: what matters is that
+    /// the stroke is *there*, not that some rendered pixel is 0.20.
+    @Test func bothTilesStrokeThatBorderAndNeitherRestatesTheNumbers() throws {
+        let tiles = [
+            ("CommitmentIconTile", "Cadence/Shared/Components/CommitmentSharedViews.swift"),
+            ("iOSIconTile", "Cadence/iOS/iOSDesignSystem.swift"),
+        ]
+
+        for (name, path) in tiles {
+            let body = try declarationBody(of: name, in: path)
+
+            #expect(body.contains("CadencePageHeaderMetrics.tileBorderOpacity"), "\(name) does not read the shared tile border")
+            #expect(body.contains("strokeBorder"), "\(name) does not stroke a border")
+            #expect(body.contains("bordered"), "\(name) has no opt-out for a tile inside another plate")
+            #expect(body.contains("CadencePageHeaderMetrics.tileFillOpacity"), "\(name) does not read the shared tile fill")
+            // The literals, back in the body, are the regression.
+            #expect(!body.contains("0.20"), "\(name) restates the border opacity")
+            #expect(!body.contains("0.14"), "\(name) restates the fill opacity")
+        }
+    }
+}
+
+/// The source text of one top-level declaration, from its `struct` line to the next top-level
+/// declaration in the same file. Crude on purpose: it over-reads at the tail, which can only make
+/// the `!contains` assertions above stricter.
+private func declarationBody(of name: String, in path: String) throws -> String {
+    let source = strippingComments(try sourceFile(path))
+    let pattern = "(?m)^(?:public |private |internal |fileprivate |final |nonisolated )*(?:struct|enum|class|extension)\\s+\(name)\\b"
+    guard let start = source.range(of: pattern, options: .regularExpression) else {
+        Issue.record("\(path) does not declare \(name)")
+        return ""
+    }
+
+    let rest = source[start.upperBound...]
+    let nextPattern = "(?m)^(?:public |private |internal |fileprivate |final |nonisolated )*(?:struct|enum|class|extension)\\s"
+    let end = rest.range(of: nextPattern, options: .regularExpression)?.lowerBound ?? rest.endIndex
+    return String(rest[..<end])
+}
+
+/// `#filePath` can name the repo through a symlinked prefix (`/tmp` against `/private/tmp` on an
+/// isolated build tree), so read relative to it rather than resolving anything.
+private func sourceFile(_ relativePath: String) throws -> String {
+    let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+}
+
+/// Blanks out `//` and `/* */` comments so the assertions read code rather than prose — the
+/// doc comments above both tiles quote the very numbers this test forbids in their bodies.
+private func strippingComments(_ source: String) -> String {
+    var result = source
+    for pattern in ["//[^\n]*", "/\\*(?s:.)*?\\*/"] {
+        while let range = result.range(of: pattern, options: .regularExpression) {
+            result.replaceSubrange(range, with: String(repeating: " ", count: result.distance(from: range.lowerBound, to: range.upperBound)))
+        }
+    }
+    return result
 }

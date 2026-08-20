@@ -46,14 +46,25 @@ struct CommitmentIconTile: View {
     var iconSize: CGFloat? = nil
     var cornerRadius: CGFloat? = nil
     var fillOpacity: Double = CadencePageHeaderMetrics.tileFillOpacity
+    /// Matches `iOSIconTile`. This tile used to draw no border at all, which made the *same* habit
+    /// tile — `HabitIconTile` picks between the two platform tiles and nothing else — a plate on an
+    /// iPad and a soft wash on a Mac at within 4pt of the same size. See
+    /// `CadencePageHeaderMetrics.tileBorderOpacity`.
+    var bordered = true
 
     var body: some View {
-        Image(systemName: systemImage)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius ?? min(12, size * 0.28))
+
+        return Image(systemName: systemImage)
             .font(.system(size: iconSize ?? size * CadencePageHeaderMetrics.tileGlyphRatio, weight: .semibold))
             .foregroundStyle(color)
             .frame(width: size, height: size)
-            .background(color.opacity(fillOpacity))
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius ?? min(12, size * 0.28)))
+            .background(shape.fill(color.opacity(fillOpacity)))
+            .overlay {
+                if bordered {
+                    shape.strokeBorder(color.opacity(CadencePageHeaderMetrics.tileBorderOpacity), lineWidth: 1)
+                }
+            }
     }
 }
 
