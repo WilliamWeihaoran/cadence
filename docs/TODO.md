@@ -32,11 +32,13 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
-
-- [T-175] **The remaining primary-row fork is `MacTaskRow`'s interaction machinery.** `d330f5e`
-  took the presentation half. What is left is hover, keyboard, drag and the completion-animation
-  observation scoping — high risk, low remaining value, and mostly *earned* difference (`.onHover`
-  94 macOS / 0 iOS, swipe actions 0 / 57). Recorded so nobody re-opens it expecting easy wins.
+- [T-176] **`CalendarDateMemoryWriterTests` is wall-clock dependent and fails under parallel load.**
+  `aRunOfPositionsCollapsesToOneWriteOfTheLastOne` took 43s and failed during a run with three other
+  agents building; re-run alone it passes in 0.412s. The writer under test is the coalescing
+  `UserDefaults` writer, so the test necessarily waits for a settle — but a real `Task.sleep` against
+  a saturated machine is a false negative waiting to happen, and a suite that cries wolf is worse
+  than one gap in coverage. Wants an injected clock or a controllable scheduler rather than a longer
+  timeout, which would only move the threshold.
 
 
 - [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
@@ -293,6 +295,18 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-120] `7f4efb3` macOS's task row reads the shared metrics, and the platform counts were wrong
+  (T-175). `CadenceTaskRowMetrics` had five iOS readers and zero macOS ones; macOS is now a third
+  `.desktop` tier. `verticalPadding` stays split at 8 desktop / 9 compact / 12 regular — tighter than
+  **both** touch tiers rather than a point on the ramp. `completionGlyphSize` is deliberately not
+  read by macOS because it is not the same measurement: iOS's is a layout box around a 16pt disc
+  hit-expanded to 44pt, macOS's would be an SF Symbol point size that is also its frame.
+  **The correction that outlives the ticket:** the platform-difference counts quoted throughout this
+  repo's briefs are inflated 2–6×. Re-measured independently: `.onHover` 56/0 not 94/0,
+  `.swipeActions` 0/9 not 0/57, `.draggable` 15/7 not 157/33. The conclusion holds; the magnitudes
+  do not. They came from an audit whose notes file was deleted, and `Shared/AGENTS.md` now carries
+  the command that produces them rather than only the output. Re-measure before quoting.
 
 - [D-119] Six entries reconciled as already done, found while picking the next batch of work.
   `T-163` iOS Inbox reminders — `iOSInboxRemindersSection.swift` shipped in `d330f5e`, and with it
