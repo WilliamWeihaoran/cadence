@@ -1,5 +1,63 @@
 import CoreGraphics
 
+// MARK: - The register: where "derive a pane decision from handed width" may live
+//
+// One rule, six expressions, four files — and this is the house file, so the register lives here
+// rather than in a doc that the code cannot be checked against. T-182 was raised as "four
+// expressions in four places"; the count was short by two. What is actually there:
+//
+//   Here, in `CadenceRegularPaneLayout.swift`
+//     - `CadenceRegularSplitLayout`     a *width*, for a chooser column beside a detail.
+//     - `CadenceCalendarWeekGridLayout` a *width*, N columns rather than two panes, and the
+//                                       supplier of the minimum the gate below reads.
+//     - `CadenceCalendarPaneLayout`     a *Bool* gate, plus the two widths behind it.
+//   `CadenceTodayLayoutSupport.swift`
+//     - `CadenceTodayLayoutSupport`     an *enum* (`CadenceTodayLayout`), plus the fixed side's width.
+//   `CadenceNotesListSupport.swift`
+//     - `CadenceNotesListMetrics`       an *enum* (`CadenceNotesLayout`); the floor and the gate only.
+//   `CadenceRootShellLayout.swift`
+//     - `CadenceRootShellLayout`        a *Bool* (labelled column or icon rail), plus both widths.
+//
+// **They stay where they are, and this register is the consolidation.** Three reasons, in the order
+// that decided it:
+//
+// 1. They do not answer with the same kind of thing — a width, a Bool, an enum — and the one shape
+//    they all reduce to is `handedWidth >= a + divider + b`. Hoisting a three-term sum into a
+//    shared `splits(width:sides:)` would trade five readable domain expressions for one generic
+//    one, and it would cost `CadenceCalendarPaneLayout` the property its own doc calls
+//    load-bearing: that gate is *derived from* `inspectorWidth` rather than stated in parallel with
+//    it, "so the two cannot drift apart". A parallel sum is the drift it was written to prevent.
+// 2. Every floor is a **sum of its parts** deliberately, so that raising a column moves the floor —
+//    and the parts are local to the surface. `regularColumnWidth` is a notes-list figure;
+//    `taskPaneMinWidth` is a Today figure. Moving the sums here without the parts would put "raise
+//    the column" in one file and "the floor follows it" in another, weakening the exact property
+//    the sums exist for. Moving the parts here too means dragging a row-metrics struct about font
+//    sizes and cell padding into a file about pane arithmetic.
+// 3. Co-location is not what prevents the recurrence, and there is evidence rather than a hunch:
+//    three of these already cross-reference each other by name and a fourth copy was still written.
+//    `CadenceNotesListMetrics.minimumEditorWidth` *is*
+//    `CadenceTodayLayoutSupport.inspectorPaneMinWidth`, by reference, across a file boundary — the
+//    coupling that matters is already expressed and needed no shared file to hold it.
+//
+// The obligation therefore sits on the register: a new width-derived pane decision either joins one
+// of the four files above and is listed here, or it is a fifth copy.
+// `CadenceTests/CadencePaneWidthRuleHomesTests.swift` counts the declarations per file and fails on
+// both — on a new file, and on a new function inside one of the four that this list does not
+// mention. Editing that count is how you are made to edit this list.
+//
+// The one file that takes a `paneWidth` and is deliberately **not** on the list is the model to
+// copy: `CadenceCalendarMonthLayout.placement(paneWidth:)` (`CadenceCalendarAgendaSupport.swift`)
+// answers a placement question by *calling* `CadenceCalendarPaneLayout.showsInspector` and states no
+// floor of its own. That is what "a new split surface belongs in the house file" looks like from the
+// surface's side, and the test pins it as a delegation rather than as an exemption.
+//
+// The shape of the mistake, stated once here so the docs below need not each restate it: a fixed
+// `.frame(width:)` beside a flexing pane, with nothing asserting the flexing side stays usable. It
+// has shipped three times — Today wrapping its own header date to "SUND AY" in a 312pt column, the
+// notes editor drawn at 39pt inside a 320pt inspector, and the shell sidebar reading "KSPACE" after
+// a pane three levels down declared a minimum wider than the window. Each time a floor existed and
+// was read as a guarantee. The floor is the wish; what is actually available is the guarantee.
+
 /// How a regular-width pane divides between a list column and the detail beside it.
 ///
 /// Every split feature surface on iPad — Goals, Habits, Focus, Lists — declared its own geometry,

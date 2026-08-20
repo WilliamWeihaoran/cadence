@@ -261,6 +261,13 @@ enum CadenceCalendarMonthLayout {
     ///
     /// Month is now the only surface that splits at this width. Week claims the whole grid before an
     /// inspector may take anything and so splits at 1183, and the Board does not split at all.
+    ///
+    /// **This function takes a `paneWidth` and is deliberately not a home of the width rule.** It
+    /// states no floor and does no arithmetic — it asks `CadenceCalendarPaneLayout` and translates
+    /// the answer into Month's own vocabulary. The register at the top of
+    /// `CadenceRegularPaneLayout.swift` names it as the model for how a surface reads the rule
+    /// instead of restating it, and `CadenceTests/CadencePaneWidthRuleHomesTests.swift` pins it as a
+    /// delegation: this file may take a width, and it may not grow a floor.
     static func placement(paneWidth: CGFloat) -> Placement {
         CadenceCalendarPaneLayout.showsInspector(paneWidth: paneWidth) ? .beside : .below
     }

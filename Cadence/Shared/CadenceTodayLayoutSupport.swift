@@ -17,6 +17,12 @@ nonisolated enum CadenceTodayLayout: Equatable {
 /// Settings → Navigation — were deleted at the user's direction, even though an 11" or 13" Pro in
 /// landscape could reach the 1022pt floor it needed.
 ///
+/// **Registered, not orphaned.** This is one of six expressions of "derive a pane decision from the
+/// width you were handed", and `CadenceRegularPaneLayout.swift` is the house file that lists all of
+/// them and argues why each stays where it is. Read the register there before adding a seventh — and
+/// note that a new width-taking function *here* fails
+/// `CadenceTests/CadencePaneWidthRuleHomesTests.swift` until the register names it.
+///
 /// The stored preference behind that picker was `ios.today.layoutMode`, a `UserDefaults` key and
 /// **not** a SwiftData property, so removing it drops a preference rather than data. Nothing reads
 /// the key any more, which is what makes a stored `mac` safe: `layout(...)` no longer takes a

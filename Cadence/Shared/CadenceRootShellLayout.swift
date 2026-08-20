@@ -17,6 +17,11 @@ import CoreGraphics
 /// declared minimum is a preference, and what is actually on screen is the guarantee. The detail
 /// pane is handed exactly `windowWidth - sidebarWidth` and clips its own content, so no pane it
 /// hosts can move the navigation column. `detailWidth` + `sidebarWidth` is always the window.
+///
+/// **Registered, not orphaned.** T-182 counted four expressions of that rule and there are six; this
+/// is one of the two it missed, which is the argument for keeping the list somewhere a test can
+/// check. The register — every expression, and why each stays in its own surface's file — is at the
+/// top of `CadenceRegularPaneLayout.swift`.
 enum CadenceRootShellLayout {
     /// The icon-only column, used where a labelled one would not leave the detail enough room.
     ///

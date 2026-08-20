@@ -132,11 +132,19 @@ nonisolated struct CadenceNotesListMetrics: Equatable, Sendable {
     // its own floor (`CadenceTodayLayoutSupport.inspectorPaneMinWidth`), which left the editor
     // **320 − 280 − 1 = 39pt**: a markdown body wrapping one character per line.
     //
-    // The same rule for the other regular-width splits is in `CadenceRegularPaneLayout.swift`
-    // (`CadenceRegularSplitLayout`, `CadenceCalendarPaneLayout.showsInspector`), stated there three
-    // times over. This one lives beside `regularColumnWidth` because that is the part it is derived
-    // from; a new split surface belongs in that file rather than in a fourth copy of this
-    // arithmetic.
+    // **This is a registered home of that rule, and the tension the last pass flagged is settled.**
+    // `CadenceRegularPaneLayout.swift` is the house file, and it holds three expressions of the same
+    // arithmetic (`CadenceRegularSplitLayout`, `CadenceCalendarWeekGridLayout`,
+    // `CadenceCalendarPaneLayout.showsInspector`) while `CadenceTodayLayoutSupport` and
+    // `CadenceRootShellLayout` hold one each — six in four files, not the four T-182 counted. The
+    // call was to leave them in their surfaces and put the *register* in the house file rather than
+    // to move the sums, because a floor is only a sum of its parts while the parts are next to it:
+    // this one is derived from `regularColumnWidth`, two declarations above, and hoisting the sum
+    // without the column would split "raise the column" from "the floor follows it".
+    //
+    // So a new split surface still does not get to write a seventh copy. It joins one of those four
+    // files and gets listed in the register, and
+    // `CadenceTests/CadencePaneWidthRuleHomesTests.swift` fails until it is.
 
     /// The 1pt `Divider()` between the two columns. Counted, because a floor that forgets it is a
     /// floor that is one point wrong — the mistake `CadenceTodayLayoutSupport.taskPaneWidth`
