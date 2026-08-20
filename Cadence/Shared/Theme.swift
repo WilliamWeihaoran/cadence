@@ -70,6 +70,19 @@ nonisolated struct Theme {
 
     static let purple = Color(hex: "#a78bfa")
 
+    /// Added for Focus, and the only accent added since the palette was fixed.
+    ///
+    /// The sidebar tints are a *family* system, not one hue per destination: amber is today and
+    /// habits, blue is tasks and settings, purple is notes and search, green is lists and goals.
+    /// Sharing a hue is how two related destinations read as related. What broke was Focus and
+    /// Calendar landing on the same red when Calendar was retinted — those two are not a family,
+    /// so the shared hue said something untrue. Every existing accent was already spoken for, so
+    /// Focus needed a sixth rather than a seat in someone else's family. Teal is far enough from
+    /// all five to be told apart at a 15pt glyph, and carries no meaning of its own — a timer is
+    /// not success, warning or danger.
+    static let tealHex = "#45CBC4"
+    static let teal = Color(hex: tealHex)
+
     /// The palette is fixed dark; there is no light variant or user selection anymore.
     static let preferredColorScheme: ColorScheme = .dark
 

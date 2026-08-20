@@ -200,14 +200,12 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         switch self {
         case .today: return "#FFB84D"
         case .allTasks: return "#5AA2FF"
-        case .focus: return "#FF6B6B"
+        case .focus: return Theme.tealHex
         case .inbox: return "#5AA2FF"
-        // Red, at the user's request. **This is the same hex as `.focus`**, which was already
-        // `#FF6B6B`, so the sidebar now carries one hue for two destinations — the one thing a
-        // per-destination tint exists to avoid. Flagged rather than resolved here: giving Focus a
-        // different colour is a change to a destination the user did not ask about, and picking a
-        // second, near-identical red would make the tints stop identifying anything. Left for them
-        // to settle.
+        // Red, at the user's request. This collided with `.focus`, which was the same hex;
+        // Focus moved to `Theme.tealHex` rather than Calendar giving the red back, because red
+        // on a calendar reads as urgency and teal on a timer reads as nothing, which is what a
+        // timer should read as. See `Theme.teal` for why a sixth accent beat reusing one.
         case .calendar: return "#FF6B6B"
         case .notes: return "#9E8CFF"
         case .lists: return "#4ECB71"
