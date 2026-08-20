@@ -29,6 +29,15 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
+- [T-184] **The shipped privacy policy promises in-app data deletion iOS does not have.**
+  In progress. `docs/privacy.html:50` and `docs/app-review-notes.md:27-28` both tell the user they can
+  delete their account and data from Settings → Account or Settings → Data Safety; on iOS neither
+  route exists, and Data Safety is read-only count tiles. `PrivacyDataResetService` is ~45 lines
+  behind `#if os(macOS)` containing **zero** AppKit — the [[T-163]] `RemindersManager` shape exactly.
+  Also `docs/privacy.html:29` tells the reader to revoke Calendar access "in macOS System Settings",
+  wrong on iOS. Submission-facing: a category named Data Safety that offers no safety action, and a
+  policy statement App Review can check.
+
 
 ## Open — decided, not started
 
@@ -54,13 +63,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   H1 is 28pt while editing and 25pt in the read-only preview, and an H5 falls through to the default.
   This is the "canvas and preview render the same block differently" class that
   `MarkdownRenderedBlockLimits` exists to stop.
-
-- [T-181] **macOS re-derives `hasVisibleHeadingContent` inline, and trims the wrong set.**
-  `MarkdownEditorSupport.heading` trims `.whitespaces` where the now-shared Services function trims
-  `.whitespacesAndNewlines`. Not fixed by T-121 because `macOS/Editor/*` was outside its scope. Also
-  worth checking: `inlineStyleExclusionRanges` trims `.whitespaces` rather than going through
-  `MarkdownSourceLines.classificationText`, against the convention that file documents — it reaches
-  the same answer today only because a line holding a stray `\r` fails all three predicates anyway.
 
 
 - [T-178] **`CommitmentIconTile` and `iOSIconTile` still disagree about corner radius.**
@@ -307,6 +309,18 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-126] `fdd04a8` A heading holding only a carriage return went 30pt bold and lost its marker
+  (T-181). macOS re-derived the visible-content test locally, trimming `.whitespaces` where the
+  shared function trims `.whitespacesAndNewlines`. Reachable, not academic: lines come from
+  `components(separatedBy: "\n")`, so on a CRLF note `"# \r"` read as *having* content — marker
+  hidden, line set 30pt bold, a tall blank row with nothing left to click the caret into, and
+  `NSTextView` does not normalise line endings on paste. This is [[T-121]]'s payoff rather than a
+  separate fix: the duplicate was invisible while the logic sat inside `#if os(iOS)`.
+  Two process notes. The agent stalled after writing and never reported, so the work was verified
+  from scratch rather than accepted. And my first mutation left an orphan paren and failed to
+  *compile* — which reads as a passing mutation test if you only check the exit code. Repaired to 0
+  compile errors before trusting it.
 
 - [D-125] `d0adfdc` The notes split asks how wide it is, not what size class it is in (T-177).
   A 320pt inspector pane minus a fixed 280pt list and a 1pt divider left **39pt** of editor. The floor
