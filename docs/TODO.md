@@ -32,6 +32,31 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-172] **Tasks are rendered by ~13 views doing ~5 jobs, and only some of the differences are
+  earned.** Raised by the user while Today was being unified: the drift is not confined to Today.
+  Surveyed inventory, by job:
+  - *Primary list row* — `MacTaskRow` (`TasksPanelComponents`), `iOSTaskRow` + `iOSTaskListRow`
+    (`iOSTaskViews`). Three spellings, one job. The Today unification is already converging part of
+    this; finish it rather than starting over.
+  - *Board card* — `KanbanCard` (macOS) / `iOSBoardTaskCard` (iOS). A [[T-136]] pair; their chrome
+    (column header, metadata chip, inline empty) is already shared as of `7e5459c`, the cards
+    themselves are not. Their interaction shells are legitimately different — drag APIs, hover vs
+    swipe — so share the *content*, not the shell.
+  - *Bundle member row* — `BundleTaskPopoverRow`, `FocusBundleTaskRow`, `iOSCalendarBundleTaskRow`.
+  - *Focus / schedule picker row* — `FocusSidebarTaskRow`, `iOSScheduleReadyTaskRow`.
+  - *Task reference inside a note* — `TaskNoteListRow`, `iOSMarkdownTaskReferenceRow`.
+
+  **Do not fold these in** — they look like the same job and are not, and a sweep that eats them
+  makes the app worse: `AppleReminderTaskRow` renders an EventKit reminder, not an `AppTask`;
+  `AITaskDraftRow` is an unsaved draft with review affordances; `GoalTaskContributorRow` shows a
+  task's *contribution* to a goal rather than its state; `iOSNewTaskGhostRow` and
+  `KanbanColumnAddTaskRow` are composer affordances. The user's own framing was that some of these
+  differences are good and some are bad — the value of this ticket is telling them apart, not
+  reducing the count.
+
+  Sequencing: blocked until the Today unification lands, because that agent currently owns
+  `iOSTaskViews.swift`, `TasksPanelComponents.swift` and `CadenceTaskPresentationSupport.swift`.
+
 - [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
   *(a)* A widget showing the running timer plus what is being worked on, and a second showing the
   task list — exact split is a design call, make a good one rather than shipping two widgets that
