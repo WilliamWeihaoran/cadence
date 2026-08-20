@@ -129,6 +129,29 @@ struct CalendarDateMemoryWriterTests {
         }
     }
 
+    /// A stand-in for the settle wait that the test opens by hand.
+    ///
+    /// Replaces the wall clock, so "not written yet" and "written" are two states this test moves
+    /// between rather than two instants it waits for. The previous shape slept 400ms against a 60ms
+    /// quiet period, which is only sound if the writer's scheduled `Task` gets a thread inside those
+    /// 400ms — under three parallel builds it did not, and the test failed after 43 seconds having
+    /// found nothing wrong (T-176). A longer interval would only move that threshold.
+    private actor SleepGate {
+        private var waiter: CheckedContinuation<Void, Never>?
+        private var isOpen = false
+
+        func wait() async {
+            guard !isOpen else { return }
+            await withCheckedContinuation { waiter = $0 }
+        }
+
+        func open() {
+            isOpen = true
+            waiter?.resume()
+            waiter = nil
+        }
+    }
+
     /// The device's own calendar, deliberately. `DateFormatters.ymd` formats in the device time
     /// zone, so a fixture calendar pinned to UTC disagrees with it by a day either side of
     /// midnight — and the type under test is exactly the round trip between the two.
@@ -147,9 +170,11 @@ struct CalendarDateMemoryWriterTests {
     func aRunOfPositionsCollapsesToOneWriteOfTheLastOne() async throws {
         let suite = UUID().uuidString
         let defaults = try countingDefaults(suite)
+        let gate = SleepGate()
         let writer = CadenceCalendarDateMemoryWriter(
             memory: CadenceCalendarDateMemory(defaults: defaults),
-            quietPeriod: .milliseconds(60)
+            quietPeriod: .milliseconds(60),
+            sleep: { _ in await gate.wait() }
         )
 
         // Thirty columns of fling. None of these may reach the store while the next is still coming.
@@ -162,7 +187,8 @@ struct CalendarDateMemoryWriterTests {
         }
         #expect(defaults.writes == 0)
 
-        try await Task.sleep(for: .milliseconds(400))
+        await gate.open()
+        await writer.awaitScheduledWrite()
         // Two: the anchor and the selection, once each.
         #expect(defaults.writes == 2)
         #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == "2026-09-30")
@@ -176,9 +202,11 @@ struct CalendarDateMemoryWriterTests {
     func flushWritesImmediatelyAndCancelsWhatWasPending() async throws {
         let suite = UUID().uuidString
         let defaults = try countingDefaults(suite)
+        let gate = SleepGate()
         let writer = CadenceCalendarDateMemoryWriter(
             memory: CadenceCalendarDateMemory(defaults: defaults),
-            quietPeriod: .milliseconds(60)
+            quietPeriod: .milliseconds(60),
+            sleep: { _ in await gate.wait() }
         )
 
         writer.remember(anchor: try date("2026-09-01"), selection: try date("2026-09-01"), calendar: calendar)
@@ -189,8 +217,11 @@ struct CalendarDateMemoryWriterTests {
         #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == "2026-10-05")
         #expect(defaults.string(forKey: CadenceCalendarDateMemory.selectionKey) == "2026-10-06")
 
-        // And the write it cancelled must not land afterwards and undo it.
-        try await Task.sleep(for: .milliseconds(400))
+        // And the write it cancelled must not land afterwards and undo it. Opening the gate and
+        // then awaiting that very task is what makes this an assertion rather than a hope: the
+        // cancelled task has demonstrably run to completion before the store is read.
+        await gate.open()
+        await writer.awaitScheduledWrite()
         #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == "2026-10-05")
         #expect(defaults.writes == 2)
 

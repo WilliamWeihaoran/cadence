@@ -119,7 +119,14 @@ final class CadenceCalendarDateMemoryWriter {
 
     private let memory: CadenceCalendarDateMemory
     private let quietPeriod: Duration
+    private let sleep: @Sendable (Duration) async -> Void
     private var pending: Task<Void, Never>?
+
+    /// The most recently scheduled settle write, **cancelled or not**, kept only so a test can
+    /// await it. `pending` is nilled by `flush` because nothing is pending afterwards; this is not,
+    /// because "the write you cancelled must not land later and undo the flush" is a thing worth
+    /// asserting and there would otherwise be no handle to await.
+    private var scheduled: Task<Void, Never>?
 
     // Spelled out rather than defaulted: a default argument is evaluated in a `nonisolated`
     // context, and both of these are main-actor — which is a warning today and an error in the
@@ -128,20 +135,52 @@ final class CadenceCalendarDateMemoryWriter {
         self.init(memory: CadenceCalendarDateMemory(), quietPeriod: Self.quietPeriod)
     }
 
-    init(memory: CadenceCalendarDateMemory, quietPeriod: Duration) {
+    convenience init(memory: CadenceCalendarDateMemory, quietPeriod: Duration) {
+        self.init(
+            memory: memory,
+            quietPeriod: quietPeriod,
+            sleep: { try? await Task.sleep(for: $0) }
+        )
+    }
+
+    /// `sleep` is the seam that keeps this type's tests off the wall clock.
+    ///
+    /// The behaviour under test is *how many writes reach `UserDefaults`*, and a test can only see
+    /// that by observing the moment between "scheduled" and "written". Waiting a fixed interval
+    /// longer than `quietPeriod` looks like it does that and does not: the scheduled `Task` still
+    /// has to be given a thread, so on a machine running several builds at once the writer's own
+    /// 60ms sleep can outlast a 400ms wait and the test fails having found nothing wrong. That
+    /// happened (T-176) — 43 seconds and a failure under load, 0.4s and a pass alone.
+    ///
+    /// A longer interval only moves the threshold. Handing the sleep in lets a test replace it with
+    /// a gate it opens itself, so "the write has not landed yet" and "the write has landed" become
+    /// two states it controls rather than two instants it hopes for.
+    init(
+        memory: CadenceCalendarDateMemory,
+        quietPeriod: Duration,
+        sleep: @escaping @Sendable (Duration) async -> Void
+    ) {
         self.memory = memory
         self.quietPeriod = quietPeriod
+        self.sleep = sleep
+    }
+
+    /// Test seam: await the settle write scheduled by the last `remember`, however it ends.
+    func awaitScheduledWrite() async {
+        await scheduled?.value
     }
 
     /// Record where the calendar is, to be written once it stops moving.
     func remember(anchor: Date, selection: Date, calendar: Calendar = .current) {
         pending?.cancel()
-        pending = Task { [memory, quietPeriod] in
-            try? await Task.sleep(for: quietPeriod)
+        let task = Task { [memory, quietPeriod, sleep] in
+            await sleep(quietPeriod)
             guard !Task.isCancelled else { return }
             memory.setAnchorDate(anchor, calendar: calendar)
             memory.setSelectedDate(selection, calendar: calendar)
         }
+        pending = task
+        scheduled = task
     }
 
     /// Write now. For leaving the page or the foreground, where there is no settle to wait for.
