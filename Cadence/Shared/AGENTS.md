@@ -67,8 +67,11 @@ because that inventory is a list of *files* and a reader counting it will not se
 Three reasons the helpers exist rather than the four inline spellings macOS had before `23eb847`:
 
 - **`attachList` is idempotent, and has to be.** `GoalContributionResolver` walks `listLinks`, so a
-  second link to the same list double-counts that list's tasks in the goal's percentage. The picker
-  checkmark hides the duplicate, so the only symptom is the bar moving twice per completion — which
+  **Attach is idempotent for a reason this guide previously got wrong.** It is not that a
+  duplicate double-counts the percentage — `contributingTasks` dedupes by task `id`, so it
+  cannot. A duplicate breaks the things that count *links*: `linkedListCount`, the "N lists"
+  chip, the attribution line, two MCP DTOs, and a duplicate row in both inspectors. The old
+  claim's test passed under a mutation removing the guard.
   is not a symptom anyone reports.
 - **`GoalLinkTarget` makes the model's invariant unspellable-wrong.** A `GoalListLink` points at
   exactly one of an area or a project; an enum with `.area` / `.project` cases cannot express both

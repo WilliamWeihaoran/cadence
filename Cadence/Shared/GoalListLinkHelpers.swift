@@ -274,9 +274,16 @@ enum GoalLinkPresentation {
 extension ModelContext {
     @discardableResult
     func attachList(_ target: GoalLinkTarget, to goal: Goal) -> GoalListLink? {
-        // Idempotent: two links to the same list would double that list's tasks in every count
-        // that walks `listLinks` — the picker checkmark hides the first one, so the only way to
-        // notice would be the percentage moving twice per completion.
+        // Idempotent, but **not** because a duplicate would double the percentage — it cannot.
+        // `GoalContributionResolver.contributingTasks` ends in `dedupe(...)`, which filters by task
+        // `id`, so the same task reached through two links is counted once. That claim was written
+        // here and in three guides and was false; a mutation removing this early return left the
+        // test named for it passing, which is the same shape as the unkillable `isDone` guard on the
+        // goal Momentum count.
+        // What a duplicate actually breaks is anything counting *links* rather than tasks:
+        // `linkedListCount`, the "N lists" chip on both platforms, the attribution line, and two MCP
+        // DTOs — plus a second identical row in both goal inspectors, so unlinking once would leave
+        // one on screen.
         if let existing = GoalLinkPresentation.existingLink(for: target, on: goal) {
             return existing
         }

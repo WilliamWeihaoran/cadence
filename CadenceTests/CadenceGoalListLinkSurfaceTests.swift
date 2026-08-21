@@ -121,10 +121,16 @@ struct CadenceGoalListLinkSurfaceTests {
         #expect(!GoalLinkPresentation.isAttached(.project(store.project), to: store.goal))
     }
 
-    /// A second link to the same list would double that list's tasks in every count that walks
-    /// `listLinks`, and the picker's checkmark would hide the first one — the only symptom would be
-    /// a percentage moving twice per completion.
-    @Test func aDuplicateAttachCannotDoubleCountAListsTasks() throws {
+    /// A duplicate link cannot move the percentage — `contributingTasks` dedupes by task `id` — so
+    /// this asserts what a duplicate *would* actually break: anything counting links rather than
+    /// tasks. `linkedListCount` feeds the "N lists" chip, the attribution line and two MCP DTOs, and
+    /// a second row would appear in both inspectors.
+    ///
+    /// The previous name and comment here claimed the percentage was the symptom. It was not, and a
+    /// mutation removing `attachList`'s early return left this test **passing** — protected upstream,
+    /// exactly like the `isDone` guard on the goal Momentum count that was reverted for the same
+    /// reason.
+    @Test func aDuplicateAttachIsCollapsedSoLinkCountsStayTruthful() throws {
         let store = try makeStore()
 
         let task = AppTask(title: "Counted once")
@@ -134,7 +140,17 @@ struct CadenceGoalListLinkSurfaceTests {
         store.modelContext.attachList(.area(store.area), to: store.goal)
         store.modelContext.attachList(.area(store.area), to: store.goal)
 
-        #expect(GoalContributionResolver.summary(for: store.goal).totalTasks == 1)
+        let summary = GoalContributionResolver.summary(for: store.goal)
+
+        // The assertions that actually fail when idempotency is removed. `totalTasks` is **not** one
+        // of them — `contributingTasks` dedupes by task `id`, so it stays 1 either way, which is why
+        // this test passed under a mutation removing the guard.
+        #expect(summary.linkedListCount == 1)
+        #expect(GoalLinkPresentation.links(of: store.goal).count == 1)
+
+        // Kept as documentation of what a duplicate does *not* break, so nobody restores the old
+        // rationale: the percentage is protected upstream regardless of this guard.
+        #expect(summary.totalTasks == 1)
     }
 
     @Test func togglingAttachesThenDetaches() throws {
@@ -221,9 +237,13 @@ struct CadenceGoalListLinkSurfaceTests {
         let titles = GoalLinkPresentation.links(of: store.goal).map(\.title)
         #expect(titles.first == "Admin")
         #expect(titles.count == 3)
-        // Case-insensitive equals means the tie-break decides, and it must decide the same way
-        // twice in a row.
-        #expect(GoalLinkPresentation.links(of: store.goal).map(\.id) == GoalLinkPresentation.links(of: store.goal).map(\.id))
+        // Case-insensitive equals means the id tie-break decides, so the result must not depend on
+        // the order the relationship hands them over — and a stored to-many has no promised order.
+        // The previous assertion compared one call to another call, which is a value against itself
+        // and could never fail.
+        let forward = GoalLinkPresentation.links(of: store.goal).map(\.id)
+        store.goal.listLinks = (store.goal.listLinks ?? []).reversed()
+        #expect(GoalLinkPresentation.links(of: store.goal).map(\.id) == forward)
     }
 
     @Test func theContributionLabelCountsOnlyWorkTheGoalCounts() throws {

@@ -290,9 +290,13 @@ GoalListLink: id, createdAt → goal:Goal?, area:Area?, project:Project?
 > `goal.listLinks` / `area.goalLinks` / `project.goalLinks` directly — the row would have no owner.
 > macOS spelled `insert(GoalListLink(...))` and `delete(link)` inline in **four** places until
 > `23eb847`; the constructor is now called from one. **Attach is idempotent, and has to be:**
-> `GoalContributionResolver` walks `listLinks`, so a second link to the same list double-counts
-> that list's tasks in the goal's percentage, and the picker checkmark hides the duplicate — the
-> only symptom is the bar moving twice per completion. Detach severs the link's own references
+> **Attach is idempotent, and the reason is not the one this file used to give.** It said a second
+> link double-counts that list's tasks in the percentage. It cannot: `contributingTasks` ends in
+> `dedupe(...)`, which filters by task `id`. That false claim was written in four places and the test
+> named for it passed under a mutation removing the guard — the same unkillable shape as the `isDone`
+> guard on the goal Momentum count. What a duplicate really breaks is anything counting **links**:
+> `linkedListCount`, the "N lists" chip, the attribution line, two MCP DTOs, and a second identical
+> row in both inspectors, so unlinking once would leave one behind. Detach severs the link's own references
 > before deleting the row, because this codebase does not trust inverse back-population to have
 > happened by the time the resolver reads it on the next render. Read side (`contributionLabel`,
 > `contributionMetric`, `attributionLine`, `inheritedListNote`) is `GoalLinkPresentation` in the

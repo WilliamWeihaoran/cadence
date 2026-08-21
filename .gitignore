@@ -1,2 +1,8 @@
 .codex-build/
 build/
+
+# Coverage/profiling artifacts left by xcodebuild runs.
+*.profraw
+
+# Per-user Xcode state; the shared schemes live in xcshareddata.
+xcuserdata/
