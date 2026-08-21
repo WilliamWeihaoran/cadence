@@ -39,11 +39,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   confirmation. Split the assertion: ban assignment, allow reads. The folder is worth showing when
   two notes are both "Untitled" ([[T-223]]), so this is blocking a real improvement.
 
-- [T-234] **`CadenceNoteFolderPath.isRoot` is confirmed dead.** Zero production readers;
-  `CadenceNoteFolderGroup.isRoot` is a *different* member that re-implements it as
-  `folderPath.isEmpty` on an already-normalized value. A static function, not a stored property, so
-  the usual removal hazard does not apply. Left in place by `605a793` only because another agent held
-  `Shared/CadenceNoteFolderSupport.swift` at the time.
 
 - [T-235] **`AGENTS.md` should record what a widgets-scheme baseline actually measures.** Now that the
   scheme is shared (`605a793`), the line claiming the baseline covers all three schemes is honest for
@@ -513,6 +508,13 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-151] `9d3e0d6` The near-copy calls the shared predicate rather than the predicate being deleted
+  (T-234). The ticket said `CadenceNoteFolderPath.isRoot` was dead with zero production readers, and
+  it was — because `CadenceNoteFolderGroup.isRoot` re-spells it as `folderPath.isEmpty` a few lines
+  below. A dead-code pass found a shared predicate unused while a duplicate of it shipped; deleting
+  the shared one would have been the wrong half of that observation. Two test readers also existed, so
+  "delete it" would have taken assertions with it.
 
 - [D-148] `605a793` `f611bd2` The widgets scheme was never shared, and it was building the whole app
   (T-231, T-230, T-232). Only `Cadence` and `CadenceMCPServer` were in `xcshareddata/xcschemes`;
