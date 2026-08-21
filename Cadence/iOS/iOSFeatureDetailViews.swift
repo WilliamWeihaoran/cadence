@@ -715,7 +715,11 @@ struct iOSHabitDetail: View {
 
     private var activityContent: some View {
         VStack(alignment: .leading, spacing: 16) {
-            lastSevenDays
+            // T-219: `HabitLast7DayStrip` (Shared/Components) rather than a local copy of it. The
+            // copy that stood here was identical down to the 26pt bar, the 8pt spacing and the
+            // weekday-label walk, so there was no figure to reconcile — only a second place for
+            // the strip to drift from.
+            HabitLast7DayStrip(habit: habit)
 
             Divider().background(Theme.borderSubtle.opacity(0.6))
 
@@ -728,35 +732,6 @@ struct iOSHabitDetail: View {
             .scrollIndicators(.hidden)
             .defaultScrollAnchor(.trailing)
         }
-    }
-
-    private var lastSevenDays: some View {
-        let states = habit.last7DayStates
-
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Last 7 days")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.subdued)
-
-            HStack(spacing: 8) {
-                ForEach(states.indices, id: \.self) { index in
-                    let done = states[index]
-                    VStack(spacing: 5) {
-                        RoundedRectangle(cornerRadius: Theme.radiusControl - 2, style: .continuous)
-                            .fill(done ? tint : Theme.borderSubtle)
-                            .frame(height: 26)
-                        Text(recentDayLabel(offset: states.count - 1 - index))
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(Theme.subdued)
-                    }
-                }
-            }
-        }
-    }
-
-    private func recentDayLabel(offset: Int) -> String {
-        let date = Calendar.current.date(byAdding: .day, value: -offset, to: Date()) ?? Date()
-        return DateFormatters.dayOfWeek.string(from: date)
     }
 }
 #endif

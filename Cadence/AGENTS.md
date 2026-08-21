@@ -9,15 +9,17 @@ This subtree contains the app target source. Prefer reading `../AGENTS.md` first
 - `Services/` contains shared services, migrations, notifications, widget support, the markdown/note parsing layer, schema, and `AI/` + `MCPReadOnly/`.
 - `Shared/` contains design tokens (`Theme.swift`), common components, date/time formatting, and cross-platform presentation/query/mutation support.
 - `macOS/` contains the fully implemented desktop app — the primary product surface.
-- `iOS/` is a **large, actively-developed iOS/iPadOS surface — 87 `.swift` files at the time of
-  writing, not stubs.** (Re-count when you add one; this line said 79 while the root guides said
-  86 and the directory held 87.)
+- `iOS/` is a **large, actively-developed iOS/iPadOS surface — 90 `.swift` files at the time of
+  writing, not stubs.** (`ls Cadence/iOS/*.swift | wc -l` — run it; this line said 79 while the
+  root guides said 86 and the directory held 87, and it has been behind at every reading since.)
   `iOSRootView.swift` is an adaptive root shell — `iPadMacStyleRootShell` (sidebar) at regular
   width, `iOSCompactRootShell` (a hand-built **four-tab bottom bar**, `[ Tasks ] [ Calendar ]
   ( + ) [ Notes ] [ More ]`) at compact width — routing to real implementations of Today,
   Calendar, Tasks/Inbox, Focus, Goals, Habits, Notes (its own markdown editor stack), Lists,
   Search, and Settings. Feature parity with macOS is not guaranteed by design — check the actual
-  view file. See `iOS/AGENTS.md` before touching the shell.
+  view file. See `iOS/AGENTS.md` before touching the shell, and before adding any surface that
+  opens a task: the inspector is presented by `iOSTaskInspectorHost`, and a row that owns the
+  `.sheet` is the bug that guide's second section exists to stop you re-shipping.
 
   This file described the compact shell as a "`TabView`" long after `iOS/AGENTS.md` was rewritten
   to refute exactly that. There is no SwiftUI `TabView` anywhere under `iOS/`; the shell is a

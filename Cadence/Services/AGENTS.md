@@ -1,7 +1,7 @@
 # Services Guide
 
-This folder contains shared app services and persistence-adjacent support (48 top-level `.swift`
-files at the time of writing, plus `AI/` and `MCPReadOnly/`; re-count when you add one). It is cross-platform: macOS-only managers live in `Cadence/macOS/Services/`.
+This folder contains shared app services and persistence-adjacent support (49 top-level `.swift`
+files at the time of writing — `ls Cadence/Services/*.swift | wc -l` — plus `AI/` and `MCPReadOnly/`). It is cross-platform: macOS-only managers live in `Cadence/macOS/Services/`.
 
 ## Families
 
@@ -11,6 +11,21 @@ files at the time of writing, plus `AI/` and `MCPReadOnly/`; re-count when you a
 - **Notes/tags/tasks** - `MarkdownNoteSupport.swift`, `NoteReferenceSupport.swift`, `TagSupport.swift`, `TaskCreationService.swift`.
 - **Notifications** - `NotificationScheduling.swift` (pure planner) + `NotificationManager.swift` (reconciler). Stateless reconciliation, not schedule-on-mutation.
 - **Privacy data reset** - `CadencePrivacyDataResetService.swift` (prefixed file, unprefixed `PrivacyDataResetService` type — the old `macOS/Services/` path keeps a tombstone under the unprefixed name). Wipes every model in `CadenceSchema`, including the legacy note types and `Pursuit`, and cancels pending Cadence notifications; `deleteCadenceDataAndLocalArtifacts` adds the OpenAI key, the widget snapshot, the pending restore and the local backups, and is the one sequence **both** Settings > Data Safety screens run. **Add a new `@Model` here whenever you add one to `CadenceSchema`** — `CadencePrivacyDataResetSurfaceTests` drives the coverage check off the schema, so it fails if you don't. Same story as reminders below: it sat under `macOS/Services/` behind an `#if os(macOS)` while importing only Foundation and SwiftData, and the shipped privacy policy promised iOS a deletion route that did not exist.
+- **List/context deletion** - `CadenceListDeleteHelpers.swift` (prefixed file, unprefixed
+  `ListDeleteHelpers` name on the `ModelContext` extension it declares). `deleteContext`,
+  `deleteArea` and `deleteProject` — the recursive cascades that take a list's tasks, notes, links,
+  goal links, image assets and nested projects with it. Moved here from `macOS/Services/` by
+  `c84732e`, which is what let iOS delete a list or a context at all. **One `#if os(macOS)` seam
+  and no more**, in `cascadeDeleteTasks(withIDs:)`: `ModelContext.deleteTasks(withIDs:)` really is
+  macOS-only (it tears down the focus, hover, completion-animation and subtask-entry managers), so
+  iOS calls the shared `CadenceTaskMutationSupport.deleteTasks(withIDs:modelContext:)` core
+  directly. `CadenceListDeletionSurfaceTests.theCascadesLiveInServicesWithExactlyOnePlatformSeam`
+  counts the `#if` directives in the file and fails at two. The user-facing copy is
+  `Shared/CadenceListDeletionSummary.swift`, and it is **two types with two audiences**:
+  `CadenceListDeletionKind.cascadeSentence` is the categorical sentence read by five macOS dialog
+  sites (`EditListSheet` x2, `SettingsView` x3) *and* iOS, so that copy cannot drift; the
+  `CadenceListDeletionSummary` counts ("1 project", "7 tasks") are read by iOS alone, because
+  macOS's dialog reports scope categorically and cannot state a number.
 - **EventKit reminders** - `CadenceRemindersManager.swift` (prefixed file, unprefixed `RemindersManager` type — the old path keeps a tombstone under the unprefixed name). Separately authorized from calendar, and cross-platform: both platforms read it in the Inbox and in Settings -> Reminders. It lived under `macOS/Services/` behind an `#if os(macOS)` for a long time despite touching no AppKit. Its pure presentation half (`RemindersConnectionState`, `RemindersSyncSummary`) is in `Shared/CadenceRemindersPresentationSupport.swift`, where `CadenceTests` can reach it.
 - **Widgets** - `Cadence*WidgetSupport.swift`, `CadenceWidgetIntents.swift`, `CadenceWidgetRefreshCenter.swift`, `CadenceDeepLink.swift`. These compile into the `CadenceWidgets` target too.
 - **`AI/`** - `AIActionService.swift`, `AIProvider.swift`, `AISettingsManager.swift`. Optional, user-supplied OpenAI key.

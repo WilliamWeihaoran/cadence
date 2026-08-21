@@ -1,6 +1,6 @@
 # iOS Guide
 
-The iOS/iPadOS app is a large, actively-developed surface (87 `.swift` files at the time of writing, covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings) — not early/stubbed. Re-count with `ls Cadence/iOS/*.swift | wc -l` when you add one rather than trusting the figure. Do not assume macOS feature parity by default; check the actual view file.
+The iOS/iPadOS app is a large, actively-developed surface (90 `.swift` files at the time of writing, covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings) — not early/stubbed. Re-count with `ls Cadence/iOS/*.swift | wc -l` when you add one rather than trusting the figure. Do not assume macOS feature parity by default; check the actual view file.
 
 ## Working Rules
 
@@ -12,6 +12,61 @@ The iOS/iPadOS app is a large, actively-developed surface (87 `.swift` files at 
 ## Current State
 
 The macOS app is the primary product surface. iOS is a large, real, actively-developed surface. `iOSRootView.swift` is an adaptive root shell: `iPadMacStyleRootShell` (sidebar) at regular width, `iOSCompactRootShell` (bottom tab bar) at compact width, routing to full implementations of most macOS feature areas.
+
+## The Task Inspector Is Presented By A Host, Never By A Row
+
+**A row, a card or a timeline block must not own a `.sheet` that presents `iOSTaskDetailSheet`.**
+Ask for it from the environment instead:
+
+```swift
+@Environment(\.iOSTaskInspector) private var taskInspector
+...
+.onTapGesture { taskInspector(task) }
+```
+
+`iOSTaskInspectorHost()` is applied **once**, in `iOSRootView`, above both shells and beside
+`cadenceStartupIssueBanner` — one call, so "every page has a host" is true by construction instead
+of by remembering. It holds the selection in its own `@State` and presents the sheet from a lifetime
+that outlives any row's. The action is a callable
+(`iOSTaskInspectorPresentAction`), deliberately not a binding, so a call site *cannot* hold the
+selection even if it wants to.
+
+Why the rule rather than a guard: a row lives inside a filtered `ForEach`, and a sheet is torn down
+with the view that presents it. `iOSTaskRow` owned `@State showDetail` plus
+`.sheet(isPresented:)`, so any status write made *from inside the inspector* — Cancel, Restore, mark
+done — moved the task out of its section, SwiftUI removed the row, and the panel went with it. The
+control experiment is the one that dates the bug: **Start** ran the identical `onSetStatus` path and
+left the panel open, because an in-progress task stays in the same section. Nothing was calling
+`dismiss()`; the defect was ownership. Four surfaces had it — `iOSTaskRow`, `iOSBoardTaskCard`,
+`iOSTimelineTaskBlock` and Today's `iOSScheduleReadyTaskRow` (T-201, `4562d4e`) — which is what a
+pattern reached for by habit looks like, and why this is written down: the next agent adding a task
+surface will otherwise reach for `@State showDetail` and add a fifth.
+
+**Four presenters keep their own `.sheet(item:)`, deliberately. Do not "finish the job".**
+`iOSSearchView`, `iOSMarkdownEditingSurface`, `iOSMarkdownReferenceSupport` and
+`iOSCalendarBundleDetailSheet` each present from a surface that does not re-filter under them, so
+they have nothing to be torn down by — and **three of them present from inside a sheet**, where a
+host above is already presenting and a second request from it silently does nothing at all.
+Converting them for uniformity would trade a correct pattern for a dead tap.
+
+**A held task is gone when `isDeleted || modelContext == nil` — both signals, measured.** The
+decision lives in `Shared/CadenceTaskInspectorPresentation.swift` (in `Shared/` because this folder
+is inside `#if os(iOS)` and invisible to the macOS-built `CadenceTests`). Against a real store:
+between `delete(_:)` and the save, `isDeleted` is `true` with `modelContext` still set; **after the
+save `isDeleted` reads `false` again** while `modelContext` goes `nil` and the property snapshot
+stays readable — so a guard on `isDeleted` alone never fires for the committed delete, which is the
+only one that can reach a panel from outside it. That is not hypothetical: it is what the first
+draft did, and the test that killed it is why both signals are there.
+
+Leaving the page's query is **not** a reason to close, and `resolve` takes
+`taskLeftThePageQuery` as an ignored parameter so that saying so is a test failure rather than a
+comment. After cancelling a task from Today the next thing a user may want is Restore, which lives
+in the panel that used to vanish.
+
+The same defect is still live for the *bundle* detail sheet — `iOSCalendarBoardBundleCard` and
+`iOSTimelineBundleBlock` present `iOSCalendarBundleDetailSheet` from a card inside a filtered
+`ForEach` (T-217, open). Different sheet, so it needs its own host; copy this one, including the
+`isDeleted || modelContext == nil` finding.
 
 ## The markdown styling layer
 

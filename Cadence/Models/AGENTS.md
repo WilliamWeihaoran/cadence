@@ -27,6 +27,11 @@ area.tasks = (area.tasks ?? []) + [task]
 - `TaskBundle` - several tasks grouped into one timeline block (declared in `AppTask.swift`). `tasks` uses a `.nullify` delete rule; verify bundle/task deletion order carefully.
 - `Tag` - cross-cutting label, many-to-many with both `AppTask` and `Note`.
 - `Goal`, `GoalListLink`, `Habit`, `HabitCompletion` - long-running progress and recurring behavior. `Goal` nests via `parentGoal`/`subGoals`: a top-level goal is a direction (usually `kind == .ongoing`), its sub-goals read as milestones.
+  **`GoalListLink` has one write path** — `ModelContext.attachList` / `detachGoalListLink` /
+  `toggleGoalListLink` in `Shared/GoalListLinkHelpers.swift`, never a hand-rolled
+  `insert(GoalListLink(...))`. Attach is idempotent because a duplicate link double-counts that
+  list's tasks in the goal's progress, and detach severs the link's own references before deleting
+  the row. Rationale and the substring-grep trap: `Cadence/Shared/AGENTS.md`.
 - `Note` - the single live note model (see below).
 - `SavedLink`, `MarkdownImageAsset` - list bookmarks and editor image assets.
 
@@ -62,9 +67,19 @@ There is no `SchemaMigrationPlan` in this project, so removing a stored property
 column's data** for every existing store — it does not clean anything up. Two fields currently
 look like dead code and are not safe to delete:
 
-- `AppTask.calendarEventID` — has readers but no writer that sets it non-empty. They exist to
-  clear stale identifiers, delete a linked event when its task is deleted, and repair
-  relationships, all for values an earlier build left on disk and in CloudKit.
+- `AppTask.calendarEventID` — has readers but no writer that sets it non-empty. There are exactly
+  three, and **all three only ever assign `""`**: `SchedulingService` (7 assignments, no reads),
+  `CalendarLinkedTaskSupport` (reads the identifier, looks the event up, clears it when EventKit no
+  longer has it), and `CadenceTaskMutationSupport.detachRelationships(for:)` on delete. They exist
+  for values an earlier build left on disk and in CloudKit.
+  This bullet used to credit the readers with *deleting the linked event* when a task is deleted
+  and with *repairing relationships*, and both were wrong — `1d81864` corrected the same two claims
+  in `CLAUDE.md` and did not reach this file. Nothing anywhere deletes an event on task delete, and
+  `DataIntegrityRepairService`'s one `calendarEventID` line is on **`Note`**, inside note merging,
+  where the field is live and in use. Re-grep before repeating either claim, and read the hits:
+  `grep -rn calendarEventID --include='*.swift' Cadence` also returns `Note`'s uses of the same
+  field name — the event-linked-note path, which is live — so the three files above are the
+  `AppTask` ones specifically, not the whole grep.
 - `Goal.dependsOnGoalIDsJSON` — finish-to-start dependency IDs as a JSON array of UUID strings.
   Zero readers, zero writers; its JSON accessor was already removed, leaving a tombstone comment
   in `macOS/Views/GoalsSupportViews.swift`.

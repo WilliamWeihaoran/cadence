@@ -33,7 +33,21 @@ Feature views in this folder are actively refactored into thin roots plus suppor
   fix to one has to be made twice until they are unified.
 - `Settings*` - settings shell and category sections.
 - `GlobalSearch*` - command palette state, indexing, interaction, and shell views.
-- `Habit*`, `Goal*` - long-running progress surfaces. Pursuits were merged into `Goal`; top-level goals are directions and their sub-goals are milestones.
+- `Habit*`, `Goal*` - long-running progress surfaces. Pursuits were merged into `Goal`; top-level goals are directions and their sub-goals are milestones. Neither owns its own chrome any more:
+  the habit detail's tile, card, heatmap and 7-day strip are all
+  `Shared/Components/HabitProgressViews.swift`, and `GoalListLink` writes go through
+  `Shared/GoalListLinkHelpers.swift` (`attachList` / `detachGoalListLink` / `toggleGoalListLink`).
+  Until `23eb847` three files wrote links by hand — `GoalAttachWorkSheet` here and
+  `Sheets/CreateGoalSheet` held the **four** `insert(GoalListLink(...))` sites between them, and
+  `GoalAttachWorkSheet` and `GoalsView` the bare `delete`s. (`GoalInspectorView` only ever *read*
+  links and took an `onDetachList` closure; it is not one of the offenders.) Do not add a fifth
+  insert.
+- `SettingsAboutSection.swift` - the About category's build card, and nothing else: `Version`,
+  `Build`, `Bundle ID`, over the shared `CadenceAppBuildIdentity` (declared in
+  `Shared/AppStoreReviewReadiness.swift` — the file name is not the type name) and the shared
+  `CadenceSettingsInfoRow` promoted out of iOS. It deliberately carries **no** Privacy Policy or
+  Support buttons: macOS offers both under Data Safety, beside the paragraph and the delete control
+  they belong with (T-220 is the open question of which screen should own them).
 
 The globs above are the whole family, singular where it looks plural. This list previously said
 `FocusView*`, `Goals*` and `Habits*`, each of which matches about two files of nine — a glob that

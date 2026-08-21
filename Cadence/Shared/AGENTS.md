@@ -57,6 +57,37 @@ as a macOS service after it had moved. Grep for the declaration, not for the fil
 component is a second declaration inside another component's file, say so in `CLAUDE.md`'s inventory,
 because that inventory is a list of *files* and a reader counting it will not see you.
 
+## One Write Path For `GoalListLink`
+
+**Attaching or detaching a linked list goes through `ModelContext.attachList(_:to:)`,
+`detachGoalListLink(_:)` or `toggleGoalListLink(_:on:)` (`GoalListLinkHelpers.swift`). Never
+`insert(GoalListLink(...))` or `delete(link)` at a call site, and never write `goal.listLinks` or
+`area.goalLinks` directly** — the link row would have no owner.
+
+Three reasons the helpers exist rather than the four inline spellings macOS had before `23eb847`:
+
+- **`attachList` is idempotent, and has to be.** `GoalContributionResolver` walks `listLinks`, so a
+  second link to the same list double-counts that list's tasks in the goal's percentage. The picker
+  checkmark hides the duplicate, so the only symptom is the bar moving twice per completion — which
+  is not a symptom anyone reports.
+- **`GoalLinkTarget` makes the model's invariant unspellable-wrong.** A `GoalListLink` points at
+  exactly one of an area or a project; an enum with `.area` / `.project` cases cannot express both
+  or neither, which a two-optional-parameters initialiser can.
+- **Detach severs the link's own references before deleting the row**, matching
+  `TrackingDeleteHelpers`: this codebase does not trust inverse back-population to have happened by
+  the time anything reads it, and `Goal.listLinks` / `Area.goalLinks` / `Project.goalLinks` are read
+  by the resolver on the very next render. Nothing on the other end is orphaned — the goal, the list
+  and its tasks all outlive the link.
+
+`GoalLinkPresentation` in the same file owns the read side (`contributionLabel`,
+`contributionMetric`, `attributionLine`, `inheritedListNote`), and the two lengths are deliberate:
+iPad's 44pt inspector row truncated "2 contributing tasks" to "2 contributing t…", so the metric is
+short there while macOS's two-line row keeps the long form — both derived from one count, not two.
+
+**Grep for the constructor with a word boundary.** `toggleGoalListLink(` *contains*
+`GoalListLink(`, so a substring scan accuses every correctly-rewired call site of being an offender.
+That trap bit two agents in one day.
+
 ## One Predicate For "This Task Is Over"
 
 `CadenceTaskQuerySupport.isFinishedTask(_:)` / `finishedTasks(from:)`
@@ -82,6 +113,19 @@ Two neighbours are deliberately *not* it, and both are pinned:
 For the *row*, the matching decision is `CadenceTaskCompletionState.isSettled`, read by
 `iOSTaskRow` and `iOSTaskEditorTitleCard`. Do not restate either as `isDone || isCancelled`
 inline.
+
+**A cancellation is timestamped.** `CadenceTaskRecurrenceWorkflowSupport.markCancelled` sets
+`completedAt = now` (`f15db8b`, T-202); it used to clear it, so "settled today" could never be true
+of a cancelled task and one you gave up on never reached Today's **Completed** at all. macOS was
+strictly worse than iOS here rather than equivalent, which is worth knowing before assuming a
+date-scoped Completed section is fine: `TasksPanelDerivedState` in `todayOverview` mode has no
+do-date or due-date fallback, so `completedAt` is its only ground and *every* cancelled task was
+excluded, not merely undated ones. Two consequences to keep in mind when touching this:
+`completionPrecedes` is `completedAt ?? createdAt`, so cancelled and done work in one Completed
+section are now ordered by the same event; and any "not already cancelled" guard must read
+**status alone** — spelling it as a status clause plus `completedAt == nil` was only correct while a
+cancelled task had a nil timestamp, and two MCP write-path guards would have started re-stamping and
+double-auditing on re-cancel.
 
 ## One Page Header Per Platform
 
@@ -201,6 +245,18 @@ pins exactly two environments in that file.
 
 - Components should be reusable through explicit props and bindings.
 - Avoid hidden global state unless the existing component pattern already uses it.
+- **The habit detail's chrome is shared, all of it.** `Components/HabitProgressViews.swift` holds
+  `HabitIconTile`, `HabitInfoCard`, `HabitHeatmap` (52 weeks, Monday-start via
+  `Habit.isoWeekCalendar`) and `HabitLast7DayStrip`, and **both** habit details read all four. The
+  strip is the cautionary one: `940c4da` promoted it here for macOS while iOS's `lastSevenDays` was
+  held by another agent, so for a stretch the repo carried the near-copy this folder's whole rule
+  exists to prevent — the same failure mode `CompactTagStrip` above has already cost twice. T-219
+  deleted the iOS copy. **There was no figure to reconcile, which is the point:** the two agreed on
+  the 26pt bar, the 8pt spacing, `Theme.radiusControl - 2`, both font sizes (11/9 semibold) and the
+  weekday-label walk. The *only* difference was `ForEach(states.indices, id: \.self)` against
+  `ForEach(Array(states.enumerated()), id: \.offset)` — the same identity either way. A fork that
+  agrees on every number is exactly what a fork looks like right up until one side is tuned, so
+  "they are identical" is a reason to delete one, never a reason to leave both.
 - **Match the app's compact visual language — not a desktop one.** This line used to say
   "compact, desktop-focused", which pointed a *cross-platform* folder at the macOS shape and
   contradicted the standing rule that iPhone and iPad are one style. macOS is no longer the
