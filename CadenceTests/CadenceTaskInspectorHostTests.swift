@@ -26,41 +26,45 @@ struct CadenceTaskInspectorHostTests {
     /// either combination — which is the half a "tidy up the selection" change would get wrong.
     @Test func onlyAGoneTaskClosesTheInspector() {
         #expect(
-            CadenceTaskInspectorPresentation.resolve(taskIsGone: false, taskLeftThePageQuery: false)
+            CadenceDetailPanelPresentation.resolve(subjectIsGone: false, subjectLeftThePageQuery: false)
                 == .stay
         )
         #expect(
-            CadenceTaskInspectorPresentation.resolve(taskIsGone: false, taskLeftThePageQuery: true)
+            CadenceDetailPanelPresentation.resolve(subjectIsGone: false, subjectLeftThePageQuery: true)
                 == .stay
         )
         #expect(
-            CadenceTaskInspectorPresentation.resolve(taskIsGone: true, taskLeftThePageQuery: false)
+            CadenceDetailPanelPresentation.resolve(subjectIsGone: true, subjectLeftThePageQuery: false)
                 == .close
         )
         #expect(
-            CadenceTaskInspectorPresentation.resolve(taskIsGone: true, taskLeftThePageQuery: true)
+            CadenceDetailPanelPresentation.resolve(subjectIsGone: true, subjectLeftThePageQuery: true)
                 == .close
         )
     }
 
     /// Both signals, either of them sufficient. `isDeleted` catches the pending delete and a nil
     /// `modelContext` catches the committed one; the next test is why it takes two.
+    ///
+    /// The rule is `CadenceDetailPanelPresentation` rather than `CadenceTaskInspectorPresentation`
+    /// since T-217: nothing in it is about an `AppTask`, and the bundle panel's host needed exactly
+    /// it. `CadenceBundleInspectorHostTests` measures the same two phases against a `TaskBundle`.
     @Test func aHeldTaskIsGoneIfEitherSignalSaysSo() {
-        #expect(!CadenceTaskInspectorPresentation.heldTaskIsGone(isDeleted: false, hasNoModelContext: false))
-        #expect(CadenceTaskInspectorPresentation.heldTaskIsGone(isDeleted: true, hasNoModelContext: false))
-        #expect(CadenceTaskInspectorPresentation.heldTaskIsGone(isDeleted: false, hasNoModelContext: true))
-        #expect(CadenceTaskInspectorPresentation.heldTaskIsGone(isDeleted: true, hasNoModelContext: true))
+        #expect(!CadenceDetailPanelPresentation.heldSubjectIsGone(isDeleted: false, hasNoModelContext: false))
+        #expect(CadenceDetailPanelPresentation.heldSubjectIsGone(isDeleted: true, hasNoModelContext: false))
+        #expect(CadenceDetailPanelPresentation.heldSubjectIsGone(isDeleted: false, hasNoModelContext: true))
+        #expect(CadenceDetailPanelPresentation.heldSubjectIsGone(isDeleted: true, hasNoModelContext: true))
 
         #expect(
-            CadenceTaskInspectorPresentation.resolveHeldTask(isDeleted: false, hasNoModelContext: false)
+            CadenceDetailPanelPresentation.resolveHeldSubject(isDeleted: false, hasNoModelContext: false)
                 == .stay
         )
         #expect(
-            CadenceTaskInspectorPresentation.resolveHeldTask(isDeleted: true, hasNoModelContext: false)
+            CadenceDetailPanelPresentation.resolveHeldSubject(isDeleted: true, hasNoModelContext: false)
                 == .close
         )
         #expect(
-            CadenceTaskInspectorPresentation.resolveHeldTask(isDeleted: false, hasNoModelContext: true)
+            CadenceDetailPanelPresentation.resolveHeldSubject(isDeleted: false, hasNoModelContext: true)
                 == .close
         )
     }
@@ -81,7 +85,7 @@ struct CadenceTaskInspectorHostTests {
 
         #expect(subject.isCancelled)
         #expect(
-            CadenceTaskInspectorPresentation.resolveHeldTask(
+            CadenceDetailPanelPresentation.resolveHeldSubject(
                 isDeleted: subject.isDeleted,
                 hasNoModelContext: subject.modelContext == nil
             ) == .stay
@@ -109,7 +113,7 @@ struct CadenceTaskInspectorHostTests {
         try context.save()
 
         #expect(
-            CadenceTaskInspectorPresentation.resolveHeldTask(
+            CadenceDetailPanelPresentation.resolveHeldSubject(
                 isDeleted: subject.isDeleted,
                 hasNoModelContext: subject.modelContext == nil
             ) == .stay
@@ -118,7 +122,7 @@ struct CadenceTaskInspectorHostTests {
         context.delete(subject)
         #expect(subject.isDeleted, "a pending delete stopped reporting through isDeleted")
         #expect(
-            CadenceTaskInspectorPresentation.resolveHeldTask(
+            CadenceDetailPanelPresentation.resolveHeldSubject(
                 isDeleted: subject.isDeleted,
                 hasNoModelContext: subject.modelContext == nil
             ) == .close
@@ -128,7 +132,7 @@ struct CadenceTaskInspectorHostTests {
         #expect(subject.modelContext == nil, "a committed delete stopped detaching the model context")
         #expect(try context.fetch(FetchDescriptor<AppTask>()).isEmpty)
         #expect(
-            CadenceTaskInspectorPresentation.resolveHeldTask(
+            CadenceDetailPanelPresentation.resolveHeldSubject(
                 isDeleted: subject.isDeleted,
                 hasNoModelContext: subject.modelContext == nil
             ) == .close
@@ -139,8 +143,10 @@ struct CadenceTaskInspectorHostTests {
 
     /// The four surfaces that owned presentation from a row or a card. Each had exactly one
     /// `iOSTaskDetailSheet(task:)` before the fix and has none now — the crisp retired spelling,
-    /// chosen because it cannot also match the post-fix text the way `.sheet(isPresented:`
-    /// would: the two calendar files still present a *bundle* sheet that way.
+    /// rather than `.sheet(isPresented:`, which was ambiguous in these two calendar files for as
+    /// long as they also presented a *bundle* sheet that way. T-217 took that second sheet off both
+    /// of them, so the ambiguity is gone; the needle is still the specific one, because a needle
+    /// that only works while a neighbouring defect exists is not the needle to keep.
     @Test func noRowOrCardStillPresentsTheInspector() throws {
         try expectOccurrences(
             of: "iOSTaskDetailSheet(",
@@ -182,13 +188,14 @@ struct CadenceTaskInspectorHostTests {
             at: [
                 "Cadence/iOS/iOSTaskViews.swift": 0,
                 "Cadence/iOS/iPadTodayScheduleViews.swift": 0,
-                // **A finding, pinned rather than fixed.** The survivor in each of these two files
-                // is the bundle card / bundle block, which presents `iOSCalendarBundleDetailSheet`
-                // from a card inside a filtered `ForEach` — the same latent defect on a different
-                // sheet. Editing a block's time from that panel moves it between day columns, which
-                // is a teardown. Out of T-201's scope because it needs a bundle host, not this one.
-                "Cadence/iOS/iOSBoardCards.swift": 1,
-                "Cadence/iOS/iOSCalendarTimelineViews.swift": 1
+                // These two read `1` until T-217, and the survivor in each was the bundle card /
+                // bundle block presenting `iOSCalendarBundleDetailSheet` from inside a filtered
+                // `ForEach` — the same defect on a different sheet, pinned here rather than fixed
+                // because it needed a bundle host and not this one. It has one now
+                // (`iOSBundleInspectorHost`), so no card in this app owns detail-panel presentation
+                // state at all; `CadenceBundleInspectorHostTests` is where that half is asserted.
+                "Cadence/iOS/iOSBoardCards.swift": 0,
+                "Cadence/iOS/iOSCalendarTimelineViews.swift": 0
             ]
         )
         try expectOccurrences(
@@ -270,7 +277,7 @@ struct CadenceTaskInspectorHostTests {
     /// filter creeping back into the panel's lifetime by another route.
     @Test func theHostAsksTheSharedRuleAboutTheTwoFactsItCanSee() throws {
         try expectOccurrences(
-            of: "CadenceTaskInspectorPresentation.resolveHeldTask(",
+            of: "CadenceDetailPanelPresentation.resolveHeldSubject(",
             at: ["Cadence/iOS/iOSTaskInspectorHost.swift": 1]
         )
         // Both signals, at the one call site. `isDeleted` on its own is the draft that did not work.
@@ -302,7 +309,7 @@ struct CadenceTaskInspectorHostTests {
             "Cadence/iOS/iOSBoardCards.swift",
             "Cadence/iOS/iOSCalendarTimelineViews.swift",
             "Cadence/iOS/iPadTodayScheduleViews.swift",
-            "Cadence/Shared/CadenceTaskInspectorPresentation.swift"
+            "Cadence/Shared/CadenceDetailPanelPresentation.swift"
         ] {
             #expect(files.contains(path))
         }

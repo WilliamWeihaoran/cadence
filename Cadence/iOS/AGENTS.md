@@ -49,9 +49,12 @@ they have nothing to be torn down by — and **three of them present from inside
 host above is already presenting and a second request from it silently does nothing at all.
 Converting them for uniformity would trade a correct pattern for a dead tap.
 
-**A held task is gone when `isDeleted || modelContext == nil` — both signals, measured.** The
-decision lives in `Shared/CadenceTaskInspectorPresentation.swift` (in `Shared/` because this folder
-is inside `#if os(iOS)` and invisible to the macOS-built `CadenceTests`). Against a real store:
+**A held model is gone when `isDeleted || modelContext == nil` — both signals, measured.** The
+decision lives in `Shared/CadenceDetailPanelPresentation.swift` (in `Shared/` because this folder
+is inside `#if os(iOS)` and invisible to the macOS-built `CadenceTests`), and it is **one** type read
+by both hosts since T-217: it was `CadenceTaskInspectorPresentation`, with `task`-shaped parameter
+names, until the bundle panel needed exactly it — nothing in the rule was ever about an `AppTask`,
+so the names lost the noun rather than the rule gaining a second copy. Against a real store:
 between `delete(_:)` and the save, `isDeleted` is `true` with `modelContext` still set; **after the
 save `isDeleted` reads `false` again** while `modelContext` goes `nil` and the property snapshot
 stays readable — so a guard on `isDeleted` alone never fires for the committed delete, which is the
@@ -59,14 +62,35 @@ only one that can reach a panel from outside it. That is not hypothetical: it is
 draft did, and the test that killed it is why both signals are there.
 
 Leaving the page's query is **not** a reason to close, and `resolve` takes
-`taskLeftThePageQuery` as an ignored parameter so that saying so is a test failure rather than a
+`subjectLeftThePageQuery` as an ignored parameter so that saying so is a test failure rather than a
 comment. After cancelling a task from Today the next thing a user may want is Restore, which lives
 in the panel that used to vanish.
 
-The same defect is still live for the *bundle* detail sheet — `iOSCalendarBoardBundleCard` and
-`iOSTimelineBundleBlock` present `iOSCalendarBundleDetailSheet` from a card inside a filtered
-`ForEach` (T-217, open). Different sheet, so it needs its own host; copy this one, including the
-`isDeleted || modelContext == nil` finding.
+## The Bundle Panel Has Its Own Host, For The Same Reason
+
+**T-217, closed.** `iOSCalendarBundleDetailSheet` had the identical defect on a different sheet:
+`iOSCalendarBoardBundleCard` and `iOSTimelineBundleBlock` each owned `@State showDetail` plus
+`.sheet(isPresented:)`, and both are drawn from a `ForEach(bundles)` already filtered by day — by
+*hour* as well on Today's schedule pane. `iOSBundleInspectorHost()` is now applied once in
+`iOSRootView` beside `iOSTaskInspectorHost()`, over `@Environment(\.iOSBundleInspector)`, and both
+cards ask for the panel instead of owning it.
+
+A separate host, because it presents a different sheet on a different model; the **same**
+`CadenceDetailPanelPresentation` for when to close, because that rule was never task-shaped.
+
+**Two presenters of the bundle sheet keep their own `.sheet(item:)`, and the reason differs from the
+four above.** `iOSCalendarDayInspector` and `iOSCalendarMonthAgendaList` hold `@State
+selectedBundle` on the *pane*, with `.sheet(item:)` above the conditional that decides whether the
+pane lists anything — so a bundle edited out of that day or month empties a section rather than
+removing the presenter. Neither presents from inside a sheet, so a host above them would work; they
+keep ownership because ownership is not the bug there. `CadenceBundleInspectorHostTests` pins the
+whole set at three, so a fourth appearing anywhere is a test failure.
+
+Reproducing it on a simulator: the reachable write is a member task's completion circle *inside* the
+panel, not the date field. The panel's Save calls `dismiss()` itself, so a date edit cannot show the
+difference — but finishing the last active member makes the block `isCompleted`, and every surface
+queries bundles with `includeCompleted: false`. Two members gives the control for free: the first
+circle leaves the card in place, the second removes it.
 
 ## The markdown styling layer
 

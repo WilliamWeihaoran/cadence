@@ -69,7 +69,9 @@ Cadence/
 │   ├── TaskDragPayload.swift  # the drag/drop wire format for tasks and bundles, both platforms
 │   ├── GoalListLinkHelpers.swift  # THE write path for GoalListLink (attachList / detachGoalListLink
 │   │                   #   / toggleGoalListLink) + GoalLinkTarget + GoalLinkPresentation
-│   ├── CadenceTaskInspectorPresentation.swift  # when the iOS inspector host keeps or drops a task
+│   ├── CadenceDetailPanelPresentation.swift    # when a host keeps or drops the model it is
+│   │                   #   showing — read by BOTH the task inspector and the bundle panel hosts
+│   │                   #   (was CadenceTaskInspectorPresentation until T-217 shared it)
 │   ├── CadenceListDeletionSummary.swift        # two types: CadenceListDeletionKind's cascade
 │   │                   #   sentence (5 macOS dialogs + iOS), and the Summary counts (iOS only —
 │   │                   #   macOS's dialog states scope categorically and cannot give a number)

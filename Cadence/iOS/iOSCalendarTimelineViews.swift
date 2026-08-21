@@ -926,7 +926,10 @@ struct iOSTimelineBundleBlock: View {
     let bundle: TaskBundle
     /// See `iOSTimelineTaskBlock.fillsAvailableHeight`.
     var fillsAvailableHeight: Bool = true
-    @State private var showDetail = false
+    // T-217, and the sharper half of it: this block is drawn from a `ForEach(bundles)` filtered by
+    // day on the Calendar screen and by *hour* on Today's schedule pane, so a card-owned sheet was
+    // torn down by a start-time edit as well as a date one.
+    @Environment(\.iOSBundleInspector) private var bundleInspector
 
     private var tasks: [AppTask] {
         bundle.sortedTasks
@@ -938,7 +941,7 @@ struct iOSTimelineBundleBlock: View {
 
     var body: some View {
         Button {
-            showDetail = true
+            bundleInspector(bundle)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
@@ -990,13 +993,10 @@ struct iOSTimelineBundleBlock: View {
         .buttonStyle(.iosPressable)
         .contextMenu {
             Button {
-                showDetail = true
+                bundleInspector(bundle)
             } label: {
                 Label("Edit Block", systemImage: "square.and.pencil")
             }
-        }
-        .sheet(isPresented: $showDetail) {
-            iOSCalendarBundleDetailSheet(bundle: bundle)
         }
     }
 }

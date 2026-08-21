@@ -75,15 +75,16 @@ private struct iOSTaskInspectorHostModifier: ViewModifier {
 }
 
 /// The selection outliving the row is the fix; the selection outliving the *model* is the sharp edge
-/// that comes with it. `CadenceTaskInspectorPresentation` — in `Shared/`, where the macOS-built test
-/// target can reach it — is where that decision lives: a task that has merely left the page's query
+/// that comes with it. `CadenceDetailPanelPresentation` — in `Shared/`, where the macOS-built test
+/// target can reach it — is where that decision lives, and since T-217 the bundle panel's host reads
+/// the same instance of it rather than a second copy: a task that has merely left the page's query
 /// keeps its panel, a deleted one closes it.
 private struct iOSTaskInspectorSheet: View {
     @Bindable var task: AppTask
     let close: () -> Void
 
     var body: some View {
-        switch CadenceTaskInspectorPresentation.resolveHeldTask(
+        switch CadenceDetailPanelPresentation.resolveHeldSubject(
             isDeleted: task.isDeleted,
             hasNoModelContext: task.modelContext == nil
         ) {

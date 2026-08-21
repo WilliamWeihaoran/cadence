@@ -394,8 +394,12 @@ struct iOSCalendarBoardBundleCard: View {
     let onDropTask: (AppTask) -> Void
     var onDropTargetedChanged: (Bool) -> Void = { _ in }
 
+    // T-217: the panel is opened on the host, not owned here. This card lives in a
+    // `ForEach(bundles)` filtered by the column's day, so a `@State showDetail` + `.sheet` was torn
+    // down by the panel's own Save the moment it moved the block to another date.
+    @Environment(\.iOSBundleInspector) private var bundleInspector
+
     @State private var isTargeted = false
-    @State private var showDetail = false
 
     private var tasks: [AppTask] {
         bundle.sortedTasks
@@ -465,17 +469,14 @@ struct iOSCalendarBoardBundleCard: View {
                 .stroke(isTargeted ? Theme.amber.opacity(0.74) : (allDone ? Theme.doneFill.opacity(0.35) : Theme.amber.opacity(0.2)), lineWidth: isTargeted ? 1.5 : 1)
         }
         .onTapGesture {
-            showDetail = true
+            bundleInspector(bundle)
         }
         .contextMenu {
             Button {
-                showDetail = true
+                bundleInspector(bundle)
             } label: {
                 Label("Edit Block", systemImage: "square.and.pencil")
             }
-        }
-        .sheet(isPresented: $showDetail) {
-            iOSCalendarBundleDetailSheet(bundle: bundle)
         }
         .draggable(TaskDragPayload.bundleString(for: bundle.id))
         .dropDestination(for: String.self) { items, _ in
