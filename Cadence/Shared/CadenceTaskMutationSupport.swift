@@ -28,10 +28,26 @@ enum CadenceTaskMutationSupport {
         }
     }
 
+    /// Reconciles `completedAt` with `status` when the iOS task sheet saves. It is a *normalizer*,
+    /// so it may clear a timestamp that contradicts the status and must not invent one that the
+    /// status merely permits.
+    ///
+    /// The `else` this used to be cleared `completedAt` for every status that is not `.done`, and
+    /// `.cancelled` is one of them — so on iOS it undid the cancellation timestamp the moment the
+    /// sheet saved, which is every route out of that sheet. That made T-202 invisible on the one
+    /// surface the ticket was reported from: the task landed in Inbox → Completed (no date test) and
+    /// not in Today's Completed (a `completedAt` test), exactly the split the fix was meant to close.
+    ///
+    /// `.cancelled` therefore does nothing here. Not clearing is the fix; *stamping* would be a
+    /// backfill of pre-T-202 rows with a value we never recorded, performed silently by opening a
+    /// sheet.
     static func normalizeCompletionState(for task: AppTask, modelContext: ModelContext) {
-        if task.status == .done {
+        switch task.status {
+        case .done:
             CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
-        } else {
+        case .cancelled:
+            break
+        case .todo, .inProgress:
             task.completedAt = nil
         }
         try? modelContext.save()

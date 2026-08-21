@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import SwiftUI
 import Testing
 @testable import Cadence
@@ -184,6 +185,188 @@ struct CadenceCancelledTaskReachabilityTests {
         #expect(CalendarBoardPlannerSupport.railTasks(from: [scheduled], todayKey: todayKey).isEmpty)
         #expect(CalendarBoardPlannerSupport.tasksByBoardDateFoldingDueDates(from: [scheduled]).isEmpty)
         #expect(CadenceSidebarLayout.overdueTaskCount(from: [scheduled], todayKey: todayKey) == 0)
+    }
+
+    // MARK: - T-202: cancelling records the time it happened
+
+    /// Midnight of `key` — inside that calendar day for the same formatter `todayKey` came from,
+    /// which is exactly what both Today filters ask about.
+    private func instant(_ key: String) throws -> Date {
+        try #require(DateFormatters.date(from: key))
+    }
+
+    private func cancelling(_ subject: AppTask, at moment: Date) throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        context.insert(subject)
+        CadenceTaskRecurrenceWorkflowSupport.markCancelled(subject, in: context, now: moment)
+    }
+
+    /// T-202, the premise run rather than argued. `completedTodayTasks` admits finished work on
+    /// three grounds — planned today, due today, or settled today — and `markCancelled` used to
+    /// clear `completedAt`, which is the only one of the three a **dateless** task has left. So
+    /// abandoning an unscheduled task reached All Tasks → Completed, its list's Completed and Inbox
+    /// Completed, and no Today section at all.
+    @Test func cancellingADatelessTaskPutsItInTodaysCompletedSection() throws {
+        let subject = task("abandoned")
+        try cancelling(subject, at: instant(todayKey))
+
+        #expect(subject.isCancelled)
+        #expect(subject.completedAt != nil)
+        #expect(
+            CadenceTaskQuerySupport.completedTodayTasks(from: [subject], todayKey: todayKey)
+                .map(\.title) == ["abandoned"]
+        )
+    }
+
+    /// The ticket's own case: an **overdue** task, exactly the kind you give up on. Both of its
+    /// dates point at the past, so neither of the other two grounds can carry it either.
+    @Test func cancellingAnOverdueTaskPutsItInTodaysCompletedSection() throws {
+        let subject = task("overdue", doDate: "2026-08-01", dueDate: "2026-08-02")
+        try cancelling(subject, at: instant(todayKey))
+
+        #expect(
+            CadenceTaskQuerySupport.completedTodayTasks(from: [subject], todayKey: todayKey)
+                .map(\.title) == ["overdue"]
+        )
+    }
+
+    /// The other half of the same predicate, and the reason this is not satisfied by recording
+    /// *any* timestamp: yesterday's abandonment is not today's Completed section.
+    @Test func aTaskCancelledYesterdayStaysOutOfTodaysCompletedSection() throws {
+        let subject = task("abandoned yesterday")
+        try cancelling(subject, at: instant("2026-08-19"))
+
+        #expect(subject.completedAt != nil)
+        #expect(
+            CadenceTaskQuerySupport.completedTodayTasks(from: [subject], todayKey: todayKey).isEmpty
+        )
+    }
+
+    /// macOS's Today Completed section is a **different** filter in a different file, and a
+    /// stricter one: in `.todayOverview` it asks only about `completedAt`, with no do-date or
+    /// due-date ground to fall back on. So on macOS *no* cancelled task reached Today's Completed,
+    /// dateless or not. Pinned here because a fix verified only through
+    /// `CadenceTaskQuerySupport` would be a fix for one platform.
+    @Test func macOSTodayCompletedAlsoAdmitsTheCancelledTask() throws {
+        let subject = task("abandoned", doDate: todayKey)
+        try cancelling(subject, at: instant(todayKey))
+
+        let state = TasksPanelDerivedState(
+            allTasks: [subject],
+            areas: [],
+            projects: [],
+            mode: .todayOverview,
+            todayKey: todayKey,
+            sortField: .date,
+            sortDirection: .ascending
+        )
+        #expect(state.doneTasks.map(\.title) == ["abandoned"])
+    }
+
+    /// `TaskOrdering.completionPrecedes` sorts `completedAt ?? createdAt`, newest first. A
+    /// cancelled task fell through to `createdAt`, so the logbook ordered it by when it was
+    /// *made* rather than when it was settled: an old task abandoned this morning sorted below
+    /// work finished days ago. Both settled statuses now sort on the same measurement.
+    @Test func theLogbookOrdersACancelledTaskByWhenItWasCancelled() throws {
+        let old = task("old, abandoned today")
+        old.createdAt = try instant("2026-01-01")
+        let recent = task("new, done last week", status: .done)
+        recent.createdAt = try instant("2026-08-13")
+        recent.completedAt = try instant("2026-08-13")
+
+        try cancelling(old, at: instant(todayKey))
+
+        #expect([recent, old].taskCompletionSorted().map(\.title) == ["old, abandoned today", "new, done last week"])
+    }
+
+    /// The timestamp is reachability, not credit. `completedTaskCount` backs the "N done" summary
+    /// line and the Settings Completed tile and counts `isDone` alone, and this pins that through
+    /// the real `markCancelled` rather than through a hand-set status.
+    @Test func recordingTheCancellationTimeGrantedNoDoneCredit() throws {
+        let done = task("finished", status: .done, completedAt: try instant(todayKey))
+        let cancelled = task("abandoned")
+        try cancelling(cancelled, at: instant(todayKey))
+
+        #expect(cancelled.completedAt != nil)
+        #expect(CadenceTaskQuerySupport.completedTaskCount(from: [cancelled, done]) == 1)
+    }
+
+    /// The other "N done" a user reads is a goal's **Momentum** tile, and that one is
+    /// `recentCompletedCount` — every contributing task whose `completedAt` falls in the last seven
+    /// days, with no `isDone` test of its own. So it looks like exactly the count this change should
+    /// have leaked into, and adding an `isDone` guard there is an edit that compiles, reads
+    /// plausibly and cannot be killed by any test: `GoalContributionResolver.contributingTasks`
+    /// already ends in `.filter { !$0.isCancelled }`, so an abandoned task is not in the universe
+    /// the momentum window is measured over in the first place. This test is what says so — mutate
+    /// that upstream filter away and it fails, which an `isDone` guard downstream would then hide.
+    @Test func aGoalsMomentumTileNeverSeesTheCancelledTaskAtAll() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let goal = Goal(title: "Ship it")
+        context.insert(goal)
+        let cancelled = task("abandoned")
+        let done = task("finished", status: .done, completedAt: try instant(todayKey))
+        for subject in [cancelled, done] {
+            context.insert(subject)
+            subject.goal = goal
+        }
+        CadenceTaskRecurrenceWorkflowSupport.markCancelled(cancelled, in: context, now: try instant(todayKey))
+
+        let summary = GoalContributionResolver.summary(for: goal, now: try instant(todayKey))
+        #expect(summary.totalTasks == 1)
+        #expect(summary.completedTasks == 1)
+        #expect(summary.recentCompletedCount == 1)
+    }
+
+    /// The iOS task sheet saves through `normalizeCompletionState`, whose job is to reconcile
+    /// `completedAt` with `status`. Its `else` branch cleared the timestamp for every status that is
+    /// not `.done` — and `.cancelled` is one of them, so cancelling from the sheet stamped the time
+    /// and *leaving* the sheet wiped it again. That is every route out of that sheet, which made the
+    /// fix invisible on the exact surface T-202 was reported from: the task appeared in Inbox →
+    /// Completed, which has no date test, and not in Today's Completed, which has one.
+    ///
+    /// The three open/settled cases are all pinned, because "clear it unless done" is the shape the
+    /// bug had and any future spelling of it must fail here.
+    @Test func savingTheTaskSheetDoesNotWipeTheCancellationTimestamp() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let subject = task("abandoned")
+        context.insert(subject)
+        CadenceTaskRecurrenceWorkflowSupport.markCancelled(subject, in: context, now: try instant(todayKey))
+        let stamp = try #require(subject.completedAt)
+
+        CadenceTaskMutationSupport.normalizeCompletionState(for: subject, modelContext: context)
+
+        #expect(subject.status == .cancelled)
+        #expect(subject.completedAt == stamp)
+        #expect(
+            CadenceTaskQuerySupport.completedTodayTasks(from: [subject], todayKey: todayKey)
+                .map(\.title) == ["abandoned"]
+        )
+
+        // …and it still clears the timestamp for the two statuses that contradict one.
+        for open in [TaskStatus.todo, .inProgress] {
+            let reopened = task("reopened", status: open, completedAt: try instant(todayKey))
+            context.insert(reopened)
+            CadenceTaskMutationSupport.normalizeCompletionState(for: reopened, modelContext: context)
+            #expect(reopened.completedAt == nil, "\(open.rawValue) kept a completion timestamp")
+        }
+    }
+
+    /// `markTodo` is the same line pointing the other way, and it was already right: restoring a
+    /// task to `todo` clears the timestamp, so a reopened task cannot linger in Today's Completed.
+    /// Pinned because it is now load-bearing in a way it was not while `markCancelled` also
+    /// cleared it.
+    @Test func restoringATaskClearsTheTimestampAgain() throws {
+        let subject = task("abandoned")
+        try cancelling(subject, at: instant(todayKey))
+        #expect(subject.completedAt != nil)
+
+        CadenceTaskRecurrenceWorkflowSupport.markTodo(subject)
+
+        #expect(subject.completedAt == nil)
+        #expect(CadenceTaskQuerySupport.completedTodayTasks(from: [subject], todayKey: todayKey).isEmpty)
     }
 
     // MARK: - The row must not read as done

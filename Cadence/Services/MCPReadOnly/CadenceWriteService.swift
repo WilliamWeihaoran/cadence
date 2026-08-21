@@ -299,7 +299,10 @@ final class CadenceWriteService {
 
     func cancelTask(taskID: String) throws -> CadenceTaskDetail {
         let task = try findTask(taskID)
-        if task.completedAt != nil || task.status != .cancelled {
+        // `status` alone, not `status != .cancelled || completedAt != nil`: since T-202 a cancelled
+        // task *carries* a `completedAt`, so the old spelling was true of every already-cancelled
+        // task and re-cancelling one would re-stamp its timestamp and write a second audit entry.
+        if task.status != .cancelled {
             // Cancelling a single occurrence still advances a recurring series (mirrors completeTask),
             // otherwise cancelling instead of completing one occurrence would silently kill all future ones.
             let previouslySpawnedTaskID = task.recurrenceSpawnedTaskID
@@ -355,7 +358,9 @@ final class CadenceWriteService {
 
         var changed: [AppTask] = []
         var auditEntries: [PendingAuditEntry] = []
-        for task in selectedTasks where task.status != .cancelled || task.completedAt != nil {
+        // `status` alone, for the same reason as `cancelTask` above (T-202): a cancelled task now
+        // has a non-nil `completedAt`, so `|| task.completedAt != nil` matched every one of them.
+        for task in selectedTasks where task.status != .cancelled {
             // Mirror cancelTask's single-task behavior: route through the shared recurrence
             // workflow instead of setting status/completedAt directly, otherwise bulk-cancelling
             // a recurring task silently kills the rest of its series (it never spawns the next

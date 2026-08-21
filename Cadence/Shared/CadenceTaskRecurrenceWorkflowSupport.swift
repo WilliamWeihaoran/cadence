@@ -27,8 +27,25 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
 
     /// Cancelling a single occurrence skips it, but the recurring series must keep going —
     /// otherwise the whole future series silently dies the first time anyone cancels instead of completes.
+    ///
+    /// `completedAt` is "when this task stopped being open", not "when it was accomplished", so a
+    /// cancellation records it exactly as `markDone` does (T-202). It used to be cleared, and
+    /// clearing it was what kept a cancelled task out of Today's Completed section: that section's
+    /// only ground for a task whose do and due dates are empty or in the past is `completedAt`
+    /// falling inside today, and macOS's `TasksPanelDerivedState` asks about `completedAt` and
+    /// nothing else. So abandoning an overdue task reached All Tasks → Completed and no Today
+    /// section at all.
+    ///
+    /// This changes the **semantics of existing rows**, not the column — there is no
+    /// `SchemaMigrationPlan`, and none is wanted. Tasks cancelled by an earlier build keep a nil
+    /// timestamp and stay out of Today's Completed; nothing backfills them, because the only
+    /// honest value for "when was this abandoned" is one we never recorded.
+    ///
+    /// Callers that treated a nil `completedAt` as part of the cancelled state must not read it
+    /// that way any more: `status == .cancelled` is the whole test. `CadenceWriteService`'s
+    /// `cancelTask` / `bulkCancelTasks` idempotency guards were the two that did.
     static func markCancelled(_ task: AppTask, in context: ModelContext, now: Date = Date()) {
-        task.completedAt = nil
+        task.completedAt = now
         task.status = .cancelled
         spawnNextOccurrenceIfNeeded(from: task, in: context, now: now)
     }

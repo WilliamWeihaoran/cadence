@@ -193,7 +193,10 @@ struct TaskWorkflowRecurrenceTests {
         try context.save()
 
         #expect(task.status == .cancelled)
-        #expect(task.completedAt == nil)
+        // T-202: a cancellation is timestamped like a completion, so the occurrence it settles is
+        // reachable from Today's Completed section. This asserted `== nil` while `markCancelled`
+        // cleared it.
+        #expect(task.completedAt != nil)
         #expect(task.recurrenceSpawnedTaskID != nil)
 
         guard let next = try spawnedTask(for: task, in: context) else {
