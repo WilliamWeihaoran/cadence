@@ -32,35 +32,25 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
-- [T-226] **iOS cannot delete a note at all, and the new folder column makes that structural.**
-  `modelContext.delete` under `Cadence/iOS/` reaches `SavedLink`, `Subtask`, goals, habits and lists —
-  never `Note`. `deleteNote` exists only in `macOS/Views/ListNotesView.swift:325` and
-  `NotesView.swift:371`. `676ff3b` shipped a full note-management column that creates, files and moves
-  notes whose context menu carries **only** Move, where macOS's has Copy Note Link and Delete. Copy
-  Note Link is also macOS-only.
+- [T-233] **A fourth instance of T-227's shape, in a test named for the wrong half.**
+  `CadenceNoteFolderSurfaceTests.onlyTheSharedFilingHelperWritesAFolderPath` is named for **writes**
+  and its assertion bans `.folderPath` *reads* too. So displaying a note's folder — a read — fails a
+  test about writing it, which is what stopped `4e6080e` showing the folder in its delete
+  confirmation. Split the assertion: ban assignment, allow reads. The folder is worth showing when
+  two notes are both "Untitled" ([[T-223]]), so this is blocking a real improvement.
 
-- [T-227] **Three latent substring traps in the newest test files** — each currently passing, each able
-  to fire on correct code. The verifier found them after three separate agents were bitten by this
-  shape in one day.
-  `CadenceNoteFolderSurfaceTests.swift:460` bans `"MinimumWidth"` from `iOSListNotesView.swift`, but
-  the shared floor is `CadenceNotesListMetrics.twoColumnMinimumWidth` — so *reading* the shared value,
-  which is what the test's own name asks for, fails it.
-  `CadenceCancelledTaskReachabilityTests.swift:487` bans the bare needle `"$0.isDone"` from two view
-  files; any unrelated use (a done-count badge, styling a done card unlike a cancelled one) fails with
-  "still splits on done alone".
-  `CadenceNoteReferencePanelSurfaceTests.swift:42` asserts `!contains("#if os(")` against
-  **unstripped** source, so a doc comment mentioning `#if os(iOS)` — routine prose in this repo —
-  fails it.
+- [T-234] **`CadenceNoteFolderPath.isRoot` is confirmed dead.** Zero production readers;
+  `CadenceNoteFolderGroup.isRoot` is a *different* member that re-implements it as
+  `folderPath.isEmpty` on an already-normalized value. A static function, not a stored property, so
+  the usual removal hazard does not apply. Left in place by `605a793` only because another agent held
+  `Shared/CadenceNoteFolderSupport.swift` at the time.
 
-- [T-228] **Three more assertions that cannot fail.** Beyond the two fixed in `D-146`:
-  `CadenceNoteReferencePanelSurfaceTests.swift:265` claims a deadline outranks a container but only
-  asserts two helpers behave — the precedence is a `??` at `iOSMarkdownAccessoryViews.swift:800` that
-  no assertion reaches, so inverting it passes, and two `area` assignments in the test are dead.
-  `:244` asserts `noteKindLabel(.meeting) != rawValue.capitalized`, which is unfalsifiable.
-  `CadenceWriteServiceTests.swift:130,137` cannot detect the **re-stamp** half of the cancel
-  idempotency guard, because the DTO formats `completedAt` with a default `ISO8601DateFormatter` at
-  second precision — a re-stamp microseconds later formats identically. Compare the stored `Date`, or
-  inject `now`.
+- [T-235] **`AGENTS.md` should record what a widgets-scheme baseline actually measures.** Now that the
+  scheme is shared (`605a793`), the line claiming the baseline covers all three schemes is honest for
+  a fresh clone — but the widgets scheme builds the **host app** as well, so a "widgets scheme" run is
+  not a widget-only measurement. Worth one sentence, because the difference is invisible from the
+  command line and it changes what a green baseline there proves.
+
 
 - [T-229] **iOS's Today → Completed admits what `CLAUDE.md` says it cannot, proven at runtime.**
   `completedTodayTasks` returns true for `scheduledDate == todayKey || dueDate == todayKey` *before*
@@ -70,32 +60,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   false of iOS; and `markCancelled`'s promise that legacy nil-stamp rows stay out holds only where the
   dates do not happen to be today. Overlaps [[T-208]].
 
-- [T-230] **macOS's New Folder sheet accepts input that creates no folder.** It gates Create on the
-  **raw** string being non-empty (`ListNotesListSupportViews.swift:48,51`) while iOS gates on the
-  *normalized* one. So typing `"//"` on macOS enables Create and files the note at the root — a New
-  Folder that silently makes no folder. iOS is correctly disabled. One-line fix; iOS is the right
-  spelling.
-
-- [T-231] **`CadenceWidgets` has no shared scheme.** Only `Cadence.xcscheme` and
-  `CadenceMCPServer.xcscheme` are in `xcshareddata/xcschemes/`; xcodebuild autocreates the widgets
-  one, and the tracked `xcschememanagement.plist` names a `CadenceWidgets.xcscheme_^#shared#^_` that
-  does not exist. So every "warning baseline holds on all three schemes" claim today rests on an
-  autogenerated scheme a fresh clone would regenerate rather than read. Share the scheme.
-
-- [T-232] **More dead code than [[T-222]] records.** With `iOSListNotesPanel` and `firstOrCreateNote`
-  dead, `CadenceListNoteSupport.defaultTitle` (`CadenceNotePlanningSupport.swift:199`) goes with them,
-  and `CadenceTests/ListNoteSupportTests.swift`'s three tests exist solely for `firstOrCreateNote` —
-  its header still asserts the premise `676ff3b` invalidated, that a list owns exactly one note. Also
-  `CadenceNoteFolderPath.isRoot` has zero production readers (`CadenceNoteFolderGroup.isRoot`
-  re-implements it), and `CalendarLinkRow` (`macOS/Views/SettingsSupportViews.swift:6`) is
-  pre-existing dead code.
-
-- [T-222] **`iOSListNotesPanel` and `CadenceListNoteSupport.firstOrCreateNote` are now dead.**
-  `676ff3b` gave iOS a real notes column, so the one-note-per-list panel has zero construction sites
-  and deleting it orphans its helper. Both sit outside the files that agent owned. Confirm with a
-  declaration grep before removing — `AGENTS.md` warns that no-references is not by itself evidence
-  something is safe to delete, though neither of these is a stored property so the usual hazard does
-  not apply.
 
 - [T-223] **Editing a list note's `# H1` on iOS does not sync back to `note.title`.** macOS does sync,
   which is why every iOS list-note row read "Untitled" while seeding `676ff3b`'s screenshots.
@@ -549,6 +513,49 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-148] `605a793` `f611bd2` The widgets scheme was never shared, and it was building the whole app
+  (T-231, T-230, T-232). Only `Cadence` and `CadenceMCPServer` were in `xcshareddata/xcschemes`;
+  xcodebuild reported `CadenceWidgets` and wrote nothing to disk, so **every "baseline holds on all
+  three schemes" claim made today rested on in-memory autocreation**. Worse, the autocreated scheme's
+  build action contained the widget *and the host app* — established properly, by capturing
+  `-showBuildSettings` before and after and noticing the first attempt did not match. So a
+  widgets-scheme run was compiling the whole application; the shared scheme reproduces that
+  deliberately, byte-identical on both destinations.
+  T-230: macOS gated New Folder's Create on the **raw** string while iOS gates on the normalized one,
+  so `"//"` filed the note at the root — a New Folder that makes no folder. T-232 removed five dead
+  things on a *specific* safety argument: the `calendarEventID` hazard is about **stored SwiftData
+  properties**, and none of these was one.
+  The agent **declined** to `git rm --cached` the tracked per-user plist, because a staged deletion in
+  a shared index is what another agent's `git add` sweeps up. That was right; `f611bd2` did it as its
+  own immediate commit instead.
+
+- [D-149] `028b081` Six source-scan assertions — three could fail on correct code, three could not
+  fail (T-227, T-228). The technique that caught real regressions all day produced every defective
+  assertion in the batch.
+  The sharpest fix made a defect *visible*: `CadenceWriteServiceTests` could not see the **re-stamp**
+  half of the cancel guard, because the DTO formats `completedAt` at second precision. The mutation
+  now fails and prints both values as **equal** — `2026-08-21 11:35:40 +0000` twice. Under the old
+  form both DTO-string *and* both audit assertions passed.
+  The agent also found the same trap **one size down**, unreported: the positive-form literal
+  `"tasks.filter { $0.isDone }"` is contained in `"…}.count"`. Each fix proven in the direction that
+  matters — legitimate-edit-stays-green for kind one, mutate-what-you-pin for kind two — nine probes,
+  every red at exit 65 with **0** compile errors, each failure message pulled from the `.xcresult` to
+  confirm the intended assertion fired. Two of those mutations live inside `#if os(iOS)` and compile
+  to nothing on macOS, which is the argument for those pins existing at all.
+  Durable output: a new `Shared/AGENTS.md` section on how these go wrong, pointed at from one line in
+  the root guide rather than restated.
+
+- [D-150] `4e6080e` iOS can delete a note, and the image sweep moved inside the delete (T-226).
+  The two macOS delete sites **agreed**, and neither was the right one — they were two spellings of one
+  operation, the shape that eventually drifts. Both ran
+  `deleteUnreferencedMarkdownImageAssets`, the forgettable step, so it is inside the shared
+  `deleteNote` now; macOS was not leaking assets, but a third caller would have been the one to.
+  Copy Note Link shipped only where macOS has it, and delete on the Notes tab follows macOS's rule —
+  Notepad rows only, because dated and event notes are manufactured from their date so deleting one
+  is a no-op behind a dialog. The confirmation states what survives as well as what goes, and the
+  image count is the set the sweep will actually collect rather than the note's image references,
+  which is larger and would over-promise.
 
 - [D-146] `7a0c3e1` The reason given for idempotent attach was false, in five places. Found by an
   independent verifier attacking my own claims, and it is the **same mistake `D-139` caught and
