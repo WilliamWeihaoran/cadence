@@ -122,7 +122,14 @@ struct CadenceNoteFolderGroup: Identifiable {
 
     var id: String { CadenceNoteFolderPath.id(for: folderPath) }
     var displayName: String { CadenceNoteFolderPath.displayName(for: folderPath) }
-    var isRoot: Bool { folderPath.isEmpty }
+    /// Reads the shared predicate rather than re-spelling it as `folderPath.isEmpty`.
+    ///
+    /// `folderPath` is already normalized here, so the two are equivalent today and the
+    /// re-normalization is redundant — which is exactly why the near-copy was easy to write. It was
+    /// also the only thing keeping `CadenceNoteFolderPath.isRoot` at zero production readers, so a
+    /// dead-code pass found a shared predicate unused while a duplicate of it shipped. Calling it is
+    /// the fix; deleting it would have been the wrong half of the same observation.
+    var isRoot: Bool { CadenceNoteFolderPath.isRoot(folderPath) }
 
     /// The root group draws no heading, on both platforms. Its notes are the ones that were never
     /// filed, and a heading reading "Notes" inside a column already headed "Notes" would be the
