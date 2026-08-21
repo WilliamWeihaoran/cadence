@@ -210,7 +210,11 @@ struct iOSBoardTaskCard: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var showDetail = false
+    // T-201: presented by the page's `iOSTaskInspectorHost`, not by this card. A board column is a
+    // filtered `ForEach` like any task list — moving a card's task out of the column it is in is
+    // most of what the inspector is *for* — so a card-owned sheet closed itself on the same writes
+    // `iOSTaskRow`'s did.
+    @Environment(\.iOSTaskInspector) private var taskInspector
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
@@ -296,10 +300,7 @@ struct iOSBoardTaskCard: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            showDetail = true
-        }
-        .sheet(isPresented: $showDetail) {
-            iOSTaskDetailSheet(task: task)
+            taskInspector(task)
         }
     }
 

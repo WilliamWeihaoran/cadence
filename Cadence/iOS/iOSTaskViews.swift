@@ -21,7 +21,13 @@ struct iOSTaskRow: View {
     // registrations re-firing on any write — for data only the context menu and the recurrence
     // dialog ever read. The queries now live in the context-menu *content* (only instantiated
     // when the menu is presented), the same trick `KanbanContainerMetaButton` documents.
-    @State private var showDetail = false
+    //
+    // T-201: **the row does not present the inspector.** It used to carry `@State showDetail` and a
+    // `.sheet(isPresented:)`, which tied the panel's lifetime to this row's — and this row lives
+    // inside a filtered `ForEach`, so cancelling, restoring or completing a task from inside the
+    // panel removed the row and closed the panel with it. The host is above the page
+    // (`iOSTaskInspectorHost`); all the row does is ask.
+    @Environment(\.iOSTaskInspector) private var taskInspector
     @State private var showDeleteConfirmation = false
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
 
@@ -60,17 +66,14 @@ struct iOSTaskRow: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                showDetail = true
+                openDetail()
             }
             .accessibilityAddTraits(.isButton)
             .accessibilityHint("Opens task details")
-            .sheet(isPresented: $showDetail) {
-                iOSTaskDetailSheet(task: task)
-            }
             .contextMenu {
                 iOSTaskRowContextMenu(
                     task: task,
-                    showDetail: $showDetail,
+                    openDetail: openDetail,
                     showDeleteConfirmation: $showDeleteConfirmation,
                     pendingRecurrenceRule: $pendingRecurrenceRule
                 )
@@ -219,9 +222,7 @@ struct iOSTaskRow: View {
                 }
 
                 if let hidden = CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task) {
-                    Button {
-                        showDetail = true
-                    } label: {
+                    Button(action: openDetail) {
                         Text("+\(hidden) more")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Theme.dim)
@@ -417,9 +418,13 @@ struct iOSTaskRow: View {
         CadenceTaskMutationSupport.delete(task, modelContext: modelContext)
     }
 
+    private func openDetail() {
+        taskInspector(task)
+    }
+
     private func handlePendingDeepLink() {
         guard deepLinkManager.pendingTaskID == task.id else { return }
-        showDetail = true
+        openDetail()
         deepLinkManager.clearPendingTask(task.id)
     }
 }

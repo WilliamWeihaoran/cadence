@@ -498,7 +498,10 @@ private struct iOSScheduleReadyTaskRow: View {
     @Bindable var task: AppTask
     let slots: [Int]
     @Environment(\.modelContext) private var modelContext
-    @State private var showDetail = false
+    // T-201: Today's page hosts the inspector (`iOSTaskInspectorHost`), not this row. "Ready to
+    // schedule" is by definition a filtered stack — scheduling, completing or cancelling the task
+    // takes it out of the stack, which is exactly what this row's own sheet could not survive.
+    @Environment(\.iOSTaskInspector) private var taskInspector
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -508,7 +511,7 @@ private struct iOSScheduleReadyTaskRow: View {
                     .padding(.top, 3)
 
                 Button {
-                    showDetail = true
+                    taskInspector(task)
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(task.title.isEmpty ? "Untitled Task" : task.title)
@@ -527,7 +530,7 @@ private struct iOSScheduleReadyTaskRow: View {
                 .buttonStyle(.plain)
 
                 Button {
-                    showDetail = true
+                    taskInspector(task)
                 } label: {
                     Image(systemName: "info.circle")
                         .font(.system(size: 13, weight: .semibold))
@@ -573,9 +576,6 @@ private struct iOSScheduleReadyTaskRow: View {
             Rectangle()
                 .fill(Theme.borderSubtle.opacity(0.35))
                 .frame(height: 1)
-        }
-        .sheet(isPresented: $showDetail) {
-            iOSTaskDetailSheet(task: task)
         }
     }
 

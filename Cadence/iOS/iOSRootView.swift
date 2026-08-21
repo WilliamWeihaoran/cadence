@@ -66,6 +66,15 @@ struct iOSRootView: View {
         // Both shells, one call. A banner that only appeared on the iPad sidebar shell would
         // recreate the macOS/iOS asymmetry it exists to close, one level down.
         .cadenceStartupIssueBanner(PersistenceController.startupIssue)
+        // T-201, and the same "both shells, one call" reasoning. The task inspector used to be
+        // presented by the row that opened it, so any status write that moved the task out of its
+        // section took the row down and the panel with it. Presented here, its lifetime is the
+        // shell's: nothing a page's own query does can reach it. One host rather than one per page
+        // because a page that forgets is a page where tapping a row does nothing — and every route
+        // into this UI passes through here. A sheet that grows task rows of its own needs a nearer
+        // host, since a host that is already presenting cannot present again; `iOSTaskInspectorHost`
+        // records which surfaces that applies to.
+        .iOSTaskInspectorHost()
         .background(Theme.bg)
         .preferredColorScheme(.dark)
         .statusBarHidden(horizontalSizeClass == .regular)

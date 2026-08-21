@@ -482,7 +482,9 @@ struct iOSTaskRowSubtaskRow: View {
 /// exists once per visible task.
 struct iOSTaskRowContextMenu: View {
     let task: AppTask
-    @Binding var showDetail: Bool
+    /// T-201: an action, not a `Binding<Bool>` into the row. The row no longer owns the panel's
+    /// presentation state, so there is no flag here to bind to.
+    let openDetail: () -> Void
     @Binding var showDeleteConfirmation: Bool
     @Binding var pendingRecurrenceRule: TaskRecurrenceRule?
     @Environment(\.modelContext) private var modelContext
@@ -508,9 +510,7 @@ struct iOSTaskRowContextMenu: View {
     }
 
     var body: some View {
-        Button {
-            showDetail = true
-        } label: {
+        Button(action: openDetail) {
             Label("Edit", systemImage: "square.and.pencil")
         }
 

@@ -830,7 +830,10 @@ struct iOSTimelineTaskBlock: View {
     /// would go back to is a few points above it on the same pane. The Calendar grid has no such
     /// stack, so it passes `nil` — an absent control, not a disabled one.
     var onClearTime: (() -> Void)? = nil
-    @State private var showDetail = false
+    // T-201: the page's `iOSTaskInspectorHost` presents, not this block. Both hosts of this block
+    // rebuild their grid from a query keyed on the day and the slot, so completing or cancelling a
+    // task from inside the panel dropped the block and the panel with it.
+    @Environment(\.iOSTaskInspector) private var taskInspector
 
     private var listColor: Color {
         Color(hex: task.containerColor)
@@ -849,7 +852,7 @@ struct iOSTimelineTaskBlock: View {
 
     var body: some View {
         Button {
-            showDetail = true
+            taskInspector(task)
         } label: {
             HStack(alignment: .top, spacing: 6) {
                 iOSTaskCompletionCircle(glyph: .resolve(task: task))
@@ -891,9 +894,6 @@ struct iOSTimelineTaskBlock: View {
         }
         .buttonStyle(.iosPressable)
         .overlay(alignment: .topTrailing) { clearTimeControl }
-        .sheet(isPresented: $showDetail) {
-            iOSTaskDetailSheet(task: task)
-        }
     }
 
     /// A sibling of the block's own button rather than a child of it: nesting a `Button` inside
