@@ -1,42 +1,6 @@
 #if os(macOS)
 import SwiftUI
 import SwiftData
-import EventKit
-
-struct CalendarLinkRow: View {
-    let icon: String
-    let name: String
-    let color: Color
-    @Binding var linkedCalendarID: String
-    let calendars: [EKCalendar]
-
-    var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(color.opacity(0.18))
-                .frame(width: 28, height: 28)
-                .overlay {
-                    Image(systemName: icon)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(color)
-                }
-
-            Text(name)
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.text)
-
-            Spacer()
-
-            CadenceCalendarPickerButton(
-                calendars: calendars,
-                selectedID: $linkedCalendarID,
-                style: .compact
-            )
-            .fixedSize()
-        }
-        .padding(.vertical, 10)
-    }
-}
 
 struct ContextSettingsRow: View {
     @Bindable var context: Context

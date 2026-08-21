@@ -286,7 +286,7 @@ struct CadenceCalendarPickerButton: View {
 
 enum CadenceCalendarPickerStyle {
     case standard   // EditListSheet, standalone usage
-    case compact    // CalendarLinkRow, QuickCreate popovers
+    case compact    // QuickCreate popovers
 
     var fontSize: CGFloat     { self == .compact ? 12 : 13 }
     var dotSize: CGFloat      { self == .compact ? 9 : 10 }

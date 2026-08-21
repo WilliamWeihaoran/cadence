@@ -38,6 +38,15 @@ struct NoteFolderSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var folderPath = ""
 
+    /// What the typed string actually becomes. Create is gated on **this**, not on the raw field:
+    /// `CadenceNoteFolderPath.normalized` drops empty components, so `"//"` and `" / "` are
+    /// non-empty text that name no folder at all, and enabling Create on them files the note at the
+    /// root — a "New Folder" that silently makes no folder. iOS's sheet has always gated on the
+    /// normalized value; this is the same spelling.
+    private var normalizedFolderPath: String {
+        CadenceNoteFolderPath.normalized(folderPath)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(request.title)
@@ -79,10 +88,10 @@ struct NoteFolderSheet: View {
                 .foregroundStyle(Theme.text)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(Theme.blue.opacity(folderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 0.95))
+                .background(Theme.blue.opacity(normalizedFolderPath.isEmpty ? 0.35 : 0.95))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .buttonStyle(.cadencePlain)
-                .disabled(folderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(normalizedFolderPath.isEmpty)
             }
         }
         .padding(18)

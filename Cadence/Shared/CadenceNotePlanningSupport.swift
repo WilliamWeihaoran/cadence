@@ -167,37 +167,9 @@ enum CadenceListNoteSupport {
         return []
     }
 
-    /// Returns `nil` — having created nothing — when the store could not be read.
-    ///
-    /// `(try? fetch(…)) ?? []` would make a failed read indistinguishable from a store holding no
-    /// notes, and the two mean opposite things here: the second says "create this list's note",
-    /// the first says "I cannot tell whether one exists". Acting on the wrong one writes a *second*
-    /// list note, and because the panel shows the first match, the user opens their list to a blank
-    /// page with their writing still on disk behind it. This is the reasoning
-    /// `CadenceTaskMutationSupport.deleteTasks` spells out at length; the caller shows its loading
-    /// state instead, which is recoverable.
-    static func firstOrCreateNote(for area: Area?, project: Project?, in modelContext: ModelContext) -> Note? {
-        let descriptor = FetchDescriptor<Note>()
-        guard let fetchedNotes = try? modelContext.fetch(descriptor) else { return nil }
-        if let existing = notes(for: area, project: project, in: fetchedNotes).first {
-            return existing
-        }
-
-        guard area != nil || project != nil else { return nil }
-        let created = Note(kind: .list, title: defaultTitle(for: area, project: project))
-        attach(created, to: area, project: project)
-        modelContext.insert(created)
-        try? modelContext.save()
-        return created
-    }
-
     static func attach(_ note: Note, to area: Area?, project: Project?) {
         note.area = area
         note.project = project
-    }
-
-    static func defaultTitle(for area: Area?, project: Project?) -> String {
-        area?.name ?? project?.name ?? "Untitled Note"
     }
 }
 
