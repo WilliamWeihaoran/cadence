@@ -32,33 +32,40 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
-- [T-205] **`docs/app-review-notes.md` says "Cadence does not use push notifications" and that is
-  false.** Submission-facing. `Cadence/Cadence.entitlements` ships
-  `com.apple.developer.aps-environment` (`$(APS_ENVIRONMENT)`, resolving to development/production in
-  `project.pbxproj`), and `CadenceAppDelegate.swift:32` calls `registerForRemoteNotifications()` at
-  launch. **The repo's own test contradicts the doc**: `AppStoreReviewReadinessTests
-  .appEntitlementsIncludeCloudKitPushSandboxNetworkCalendarAndAppGroupAccess` asserts that entitlement
-  is present. It is CloudKit's silent push, which is a perfectly good thing to say — saying the app
-  does not use push is not. Fix the sentence, and consider making that test also assert the doc says
-  something true, since it currently pins the entitlement while the prose denies it.
+- [T-212] **`finishRemainingActiveTasks` hand-rolls the cancel transition, and gets two things wrong.**
+  `Cadence/macOS/Services/TaskWorkflowService.swift:~105-118`. Found by T-202 and left because another
+  agent held the file. It sets `completedAt = nil` for `.cancelled`, so bulk "cancel remaining tasks
+  in this section" still produces untimestamped cancellations that [[T-202]] just fixed everywhere
+  else — **and** it bypasses `markCancelled` entirely, so it never spawns a recurring successor. Two
+  bugs in the same three lines. Route it through the shared workflow rather than patching the
+  timestamp.
 
-- [T-206] **Apple Reminders access is in neither shipped document.** Submission-facing.
-  `INFOPLIST_KEY_NSRemindersFullAccessUsageDescription` ships on both platform configs and
-  `RemindersManager` reads EventKit reminders, but `docs/privacy.html` has a Calendar Access section
-  with no Reminders counterpart and `docs/app-review-notes.md` lists calendar access only. **A user
-  gets a permission prompt the privacy policy never mentions.** While there: privacy.html's "Data
-  Cadence Stores" list omits tags and `MarkdownImageAsset` — imprecise rather than false, since it
-  says "including", but worth completing in the same pass.
+- [T-213] **`normalizeCompletionState`'s `.done` branch bumps a completion timestamp.** It calls
+  `markDone`, which sets `completedAt = now` unconditionally, and the iOS task sheet's save is its
+  only caller — so opening and closing the sheet on a task finished last week rewrites its timestamp
+  to today and pulls it into Today's Completed. Pre-existing and distinct from [[T-202]]; found while
+  fixing the `.cancelled` branch beside it. A normalizer should not invent a timestamp the status
+  merely permits.
 
-- [T-207] **Four stale doc claims found by the HEAD verification.** Each re-verify before editing.
-  `CadenceTests/` is described as "**~140** flat files" (`AGENTS.md`, `CLAUDE.md`) and is **164** —
-  this is the number the guides cite when telling an agent to look for an existing test file first.
-  `Cadence/iOS/` says **86** in five places, actual **87**. `macOS/Views/` is inconsistent *within*
-  the docs — `AGENTS.md` and `CLAUDE.md` say ~168, `CLAUDE.md` elsewhere says ~165; actual **165**.
-  macOS Settings is described as **twelve** categories and is now **thirteen** (`592b967`). Also
-  `CLAUDE.md`'s enumeration of `AppTask.calendarEventID` clearing sites ("`SchedulingService` ×7,
-  `CalendarLinkedTaskSupport`") omits `CadenceTaskMutationSupport.swift:367`, so the count is
-  incomplete while the claim itself stays true.
+- [T-214] **iOS list *completion* is still macOS-only, and the obvious shared substitute is wrong.**
+  T-187 shipped deletion and deliberately not completion. `TaskContainerLifecycleService` lives in
+  `TaskWorkflowService.swift` behind `#if os(macOS)` with nothing platform-specific in it — the
+  fourth-instance shape again — so un-guarding it makes iOS completion a call site and nothing more.
+  Do **not** reach for `applyStatusCompletion` instead: it routes through `markDone`, which **spawns
+  the next recurrence occurrence**, which is correct for one task and wrong for bulk container
+  completion that must not mint new work.
+
+- [T-215] **macOS's archive cancels a list's remaining active tasks; iOS's archive only sets status.**
+  An existing silent divergence found by T-187, in the same blocked file as [[T-212]] and [[T-214]].
+  One line, but decide it deliberately: archiving *should* probably settle the work, and if so iOS is
+  the wrong one — which also makes it [[T-212]]'s bug, since that is the path macOS uses.
+
+- [T-216] **Docs need a pass for the `ListDeleteHelpers` move.** `Cadence/Services/` count 48 → 49;
+  `AGENTS.md`'s `macOS/Services/` bullet now has **three** tombstones, not two; `CLAUDE.md`'s
+  project-structure block, its "What's Built (iOS)" Settings line, and the `Shared/` inventory (two
+  new files) are all stale. Deliberately not done by the agent that moved the file, because the docs
+  agent held those files at the time.
+
 
 - [T-208] **Today's Completed section lists cancelled tasks but the header's "N done" does not count
   them.** Introduced deliberately by `9d11135` and documented at `CadenceTaskQuerySharedSupport.swift`
@@ -120,32 +127,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   modifier is that the pattern becomes one thing rather than eight. `Cadence/iOS/` is invisible to
   the macOS-built test target, so pin by source scan or move the decision outside the guard.
   **Blocked** while agents hold `iOSTaskDetailSheetSections.swift` and the markdown surfaces.
-
-- [T-202] **`markCancelled` records no timestamp, so a cancelled task can never be "settled today".**
-  Decided: **record the time on cancel.** `CadenceTaskRecurrenceWorkflowSupport.markCancelled`
-  (`Shared/CadenceTaskRecurrenceWorkflowSupport.swift:30-34`) sets `completedAt = nil`, and
-  `completedTodayTasks` admits a finished task on only three grounds — `scheduledDate == todayKey`,
-  `dueDate == todayKey`, or `completedAt` being today. So cancel an **overdue** task, exactly the kind
-  you give up on, and it reaches All Tasks → Completed, its list's Completed and Inbox Completed but
-  **no** Today section. Verified on iPad: All Tasks → Completed went 2 → 3 while Today's Completed
-  stayed empty.
-  Writing `now` also fixes logbook ordering, since `TaskOrdering.completionPrecedes` currently sorts
-  cancelled tasks on a nil timestamp. Two things to respect: `completedAt` is a stored SwiftData
-  property with **no `SchemaMigrationPlan`**, so this changes the semantics of existing rows rather
-  than the column; and that file is compiled into **both** `CadenceWidgets` and `CadenceMCPServer`,
-  so the MCP boundary procedure in `CadenceMCPServer/AGENTS.md` applies. macOS's
-  `TasksPanelDerivedState:~125` has the same filter and scoping, so it goes for both platforms.
-  **Blocked** while an agent holds that file for T-188.
-
-
-- [T-187] **List and context lifecycle is macOS-only.** `macOS/Services/ListDeleteHelpers.swift` is
-  `#if os(macOS)`, no AppKit, and declares `ModelContext.deleteContext/deleteArea/deleteProject` with
-  the cascade rules. `Cadence/iOS` has **zero** calls to any of the three. iOS can archive/unarchive
-  an area or project but cannot *complete* or *delete* one, iOS Settings → Lists offers only
-  Reopen/Unarchive where macOS also deletes, and iOS Settings → Contexts creates and edits but never
-  deletes. **Risk is the reason this is ranked high:** an agent hand-rolling deletion on iOS instead
-  of un-guarding the helper would orphan tasks, notes, links and nested projects. Un-guard; do not
-  reimplement.
 
 
 - [T-190] **Task bundles can be viewed, edited and deleted on iOS but never created.** `TaskBundle(`
@@ -226,10 +207,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   "APPLY TO" row replacing a `confirmationDialog` is macOS-only — iOS still raises the dialog at
   `iOSTaskDetailSheet.swift:113`.
 
-- [T-200] **Two mechanical leftovers.** `macOS/Services/CalendarVisibilityPreferences.swift` is a
-  2-line tombstone `CLAUDE.md` itself says "could be deleted". And `TaskRecurrenceEditScope`
-  (`macOS/Services/TaskWorkflowService.swift:5`) is a two-case duplicate of shared
-  `CadenceTaskRecurrenceEditScope` with byte-identical labels and a private `sharedScope` bridge.
 
 - [T-15] **Several dark palettes — decided, and the colours are not the hard part.** User's call, and
   it narrows what was an open-ended ask: **stay dark-only**, offer alternate near-black palettes
@@ -488,6 +465,45 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-136] `6f71a70` Two leftovers gone; the duplicate edit scope had **two** bridges (T-200).
+  The second lived in `TaskInspectorWorkflowSupportViews`, unmentioned by the ticket. Safe to collapse
+  because it is a *type*, not a stored property — nothing persists its raw value — which is the exact
+  distinction that makes `Goal.dependsOnGoalIDsJSON` unsafe to remove. Renamed rather than
+  typealiased, so both platforms' recurrence code reads identically.
+
+- [D-137] `1d81864` The review notes denied push; the privacy policy never mentioned Reminders
+  (T-205, T-206, T-207). Root cause of the push falsehood recorded: `CLAUDE.md`'s Notifications
+  section documented only *local* notifications, so nothing in the working map contradicted it. The
+  new test rejects denial phrasings rather than pinning wording. "Never creates or deletes reminders"
+  was verified, not assumed — no `EKReminder(` exists repo-wide.
+  Three counts were wrong in instructive ways: `CadenceTests` is **167** so the ticket's own 164 was
+  already stale; `Cadence/AGENTS.md` said iOS was **79**, the worst of five figures and in a guide the
+  root file says to read first; `Editor/AGENTS.md` said ~21 markdown support files while its own glob
+  returns 27 and only 25 end in `Support.swift` — number and pattern never matched.
+  And the `calendarEventID` enumeration was worse than "one missing": **two of four credited files
+  were wrong**. `TaskDeleteHelpers` never mentions the field; `DataIntegrityRepairService`'s mention
+  is on `Note` inside note-merging. Verified both independently. `InboxView` was also named in four
+  places and has not existed since `7e5459c`.
+
+- [D-138] `c84732e` Deleting a list reaches iOS, and it enumerates what it will take (T-187).
+  The helper was **not** purely un-guardable: all three cascades call `deleteTasks(withIDs:)`, which
+  is genuinely macOS-only (it tears down the focus, hover, completion-animation and subtask-entry
+  managers). One seam remains by necessity and a test fails if a second appears.
+  Confirmation is a modal sheet, and *more* informative than macOS rather than merely as ceremonious
+  — it shows real counts where macOS's categorical sentence cannot. No typed phrase, deliberately: a
+  list delete is scoped and now shows its scope, unlike the total, unreportable privacy reset.
+
+- [D-139] `f15db8b` A cancellation is timestamped, and two other things were undoing it (T-202).
+  macOS was **strictly worse** than iOS, not equivalent: `TasksPanelDerivedState` has no date
+  fallback at all, so *every* cancelled task was excluded there. And `normalizeCompletionState`
+  cleared the timestamp on the iOS sheet's save — the very surface the report came from — so Cancel
+  stamped it and closing the sheet wiped it. Two MCP idempotency guards would also have broken
+  silently, re-stamping and duplicating audit entries on re-cancel.
+  **The best thing in it is an edit that was reverted.** An `isDone` guard added to the goal Momentum
+  count looked obviously right and its mutation *survived*, because `contributingTasks` already
+  filters cancelled work upstream. A guard that compiles, reads plausibly and cannot be killed is
+  worse than none.
 
 - [D-132] `d513e72` One heading ramp per platform; the tile corner was never size-relative
   (T-180, T-178). The same note showed an H1 at 28pt editing and 25pt in preview, and preview's
