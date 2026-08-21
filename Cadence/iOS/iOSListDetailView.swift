@@ -190,7 +190,10 @@ struct iOSListDetailView: View {
                 listName: title
             )
         case .documents:
-            iOSListNotesPanel(area: area, project: project)
+            // `iOSListNotesView`, not the old `iOSListNotesPanel`: this list may hold many notes,
+            // filed into folders on a Mac, and the panel showed exactly one of them at the root of
+            // a filing system it could not draw. See T-193 and `CadenceNoteFolderPath`.
+            iOSListNotesView(area: area, project: project)
         case .links:
             iOSListLinksPanel(area: area, project: project)
         case .completed:

@@ -569,10 +569,21 @@ private struct iOSNotesHeaderIconButton: View {
 ///
 /// The template menu rides in the editor's own format row here, because at compact width the header
 /// row has no space for it. See `iOSNotesView.showsHeaderTemplateMenu`.
-private struct iOSNoteEditorCover: View {
+/// The one-column form's editor: the whole screen, over the list column that presented it.
+///
+/// **Two hosts, deliberately internal.** The Notes tab presents it for a daily/weekly/notepad note,
+/// and `iOSListNotesView` presents it for a list note — the same editor, the same format row, the
+/// same AI menu, so a note does not gain or lose chrome depending on which column you reached it
+/// from. It was `private` while there was one host; a second copy of it would have been a second
+/// place the template menu could go missing.
+struct iOSNoteEditorCover: View {
     let note: Note
     let templateKind: NoteKind?
     let title: String
+    /// The list a task created from inside this note should land in — set when the note is a list
+    /// note, so `[[task:` capture from a project's note files into that project.
+    var embeddedTaskArea: Area?
+    var embeddedTaskProject: Project?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -594,6 +605,8 @@ private struct iOSNoteEditorCover: View {
                 referenceNotes: allNotes,
                 referenceTasks: allTasks,
                 onOpenReference: openMarkdownReference,
+                embeddedTaskArea: embeddedTaskArea,
+                embeddedTaskProject: embeddedTaskProject,
                 templateKind: templateKind,
                 applyTemplate: templateKind == nil ? nil : { apply($0) }
             )

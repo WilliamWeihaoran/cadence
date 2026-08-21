@@ -101,56 +101,45 @@ struct CollapsibleNoteSection<Content: View>: View {
     }
 }
 
-// MARK: - List Note Folder Group
+// MARK: - List Note Row + Menu
 
-struct ListNoteFolderGroupView: View {
-    let group: ListNoteFolderGroup
-    let selectedNoteID: UUID?
+/// One row of the folder-grouped list-notes column, with the affordances that are macOS's own:
+/// click to open, right-click for the copy/move/delete menu.
+///
+/// The **grouping** is not here — `NoteFolderGroupList` in `Shared/CadenceNoteFolderSupport.swift`
+/// draws the headings and the runs on both platforms, and this is the row it is handed. This used
+/// to be `ListNoteFolderGroupView`, which owned the heading, the ordering *and* the row menu; the
+/// first two are the parts iOS would have had to copy to show a Mac-made folder at all.
+struct ListNoteFolderRow: View {
+    let note: Note
+    let isSelected: Bool
     let folderNames: [String]
     let onSelect: (Note) -> Void
     let onCopyLink: (Note) -> Void
-    let onMoveToFolder: (Note, String) -> Void
-    let onNewFolder: (Note) -> Void
+    let onMoveToFolder: (String) -> Void
+    let onNewFolder: () -> Void
     let onDelete: (Note) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if !group.folderPath.isEmpty {
-                Text(group.displayName)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 12)
+        ListNoteRow(note: note, isSelected: isSelected)
+            .onTapGesture {
+                onSelect(note)
             }
-            ForEach(group.notes) { note in
-                ListNoteRow(note: note, isSelected: selectedNoteID == note.id)
-                    .onTapGesture {
-                        onSelect(note)
-                    }
-                    .contextMenu {
-                        Button("Copy Note Link") {
-                            onCopyLink(note)
-                        }
-                        Menu("Move to Folder") {
-                            Button("No Folder") {
-                                onMoveToFolder(note, "")
-                            }
-                            ForEach(folderNames, id: \.self) { folder in
-                                Button(folder) {
-                                    onMoveToFolder(note, folder)
-                                }
-                            }
-                            Button("New Folder...") {
-                                onNewFolder(note)
-                            }
-                        }
-                        Button(role: .destructive) {
-                            onDelete(note)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
+            .contextMenu {
+                Button("Copy Note Link") {
+                    onCopyLink(note)
+                }
+                NoteFolderMoveMenu(
+                    folderNames: folderNames,
+                    move: onMoveToFolder,
+                    newFolder: onNewFolder
+                )
+                Button(role: .destructive) {
+                    onDelete(note)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
             }
-        }
     }
 }
 

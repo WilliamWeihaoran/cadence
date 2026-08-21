@@ -865,7 +865,10 @@ struct NoteListDayRow: View {
 
 // MARK: - Shared note text
 
-private enum NoteRowText {
+/// Internal rather than private: `NoteFolderListRow`'s callers on both platforms need the same
+/// preview line, and a second copy of "first line that is not the title heading" is how two rows in
+/// the same column start disagreeing about what a note says.
+enum NoteRowText {
     /// "Looks empty" for row styling — the same body-measured rule the list filter uses, so a row
     /// can never be listed as written and dimmed as blank at the same time. A tagged-but-unwritten
     /// note is listed (its tags live there) and still reads as empty, which is what it looks like.

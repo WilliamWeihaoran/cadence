@@ -2,13 +2,11 @@
 import SwiftUI
 import SwiftData
 
-struct ListNoteFolderGroup: Identifiable {
-    let folderPath: String
-    let notes: [Note]
-
-    var id: String { folderPath.isEmpty ? "__root__" : folderPath }
-    var displayName: String { folderPath.isEmpty ? "Notes" : folderPath }
-}
+// `ListNoteFolderGroup` was here — a macOS-only struct carrying the `""`-is-root and
+// `"__root__"`-is-its-id halves of the folder convention. It is `CadenceNoteFolderGroup` in
+// `Shared/CadenceNoteFolderSupport.swift` now, with the convention written down beside it, because
+// a folder made on a Mac was invisible on iOS and this type was one of the four places that knew
+// why.
 
 struct NoteFolderSheetRequest: Identifiable {
     enum Mode {
@@ -162,49 +160,35 @@ struct TaskNoteListRow: View {
     }
 }
 
+/// macOS's list-note row: `NoteFolderListRow` plus the double-click rename.
+///
+/// The row itself is shared — one glyph slot, one title, one tag strip, and **one** selection/hover
+/// fill at `Theme.radiusControl`. This carried its own copy of that layout, and drew
+/// `Theme.blue.opacity(0.15)` *underneath* a `cadenceHoverHighlight` fill and stroke at the same
+/// radius: two hover layers for one row, which is the standing violation the shared row exists to
+/// end. Escape still leaves the field, from out here — `onExitCommand` is AppKit-only and the
+/// shared row has no platform guards.
+///
+/// One deliberate change in the move: the tag strip caps at 3 rather than 2. That is
+/// `NoteListDayRow`'s figure — the *other* shared note row — so the two rows in the same column
+/// stop disagreeing about how many tags a note gets to show.
 struct ListNoteRow: View {
     @Bindable var note: Note
     let isSelected: Bool
     @State private var isEditingTitle = false
-    @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.dim)
-            VStack(alignment: .leading, spacing: 4) {
-                if isEditingTitle {
-                    TextField("", text: $note.title)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.text)
-                        .focused($focused)
-                        .onSubmit { isEditingTitle = false }
-                        .onExitCommand { isEditingTitle = false }
-                } else {
-                    Text(note.displayTitle)
-                        .font(.system(size: 13))
-                        .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-                        .lineLimit(1)
-                }
-                CompactTagStrip(tags: note.sortedTags, limit: 2)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 8)
-        .background(isSelected ? Theme.blue.opacity(0.15) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-        .contentShape(Rectangle())
-        .cadenceHoverHighlight(
-            cornerRadius: Theme.radiusControl,
-            fillColor: Theme.blue.opacity(isSelected ? 0.16 : 0.06),
-            strokeColor: Theme.blue.opacity(isSelected ? 0.24 : 0.12)
+        NoteFolderListRow(
+            title: note.displayTitle,
+            detail: NoteRowText.previewBelowTitleHeading(note),
+            tags: note.sortedTags,
+            isSelected: isSelected,
+            editingTitle: isEditingTitle ? $note.title : nil,
+            onSubmitTitle: { isEditingTitle = false }
         )
+        .onExitCommand { isEditingTitle = false }
         .onTapGesture(count: 2) {
             isEditingTitle = true
-            focused = true
         }
     }
 }

@@ -127,27 +127,14 @@ struct ListNotesView: View {
         }
     }
 
+    /// The folders this list already has, for the row menu. Shared with iOS — see
+    /// `CadenceNoteFolderPath` for the convention `folderPath` is a string under.
     private var listNoteFolderNames: [String] {
-        Array(Set(listNotes.map { normalizedFolderPath($0.folderPath) }.filter { !$0.isEmpty }))
-            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        CadenceNoteFolderGrouping.folderNames(in: listNotes)
     }
 
-    private var filteredListNoteGroups: [ListNoteFolderGroup] {
-        let grouped = Dictionary(grouping: filteredListNotes) { normalizedFolderPath($0.folderPath) }
-        let folders = grouped.keys.sorted { lhs, rhs in
-            if lhs.isEmpty { return false }
-            if rhs.isEmpty { return true }
-            return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
-        }
-        return folders.map { folder in
-            ListNoteFolderGroup(
-                folderPath: folder,
-                notes: (grouped[folder] ?? []).sorted {
-                    if $0.order != $1.order { return $0.order < $1.order }
-                    return $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending
-                }
-            )
-        }
+    private var filteredListNoteGroups: [CadenceNoteFolderGroup] {
+        CadenceNoteFolderGrouping.groups(for: filteredListNotes)
     }
 
     var body: some View {
@@ -251,19 +238,17 @@ struct ListNotesView: View {
                 count: filteredListNotes.count,
                 isCollapsed: $isListNotesCollapsed
             ) {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(filteredListNoteGroups) { group in
-                        ListNoteFolderGroupView(
-                            group: group,
-                            selectedNoteID: selectedListNoteID,
-                            folderNames: listNoteFolderNames,
-                            onSelect: openListNote,
-                            onCopyLink: { NoteActionSupport.copyMarkdownLink(to: $0) },
-                            onMoveToFolder: { note, folder in note.folderPath = folder },
-                            onNewFolder: { note in folderSheetRequest = NoteFolderSheetRequest(mode: .moveNote(note.id)) },
-                            onDelete: deleteNote
-                        )
-                    }
+                NoteFolderGroupList(groups: filteredListNoteGroups) { note in
+                    ListNoteFolderRow(
+                        note: note,
+                        isSelected: selectedListNoteID == note.id,
+                        folderNames: listNoteFolderNames,
+                        onSelect: openListNote,
+                        onCopyLink: { NoteActionSupport.copyMarkdownLink(to: $0) },
+                        onMoveToFolder: { CadenceListNoteFiling.move(note, toFolder: $0) },
+                        onNewFolder: { folderSheetRequest = NoteFolderSheetRequest(mode: .moveNote(note.id)) },
+                        onDelete: deleteNote
+                    )
                 }
             }
         }
@@ -314,13 +299,14 @@ struct ListNotesView: View {
         ListNotesEditorPlaceholder()
     }
 
-    private func addNote(folderPath: String = "") {
-        let note = Note(kind: .list)
-        CadenceListNoteSupport.attach(note, to: area, project: project)
-        note.order = listNotes.count
-        note.folderPath = normalizedFolderPath(folderPath)
-        note.content = defaultNoteContent(for: note.title)
-        modelContext.insert(note)
+    private func addNote(folderPath: String = CadenceNoteFolderPath.root) {
+        let note = CadenceListNoteFiling.createNote(
+            in: modelContext,
+            area: area,
+            project: project,
+            folderPath: folderPath,
+            order: listNotes.count
+        )
         select(.list(note.id), clearsRequestedEventNote: false)
     }
 
@@ -353,28 +339,13 @@ struct ListNotesView: View {
     }
 
     private func applyFolderRequest(_ request: NoteFolderSheetRequest, folderPath: String) {
-        let normalized = normalizedFolderPath(folderPath)
         switch request.mode {
         case .newNote:
-            addNote(folderPath: normalized)
+            addNote(folderPath: folderPath)
         case .moveNote(let noteID):
             guard let note = listNotes.first(where: { $0.id == noteID }) else { return }
-            note.folderPath = normalized
+            CadenceListNoteFiling.move(note, toFolder: folderPath)
         }
-    }
-
-    private func normalizedFolderPath(_ folderPath: String) -> String {
-        folderPath
-            .split(separator: "/")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "/")
-    }
-
-    private func defaultNoteContent(for title: String) -> String {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let headingTitle = trimmed.isEmpty ? "Untitled" : trimmed
-        return "# \(headingTitle)\n\n"
     }
 
     private func filteredNotes(_ notes: [Note]) -> [Note] {
