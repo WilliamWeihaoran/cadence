@@ -15,10 +15,11 @@ struct GoalInspectorView: View {
         GoalHabitMomentumResolver.summary(for: goal)
     }
 
+    /// The shared rule, not a second copy of it: title alone is a partial order over a SwiftData
+    /// to-many with no defined order, so two lists of the same name swapped places between renders.
+    /// `GoalLinkPresentation.links` is what iOS's goal detail reads too.
     private var linkedLists: [GoalListLink] {
-        (goal.listLinks ?? [])
-            .filter { $0.area != nil || $0.project != nil }
-            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        GoalLinkPresentation.links(of: goal)
     }
 
     private var contributingTasks: [AppTask] {
@@ -135,7 +136,7 @@ struct GoalInspectorView: View {
                     Text("No lists attached")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                    Text("Attach an area or project so its tasks count toward this goal. Tasks assigned to the goal directly count too.")
+                    Text(GoalLinkPresentation.emptyExplanation)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)

@@ -368,7 +368,7 @@ struct GoalLinkedListRow: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
-                Text("\(link.tasks.filter { !$0.isCancelled }.count) contributing tasks")
+                Text(GoalLinkPresentation.contributionLabel(for: link))
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.dim)
             }

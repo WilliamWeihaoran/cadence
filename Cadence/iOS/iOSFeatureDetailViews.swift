@@ -10,6 +10,9 @@ struct iOSGoalDetail: View {
     /// deliberate: the list pane's own `dismiss` pops the list, so a closure handed down from there
     /// would skip a level. Only consulted when `showsBackControl` is set.
     @Environment(\.dismiss) private var dismiss
+    /// Detaching a linked list is a `delete` of a `GoalListLink` row, so this screen needs the
+    /// context. The attach half is the sheet's.
+    @Environment(\.modelContext) private var modelContext
 
     let goal: Goal
     var milestones: [Goal] = []
@@ -23,8 +26,17 @@ struct iOSGoalDetail: View {
     /// detail sits beside its list and there is nothing to go back to.
     var showsBackControl = false
 
+    @State private var showAttachLists = false
+
     private var summary: GoalContributionSummary {
         GoalContributionResolver.summary(for: goal)
+    }
+
+    /// The lists attached to *this* goal, filtered and ordered by the shared rule macOS's
+    /// inspector reads. Links attached to the goal's milestones are counted by
+    /// `summary.linkedListCount` and are not rows here — `inheritedListNote` is what says so.
+    private var linkedLists: [GoalListLink] {
+        GoalLinkPresentation.links(of: goal)
     }
 
     private var tint: Color {
@@ -62,6 +74,8 @@ struct iOSGoalDetail: View {
 
                 linkedWorkChips
 
+                linkedListsSection
+
                 if !milestones.isEmpty {
                     iOSEditorSection(title: "Milestones") {
                         rows(milestones) { milestone in
@@ -97,6 +111,75 @@ struct iOSGoalDetail: View {
         .scrollIndicators(.hidden)
         .background(Theme.bg)
         .iOSHidesCompactNavigationBar()
+        .sheet(isPresented: $showAttachLists) {
+            iOSGoalAttachListsSheet(goal: goal)
+        }
+    }
+
+    /// The section T-191 is about: the areas and projects whose tasks `GoalContributionResolver`
+    /// has always folded into this goal's percentage, each removable, with a way to attach another.
+    ///
+    /// It renders **even when empty**, unlike the chips above it — an empty Milestones section
+    /// would only announce a zero, but an empty *this* is the only route on the device to a first
+    /// link, and the one place that can say tasks assigned straight to the goal count too.
+    private var linkedListsSection: some View {
+        let links = linkedLists
+
+        return iOSEditorSection(title: "Linked Lists") {
+            if links.isEmpty {
+                CadenceInlineEmpty(text: GoalLinkPresentation.emptyExplanation, surface: .touch)
+            } else {
+                ForEach(Array(links.enumerated()), id: \.element.id) { index, link in
+                    if index > 0 {
+                        iOSEditorDivider()
+                    }
+                    iOSEditorFieldRow(
+                        label: link.title,
+                        systemImage: link.icon,
+                        color: Color(hex: link.colorHex)
+                    ) {
+                        HStack(spacing: 4) {
+                            trailingMetric(GoalLinkPresentation.contributionMetric(for: link))
+
+                            iOSIconButton(
+                                systemImage: "xmark",
+                                accessibilityLabel: "Unlink \(link.title)",
+                                plateSize: 30,
+                                iconSize: 11
+                            ) {
+                                modelContext.detachGoalListLink(link)
+                            }
+                        }
+                    }
+                }
+            }
+
+            iOSEditorDivider()
+
+            HStack(spacing: 10) {
+                iOSActionButton(
+                    title: "Attach List",
+                    systemImage: "plus",
+                    role: .secondary,
+                    size: .compact
+                ) {
+                    showAttachLists = true
+                }
+
+                Spacer(minLength: 0)
+
+                if let note = GoalLinkPresentation.inheritedListNote(
+                    ownLinkCount: links.count,
+                    totalLinkCount: summary.linkedListCount
+                ) {
+                    Text(note)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 
     /// Milestones and habits are facts *about* the goal, so they read as editor rows in one card
@@ -209,12 +292,30 @@ struct iOSGoalDetail: View {
             VStack(alignment: .leading, spacing: 10) {
                 GoalProgressBar(progress: summary.progress, color: tint, height: 5)
 
+                progressAttributionLine(summary: summary)
+
                 nextActionLine
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusPanel, shadowRadius: 16, shadowY: 6)
+    }
+
+    /// Why the bar is where it is, when part of the answer is somewhere the reader cannot see.
+    ///
+    /// T-191's actual complaint: a linked list's tasks count toward this percentage, and until the
+    /// section below existed there was no way to know that from the device showing it. Silent when
+    /// every counted task is assigned to the goal directly — there is nothing to explain then, and
+    /// a line saying so would be one more thing to read on every goal.
+    @ViewBuilder
+    private func progressAttributionLine(summary: GoalContributionSummary) -> some View {
+        if let line = GoalLinkPresentation.attributionLine(for: summary) {
+            Text(line)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.dim)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     /// The next action, as one line under the progress bar rather than a "NEXT ACTION" section

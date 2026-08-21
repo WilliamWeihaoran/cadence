@@ -203,8 +203,10 @@ struct GoalsView: View {
         }
     }
 
+    /// `ModelContext.detachGoalListLink` rather than a bare `delete`: the shared helper severs the
+    /// link's own references first and saves, and it is the same call iOS's goal detail makes.
     private func detachList(_ link: GoalListLink) {
-        modelContext.delete(link)
+        modelContext.detachGoalListLink(link)
     }
 
     private var goalsViewMode: GoalsViewMode {

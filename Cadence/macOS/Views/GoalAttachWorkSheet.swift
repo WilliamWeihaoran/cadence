@@ -12,28 +12,17 @@ struct AttachWorkSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
 
-    private var query: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
-    private var groupedLists: [(context: Context?, areas: [Area], projects: [Project])] {
-        var result: [(Context?, [Area], [Project])] = contexts.compactMap { context in
-            let contextAreas = areas
-                .filter { $0.context?.id == context.id && matches($0.name) }
-                .sorted { $0.order < $1.order }
-            let contextProjects = projects
-                .filter { $0.context?.id == context.id && matches($0.name) }
-                .sorted { $0.order < $1.order }
-            guard !contextAreas.isEmpty || !contextProjects.isEmpty else { return nil }
-            return (context, contextAreas, contextProjects)
-        }
-
-        let unfiledAreas = areas.filter { $0.context == nil && matches($0.name) }
-        let unfiledProjects = projects.filter { $0.context == nil && matches($0.name) }
-        if !unfiledAreas.isEmpty || !unfiledProjects.isEmpty {
-            result.append((nil, unfiledAreas, unfiledProjects))
-        }
-        return result
+    /// Grouping, ordering and search all come from `GoalLinkPresentation.candidateGroups`, which
+    /// is outside every platform conditional so iOS's `iOSGoalAttachListsSheet` offers the same
+    /// candidates in the same order — and so `CadenceTests` can assert what they are. This was a
+    /// private computed property here, which is why iOS had nothing to reuse.
+    private var groupedLists: [GoalLinkCandidateGroup] {
+        GoalLinkPresentation.candidateGroups(
+            contexts: contexts,
+            areas: areas,
+            projects: projects,
+            query: searchText
+        )
     }
 
     var body: some View {
@@ -87,67 +76,29 @@ struct AttachWorkSheet: View {
 
     private var attachListsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            GoalSectionHeading(title: "Lists", count: groupedLists.reduce(0) { $0 + $1.areas.count + $1.projects.count })
+            GoalSectionHeading(title: "Lists", count: GoalLinkPresentation.candidateCount(in: groupedLists))
             if groupedLists.isEmpty {
                 CadenceInlineEmpty(text: "No matching lists.", surface: .desktop)
             } else {
-                ForEach(Array(groupedLists.enumerated()), id: \.offset) { _, group in
+                ForEach(groupedLists) { group in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text((group.context?.name ?? "No Context").uppercased())
+                        Text(group.title.uppercased())
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(group.context.map { Color(hex: $0.colorHex) } ?? Theme.dim)
                             .padding(.top, 4)
-                        ForEach(group.areas) { area in
+                        ForEach(group.targets) { target in
                             AttachListCandidateRow(
-                                icon: area.icon,
-                                title: area.name,
-                                subtitle: "\(CadenceTaskQuerySupport.openTaskCount(for: area)) active tasks",
-                                color: Color(hex: area.colorHex),
-                                isAttached: isAttached(area: area),
-                                onToggle: { toggle(area: area) }
-                            )
-                        }
-                        ForEach(group.projects) { project in
-                            AttachListCandidateRow(
-                                icon: project.icon,
-                                title: project.name,
-                                subtitle: "\(CadenceTaskQuerySupport.openTaskCount(for: project)) active tasks",
-                                color: Color(hex: project.colorHex),
-                                isAttached: isAttached(project: project),
-                                onToggle: { toggle(project: project) }
+                                icon: target.icon,
+                                title: target.displayName,
+                                subtitle: target.openTaskLabel,
+                                color: Color(hex: target.colorHex),
+                                isAttached: GoalLinkPresentation.isAttached(target, to: goal),
+                                onToggle: { modelContext.toggleGoalListLink(target, on: goal) }
                             )
                         }
                     }
                 }
             }
-        }
-    }
-
-    private func matches(_ text: String) -> Bool {
-        query.isEmpty || text.lowercased().contains(query)
-    }
-
-    private func isAttached(area: Area) -> Bool {
-        (goal.listLinks ?? []).contains { $0.pointsTo(area: area) }
-    }
-
-    private func isAttached(project: Project) -> Bool {
-        (goal.listLinks ?? []).contains { $0.pointsTo(project: project) }
-    }
-
-    private func toggle(area: Area) {
-        if let existing = (goal.listLinks ?? []).first(where: { $0.pointsTo(area: area) }) {
-            modelContext.delete(existing)
-        } else {
-            modelContext.insert(GoalListLink(goal: goal, area: area))
-        }
-    }
-
-    private func toggle(project: Project) {
-        if let existing = (goal.listLinks ?? []).first(where: { $0.pointsTo(project: project) }) {
-            modelContext.delete(existing)
-        } else {
-            modelContext.insert(GoalListLink(goal: goal, project: project))
         }
     }
 }

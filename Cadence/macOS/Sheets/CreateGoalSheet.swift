@@ -301,11 +301,11 @@ struct CreateGoalSheet: View {
         if initialListTag.hasPrefix("area:"),
            let id = UUID(uuidString: String(initialListTag.dropFirst(5))),
            let area = areas.first(where: { $0.id == id }) {
-            modelContext.insert(GoalListLink(goal: goal, area: area))
+            modelContext.attachList(.area(area), to: goal)
         } else if initialListTag.hasPrefix("project:"),
                   let id = UUID(uuidString: String(initialListTag.dropFirst(8))),
                   let project = projects.first(where: { $0.id == id }) {
-            modelContext.insert(GoalListLink(goal: goal, project: project))
+            modelContext.attachList(.project(project), to: goal)
         }
     }
 }
