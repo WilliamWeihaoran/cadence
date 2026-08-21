@@ -92,6 +92,43 @@ difference — but finishing the last active member makes the block `isCompleted
 queries bundles with `includeCompleted: false`. Two members gives the control for free: the first
 circle leaves the card in place, the second removes it.
 
+## Two Tasks Become A Block On The Board, And Nowhere Else Yet
+
+**T-190.** "Drop a task on a task and the two become a block" was macOS-only because
+`SchedulingActions.createBundle(from:adding:)` sat inside `#if os(macOS)`. The mutation is
+`CadenceTaskMutationSupport.insertBundle(from:adding:)` now and the Mac delegates to it, so there is
+one implementation. **Do not add a second** — the whole ticket was about a `Shared/`-shaped mutation
+hiding behind a platform guard.
+
+iOS wires it on the **Calendar Board** (`iOSCalendarBoardView`), not on the timeline, and the reason
+is not preference: `iOSCalendarTimelineViews.swift` has no `.draggable` and no `.dropDestination`
+anywhere, so `iOSTimelineTaskBlock` cannot be dragged at all. That file's own comment records why
+nobody has added one — it carries a `simultaneousGesture` pinch, and `.draggable` "delays the
+touches of everything under it". See T-243 before attempting it.
+
+Three things about the board wiring that are easy to get wrong:
+
+- **The card opts in, whole.** `iOSBoardTaskCard` takes an optional `iOSBoardTaskCardBundleDrop`
+  bundling the task list, the drop handler and the targeting callback, because the three are
+  useless apart. `iOSListSupportViews` draws the same card and passes `nil`, and so does the
+  column's *completed* footer — a finished card is not something you plan around.
+- **Only a card with a slot offers it.** `bundleFormingDrop(onto:)` returns `nil` unless
+  `task.scheduledStartMin >= 0`. A bundle is `dateKey` **plus** `startMin`; the shared mutation
+  refuses a do-dated-only target, so without this guard the card would light up amber and then
+  silently do nothing. Declining instead lets the day column read the release as the reschedule it
+  already is.
+- **A nested card that claims a drag must say so.** The column has its own `dropDestination`, and it
+  fires on the same release. `nestedDropTargetID` plus the short-lived `recentlyBundledTaskID`
+  window is what stops the task being rescheduled straight back out of the block it was just put
+  into. That state used to be `targetedBundleID`, named for its only user; a task card needed the
+  identical mechanism, which is the same lesson the `CadenceTaskInspectorPresentation` →
+  `CadenceDetailPanelPresentation` rename recorded — **a helper named for one subject is why the
+  second one never got checked against it.**
+
+The `.dropDestination` is attached in an `if let` branch rather than always-on-returning-`false`,
+because `isTargeted` fires whether or not the closure accepts the drop — an always-attached version
+would highlight cards on surfaces that cannot bundle.
+
 ## The markdown styling layer
 
 `iOSMarkdownStyler` is **four files** since T-121, all extensions on the one enum:

@@ -112,26 +112,19 @@ enum SchedulingActions {
         normalizeBundleOrder(bundle)
     }
 
+    /// Forms a bundle out of a scheduled task plus a task dropped onto it.
+    ///
+    /// The mutation itself is `CadenceTaskMutationSupport.insertBundle(from:adding:)` — shared, and
+    /// therefore reachable from iOS's Calendar Board too (T-190). This spelling stays because the
+    /// timeline calls it and reads better in `SchedulingActions`' vocabulary; it must not grow a
+    /// second body.
     @discardableResult
     static func createBundle(from targetTask: AppTask, adding draggedTask: AppTask, in context: ModelContext) -> TaskBundle? {
-        guard targetTask.id != draggedTask.id,
-              !targetTask.scheduledDate.isEmpty,
-              targetTask.scheduledStartMin >= 0 else { return nil }
-
-        let duration = clampedBundleDuration(
-            startingAt: targetTask.scheduledStartMin,
-            tasks: [targetTask, draggedTask]
+        CadenceTaskMutationSupport.insertBundle(
+            from: targetTask,
+            adding: draggedTask,
+            modelContext: context
         )
-        let bundle = TaskBundle(
-            title: "Task Bundle",
-            dateKey: targetTask.scheduledDate,
-            startMin: targetTask.scheduledStartMin,
-            durationMinutes: duration
-        )
-        context.insert(bundle)
-        addTask(targetTask, to: bundle)
-        addTask(draggedTask, to: bundle)
-        return bundle
     }
 
     static func removeTaskFromBundle(_ task: AppTask, keepOnBundleDate: Bool = true) {
@@ -240,14 +233,6 @@ enum SchedulingActions {
             task.calendarEventID = ""
         }
         bundle.tasks = []
-    }
-
-    private static func clampedBundleDuration(startingAt startMin: Int, tasks: [AppTask]) -> Int {
-        let total = tasks.reduce(0) { partial, task in
-            partial + max(task.estimatedMinutes, minimumBundleDuration)
-        }
-        let clampedStart = clampedStartMin(startMin)
-        return max(minimumBundleDuration, min(total, dayEndMin - clampedStart))
     }
 
     private static func clampedStartMin(_ startMin: Int) -> Int {

@@ -494,6 +494,69 @@ enum CadenceTaskMutationSupport {
         }
     }
 
+    /// The day a bundle has to fit inside, and the shortest slot it may occupy.
+    ///
+    /// macOS spells the same two numbers as `TimelineDayRange` in `macOS/Views/TimelineMetrics.swift`,
+    /// which this file cannot see — `Shared/` does not compile the timeline. They are deliberately
+    /// identical, and `bundleClampsMatchTheTimelineDayRange` in `TaskBundleTests` fails if one side
+    /// moves. Do not re-spell either literal at a call site; that is how the timeline clamp came to
+    /// exist four times with three different bounds.
+    static let bundleDayEndMin = 24 * 60
+    static let bundleMinimumDuration = 5
+
+    /// Clamps a start minute so a minimum-length block still ends inside the day.
+    static func clampedBundleStart(_ startMin: Int) -> Int {
+        min(max(0, startMin), bundleDayEndMin - bundleMinimumDuration)
+    }
+
+    /// Minutes a bundle starting at `startMin` needs in order to hold `tasks`, clamped inside the day.
+    ///
+    /// Every member contributes at least `bundleMinimumDuration`, so two estimate-less tasks still
+    /// get a block tall enough to see and hit rather than a zero-height sliver.
+    static func bundleDuration(startingAt startMin: Int, tasks: [AppTask]) -> Int {
+        let total = tasks.reduce(0) { partial, task in
+            partial + max(task.estimatedMinutes, bundleMinimumDuration)
+        }
+        return max(bundleMinimumDuration, min(total, bundleDayEndMin - clampedBundleStart(startMin)))
+    }
+
+    /// Forms a new bundle out of a scheduled task plus a task dropped onto it.
+    ///
+    /// **This is the one implementation of the drop-a-task-on-a-task gesture.** It was
+    /// `SchedulingActions.createBundle(from:adding:)` inside `#if os(macOS)`, in a file that imports
+    /// no AppKit, which is why the gesture existed only on the Mac timeline (T-190).
+    /// `SchedulingActions.createBundle(from:adding:)` now delegates here, so macOS's timeline and
+    /// iOS's Calendar Board mint a block the same way.
+    ///
+    /// Returns `nil` when the drop cannot form a block: the same task twice, or a target with no day
+    /// or no time-of-day slot. A bundle *is* a timeline block — `dateKey` plus `startMin` — so a
+    /// target that is merely do-dated has nothing for the block to sit on, and inventing a start
+    /// minute for it would be this platform guessing where the other one refuses to.
+    @discardableResult
+    static func insertBundle(
+        from targetTask: AppTask,
+        adding draggedTask: AppTask,
+        modelContext: ModelContext
+    ) -> TaskBundle? {
+        guard targetTask.id != draggedTask.id,
+              !targetTask.scheduledDate.isEmpty,
+              targetTask.scheduledStartMin >= 0 else { return nil }
+
+        let bundle = TaskBundle(
+            title: "Task Bundle",
+            dateKey: targetTask.scheduledDate,
+            startMin: clampedBundleStart(targetTask.scheduledStartMin),
+            durationMinutes: bundleDuration(
+                startingAt: targetTask.scheduledStartMin,
+                tasks: [targetTask, draggedTask]
+            )
+        )
+        modelContext.insert(bundle)
+        addTask(targetTask, to: bundle, modelContext: modelContext)
+        addTask(draggedTask, to: bundle, modelContext: modelContext)
+        return bundle
+    }
+
     @discardableResult
     static func insertBundle(
         title: String,
@@ -503,8 +566,8 @@ enum CadenceTaskMutationSupport {
         modelContext: ModelContext
     ) throws -> TaskBundle {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let clampedStart = min(max(0, startMin), (24 * 60) - 5)
-        let duration = min(max(5, durationMinutes), (24 * 60) - clampedStart)
+        let clampedStart = clampedBundleStart(startMin)
+        let duration = min(max(bundleMinimumDuration, durationMinutes), bundleDayEndMin - clampedStart)
         let bundle = TaskBundle(
             title: trimmed.isEmpty ? "Task Bundle" : trimmed,
             dateKey: dateKey,
@@ -564,6 +627,12 @@ enum CadenceTaskMutationSupport {
         task.bundleOrder = nextOrder
         task.scheduledDate = bundle.dateKey
         task.scheduledStartMin = -1
+        // The task's own slot is gone — the bundle owns the block now — so any stale calendar link
+        // it still carries has to go with it. `SchedulingActions.addTask` has always cleared this;
+        // this copy did not, which was the one field on which the two platforms' add-to-bundle
+        // paths disagreed. See "Calendar / Events" in CLAUDE.md: nothing writes this field a
+        // non-empty value any more, and every write site clears it.
+        task.calendarEventID = ""
         if !(bundle.tasks ?? []).contains(where: { $0.id == task.id }) {
             bundle.tasks = (bundle.tasks ?? []) + [task]
         }

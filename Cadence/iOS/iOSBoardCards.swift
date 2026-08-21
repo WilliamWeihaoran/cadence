@@ -201,12 +201,29 @@ let iOSBoardColumnWidth: CGFloat = 300
 /// This replaced a second card in `iOSListSupportViews` — a flat `Theme.surface` rectangle with a
 /// 13.5pt title and plain icon-and-text metadata — that made the same task read as a different
 /// kind of object depending on which board you opened.
+/// What a surface has to supply before its task cards will accept "drop a task on a task to make a
+/// block". The three things only make sense together — the dragged task has to be resolvable from a
+/// payload, the drop has to go somewhere, and the column has to hear about targeting so it can stop
+/// treating the same drop as a reschedule — so they arrive as one value and a surface opts in whole.
+struct iOSBoardTaskCardBundleDrop {
+    let allTasks: [AppTask]
+    let onDropTask: (AppTask) -> Void
+    var onTargetedChanged: (Bool) -> Void = { _ in }
+}
+
 struct iOSBoardTaskCard: View {
     @Bindable var task: AppTask
     var showsContainerChip: Bool = true
     /// The day this card's surface has already stated, if it states one. See
     /// `CadenceBoardCardMetadata.repeatsSurfaceDay`.
     var dayAlreadyStatedBySurface: String? = nil
+    /// Non-`nil` only where dropping another task on this one can form a block: the card needs a day
+    /// *and* a time-of-day slot, because that is what a `TaskBundle` is. A list's task list has
+    /// neither, and a completed card is not something you plan around, so both leave this `nil` and
+    /// the drop falls through to whatever is underneath.
+    var bundleFormingDrop: iOSBoardTaskCardBundleDrop? = nil
+
+    @State private var isBundleFormingTargeted = false
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -236,6 +253,29 @@ struct iOSBoardTaskCard: View {
     }
 
     var body: some View {
+        if let drop = bundleFormingDrop {
+            // `.dropDestination` has no erased form and `isTargeted` fires whether or not the
+            // closure accepts the drop, so a card that cannot form a block must not carry the
+            // modifier at all — an always-attached version returning `false` would still light up
+            // under the drag. Same reasoning as `iOSBoardColumnPaging` in iOSCalendarBoardView.
+            // `bundleFormingDrop` is fixed per call site, so this branch never flips at runtime.
+            card.dropDestination(for: String.self) { items, _ in
+                guard let payload = items.first,
+                      let taskID = TaskDragPayload.taskID(from: payload),
+                      taskID != task.id,
+                      let dragged = drop.allTasks.first(where: { $0.id == taskID }) else { return false }
+                drop.onDropTask(dragged)
+                return true
+            } isTargeted: { targeted in
+                isBundleFormingTargeted = targeted
+                drop.onTargetedChanged(targeted)
+            }
+        } else {
+            card
+        }
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
                 Button(action: toggleCompletion) {
@@ -287,11 +327,21 @@ struct iOSBoardTaskCard: View {
             ZStack {
                 cardShape.fill(Theme.surfaceElevated.opacity(0.82))
                 cardShape.fill(listColor.opacity(task.isDone ? 0.05 : 0.12))
+                if isBundleFormingTargeted {
+                    cardShape.fill(Theme.amber.opacity(0.16))
+                }
             }
         }
         .clipShape(cardShape)
+        // One layer, one radius: the targeted state re-tints the border this card already draws
+        // rather than adding a second ring. Amber because that is what a block reads as on this
+        // board — `iOSCalendarBoardBundleCard` is amber, at this same stroke weight and opacity, so
+        // a card about to *become* one says so in the colour it is about to take.
         .overlay {
-            cardShape.strokeBorder(Theme.borderSubtle, lineWidth: 1)
+            cardShape.strokeBorder(
+                isBundleFormingTargeted ? Theme.amber.opacity(0.74) : Theme.borderSubtle,
+                lineWidth: isBundleFormingTargeted ? 1.5 : 1
+            )
         }
         .overlay(alignment: .leading) {
             Rectangle()
