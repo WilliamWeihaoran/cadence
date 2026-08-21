@@ -32,6 +32,36 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-217] **The bundle detail sheet has the same row-owned-sheet defect T-201 just fixed.**
+  `iOSCalendarBoardBundleCard` (`iOSBoardCards.swift:~390`) and `iOSTimelineBundleBlock`
+  (`iOSCalendarTimelineViews.swift:~925`) each present `iOSCalendarBundleDetailSheet` from a card
+  inside a filtered `ForEach`, so editing a block's date or time moves the card between day columns
+  and tears the panel down mid-edit. Same defect, **different sheet**, so it needs its own host rather
+  than the task one. `D-141` pinned both at an exact count so it cannot drift unnoticed.
+  `iOSTaskInspectorHost` is the pattern to copy, including its `isDeleted || modelContext == nil`
+  finding.
+
+- [T-218] **Docs owe the last three batches.** Deliberately deferred each time because a docs agent or
+  a concurrent writer held the files. Outstanding: the iOS task inspector rule (presented by
+  `iOSTaskInspectorHost`, installed once in `iOSRootView`; **a row or card must never own a `.sheet`
+  presenting it**, and the four surface-owned `.sheet(item:)` presenters are deliberate) — without
+  this the next agent adding a task surface reaches for `@State showDetail`, which is exactly how the
+  bug shipped; the `GoalListLink` write rule (`attachList` / `detachGoalListLink` /
+  `toggleGoalListLink`, never a hand-rolled `insert`); the `ListDeleteHelpers` move (`Services/` count,
+  and `macOS/Services/` now has **three** tombstones not two); macOS settings categories now
+  **fourteen** with About; iOS Goals gaining linked lists; two new `Shared/` files; and the file counts
+  again — `Cadence/iOS/` ~90, `Shared/` ~81, `CadenceTests/` ~171. Re-count rather than trusting those.
+
+- [T-219] **iOS's own 7-day habit strip is a near-copy of the shared one.** `D-140` promoted
+  `HabitLast7DayStrip` into `Shared/Components/HabitProgressViews.swift` for macOS, but
+  `iOSFeatureDetailViews.swift`'s `lastSevenDays` was held by another agent at the time. A one-line
+  swap, and exactly the near-copy the no-duplicates rule exists to prevent.
+
+- [T-220] **macOS's About carries only the build card; iOS's also carries Privacy Policy and Support.**
+  Flagged by `D-140` rather than decided: macOS already offers both links under Settings → Data Safety,
+  so matching the two screens means *moving* them rather than duplicating. Decide which screen owns
+  those links on each platform.
+
 - [T-212] **`finishRemainingActiveTasks` hand-rolls the cancel transition, and gets two things wrong.**
   `Cadence/macOS/Services/TaskWorkflowService.swift:~105-118`. Found by T-202 and left because another
   agent held the file. It sets `completedAt = nil` for `.cancelled`, so bulk "cancel remaining tasks
@@ -82,11 +112,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   private paths. Add it, because the failure mode is a plausible-looking compile error that a careless
   agent would report as a regression.
 
-- [T-210] **macOS's settings category list is a private local enum with no analogue of mobile's
-  `desktopOnly`.** Mobile states its deliberate omissions positively and tests them, which is why a
-  missing mobile category fails a test; macOS has nothing equivalent, so `.coverage` and `.about` are
-  absent there with nothing to notice it. Making it symmetric means moving macOS's list into
-  `Shared/`. Note [[T-197]] will delete `.coverage` entirely, which shrinks this.
 
 - [T-211] **On iOS, H5 (16pt) and H6 (15pt) render *below* the editor's body text.** Found by
   `d513e72` and recorded rather than fixed. The iOS body is
@@ -113,21 +138,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   whenever the machine feels slow. A `pgrep -c CadenceMCPServer` in the pre-verification checklist
   would cost nothing.
 
-- [T-201] **The iOS task inspector dismisses itself on any status change.** `iOSTaskDetailSheet` is
-  presented *by the row* — `iOSTaskViews.swift:~53` carries `@State showDetail` and
-  `.sheet(isPresented:)` — so when a status write moves the task out of the section's `ForEach`,
-  SwiftUI tears the row down and the sheet with it. **No status path calls `dismiss()`**; proven by
-  control experiment, since **Start** keeps the row in ACTIVE and the sheet stays open while Cancel,
-  Restore and mark-done all close it. So this is not cancel-specific.
-  Fix: move presentation off the row — one host modifier per page (e.g. `.iOSTaskInspectorHost()`)
-  over an `AppTask?` selection, so the sheet's lifetime is the page's. There are **8** presenters of
-  `iOSTaskDetailSheet` (`iOSTaskViews`, `iPadTodayScheduleViews`, `iOSMarkdownEditingSurface`,
-  `iOSCalendarBundleDetailSheet`, `iOSMarkdownReferenceSupport`, `iOSCalendarTimelineViews`,
-  `iOSBoardCards`, `iOSSearchView`); the row one is the one that matters, and the point of a host
-  modifier is that the pattern becomes one thing rather than eight. `Cadence/iOS/` is invisible to
-  the macOS-built test target, so pin by source scan or move the decision outside the guard.
-  **Blocked** while agents hold `iOSTaskDetailSheetSections.swift` and the markdown surfaces.
-
 
 - [T-190] **Task bundles can be viewed, edited and deleted on iOS but never created.** `TaskBundle(`
   is constructed only at `macOS/Services/SchedulingService.swift:32` and `:125`, inside
@@ -135,11 +145,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   sheet with a `@Bindable bundle` plus `deleteBundle`. Also no bundle focus on iOS. Needs a create
   affordance the iOS calendar does not currently have, so this is more than un-guarding.
 
-- [T-191] **Goal↔list links feed iOS progress bars but are invisible and unmanageable there.**
-  `Models/GoalContributionSummary.swift:83` folds `goal.listLinks` tasks into progress, and `Models/`
-  compiles on every target. `GoalListLink` has zero references under `Cadence/iOS`; `iOSGoalDetail`
-  has Milestones and Habits and no linked-lists section, and `GoalAttachWorkSheet` is macOS-only. An
-  iOS user sees a percentage they cannot explain or change.
 
 - [T-192] **The note reference / backlinks panel is macOS-only.** `NoteReferenceResolver.backlinks`
   (`Services/NoteReferenceSupport.swift:167`) is shared, unguarded and platform-independent, called
@@ -168,22 +173,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `TodayOverdueSectionSummary`. The roll action's slot-clearing semantics — move `scheduledDate`,
   reset `scheduledStartMin`, drop the linked event — would need lifting into `Shared/` first.
 
-- [T-196] **Two small reverse gaps, near-free.** `habit.bestStreak` and `habit.last7DayStates`
-  (`Models/HabitInsights.swift`) have iOS readers only, so macOS's `HabitQuietMetrics` shows no best
-  streak and no 7-day strip. And `iOSAboutSettingsSection` (version, build, bundle ID, review link)
-  has no macOS counterpart — macOS has no `.about` category.
-
-- [T-197] **Delete the Settings → Coverage parity manifest.** User's call, and the right one: a
-  hand-maintained parity list living inside the app will always drift, and it already has —
-  `iOSMobileCapability.all` (`iOS/iOSSettingsComponents.swift:149`) still advertises a **Theme**
-  picker that went with `ThemeManager`, omits reminders and notifications from its Settings row
-  (both shipped), and files CloudKit sync and Habits under "Partial" with reasons the code
-  contradicts. It was the only stale claim a *user* could read.
-  Remove the section, the `iOSMobileCapability` type and the `.coverage` settings category with it —
-  a category that still routes somewhere empty is how `subtitle` survived three deletions. Check
-  whether `CadenceSettingsCategoryKind.coverage` has other readers before removing the case, and
-  note `T-199` records that macOS never offered `.coverage` at all, so this narrows a two-way
-  difference to nothing rather than creating one.
 
 - [T-198] **Six stale counts across the guides, and one refuted shared-component claim.** From the
   T-32 audit, re-verify each before editing: `Cadence/iOS/` said 79 in three places (actual 82 at the
@@ -465,6 +454,40 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-140] `940c4da` The parity manifest is gone; macOS now offers every settings category
+  (T-197, T-196, and T-210 with it). Coverage deleted whole — section, type, status enum, row view,
+  iOS case and the shared `.coverage` kind — because leaving a case routing somewhere empty is how
+  `subtitle` survived three deletions. It could not have been persisted (both surfaces hold selection
+  in `@State`; no AppStorage key, deep link or palette command), and a test pins that
+  `rawValue: "coverage"` is now nil. T-196's two gaps were **rendering-only**, verified first.
+  Side effect: with `.sync` in and `.coverage` out, macOS offers **every** shared category, so the
+  parity relation is one-way — iOS lacks `sidebar` and `account`, macOS lacks nothing. That closed
+  [[T-210]] as a set-equality assertion instead of a `desktopOnly` analogue.
+
+- [D-141] `4562d4e` The task inspector outlives the row that opened it (T-201). Four presenters
+  converted, one host in `iOSRootView` over an environment action so no call site can hold the
+  selection. The other four were left because converting them would have been **wrong** — three
+  present from inside a sheet, where a host above is already presenting and a second request silently
+  does nothing.
+  **The measured finding that changed the fix:** guarding on `isDeleted` alone is insufficient and the
+  agent's own test killed its first draft. Between `delete` and `save`, `isDeleted` is true with
+  `modelContext` set; **after the save `isDeleted` reads false again** while `modelContext` goes nil
+  and the property snapshot stays readable — a stale panel looks alive. Rule is
+  `isDeleted || modelContext == nil`, both phases pinned, and the doc states the honest bound: neither
+  signal is observable, so a CloudKit delete closes on the next re-render, not instantly.
+  Proven with a pre-fix binary built alongside, Start control re-run on both.
+
+- [D-142] `23eb847` A goal's progress counted linked lists iOS could neither see nor change (T-191).
+  No shared path existed to reuse — macOS spelled `insert(GoalListLink(...))` inline in **four**
+  places — so one now exists, with a target type that makes the model's exactly-one-of invariant
+  unspellable-wrong and an idempotent attach, because a duplicate link double-counts a list's tasks.
+  The explanation ships with the section, since the complaint was explanatory; for an hours goal it
+  says progress tracks logged hours, because there the lists move the count and not the bar.
+  Two self-caught errors worth keeping: its first scan used a substring count and
+  `toggleGoalListLink(` *contains* `GoalListLink(`, so it accused its own four rewired call sites —
+  the same trap that bit another agent today. And the iPad caught "2 contributing tasks" truncating
+  to "2 contributing t…".
 
 - [D-136] `6f71a70` Two leftovers gone; the duplicate edit scope had **two** bridges (T-200).
   The second lived in `TaskInspectorWorkflowSupportViews`, unmentioned by the ticket. Safe to collapse
