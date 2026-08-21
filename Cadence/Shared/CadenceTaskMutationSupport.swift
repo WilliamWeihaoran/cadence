@@ -41,11 +41,23 @@ enum CadenceTaskMutationSupport {
     /// `.cancelled` therefore does nothing here. Not clearing is the fix; *stamping* would be a
     /// backfill of pre-T-202 rows with a value we never recorded, performed silently by opening a
     /// sheet.
+    ///
+    /// **`.done` does nothing here either, for the same reason (T-213).** It used to call
+    /// `markDone`, which is a *transition* and does two things a normalizer must not: it sets
+    /// `completedAt = now` unconditionally, and it spawns the next recurrence occurrence. The sheet
+    /// re-saves on every change to title, priority, status, recurrence, estimate, actual minutes and
+    /// section, so editing the title of a task finished last week rewrote its timestamp to today and
+    /// pulled it into Today's Completed — the same class of bug as the `.cancelled` branch above,
+    /// pointing the other way. Nothing is lost by not stamping: every real done transition on this
+    /// surface goes through `toggleCompletion` or `setStatus` → `applyStatusCompletion` → `markDone`,
+    /// which has already recorded the timestamp before this normalizer ever runs.
+    ///
+    /// So the rule is symmetric and the switch says it directly: a **settled** status keeps whatever
+    /// timestamp it was given, and only the two **open** statuses clear one. Do not re-add a
+    /// transition call to either settled case.
     static func normalizeCompletionState(for task: AppTask, modelContext: ModelContext) {
         switch task.status {
-        case .done:
-            CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
-        case .cancelled:
+        case .done, .cancelled:
             break
         case .todo, .inProgress:
             task.completedAt = nil

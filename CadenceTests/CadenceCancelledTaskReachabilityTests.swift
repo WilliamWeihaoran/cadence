@@ -354,6 +354,79 @@ struct CadenceCancelledTaskReachabilityTests {
         }
     }
 
+    // MARK: - T-213: the normalizer must not re-stamp a task finished last week
+
+    /// The `.done` branch was the `.cancelled` bug pointing the other way. It called `markDone`,
+    /// which is a **transition** — it sets `completedAt = now` unconditionally — and the sheet
+    /// re-saves on every change to title, priority, status, recurrence, estimate, actual minutes and
+    /// section. So renaming a task finished last week rewrote its timestamp to today and dragged it
+    /// into Today's Completed section, which is the one place a week-old task must not appear.
+    ///
+    /// The stamp is compared as a stored `Date`, deliberately. A re-stamp is invisible through a
+    /// default `ISO8601DateFormatter` (second precision) and would be invisible through
+    /// `DateFormatters.ymd` too if the re-stamp happened on the same day, so a formatted comparison
+    /// here can pass while the bug is live.
+    @Test func savingTheSheetDoesNotRestampATaskFinishedLastWeek() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let lastWeek = try instant("2026-08-13")
+        let subject = task("finished last week", status: .done, completedAt: lastWeek)
+        context.insert(subject)
+
+        CadenceTaskMutationSupport.normalizeCompletionState(for: subject, modelContext: context)
+
+        #expect(subject.status == .done)
+        #expect(subject.completedAt == lastWeek)
+        #expect(
+            CadenceTaskQuerySupport.completedTodayTasks(from: [subject], todayKey: todayKey).isEmpty,
+            "a task finished last week was pulled into Today's Completed section"
+        )
+    }
+
+    /// The other polarity, so the fix cannot be satisfied by *clearing* the timestamp instead —
+    /// which would break Today's Completed on both platforms rather than only for old rows. A task
+    /// genuinely finished today keeps its stamp and stays in the section.
+    @Test func savingTheSheetKeepsATaskFinishedTodayInTodaysCompletedSection() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let today = try instant(todayKey)
+        let subject = task("finished today", status: .done, completedAt: today)
+        context.insert(subject)
+
+        CadenceTaskMutationSupport.normalizeCompletionState(for: subject, modelContext: context)
+
+        #expect(subject.completedAt == today)
+        #expect(
+            CadenceTaskQuerySupport.completedTodayTasks(from: [subject], todayKey: todayKey)
+                .map(\.title) == ["finished today"]
+        )
+    }
+
+    /// `markDone`'s *second* side effect, and the reason routing a normalizer through a transition
+    /// is wrong in principle and not just in its timestamp: it spawns the next occurrence. A done
+    /// recurring task whose successor pointer is nil — an unfinished series, or one whose successor
+    /// was deleted and the pointer repaired — grew a brand new task every time the sheet saved.
+    /// Same hazard `docs/TODO.md` T-214 records against `applyStatusCompletion`: a bulk or
+    /// incidental path must not mint work.
+    @Test func theNormalizerDoesNotMintARecurrenceOccurrence() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let subject = task("water the plants", status: .done, completedAt: try instant("2026-08-13"))
+        subject.recurrenceRule = .daily
+        context.insert(subject)
+        try context.save()
+        #expect(subject.recurrenceSpawnedTaskID == nil)
+        #expect(subject.shouldSpawnNextOccurrence(nextDateKey: "2026-08-14"))
+
+        CadenceTaskMutationSupport.normalizeCompletionState(for: subject, modelContext: context)
+
+        #expect(subject.recurrenceSpawnedTaskID == nil)
+        #expect(
+            try context.fetch(FetchDescriptor<AppTask>()).count == 1,
+            "the normalizer spawned a recurrence occurrence"
+        )
+    }
+
     /// `markTodo` is the same line pointing the other way, and it was already right: restoring a
     /// task to `todo` clears the timestamp, so a reopened task cannot linger in Today's Completed.
     /// Pinned because it is now load-bearing in a way it was not while `markCancelled` also
