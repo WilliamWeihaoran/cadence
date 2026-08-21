@@ -240,6 +240,23 @@ struct iOSListDetailPagePicker: View {
             .padding(.horizontal, 1)
         }
         .scrollIndicators(.hidden)
+        // A page carrying the floating `+` sets
+        // `contentMargins(.bottom, iOSCircularAddButton.scrollClearance, for: .scrollContent)` — 100pt —
+        // once, for its own bottom-reaching list. `contentMargins` is **inherited through the
+        // environment**, so it lands on every scroll view underneath, including this tab strip. This
+        // one is a single 44pt row, so the inherited 100pt becomes 100pt of empty content region
+        // *below* the tabs — the strip grows to 144pt and every tab on the page appears to start a
+        // touch target and a half lower. The band reads as the page's, which is why it looked like
+        // five separate bugs: it is above `pageBody`, so it is in front of Tasks, Kanban, Notes,
+        // Links and Completed alike. Compact width was never affected — the host sets 0 there,
+        // because the tab bar's centre `+` is the capture affordance and no page floats one.
+        //
+        // Reset here rather than at the host, for the same reason the markdown accessory strips do
+        // it: a short single-row horizontal scroll view is never the page's bottom-reaching content,
+        // so it should never inherit the page's clearance for the button. This is the third instance
+        // of `D-104` — see `iOSMarkdownAccessoryViews.swift` — and putting the reset on the strip is
+        // what makes it true for the next host as well as this one.
+        .contentMargins(.vertical, 0, for: .scrollContent)
     }
 }
 
