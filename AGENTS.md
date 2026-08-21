@@ -129,6 +129,11 @@ code, and every one of them has been violated by a shipped change at least once.
   `SourcePackages`, which read as a broken checkout and briefly made a correct agent report look
   wrong. Rule: a build failure you cannot explain is a private-`derivedDataPath` re-run before it is
   a finding. Note `-derivedDataPath` requires `-scheme`; it is rejected with `-target` alone.
+  **It isolates the build, not the test host's container.** A macOS `xcodebuild test` run launches
+  `Cadence.app`, which uses the one app-group container at `~/Library/Containers/com.haoranwei.Cadence/Data/`
+  no matter where DerivedData points — so two simultaneous macOS test runs corrupt each other. Check
+  `ps aux | grep "[x]codebuild test"` first and wait the other run out; see `docs/TODO.md` T-236 for
+  the measurement and the tell.
 - **One directory per agent, and clean only inside it.** The scratchpad root is shared. Make
   **one** directory of your own under it — the session scratchpad path plus your PID, e.g.
   `.../scratchpad/agent-$$/` — put both your isolated source tree and your `-derivedDataPath`
@@ -138,6 +143,24 @@ code, and every one of them has been violated by a shipped change at least once.
   unique name is not isolation if the cleanup step can still reach a sibling. Cleanup is also not
   optional: the scratchpad reached **64 GB** in one session and filled the user's disk. Delete your
   directory when you are done, and only yours.
+- **Isolate the tree with `rsync`, not `git archive` — and restore HEAD by hand.** `git archive
+  --format=tar HEAD` over the whole tree runs at about **5 KB/s** on this machine (sampled every 10s:
+  1259520 → 1310720 → 1372160 → 1484800 → 1525760 → 1576960 bytes), i.e. ~25 minutes for a 15 MB
+  working tree. Worse, it produces a **0-byte file** for the first minutes, so two invocations were
+  killed at 2 and 3 minutes as apparent hangs — it looks like a broken repo and is not
+  (`git rev-parse HEAD` is 0.018s; `git archive HEAD -- AGENTS.md` for one file is instant). Suspected
+  but unconfirmed: a global `filter.lfs` with `required = true` while `git-lfs` is not installed
+  (`-c filter.lfs.process= -c filter.lfs.required=false` did not help; the repo has no
+  `.gitattributes`). See `docs/TODO.md` T-237.
+  The working recipe, and **step 2 is not optional** — skip it and you silently verify another
+  agent's in-flight code as if it were yours:
+  1. `rsync -a --exclude '.git' --exclude '.codex-build' --exclude '.DS_Store' --exclude 'default.profraw' <repo>/ <tree>/` — a couple of seconds.
+  2. Read `git status --porcelain`. For every path *another* agent modified or deleted, restore
+     HEAD's bytes into the copy with `git show HEAD:<path> > <tree>/<path>`; for every path they
+     added, `rm` it from the copy. Then check each one: `git show HEAD:<path> | shasum` must equal
+     `shasum < <tree>/<path>`. This is the part `git archive` gave for free.
+  3. `shasum` your own changed files into your scratchpad, so at report time you can prove what you
+     tested is still what is on disk.
 - **Check the log says which tree it built.** An isolated tree can be deleted out from under a
   running build (see above); the failed `cd` then falls through to the live repo and the run reports
   **exit 0 against the wrong sources**. This happened on 2026-08-18 and was caught only by grepping

@@ -32,12 +32,45 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
-- [T-233] **A fourth instance of T-227's shape, in a test named for the wrong half.**
-  `CadenceNoteFolderSurfaceTests.onlyTheSharedFilingHelperWritesAFolderPath` is named for **writes**
-  and its assertion bans `.folderPath` *reads* too. So displaying a note's folder — a read — fails a
-  test about writing it, which is what stopped `4e6080e` showing the folder in its delete
-  confirmation. Split the assertion: ban assignment, allow reads. The folder is worth showing when
-  two notes are both "Untitled" ([[T-223]]), so this is blocking a real improvement.
+- [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
+  Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes
+  `rsync` + `git show HEAD:<path>` restore instead. The workaround has a real ongoing cost: the
+  restore step is manual, and an agent that skips it verifies another agent's in-flight code while
+  believing it tested HEAD. That is worth removing, not just documenting.
+  Evidence: one file (`git archive --format=tar HEAD -- AGENTS.md`) is instant; the whole tree
+  sampled at 10s intervals gave 1259520 → 1310720 → 1372160 → 1484800 → 1525760 → 1576960 bytes,
+  ~25 min for a 15 MB tree, and emits a **0-byte file** for the first minutes so it reads as a hang
+  (two runs were killed at 2 and 3 minutes for that reason). The repo is healthy —
+  `git rev-parse HEAD` is 0.018s.
+  Prime suspect, **not confirmed**: a global `filter.lfs` with `required = true` while `git-lfs` is
+  not installed (`git lfs version` → "not a git command"). Against that theory,
+  `-c filter.lfs.process= -c filter.lfs.required=false` did not help, and the repo has no
+  `.gitattributes`. Next steps: `git config --global --get-regexp '^filter\.'`, then try
+  `GIT_TRACE=1 GIT_TRACE_PERFORMANCE=1 git archive HEAD > /dev/null` to see where the time goes, and
+  test whether the slowness follows the global config into a scratch repo. Fixing it restores a
+  one-command isolation step for every future agent.
+
+
+- [T-236] **A private `-derivedDataPath` does not isolate a macOS *test* run from another agent's.**
+  Measured 2026-08-22. `xcodebuild test -scheme Cadence -destination platform=macOS
+  -only-testing:CadenceTests` came back `** TEST FAILED **`, exit 65, **0 compile errors**, with
+  **1438 failures and 757 passes** — on bytes that had passed 2194/2194 minutes earlier, and that
+  passed 2194/2194 again immediately afterwards. Nothing about the sources changed. What changed is
+  that `ps aux | grep "[x]codebuild test"` showed a second agent's run against the live repo, and the
+  log showed the test host relaunching under a second PID (`My Mac - Cadence (13229)` then `(13416)`).
+  The cause is that the test host is `Cadence.app`, whose app-group container lives at
+  `~/Library/Containers/com.haoranwei.Cadence/Data/` — one path, shared by every run on the machine
+  regardless of where DerivedData points. The private `-derivedDataPath` isolates the *build*
+  products and nothing about the host's store.
+  **The tell**, because this is misattributed by default exactly like the shared-DerivedData family
+  already in `AGENTS.md`: 0 compile errors, a four-figure failure count, most failures reporting
+  `0.000 seconds`, and two host PIDs in one run. It exits 65 like a real regression and like a
+  mutation that failed to build, and no line of output says another test host is running.
+  **The rule to write down:** check `ps aux | grep "[x]codebuild test"` before starting a macOS test
+  run and wait the other one out. There is no flag that buys isolation here.
+  A one-line summary of the rule went into `AGENTS.md` beside the private-`-derivedDataPath`
+  non-negotiable; the evidence lives here rather than in both places.
+
 
 
 - [T-235] **`AGENTS.md` should record what a widgets-scheme baseline actually measures.** Now that the
@@ -56,11 +89,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   dates do not happen to be today. Overlaps [[T-208]].
 
 
-- [T-223] **Editing a list note's `# H1` on iOS does not sync back to `note.title`.** macOS does sync,
-  which is why every iOS list-note row read "Untitled" while seeding `676ff3b`'s screenshots.
-  Pre-existing and unrelated to folders. `CLAUDE.md` documents the intended behaviour — new notes
-  start with the title as the first H1, and editing that H1 syncs back — so iOS is missing half of a
-  documented feature.
 
 - [T-224] **Two hosts still need the one-line `editingNote:` pass for the reference panel.**
   `0332255` shipped the panel but `iOSNotesView.swift` (2 sites) and the list-detail notes panel were
@@ -109,15 +137,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   which a hosted sub-editor would break. `MarkdownRenderedBlockDeletionSupport` already exists for
   deleting a rendered block, so read it: it is evidence of how much special-casing a canvas already
   needs.
-
-- [T-217] **The bundle detail sheet has the same row-owned-sheet defect T-201 just fixed.**
-  `iOSCalendarBoardBundleCard` (`iOSBoardCards.swift:~390`) and `iOSTimelineBundleBlock`
-  (`iOSCalendarTimelineViews.swift:~925`) each present `iOSCalendarBundleDetailSheet` from a card
-  inside a filtered `ForEach`, so editing a block's date or time moves the card between day columns
-  and tears the panel down mid-edit. Same defect, **different sheet**, so it needs its own host rather
-  than the task one. `D-141` pinned both at an exact count so it cannot drift unnoticed.
-  `iOSTaskInspectorHost` is the pattern to copy, including its `isDeleted || modelContext == nil`
-  finding.
 
 
 - [T-220] **macOS's About carries only the build card; iOS's also carries Privacy Policy and Support.**
@@ -508,6 +527,37 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-155] `23210b9` The 100pt band under every iPad list tab was the floating `+`'s clearance,
+  inherited. Reported as a Notes-tab bug, then corrected to "it's in all tabs" — which was the
+  diagnosis: `iOSListDetailPagePicker` sits above `pageBody`, so one defect appears on five tabs.
+  `.iOSFloatingCreateTaskButton(seed:)` sets `.contentMargins(.bottom, scrollClearance, …)` for the
+  page's own list, `contentMargins` is inherited through the environment, and a `.bottom` margin on a
+  **horizontal** scroll view grows its *cross* axis — so a 44pt tab row became 144pt. Reset on the
+  strip, matching the two markdown accessory strips (D-104), so the next host is fixed too. Hairline
+  230pt → 130pt.
+
+- [D-154] `6c915fd` The bundle panel dismissed itself for the same reason the task inspector did
+  (T-217). T-201 fixed four surfaces where a row owned the `.sheet`; `iOSCalendarBoardBundleCard` and
+  `iOSTimelineBundleBlock` had it for `TaskBundle` and were missed **because the shared helper was
+  named for tasks**. So the fix is mostly a rename — `CadenceTaskInspectorPresentation` →
+  `CadenceDetailPanelPresentation`, `task` → `subject` — plus `iOSBundleInspectorHost` applied once in
+  `iOSRootView`. `iOSCalendarDayInspector` and `iOSCalendarMonthAgendaList` deliberately keep their
+  own `.sheet(item:)`: not being inside a filtered `ForEach` over what they present, they cannot show
+  the defect. Worth remembering as a naming lesson, not just a bug fix.
+
+- [D-153] `e79225a` Editing a note's `# H1` syncs back to `note.title` on iOS too (T-223). macOS did
+  it inline in `NoteEditorPane`, so iOS had nothing to call; now `MarkdownNoteTitleSync` in
+  `Services/MarkdownNoteSupport.swift` and both platforms call it. `iOSNoteDetailSheet` also stopped
+  writing `note.content` directly and goes through `CadenceCoreNoteSupport.update`.
+
+- [D-152] `e79225a` A test named for writes was banning reads, and blocking a real improvement
+  (T-233). `onlyTheSharedFilingHelperWritesAFolderPath` banned `.folderPath` reads as well as
+  assignments, so *displaying* a note's folder failed a test about *writing* it — the fourth instance
+  of T-227's shape (a name narrower than the assertion it guards). Split to
+  `\.folderPath\s*\+?=(?!=)`; the negative lookahead is what keeps `==` legal. With reads allowed,
+  `CadenceNoteDeletionSummary` gained the `folder` field, so a confirmation for one of several
+  "Untitled" notes can say which one.
 
 - [D-151] `9d3e0d6` The near-copy calls the shared predicate rather than the predicate being deleted
   (T-234). The ticket said `CadenceNoteFolderPath.isRoot` was dead with zero production readers, and
