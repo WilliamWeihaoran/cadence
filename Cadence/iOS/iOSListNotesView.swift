@@ -35,6 +35,8 @@ struct iOSListNotesView: View {
     /// One-column only. The column is the screen there, so the editor is presented over it.
     @State private var presentedNote: Note?
     @State private var folderRequest: iOSNoteFolderRequest?
+    /// Set by a row's menu; the `iOSNoteDeletion` modifier owns the confirmation and the delete.
+    @State private var noteToDelete: Note?
     /// The width this view was handed, which is not what the size class says about it. Zero until
     /// the first measurement lands — see `CadenceNotesListMetrics.layout`.
     @State private var hostWidth: CGFloat = 0
@@ -117,6 +119,7 @@ struct iOSListNotesView: View {
             referenceNotes: allNotes,
             referenceTasks: allTasks
         )
+        .iOSNoteDeletion(note: $noteToDelete)
     }
 
     /// No panel header — the tab strip above already says "Notes", and this row carries only
@@ -214,12 +217,15 @@ struct iOSListNotesView: View {
             )
         }
         .buttonStyle(.iosPressable)
+        // macOS's `ListNoteFolderRow` menu, item for item and in its order: copy, move, delete.
         .contextMenu {
+            iOSNoteCopyLinkButton(note: note)
             NoteFolderMoveMenu(
                 folderNames: folderNames,
                 move: { CadenceListNoteFiling.move(note, toFolder: $0) },
                 newFolder: { folderRequest = iOSNoteFolderRequest(mode: .moveNote(note.id)) }
             )
+            iOSNoteDeleteMenuButton(note: note) { noteToDelete = $0 }
         }
     }
 

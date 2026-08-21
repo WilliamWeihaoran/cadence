@@ -88,6 +88,9 @@ struct iOSNotesView: View {
     /// Compact width only. The sidebar is the screen there, so the editor is presented over it.
     @State private var presentedNote: Note?
     @State private var selectedMeetingNote: Note?
+    /// Set by a notepad row's menu; the `iOSNoteDeletion` modifier owns the confirmation and the
+    /// delete.
+    @State private var noteToDelete: Note?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
     // Deliberately `@State`, not `@FocusState`. The editor's first responder is a `UITextView`
@@ -208,6 +211,7 @@ struct iOSNotesView: View {
             referenceNotes: allNotes,
             referenceTasks: allTasks
         )
+        .iOSNoteDeletion(note: $noteToDelete)
     }
 
     /// One header, every host.
@@ -294,17 +298,41 @@ struct iOSNotesView: View {
                     metrics: listMetrics,
                     dateKey: { listDateKey(for: $0) }
                 ) { note in
-                    Button {
-                        open(note)
-                    } label: {
-                        listRow(for: note)
-                    }
-                    .buttonStyle(.iosPressable)
+                    sidebarRow(for: note)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.surface)
+    }
+
+    /// One row of the index column, with the delete menu on the one tab that can have one.
+    ///
+    /// **Notepad only, and that is macOS's rule rather than a mobile compromise:** `NotesView`
+    /// passes `onDelete` from `NotepadPage` and from nowhere else. A daily, weekly or event note is
+    /// manufactured by its date or its calendar event and reappears the moment you look at that
+    /// day again, so deleting one is a no-op behind a confirmation. A notepad note is typed from
+    /// nothing, and until T-226 nothing on this platform could remove one.
+    ///
+    /// The menu is attached conditionally rather than emptied conditionally: a `.contextMenu` whose
+    /// content resolves to nothing still arms the long-press, so every dated row would answer a
+    /// press with a blank panel.
+    @ViewBuilder
+    private func sidebarRow(for note: Note) -> some View {
+        let row = Button {
+            open(note)
+        } label: {
+            listRow(for: note)
+        }
+        .buttonStyle(.iosPressable)
+
+        if activeTab == .notepad {
+            row.contextMenu {
+                iOSNoteDeleteMenuButton(note: note) { noteToDelete = $0 }
+            }
+        } else {
+            row
+        }
     }
 
     @ViewBuilder

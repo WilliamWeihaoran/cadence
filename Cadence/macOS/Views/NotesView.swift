@@ -379,8 +379,8 @@ private struct NotepadPage: View {
             if selectedNoteID == noteID {
                 selectedNoteID = notes.first { $0.id != noteID }?.id
             }
-            modelContext.delete(current)
-            modelContext.deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: [noteID])
+            // The shared delete — see `ListNotesView.deleteNote` and `CadenceNoteActionSupport`.
+            modelContext.deleteNote(current)
         }
     }
 

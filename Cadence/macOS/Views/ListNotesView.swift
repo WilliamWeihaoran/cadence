@@ -333,8 +333,10 @@ struct ListNotesView: View {
             if selection == .list(noteID) {
                 selection = replacementSelectionAfterDeletingListNote(noteID)
             }
-            modelContext.delete(currentNote)
-            modelContext.deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: [noteID])
+            // The shared delete: the note *and* the images it was the last reader of. Both this
+            // site and `NotesView`'s spelled those two steps out separately until T-226 needed a
+            // third caller on iOS — see `CadenceNoteActionSupport`.
+            modelContext.deleteNote(currentNote)
         }
     }
 

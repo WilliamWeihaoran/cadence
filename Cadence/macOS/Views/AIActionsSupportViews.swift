@@ -25,10 +25,10 @@ enum NoteActionSupport {
         CadenceAINoteSummary.append(summary, to: note, modelContext: modelContext)
     }
 
+    /// Forwards for the same reason `appendSummary` does: iOS's row menu copies the same link, and
+    /// the *format* is the half that can drift. See `CadenceNoteClipboard`.
     static func copyMarkdownLink(to note: Note) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(NoteReferenceParser.noteReferenceMarkdown(for: note), forType: .string)
+        CadenceNoteClipboard.copyMarkdownLink(to: note)
     }
 
     static func move(_ note: Note, toArea area: Area?, modelContext: ModelContext?) {
