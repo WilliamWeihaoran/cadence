@@ -9,7 +9,9 @@ This subtree contains the app target source. Prefer reading `../AGENTS.md` first
 - `Services/` contains shared services, migrations, notifications, widget support, the markdown/note parsing layer, schema, and `AI/` + `MCPReadOnly/`.
 - `Shared/` contains design tokens (`Theme.swift`), common components, date/time formatting, and cross-platform presentation/query/mutation support.
 - `macOS/` contains the fully implemented desktop app — the primary product surface.
-- `iOS/` is a **large, actively-developed iOS/iPadOS surface — 79 files, not stubs.**
+- `iOS/` is a **large, actively-developed iOS/iPadOS surface — 87 `.swift` files at the time of
+  writing, not stubs.** (Re-count when you add one; this line said 79 while the root guides said
+  86 and the directory held 87.)
   `iOSRootView.swift` is an adaptive root shell — `iPadMacStyleRootShell` (sidebar) at regular
   width, `iOSCompactRootShell` (a hand-built **four-tab bottom bar**, `[ Tasks ] [ Calendar ]
   ( + ) [ Notes ] [ More ]`) at compact width — routing to real implementations of Today,

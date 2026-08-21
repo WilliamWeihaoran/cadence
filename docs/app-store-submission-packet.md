@@ -30,11 +30,12 @@ Paste `docs/app-review-notes.md` into App Store Connect "Notes for Review" and u
 Required notes:
 
 - Calendar access is optional and permission-gated.
+- Reminders access is optional and permission-gated, and is requested separately from Calendar access. Cadence reads incomplete reminders and can mark one complete; it never creates, edits, or deletes a reminder.
 - Sign in with Apple is optional.
 - Account/data deletion is available in Settings, Account and Settings, Data Safety.
 - AI is optional, requires the user's own OpenAI API key, and sends selected note content only when the user runs an AI command.
 - CloudKit sync may use the user's private iCloud database.
-- Cadence has no purchases, subscriptions, ads, tracking, or user-facing push notifications.
+- Cadence has no purchases, subscriptions, ads, tracking, or user-facing push notifications. The APS entitlement it ships is for CloudKit's silent sync pushes; task and habit reminders are local notifications, requested only from Settings, Notifications.
 
 ## Privacy Details
 

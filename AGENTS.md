@@ -56,16 +56,16 @@ past a `grep "/Cadence/"` entirely.
 
 - `Cadence/CadenceApp.swift` - app entry, model container, CloudKit setup, recovery.
 - `Cadence/Models/` - shared SwiftData models. Read this before changing persistence or relationships.
-- `Cadence/Services/` - 48 shared services: schema, migrations, notifications, widget support, the 27 `Markdown*Support` parsing/mutation files, plus `AI/` and `MCPReadOnly/`. Note the markdown *logic* lives here, not in `macOS/Editor/`.
+- `Cadence/Services/` - 48 shared services: schema, migrations, notifications, widget support, the 27 `Markdown*` parsing/mutation files (25 of them named `*Support.swift`; re-count when you add one), plus `AI/` and `MCPReadOnly/`. Note the markdown *logic* lives here, not in `macOS/Editor/`.
 - `Cadence/Shared/` - design tokens (`Theme.swift`), shared components, date/time utilities, hover styling, and cross-platform presentation/query support (`Cadence*Support.swift`).
 - `Cadence/macOS/` - main product surface. Most active work happens here.
-- `Cadence/macOS/Views/` - macOS feature screens and support views (~168 files).
+- `Cadence/macOS/Views/` - macOS feature screens and support views (166 `.swift` files at the time of writing; re-count with `ls Cadence/macOS/Views/*.swift | wc -l` rather than trusting this figure).
 - `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, hotkeys, task creation, hover state, deletion, scheduling, note export, Apple account. **Not** reminders and **not** the privacy data reset: `RemindersManager` and `PrivacyDataResetService` are both cross-platform and live in `Cadence/Services/` (`CadenceRemindersManager.swift`, `CadencePrivacyDataResetService.swift`), each leaving a tombstone under its old unprefixed name.
 - `Cadence/macOS/Editor/` - AppKit-backed markdown editor bridge (11 files since the T-105 split). High risk; preserve NSTextView behavior carefully.
-- `Cadence/iOS/` - large, real iOS/iPadOS surface (86 files: Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings). iPhone runs a four-tab bottom bar (`iOSCompactTabShell`); iPad keeps its sidebar. Do not assume feature parity with macOS.
+- `Cadence/iOS/` - large, real iOS/iPadOS surface covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search and Settings (87 `.swift` files at the time of writing; re-count when you add one). iPhone runs a four-tab bottom bar (`iOSCompactTabShell`); iPad keeps its sidebar. Do not assume feature parity with macOS.
 - `CadenceWidgets/` - widget extension. Compiles a subset of app sources (models, `Theme.swift`, `Cadence*WidgetSupport.swift`) directly into the extension target.
 - `CadenceMCPServer/` and `plugins/cadence-mcp/` - MCP server/plugin surfaces. Separate integration boundaries with their own build and verification procedure — read `CadenceMCPServer/AGENTS.md` before changing shared models or services that they compile.
-- `CadenceTests/`, `CadenceUITests/` - test targets. `CadenceTests/` is ~140 flat `.swift` files; look for an existing file before adding one.
+- `CadenceTests/`, `CadenceUITests/` - test targets. `CadenceTests/` is a flat directory of 167 `.swift` files at the time of writing; **look for an existing file before adding one**, and re-count with `ls CadenceTests/*.swift | wc -l` instead of trusting this number. It is the figure the guides cite when they tell you to reuse a test file, so an undercount is what produces duplicate suites — it read "~140" through 158, 164 and 167.
 - `docs/` - support, privacy, and App Review notes (the public site + submission material).
 
 ## Scoped Guides
@@ -242,7 +242,7 @@ Use extra caution in these areas:
   blocks the flip; what remains is 10 Swift-6-mode *warnings* elsewhere in the app, unchanged by
   T-105 and none of them in editor files. Clearing those is the work a flip now needs.
 - `Cadence/macOS/Views/Timeline*`, `SchedulePanel*`, `CalendarPage*`, `CalendarBoard*` - timeline coordinate math, drag/drop, EventKit, and schedule state.
-- `Cadence/macOS/Views/TasksPanel*`, `ListDetail*`, `Inbox*`, `Kanban*` - shared task surface behavior, grouping, sorting, drag reorder, completion animations.
+- `Cadence/macOS/Views/TasksPanel*`, `TasksListView.swift`, `ListDetail*`, `Inbox*`, `Kanban*` - shared task surface behavior, grouping, sorting, drag reorder, completion animations. `TasksListView` is the single All Tasks + Inbox list; `AllTasksListView.swift` and `InboxView.swift` were merged into it and are gone.
 - `Cadence/macOS/Services/CalendarManager.swift`, `SchedulingService.swift`, `TaskWorkflowService.swift`, deletion helpers - can affect SwiftData relationships and EventKit side effects.
 - `Cadence/Models/` and `Cadence/Services/CadenceSchema.swift` - schema changes require migration and CloudKit awareness.
 

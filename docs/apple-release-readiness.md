@@ -54,8 +54,9 @@ Current privacy manifest requirements:
 | Application group `group.com.haoranwei.Cadence` | App and widgets | Shares the SwiftData store and widget snapshots between app and widgets |
 | iCloud container `iCloud.com.haoranwei.Cadence` | App | Syncs Cadence data through the user's private CloudKit database |
 | CloudKit service | App | Supports private iCloud sync |
-| APS environment | App | Allows CloudKit remote notifications used by sync infrastructure; Cadence review notes state it does not send user-facing push notifications |
+| APS environment | App | Allows CloudKit's silent remote notifications, which tell the app its private database changed. Registered for at launch on macOS (`CadenceRemoteNotificationRegistrar`). No alert/sound/badge payloads, no Cadence-operated sender, and no user-facing push notifications — task and habit reminders are *local* notifications through `UNUserNotificationCenter` |
 | Calendar personal information | App | Reads Apple Calendar events and creates, updates, or deletes scheduled task events when requested |
+| Reminders usage description (`NSRemindersFullAccessUsageDescription`) | App | Reads incomplete Apple Reminders for the Inbox and marks one complete when the user checks it off; Cadence never creates, edits, or deletes a reminder. Requested separately from Calendar access, and there is no reminders-specific App Sandbox entitlement to ship alongside it |
 | Network client | App | Supports optional OpenAI API calls and CloudKit/network-backed app functionality |
 | Sign in with Apple | App | Optional Cadence identity flow; local use and iCloud sync do not depend on it |
 | User-selected read/write files | App build setting | Supports user-directed export/import or backup folder interactions inside the sandbox |

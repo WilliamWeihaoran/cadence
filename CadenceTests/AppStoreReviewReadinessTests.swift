@@ -133,6 +133,98 @@ struct AppStoreReviewReadinessTests {
         #expect(privacyPolicy.contains("removes local Cadence backups"))
     }
 
+    /// The entitlement assertion below pinned `aps-environment` while
+    /// `docs/app-review-notes.md` said "Cadence does not use push notifications" — a
+    /// submission-facing falsehood that survived precisely because the code fact and the prose
+    /// were pinned in different places, or in the prose's case not at all. This closes that gap
+    /// from the prose side.
+    ///
+    /// It deliberately does **not** pin a sentence. What it pins is the shape of the claim: while
+    /// the entitlement ships, the document may not deny push, and its push section must say what
+    /// the push actually is (CloudKit, silent) so a reviewer is not left to guess. Rewording is
+    /// free; reverting to a denial is not.
+    @Test func appReviewNotesDescribePushAsCloudKitSilentSyncRatherThanDenyingIt() throws {
+        let entitlements = try plistDictionary(at: "Cadence/Cadence.entitlements")
+        let reviewNotes = try textFile(at: "docs/app-review-notes.md").lowercased()
+
+        // The premise. If this entitlement is ever dropped, the prose rule below stops applying
+        // and this test should be revisited rather than worked around.
+        #expect(entitlements["com.apple.developer.aps-environment"] as? String == "$(APS_ENVIRONMENT)")
+
+        for denial in [
+            "does not use push notification",
+            "doesn't use push notification",
+            "no push notification",
+            "does not send push notification",
+            "uses no push notification",
+        ] {
+            #expect(!reviewNotes.contains(denial), "review notes deny push while the APS entitlement ships")
+        }
+
+        let pushSection = try #require(
+            section(titled: "push notifications", in: reviewNotes),
+            "review notes have no Push notifications section"
+        )
+        #expect(pushSection.contains("cloudkit"))
+        #expect(pushSection.contains("silent"))
+        // A reviewer needs to know the pushes are not user-facing; any of these phrasings says so.
+        #expect(
+            ["no alert", "no user-visible", "not user-facing", "no user-facing"]
+                .contains { pushSection.contains($0) }
+        )
+
+        // And the local mechanism must not be folded into the push claim: they are different
+        // APIs with different authorization, and conflating them is what the old sentence did.
+        #expect(reviewNotes.contains("local notification"))
+        #expect(reviewNotes.contains("unusernotificationcenter"))
+    }
+
+    /// `NSRemindersFullAccessUsageDescription` ships, so the user sees a Reminders permission
+    /// prompt — and for a while neither shipped document mentioned reminders at all, so the
+    /// privacy policy described a prompt the app does not make and omitted one it does.
+    ///
+    /// Pins the presence of the disclosure and the three facts a reviewer or user needs, not the
+    /// wording: reminders exist in the app, access is separate from Calendar, and Cadence does not
+    /// create or delete them.
+    @Test func remindersAccessIsDisclosedWhereverTheAppAsksForIt() throws {
+        let project = try textFile(at: "Cadence.xcodeproj/project.pbxproj")
+        #expect(project.contains("INFOPLIST_KEY_NSRemindersFullAccessUsageDescription"))
+
+        let reviewNotes = try textFile(at: "docs/app-review-notes.md").lowercased()
+        let privacyPolicy = try textFile(at: "docs/privacy.html").lowercased()
+
+        for (document, text) in [("review notes", reviewNotes), ("privacy policy", privacyPolicy)] {
+            #expect(text.contains("reminders"), "\(document) never mentions Reminders")
+            #expect(text.contains("eventkit"), "\(document) does not say how reminders are read")
+            #expect(
+                text.contains("separately from calendar") || text.contains("separately from calendar access"),
+                "\(document) does not say Reminders access is separate from Calendar access"
+            )
+            #expect(
+                text.contains("never creates a reminder"),
+                "\(document) does not state that Cadence never creates a reminder"
+            )
+            #expect(
+                text.contains("never deletes one") || text.contains("never deletes a reminder"),
+                "\(document) does not state that Cadence never deletes a reminder"
+            )
+        }
+
+        // Both platforms surface reminders — an earlier verification called this macOS-only.
+        #expect(privacyPolicy.contains("inbox"))
+        #expect(reviewNotes.contains("ios/ipados") || reviewNotes.contains("iphone and ipad"))
+    }
+
+    /// `docs/privacy.html`'s stored-data list says "including", so an omission was imprecise
+    /// rather than false — but tags and pasted note images are whole `@Model` types, and a
+    /// privacy policy is the wrong document to be approximate in.
+    @Test func privacyPolicyStoredDataListNamesTagsAndNoteImages() throws {
+        let privacyPolicy = try textFile(at: "docs/privacy.html").lowercased()
+
+        #expect(privacyPolicy.contains("tags"))
+        #expect(privacyPolicy.contains("images you paste or drop into a note"))
+    }
+
     @Test func appEntitlementsIncludeCloudKitPushSandboxNetworkCalendarAndAppGroupAccess() throws {
         let entitlements = try plistDictionary(at: "Cadence/Cadence.entitlements")
 
@@ -269,6 +361,18 @@ struct AppStoreReviewReadinessTests {
         let data = try Data(contentsOf: repositoryRoot().appendingPathComponent(relativePath))
         let value = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
         return try #require(value as? [String: Any])
+    }
+
+    /// The block of a `Title:`-then-bullets section in `docs/app-review-notes.md`, from the
+    /// heading to the next blank line. Lets a test assert about one section's contents without
+    /// pinning its sentences, and without a match leaking in from a neighbouring section.
+    private func section(titled title: String, in document: String) -> String? {
+        guard let start = document.range(of: "\n\(title):\n") ?? document.range(of: "\(title):\n") else {
+            return nil
+        }
+        let rest = document[start.upperBound...]
+        guard let end = rest.range(of: "\n\n") else { return String(rest) }
+        return String(rest[..<end.lowerBound])
     }
 
     private func textFile(at relativePath: String) throws -> String {

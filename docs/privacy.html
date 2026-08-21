@@ -10,7 +10,7 @@
   <main class="page">
     <p class="eyebrow">Cadence</p>
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: May 21, 2026</p>
+    <p class="updated">Last updated: August 21, 2026</p>
 
     <section>
       <h2>Overview</h2>
@@ -20,7 +20,7 @@
 
     <section>
       <h2>Data Cadence Stores</h2>
-      <p>Cadence may store the content you create in the app, including tasks, subtasks, task bundles, notes, documents, saved links, lists, contexts, projects, goals, habits, focus information, and calendar-link metadata.</p>
+      <p>Cadence may store the content you create in the app, including tasks, subtasks, task bundles, notes, images you paste or drop into a note, tags, documents, saved links, lists, contexts, projects, goals, habits, focus information, and calendar-link metadata.</p>
       <p>If you choose to sign in with Apple on macOS, Cadence stores the Apple user identifier and any name or email address Apple returns to the app. Sign in with Apple is a macOS feature, so no Cadence account profile is stored on iPhone or iPad. This identity is optional and can be removed by signing out or by deleting your Cadence account and data in Settings.</p>
     </section>
 
@@ -30,8 +30,16 @@
     </section>
 
     <section>
+      <h2>Reminders Access</h2>
+      <p>Cadence requests Reminders access so it can show your incomplete Apple Reminders in the Cadence Inbox and mark one complete when you check it off there. Reminders are accessed through Apple's EventKit APIs, on both macOS and iPhone and iPad, and appear in Settings, Reminders as well as in the Inbox.</p>
+      <p>Marking a reminder complete is the only change Cadence makes to your reminders, and only in a reminders list that allows changes. Cadence never creates a reminder, never edits a reminder's title, notes, or dates, and never deletes one. Your reminders stay in Apple's Reminders app: Cadence reads them for display and does not copy them into its own store or sync them through iCloud with your Cadence data.</p>
+      <p>Reminders access is requested separately from Calendar access, and granting one does not grant the other. It is optional, and Cadence works without it. You can revoke Reminders access at any time in System Settings on macOS, or in the Settings app on iPhone and iPad.</p>
+    </section>
+
+    <section>
       <h2>iCloud Sync</h2>
       <p>Cadence may use Apple's CloudKit service to sync app data through your private iCloud database. Private iCloud data is associated with your Apple account and is handled by Apple according to Apple's iCloud terms and privacy practices.</p>
+      <p>So that Cadence learns about changes made on your other devices, CloudKit sends the app silent push notifications through Apple's push service. These carry no alert, sound, or badge, and no server operated by Cadence sends them or receives them. Cadence sends no other push notifications. Reminders about your own tasks and habits are scheduled locally on your device instead, and Cadence asks for notification permission only when you turn them on in Settings, Notifications.</p>
     </section>
 
     <section>
