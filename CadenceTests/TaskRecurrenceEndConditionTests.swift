@@ -469,4 +469,28 @@ struct TaskRecurrenceEndConditionTests {
         #expect(root.recurrenceEndCount == 1)
         #expect(root.effectiveRecurrenceEndMode == .afterCount)
     }
+
+    // MARK: - 8. One edit scope, two cases, one set of labels
+
+    /// T-200: `TaskWorkflowService` used to declare its own two-case `TaskRecurrenceEditScope`
+    /// with labels byte-identical to these, bridged across by two separate private converters.
+    /// Nothing pinned the labels, so the duplicate could have drifted and the macOS confirmation
+    /// dialog would have started saying something the iOS one did not. There is one type now, and
+    /// this is what says so.
+    @Test func theEditScopeHasExactlyTwoCasesWithStableRawValuesAndLabels() {
+        #expect(CadenceTaskRecurrenceEditScope.allCases.count == 2)
+        #expect(CadenceTaskRecurrenceEditScope.allCases == [.thisTask, .thisAndFuture])
+
+        #expect(CadenceTaskRecurrenceEditScope.thisTask.rawValue == "thisTask")
+        #expect(CadenceTaskRecurrenceEditScope.thisAndFuture.rawValue == "thisAndFuture")
+
+        #expect(CadenceTaskRecurrenceEditScope.thisTask.label == "Only This Task")
+        #expect(CadenceTaskRecurrenceEditScope.thisAndFuture.label == "This And Future Tasks")
+
+        // Every case carries a distinct, non-empty label: an empty one renders as a blank button
+        // in the macOS embed-popover dialog and the iOS swipe-tray dialog alike.
+        let labels = Set(CadenceTaskRecurrenceEditScope.allCases.map(\.label))
+        #expect(labels.count == CadenceTaskRecurrenceEditScope.allCases.count)
+        #expect(labels.contains(where: \.isEmpty) == false)
+    }
 }

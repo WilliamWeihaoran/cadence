@@ -106,12 +106,12 @@ struct TaskInspectorRecurrenceControl: View {
 
     // MARK: - Edits
 
-    private func selectRule(_ rule: TaskRecurrenceRule, scope: TaskRecurrenceEditScope) {
+    private func selectRule(_ rule: TaskRecurrenceRule, scope: CadenceTaskRecurrenceEditScope) {
         guard task.recurrenceRule != rule else { return }
         apply(.rule(rule), scope: resolvedScope(scope))
     }
 
-    private func selectEnd(mode: TaskRecurrenceEndMode, dateKey: String, count: Int, scope: TaskRecurrenceEditScope) {
+    private func selectEnd(mode: TaskRecurrenceEndMode, dateKey: String, count: Int, scope: CadenceTaskRecurrenceEditScope) {
         let normalizedDate = mode == .onDate ? dateKey : ""
         let normalizedCount = mode == .afterCount ? CadenceTaskRecurrenceEndPresentation.normalizedEndCount(count) : 0
         guard mode != task.recurrenceEndMode
@@ -122,11 +122,11 @@ struct TaskInspectorRecurrenceControl: View {
 
     /// A standalone task has no siblings to propagate to, and the panel hides the scope row for
     /// it — so whatever the panel reports is pinned back to `.thisTask` rather than trusted.
-    private func resolvedScope(_ scope: TaskRecurrenceEditScope) -> TaskRecurrenceEditScope {
+    private func resolvedScope(_ scope: CadenceTaskRecurrenceEditScope) -> CadenceTaskRecurrenceEditScope {
         task.isRecurrenceSeriesMember ? scope : .thisTask
     }
 
-    private func apply(_ change: RecurrenceChange, scope: TaskRecurrenceEditScope) {
+    private func apply(_ change: RecurrenceChange, scope: CadenceTaskRecurrenceEditScope) {
         switch change {
         case .rule(let rule):
             TaskWorkflowService.applyRecurrenceRule(rule, to: task, allTasks: allTasks, scope: scope)
@@ -137,7 +137,7 @@ struct TaskInspectorRecurrenceControl: View {
                     mode: .never,
                     to: task,
                     allTasks: allTasks,
-                    scope: sharedScope(scope)
+                    scope: scope
                 )
             }
         case .end(let mode, let dateKey, let count):
@@ -147,17 +147,10 @@ struct TaskInspectorRecurrenceControl: View {
                 endCount: count,
                 to: task,
                 allTasks: allTasks,
-                scope: sharedScope(scope)
+                scope: scope
             )
         }
         try? modelContext.save()
-    }
-
-    private func sharedScope(_ scope: TaskRecurrenceEditScope) -> CadenceTaskRecurrenceEditScope {
-        switch scope {
-        case .thisTask: return .thisTask
-        case .thisAndFuture: return .thisAndFuture
-        }
     }
 }
 
@@ -207,12 +200,12 @@ private struct TaskRecurrencePickerPanel: View {
     let endDateKey: String
     let endCount: Int
     let showsScope: Bool
-    let onSelectRule: (TaskRecurrenceRule, TaskRecurrenceEditScope) -> Void
-    let onSelectEnd: (TaskRecurrenceEndMode, String, Int, TaskRecurrenceEditScope) -> Void
+    let onSelectRule: (TaskRecurrenceRule, CadenceTaskRecurrenceEditScope) -> Void
+    let onSelectEnd: (TaskRecurrenceEndMode, String, Int, CadenceTaskRecurrenceEditScope) -> Void
 
     /// Resets to "this task only" every time the popover opens — the safe default, and the one
     /// the old dialog listed first.
-    @State private var scope: TaskRecurrenceEditScope = .thisTask
+    @State private var scope: CadenceTaskRecurrenceEditScope = .thisTask
     @State private var showEndDatePicker = false
     @State private var viewMonth: Date = Calendar.current.startOfDay(for: Date())
     @State private var countText: String = ""
@@ -291,7 +284,7 @@ private struct TaskRecurrencePickerPanel: View {
     @ViewBuilder
     private var scopeOptions: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Wording is deliberately the short inline form, not `TaskRecurrenceEditScope.label`
+            // Wording is deliberately the short inline form, not `CadenceTaskRecurrenceEditScope.label`
             // ("Only This Task" / "This And Future Tasks") — those are title-cased for the alert
             // buttons this row replaced.
             scopeRow("This task only", value: .thisTask)
@@ -300,7 +293,7 @@ private struct TaskRecurrencePickerPanel: View {
     }
 
     @ViewBuilder
-    private func scopeRow(_ title: String, value: TaskRecurrenceEditScope) -> some View {
+    private func scopeRow(_ title: String, value: CadenceTaskRecurrenceEditScope) -> some View {
         let isSelected = scope == value
         Button {
             scope = value

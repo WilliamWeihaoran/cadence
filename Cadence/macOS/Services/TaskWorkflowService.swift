@@ -2,18 +2,6 @@
 import SwiftData
 import Foundation
 
-enum TaskRecurrenceEditScope: String, CaseIterable, Hashable {
-    case thisTask
-    case thisAndFuture
-
-    var label: String {
-        switch self {
-        case .thisTask: return "Only This Task"
-        case .thisAndFuture: return "This And Future Tasks"
-        }
-    }
-}
-
 enum TaskWorkflowService {
     static func markDone(_ task: AppTask, in context: ModelContext) {
         CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: context)
@@ -44,35 +32,26 @@ enum TaskWorkflowService {
         _ rule: TaskRecurrenceRule,
         to task: AppTask,
         allTasks: [AppTask],
-        scope: TaskRecurrenceEditScope
+        scope: CadenceTaskRecurrenceEditScope
     ) {
         CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
             rule,
             to: task,
             allTasks: allTasks,
-            scope: scope.sharedScope
+            scope: scope
         )
     }
 
     static func recurrenceTargets(
         from task: AppTask,
         allTasks: [AppTask],
-        scope: TaskRecurrenceEditScope
+        scope: CadenceTaskRecurrenceEditScope
     ) -> [AppTask] {
         CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets(
             from: task,
             allTasks: allTasks,
-            scope: scope.sharedScope
+            scope: scope
         )
-    }
-}
-
-private extension TaskRecurrenceEditScope {
-    var sharedScope: CadenceTaskRecurrenceEditScope {
-        switch self {
-        case .thisTask: return .thisTask
-        case .thisAndFuture: return .thisAndFuture
-        }
     }
 }
 

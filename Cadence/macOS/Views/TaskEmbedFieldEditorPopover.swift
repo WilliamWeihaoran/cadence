@@ -38,10 +38,10 @@ struct TaskEmbedFieldEditorPopover: View {
                 ),
                 titleVisibility: .visible
             ) {
-                Button(TaskRecurrenceEditScope.thisTask.label) {
+                Button(CadenceTaskRecurrenceEditScope.thisTask.label) {
                     applyPendingRecurrenceRule(scope: .thisTask)
                 }
-                Button(TaskRecurrenceEditScope.thisAndFuture.label) {
+                Button(CadenceTaskRecurrenceEditScope.thisAndFuture.label) {
                     applyPendingRecurrenceRule(scope: .thisAndFuture)
                 }
                 Button("Cancel", role: .cancel) {
@@ -376,7 +376,7 @@ struct TaskEmbedFieldEditorPopover: View {
         }
     }
 
-    private func applyPendingRecurrenceRule(scope: TaskRecurrenceEditScope) {
+    private func applyPendingRecurrenceRule(scope: CadenceTaskRecurrenceEditScope) {
         guard let pendingRecurrenceRule else { return }
         TaskWorkflowService.applyRecurrenceRule(
             pendingRecurrenceRule,
