@@ -442,6 +442,185 @@ struct CadenceCancelledTaskReachabilityTests {
         #expect(CadenceTaskQuerySupport.completedTodayTasks(from: [subject], todayKey: todayKey).isEmpty)
     }
 
+    // MARK: - T-212: winding a container down settles its work, and advances no series
+
+    /// An area holding `tasks`, inserted so `TaskContainerLifecycleService` can walk it.
+    private func containerArea(
+        _ name: String,
+        holding tasks: [AppTask],
+        in context: ModelContext
+    ) -> Area {
+        let area = Area(name: name)
+        context.insert(area)
+        for task in tasks {
+            context.insert(task)
+        }
+        area.tasks = tasks
+        return area
+    }
+
+    /// The T-212 bug. `finishRemainingActiveTasks` hand-wrote the cancel transition and set
+    /// `completedAt = nil`, so completing or archiving a list produced untimestamped cancellations
+    /// after T-202 had made every other cancellation in the app a timestamped event. Both of these
+    /// tasks are the kind that has nothing else to stand on: one overdue, one dateless.
+    @Test func archivingAListTimestampsTheCancellationsItProduces() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let overdue = task("overdue", doDate: "2026-08-01", dueDate: "2026-08-02")
+        let dateless = task("dateless")
+        let area = containerArea("wound down", holding: [overdue, dateless], in: context)
+
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(
+            in: area,
+            includingChildProjects: true,
+            in: context
+        )
+
+        #expect(overdue.isCancelled)
+        #expect(dateless.isCancelled)
+        #expect(overdue.completedAt != nil)
+        #expect(dateless.completedAt != nil)
+
+        let today = DateFormatters.todayKey()
+        #expect(
+            CadenceTaskQuerySupport.completedTodayTasks(from: [overdue, dateless], todayKey: today)
+                .map(\.title).sorted() == ["dateless", "overdue"]
+        )
+    }
+
+    /// macOS's Today Completed section is the stricter filter — in `.todayOverview` it asks about
+    /// `completedAt` and has no do-date or due-date ground to fall back on — so it is the surface
+    /// where an untimestamped bulk cancellation disappeared completely. Pinned separately for the
+    /// same reason `macOSTodayCompletedAlsoAdmitsTheCancelledTask` is.
+    @Test func macOSTodayCompletedAdmitsTheTasksAKanbanColumnArchiveCancelled() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let subject = task("in the archived column")
+        subject.sectionName = "Doing"
+        let area = containerArea("board", holding: [subject], in: context)
+        let section = TaskSectionConfig(name: "Doing")
+
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(
+            in: section,
+            area: area,
+            project: nil,
+            in: context
+        )
+
+        #expect(subject.isCancelled)
+        let state = TasksPanelDerivedState(
+            allTasks: [subject],
+            areas: [area],
+            projects: [],
+            mode: .todayOverview,
+            todayKey: DateFormatters.todayKey(),
+            sortField: .date,
+            sortDirection: .ascending
+        )
+        #expect(state.doneTasks.map(\.title) == ["in the archived column"])
+    }
+
+    /// One click settling twelve tasks settled them at one moment, so they carry one timestamp
+    /// rather than a scatter of them — which is also what keeps their order in the logbook stable
+    /// under `completionPrecedes`.
+    @Test func oneContainerActionSettlesEveryTaskAtTheSameInstant() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let first = task("first")
+        let second = task("second")
+        let area = containerArea("wound down", holding: [first, second], in: context)
+
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(
+            in: area,
+            includingChildProjects: true,
+            in: context
+        )
+
+        #expect(first.completedAt != nil)
+        #expect(first.completedAt == second.completedAt)
+    }
+
+    /// The other half of the ticket, and the half the ticket got backwards: it asked for this path
+    /// to be routed through `markCancelled` so it *would* spawn a successor. It must not. The
+    /// successor `spawnNextOccurrenceIfNeeded` builds inherits `area`, `project` and `sectionName`,
+    /// so archiving a list containing a daily task would immediately refill the list it just
+    /// closed — the same hazard T-213 fixed in the normalizer and T-214 records against
+    /// `applyStatusCompletion`. The `shouldSpawnNextOccurrence` expectation is the non-vacuity
+    /// check: without it this passes on a task that could never have spawned anything.
+    @Test func archivingAListDoesNotMintTheNextRecurrenceOccurrence() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let subject = task("water the plants", doDate: DateFormatters.todayKey())
+        subject.recurrenceRule = .daily
+        let area = containerArea("wound down", holding: [subject], in: context)
+        try context.save()
+        #expect(subject.shouldSpawnNextOccurrence(nextDateKey: "2026-12-31"))
+
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(
+            in: area,
+            includingChildProjects: true,
+            in: context
+        )
+
+        #expect(subject.isCancelled)
+        #expect(subject.recurrenceSpawnedTaskID == nil)
+        #expect(
+            try context.fetch(FetchDescriptor<AppTask>()).count == 1,
+            "archiving a list spawned a recurrence occurrence into the list it just closed"
+        )
+    }
+
+    /// Completing a project is the same shape pointing the other way, and it was already right —
+    /// pinned so a later "make the two branches symmetric" pass cannot make it wrong by routing
+    /// both through the single-task transitions.
+    @Test func completingAProjectDoesNotMintTheNextRecurrenceOccurrence() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let subject = task("weekly review", doDate: DateFormatters.todayKey())
+        subject.recurrenceRule = .weekly
+        let project = Project(name: "wound down")
+        context.insert(project)
+        context.insert(subject)
+        project.tasks = [subject]
+        try context.save()
+        #expect(subject.shouldSpawnNextOccurrence(nextDateKey: "2026-12-31"))
+
+        TaskContainerLifecycleService.completeRemainingActiveTasks(in: project, in: context)
+
+        #expect(subject.isDone)
+        #expect(subject.completedAt != nil)
+        #expect(subject.recurrenceSpawnedTaskID == nil)
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 1)
+    }
+
+    /// Work already settled is left exactly as it was. The guard reads **status alone**
+    /// (`!isDone && !isCancelled`), which is the spelling that stayed correct once a cancelled task
+    /// began carrying a `completedAt`; a guard that also asked `completedAt == nil` would have
+    /// re-stamped last week's cancellation to today and dragged it into Today's Completed section.
+    @Test func windingDownAContainerLeavesAlreadySettledWorkUntouched() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let lastWeek = try instant("2026-08-13")
+        let doneEarlier = task("done last week", status: .done, completedAt: lastWeek)
+        let cancelledEarlier = task("cancelled last week", status: .cancelled, completedAt: lastWeek)
+        let area = containerArea(
+            "wound down",
+            holding: [doneEarlier, cancelledEarlier],
+            in: context
+        )
+
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(
+            in: area,
+            includingChildProjects: true,
+            in: context
+        )
+
+        #expect(doneEarlier.status == .done)
+        #expect(doneEarlier.completedAt == lastWeek)
+        #expect(cancelledEarlier.status == .cancelled)
+        #expect(cancelledEarlier.completedAt == lastWeek)
+    }
+
     // MARK: - The row must not read as done
 
     /// Strikethrough, dim, a cross — and never `Theme.doneFill`. Both platforms resolve the row's

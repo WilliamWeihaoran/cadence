@@ -55,6 +55,35 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         task.status = .todo
     }
 
+    /// Settles a task **without** advancing its series — the bulk counterpart to `markDone` and
+    /// `markCancelled`, for a container being wound down rather than a task being finished.
+    ///
+    /// Those two are *transitions* about one occurrence: they stamp `completedAt` and then call
+    /// `spawnNextOccurrenceIfNeeded`. That is right when a person finishes or skips a single task,
+    /// and wrong for every bulk path, because the successor inherits `area`, `project` and
+    /// `sectionName` — so completing or archiving a list would mint fresh open work inside the list
+    /// that was just closed, and archiving a kanban column would refill the column. `docs/TODO.md`
+    /// T-213 and T-214 both record that hazard; this is the shape a bulk caller is supposed to use
+    /// instead of reaching for `markDone` / `markCancelled` / `applyStatusCompletion`.
+    ///
+    /// What it does *not* skip is the timestamp. `completedAt` is "when this stopped being open",
+    /// not "when it was accomplished" (T-202), so a bulk cancellation records it exactly as a
+    /// single one does — a bulk cancel that left it nil produced settled work that reached no
+    /// Today Completed section on either platform (T-212). The invariant is the same one
+    /// `normalizeCompletionState` states: a settled status carries a timestamp, an open status
+    /// carries none. Pass one `now` for a whole batch so a single user action does not scatter
+    /// timestamps across it.
+    static func settleWithoutAdvancingSeries(_ task: AppTask, as status: TaskStatus, now: Date = Date()) {
+        switch status {
+        case .done, .cancelled:
+            task.completedAt = now
+            task.status = status
+        case .todo, .inProgress:
+            task.completedAt = nil
+            task.status = status
+        }
+    }
+
     /// If a predecessor's recorded `recurrenceSpawnedTaskID` points at a task being deleted, that
     /// predecessor would otherwise believe the series already has a live next occurrence forever —
     /// even though that occurrence no longer exists. That silently kills the series: the predecessor

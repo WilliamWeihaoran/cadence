@@ -80,19 +80,22 @@ enum TaskContainerLifecycleService {
         finishRemainingActiveTasks(tasks(in: section, area: area, project: project), as: .cancelled, in: context)
     }
 
+    /// Settling a whole container is **not** the single-task transition, and must not become it.
+    /// `markDone` / `markCancelled` spawn the next recurrence occurrence into the same area,
+    /// project and section, so routing this through either would refill the list or column that
+    /// was just completed or archived (`docs/TODO.md` T-213, T-214). It routes through
+    /// `settleWithoutAdvancingSeries` instead, which is that decision written down once.
+    ///
+    /// What was actually wrong here was the timestamp: `.cancelled` hand-wrote
+    /// `completedAt = nil`, so archiving a list or a kanban column produced untimestamped
+    /// cancellations after T-202 had made a cancellation a timestamped event everywhere else —
+    /// and `completedAt` is the only ground Today's Completed section has for settled work whose
+    /// dates are empty or past, the *only* one on macOS. One `Date()` for the batch, because a
+    /// single click settling twelve tasks settled them all at once.
     private static func finishRemainingActiveTasks(_ tasks: [AppTask], as status: TaskStatus, in context: ModelContext) {
+        let now = Date()
         for task in unique(tasks) where !task.isDone && !task.isCancelled {
-            switch status {
-            case .done:
-                task.completedAt = Date()
-                task.status = .done
-            case .cancelled:
-                task.completedAt = nil
-                task.status = .cancelled
-            case .todo, .inProgress:
-                task.completedAt = nil
-                task.status = status
-            }
+            CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: status, now: now)
         }
     }
 
