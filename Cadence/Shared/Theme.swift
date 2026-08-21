@@ -53,6 +53,17 @@ nonisolated struct Theme {
     static let markerHighlightBorder = Color(hex: "#ffd66b")
     static let markerHighlightText = Color(hex: "#fff4c2")
 
+    // Every accent is declared hex-string-first, and the `Color` is derived from it.
+    //
+    // The string is not a convenience: an app-defined *default* offered to the user — a sidebar
+    // glyph tint, a model `colorHex` seed — is a palette decision that happens to be spelled as a
+    // string, and the only way it can come from the palette rather than from a second hand-typed
+    // literal is for the palette to publish the string. `blueHex` and `tealHex` were the only two
+    // that did, so `CadenceFeatureDestination.defaultColorHex` spelled its own amber, blue and
+    // purple and all three drifted (T-166): the sidebar drew Today in `#FFB84D` while the command
+    // palette drew the same destination in this file's `#ffa94d`. Derive the `Color` from the
+    // string, never the other way round, and never re-type a value that is already here.
+
     /// Single source of truth for the accent hex — also used where a *string* color is
     /// required (model `colorHex` fallbacks) so the literal is not duplicated.
     static let blueHex = "#4a9eff"
@@ -60,15 +71,19 @@ nonisolated struct Theme {
     static let blue = Color(hex: blueHex)
     static let blueLight = lightened(blueHex)
 
-    static let red = Color(hex: "#ff6b6b")
+    static let redHex = "#ff6b6b"
+    static let red = Color(hex: redHex)
 
-    static let green = Color(hex: "#4ecb71")
-    static let greenLight = lightened("#4ecb71")
+    static let greenHex = "#4ecb71"
+    static let green = Color(hex: greenHex)
+    static let greenLight = lightened(greenHex)
 
-    static let amber = Color(hex: "#ffa94d")
-    static let amberLight = lightened("#ffa94d")
+    static let amberHex = "#ffa94d"
+    static let amber = Color(hex: amberHex)
+    static let amberLight = lightened(amberHex)
 
-    static let purple = Color(hex: "#a78bfa")
+    static let purpleHex = "#a78bfa"
+    static let purple = Color(hex: purpleHex)
 
     /// Added for Focus, and the only accent added since the palette was fixed.
     ///

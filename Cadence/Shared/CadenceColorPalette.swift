@@ -16,7 +16,7 @@ enum CadenceColorPalette {
     static let areaDefault = Theme.blueHex
 
     /// `Project.colorHex`'s model default.
-    static let projectDefault = "#4ecb71"
+    static let projectDefault = Theme.greenHex
 
     /// One lap of the hue circle, warm through cool, ending on a neutral. Twelve reads as a 6×2 or
     /// 4×3 grid on macOS and wraps cleanly into a strip on iOS.

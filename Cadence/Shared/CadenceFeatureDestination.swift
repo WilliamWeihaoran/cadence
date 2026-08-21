@@ -196,23 +196,42 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         Color(hex: defaultColorHex)
     }
 
+    /// The destination's glyph tint when the user has not overridden it, as a hex string because
+    /// that is what `CadencePreferenceKeys.sidebarTabColors` stores an override as.
+    ///
+    /// **Every arm reads a `Theme` accent token; none of them spells a hex.** These are app-defined
+    /// palette decisions that merely happen to be typed as strings, and for a long time ten of the
+    /// eleven were hand-written literals here — a second copy of a palette `Theme` already owned,
+    /// which had already drifted from it in three of the five hues (T-166). The visible symptom was
+    /// two ambers for one destination: the sidebar drew Today in `#FFB84D` while the Cmd+K palette,
+    /// which derives its tint from `Theme.amber`, drew it in `#ffa94d`. `Theme.tealHex` existed
+    /// precisely so `.focus` would not have to, and was the only arm getting it right.
+    ///
+    /// The families are `Theme`'s, and they are documented on `Theme.tealHex`: amber is Today and
+    /// Habits, blue is Tasks/Inbox and Settings, purple is Notes and Search, green is Lists and
+    /// Goals, red is Calendar, teal is Focus. Two destinations sharing a token is how they read as
+    /// related — it is not a duplicate to be split.
+    ///
+    /// `CadenceFeatureDestinationTintTests` pins that no arm here is a literal. Adding one back —
+    /// even one whose value matches its token exactly — reopens the drift, because the next hue
+    /// change to `Theme` will not reach it.
     var defaultColorHex: String {
         switch self {
-        case .today: return "#FFB84D"
-        case .allTasks: return "#5AA2FF"
+        case .today: return Theme.amberHex
+        case .allTasks: return Theme.blueHex
         case .focus: return Theme.tealHex
-        case .inbox: return "#5AA2FF"
+        case .inbox: return Theme.blueHex
         // Red, at the user's request. This collided with `.focus`, which was the same hex;
         // Focus moved to `Theme.tealHex` rather than Calendar giving the red back, because red
         // on a calendar reads as urgency and teal on a timer reads as nothing, which is what a
         // timer should read as. See `Theme.teal` for why a sixth accent beat reusing one.
-        case .calendar: return "#FF6B6B"
-        case .notes: return "#9E8CFF"
-        case .lists: return "#4ECB71"
-        case .goals: return "#4ECB71"
-        case .habits: return "#FFB84D"
-        case .search: return "#9E8CFF"
-        case .settings: return "#5AA2FF"
+        case .calendar: return Theme.redHex
+        case .notes: return Theme.purpleHex
+        case .lists: return Theme.greenHex
+        case .goals: return Theme.greenHex
+        case .habits: return Theme.amberHex
+        case .search: return Theme.purpleHex
+        case .settings: return Theme.blueHex
         }
     }
 }
