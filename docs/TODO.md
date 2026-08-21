@@ -32,6 +32,41 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-221] **Edit tables and code blocks in place, instead of falling back to raw markdown.**
+  Requested 2026-08-21. Today the editor renders a table, a fenced code block, a divider, an image and
+  a task embed as **canvases**, and `MarkdownStyleRanges.isRevealed` swaps a block back to its raw
+  markdown source when the caret lands inside it. So typing in a table means typing pipes. The user
+  wants the rendered form to *stay* rendered and be edited directly — cell by cell for a table, and
+  the equivalent for the other elements where it makes sense.
+  **The user explicitly asked to be consulted while this is worked on**, so ask before choosing the
+  interaction: at minimum, which elements are in scope (table certainly; fenced code with a language
+  pill probably; image and task embed unclear), what Tab and Return do inside a table, how a row or
+  column is added or removed, and whether the raw source should still be reachable on purpose.
+
+  **Why this is bigger than it sounds, and the thing to establish first.** Both editors are a single
+  `NSTextView` / `UITextView` over one attributed string, and a canvas is **drawn** — there is no
+  view hosting a cell, confirmed by the absence of any `NSTextAttachment` / `UIView` / `NSView` in
+  `iOSMarkdownStylingBlockSupport.swift`. Nothing is editable because nothing is a control. So the
+  first question is not "how should cells behave" but **which of these three shapes the app takes**:
+  1. Keep one text view and make the *source* edit feel structured — caret navigation that skips
+     delimiters, Tab jumping cell to cell, alignment maintained as you type. Cheapest, and it is an
+     extension of work already done (hidden markers already are skipped by caret traversal).
+  2. Host real views for these blocks — text attachments or subviews with their own editing — inside
+     the text view. Genuinely WYSIWYG, and the hard one: selection, undo, copy/paste, and the
+     `MarkdownStyleSignature` render gate all have to cross the boundary.
+  3. A separate structured editor for a block, opened from the canvas. Least ambitious, most
+     predictable, and it sidesteps the text-view boundary entirely.
+
+  Constraints that will shape the answer: markdown *decisions* belong in
+  `Cadence/Services/Markdown*Support.swift` and the parsing already exists
+  (`MarkdownTableParser.tableBlock` is shared by the editor and the preview since `7c964a6`);
+  `MarkdownStyleSignature` is the gate in front of the whole render pass, so a block that becomes
+  editable must still invalidate correctly or it silently stops updating; and undo must keep working —
+  `Cmd+Z` currently passes through to `NSTextView`'s own stack when a text view is first responder,
+  which a hosted sub-editor would break. `MarkdownRenderedBlockDeletionSupport` already exists for
+  deleting a rendered block, so read it: it is evidence of how much special-casing a canvas already
+  needs.
+
 - [T-217] **The bundle detail sheet has the same row-owned-sheet defect T-201 just fixed.**
   `iOSCalendarBoardBundleCard` (`iOSBoardCards.swift:~390`) and `iOSTimelineBundleBlock`
   (`iOSCalendarTimelineViews.swift:~925`) each present `iOSCalendarBundleDetailSheet` from a card
