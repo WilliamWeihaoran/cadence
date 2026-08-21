@@ -42,12 +42,20 @@ Feature views in this folder are actively refactored into thin roots plus suppor
   `GoalAttachWorkSheet` and `GoalsView` the bare `delete`s. (`GoalInspectorView` only ever *read*
   links and took an `onDetachList` closure; it is not one of the offenders.) Do not add a fifth
   insert.
-- `SettingsAboutSection.swift` - the About category's build card, and nothing else: `Version`,
-  `Build`, `Bundle ID`, over the shared `CadenceAppBuildIdentity` (declared in
-  `Shared/AppStoreReviewReadiness.swift` — the file name is not the type name) and the shared
-  `CadenceSettingsInfoRow` promoted out of iOS. It deliberately carries **no** Privacy Policy or
-  Support buttons: macOS offers both under Data Safety, beside the paragraph and the delete control
-  they belong with (T-220 is the open question of which screen should own them).
+- `SettingsAboutSection.swift` - the About category's build card (`Version`, `Build`, `Bundle ID`,
+  over the shared `CadenceAppBuildIdentity`, declared in `Shared/AppStoreReviewReadiness.swift` —
+  the file name is not the type name — and the shared `CadenceSettingsInfoRow` promoted out of iOS)
+  **plus the Privacy Policy and Support links**, from the shared `CadenceAppReferenceLink.all` in
+  that same file. This bullet said the opposite until T-220 closed, and so did the file's own doc
+  comment: the links used to sit on Data Safety "beside the paragraph and the delete control they
+  belong with", which was a description of an accident. They sat there because the privacy
+  *paragraph* did; a Support page is not a data-safety control, and a harmless link a tab-stop from
+  an irreversible delete reads as one more thing that might erase something — the argument that
+  already keeps `.about` out of the Account & Safety rail group. The paragraph stayed, and
+  `SettingsReviewLinksSection` is now `SettingsPrivacyStatementSection` so the name does not promise
+  links it no longer has. Chrome is per-platform (`SettingsActionButton` here, a 44pt-target `Link`
+  on iOS); the *list* is not, and `MacSettingsAboutAndHabitMetricsTests` pins both About screens to
+  it and both view files to zero hand-typed link titles.
 
 The globs above are the whole family, singular where it looks plural. This list previously said
 `FocusView*`, `Goals*` and `Habits*`, each of which matches about two files of nine — a glob that

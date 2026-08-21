@@ -101,6 +101,15 @@ in `CadenceListDetailPage.swift`. Others are the reverse of where a reader expec
 `CalendarWorkHoursPreferences`, `TaskDragPayload` and `CadenceCompactTab` are all here rather than
 under a platform folder, precisely because both platforms use them.
 
+`AppStoreReviewReadiness.swift` is the worst of the family: it declares **three** types and only one
+of them is the file's name. `CadenceAppBuildIdentity` (the three strings both About screens report
+about the running build) and `CadenceAppReferenceLink` (the Privacy Policy / Support pair both About
+screens render, `.all` being the list they iterate) also live there. Both are deliberately outside
+every `#if`, because `Cadence/iOS/` is invisible to the macOS-built test target and the values have
+to be reachable from `CadenceTests`. Look for a `CadenceAppReferenceLink.swift` and you will find
+nothing, then hand-type a second pair of link literals into a view — which is the whole failure mode
+this section exists to prevent.
+
 Some shared views are not top-level files at all. **`CompactTagStrip` — the read-only compact tag
 strip used by task rows, board cards and note rows on both platforms — is declared inside
 `Components/CadenceTagChip.swift`**, beside the chip and overflow badge it is built from. There is

@@ -300,70 +300,46 @@ struct iOSAboutSettingsSection: View {
                 }
             }
 
-            CadenceSettingsSectionLabel(text: "Review Links")
+            CadenceSettingsSectionLabel(text: CadenceAppReferenceLink.sectionTitle)
             iOSSettingsCard {
-                VStack(alignment: .leading, spacing: 13) {
-                    HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
-                        iOSIconTile(
-                            systemImage: "hand.raised.fill",
-                            color: Theme.blue,
-                            size: iOSSettingsMetrics.glyphSlot,
-                            iconSize: 15
-                        )
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Privacy and Support")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Theme.text)
-                            Text("Use these during TestFlight and App Review checks.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Theme.subdued)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        Spacer(minLength: 0)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        linkButtons
                     }
-
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 10) {
-                            reviewLinkButtons
-                        }
-                        VStack(alignment: .leading, spacing: 9) {
-                            reviewLinkButtons
-                        }
+                    VStack(alignment: .leading, spacing: 9) {
+                        linkButtons
                     }
                 }
             }
         }
     }
 
+    /// The pair comes from `CadenceAppReferenceLink.all`, which macOS's About screen reads too, so
+    /// a third link — or a retitled one — is one edit rather than two.
+    ///
+    /// The glyph tile, the `Privacy and Support` heading and the App-Review-flavoured sentence that
+    /// used to sit above these buttons are gone: the heading restated the two buttons under it,
+    /// which is the page-header `subtitle` mistake one card down, and the sentence told a shipped
+    /// user which internal checks the links were for.
     @ViewBuilder
-    private var reviewLinkButtons: some View {
-        iOSReviewLinkButton(
-            title: "Privacy Policy",
-            icon: "lock.shield.fill",
-            url: AppStoreReviewReadiness.privacyPolicyURL,
-            missingMessage: AppStoreReviewReadiness.privacyPolicyMissingMessage
-        )
-        iOSReviewLinkButton(
-            title: "Support",
-            icon: "questionmark.circle.fill",
-            url: AppStoreReviewReadiness.supportURL,
-            missingMessage: AppStoreReviewReadiness.supportURLMissingMessage
-        )
+    private var linkButtons: some View {
+        ForEach(CadenceAppReferenceLink.all) { link in
+            iOSReviewLinkButton(link: link)
+        }
     }
 }
 
+/// One reference link, at iOS's 44pt tap target.
+///
+/// The chrome is the one deliberately per-platform half: macOS's About screen draws the same link
+/// through `SettingsActionButton`, which is what every other button on those panes looks like.
 private struct iOSReviewLinkButton: View {
-    let title: String
-    let icon: String
-    let url: URL?
-    let missingMessage: String
+    let link: CadenceAppReferenceLink
 
     var body: some View {
-        if let url {
+        if let url = link.url {
             Link(destination: url) {
-                Label(title, systemImage: icon)
+                Label(link.title, systemImage: link.systemImage)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.blue)
                     .frame(maxWidth: .infinity)
@@ -377,11 +353,15 @@ private struct iOSReviewLinkButton: View {
             }
             .buttonStyle(.iosPressable)
         } else {
+            // `#if DEBUG`, matching macOS: the message names work the developer has to do before
+            // submitting, and a release build has no business showing it to a user. iOS was the
+            // only unguarded one.
+            #if DEBUG
             VStack(alignment: .leading, spacing: 4) {
-                Label(title, systemImage: icon)
+                Label(link.title, systemImage: link.systemImage)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.dim)
-                Text(missingMessage)
+                Text(link.missingMessage)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.amber)
                     .fixedSize(horizontal: false, vertical: true)
@@ -390,6 +370,7 @@ private struct iOSReviewLinkButton: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.surfaceElevated.opacity(0.42))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+            #endif
         }
     }
 }

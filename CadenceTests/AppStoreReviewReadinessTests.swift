@@ -103,7 +103,7 @@ struct AppStoreReviewReadinessTests {
             dataSafetySettings.range(of: "    private func deleteCadenceData() {").flatMap { start in
                 dataSafetySettings
                     .range(
-                        of: "\n}\n\nprivate struct SettingsReviewLinksSection",
+                        of: "private struct SettingsPrivacyStatementSection",
                         range: start.upperBound..<dataSafetySettings.endIndex
                     )
                     .map { end in String(dataSafetySettings[start.lowerBound..<end.lowerBound]) }

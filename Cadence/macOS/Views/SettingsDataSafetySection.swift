@@ -14,7 +14,7 @@ struct SettingsDataSafetySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsReviewLinksSection()
+            SettingsPrivacyStatementSection()
             SettingsDataResetCard(
                 statusMessage: statusMessage,
                 onDeleteData: { isConfirmingDataDelete = true }
@@ -193,74 +193,38 @@ struct SettingsDataSafetySection: View {
     }
 }
 
-private struct SettingsReviewLinksSection: View {
+/// What Cadence does with your data, in one paragraph, above the control that erases it.
+///
+/// This was `SettingsReviewLinksSection`, and it carried the `Privacy Policy` and `Support`
+/// buttons in a trailing `HStack`. Those moved to Settings → About (T-220): a support page is not a
+/// data-safety control, and the pair only ever sat here because *this* paragraph did. The paragraph
+/// stays — how Cadence stores and transmits data is exactly this screen's subject — so the struct
+/// is renamed to say what is left rather than keeping a name that promises links it no longer has.
+private struct SettingsPrivacyStatementSection: View {
     var body: some View {
         SettingsCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 14) {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Theme.blue.opacity(0.16))
-                        .frame(width: 42, height: 42)
-                        .overlay {
-                            Image(systemName: "hand.raised.fill")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(Theme.blue)
-                        }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Privacy")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                        Text("Cadence stores planning data locally and in your private iCloud database when sync is available. Calendar access is used for calendar features, and AI actions send selected note content only when you run them.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.dim)
-                            .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 14) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Theme.blue.opacity(0.16))
+                    .frame(width: 42, height: 42)
+                    .overlay {
+                        Image(systemName: "hand.raised.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Theme.blue)
                     }
 
-                    Spacer()
-
-                    HStack(spacing: 10) {
-                        reviewLinkButton(
-                            title: "Privacy Policy",
-                            icon: "lock.shield.fill",
-                            url: AppStoreReviewReadiness.privacyPolicyURL,
-                            missingMessage: AppStoreReviewReadiness.privacyPolicyMissingMessage
-                        )
-                        reviewLinkButton(
-                            title: "Support",
-                            icon: "questionmark.circle.fill",
-                            url: AppStoreReviewReadiness.supportURL,
-                            missingMessage: AppStoreReviewReadiness.supportURLMissingMessage
-                        )
-                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Privacy")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text("Cadence stores planning data locally and in your private iCloud database when sync is available. Calendar access is used for calendar features, and AI actions send selected note content only when you run them.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-        }
-    }
 
-    @ViewBuilder
-    private func reviewLinkButton(title: String, icon: String, url: URL?, missingMessage: String) -> some View {
-        if let url {
-            SettingsActionButton(tone: .tinted(Theme.blue), action: { NSWorkspace.shared.open(url) }) {
-                Label(title, systemImage: icon)
+                Spacer(minLength: 0)
             }
-        } else {
-            #if DEBUG
-            VStack(alignment: .trailing, spacing: 4) {
-                Label(title, systemImage: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Theme.dim.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                Text(missingMessage)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.amber)
-                    .multilineTextAlignment(.trailing)
-                    .frame(maxWidth: 190, alignment: .trailing)
-            }
-            #endif
         }
     }
 }

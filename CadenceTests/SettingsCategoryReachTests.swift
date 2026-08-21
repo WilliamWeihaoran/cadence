@@ -180,6 +180,87 @@ struct MacSettingsAboutAndHabitMetricsTests {
         try expectNoLiveMention(of: "iOSSettingsInfoRow")
     }
 
+    // MARK: - T-220: the About screens own the Privacy Policy and Support links
+
+    /// The pair itself, as one list rather than two hand-typed button call sites.
+    ///
+    /// `CadenceAppReferenceLink` sits outside every `#if` for the usual reason — `Cadence/iOS/` is
+    /// invisible to this macOS-built target — so this is the one assertion here that can check the
+    /// real values rather than the source text.
+    @Test func thereIsOneSharedListOfTheTwoReferenceLinks() throws {
+        #expect(CadenceAppReferenceLink.all == [.privacyPolicy, .support])
+        #expect(CadenceAppReferenceLink.all.map(\.title) == ["Privacy Policy", "Support"])
+        #expect(CadenceAppReferenceLink.all.map(\.id) == ["privacy-policy", "support"])
+        #expect(Set(CadenceAppReferenceLink.all.map(\.systemImage)).count == 2)
+        #expect(CadenceAppReferenceLink.sectionTitle == "Links")
+
+        for link in CadenceAppReferenceLink.all {
+            let url = try #require(link.url, "\(link.title) has no URL")
+            #expect(url.scheme == "https")
+            #expect(!link.missingMessage.isEmpty)
+        }
+        #expect(CadenceAppReferenceLink.privacyPolicy.url == AppStoreReviewReadiness.privacyPolicyURL)
+        #expect(CadenceAppReferenceLink.support.url == AppStoreReviewReadiness.supportURL)
+    }
+
+    /// Both About screens read that list, and neither hand-types a title.
+    ///
+    /// The exact-count form matters here in the way `expectCallSites`' doc comment describes: an
+    /// assertion that each About file merely *mentions* `CadenceAppReferenceLink` somewhere would
+    /// stay green with one of the two screens reverted to literals.
+    @Test func bothAboutScreensRenderTheTwoLinksFromTheSharedList() throws {
+        try expectOccurrences(
+            of: "CadenceAppReferenceLink.all",
+            at: [
+                "Cadence/macOS/Views/SettingsAboutSection.swift": 1,
+                "Cadence/iOS/iOSSettingsOverviewSections.swift": 1
+            ]
+        )
+        try expectOccurrences(
+            of: "CadenceAppReferenceLink.sectionTitle",
+            at: [
+                "Cadence/macOS/Views/SettingsAboutSection.swift": 1,
+                "Cadence/iOS/iOSSettingsOverviewSections.swift": 1
+            ]
+        )
+        // The titles live in exactly one file. Asserting 0 in the two views alone would be the
+        // substring trap in its other form — vacuous if the scan read nothing — so the shared
+        // file's count is asserted in the same breath.
+        try expectOccurrences(
+            of: "\"Privacy Policy\"",
+            at: [
+                "Cadence/Shared/AppStoreReviewReadiness.swift": 1,
+                "Cadence/macOS/Views/SettingsAboutSection.swift": 0,
+                "Cadence/iOS/iOSSettingsOverviewSections.swift": 0,
+                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 0
+            ]
+        )
+    }
+
+    /// macOS's Data Safety pane no longer carries them, and its privacy paragraph still does.
+    ///
+    /// The links sat here because *the paragraph* did; a support page is not a data-safety control,
+    /// and a harmless link one tab-stop from an irreversible delete reads as one more thing that
+    /// might erase something. `SettingsReviewLinksSection` is renamed rather than kept, because a
+    /// struct named for links it no longer has is exactly how the page-header `subtitle` parameter
+    /// survived three deletions.
+    @Test func macOSDataSafetyKeepsThePrivacyParagraphAndNotTheLinks() throws {
+        try expectNoLiveMention(of: "SettingsReviewLinksSection")
+        try expectOccurrences(
+            of: "AppStoreReviewReadiness",
+            at: [
+                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 0,
+                "Cadence/iOS/iOSSettingsOverviewSections.swift": 0
+            ]
+        )
+        try expectCallSites(
+            of: "SettingsPrivacyStatementSection",
+            at: ["Cadence/macOS/Views/SettingsDataSafetySection.swift": 1]
+        )
+        let dataSafety = try strippingComments(sourceFile("Cadence/macOS/Views/SettingsDataSafetySection.swift"))
+        #expect(dataSafety.contains("Cadence stores planning data locally and in your private iCloud database"))
+    }
+
     /// The scan itself works. Without this, a wrong repository root or a broken enumerator makes
     /// every absence assertion above pass by reading nothing at all.
     @Test func theSourceScanIsNotVacuous() throws {
