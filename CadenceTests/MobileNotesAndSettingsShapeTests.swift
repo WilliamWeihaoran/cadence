@@ -86,10 +86,16 @@ struct MobileSettingsLayoutTests {
     /// built for asked for all of them reachable without scrolling sideways, so the count is
     /// derived from the shared enum rather than typed in. It used to be a literal `12`, which
     /// meant the count and the exclusion list could only ever agree by coincidence.
+    ///
+    /// A second, literal assertion sat under this one and read `13` — it had to be edited again the
+    /// moment `.coverage` was deleted, which is the maintenance cost the derived form exists to
+    /// avoid. `onlyTheTwoDesktopShellCategoriesAreExcluded` below does the strong half by set
+    /// equality, so the literal was buying nothing that the pair of them did not already say.
     @Test func mobileOffersEveryCategoryItDoesNotDeliberatelyExclude() {
         let expected = CadenceSettingsCategoryKind.allCases.count - CadenceMobileSettingsLayout.desktopOnly.count
         #expect(CadenceMobileSettingsLayout.categories.count == expected)
-        #expect(CadenceMobileSettingsLayout.categories.count == 13)
+        // Non-vacuity: a derived count either side of an empty enum would agree at zero.
+        #expect(expected > 8)
     }
 
     /// The categories mobile deliberately does not offer, and the only two it may omit.

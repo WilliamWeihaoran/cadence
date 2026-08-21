@@ -13,7 +13,6 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
     case tags
     case templates
     case ai
-    case coverage
     case account
     case about
 
@@ -33,7 +32,6 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
         case .tags: return "Tags"
         case .templates: return "Templates"
         case .ai: return "AI"
-        case .coverage: return "Coverage"
         case .account: return "Account"
         case .about: return "About"
         }
@@ -56,7 +54,6 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
         case .tags: return "tag.fill"
         case .templates: return "doc.text.fill"
         case .ai: return "sparkles"
-        case .coverage: return "iphone.and.arrow.forward"
         case .account: return "person.crop.circle.fill"
         case .about: return "info.circle.fill"
         }
@@ -89,8 +86,6 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
             return Theme.blue
         case .ai:
             return Theme.blue
-        case .coverage:
-            return Theme.purple
         case .account:
             return Theme.green
         case .about:
@@ -147,7 +142,7 @@ enum CadenceMobileSettingsLayout {
             // on the theory that reminders were a macOS concern; EventKit reminders are fully
             // available on iOS, and `NSRemindersFullAccessUsageDescription` already ships in
             // the shared `Info.plist`, so the omission was the bug, not the boundary.
-            kinds: [.calendar, .reminders, .sync, .dataSafety, .coverage, .about]
+            kinds: [.calendar, .reminders, .sync, .dataSafety, .about]
         )
     ]
 }

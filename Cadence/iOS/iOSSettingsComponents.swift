@@ -13,7 +13,6 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
     case tags
     case templates
     case ai
-    case coverage
     case about
 
     var id: String { rawValue }
@@ -62,7 +61,6 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         case .tags: self = .tags
         case .templates: self = .templates
         case .ai: self = .ai
-        case .coverage: self = .coverage
         case .about: self = .about
         case .sidebar, .account: return nil
         }
@@ -81,7 +79,6 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         case .tags: return .tags
         case .templates: return .templates
         case .ai: return .ai
-        case .coverage: return .coverage
         case .about: return .about
         }
     }
@@ -105,72 +102,6 @@ struct iOSSettingsCategoryGroup: Identifiable {
     let categories: [iOSSettingsCategory]
 
     var id: String { title }
-}
-
-enum iOSMobileCapabilityStatus: String, CaseIterable, Identifiable {
-    case ready
-    case partial
-    case later
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .ready: return "Ready"
-        case .partial: return "Partial"
-        case .later: return "Later"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .ready: return "checkmark.circle.fill"
-        case .partial: return "wrench.and.screwdriver.fill"
-        case .later: return "clock.fill"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .ready: return Theme.green
-        case .partial: return Theme.amber
-        case .later: return Theme.dim
-        }
-    }
-}
-
-struct iOSMobileCapability: Identifiable, Hashable {
-    let title: String
-    let detail: String
-    let status: iOSMobileCapabilityStatus
-
-    var id: String { title }
-
-    static let all: [iOSMobileCapability] = [
-        iOSMobileCapability(title: "Today planning", detail: "Capture, sort, complete, notes, samples, and timeline inspector.", status: .ready),
-        iOSMobileCapability(title: "All Tasks", detail: "Review active/completed work, edit tasks, and use shared task presentation.", status: .ready),
-        iOSMobileCapability(title: "Inbox capture", detail: "Quick add, triage, completion, and scheduling basics.", status: .ready),
-        iOSMobileCapability(title: "Lists", detail: "Areas/projects, list detail, Kanban, links, and lifecycle restore.", status: .ready),
-        iOSMobileCapability(title: "Search", detail: "Find tasks, notes, and feature destinations from mobile.", status: .ready),
-        iOSMobileCapability(title: "Markdown notes", detail: "Live rendering, raw edit, preview, formatting, images, references, tables, and templates.", status: .ready),
-        iOSMobileCapability(title: "Settings", detail: "Theme, navigation defaults, calendar, tags, templates, sync, AI, data, and about.", status: .ready),
-        iOSMobileCapability(title: "Focus timer", detail: "Mobile focus surface exists, but still needs deeper desktop parity testing.", status: .partial),
-        iOSMobileCapability(title: "Calendar", detail: "Timeline/month/board, quick create, event editing, and empty-slot creation exist; drag/resize parity remains.", status: .partial),
-        iOSMobileCapability(title: "Goals", detail: "Create/edit top-level goals with nested milestones and habits; desktop timeline parity still needs polish.", status: .partial),
-        iOSMobileCapability(title: "Habits", detail: "Create/edit and toggle habits; deeper analytics and Mac polish remain.", status: .partial),
-        iOSMobileCapability(title: "CloudKit sync", detail: "Uses the shared container, but needs manual device/relaunch verification before TestFlight.", status: .partial),
-        iOSMobileCapability(title: "App Store metadata", detail: "Icons and public support/privacy links are present; screenshots and final review notes remain.", status: .partial),
-        iOSMobileCapability(title: "Desktop editor parity", detail: "The AppKit editor cannot be reused directly; mobile now shares markdown behavior through SwiftUI/UIKit surfaces.", status: .partial),
-        iOSMobileCapability(title: "Global desktop commands", detail: "Global hotkeys, hover affordances, and macOS command surfaces are intentionally desktop-only.", status: .later)
-    ]
-
-    static func count(for status: iOSMobileCapabilityStatus) -> Int {
-        all.filter { $0.status == status }.count
-    }
-
-    static func items(for status: iOSMobileCapabilityStatus) -> [iOSMobileCapability] {
-        all.filter { $0.status == status }
-    }
 }
 
 /// Sizing for the settings category rail and the rows inside settings cards.
@@ -506,71 +437,6 @@ struct iOSSettingsMetricTile: View {
 
     var body: some View {
         iOSMetricTile(title: title, value: value, icon: icon, color: color)
-    }
-}
-
-struct iOSSettingsInfoRow: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 16) {
-            // Label half of a label/value pair: `subdued`, not `dim` — `dim` is for
-            // genuinely de-emphasized content, and these labels are ordinary reading text.
-            Text(title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.subdued)
-
-            Spacer(minLength: 0)
-
-            Text(value)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .multilineTextAlignment(.trailing)
-                .textSelection(.enabled)
-        }
-        .padding(.vertical, 10)
-    }
-}
-
-struct iOSSettingsCapabilityRow: View {
-    let capability: iOSMobileCapability
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 11) {
-            Image(systemName: capability.status.systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(capability.status.color)
-                .frame(width: 28, height: 28)
-                .background(capability.status.color.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(capability.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-
-                Text(capability.detail)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 8)
-
-            Text(capability.status.title)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(capability.status.color)
-                .lineLimit(1)
-                .padding(.horizontal, 7)
-                .frame(height: 22)
-                .background(capability.status.color.opacity(0.12))
-                .clipShape(Capsule())
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
     }
 }
 

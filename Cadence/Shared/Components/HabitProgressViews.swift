@@ -206,3 +206,52 @@ struct HabitHeatmap: View {
         }
     }
 }
+
+// MARK: - Last 7 days
+
+/// The habit's last seven days as a run of bars, oldest first, today last.
+///
+/// Reads `Habit.last7DayStates`, which is where the day walk and its DST handling live — the view
+/// does no date arithmetic beyond naming the weekday under each bar, and the walk it labels is the
+/// same one it fills. `last7DayStates` returns exactly seven states, so the labels cannot slip out
+/// of step with the bars.
+///
+/// Shared because it is not a platform decision: macOS's habit detail showed a year-long heatmap
+/// and no recent week at all, which is the one range you actually check a habit against.
+struct HabitLast7DayStrip: View {
+    let habit: Habit
+    /// Bar geometry is a parameter so a narrower surface can tighten the strip rather than fork it.
+    var barHeight: CGFloat = 26
+    var spacing: CGFloat = 8
+
+    private var tint: Color { Color(hex: habit.colorHex) }
+
+    var body: some View {
+        let states = habit.last7DayStates
+
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Last 7 days")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.subdued)
+
+            HStack(spacing: spacing) {
+                ForEach(Array(states.enumerated()), id: \.offset) { index, done in
+                    VStack(spacing: 5) {
+                        RoundedRectangle(cornerRadius: Theme.radiusControl - 2, style: .continuous)
+                            .fill(done ? tint : Theme.borderSubtle)
+                            .frame(height: barHeight)
+                        Text(Self.dayLabel(offset: states.count - 1 - index))
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Theme.subdued)
+                    }
+                }
+            }
+        }
+    }
+
+    /// `offset` days back from today, as `EEE`. Same direction as `last7DayStates`' own walk.
+    private static func dayLabel(offset: Int, asOf referenceDate: Date = Date(), calendar: Calendar = .current) -> String {
+        let date = calendar.date(byAdding: .day, value: -offset, to: referenceDate) ?? referenceDate
+        return DateFormatters.dayOfWeek.string(from: date)
+    }
+}

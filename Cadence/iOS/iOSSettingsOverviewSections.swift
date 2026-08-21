@@ -282,65 +282,6 @@ struct iOSNavigationSettingsSection: View {
     }
 }
 
-struct iOSMobileCoverageSettingsSection: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            CadenceSettingsSectionLabel(text: "Mobile Coverage")
-            iOSSettingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
-                        iOSSettingsMetricTile(
-                            title: "Ready",
-                            value: "\(iOSMobileCapability.count(for: .ready))",
-                            icon: iOSMobileCapabilityStatus.ready.systemImage,
-                            color: iOSMobileCapabilityStatus.ready.color
-                        )
-                        iOSSettingsMetricTile(
-                            title: "Partial",
-                            value: "\(iOSMobileCapability.count(for: .partial))",
-                            icon: iOSMobileCapabilityStatus.partial.systemImage,
-                            color: iOSMobileCapabilityStatus.partial.color
-                        )
-                        iOSSettingsMetricTile(
-                            title: "Later",
-                            value: "\(iOSMobileCapability.count(for: .later))",
-                            icon: iOSMobileCapabilityStatus.later.systemImage,
-                            color: iOSMobileCapabilityStatus.later.color
-                        )
-                    }
-
-                    ForEach(iOSMobileCapabilityStatus.allCases) { status in
-                        let items = iOSMobileCapability.items(for: status)
-                        if !items.isEmpty {
-                            VStack(alignment: .leading, spacing: 0) {
-                                HStack(spacing: 7) {
-                                    Image(systemName: status.systemImage)
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(status.color)
-                                    SectionEyebrowLabel(text: status.title)
-                                    Spacer(minLength: 0)
-                                }
-                                .padding(.bottom, 7)
-
-                                VStack(spacing: 0) {
-                                    ForEach(items) { capability in
-                                        iOSSettingsCapabilityRow(capability: capability)
-                                        if capability.id != items.last?.id {
-                                            iOSRowDivider()
-                                        }
-                                    }
-                                }
-                                .background(Theme.surfaceElevated.opacity(0.34))
-                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 struct iOSAboutSettingsSection: View {
     let appVersion: String
     let buildNumber: String
@@ -351,11 +292,11 @@ struct iOSAboutSettingsSection: View {
             CadenceSettingsSectionLabel(text: "Build")
             iOSSettingsCard {
                 VStack(spacing: 0) {
-                    iOSSettingsInfoRow(title: "Version", value: appVersion)
+                    CadenceSettingsInfoRow(title: "Version", value: appVersion)
                     iOSRowDivider()
-                    iOSSettingsInfoRow(title: "Build", value: buildNumber)
+                    CadenceSettingsInfoRow(title: "Build", value: buildNumber)
                     iOSRowDivider()
-                    iOSSettingsInfoRow(title: "Bundle ID", value: bundleID)
+                    CadenceSettingsInfoRow(title: "Bundle ID", value: bundleID)
                 }
             }
 

@@ -90,3 +90,33 @@ struct CadenceSettingsHeader<TrailingContent: View>: View {
     }
 }
 #endif
+
+/// One label/value line inside a settings card — `Version   1.0`.
+///
+/// Shared rather than per-platform: it was `iOSSettingsInfoRow`, read only by iOS's About screen,
+/// and macOS's new About screen wants exactly the same row. The value is selectable because the
+/// things reported through it (a build number, a bundle identifier) exist to be copied into a
+/// bug report.
+struct CadenceSettingsInfoRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            // Label half of a label/value pair: `subdued`, not `dim` — `dim` is for
+            // genuinely de-emphasized content, and these labels are ordinary reading text.
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.subdued)
+
+            Spacer(minLength: 0)
+
+            Text(value)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
+        }
+        .padding(.vertical, 10)
+    }
+}

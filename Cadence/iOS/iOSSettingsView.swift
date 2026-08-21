@@ -39,17 +39,11 @@ struct iOSSettingsView: View {
     @State private var sampleDataStatus: String?
     #endif
 
-    private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-    }
+    private var appVersion: String { CadenceAppBuildIdentity.version }
 
-    private var buildNumber: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
-    }
+    private var buildNumber: String { CadenceAppBuildIdentity.build }
 
-    private var bundleID: String {
-        Bundle.main.bundleIdentifier ?? "Unknown"
-    }
+    private var bundleID: String { CadenceAppBuildIdentity.bundleID }
 
     private var calendarViewMode: CadenceCalendarViewMode {
         CadenceCalendarViewMode(rawValue: calendarViewModeRaw) ?? .week
@@ -192,8 +186,6 @@ struct iOSSettingsView: View {
             )
         case .data:
             dataSafetySection
-        case .coverage:
-            iOSMobileCoverageSettingsSection()
         case .about:
             iOSAboutSettingsSection(
                 appVersion: appVersion,

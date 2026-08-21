@@ -15,6 +15,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case ai
     case dataSafety
     case account
+    case about
 
     var id: String { rawValue }
 
@@ -33,6 +34,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .ai: return .ai
         case .dataSafety: return .dataSafety
         case .account: return .account
+        case .about: return .about
         }
     }
 
@@ -77,6 +79,13 @@ private struct SettingsCategoryGroup: Identifiable {
         SettingsCategoryGroup(
             title: "Account & Safety",
             categories: [.account, .dataSafety]
+        ),
+        // Its own group of one rather than filed under "Account & Safety": which build is
+        // running is not a safety control, and a row reading "About" beside "Data Safety"
+        // reads as one more thing that might delete something.
+        SettingsCategoryGroup(
+            title: "App",
+            categories: [.about]
         )
     ]
 }
@@ -107,7 +116,7 @@ enum SettingsRailMetrics {
     static let labelFontSize: CGFloat = SidebarMetrics.listLabelFontSize
     static let trailingGap: CGFloat = SidebarMetrics.listTrailingGap
     /// Between the sidebar's list glyph (12) and its nav glyph (15): these rows are
-    /// destinations, but there are thirteen of them, so they stay under the nav weight.
+    /// destinations, but there are fourteen of them, so they stay under the nav weight.
     static let iconSize: CGFloat = 14
 
     // MARK: Group headers
@@ -159,7 +168,7 @@ struct SettingsRail: View {
                 .foregroundStyle(Theme.text)
                 .padding(.horizontal, SettingsRailMetrics.rowHorizontalPadding)
 
-            // Still a ScrollView: the thirteen rows fit in a normal window, but this is
+            // Still a ScrollView: the fourteen rows fit in a normal window, but this is
             // the only thing keeping the last group reachable in a very short one.
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: SettingsRailMetrics.groupSpacing) {
@@ -216,7 +225,7 @@ private struct SettingsRailButton: View {
         Button(action: action) {
             HStack(spacing: SettingsRailMetrics.iconLabelSpacing) {
                 // The glyph is neutral until this is the row you are on — colour marks
-                // the current category rather than tinting all eleven at once.
+                // the current category rather than tinting all fourteen at once.
                 Image(systemName: category.icon)
                     .font(.system(size: SettingsRailMetrics.iconSize, weight: .semibold))
                     .foregroundStyle(isSelected ? category.tint : Theme.dim)

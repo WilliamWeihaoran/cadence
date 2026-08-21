@@ -134,7 +134,17 @@ struct HabitDetailView: View {
                 HabitQuietMetrics(habit: habit, totalCompletions: totalCompletions)
 
                 HabitInfoCard(title: "Activity") {
-                    HabitHeatmap(habit: habit)
+                    VStack(alignment: .leading, spacing: 16) {
+                        // The recent week and the long arc, in that order — the same two ranges
+                        // the iOS habit detail already showed. `last7DayStates` was computed on
+                        // the model and read only from iOS, so this is a rendering gap closing,
+                        // not a second definition of a recent week.
+                        HabitLast7DayStrip(habit: habit)
+
+                        Divider().background(Theme.borderSubtle.opacity(0.6))
+
+                        HabitHeatmap(habit: habit)
+                    }
                 }
             }
             .padding(24)
@@ -214,6 +224,10 @@ struct HabitQuietMetrics: View {
     var body: some View {
         HStack(spacing: 18) {
             quietMetric("Streak", habit.streakUnit.shortLabel(habit.currentStreak))
+            // `bestStreak` goes through `Habit`'s one definition of a streak, so it cannot
+            // disagree with the figure beside it. It had an iOS reader and no macOS one, which
+            // is why a record run was invisible on the desktop.
+            quietMetric("Best", habit.streakUnit.shortLabel(habit.bestStreak))
             quietMetric(habit.completionRateWindowLabel, "\(habit.last30DayCompletionRate)%")
             quietMetric("Total", "\(totalCompletions)")
             Spacer()

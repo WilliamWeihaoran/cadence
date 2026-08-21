@@ -230,6 +230,8 @@ struct SettingsView: View {
                 notificationManager: notificationManager,
                 notificationsEnabled: $notificationsEnabled
             )
+        case .about:
+            SettingsAboutSection()
         }
     }
 
