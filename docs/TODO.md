@@ -32,6 +32,35 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-240] **A test bounds a `#require`'d source range by searching for another file's declaration
+  line.** `AppStoreReviewReadinessTests.accountDeletionIsExplicitInSettingsAndReviewDocs` locates the
+  region it wants to assert over by finding a literal landmark in a *different* file. T-220 made the
+  landmark less brittle (the struct name rather than a `"\n}\n\nprivate struct …"` sequence), but the
+  shape remains: rename `SettingsPrivacyStatementSection` and the test fails as a `#require`
+  precondition rather than as a readable assertion, so the message tells you nothing about what broke.
+  That is the same "fails for a reason unrelated to its subject" family as T-233 and T-227. Worth
+  replacing the source-range search with something that cannot silently stop matching — assert over
+  the whole file, or have the view expose the fact under test as a value the test can read directly.
+
+
+- [T-238] **A third signature of "red tests that are not a regression": the test host exits early.**
+  Found 2026-08-22 while fixing T-213. A macOS run exited **65** with **8 failures across 7 unrelated
+  suites, every one at 0.000 seconds**, and `pgrep -f "xcodebuild test"` had been clear before it
+  started — so it was *not* T-236's container contention. `xcresulttool` on the `.xcresult` gave the
+  real reason: *"The test runner exited with code 0 before finishing running tests."* The host went
+  away and the harness marked the in-flight parallel tests failed. A serial re-run on the same bytes
+  was exit 0, 2184 passed.
+  **Why this needs writing down:** the diagnosis exists only inside the `.xcresult` and never appears
+  in the xcodebuild log, so from the log alone this is indistinguishable from 8 real regressions. That
+  now makes three separate causes that all present as exit 65 with 0 compile errors — T-236
+  (concurrent test host: four-figure failures), T-209 (macro-plugin errors), and this one (small burst
+  of zero-duration failures in unrelated suites, plus a host-PID change).
+  What to do: fold the discriminator into `AGENTS.md` beside the T-236 rule — a handful of 0.000s
+  failures scattered across suites you did not touch means read the `.xcresult` before believing the
+  log, and re-run serially to confirm. Worth also deciding whether agent runs should default to
+  serial, and measuring what that costs; a false regression costs more than the wall-clock does.
+
+
 - [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
   Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes
   `rsync` + `git show HEAD:<path>` restore instead. The workaround has a real ongoing cost: the
@@ -90,12 +119,17 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 
 
-- [T-224] **Two hosts still need the one-line `editingNote:` pass for the reference panel.**
-  `0332255` shipped the panel but `iOSNotesView.swift` (2 sites) and the list-detail notes panel were
-  locked to other agents mid-run. The test deliberately does **not** assert them at zero, so adding
-  them will not read as a regression. Also: `iOSSearchView.swift:589` and
-  `iOSMarkdownNoteReferenceRow` each carry their own note-kind switch — third and fourth spellings of
-  one mapping, now that the shared label exists.
+
+- [T-239] **The note-kind switch is spelled three times, and the three disagree.** Split out of
+  [[T-224]], which called `iOSSearchView.noteSubtitle` and
+  `iOSMarkdownAccessoryViews.iOSMarkdownNoteReferenceRow.subtitle` the "third and fourth spellings of
+  one mapping" beside `NoteReferencePanelSupport.noteKindLabel`. They are not spellings of one
+  mapping, which is why this is a decision and not a refactor: `noteKindLabel(.permanent)` is
+  `"Notepad"` where search says `"Permanent note"`, and `noteKindLabel(.list)` is `"List note"` where
+  the reference row says `"Linked note"`. Both view switches also append context the shared label has
+  no room for — `"Daily / 2026-08-21"`, `"Event · 2026-08-21"`, or a list note's area/project name.
+  So consolidating changes user-visible copy in two places and needs the strings decided first;
+  the shape is probably a shared label plus a shared *detail* helper, not one function.
 
 - [T-225] **An agent overwrote another agent's simulator app-group data.** During `0332255` a build was
   installed on an iPad another agent had booted between the device listing and the boot attempt,
@@ -139,10 +173,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   needs.
 
 
-- [T-220] **macOS's About carries only the build card; iOS's also carries Privacy Policy and Support.**
-  Flagged by `D-140` rather than decided: macOS already offers both links under Settings → Data Safety,
-  so matching the two screens means *moving* them rather than duplicating. Decide which screen owns
-  those links on each platform.
 
 - [T-212] **`finishRemainingActiveTasks` hand-rolls the cancel transition, and gets two things wrong.**
   `Cadence/macOS/Services/TaskWorkflowService.swift:~105-118`. Found by T-202 and left because another
@@ -152,12 +182,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   bugs in the same three lines. Route it through the shared workflow rather than patching the
   timestamp.
 
-- [T-213] **`normalizeCompletionState`'s `.done` branch bumps a completion timestamp.** It calls
-  `markDone`, which sets `completedAt = now` unconditionally, and the iOS task sheet's save is its
-  only caller — so opening and closing the sheet on a task finished last week rewrites its timestamp
-  to today and pulls it into Today's Completed. Pre-existing and distinct from [[T-202]]; found while
-  fixing the `.cancelled` branch beside it. A normalizer should not invent a timestamp the status
-  merely permits.
 
 - [T-214] **iOS list *completion* is still macOS-only, and the obvious shared substitute is wrong.**
   T-187 shipped deletion and deliberately not completion. `TaskContainerLifecycleService` lives in
@@ -527,6 +551,33 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-158] `4fe809f` Privacy Policy and Support belong to About on both platforms (T-220). The old
+  doc comment justified the split with "iOS files them under About because iOS's Data Safety screen
+  does not carry them" — a description of an accident, not a defence: that screen had no delete route
+  at the time. Neither link is a data-safety control, and a help link one tab-stop from an
+  irreversible delete button is the misread `.about`'s group-of-one exists to avoid.
+  `CadenceAppReferenceLink` is now the one source for URLs *and* titles, glyphs and fallback copy —
+  the URLs were already shared, which is exactly why the hand-typed titles had drifted
+  ("Notepad"/"Permanent note"). `SettingsReviewLinksSection` renamed to
+  `SettingsPrivacyStatementSection`, because a struct named for links it no longer has is how the
+  page-header `subtitle` parameter survived three deletions.
+
+- [D-157] `13dd01c` Notes reached from the Notes page or a list can say what points at them (T-224).
+  Three sites presented the editor over a real `Note` and passed it nothing, so
+  `refreshReferenceContents` wrote empty contents and the panel rendered `EmptyView` — the same note
+  showed its backlinks from Search and not from the Notes page. The test states a **relation** (every
+  editor in a note-editing host carries an `editingNote:`) rather than a count, since a count is
+  satisfied by the wrong pane and goes stale when a pane is added.
+
+- [D-156] `64df379` A normalizer was calling a transition, so renaming old work re-finished it
+  (T-213). `normalizeCompletionState`'s `.done` branch called `markDone`, which stamps
+  `completedAt = now` **and** spawns the next recurrence — so editing any of seven fields on a task
+  finished last week pulled it into Today's Completed, and on a done recurring task minted a new
+  occurrence every save. The ticket described the trigger wrongly (open/close does not save) and
+  missed the spawn entirely. Fixed to `case .done, .cancelled: break`, which is what the function's
+  own doc comment already claimed while the branch below contradicted it. Clearing the timestamp
+  would have been the wrong fix and a test asserts the opposite polarity to prevent it.
 
 - [D-155] `23210b9` The 100pt band under every iPad list tab was the floating `+`'s clearance,
   inherited. Reported as a Notes-tab bug, then corrected to "it's in all tabs" — which was the

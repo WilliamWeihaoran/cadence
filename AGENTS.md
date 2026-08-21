@@ -132,8 +132,13 @@ code, and every one of them has been violated by a shipped change at least once.
   **It isolates the build, not the test host's container.** A macOS `xcodebuild test` run launches
   `Cadence.app`, which uses the one app-group container at `~/Library/Containers/com.haoranwei.Cadence/Data/`
   no matter where DerivedData points — so two simultaneous macOS test runs corrupt each other. Check
-  `ps aux | grep "[x]codebuild test"` first and wait the other run out; see `docs/TODO.md` T-236 for
-  the measurement and the tell.
+  for another run first and wait it out; see `docs/TODO.md` T-236 for the measurement and the tell.
+  **Match the pattern carefully.** `pgrep -f "xcodebuild test"` matches *any* process whose command
+  line contains that string — including the shell running your own wait loop, so
+  `until ! pgrep -f "xcodebuild test"; do sleep 10; done` never exits, and a plain
+  `grep xcodebuild` over `ps aux` reports your own grep as a hit. Match the binary path —
+  `pgrep -f "Developer/usr/bin/xcodebuild test"` — or capture the PID when you launch and wait on
+  that.
 - **One directory per agent, and clean only inside it.** The scratchpad root is shared. Make
   **one** directory of your own under it — the session scratchpad path plus your PID, e.g.
   `.../scratchpad/agent-$$/` — put both your isolated source tree and your `-derivedDataPath`
