@@ -475,22 +475,41 @@ struct CadenceCancelledTaskReachabilityTests {
     ///
     /// This is a **no-op today by design** — `aCancelledTaskIsStillOffTheScheduleTheRailsAndTheOverdueCount`
     /// above pins that nothing moved — so no behavioural test can tell the fix from its absence.
-    /// A source scan is the only thing that can. The two retired spellings are chosen to match the
-    /// pre-fix text and not the post-fix one: `"filter { $0.isDone }"` is deliberately not a
-    /// substring of `"filter { !$0.isDone }"`, the trap a first draft of the test above fell into.
+    /// A source scan is the only thing that can.
+    ///
+    /// **T-227 rewrote the negative half of this scan, and shrank it.** It used to ban three
+    /// substrings from two whole view files — `"tasks.filter { !$0.isDone }"`,
+    /// `"tasks.filter { $0.isDone }"`, and the bare `"$0.isDone"` — and each was a trap of a
+    /// different size. The bare one failed any innocent mention: a done count, a done card styled
+    /// unlike a cancelled one. The positive-form literal failed a done count spelled on the same
+    /// receiver, `tasks.filter { $0.isDone }.count`. What is left is:
+    ///
+    /// - **one regex, one polarity.** `filter { !$0.isDone }` as a whole predicate can only mean
+    ///   "the work you still intend to do", which *is* the misclassification. It is receiver-
+    ///   agnostic, so `dayTasks.filter { !$0.isDone }` is caught too, which the old exact literal
+    ///   missed. A positive `$0.isDone` cannot be judged out of context, so it is not judged.
+    /// - **the positive count, which already covered the settled half.** Two
+    ///   `isFinishedTask($0)` calls per file is one per half, so a regression in *either* half
+    ///   drops the count and fails — that is what the retired positive-form literal was for, said
+    ///   without a needle that can hit correct code.
     @Test func neitherCalendarBoardDayColumnStillSplitsOnDoneAlone() throws {
         let columns = [
             "Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift",
             "Cadence/iOS/iOSCalendarBoardView.swift"
         ]
+        let zeroInBoth = Dictionary(uniqueKeysWithValues: columns.map { ($0, 0) })
 
-        for retired in ["tasks.filter { !$0.isDone }", "tasks.filter { $0.isDone }", "$0.isDone"] {
-            try expectOccurrences(of: retired, at: Dictionary(uniqueKeysWithValues: columns.map { ($0, 0) }))
-        }
+        try expectPatternOccurrences(of: activeHalfSplitOnDoneAlone, at: zeroInBoth)
         try expectOccurrences(
             of: "CadenceTaskQuerySupport.isFinishedTask($0)",
             at: Dictionary(uniqueKeysWithValues: columns.map { ($0, 2) })
         )
+
+        // The needle is not vacuous, and it does not reach the spellings that are fine.
+        #expect("tasks.filter { !$0.isDone }".matchCount(ofPattern: activeHalfSplitOnDoneAlone) == 1)
+        #expect("dayTasks.filter{!$0.isDone}".matchCount(ofPattern: activeHalfSplitOnDoneAlone) == 1)
+        #expect("tasks.filter { $0.isDone }.count".matchCount(ofPattern: activeHalfSplitOnDoneAlone) == 0)
+        #expect("$0.isDone ? Theme.doneFill : Theme.dim".matchCount(ofPattern: activeHalfSplitOnDoneAlone) == 0)
 
         // And the upstream filter stays exactly where it was: the fix was the accident, not the
         // policy. Cancelled work is still off the Board.
@@ -529,6 +548,41 @@ struct CadenceCancelledTaskReachabilityTests {
 }
 
 // MARK: - Source-reading helpers
+
+/// The retired active-half split, receiver-agnostic and whitespace-tolerant: any `filter` whose
+/// entire predicate is `!$0.isDone`.
+private let activeHalfSplitOnDoneAlone = "\\.filter\\s*\\{\\s*!\\s*\\$0\\.isDone\\s*\\}"
+
+private extension String {
+    /// Regex match count, for scans where a bare substring over-matches or under-matches.
+    func matchCount(ofPattern pattern: String) -> Int {
+        var count = 0
+        var searchRange = startIndex..<endIndex
+        while let found = range(of: pattern, options: .regularExpression, range: searchRange) {
+            count += 1
+            searchRange = found.upperBound..<endIndex
+        }
+        return count
+    }
+}
+
+/// `expectOccurrences`, but the needle is a regular expression. Prefer this whenever a substring
+/// would also match code that is perfectly fine — see T-227.
+private func expectPatternOccurrences(
+    of pattern: String,
+    at files: [String: Int],
+    sourceLocation: SourceLocation = #_sourceLocation
+) throws {
+    for (path, expected) in files {
+        let code = try strippingComments(sourceFile(path))
+        let actual = code.matchCount(ofPattern: pattern)
+        #expect(
+            actual == expected,
+            "\(path) matches /\(pattern)/ \(actual) times, expected \(expected)",
+            sourceLocation: sourceLocation
+        )
+    }
+}
 
 /// Fails unless `text` occurs exactly `count` times as live code in each listed file.
 ///

@@ -33,6 +33,66 @@ hardcoded colours either.
 - Preserve hover semantics in `CadenceHoverStyles.swift`: task/event/bundle hovers should preserve original color and lift/brighten rather than gray out.
 - Keep shared components small and dependency-light. Avoid pulling macOS-only managers into shared code.
 
+## Source-Scanning Tests: The Two Ways They Go Wrong
+
+A **source-scanning test** reads a `.swift` file as text and asserts something about the code in
+it. This repo has a lot of them, for a good reason and a bad one. The good reason: `Cadence/iOS/`
+is entirely inside `#if os(iOS)` and the test target builds for macOS, so for the whole iOS surface
+there is no symbol to reference and a text scan is the *only* tool available. The bad one: they are
+easy to write and easy to write wrongly. On one day they caught several real regressions **and**
+produced every defective assertion an independent verifier found (T-227, T-228). Both failure modes
+have names now.
+
+**Kind one: it can fail on correct code.** A substring needle is a claim about text, and the claim
+you meant is almost always about *structure*.
+
+- `contains("MinimumWidth") == 0`, meaning "this file has not grown its own width floor", failed
+  the moment a file read `CadenceNotesListMetrics.twoColumnMinimumWidth` — which is the edit the
+  test's own name asked for.
+- A bare `"$0.isDone"` banned from two whole view files, meaning "this column no longer splits its
+  cards on done alone", would fail a done-count badge or a done card styled unlike a cancelled one.
+- `toggleGoalListLink(` *contains* `GoalListLink(`, so a scan for stray constructors accuses every
+  correctly-rewired call site.
+
+Fixes, in order of preference: make the assertion **positive** ("this file reads the shared value")
+rather than negative ("this file does not contain a string"); use a **regex with a word boundary or
+a negative lookbehind** so a qualified read is exempt (`(?<!CadenceNotesListMetrics\.)`); pick the
+**one polarity that can only mean the bug** (`filter { !$0.isDone }` is "work you still intend to
+do"; a positive `$0.isDone` cannot be judged out of context, so do not judge it). And **strip
+comments before scanning** — `strippingComments` in any of these test files — because explaining in
+prose why a file has no `#if os(iOS)` should not fail a test asserting it has none. If the needle
+is inherently ambiguous, assert the call site instead of the absence.
+
+**Kind two: it cannot fail at all.** Green forever, and worth nothing.
+
+- Asserting the *helpers* a decision reads while the decision itself — a `??`, a ternary, an
+  argument order — sits in a view this target cannot call. Dropping `due ??` from the pill left the
+  whole test green and two fixture lines dead.
+- Restating something the line above already pins: `noteKindLabel(.meeting) != rawValue.capitalized`
+  directly under `noteKindLabel(.meeting) == "Event note"`.
+- Comparing through a lossy formatter. The MCP DTO formats `completedAt` with a default
+  `ISO8601DateFormatter`, i.e. second precision, so a re-stamp microseconds later serialises
+  identically and a DTO-string comparison cannot see it. Compare the stored `Date`, or inject the
+  clock.
+- A scan that silently read nothing. Every zero-count assertion passes against an empty string,
+  which is what a `/tmp` against `/private/tmp` path mismatch produces on an isolated build tree.
+
+So: **mutate the thing you claim to pin and watch the test fail.** That is the only evidence that
+an assertion is load-bearing, and it is cheap — one line in a private tree. Read the *xcodebuild
+exit status*, and count compile errors beside it: a mutation that fails to build also exits 65 and
+looks exactly like a caught regression. Pull the failing expectation out of the `.xcresult`
+(`xcrun xcresulttool get test-results tests --path <…>.xcresult --format json`) and check it is the
+assertion you meant, not a neighbour. Then add the two guards that make the rest trustworthy: a
+**non-vacuity test** over the file reader (`files.count > 300`, plus one positive `contains` and one
+that proves the stripper stripped), and, for a regex needle, a **self-check** — run it against a
+literal that must match and a literal that must not, so a typo in the pattern cannot quietly pass
+every scan built on it.
+
+Worked examples of all of this: `CadenceTests/CadenceSharedTaskRowJobsTests.swift` for the helper
+shape, and the four files T-227/T-228 repaired —
+`CadenceNoteFolderSurfaceTests`, `CadenceCancelledTaskReachabilityTests`,
+`CadenceNoteReferencePanelSurfaceTests`, `CadenceWriteServiceTests`.
+
 ## The File Name Is Not The Type Name
 
 Several shared types sit in `Cadence`-prefixed files while carrying no prefix themselves:

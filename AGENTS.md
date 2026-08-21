@@ -37,6 +37,11 @@ An unscoped `test` run also pulls in `CadenceUITests`, which cannot launch headl
 the whole run. The failure reads like a broken suite rather than a harness problem — do not
 conclude "tests can't run here" from it.
 
+**Writing a test that reads source files as text? Read "Source-Scanning Tests: The Two Ways They Go
+Wrong" in `Cadence/Shared/AGENTS.md` first.** Those tests caught several real regressions in one day
+and produced every defective assertion a verifier found in the same day; the substring trap,
+comment-stripping, non-vacuity, and "mutate what you claim to pin" are all written up there, once.
+
 **Warning baseline: 0 on macOS, 0 on iOS.** It was three until `651694b` (`MarkdownLinkSupport`
 was itself a main-actor isolation warning and went with the `nonisolated` pass), then two —
 `SchedulingService` and `SettingsNotificationsSection` — until T-96 cleared both. Neither was a

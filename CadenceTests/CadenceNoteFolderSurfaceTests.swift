@@ -452,6 +452,12 @@ struct CadenceNoteFolderSurfaceTests {
     /// the pane-width rule — a folder is a heading inside one column, not a third pane, so no
     /// arithmetic changed. `CadencePaneWidthRuleHomesTests` is what enforces the general rule;
     /// this pins that this surface joined it by delegating.
+    ///
+    /// **The ban is on owning one of these figures, not on naming one.** T-227: this read
+    /// `contains("MinimumWidth") == 0`, and the shared floor is
+    /// `CadenceNotesListMetrics.twoColumnMinimumWidth` — so the one edit this test's own name asks
+    /// for, reading the shared value, failed it. Each spelling is matched only where it is *not*
+    /// reached through the shared namespace, which is what "grown its own" actually means.
     @Test func theIOSFolderColumnBorrowsTheNotesSplitRatherThanInventingOne() throws {
         let code = try folderStrippingComments(folderSource("Cadence/iOS/iOSListNotesView.swift"))
 
@@ -459,10 +465,20 @@ struct CadenceNoteFolderSurfaceTests {
         #expect(code.components(separatedBy: "CadenceNotesListMetrics.regularColumnWidth").count - 1 == 1)
         for floorSpelling in ["MinimumWidth", "minimumEditorWidth", "columnDividerWidth"] {
             #expect(
-                code.components(separatedBy: floorSpelling).count - 1 == 0,
-                "iOSListNotesView has grown its own \(floorSpelling) instead of reading one"
+                code.folderMatchCount(ofPattern: unqualifiedFloorPattern(floorSpelling)) == 0,
+                """
+                iOSListNotesView names a \(floorSpelling) figure without reaching it through \
+                CadenceNotesListMetrics — it has grown its own instead of reading one
+                """
             )
         }
+
+        // The needle is not vacuous. A regex typo here would silently pass all three checks above,
+        // which is the same failure mode `theSourceScanActuallyReachesBothPlatformsSource` guards
+        // for the file reader.
+        let pattern = unqualifiedFloorPattern("MinimumWidth")
+        #expect("private let paneMinimumWidth: CGFloat = 601".folderMatchCount(ofPattern: pattern) == 1)
+        #expect("if width >= CadenceNotesListMetrics.twoColumnMinimumWidth {".folderMatchCount(ofPattern: pattern) == 0)
     }
 
     // MARK: - The scan itself
@@ -490,6 +506,26 @@ struct CadenceNoteFolderSurfaceTests {
 }
 
 // MARK: - Source-reading helpers
+
+private extension String {
+    /// Regex match count, for scans where a bare substring over-matches.
+    func folderMatchCount(ofPattern pattern: String) -> Int {
+        var count = 0
+        var searchRange = startIndex..<endIndex
+        while let found = range(of: pattern, options: .regularExpression, range: searchRange) {
+            count += 1
+            searchRange = found.upperBound..<endIndex
+        }
+        return count
+    }
+}
+
+/// Matches an identifier ending in `spelling` **except** where it is reached through
+/// `CadenceNotesListMetrics.`. Reading the shared figure is the point; declaring a local one is the
+/// regression, and a substring scan cannot tell them apart (T-227).
+private func unqualifiedFloorPattern(_ spelling: String) -> String {
+    "(?<!CadenceNotesListMetrics\\.)\\b[A-Za-z0-9_]*\(spelling)\\b"
+}
 
 /// Fails unless `text` occurs exactly `count` times as live code in each listed file.
 private func expectFolderOccurrences(

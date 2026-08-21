@@ -112,6 +112,13 @@ struct CadenceWriteServiceTests {
     /// cancelled state" only while that state had a nil timestamp. Now that a cancellation is
     /// timestamped, the second clause is true of every cancelled task, so an unfixed guard would
     /// re-stamp `completedAt` and append a second audit entry on every repeat call.
+    ///
+    /// **T-228: the re-stamp half is asserted on the stored `Date`, not on the DTO string.**
+    /// `CadenceReadService` formats `completedAt` through a default `ISO8601DateFormatter`, which
+    /// is second-precision, so a re-stamp microseconds later serialises to an identical string and
+    /// a DTO comparison sees nothing. That left the guard's two halves unevenly covered: a mutation
+    /// that re-stamped *and* re-audited was caught by the audit assertions, and one that only
+    /// re-stamped was not caught at all.
     @Test func cancellingAnAlreadyCancelledTaskChangesAndAuditsNothing() throws {
         let auditURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("cadence-mcp-cancel-idempotent-\(UUID().uuidString)")
@@ -124,17 +131,23 @@ struct CadenceWriteServiceTests {
         try fixture.modelContext.save()
 
         let first = try fixture.writeService.cancelTask(taskID: task.id.uuidString)
-        let stamp = try #require(first.completedAt)
+        #expect(first.completedAt != nil)
+        // The model's own `Date`, captured from the same context the write service mutates. This is
+        // the assertion that can see a re-stamp; the DTO string below cannot.
+        let stamp = try #require(task.completedAt)
+
         let second = try fixture.writeService.cancelTask(taskID: task.id.uuidString)
 
-        #expect(second.completedAt == stamp)
+        #expect(task.completedAt == stamp)
+        #expect(second.completedAt == first.completedAt)
         #expect(try readAuditEntries(from: auditURL).map(\.tool) == ["cancel_task"])
 
         // …and the same for the bulk path, which filters on the same guard. It still reports the
         // task as cancelled — that is its contract — but must neither re-stamp nor re-audit it.
         let bulk = try fixture.writeService.bulkCancelTasks(options: .init(taskIds: [task.id.uuidString]))
         #expect(bulk.cancelledTasks.map(\.title) == ["MCP TEST abandon me"])
-        #expect(try fixture.readService.getTask(taskID: task.id.uuidString).completedAt == stamp)
+        #expect(task.completedAt == stamp)
+        #expect(try fixture.readService.getTask(taskID: task.id.uuidString).completedAt == first.completedAt)
         #expect(try readAuditEntries(from: auditURL).map(\.tool) == ["cancel_task"])
     }
 

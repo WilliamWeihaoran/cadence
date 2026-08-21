@@ -36,13 +36,22 @@ struct CadenceNoteReferencePanelSurfaceTests {
     /// The ticket's first claim, asserted rather than assumed: the resolver has no platform in it.
     /// If a `#if os(` ever appears in this file, the panel's shared half stops being shared and the
     /// scan below is measuring the wrong thing.
+    ///
+    /// **Read through the comment stripper, like every other scan in this file.** T-227: this was
+    /// the one assertion here reading raw source, so a doc comment writing `#if os(iOS)` or naming
+    /// `import UIKit` — routine prose in this repo, and the natural way to explain *why* a file has
+    /// neither — would have failed it. The positive assertion afterwards is what keeps the four
+    /// absences honest: a stripper that returned an empty string would otherwise satisfy them all.
     @Test func theResolverIsPlatformIndependent() throws {
-        let source = try sourceFile("Cadence/Services/NoteReferenceSupport.swift")
+        let source = try strippingComments(sourceFile("Cadence/Services/NoteReferenceSupport.swift"))
 
         #expect(!source.contains("#if os("))
         #expect(!source.contains("import SwiftUI"))
         #expect(!source.contains("import AppKit"))
         #expect(!source.contains("import UIKit"))
+
+        #expect(source.contains("static func noteKindLabel"))
+        #expect(source.contains("import Foundation"))
     }
 
     // MARK: - Which sections a panel offers
@@ -235,13 +244,26 @@ struct CadenceNoteReferencePanelSurfaceTests {
 
     /// `.meeting` keeps its raw value because it is persisted, so `rawValue.capitalized` says
     /// "Meeting" — the retired name of the tab. One spelling, and it is the current one.
-    @Test func theNoteKindLabelUsesTheAppsCurrentVocabulary() {
+    ///
+    /// **The "one spelling" half is a call-site assertion, not a comparison.** T-228: this closed
+    /// with `noteKindLabel(.meeting) != NoteKind.meeting.rawValue.capitalized`, which cannot fail —
+    /// the line above already pins the label to an exact string, so the inequality was true by
+    /// construction and told you nothing. What the five literals genuinely cannot see is the pill
+    /// deriving its own subtitle from the raw value instead of calling the helper, so that is what
+    /// is pinned. (`NoteKind.meeting.rawValue == "meeting"` is covered by
+    /// `CadenceNotesListSupportTests` and `MobileNotesAndSettingsShapeTests`; a third copy here
+    /// would be duplication, not coverage.)
+    @Test func theNoteKindLabelUsesTheAppsCurrentVocabulary() throws {
         #expect(NoteReferencePanelSupport.noteKindLabel(.daily) == "Daily note")
         #expect(NoteReferencePanelSupport.noteKindLabel(.weekly) == "Weekly note")
         #expect(NoteReferencePanelSupport.noteKindLabel(.permanent) == "Notepad")
         #expect(NoteReferencePanelSupport.noteKindLabel(.list) == "List note")
         #expect(NoteReferencePanelSupport.noteKindLabel(.meeting) == "Event note")
-        #expect(NoteReferencePanelSupport.noteKindLabel(.meeting) != NoteKind.meeting.rawValue.capitalized)
+
+        try expectOccurrences(
+            of: "subtitle: NoteReferencePanelSupport.noteKindLabel(note.kind)",
+            at: ["Cadence/iOS/iOSMarkdownAccessoryViews.swift": 1]
+        )
     }
 
     @Test func aReferencedTaskFallsBackToWhereItActuallyIs() {
@@ -260,9 +282,18 @@ struct CadenceNoteReferencePanelSurfaceTests {
         #expect(NoteReferencePanelSupport.taskFallbackSubtitle(done) == "Completed")
     }
 
-    /// The deadline wins the subtitle when there is one — the panel calls the same helper macOS's
-    /// chip does, and this pins the two decisions it makes with the answer.
-    @Test func theDeadlineOutranksTheContainerOnAReferencedTask() {
+    /// The deadline wins the subtitle when there is one — the panel calls the same helpers macOS's
+    /// chip does, and the *order* it applies them in is a `??` in the iOS pill builder that this
+    /// target cannot call: `Cadence/iOS/` is entirely inside `#if os(iOS)`.
+    ///
+    /// **T-228: asserting the helpers is not asserting the precedence.** This test used to end
+    /// after the four helper expectations, so dropping `due ??` from the pill — every referenced
+    /// task reading as undated, the container always winning — left it green, and the two `area`
+    /// assignments were dead weight. Both halves are load-bearing now: the container is asserted to
+    /// be a real competing answer ("Documents", not "Inbox"), which is what makes "outranks" a
+    /// choice rather than a fallback for nothing, and the expression that chooses is read from
+    /// source.
+    @Test func theDeadlineOutranksTheContainerOnAReferencedTask() throws {
         let todayKey = "2026-08-21"
         let context = Context(name: "Work")
         let area = Area(name: "Documents", context: context)
@@ -270,13 +301,26 @@ struct CadenceNoteReferencePanelSurfaceTests {
         overdue.area = area
         overdue.dueDate = "2026-08-19"
 
+        #expect(NoteReferencePanelSupport.taskFallbackSubtitle(overdue) == "Documents")
         #expect(CadenceFocusSupport.dueLabel(forDueDateKey: overdue.dueDate, todayKey: todayKey) != nil)
         #expect(overdue.isOverdue(todayKey: todayKey))
 
         let undated = AppTask(title: "Whenever")
         undated.area = area
+        #expect(NoteReferencePanelSupport.taskFallbackSubtitle(undated) == "Documents")
         #expect(CadenceFocusSupport.dueLabel(forDueDateKey: undated.dueDate, todayKey: todayKey) == nil)
         #expect(!undated.isOverdue(todayKey: todayKey))
+
+        // The deadline is the left operand, and the overdue red is spent only on a deadline that is
+        // actually being shown — the two decisions the helpers above are the inputs to.
+        try expectOccurrences(
+            of: "subtitle: due ?? NoteReferencePanelSupport.taskFallbackSubtitle(task)",
+            at: ["Cadence/iOS/iOSMarkdownAccessoryViews.swift": 1]
+        )
+        try expectOccurrences(
+            of: "subtitleTint: due != nil && isOverdue ? Theme.red : Theme.dim",
+            at: ["Cadence/iOS/iOSMarkdownAccessoryViews.swift": 1]
+        )
     }
 
     // MARK: - The call sites
