@@ -55,14 +55,11 @@ struct iOSLinkedNoteEditorSheet: View {
         horizontalSizeClass == .regular
     }
 
+    /// The shared spelling, not a fifth copy of this switch. It said "Linked note" for `.list`
+    /// while the reference panel's chip for the same note said "List note" — one note, two names,
+    /// on two surfaces a tap apart.
     private var subtitle: String {
-        switch note.kind {
-        case .daily: return "Daily note"
-        case .weekly: return "Weekly note"
-        case .permanent: return "Notepad"
-        case .list: return "Linked note"
-        case .meeting: return "Event note"
-        }
+        NoteReferencePanelSupport.noteKindLabel(note.kind)
     }
 
     var body: some View {
@@ -141,6 +138,7 @@ struct iOSLinkedNoteEditorSheet: View {
             placeholder: "Start writing...",
             referenceNotes: referenceNotes,
             referenceTasks: referenceTasks,
+            editingNote: note,
             onOpenReference: openMarkdownReference
         )
     }

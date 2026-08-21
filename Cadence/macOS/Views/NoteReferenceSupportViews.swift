@@ -1,6 +1,13 @@
 #if os(macOS)
 import SwiftUI
 
+/// The desktop reference panel. Its iOS counterpart is `iOSNoteReferencePanel`.
+///
+/// The section labels and glyphs come from `NoteReferencePanelSection` rather than the three string
+/// literals that used to sit here: there are two panels now, and "Backlinks" on one platform beside
+/// "Linked From" on the other would be one note answering one question two ways. The three accents
+/// stay local — `NoteReferencePanelSection` is compiled into the MCP server target, which has no
+/// `Theme`.
 struct NoteReferenceStrip: View {
     let linkedNotes: [Note]
     let linkedTasks: [AppTask]
@@ -15,12 +22,16 @@ struct NoteReferenceStrip: View {
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 if !linkedNotes.isEmpty {
-                    ReferenceSection(label: "Linked Notes") {
+                    ReferenceSection(label: NoteReferencePanelSection.linkedNotes.label) {
                         ForEach(linkedNotes, id: \.id) { linked in
                             Button {
                                 onOpenNote(linked)
                             } label: {
-                                ReferenceChip(icon: "doc.text", title: linked.displayTitle, tint: Theme.blue)
+                                ReferenceChip(
+                                icon: NoteReferencePanelSection.linkedNotes.systemImage,
+                                title: linked.displayTitle,
+                                tint: Theme.blue
+                            )
                             }
                             .buttonStyle(.cadencePlain)
                         }
@@ -28,10 +39,10 @@ struct NoteReferenceStrip: View {
                 }
 
                 if !linkedTasks.isEmpty {
-                    ReferenceSection(label: "Task References") {
+                    ReferenceSection(label: NoteReferencePanelSection.taskReferences.label) {
                         ForEach(linkedTasks, id: \.id) { task in
                             ReferenceChip(
-                                icon: "checkmark.circle",
+                                icon: NoteReferencePanelSection.taskReferences.systemImage,
                                 title: task.title.isEmpty ? "Untitled Task" : task.title,
                                 tint: Theme.green,
                                 dueLabel: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey),
@@ -42,12 +53,16 @@ struct NoteReferenceStrip: View {
                 }
 
                 if !backlinks.isEmpty {
-                    ReferenceSection(label: "Backlinks") {
+                    ReferenceSection(label: NoteReferencePanelSection.backlinks.label) {
                         ForEach(backlinks, id: \.id) { backlink in
                             Button {
                                 onOpenNote(backlink)
                             } label: {
-                                ReferenceChip(icon: "arrow.uturn.backward.circle", title: backlink.displayTitle, tint: Theme.amber)
+                                ReferenceChip(
+                                icon: NoteReferencePanelSection.backlinks.systemImage,
+                                title: backlink.displayTitle,
+                                tint: Theme.amber
+                            )
                             }
                             .buttonStyle(.cadencePlain)
                         }

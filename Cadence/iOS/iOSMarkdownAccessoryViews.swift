@@ -355,6 +355,9 @@ struct iOSMarkdownSuggestionStrip<Content: View>: View {
 private struct iOSMarkdownSuggestionPill<Leading: View>: View {
     let title: String
     let subtitle: String
+    /// Only the reference panel sets this, and only to `Theme.red` for a due date that has passed.
+    /// Defaulted so a suggestion pill stays one control rather than becoming two.
+    var subtitleTint: Color = Theme.dim
     let action: () -> Void
     @ViewBuilder let leading: Leading
 
@@ -371,7 +374,7 @@ private struct iOSMarkdownSuggestionPill<Leading: View>: View {
 
                     Text(subtitle)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(subtitleTint)
                         .lineLimit(1)
                 }
             }
@@ -704,4 +707,123 @@ struct iOSMarkdownEmptyPrompt: View {
         .allowsHitTesting(false)
     }
 }
+// MARK: - Reference panel
+
+/// What this note points at, and what points at it, above the editor.
+///
+/// macOS has drawn this since `NoteReferenceStrip`; iOS had only the *follow* half — tapping a
+/// `[[link]]` in the body opened it — so a note could take you somewhere but could never tell you
+/// what pointed back (T-192). The sections, their order and their labels come from
+/// `NoteReferencePanelSection`, and the three arrays from `NoteReferencePanelSupport.contents`,
+/// which is `NoteReferenceResolver` and nothing else: the resolution rules are tested once, in
+/// `Services/`, and neither platform gets to hold a second opinion about them.
+///
+/// **Built out of `iOSMarkdownSuggestionStrip` and `iOSMarkdownSuggestionPill`, deliberately.**
+/// A note-reference chip and a `[[` completion suggestion are the same kind of control in the same
+/// 44pt band of the same editor, and the strip already carries the
+/// `contentMargins(.vertical, 0, for: .scrollContent)` reset that `D-104` is about — a new
+/// horizontal scroll view written from scratch here would be a fourth chance to inherit a page's
+/// 100pt bottom clearance into a 56pt viewport and draw itself 50pt above its own frame.
+struct iOSNoteReferencePanel: View {
+    let contents: NoteReferencePanelContents
+    let openNote: (Note) -> Void
+    let openTask: (AppTask) -> Void
+
+    private var todayKey: String { DateFormatters.todayKey() }
+
+    var body: some View {
+        if contents.isEmpty {
+            EmptyView()
+        } else {
+            VStack(spacing: 0) {
+                ForEach(contents.sections) { section in
+                    strip(for: section)
+
+                    Divider().background(Theme.borderSubtle)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func strip(for section: NoteReferencePanelSection) -> some View {
+        iOSMarkdownSuggestionStrip(
+            label: section.label,
+            // No query and never empty: a section only exists here when it has something in it, so
+            // there is no "no matches" state to spell out.
+            query: "",
+            emptyText: "",
+            isEmpty: false
+        ) {
+            switch section {
+            case .linkedNotes:
+                notePills(contents.linkedNotes, section: section)
+            case .taskReferences:
+                taskPills(contents.linkedTasks, section: section)
+            case .backlinks:
+                notePills(contents.backlinks, section: section)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func notePills(_ notes: [Note], section: NoteReferencePanelSection) -> some View {
+        ForEach(notes, id: \.id) { note in
+            iOSMarkdownSuggestionPill(
+                title: note.displayTitle,
+                subtitle: NoteReferencePanelSupport.noteKindLabel(note.kind),
+                action: { openNote(note) }
+            ) {
+                iOSIconTile(
+                    systemImage: section.systemImage,
+                    color: section.tint,
+                    size: 26,
+                    iconSize: 12,
+                    bordered: false
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func taskPills(_ tasks: [AppTask], section: NoteReferencePanelSection) -> some View {
+        ForEach(tasks, id: \.id) { task in
+            // The deadline wins the subtitle when there is one, and reddens when it has passed —
+            // the same two decisions macOS's chip makes, through the same two helpers, so a
+            // referenced task does not read as undated on one platform and overdue on the other.
+            let due = CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)
+            let isOverdue = task.isOverdue(todayKey: todayKey)
+            let title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            iOSMarkdownSuggestionPill(
+                title: title.isEmpty ? MarkdownTaskEmbedRenderInfo.untitledTaskTitle : title,
+                subtitle: due ?? NoteReferencePanelSupport.taskFallbackSubtitle(task),
+                subtitleTint: due != nil && isOverdue ? Theme.red : Theme.dim,
+                action: { openTask(task) }
+            ) {
+                iOSIconTile(
+                    systemImage: task.isDone ? "checkmark.circle.fill" : section.systemImage,
+                    color: section.tint,
+                    size: 26,
+                    iconSize: 12,
+                    bordered: false
+                )
+            }
+        }
+    }
+}
+
+private extension NoteReferencePanelSection {
+    /// The three accents macOS's `NoteReferenceStrip` already spends on these sections. They live in
+    /// the view layer rather than beside the labels because `NoteReferencePanelSection` is compiled
+    /// into the MCP server target, which has no `Theme`.
+    var tint: Color {
+        switch self {
+        case .linkedNotes: return Theme.blue
+        case .taskReferences: return Theme.green
+        case .backlinks: return Theme.amber
+        }
+    }
+}
+
 #endif

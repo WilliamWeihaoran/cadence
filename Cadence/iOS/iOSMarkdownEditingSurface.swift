@@ -19,6 +19,16 @@ struct iOSMarkdownEditingSurface: View {
     let placeholder: String
     var referenceNotes: [Note] = []
     var referenceTasks: [AppTask] = []
+    /// The note being edited, when the host is editing a `Note` rather than some other body of
+    /// markdown (a task's notes field, a template, an event draft). Set it and the editor grows the
+    /// reference panel above its toolbar; leave it nil and it cannot, because "what points at this"
+    /// has no subject.
+    ///
+    /// It is a separate parameter rather than something inferred from `text` and `referenceNotes`
+    /// on purpose: hosts pass *all* notes, including the one being edited, so the only way to pick
+    /// self out of that array would be to match content — and two blank notes are indistinguishable
+    /// that way. Guessing wrong shows one note the backlinks of another.
+    var editingNote: Note? = nil
     var onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)? = nil
     var allowsEmbeddedTaskCreation = true
     var embeddedTaskArea: Area? = nil
@@ -36,6 +46,11 @@ struct iOSMarkdownEditingSurface: View {
     @State private var selectedImageItems: [PhotosPickerItem] = []
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
     @State private var selectedEmbeddedTask: AppTask?
+    /// Held rather than computed in `body`. Backlinks run a regex over *every* other note's content,
+    /// so recomputing them on each body pass would put that scan behind every keystroke; macOS holds
+    /// its equivalent in `NoteEditorPane.derivedState` for the same reason. Refreshed when the
+    /// committed text changes — the editor's own 2.5s commit debounce is the throttle.
+    @State private var referenceContents = NoteReferencePanelContents()
 
     // No word/line count bar under the editor. It was a permanent strip across the foot of every
     // note reporting a number nobody was writing towards — the editor's last piece of chrome that
@@ -44,11 +59,19 @@ struct iOSMarkdownEditingSurface: View {
         editorSurface
         .background(Theme.surface)
         .onAppear(perform: loadDraftIfNeeded)
+        .onAppear(perform: refreshReferenceContents)
         .onDisappear(perform: commitDraftImmediately)
         .onChange(of: text) { _, newValue in
             guard !isFocused, newValue != draftText else { return }
             draftText = newValue
         }
+        // Its own observer rather than a line inside the one above: that one returns early while the
+        // editor holds focus, and the references still have to catch up when focus is released and
+        // the buffer commits.
+        .onChange(of: text) { _, _ in refreshReferenceContents() }
+        .onChange(of: editingNote?.id) { _, _ in refreshReferenceContents() }
+        .onChange(of: referenceNotes.count) { _, _ in refreshReferenceContents() }
+        .onChange(of: referenceTasks.count) { _, _ in refreshReferenceContents() }
         .onChange(of: isFocused) { _, focused in
             if focused {
                 loadDraftIfNeeded()
@@ -88,6 +111,22 @@ struct iOSMarkdownEditingSurface: View {
             : nil
 
         return VStack(spacing: 0) {
+            // Above the format toolbar, which is where macOS puts it: header, then what the note is
+            // connected to, then the tools, then the note.
+            //
+            // Hidden while the editor has focus, which is the one place this differs from macOS.
+            // With a keyboard up there is room for a single row of chrome above the editor, and that
+            // row belongs to the `[[` and `/` strips below the toolbar — typing affordances beat a
+            // navigation affordance for the space, and up to three reference strips plus a toolbar
+            // plus a keyboard leaves the note itself a sliver.
+            if !isFocused {
+                iOSNoteReferencePanel(
+                    contents: referenceContents,
+                    openNote: openReferencedNote,
+                    openTask: { task in openEmbeddedTask(id: task.id) }
+                )
+            }
+
             iOSMarkdownFormatToolbar(
                 apply: { command in applyToolbarCommand(command) },
                 chooseImages: { chooseImages() },
@@ -186,7 +225,7 @@ struct iOSMarkdownEditingSurface: View {
                     iOSMarkdownReferenceCompletionChoice(
                         id: "note-\(note.id.uuidString)",
                         title: note.displayTitle,
-                        subtitle: note.kind.rawValue.capitalized,
+                        subtitle: NoteReferencePanelSupport.noteKindLabel(note.kind),
                         systemImage: "doc.text",
                         tint: Theme.blue,
                         markdown: NoteReferenceParser.noteReferenceMarkdown(for: note)
@@ -335,6 +374,31 @@ struct iOSMarkdownEditingSurface: View {
         ) else { return }
         updateDraft(reconciled)
         commitDraftImmediately()
+    }
+
+    private func refreshReferenceContents() {
+        guard let editingNote else {
+            referenceContents = NoteReferencePanelContents()
+            return
+        }
+        referenceContents = NoteReferencePanelSupport.contents(
+            for: editingNote,
+            content: text,
+            notes: referenceNotes,
+            tasks: referenceTasks
+        )
+    }
+
+    /// Opens a panel chip through the same presenter a `[[link]]` tapped in the body goes through —
+    /// the host's `iOSMarkdownReferenceSheets`, one of the four `.sheet(item:)` presenters that
+    /// deliberately keep their own presentation because they present from inside a sheet. A panel
+    /// chip is the same navigation as the link it stands for, so it must not be a second route.
+    private func openReferencedNote(_ note: Note) {
+        commitDraftImmediately()
+        isFocused = false
+        onOpenReference?(
+            MarkdownReferenceDisplayTarget(kind: .note, referenceID: note.id, title: note.displayTitle)
+        )
     }
 
     private func embeddedTask(id: UUID) -> AppTask? {

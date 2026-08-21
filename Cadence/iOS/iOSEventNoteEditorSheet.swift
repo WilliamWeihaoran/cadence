@@ -107,6 +107,7 @@ struct iOSEventNoteEditorSheet: View {
             placeholder: "Start writing...",
             referenceNotes: allNotes,
             referenceTasks: allTasks,
+            editingNote: note,
             onOpenReference: openMarkdownReference
         )
     }
