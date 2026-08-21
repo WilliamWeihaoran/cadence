@@ -32,6 +32,51 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-242] **Bundle focus is macOS-only.** `macOS/Views/FocusBundleTaskSupportViews.swift` lets the
+  focus timer run a `TaskBundle` and step through its members; `Cadence/iOS/iOSFocusView.swift`
+  contains the string `bundle` zero times. This was the one claim in [[T-190]] that was **true**,
+  and it survived the ticket being closed because it is a separate feature rather than a guard to
+  lift: `FocusManager` is macOS-only (`macOS/Services/`), so the picker, the member rows and the
+  "which member am I on" state all have to be reached before iOS can focus a block. Start by
+  checking what of `FocusManager` is actually AppKit-bound — [[T-190]] and the three tombstones in
+  `macOS/Services/` are all cases where the answer was "nothing".
+
+- [T-243] **The drop-a-task-on-a-task gesture landed on iOS's Board, not its timeline — because the
+  iOS timeline has no drag-and-drop at all.** macOS's home for the gesture is `TimelineDayCanvas`,
+  where every block by definition owns a slot, so the target is always eligible.
+  `Cadence/iOS/iOSCalendarTimelineViews.swift` has **no** `.draggable` and **no** `.dropDestination`
+  anywhere — `iOSTimelineTaskBlock` cannot be dragged — so [[T-190]]'s gesture went to the Calendar
+  Board, whose drag mesh already works. Consequence: on the Board only *timed* cards offer it, and a
+  do-dated-only card correctly declines, so the affordance is less discoverable than on the Mac.
+  Adding DnD to the iOS timeline is the fix and it is **not** small: that view carries a
+  `simultaneousGesture` pinch, and the file's own comment records that `.draggable` "delays the
+  touches of everything under it" — the sidebar bug it was written about. Treat gesture-conflict
+  testing on a real device as part of the work, not a follow-up.
+  Two small things found in the same pass, neither worth its own ticket: `SchedulingActions.dayStartMin`
+  has been dead since before [[T-190]] (declared, read by nothing), and the day bounds are now
+  spelled twice on purpose — `TimelineDayRange` in `macOS/Views/TimelineMetrics.swift` and
+  `CadenceTaskMutationSupport.bundleDayEndMin` / `bundleMinimumDuration` in `Shared/`, because
+  `Shared/` does not compile the timeline. The second pair is pinned equal to the first by
+  `theSharedBundleClampsMatchTheTimelineDayRange`; if `TimelineDayRange` ever moves to `Shared/`,
+  delete the copy rather than the test.
+
+- [T-241] **Bulk container settle skips the notification reconcile, so a completed list keeps its
+  nudges.** Found while fixing T-212 and deliberately not fixed there.
+  `TaskWorkflowService.markDone` / `markCancelled` / `markTodo` all call
+  `HabitNotificationReconcileSupport.scheduleReconcile`; `finishRemainingActiveTasks` never has, for
+  either settled status. So completing or archiving a list leaves its tasks' pending "due today" and
+  scheduled-start notifications live until the next `scenePhase` checkpoint reconciles them away — the
+  reconciliation design means they *do* eventually go, which is why this is a delay rather than a
+  permanent wrong notification, and why it was safe to defer.
+  It is one line, and the reason it was deferred is worth keeping: `scheduleReconcile` spawns a `Task`
+  into `NotificationManager.shared` / `UNUserNotificationCenter`, so adding it makes six brand-new
+  unit tests touch the real notification centre. That needs a decision about how these tests isolate
+  the notification layer — a seam, or an injected reconciler — not a drive-by call added under a green
+  suite that then starts talking to the system. Note also that `finishRemainingActiveTasks`' `in
+  context:` parameter and the `context` parameters on all six `TaskContainerLifecycleService` entry
+  points are currently unused; the fix above is what would want them back, so do not delete them first.
+
+
 - [T-240] **A test bounds a `#require`'d source range by searching for another file's declaration
   line.** `AppStoreReviewReadinessTests.accountDeletionIsExplicitInSettingsAndReviewDocs` locates the
   region it wants to assert over by finding a literal landmark in a *different* file. T-220 made the
@@ -174,14 +219,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 
 
-- [T-212] **`finishRemainingActiveTasks` hand-rolls the cancel transition, and gets two things wrong.**
-  `Cadence/macOS/Services/TaskWorkflowService.swift:~105-118`. Found by T-202 and left because another
-  agent held the file. It sets `completedAt = nil` for `.cancelled`, so bulk "cancel remaining tasks
-  in this section" still produces untimestamped cancellations that [[T-202]] just fixed everywhere
-  else — **and** it bypasses `markCancelled` entirely, so it never spawns a recurring successor. Two
-  bugs in the same three lines. Route it through the shared workflow rather than patching the
-  timestamp.
-
 
 - [T-214] **iOS list *completion* is still macOS-only, and the obvious shared substitute is wrong.**
   T-187 shipped deletion and deliberately not completion. `TaskContainerLifecycleService` lives in
@@ -244,12 +281,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   whenever the machine feels slow. A `pgrep -c CadenceMCPServer` in the pre-verification checklist
   would cost nothing.
 
-
-- [T-190] **Task bundles can be viewed, edited and deleted on iOS but never created.** `TaskBundle(`
-  is constructed only at `macOS/Services/SchedulingService.swift:32` and `:125`, inside
-  `#if os(macOS)`, in a file with no AppKit. iOS reads bundles across nine files and has a detail
-  sheet with a `@Bindable bundle` plus `deleteBundle`. Also no bundle focus on iOS. Needs a create
-  affordance the iOS calendar does not currently have, so this is more than un-guarding.
 
 
 - [T-194] **Note export on iOS: markdown *and* PDF.** User's call — the fuller option, chosen
@@ -392,11 +423,38 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   measured here) and the escape radius, which must be larger than the palette's own reach or
   segment selection will convert to a drag mid-choice. macOS stays deliberately unspecified.
 
-- [T-166] **`defaultColorHex` is eleven hand-typed hex literals feeding `Color(hex:)`.** Exactly the
-  pattern `AGENTS.md` bans outside `Theme.swift` and genuinely user-owned `colorHex`. These are
-  app-defined defaults, so they are a standing exception that predates the rule. Adding a
-  `Theme.redHex` for one of the eleven would make the exception *less* consistent — it wants one
-  pass over all of them or none.
+
+- [T-244] **Cmd+K colours two destinations differently from the sidebar, and ignores the user's
+  override.** `macOS/Views/GlobalSearchSupportViews.swift` hand-assigns each command/page tint —
+  `Theme.red` for Focus and `Theme.purple` for Calendar — while
+  `CadenceFeatureDestination.defaultColorHex` gives Focus **teal** and Calendar **red**. So the
+  command palette and the sidebar disagree about two rows' hue, not just their shade, and the
+  palette never reads `CadencePreferenceKeys.sidebarTabColors` at all, so a user who retints Today
+  in Settings → Sidebar sees the old colour in Cmd+K. The fix is for those rows to read
+  `CadenceSidebarTint.hex(for:overridesRaw:)` rather than naming a `Theme` colour, which also
+  deletes eight dead `?? "#5AA2FF"`-shaped literal fallbacks (`globalSearchHexString()` only returns
+  nil if colour-space conversion fails). Found while doing T-166; out of its scope because it is a
+  hue *assignment* question, not a literal.
+
+- [T-245] **The sidebar tab editor offers the wrong palette, so Focus's teal shows up as a
+  thirteenth swatch.** `SidebarTabEditorSheet` renders `ColorGrid`, which offers
+  `CadenceColorPalette.offeredColors(for:)` — the twelve-hue **list/goal/habit** palette — plus the
+  current value when the palette does not contain it. `Theme.tealHex` (`#45CBC4`) is not in that
+  palette, so opening Focus's editor draws a 13th circle beside the palette's `#14b8a6`: two teals,
+  one decision, which is the exact thing `ColorGrid`'s own comment says the palette must not do.
+  Before T-166 this was true of amber, blue and purple as well. Decide whether a *destination* tint
+  should be picked from `Theme`'s six accents rather than from the list palette — they are different
+  jobs and currently share one grid.
+
+- [T-246] **Three more hex palettes live outside `Theme`.** Found while doing T-166 and left alone
+  deliberately, since none of them is `defaultColorHex`: `macOS/Views/KanbanBoardSupport.swift`'s
+  eight kanban-section colours are a *fourth* palette and four of them (`#f59e0b`, `#ef4444`,
+  `#a855f7`, `#f97316`) are not `Theme` values at all; `macOS/Sheets/CreateListSheet.swift:39`
+  re-types `"#4ecb71"` where `CadenceColorPalette.projectDefault` now reads `Theme.greenHex`; and
+  four of `CadenceColorPalette.colors`' twelve swatches (`#a78bfa`, `#ff6b6b`, `#ffa94d`, `#4ecb71`)
+  are `Theme`'s purple/red/amber/green spelled again, which is now a pure-refactor substitution.
+  `TagSupport.colorOptions` is explicitly **not** in scope — it is a separate palette with a
+  separate job and `CadenceColorPalette`'s doc comment says so.
 
 
 - [T-161] **Tests pin helpers, not wiring.** The T-149 verifier proved by mutation that reverting the
@@ -551,6 +609,33 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-161] `223e46a` Drop a task on a task on iOS and the two become a block (T-190). The ticket's
+  central claim was false — there was a third `TaskBundle(` constructor in `Shared/`, in a file with
+  no `#if` at all, and iOS's quick-create Block segment had been calling it all along. The one real
+  gap was the *gesture*, behind `#if os(macOS)` in a file importing no AppKit — the fifth instance of
+  that shape. Unifying surfaced two divergences between the two copies (one cleared
+  `calendarEventID`, one clamped the start minute) and both were resolved toward the careful version.
+  Verified by dragging one card onto another on an iPhone 17 Pro: 30 + 25 minutes of estimates became
+  a 9:30–10:25 block, which is arithmetic rather than a screenshot's word.
+
+- [D-160] `8b743d0` Two ambers, one Today row (T-166). Not eleven literals but ten, and the real
+  finding was that three of five hues had **drifted** from the `Theme` families they copied — with the
+  drift on screen, since Cmd+K derives its tints from `Theme` while the sidebar used the literals.
+  Deliberately a change of appearance: seven defaults move to the `Theme` value, no stored user tint
+  is touched. The pure refactor was rejected because it would have added a second amber, blue and
+  purple to a palette whose own comment forbids exactly that.
+  Keep the test shape: the mutation that matters replaces a token with **its own current value** as a
+  literal, which every value assertion passes and only the source-scanning relation catches.
+
+- [D-159] `aa33ae6` Archiving a list timestamps the cancellations it produces (T-212), and still
+  spawns nothing. Half the ticket was right — bulk cancel hand-wrote `completedAt = nil`, so archived
+  work reached no Today section on macOS. The other half prescribed routing bulk settle through
+  `markDone`/`markCancelled`, which would have inserted fresh **open** recurrence occurrences into
+  the very column just archived, since `makeNextRecurringTask` copies `area`, `project` and
+  `sectionName`. Not implemented, and a test now implements it as written and fails, so the wrong fix
+  is pinned against rather than just avoided. New shared `settleWithoutAdvancingSeries` carries the
+  decision. `TaskContainerLifecycleService` had zero coverage before this.
 
 - [D-158] `4fe809f` Privacy Policy and Support belong to About on both platforms (T-220). The old
   doc comment justified the split with "iOS files them under About because iOS's Data Safety screen

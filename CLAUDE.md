@@ -378,12 +378,20 @@ Theme.muted   = #a1a1aa   // secondary
 Theme.subdued = #95959e   // label half of a label/value pair, annotating captions
 Theme.dim     = #71717a   // genuinely de-emphasized / disabled
 
-// Accents (+ derived `*Light` variants blended toward white)
+// Accents (+ derived `*Light` variants blended toward white). EVERY accent is declared
+// hex-string-first — `blueHex`, `redHex`, `greenHex`, `amberHex`, `purpleHex`, `tealHex` — and its
+// `Color` is derived from that string. The string is the half an app-defined *default* needs: a
+// sidebar glyph tint or a model `colorHex` seed is a palette decision that happens to be spelled as
+// a String, and publishing the string is the only way it can come from the palette instead of a
+// second hand-typed literal. Only `blueHex` and `tealHex` existed for a while, which is exactly why
+// `CadenceFeatureDestination.defaultColorHex` spelled its own amber, blue and purple and all three
+// drifted (T-166). Derive the Color from the string, never the reverse.
 Theme.blue / blueLight   = #4a9eff   // primary action; Theme.blueHex is the String form
-Theme.red                = #ff6b6b
-Theme.green / greenLight = #4ecb71
-Theme.amber / amberLight = #ffa94d
-Theme.purple             = #a78bfa
+Theme.red                = #ff6b6b   // Theme.redHex
+Theme.green / greenLight = #4ecb71   // Theme.greenHex
+Theme.amber / amberLight = #ffa94d   // Theme.amberHex
+Theme.purple             = #a78bfa   // Theme.purpleHex
+Theme.teal               = #45CBC4   // Theme.tealHex; the sixth accent, added for Focus
 Theme.doneFill           = green     // completed completion-circle; priority stops showing once done
 Theme.markerHighlight{Fill,Border,Text}   // ==highlight== pen; deliberately stays warm
 Theme.appleSignInFill    = .black    // brand-mandated; must not be re-tinted
@@ -754,7 +762,32 @@ plus `iOSSettingsTagsSection`). Shared logic is in `Cadence/Services/TagSupport.
 `TaskBundle` groups several tasks into a single timeline block (`dateKey`, `startMin`,
 `durationMinutes`). The `tasks` relationship uses a `.nullify` delete rule — deleting a bundle
 must not delete its tasks. Rendered by `TimelineBundleBlock*`; pickable in Focus
-(`FocusBundleTaskSupportViews`) and assignable via `TaskBundlePickerSupportViews`.
+(`FocusBundleTaskSupportViews`, **macOS only** — T-242) and assignable via
+`TaskBundlePickerSupportViews`.
+
+**Three ways a bundle comes into existence, and all three now go through `Shared/`:**
+- `CadenceTaskMutationSupport.insertBundle(title:dateKey:startMin:durationMinutes:)` — an empty
+  block, created by name. macOS's `SchedulingActions.createBundle(title:…)` is the drag-out-a-range
+  spelling of the same thing; iOS reaches it from `iOSCalendarQuickCreateSheet`'s **Block** segment.
+- `CadenceTaskMutationSupport.insertBundle(from:adding:)` — **drop a task on a task and the two
+  become a block.** One implementation since T-190; `SchedulingActions.createBundle(from:adding:)`
+  is a delegation and must not grow a second body. macOS calls it from `TimelineDayCanvas`, iOS from
+  the Calendar Board's task cards (`iOSBoardTaskCardBundleDrop`). It returns `nil` for a target with
+  no day or no start minute — a bundle *is* a block, so there is nothing to sit on — which is why
+  the iOS card only offers the drop when `scheduledStartMin >= 0`.
+- `CadenceTaskMutationSupport.addTask(_:to:)` — growing an existing block.
+
+**T-190 was filed saying iOS "never creates" bundles and that `TaskBundle(` is constructed only in
+two macOS places.** Both halves were false: the shared `insertBundle(title:…)` was the third
+constructor and iOS's Block segment was already calling it. Only the task-onto-task gesture was
+actually missing. Grep `TaskBundle(` with no path filter before repeating any claim about where
+bundles are made.
+
+The day bounds a bundle is clamped against are spelled twice on purpose —
+`CadenceTaskMutationSupport.bundleDayEndMin` / `bundleMinimumDuration` in `Shared/`, and
+`TimelineDayRange` in `macOS/Views/TimelineMetrics.swift`, because `Shared/` does not compile the
+timeline. `theSharedBundleClampsMatchTheTimelineDayRange` keeps them equal; do not re-spell either
+literal at a call site.
 
 ## AI Actions
 Optional and off by default. `Cadence/Services/AI/` holds `AIProvider` (user-supplied OpenAI API
