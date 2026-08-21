@@ -32,6 +32,32 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-222] **`iOSListNotesPanel` and `CadenceListNoteSupport.firstOrCreateNote` are now dead.**
+  `676ff3b` gave iOS a real notes column, so the one-note-per-list panel has zero construction sites
+  and deleting it orphans its helper. Both sit outside the files that agent owned. Confirm with a
+  declaration grep before removing — `AGENTS.md` warns that no-references is not by itself evidence
+  something is safe to delete, though neither of these is a stored property so the usual hazard does
+  not apply.
+
+- [T-223] **Editing a list note's `# H1` on iOS does not sync back to `note.title`.** macOS does sync,
+  which is why every iOS list-note row read "Untitled" while seeding `676ff3b`'s screenshots.
+  Pre-existing and unrelated to folders. `CLAUDE.md` documents the intended behaviour — new notes
+  start with the title as the first H1, and editing that H1 syncs back — so iOS is missing half of a
+  documented feature.
+
+- [T-224] **Two hosts still need the one-line `editingNote:` pass for the reference panel.**
+  `0332255` shipped the panel but `iOSNotesView.swift` (2 sites) and the list-detail notes panel were
+  locked to other agents mid-run. The test deliberately does **not** assert them at zero, so adding
+  them will not read as a regression. Also: `iOSSearchView.swift:589` and
+  `iOSMarkdownNoteReferenceRow` each carry their own note-kind switch — third and fourth spellings of
+  one mapping, now that the shared label exists.
+
+- [T-225] **An agent overwrote another agent's simulator app-group data.** During `0332255` a build was
+  installed on an iPad another agent had booted between the device listing and the boot attempt,
+  replacing its `Application Support/Cadence`. No repo damage, but it invalidated that agent's seeded
+  state mid-run. Same family as [[T-179]] and [[T-204]]: the simulator fleet is shared and nothing in
+  the brief tells an agent to check whether a device is already in use before installing to it.
+
 - [T-221] **Edit tables and code blocks in place, instead of falling back to raw markdown.**
   Requested 2026-08-21. Today the editor renders a table, a fenced code block, a divider, an image and
   a task embed as **canvases**, and `MarkdownStyleRanges.isRevealed` swaps a block back to its raw
@@ -76,21 +102,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `iOSTaskInspectorHost` is the pattern to copy, including its `isDeleted || modelContext == nil`
   finding.
 
-- [T-218] **Docs owe the last three batches.** Deliberately deferred each time because a docs agent or
-  a concurrent writer held the files. Outstanding: the iOS task inspector rule (presented by
-  `iOSTaskInspectorHost`, installed once in `iOSRootView`; **a row or card must never own a `.sheet`
-  presenting it**, and the four surface-owned `.sheet(item:)` presenters are deliberate) — without
-  this the next agent adding a task surface reaches for `@State showDetail`, which is exactly how the
-  bug shipped; the `GoalListLink` write rule (`attachList` / `detachGoalListLink` /
-  `toggleGoalListLink`, never a hand-rolled `insert`); the `ListDeleteHelpers` move (`Services/` count,
-  and `macOS/Services/` now has **three** tombstones not two); macOS settings categories now
-  **fourteen** with About; iOS Goals gaining linked lists; two new `Shared/` files; and the file counts
-  again — `Cadence/iOS/` ~90, `Shared/` ~81, `CadenceTests/` ~171. Re-count rather than trusting those.
-
-- [T-219] **iOS's own 7-day habit strip is a near-copy of the shared one.** `D-140` promoted
-  `HabitLast7DayStrip` into `Shared/Components/HabitProgressViews.swift` for macOS, but
-  `iOSFeatureDetailViews.swift`'s `lastSevenDays` was held by another agent at the time. A one-line
-  swap, and exactly the near-copy the no-duplicates rule exists to prevent.
 
 - [T-220] **macOS's About carries only the build card; iOS's also carries Privacy Policy and Support.**
   Flagged by `D-140` rather than decided: macOS already offers both links under Settings → Data Safety,
@@ -180,15 +191,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   sheet with a `@Bindable bundle` plus `deleteBundle`. Also no bundle focus on iOS. Needs a create
   affordance the iOS calendar does not currently have, so this is more than un-guarding.
 
-
-- [T-192] **The note reference / backlinks panel is macOS-only.** `NoteReferenceResolver.backlinks`
-  (`Services/NoteReferenceSupport.swift:167`) is shared, unguarded and platform-independent, called
-  from `macOS/Views/NoteEditorPane.swift:384`. iOS's `iOSMarkdownReferenceSupport` only *follows* a
-  reference into a sheet; there is no linked-notes / linked-tasks / backlinks strip above the editor.
-
-- [T-193] **Note folders are macOS-only.** `Note.folderPath` is read or written only in
-  `macOS/Views/ListNotes*` plus `DataIntegrityRepairService`. iOS's list-detail Notes tab is flat, so
-  folders created on a Mac are invisible and a note created on iOS always lands at the root.
 
 - [T-194] **Note export on iOS: markdown *and* PDF.** User's call — the fuller option, chosen
   knowing the cost. Unlike [[T-187]]–[[T-193]] this is the one gap that is genuinely AppKit-bound
@@ -489,6 +491,41 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   usage strings matching real behaviour.
 
 ## Done
+
+- [D-143] `de32a59` Three batches of doc debt, plus a fix that never reached the scoped guide
+  (T-218, T-219). The finding that outlives the ticket: `1d81864` corrected two false
+  `calendarEventID` claims in `CLAUDE.md` and **never reached `Cadence/Models/AGENTS.md`**, which
+  carried the same two — and the precedence rule says the scoped guide is *closer to the code*, so the
+  fix corrected the less authoritative copy and left the more authoritative one wrong. Three more were
+  stale the same way, including a tombstone `CLAUDE.md` said "could be deleted" that `6f71a70` had
+  already deleted.
+  Counts were written against **HEAD, not the worktree**, deliberately: two agents were mid-flight
+  adding files, and a count that is one *low* reads as "add one when you add one" while one that is
+  too *high* reads as a complete inventory — the `CompactTagStrip` failure mode exactly.
+  T-219 was verified rather than assumed and really was a swap: every figure agreed, differing only
+  in `ForEach` identity spelling with identical semantics. The agent also caught five errors in its
+  own drafts before reporting.
+
+- [D-144] `0332255` A note can say what points at it on iOS (T-192). The resolver was already shared,
+  unguarded and platform-independent, and `Cadence/iOS` called it **zero** times — it only ever
+  *followed* a reference. So the panel is a call site, not new logic, built from the existing
+  suggestion strip, which is also why the toolbar `contentMargins` fix survives: the panel reuses the
+  strip that carries it. Ambiguity inherited verbatim rather than re-decided — id beats title, a
+  title-only reference takes the first case-insensitive match, an unresolvable one is absent because
+  macOS draws no broken chip either. **The third substring trap of the day**, caught in the act: an
+  absence assertion on `".white"` fires on `".whitespacesAndNewlines"`.
+
+- [D-145] `676ff3b` Note folders reach iOS, and the tab was showing one note not a flat list (T-193).
+  The premise understated it in a way that changed the work: iOS's list Notes tab showed **exactly one
+  note per list**, so folders were invisible because the notes were. The convention was read off all
+  four macOS call sites, and nesting is **representable but deliberately not a tree** — every surface
+  groups on the whole normalized string, so `Planning` and `Planning/Research` are siblings.
+  Two findings worth keeping: one macOS context-menu site wrote `folderPath` **unnormalized**, safe
+  only because its own menu values happened to be normalized; and `DataIntegrityRepairService`
+  assigns **raw**, which is why paths must be normalized on *read* as well as write — pinned by a test
+  that writes the property directly on the model, bypassing the writer.
+  No pane added: a folder is a heading inside the existing column, so the notes split's floor is
+  borrowed rather than duplicated.
 
 - [D-140] `940c4da` The parity manifest is gone; macOS now offers every settings category
   (T-197, T-196, and T-210 with it). Coverage deleted whole — section, type, status enum, row view,
