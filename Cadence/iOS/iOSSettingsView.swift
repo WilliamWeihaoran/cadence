@@ -23,6 +23,7 @@ struct iOSSettingsView: View {
     @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var cloudAccount = CadenceCloudAccountProbe()
     @State private var contextEditorMode: iOSContextEditorMode?
+    @State private var pendingDeletion: iOSListDeletionTarget?
     /// What the iPad rail is pointing at. On iPad a category is always selected — the rail is
     /// beside the content, so there is no "no category" state to be in.
     @State private var selectedCategory: iOSSettingsCategory = .navigation
@@ -71,6 +72,7 @@ struct iOSSettingsView: View {
         .sheet(item: $contextEditorMode) { mode in
             iOSContextEditorSheet(mode: mode)
         }
+        .iOSListDeletion(target: $pendingDeletion)
         .onAppear { cloudAccount.refreshIfNeeded() }
     }
 
@@ -242,7 +244,9 @@ struct iOSSettingsView: View {
             completedProjects: projects.filter(\.isDone),
             archivedProjects: projects.filter(\.isArchived),
             onReopenArea: reopen(_:),
-            onReopenProject: reopen(_:)
+            onReopenProject: reopen(_:),
+            onDeleteArea: { pendingDeletion = .area($0) },
+            onDeleteProject: { pendingDeletion = .project($0) }
         )
     }
 
@@ -288,6 +292,8 @@ struct iOSSettingsView: View {
                                 } label: {
                                     Label("Archive Context", systemImage: "archivebox")
                                 }
+
+                                iOSListDeleteMenuButton(target: .context(context)) { pendingDeletion = $0 }
                             }
 
                             if context.id != activeContexts.last?.id {
@@ -303,9 +309,11 @@ struct iOSSettingsView: View {
                 iOSSettingsCard {
                     VStack(spacing: 0) {
                         ForEach(archivedContexts) { context in
-                            iOSSettingsArchivedContextRow(context: context) {
-                                restore(context)
-                            }
+                            iOSSettingsArchivedContextRow(
+                                context: context,
+                                restore: { restore(context) },
+                                delete: { pendingDeletion = .context(context) }
+                            )
 
                             if context.id != archivedContexts.last?.id {
                                 iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)

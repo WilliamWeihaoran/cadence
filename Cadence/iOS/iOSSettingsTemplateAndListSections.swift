@@ -225,6 +225,10 @@ struct iOSListsLifecycleSettingsSection: View {
     let archivedProjects: [Project]
     let onReopenArea: (Area) -> Void
     let onReopenProject: (Project) -> Void
+    /// Delete is here for the same reason macOS's Settings → Lists has it: a completed or archived
+    /// list is off the Lists page, so this is the only screen that can still reach it.
+    let onDeleteArea: (Area) -> Void
+    let onDeleteProject: (Project) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -269,7 +273,8 @@ struct iOSListsLifecycleSettingsSection: View {
                         color: Color(hex: area.colorHex),
                         statusLabel: area.isDone ? "Completed" : "Archived",
                         primaryLabel: area.isDone ? "Reopen" : "Unarchive",
-                        primaryAction: { onReopenArea(area) }
+                        primaryAction: { onReopenArea(area) },
+                        deleteAction: { onDeleteArea(area) }
                     )
 
                     if index < areas.count - 1 || !projects.isEmpty {
@@ -285,7 +290,8 @@ struct iOSListsLifecycleSettingsSection: View {
                         color: Color(hex: project.colorHex),
                         statusLabel: project.isDone ? "Completed" : "Archived",
                         primaryLabel: project.isDone ? "Reopen" : "Unarchive",
-                        primaryAction: { onReopenProject(project) }
+                        primaryAction: { onReopenProject(project) },
+                        deleteAction: { onDeleteProject(project) }
                     )
 
                     if index < projects.count - 1 {
@@ -575,6 +581,9 @@ private struct iOSListLifecycleSettingsRow: View {
     let statusLabel: String
     let primaryLabel: String
     let primaryAction: () -> Void
+    /// Requests the delete only — the confirmation and the cascade are `iOSSettingsView`'s, through
+    /// the one `iOSListDeletion` modifier.
+    let deleteAction: () -> Void
 
     private var statusTint: Color {
         statusLabel == "Completed" ? Theme.green : Theme.amber
@@ -612,6 +621,13 @@ private struct iOSListLifecycleSettingsRow: View {
                 role: .secondary,
                 size: .compact,
                 action: primaryAction
+            )
+
+            iOSActionButton(
+                title: "Delete",
+                role: .destructive,
+                size: .compact,
+                action: deleteAction
             )
         }
         .padding(.vertical, 6)

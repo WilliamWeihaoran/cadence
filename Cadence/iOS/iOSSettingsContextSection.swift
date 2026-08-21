@@ -188,6 +188,9 @@ struct iOSSettingsContextRow: View {
 struct iOSSettingsArchivedContextRow: View {
     let context: Context
     let restore: () -> Void
+    /// An archived context is not on any other screen, so this row is the only place it can be
+    /// removed from — the same reason macOS puts delete beside its own archived-list rows.
+    let delete: () -> Void
 
     var body: some View {
         HStack(spacing: iOSSettingsMetrics.glyphLabelSpacing) {
@@ -210,6 +213,13 @@ struct iOSSettingsArchivedContextRow: View {
                 role: .secondary,
                 size: .compact,
                 action: restore
+            )
+
+            iOSActionButton(
+                title: "Delete",
+                role: .destructive,
+                size: .compact,
+                action: delete
             )
         }
         .padding(.vertical, 6)

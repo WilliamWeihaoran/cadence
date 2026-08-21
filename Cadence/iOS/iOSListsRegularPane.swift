@@ -13,6 +13,9 @@ struct iOSListsRegularPane: View {
     let archiveProject: (Project) -> Void
     let restoreArea: (Area) -> Void
     let restoreProject: (Project) -> Void
+    /// Only *requests* the delete. The confirmation and the cascade live on `iOSListsView`, which
+    /// hosts this pane, so the iPhone list and the iPad pane cannot diverge on either.
+    let requestDeletion: (iOSListDeletionTarget) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -74,6 +77,8 @@ struct iOSListsRegularPane: View {
                         } label: {
                             Label("Archive Area", systemImage: "archivebox")
                         }
+
+                        iOSListDeleteMenuButton(target: .area(area), request: requestDeletion)
                     }
                     // The same tray the compact rows have. These rows are in a `ScrollView`, which
                     // is why `.swipeActions` was never an option here — see `iOSListRowSwipeActions`.
@@ -110,6 +115,8 @@ struct iOSListsRegularPane: View {
                         } label: {
                             Label("Archive Project", systemImage: "archivebox")
                         }
+
+                        iOSListDeleteMenuButton(target: .project(project), request: requestDeletion)
                     }
                     .iOSSwipeActions(trailing: iOSListRowSwipeActions.archive { archiveProject(project) })
                 }

@@ -3,6 +3,11 @@ import SwiftData
 import Testing
 @testable import Cadence
 
+/// The three cascades are cross-platform since T-187
+/// (`Cadence/Services/CadenceListDeleteHelpers.swift`). The guard below survives **only** for the
+/// last two tests in this file, which exercise `ModelContext.deleteTask(_:)` — the macOS wrapper
+/// that supplies the AppKit-shaped hooks around the shared deletion core, and still genuinely
+/// macOS-only. It is no longer a statement about `deleteArea`/`deleteProject`/`deleteContext`.
 #if os(macOS)
 @MainActor
 struct ListDeleteHelpersTests {
@@ -120,6 +125,76 @@ struct ListDeleteHelpersTests {
 
         let remainingAssets = try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>())
         #expect(remainingAssets.map(\.id) == [retainedAsset.id])
+    }
+
+    /// The area cascade's own coverage, filling what `TaskDeleteHelpersScenarioTests` test 4 leaves
+    /// out. That test pins tasks, subtasks, legacy `Document`s, `SavedLink`s and the nested project;
+    /// it inserts no `Note`, no `GoalListLink` and no `MarkdownImageAsset`, so the three parts of
+    /// `deleteArea` that handle them were unpinned. They matter for different reasons: a list note
+    /// is a first-class user document, a `GoalListLink` left behind is a goal whose progress counts
+    /// tasks that no longer exist, and an orphaned image asset is `.externalStorage` bytes that
+    /// nothing will ever reclaim.
+    ///
+    /// It also pins the one thing `deleteArea` deliberately does *not* take: a note attached to the
+    /// area whose kind is not `.list`.
+    @Test func deleteAreaCascadesThroughListNotesGoalLinksAndImageAssets() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let context = Context(name: "Work")
+        let area = Area(name: "Area", context: context)
+        let project = Project(name: "Nested", context: context, area: area)
+        let goal = Goal(title: "Goal", context: context)
+        let areaLink = GoalListLink(goal: goal, area: area)
+        let projectLink = GoalListLink(goal: goal, project: project)
+
+        let asset = MarkdownImageAsset(
+            data: Data([9, 9, 9]),
+            mimeType: "image/png",
+            pixelWidth: 20,
+            pixelHeight: 20,
+            displayWidth: 20
+        )
+        let areaNote = Note(kind: .list, title: "Area note")
+        areaNote.area = area
+        areaNote.content = "![area](cadence-image://\(asset.id.uuidString))"
+        let projectNote = Note(kind: .list, title: "Project note")
+        projectNote.project = project
+        // Not a list note: the cascade leaves it, and its `area` relationship nullifies.
+        let survivingNote = Note(kind: .permanent, title: "Notepad entry")
+        survivingNote.area = area
+
+        let areaTask = AppTask(title: "Area task")
+        areaTask.area = area
+        let projectTask = AppTask(title: "Project task")
+        projectTask.project = project
+
+        modelContext.insert(context)
+        modelContext.insert(area)
+        modelContext.insert(project)
+        modelContext.insert(goal)
+        modelContext.insert(areaLink)
+        modelContext.insert(projectLink)
+        modelContext.insert(asset)
+        modelContext.insert(areaNote)
+        modelContext.insert(projectNote)
+        modelContext.insert(survivingNote)
+        modelContext.insert(areaTask)
+        modelContext.insert(projectTask)
+        try modelContext.save()
+
+        #expect(modelContext.deleteArea(area))
+        try modelContext.save()
+
+        #expect(try modelContext.fetch(FetchDescriptor<Area>()).isEmpty)
+        #expect(try modelContext.fetch(FetchDescriptor<Project>()).isEmpty)
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty)
+        #expect(try modelContext.fetch(FetchDescriptor<GoalListLink>()).isEmpty)
+        #expect(try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).isEmpty)
+        // The goal itself is not the area's to delete, and the non-list note survives.
+        #expect(try modelContext.fetch(FetchDescriptor<Goal>()).count == 1)
+        let remainingNotes = try modelContext.fetch(FetchDescriptor<Note>())
+        #expect(remainingNotes.map(\.id) == [survivingNote.id])
     }
 
     @Test func deleteTaskRemovesScheduledCompletedTaskAndSubtasksCleanly() throws {

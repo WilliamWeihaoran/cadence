@@ -93,7 +93,7 @@ struct EditAreaSheet: View {
             Button("Delete Area", role: .destructive) { deleteArea() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This permanently deletes the area and its tasks, projects, documents, and links.")
+            Text(CadenceListDeletionKind.area.cascadeSentence)
         }
     }
 
@@ -245,7 +245,7 @@ struct EditProjectSheet: View {
             Button("Delete Project", role: .destructive) { deleteProject() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This permanently deletes the project and its tasks, documents, and links.")
+            Text(CadenceListDeletionKind.project.cascadeSentence)
         }
     }
 

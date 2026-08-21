@@ -67,7 +67,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { pendingDeleteArea = nil }
         } message: {
-            Text("This permanently deletes the area and its tasks, projects, documents, and links.")
+            Text(CadenceListDeletionKind.area.cascadeSentence)
         }
         .confirmationDialog(
             "Delete Project?",
@@ -83,7 +83,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { pendingDeleteProject = nil }
         } message: {
-            Text("This permanently deletes the project and its tasks, documents, and links.")
+            Text(CadenceListDeletionKind.project.cascadeSentence)
         }
         .confirmationDialog(
             "Delete Context?",
@@ -99,7 +99,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { pendingDeleteContext = nil }
         } message: {
-            Text("This permanently deletes the context and all its areas, projects, tasks, milestones, and habits.")
+            Text(CadenceListDeletionKind.context.cascadeSentence)
         }
         .onAppear { cloudAccount.refreshIfNeeded() }
         .sheet(isPresented: $showCreateContext) {

@@ -15,6 +15,7 @@ struct iOSListsView: View {
     @Query(sort: \Project.order) private var projects: [Project]
     @State private var editorMode: iOSListEditorMode?
     @State private var selectedRoute: iOSListRoute?
+    @State private var pendingDeletion: iOSListDeletionTarget?
 
     private var activeAreas: [Area] {
         areas.filter(\.isActive)
@@ -66,6 +67,7 @@ struct iOSListsView: View {
         .sheet(item: $editorMode) { mode in
             iOSListEditorSheet(mode: mode)
         }
+        .iOSListDeletion(target: $pendingDeletion)
         .navigationDestination(for: iOSListRoute.self) { route in
             listDetail(for: route)
         }
@@ -129,7 +131,8 @@ struct iOSListsView: View {
                 archiveArea: archive,
                 archiveProject: archive,
                 restoreArea: restore,
-                restoreProject: restore
+                restoreProject: restore,
+                requestDeletion: { pendingDeletion = $0 }
             )
         } detail: {
             if let route = effectiveSelectedRoute {
@@ -179,6 +182,8 @@ struct iOSListsView: View {
             }
 
             archiveAreaButton(area, title: "Archive Area")
+
+            iOSListDeleteMenuButton(target: .area(area)) { pendingDeletion = $0 }
         }
         // Not `.swipeActions`: the iPad pane draws the same row in a `ScrollView`, where SwiftUI
         // drops that modifier. See `iOSListRowSwipeActions`.
@@ -217,6 +222,8 @@ struct iOSListsView: View {
             }
 
             archiveProjectButton(project, title: "Archive Project")
+
+            iOSListDeleteMenuButton(target: .project(project)) { pendingDeletion = $0 }
         }
         .iOSSwipeActions(trailing: iOSListRowSwipeActions.archive { archive(project) })
     }
