@@ -445,14 +445,22 @@ struct CadenceNoteReferencePanelSurfaceTests {
     /// Every host that edits a real `Note` hands the editor that note, because "what points at this"
     /// has no subject otherwise. Exact counts so that dropping one host fails.
     ///
-    /// The Notes page (`iOSNotesView.swift`, two call sites) and the list-detail Notes panel are
-    /// deliberately absent and are **not** asserted at zero: each wants the same one-line argument,
-    /// and asserting the gap would turn closing it into a test failure.
+    /// **T-224 closed the last three, and this list is now complete.** When `0332255` shipped the
+    /// panel, the Notes page's two call sites (`iOSNotesView.swift`: the regular-width editor pane
+    /// and the compact full-screen cover) and the list-detail Notes pane
+    /// (`iOSListNotesView.swift`) were locked to other agents mid-run, so this test deliberately
+    /// left them out rather than asserting them at zero — an absence assertion would have turned
+    /// closing a known gap into a test failure. They are asserted positively now. All six hosts
+    /// that edit a `Note` are here; the four that edit some *other* body of markdown — a task's
+    /// notes field, a template body, and the two Apple Calendar note strings — correctly pass
+    /// nothing, and are pinned by the relation in the test below rather than by a zero here.
     @Test func everyNoteEditingHostHandsTheEditorItsNote() throws {
         try expectOccurrences(of: "editingNote: note", at: [
             "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 1,
             "Cadence/iOS/iOSEventNoteEditorSheet.swift": 1,
-            "Cadence/iOS/iOSSearchSupportViews.swift": 1
+            "Cadence/iOS/iOSSearchSupportViews.swift": 1,
+            "Cadence/iOS/iOSNotesView.swift": 2,
+            "Cadence/iOS/iOSListNotesView.swift": 1
         ])
 
         // And the editor treats it as optional rather than required, so the hosts editing a task's
@@ -460,6 +468,46 @@ struct CadenceNoteReferencePanelSurfaceTests {
         try expectOccurrences(of: "var editingNote: Note? = nil", at: [
             "Cadence/iOS/iOSMarkdownEditingSurface.swift": 1
         ])
+    }
+
+    /// The counts above are literals, and a literal is only correct for as long as nobody adds a
+    /// pane. This is the same claim stated as a **relation**: inside a host file whose editors all
+    /// edit a real `Note`, *every* `iOSMarkdownEditingSurface(` invocation carries an
+    /// `editingNote:`. Grow the Notes page a third editor without the argument and this fails
+    /// without anyone having to remember to bump a number.
+    ///
+    /// It is deliberately a relation and not an absence assertion on the other four hosts. Banning
+    /// `editingNote:` from `iOSTaskDetailSheetSections` would fail the day a task's notes field
+    /// legitimately gains a subject — the "can fail on correct code" shape. Requiring parity inside
+    /// the files that already have it can only fail on the omission it names.
+    @Test func inEveryNoteEditingHostAllOfItsEditorsCarryTheNote() throws {
+        for path in [
+            "Cadence/iOS/iOSNotesView.swift",
+            "Cadence/iOS/iOSListNotesView.swift",
+            "Cadence/iOS/iOSSearchSupportViews.swift",
+            "Cadence/iOS/iOSEventNoteEditorSheet.swift",
+            "Cadence/iOS/iOSMarkdownReferenceSupport.swift"
+        ] {
+            let code = try strippingComments(sourceFile(path))
+            let editors = code.components(separatedBy: "iOSMarkdownEditingSurface(").count - 1
+            let notesPassed = code.components(separatedBy: "editingNote:").count - 1
+
+            // Non-vacuity: a file this scan cannot read presents zero editors and would satisfy
+            // `editors == notesPassed` trivially.
+            #expect(editors > 0, "\(path) presents no editor at all; this scan is measuring nothing")
+            #expect(
+                editors == notesPassed,
+                "\(path) presents \(editors) editors but passes editingNote: \(notesPassed) times"
+            )
+        }
+
+        // The reference panel is what the argument buys, and it is reachable only through the
+        // editor's own `editingNote` guard: with nothing passed, `refreshReferenceContents` writes
+        // an empty `NoteReferencePanelContents` and the panel renders `EmptyView`. Pinned here so
+        // the passes above are known to be load-bearing rather than decorative.
+        let editor = try strippingComments(sourceFile("Cadence/iOS/iOSMarkdownEditingSurface.swift"))
+        #expect(editor.contains("guard let editingNote else {"))
+        #expect(editor.contains("NoteReferencePanelSupport.contents("))
     }
 
     // MARK: - The scan itself

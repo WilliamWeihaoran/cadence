@@ -365,6 +365,7 @@ struct iOSNotesView: View {
                 placeholder: "Start writing...",
                 referenceNotes: allNotes,
                 referenceTasks: allTasks,
+                editingNote: note,
                 onOpenReference: openMarkdownReference,
                 templateKind: showsHeaderTemplateMenu ? nil : activeTab.coreTab?.noteKind,
                 applyTemplate: showsHeaderTemplateMenu ? nil : { apply($0, to: note) }
@@ -632,6 +633,7 @@ struct iOSNoteEditorCover: View {
                 placeholder: "Start writing...",
                 referenceNotes: allNotes,
                 referenceTasks: allTasks,
+                editingNote: note,
                 onOpenReference: openMarkdownReference,
                 embeddedTaskArea: embeddedTaskArea,
                 embeddedTaskProject: embeddedTaskProject,

@@ -242,6 +242,7 @@ struct iOSListNotesView: View {
                 placeholder: "Start writing...",
                 referenceNotes: allNotes,
                 referenceTasks: allTasks,
+                editingNote: note,
                 onOpenReference: openMarkdownReference,
                 embeddedTaskArea: area,
                 embeddedTaskProject: project
