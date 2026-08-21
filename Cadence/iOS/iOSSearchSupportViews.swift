@@ -302,10 +302,13 @@ struct iOSNoteDetailSheet: View {
         .preferredColorScheme(.dark)
     }
 
+    /// The fifth note-editor host, and it was spelling the commit itself: `content`, `updatedAt`,
+    /// `save()` — the body of `CadenceCoreNoteSupport.update` minus the two things that make it a
+    /// commit rather than an assignment. So a note opened from Search neither synced its inline
+    /// `#tags` nor renamed itself from its `# H1` (T-223), while the same note opened from the
+    /// Notes tab did both.
     private func updateContent(_ content: String) {
-        note.content = content
-        note.updatedAt = Date()
-        try? modelContext.save()
+        CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
     }
 
     private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {

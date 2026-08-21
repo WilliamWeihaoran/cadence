@@ -525,3 +525,67 @@ nonisolated enum NoteUnlinkedMentionResolver {
         return regex.firstMatch(in: content, range: NSRange(location: 0, length: (content as NSString).length)) != nil
     }
 }
+
+// MARK: - The `# H1` is the title
+
+/// **The `# Heading` at the top of a note's body *is* the rename control for the kinds whose title
+/// is otherwise unreachable, and this is the one place that decides it.**
+///
+/// The rule lived as `NoteEditorPane.syncTitleFromH1IfNeeded`, a private method on one macOS view.
+/// Every iOS editor commits through `CadenceCoreNoteSupport.update` instead, which knew nothing
+/// about it — so a list note renamed on the phone kept the title it was born with and every iOS
+/// list-note row read "Untitled" (T-223). Nothing in the original was AppKit-shaped: it was a
+/// `hasPrefix` and a `trimmingCharacters`, i.e. a markdown *decision*, which is why it is here in
+/// `Services/` where both platforms and the macOS-built test target can reach it.
+///
+/// `.permanent` is in scope beside `.list` because a notepad note has a row in a list now and needs
+/// a name, and its header renders that name as plain text rather than a field. Daily and weekly are
+/// excluded because their titles are their date keys; `.meeting` is excluded because its header
+/// carries a real editable title field.
+nonisolated enum MarkdownNoteTitleSync {
+    /// The kinds whose title follows their first `# H1`.
+    static func syncsTitleFromH1(_ kind: NoteKind) -> Bool {
+        kind == .list || kind == .permanent
+    }
+
+    /// The title `content` asks for, or `nil` for "leave the stored title alone".
+    ///
+    /// `nil` is the answer in five distinct cases, and they are the sharp edges of the feature:
+    /// the kind does not opt in; the first line is not an H1 at all (so a body that opens with
+    /// prose, a frontmatter fence, or an `## H2` says nothing about the name); the H1 was
+    /// **deleted**, which reaches here as "the first line no longer starts with `# `"; the H1 is
+    /// present but empty (`"# "` alone, i.e. mid-rename); and the H1 already equals the stored
+    /// title.
+    ///
+    /// So a deleted or emptied H1 **keeps the last synced title** rather than reverting to a
+    /// default or clearing it. That is deliberate and it is macOS's shipped behaviour: clearing
+    /// would mean a user who selects the heading line and starts retyping watches their note become
+    /// "Untitled" in the sidebar for the duration, and reverting has nothing to revert to — the
+    /// note's title has no history.
+    ///
+    /// Only the *first* line is considered. An `# H1` further down the body is a section heading,
+    /// not the document's name.
+    static func title(from content: String, kind: NoteKind, currentTitle: String) -> String? {
+        guard syncsTitleFromH1(kind) else { return nil }
+        let firstLine = content.prefix(while: { $0 != "\n" })
+        guard firstLine.hasPrefix("# ") else { return nil }
+        let h1 = String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+        guard !h1.isEmpty, h1 != currentTitle else { return nil }
+        return h1
+    }
+
+    /// Applies the rule to a note. **The one write path** — both platforms' commit paths call this
+    /// and nothing spells the `hasPrefix("# ")` test itself.
+    ///
+    /// Called from a *commit*, never from a keystroke: macOS's `NoteEditorPane` reaches it through
+    /// `persistEditorContentIfNeeded` (debounced by `MarkdownEditorSyncTiming`, or flushed on focus
+    /// loss) and iOS through `CadenceCoreNoteSupport.update` (the 2.5s debounce in
+    /// `iOSMarkdownEditingSurface`, or its focus-loss flush). A per-keystroke sync would be a
+    /// SwiftData write and a CloudKit change per character typed into a heading.
+    static func apply(to note: Note, content: String) {
+        guard let title = title(from: content, kind: note.kind, currentTitle: note.title) else {
+            return
+        }
+        note.title = title
+    }
+}

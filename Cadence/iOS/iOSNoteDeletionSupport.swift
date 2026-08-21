@@ -179,6 +179,18 @@ struct iOSNoteDeleteConfirmationSheet: View {
         }
     }
 
+    /// Which note this is: its title, and its folder when it has one.
+    ///
+    /// **The folder line is back** (T-233). It came off because reading `note.folderPath` failed
+    /// `CadenceNoteFolderSurfaceTests.onlyTheSharedFilingHelperWritesAFolderPath`, a test named for
+    /// writes whose needle counted reads too; that assertion is an assignment scan now and the read
+    /// was never the thing worth banning. It is read off `summary.folder` rather than the note, so
+    /// the `""`-is-root convention is applied by the one type that owns it.
+    ///
+    /// It is a second line under the title rather than a breadcrumb beside it because the title is
+    /// allowed two lines, and because the folder is the disambiguator — it earns its own line only
+    /// when the title has not already answered the question. Absent at the root: see
+    /// `CadenceNoteDeletionSummary.folder`.
     private var noteRow: some View {
         HStack(spacing: iOSSettingsMetrics.glyphLabelSpacing) {
             iOSIconTile(
@@ -188,16 +200,25 @@ struct iOSNoteDeleteConfirmationSheet: View {
                 iconSize: 15
             )
 
-            // Title alone, which is also macOS's dialog ("This will permanently delete …"). The
-            // note's folder was on a second line here and came off: reading `note.folderPath`
-            // outside `CadenceNoteFolderSupport` fails
-            // `CadenceNoteFolderSurfaceTests.onlyTheSharedFilingHelperWritesAFolderPath`, whose
-            // assertion covers reads even though its name is about writes. Reported rather than
-            // worked around — the folder is worth showing when two notes are both "Untitled".
-            Text(note.displayTitle)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(2)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(note.displayTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(2)
+
+                if let folder = summary.folder {
+                    HStack(spacing: 4) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 10, weight: .semibold))
+
+                        Text(folder)
+                            .font(.system(size: 12))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .foregroundStyle(Theme.subdued)
+                }
+            }
 
             Spacer(minLength: 0)
         }

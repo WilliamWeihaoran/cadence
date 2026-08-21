@@ -146,9 +146,19 @@ enum CadenceCoreNoteSupport {
         }
     }
 
+    /// **The shared note commit.** Every iOS editor host writes through here, and so does macOS's
+    /// Today notes panel; macOS's Notes page has its own `persistEditorContentIfNeeded` because it
+    /// deliberately does not save the context.
+    ///
+    /// `MarkdownNoteTitleSync.apply` is the T-223 fix. The `# H1` -> `note.title` rule was private
+    /// to `NoteEditorPane`, so it never ran on this path and every iOS list-note row read
+    /// "Untitled". It runs before the save so the rename lands in the same transaction as the body
+    /// it came from, and it is a no-op for the kinds whose title is not their heading -- daily and
+    /// weekly notes reaching this from `NotePanel` are unaffected.
     static func update(_ note: Note, content: String, in modelContext: ModelContext, syncTags: Bool = true) {
         note.content = content
         note.updatedAt = Date()
+        MarkdownNoteTitleSync.apply(to: note, content: content)
         if syncTags {
             TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)
         }

@@ -361,8 +361,8 @@ struct NoteEditorPane: View {
     ///
     /// The guard used to be `note.content != content || loadedNoteID != note.id`, whose second
     /// clause *forced the write through* during a note switch — the one moment `content` belongs
-    /// to a different note than `note` does. That is not a harmless mix-up: `syncTitleFromH1IfNeeded`
-    /// below would rename the newly-opened note from the previous note's `# Heading`, and
+    /// to a different note than `note` does. That is not a harmless mix-up: `MarkdownNoteTitleSync`
+    /// would rename the newly-opened note from the previous note's `# Heading`, and
     /// `onPersistContent` is wired to the event-note sheet, which pushes the body into the user's
     /// real Calendar event. `NotePanel` already threads an id through its debounce for this reason.
     private func persistEditorContentIfNeeded(_ content: String, noteID: UUID) {
@@ -370,7 +370,11 @@ struct NoteEditorPane: View {
         guard note.content != content else { return }
         note.content = content
         note.updatedAt = Date()
-        syncTitleFromH1IfNeeded(in: content)
+        // The `# H1` -> `note.title` rule. It was a private method here — a `hasPrefix` and a
+        // trim, nothing AppKit-shaped — which is why iOS never had it and every iOS list-note row
+        // read "Untitled" (T-223). It is `MarkdownNoteTitleSync` in `Services/` now, called from
+        // here and from `CadenceCoreNoteSupport.update`, and from nowhere else.
+        MarkdownNoteTitleSync.apply(to: note, content: content)
         TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)
         onPersistContent(note, content)
         loadedNoteID = note.id
@@ -401,24 +405,6 @@ struct NoteEditorPane: View {
         // the content is for.
         persistEditorContentIfNeeded(content, noteID: note.id)
         refreshDerivedState(for: content)
-    }
-
-    /// The `# Heading` at the top of the body *is* the rename control for the kinds whose title is
-    /// otherwise unreachable.
-    ///
-    /// `.permanent` joined `.list` here when Notepad stopped being a singleton: a notepad note has
-    /// a row in a list now, so it needs a name, and its header renders that name as plain text
-    /// rather than a field. Rather than grow a rename UI, it reuses the mechanism list notes have
-    /// always used. Daily and weekly are excluded because their titles are their date keys, and
-    /// meeting/list notes with an editable header field do not need it — well, `.list` does, since
-    /// the list-detail Notes tab hides the header entirely.
-    private func syncTitleFromH1IfNeeded(in content: String) {
-        guard note.kind == .list || note.kind == .permanent else { return }
-        let firstLine = content.prefix(while: { $0 != "\n" })
-        guard firstLine.hasPrefix("# ") else { return }
-        let h1Text = String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-        guard !h1Text.isEmpty, h1Text != note.title else { return }
-        note.title = h1Text
     }
 
     private func createTag(_ name: String) -> Tag {

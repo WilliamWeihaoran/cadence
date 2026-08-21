@@ -323,18 +323,33 @@ struct CadenceNoteFolderSurfaceTests {
 
     // MARK: - Both platforms reach the one path
 
-    /// **The call-site half.** `folderPath` is written in exactly two places outside its own
+    /// **The call-site half.** `folderPath` is *assigned* in exactly two places outside its own
     /// declaration, both in the shared file, so neither platform can normalize a path its own way —
     /// which is what "a note created on iOS always lands at the root" was a symptom of.
     ///
     /// The scan is over `.folderPath` with the leading dot rather than the bare word, because both
     /// folder sheets hold a `@State private var folderPath` of their own: a bare-word count reports
     /// the local draft as a write to the model.
+    ///
+    /// **T-233 — this test's name says "writes" and its assertion used to ban reads too.** It
+    /// counted every `.folderPath` occurrence, so *displaying* a note's folder failed a test about
+    /// writing one: it is what took the folder line off `iOSNoteDeleteConfirmationSheet`, and the
+    /// folder is exactly what tells two "Untitled" notes apart ([[T-223]]). Fourth instance of the
+    /// substring/needle-scope family in `Cadence/Shared/AGENTS.md`, and the textbook one — the
+    /// needle was not merely over-broad, it contradicted the assertion's own name.
+    ///
+    /// So the needle is now a regex for **assignment**: `.folderPath` followed by `=` or `+=`, with
+    /// a negative lookahead so `==` is not an assignment. A read — `$0.folderPath`,
+    /// `note.folderPath` in a view, `\.folderPath` as a key path — is deliberately uncounted and
+    /// allowed anywhere, which is the whole point: the convention is protected by there being one
+    /// *normalizer*, and nothing about reading a normalized string can spell a second one.
+    /// `DataIntegrityRepairService` therefore drops out of the expectation entirely rather than
+    /// being excused in a comment.
     @Test func onlyTheSharedFilingHelperWritesAFolderPath() throws {
         var offenders: [String] = []
         for path in try folderSwiftFiles(under: "Cadence") {
             let code = try folderStrippingComments(folderSource(path))
-            let count = code.components(separatedBy: ".folderPath").count - 1
+            let count = code.folderMatchCount(ofPattern: folderPathAssignmentPattern)
             guard count > 0 else { continue }
             offenders.append("\(path):\(count)")
         }
@@ -342,12 +357,39 @@ struct CadenceNoteFolderSurfaceTests {
         #expect(offenders.sorted() == [
             // `self.folderPath = folderPath` in the initializer.
             "Cadence/Models/Note.swift:1",
-            // `fillEmptyString(\.folderPath, …)` — a read of the key path, not a spelling of the
-            // convention. See `aRepairPassLeavesTwoIdenticalListNotesAndTheirFoldersAlone`.
-            "Cadence/Services/DataIntegrityRepairService.swift:1",
-            // Two writes (`createNote`, `move`) and two reads (`groups`, `folderNames`).
-            "Cadence/Shared/CadenceNoteFolderSupport.swift:4"
+            // `createNote` and `move`, and nothing else anywhere.
+            "Cadence/Shared/CadenceNoteFolderSupport.swift:2"
         ])
+    }
+
+    /// The assignment needle, against literals that must and must not match.
+    ///
+    /// Required by `Cadence/Shared/AGENTS.md`: a regex needle without a self-check can have a typo
+    /// that silently passes every scan built on it, and the scan above is a *zero-count* scan for
+    /// most of the repo, which is the shape that cannot tell "no offenders" from "no matches ever".
+    /// The read spellings here are the four that actually exist in the tree.
+    @Test func theFolderPathAssignmentNeedleMatchesAssignmentsAndNotReads() throws {
+        let pattern = folderPathAssignmentPattern
+
+        for assignment in [
+            "note.folderPath = CadenceNoteFolderPath.normalized(rawPath)",
+            "self.folderPath = folderPath",
+            "note.folderPath=\"Planning\"",
+            "note.folderPath += \"/Research\""
+        ] {
+            #expect(assignment.folderMatchCount(ofPattern: pattern) == 1, "missed \(assignment)")
+        }
+
+        for read in [
+            "CadenceNoteFolderPath.normalized($0.folderPath)",
+            "names(in: notes.map(\\.folderPath))",
+            "fillEmptyString(\\.folderPath, on: target, from: source)",
+            "Text(CadenceNoteFolderPath.displayName(for: note.folderPath))",
+            "#expect(filed.folderPath == \"Planning\")",
+            "guard note.folderPath != other.folderPath else { return }"
+        ] {
+            #expect(read.folderMatchCount(ofPattern: pattern) == 0, "over-matched \(read)")
+        }
     }
 
     /// The grouping, the folder list, the filing and the row are one implementation each, reached
@@ -519,6 +561,12 @@ private extension String {
         return count
     }
 }
+
+/// Matches an **assignment** to `.folderPath` — `=` or `+=`, with `==` excluded by the lookahead.
+///
+/// T-233: the scan this replaces counted every `.folderPath` occurrence, so a read failed a test
+/// named for writes. Reads are unrestricted; only the normalizer's two call sites may assign.
+private let folderPathAssignmentPattern = "\\.folderPath\\s*\\+?=(?!=)"
 
 /// Matches an identifier ending in `spelling` **except** where it is reached through
 /// `CadenceNotesListMetrics.`. Reading the shared figure is the point; declaring a local one is the

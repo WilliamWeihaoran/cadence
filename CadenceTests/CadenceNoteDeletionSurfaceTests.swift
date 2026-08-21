@@ -238,6 +238,50 @@ struct CadenceNoteDeletionSurfaceTests {
         #expect(summary.lostItemLines.isEmpty)
     }
 
+    /// **The folder line, restored by T-233.** It was on the confirmation once and came off because
+    /// reading `note.folderPath` failed a test named for *writes* whose needle counted reads —
+    /// `CadenceNoteFolderSurfaceTests.onlyTheSharedFilingHelperWritesAFolderPath`, now an assignment
+    /// scan. It is on the summary rather than read off the note in the view so that the `""`-is-root
+    /// convention is applied by `CadenceNoteFolderPath` and so that this line is pinnable here
+    /// rather than only by a source scan.
+    ///
+    /// `nil` at the root, deliberately, and not `CadenceNoteFolderPath.rootDisplayName`: "Notes" is
+    /// the heading a folder-less run of rows does **not** draw, and printing it in a confirmation
+    /// would name a folder the user never made.
+    @Test func theSummaryNamesTheFolderAndSaysNothingAtTheRoot() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let filed = Note(kind: .list, title: "Spec", content: "body", folderPath: "Planning")
+        let nested = Note(kind: .list, title: "Spec", content: "body", folderPath: "/Planning/Research/")
+        let unfiled = Note(kind: .list, title: "Spec", content: "body")
+        let whitespace = Note(kind: .list, title: "Spec", content: "body", folderPath: "  /  ")
+        for note in [filed, nested, unfiled, whitespace] { modelContext.insert(note) }
+        try modelContext.save()
+
+        #expect(CadenceNoteDeletionSummary.forNote(filed, in: modelContext).folder == "Planning")
+        // Normalized on read, and the **whole** path — `Planning/Research` and `Admin/Research` are
+        // two folders, so a leaf-only label would name them both "Research".
+        #expect(CadenceNoteDeletionSummary.forNote(nested, in: modelContext).folder == "Planning/Research")
+        #expect(CadenceNoteDeletionSummary.forNote(unfiled, in: modelContext).folder == nil)
+        #expect(CadenceNoteDeletionSummary.forNote(whitespace, in: modelContext).folder == nil)
+
+        // The three notes are otherwise identical, which is the reason the line exists: without it
+        // the confirmation for any of them is the same screen.
+        #expect(filed.displayTitle == unfiled.displayTitle)
+        #expect(CadenceNoteDeletionSummary.forNote(filed, in: modelContext).lostItemLines
+                == CadenceNoteDeletionSummary.forNote(unfiled, in: modelContext).lostItemLines)
+    }
+
+    /// The confirmation reads the folder off the summary, not off the note — one line, and the only
+    /// `folderPath` mention in the sheet is none at all.
+    @Test func theIOSConfirmationRendersTheFolderFromTheSummary() throws {
+        let sheet = try strippingComments(sourceFile("Cadence/iOS/iOSNoteDeletionSupport.swift"))
+        #expect(sheet.components(separatedBy: "summary.folder").count - 1 == 1)
+        // Not through the note, so the sheet cannot decide for itself what `""` means.
+        #expect(!sheet.contains("folderPath"))
+    }
+
     // MARK: - Both platforms delete through the one helper
 
     /// The delete is `ModelContext.deleteNote` and nothing else, from exactly three places: the two

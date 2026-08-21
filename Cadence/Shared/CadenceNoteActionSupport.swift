@@ -67,6 +67,23 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
     var tags = 0
     /// Other notes whose body links to this one. Not deleted either; their links go dangling.
     var backlinks = 0
+    /// The note's folder, normalized and ready to print, or `nil` when it sits at the root.
+    ///
+    /// **Identity, not a count** — the only field here that is not arithmetic, and it is here
+    /// rather than read off the note in the view for two reasons. It keeps the `folderPath` read
+    /// beside the normalizer that gives the string meaning (`""`, `"/"` and `"  "` are all the
+    /// root, and a raw value can arrive from a merge or from CloudKit), and it makes the line
+    /// testable from the macOS-built test target instead of only by a source scan.
+    ///
+    /// Why show it at all: a note's title and its folder are the only two things distinguishing
+    /// one row in a list-notes column from another, and until [[T-223]] every list note on iOS
+    /// read "Untitled" — so the confirmation for "delete this one" could name neither. It stays
+    /// worth showing after that fix, because two notes in one list may legitimately share a title
+    /// while living in different folders, and because notes written before the fix keep their old
+    /// title until the next edit. `nil` at the root rather than the word "Notes": "Notes" is the
+    /// heading a folder-less run of rows *lacks*, and printing it here would read as a folder the
+    /// user never made.
+    var folder: String?
 
     /// True when there is nothing to lose but the row itself — a note created and never written
     /// in. Published rather than inferred from `lostItemLines.isEmpty` for the reason
@@ -129,6 +146,9 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
         summary.words = wordCount(note.content)
         summary.images = reclaimed.count
         summary.tags = (note.tags ?? []).count
+        summary.folder = CadenceNoteFolderPath.isRoot(note.folderPath)
+            ? nil
+            : CadenceNoteFolderPath.displayName(for: note.folderPath)
         // Through `NoteReferencePanelSupport`, not `NoteReferenceResolver.backlinks` directly, for
         // the reason that file states: the panel support is the *one* entry point resolution goes
         // through, and `CadenceNoteReferencePanelSurfaceTests` pins that the resolver itself has
