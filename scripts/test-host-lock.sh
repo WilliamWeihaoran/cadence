@@ -34,7 +34,11 @@ case "$CMD" in
     # release warn and release anyway -- meaning one agent could free another's
     # lock. Default the id to the caller's directory, which is stable across
     # subshells of the same agent.
-    timeout="${2:-5400}"; ID="${3:-${PWD:t}}"; waited=0
+    # Default to $PPID, NOT ${PWD:t}: every agent cds to the repo first, so a
+    # directory-derived id is "Cadence" for all of them and the identity check
+    # below compares equal for strangers -- defeating the whole point. $PPID is
+    # the caller's shell, unique per agent. Pass an explicit id if you prefer.
+    timeout="${2:-5400}"; ID="${3:-$PPID}"; waited=0
     while (( waited < timeout )); do
       if mkdir "$LOCK" 2>/dev/null; then
         # $PPID, never $$: $$ is THIS script, which exits the instant acquire
@@ -60,7 +64,7 @@ case "$CMD" in
     exit 1
     ;;
   release)
-    ID="${2:-${PWD:t}}"
+    ID="${2:-$PPID}"
     if [[ -d "$LOCK" ]]; then
       owner_id=$(cat "$LOCK/id" 2>/dev/null); owner_pid=$(cat "$LOCK/pid" 2>/dev/null)
       if [[ -n "$owner_id" && "$owner_id" != "$ID" ]]; then
