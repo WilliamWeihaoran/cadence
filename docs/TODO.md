@@ -32,6 +32,45 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Open — decided, not started
 
+- [T-259] **The MCP smoke test runs 21 of the router's 30 arms, and five of the eight write tools
+  are run by nothing at all.** Found while doing [[T-126]]. `plugins/cadence-mcp/scripts/smoke-test.py`
+  is the only thing that *executes* `CadenceMCPServer/`, and it never dispatches `get_task_bundle`,
+  `list_containers`, `get_container_summary`, `get_goal`, `update_task`, `schedule_task`,
+  `complete_task`, `reopen_task` or `cancel_task`. The five write tools are the ones that matter:
+  each has its own argument wiring — `schedule_task` is the only place `minuteOfDay`,
+  `durationMinutes` and `clearScheduledDate` are read together — and a rename or a reordered
+  `CadenceScheduleTaskOptions` initialiser would compile, advertise, and fail only in the user's
+  editor. `CadenceMCPToolContractTests` (added under T-126) closes the *name* half and explicitly
+  not this half: it is a source scan and executes nothing.
+  Two smaller shapes of the same gap, worth folding in: the four `list_*` arms the smoke test does
+  call run against a **fresh empty fixture store** and return `[]`, so no list DTO's shape is ever
+  observed; and the natural-language parsing in `CadenceMCPArgumentParsing.swift` is sampled at one
+  point per helper — `tomorrow` but never `today`/`yesterday`/`in 3 days`/`+2 days`/`2 days ago`,
+  `1h` and `three hours` but never `30m`/`1.5h`/`two and a half hours`, `4 PM` but never `4:30 pm`
+  and never a rejected `13 pm`.
+  Note the constraint before proposing "just add unit tests": `CadenceMCPArgumentParsing` extends
+  `Dictionary where Value == MCP.Value`, and the `MCP` package product is linked into the
+  `CadenceMCPServer` target only. Reaching it from `CadenceTests` means adding that package
+  dependency to the test target in `project.pbxproj` — a real decision, not a formality — and it
+  would compile those files under the app's Swift 5 / `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
+  settings rather than the server's Swift 6 without it, i.e. under settings that cannot reproduce
+  the failure mode `CadenceMCPServer/AGENTS.md` exists to warn about. Extending the smoke test is
+  the cheaper and more honest route.
+
+- [T-260] **Two argument-parsing helpers in the MCP server have zero call sites.** Found while doing
+  [[T-126]]. `Dictionary.int(_:)` and `Dictionary.stringArray(_:)` in
+  `CadenceMCPServer/CadenceMCPArgumentParsing.swift` are never called by the router, by
+  `main.swift`, or by the tool definitions — `strictInt` and `flexibleStringArray` replaced them
+  (12 and 8 router call sites respectively) and the originals were left behind. Grep with a leading
+  dot and read the hits: `.int(` also matches `MCP.Value.int(...)`, which the definitions file uses
+  three times to build JSON-schema payloads, so a naive scan reports `int` as live.
+  This is dead code in the one folder with no unit coverage and no execution path, which is the
+  combination that makes it worth removing rather than leaving: the next agent to touch argument
+  parsing sees two plausible entry points whose semantics differ from the two that are actually
+  wired up — `int` returns `nil` on a bad value where `strictInt` throws, and `stringArray`
+  silently drops non-strings where `flexibleStringArray` throws. Picking the wrong one turns a tool
+  error into a silently ignored argument. Delete both, or wire them and say why.
+
 - [T-242] **Bundle focus is macOS-only.** `macOS/Views/FocusBundleTaskSupportViews.swift` lets the
   focus timer run a `TaskBundle` and step through its members; `Cadence/iOS/iOSFocusView.swift`
   contains the string `bundle` zero times. This was the one claim in [[T-190]] that was **true**,
@@ -231,23 +270,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   the next recurrence occurrence**, which is correct for one task and wrong for bulk container
   completion that must not mint new work.
 
-- [T-215] **macOS's archive cancels a list's remaining active tasks; iOS's archive only sets status.**
-  An existing silent divergence found by T-187, in the same blocked file as [[T-212]] and [[T-214]].
-  One line, but decide it deliberately: archiving *should* probably settle the work, and if so iOS is
-  the wrong one — which also makes it [[T-212]]'s bug, since that is the path macOS uses.
-  **Decided and implemented, uncommitted at the time of writing.** macOS is the right one, so the
-  wind-down crossed over. `TaskContainerLifecycleService` moved out of
-  `macOS/Services/TaskWorkflowService.swift`'s `#if os(macOS)` — it imported nothing
-  platform-specific, the sixth instance of that shape — to
-  `Cadence/Services/CadenceTaskContainerLifecycleService.swift`, and
-  `Cadence/iOS/iOSListArchiveSupport.swift` is the one iOS archive call site.
-  Two decisions worth carrying: the confirmation is a modal sheet that states the count and is
-  **conditional** — `CadenceListArchiveSummary.requiresConfirmation` is false when nothing is open,
-  because a sheet over a list where nothing happens is one people learn to dismiss unread — and the
-  count comes from `remainingActiveTasks`, the settle's *own* array, so it cannot over-promise.
-  The wind-down still routes through `settleWithoutAdvancingSeries` and spawns nothing.
-  Docs still owed: `Cadence/Services/` 49 → **50** in root `AGENTS.md` and `CLAUDE.md`, and
-  `CLAUDE.md`'s `macOS/Services/` block still lists `TaskWorkflowService` without noting the move.
 
 - [T-208] **Today's Completed section lists cancelled tasks but the header's "N done" does not count
   them.** Introduced deliberately by `9d11135` and documented at `CadenceTaskQuerySharedSupport.swift`
@@ -304,11 +326,26 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   already disagreed about heading sizes on the same platform; a third renderer is a third chance at
   that.
 
-- [T-195] **Today's rollover banner and sections-due-today are macOS-only.** The four Today group
-  kinds *are* shared (`CadenceTodayTaskGroupKind`, read by both platforms since `d330f5e`). What is
-  not: `TasksPanelRolloverNoticeSectionView`, the `todayRolloverNoticeDismissedDate` preference, and
-  `TodayOverdueSectionSummary`. The roll action's slot-clearing semantics — move `scheduledDate`,
-  reset `scheduledStartMin`, drop the linked event — would need lifting into `Shared/` first.
+- [T-195] **Sections-due-today is still macOS-only — the rollover banner half is done.** This
+  ticket named two unrelated features and only one of them has shipped.
+  **Closed:** the rollover banner. `TasksPanelRolloverNoticeSectionView` is
+  `Shared/Components/CadenceTodayRolloverBanner.swift` (two container styles, `.panelBand` for the
+  Mac's task column and `.card` for iOS), the decision is `Shared/CadenceTodayRolloverSupport.swift`
+  (the over-do predicate, the visibility test, the withhold-while-showing filter, the batch roll),
+  and the slot-clearing mutation is `CadenceTaskMutationSupport.rollOverTaskToToday` —
+  `SchedulingActions.rollOverTaskToToday` delegates to it and must not grow a second body. macOS was
+  rewired to all three rather than left beside them; `CadenceTodayRolloverSurfaceTests` recomputes
+  `TasksPanelDerivedState`'s two changed values with the old inline expressions and asserts they are
+  identical. **One `UserDefaults` key on purpose** — `todayRolloverNoticeDismissedDate` — because
+  dismissing is a statement about the day, not the device.
+  **Still open:** sections-due-today. `TodayOverdueSectionSummary` and
+  `TodayOverdueListSummary` are still declared in `macOS/Views/TasksPanelSupport.swift` and built
+  in `TasksPanelDerivedState.init`, with **zero** references under `Cadence/iOS/` (grep them).
+  The work is the same shape as the banner's: the two summary values and the
+  `sectionConfigs`-walking derivation are pure and belong in `Shared/`, the two row views
+  (`TasksPanelSupportViews`) are Theme-only and can be shared, and the tap target needs an iOS
+  equivalent of `TasksPanelSupport.openOverdueSectionSummary`'s `ListNavigationManager` hop —
+  that navigation manager is macOS-only and is the one genuinely platform-shaped piece.
 
 
 
@@ -412,17 +449,19 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   segment selection will convert to a drag mid-choice. macOS stays deliberately unspecified.
 
 
-- [T-244] **Cmd+K colours two destinations differently from the sidebar, and ignores the user's
-  override.** `macOS/Views/GlobalSearchSupportViews.swift` hand-assigns each command/page tint —
-  `Theme.red` for Focus and `Theme.purple` for Calendar — while
-  `CadenceFeatureDestination.defaultColorHex` gives Focus **teal** and Calendar **red**. So the
-  command palette and the sidebar disagree about two rows' hue, not just their shade, and the
-  palette never reads `CadencePreferenceKeys.sidebarTabColors` at all, so a user who retints Today
-  in Settings → Sidebar sees the old colour in Cmd+K. The fix is for those rows to read
-  `CadenceSidebarTint.hex(for:overridesRaw:)` rather than naming a `Theme` colour, which also
-  deletes eight dead `?? "#5AA2FF"`-shaped literal fallbacks (`globalSearchHexString()` only returns
-  nil if colour-space conversion fails). Found while doing T-166; out of its scope because it is a
-  hue *assignment* question, not a literal.
+
+- [T-258] **Cmd+K draws the Notes row in a different glyph than the sidebar does.** The last
+  hand-typed per-destination fact in `GlobalSearchPageDefinition`. T-244 made the definition carry
+  a `CadenceFeatureDestination` and derived the tint, the selection it opens and its Settings →
+  Sidebar toggle from it; `icon` was left stored, and eight of the nine happen to equal
+  `CadenceFeatureDestination.systemImage` already. The ninth does not: the palette says `doc.text`
+  for Notes, the sidebar says `note.text`. Same defect class as T-244 one layer up — two lists
+  answering one question about a destination, agreeing until one moved. The fix is one line
+  (`icon: feature.systemImage`, deleting the stored field), deliberately not taken with T-244
+  because it changes a glyph nobody asked about. Decide whether the palette should show the
+  sidebar's glyph; if yes, the field goes and the drift cannot come back.
+  (The `doc.text` on the **event-note** result rows in `GlobalSearchIndexSupport` is unrelated —
+  those are note rows, not the Notes destination, and should stay.)
 
 - [T-245] **The sidebar tab editor offers the wrong palette, so Focus's teal shows up as a
   thirteenth swatch.** `SidebarTabEditorSheet` renders `ColorGrid`, which offers
@@ -434,15 +473,39 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   should be picked from `Theme`'s six accents rather than from the list palette — they are different
   jobs and currently share one grid.
 
-- [T-246] **Three more hex palettes live outside `Theme`.** Found while doing T-166 and left alone
-  deliberately, since none of them is `defaultColorHex`: `macOS/Views/KanbanBoardSupport.swift`'s
-  eight kanban-section colours are a *fourth* palette and four of them (`#f59e0b`, `#ef4444`,
-  `#a855f7`, `#f97316`) are not `Theme` values at all; `macOS/Sheets/CreateListSheet.swift:39`
-  re-types `"#4ecb71"` where `CadenceColorPalette.projectDefault` now reads `Theme.greenHex`; and
-  four of `CadenceColorPalette.colors`' twelve swatches (`#a78bfa`, `#ff6b6b`, `#ffa94d`, `#4ecb71`)
-  are `Theme`'s purple/red/amber/green spelled again, which is now a pure-refactor substitution.
-  `TagSupport.colorOptions` is explicitly **not** in scope — it is a separate palette with a
-  separate job and `CadenceColorPalette`'s doc comment says so.
+
+- [T-261] **Two swatch menus for one field: a kanban section's colour differs by platform.**
+  `TaskSectionConfig.colorHex` is edited from two places and they offer different sets. macOS's
+  column editor offers `CadenceColorPalette.sectionColors` (eight hues, moved out of
+  `macOS/Views/KanbanBoardSupport.swift` by T-246); iOS's `iOSSectionColorPicker`
+  (`iOS/iOSListEditorViews.swift`) offers `[TaskSectionDefaults.defaultColorHex] +
+  TagSupport.colorOptions` — nine hues, only **one** of which (`#6b7a99`, the default) the Mac's
+  grid also contains. So a column tinted `#e671b8` on the phone opens on the Mac wearing a hue the
+  Mac cannot offer. T-246 stopped that being destructive — `offeredSectionColors(for:)` appends the
+  stored value, and the Mac's comparison is case-insensitive now, so the swatch still reads as
+  selected and the next save does not replace it — but the two menus are still two answers to one
+  question, which is the exact three-way split `CadenceColorPalette` was created to end.
+  Note the iOS side is *also* borrowing `TagSupport.colorOptions`, a palette
+  `CadenceColorPalette`'s own doc comment says is deliberately separate with a separate job.
+  Deciding the section set is a hue decision, not a refactor: say which eight (or nine) win, then
+  point both pickers at `CadenceColorPalette.sectionColors`.
+
+- [T-262] **Five more `@State` colour seeds still hand-type `#4a9eff` / `#6b7a99`.** Out of T-246's
+  scope, which named three palettes and not these. Each is a pure substitution — the literal
+  already equals the token it should read — which is precisely why they survive:
+  `macOS/Sheets/CreateContextSheet.swift:11`, `macOS/Sheets/CreateGoalSheet.swift:24` and `:47`,
+  `macOS/Views/HabitsFormSheets.swift:14` (all `#4a9eff` → `CadenceColorPalette.areaDefault`), and
+  `macOS/Views/HabitsView.swift:63` (`#6b7a99` → `TaskSectionDefaults.defaultColorHex`, which is
+  what that neutral is). Two adjacent things that are **not** the same finding and must not be
+  swept in with them:
+  - `Cadence/Models/*.swift`'s `colorHex` defaults (`Area`, `Context`, `Goal`, `Habit`, `Project`,
+    `Tag`, `AppTask`) genuinely cannot read `Theme`: `CadenceMCPServer` compiles `Models/` and not
+    `Theme.swift`. Same reason T-166 left `TaskSectionDefaults.defaultColorHex` alone. Leave them.
+  - `Services/CadenceUITestSupport.swift` seeds fixtures with `#5AA2FF`, `#FFB84D` and `#4ECB71`.
+    The first two are the *drifted* sidebar tints T-166 deleted — they now exist nowhere else in
+    the app. Harmless as fixture data, but a UI test asserting on a colour would be asserting on a
+    hue the product no longer has.
+
 
 
 - [T-161] **Tests pin helpers, not wiring.** The T-149 verifier proved by mutation that reverting the
@@ -454,11 +517,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   pinned the consolidation.
 
 
-- [T-126] **The MCP smoke test can be run from here, and is data-safe** — it verifies read-only mode
-  then drives a temp fixture store via `CADENCE_MCP_STORE_URL`, never the app-group store. SPM
-  checkouts are already resolved locally, so no network is needed. One gap worth closing before
-  relying on it: it rebuilds into the shared `.codex-build` with no private-path override, so
-  verifying an MCP change disturbs the same DerivedData the live processes and Codex use.
 
 - [T-123] **Tighten the repo, and converge the three platforms' UI.** Requested 2026-08-18. Scope
   decided with the user up front, because two readings of "unify the UI" are different projects:
@@ -775,6 +833,37 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   had to special-case the file to build at all. `git add` it.
 
 ## Done
+
+- [D-167] `c82e120` The section palette gets an address, not new `Theme` accents (T-246). No resolved
+  hue changed — 31 values compared programmatically, 0 differences. The ticket's count was off by one
+  (`#4ecb71` was already a token) and the agent's own value test caught its own miscount. Mapping the
+  eight kanban colours onto `Theme` was rejected as *structurally* impossible: six accents cannot
+  supply eight distinct swatches, and two of them collapse onto amber. Keep the distinction it drew —
+  a swatch **menu** is the "user-owned `colorHex`" clause of the no-hardcoded-colour rule, not the
+  `Theme.*` clause. Found a real defect in passing: the macOS grid compared case-sensitively with no
+  keep-the-stored-value rule, so a section wearing an unoffered hue showed nothing selected and the
+  next tap silently replaced it.
+
+- [D-166] `635720c` Archiving a list on iOS settles its remaining work, behind a confirmation
+  (T-215). Sixth `#if os(macOS)` around code importing nothing platform-specific. The ticket said
+  "one line"; it is not, because **archive is advertised as reversible and the cancellation is not**,
+  and on iOS archive is a row *swipe* — the literal one-liner would have made one flick irreversibly
+  cancel N tasks. The confirmation is conditional, so an empty list is still one flick, and it counts
+  the settle's own array rather than a re-derived one. Does **not** close T-214: it resolves that
+  ticket's premise, but iOS still offers no Complete action for a list.
+
+- [D-165] `e181dea` Cmd+K asks the sidebar what colour a destination is (T-244). The ticket
+  undercounted twice: three rows disagreed, not two (Settings was grey against the sidebar's blue),
+  and there were **seventeen** dead literal fallbacks, not eight — and those fallbacks were the
+  *pre-T-166 drifted* values, a frozen snapshot of a sidebar that had since moved twice. Fixed the
+  same defect on iOS Search, which read `destination.tint`: right hue, but a default is not an
+  override, so it silently disagreed for any retinted row.
+
+- [D-164] `69b0237` A write tool missing from `writeToolNames` is advertised in read-only mode
+  (T-126). The smoke test is data-safe — `CADENCE_MCP_STORE_URL` is honoured before the real store
+  and the audit log and refresh marker derive from the same resolved URL — verified by 46 store files
+  being byte-identical across a run. The finding is coverage: 30 router arms, 21 dispatched, and five
+  of eight write tools never exercised. Filed T-259, T-260.
 
 - [D-163] Three doc-accuracy tickets closed, and two of the three had largely been overtaken
   (T-198, T-199, T-216). Every claim re-derived against `HEAD` rather than trusted.
