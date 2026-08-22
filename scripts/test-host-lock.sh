@@ -29,11 +29,20 @@ CMD="${1:-status}"
 
 case "$CMD" in
   acquire)
-    timeout="${2:-5400}"; waited=0
+    # Identity is an explicit id, NOT $$: acquire and release routinely run in
+    # different subshells (nohup, background, a trap), so comparing $$ made every
+    # release warn and release anyway -- meaning one agent could free another's
+    # lock. Default the id to the caller's directory, which is stable across
+    # subshells of the same agent.
+    timeout="${2:-5400}"; ID="${3:-${PWD:t}}"; waited=0
     while (( waited < timeout )); do
       if mkdir "$LOCK" 2>/dev/null; then
-        print -r -- "$$" > "$LOCK/pid"; date +%s > "$LOCK/since"
-        print -r -- "acquired after ${waited}s (pid $$)"; exit 0
+        # $PPID, never $$: $$ is THIS script, which exits the instant acquire
+        # returns, so the liveness check below would find every lock stale and
+        # hand it to the next caller immediately -- a mutex that never excludes.
+        # $PPID is the caller's shell, which lives for the duration of its run.
+        print -r -- "$PPID" > "$LOCK/pid"; print -r -- "$ID" > "$LOCK/id"; date +%s > "$LOCK/since"
+        print -r -- "acquired after ${waited}s (id $ID, owner pid $PPID)"; exit 0
       fi
       # Reclaim a lock whose owner is gone -- an agent killed by a watchdog or a
       # usage limit never runs its release.
@@ -51,16 +60,23 @@ case "$CMD" in
     exit 1
     ;;
   release)
-    if [[ -f "$LOCK/pid" && "$(<"$LOCK/pid")" != "$$" ]]; then
-      print -r -- "warning: releasing a lock owned by $(<"$LOCK/pid"), not $$"
+    ID="${2:-${PWD:t}}"
+    if [[ -d "$LOCK" ]]; then
+      owner_id=$(cat "$LOCK/id" 2>/dev/null); owner_pid=$(cat "$LOCK/pid" 2>/dev/null)
+      if [[ -n "$owner_id" && "$owner_id" != "$ID" ]]; then
+        if kill -0 "$owner_pid" 2>/dev/null; then
+          print -r -- "REFUSING: lock is held by '$owner_id' (pid $owner_pid, alive), not '$ID'"; exit 1
+        fi
+        print -r -- "owner '$owner_id' is dead; reclaiming"
+      fi
     fi
-    rm -rf "$LOCK"; print -r -- "released"
+    rm -rf "$LOCK"; print -r -- "released ($ID)"
     ;;
   status)
     if [[ -d "$LOCK" ]]; then
-      owner=$(cat "$LOCK/pid" 2>/dev/null); since=$(cat "$LOCK/since" 2>/dev/null)
+      owner=$(cat "$LOCK/pid" 2>/dev/null); since=$(cat "$LOCK/since" 2>/dev/null); oid=$(cat "$LOCK/id" 2>/dev/null)
       alive=$(kill -0 "$owner" 2>/dev/null && print held || print STALE)
-      print -r -- "locked by $owner ($alive) for $(( $(date +%s) - ${since:-0} ))s"
+      print -r -- "locked by ${oid:-?} / pid $owner ($alive) for $(( $(date +%s) - ${since:-0} ))s"
     else
       print -r -- "free"
     fi
