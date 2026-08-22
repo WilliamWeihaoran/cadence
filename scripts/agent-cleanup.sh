@@ -39,10 +39,27 @@ for rt, devs in json.load(sys.stdin)['devices'].items():
 done
 
 say "== Cadence processes that should not outlive a run =="
-# A macOS debug build is the dangerous one: it writes to the real app-group store.
+# A macOS debug build launched by hand writes to the real app-group store, and has
+# hung and needed a force-quit. But `Build/Products/Debug/Cadence.app` ALSO matches
+# xcodebuild's own test host, which is a legitimate, short-lived process — killing
+# it mid-suite destroys another agent's run and looks like a flaky test. So: skip
+# every match while any xcodebuild is alive, and only reclaim ones that are stale.
+_xcb=$(pgrep -f "Developer/usr/bin/xcodebuild" 2>/dev/null | wc -l | tr -d " ")
 pgrep -fl "Build/Products/Debug/Cadence.app" 2>/dev/null | while read -r pid rest; do
-  say "  macOS debug build  pid $pid  $rest"
-  run "kill $pid"
+  age=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d " ")
+  if (( _xcb > 0 )); then
+    say "  macOS debug build  pid $pid  age $age  -- xcodebuild is running, this is probably its TEST HOST; left alone"
+  elif [[ "$age" == *-* || "$age" == *:*:* ]]; then
+    say "  macOS debug build  pid $pid  age $age  (stale, >1h)"
+    run "kill $pid"
+  else
+    say "  macOS debug build  pid $pid  age $age  -- recent; left alone"
+  fi
+done
+# Private stores from run-macos-app.sh whose process is gone.
+for sd in ${TMPDIR:-/tmp}/CadenceUITestStores/*(N/); do
+  say "  orphaned private store  ${sd:t}"
+  run "rm -rf ${(q)sd}"
 done
 # Orphaned MCP servers hold default.store / -shm / -wal open; four were once found
 # holding the user's live store for 25 hours.
