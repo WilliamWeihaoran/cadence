@@ -10,7 +10,7 @@ struct CreateListSheet: View {
 
     @State private var name = ""
     @State private var listType: ListType = .area
-    @State private var selectedColor = "#4a9eff"
+    @State private var selectedColor = ListType.area.defaultColor
     @State private var selectedIcon = "folder.fill"
     @State private var dueDate: Date = Date()
     @State private var hasDueDate: Bool = false
@@ -33,10 +33,17 @@ struct CreateListSheet: View {
             case .project: return "checklist"
             }
         }
+        /// The model default for the type, read from `CadenceColorPalette` rather than respelled.
+        ///
+        /// Both arms were hex literals until T-246 — `#4ecb71` beside a `projectDefault` that had
+        /// just been pointed at `Theme.greenHex`, which is the exact shape T-166 found in the
+        /// sidebar's tints. A value test cannot see this: the literals matched their tokens
+        /// exactly, so nothing was wrong on screen and nothing would have been until the next time
+        /// a default moved and took only one of its two spellings with it.
         var defaultColor: String {
             switch self {
-            case .area:    return "#4a9eff"
-            case .project: return "#4ecb71"
+            case .area:    return CadenceColorPalette.areaDefault
+            case .project: return CadenceColorPalette.projectDefault
             }
         }
     }

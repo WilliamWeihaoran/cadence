@@ -2,9 +2,10 @@
 import SwiftUI
 
 let kanbanSectionDragPrefix = "kanban-section::"
-let kanbanSectionColorOptions: [String] = [
-    "#6b7a99", "#4a9eff", "#4ecb71", "#f59e0b", "#ef4444", "#a855f7", "#14b8a6", "#f97316"
-]
+// The section swatch palette is `CadenceColorPalette.sectionColors`, in `Shared/`. It was eight
+// hex literals here (T-246) — a fourth palette, in a macOS view file, for a field iOS also edits.
+// The values did not change when they moved; see that declaration for why five of them are hexes
+// rather than `Theme` tokens.
 let kanbanColumnReorderAnimation = Animation.spring(response: 0.34, dampingFraction: 0.82, blendDuration: 0.12)
 let kanbanColumnStateAnimation = Animation.spring(response: 0.26, dampingFraction: 0.88, blendDuration: 0.08)
 let kanbanColumnWidth: CGFloat = 236

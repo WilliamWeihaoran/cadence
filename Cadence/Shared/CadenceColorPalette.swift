@@ -1,6 +1,7 @@
 import Foundation
 
-/// The swatch palette offered wherever a user picks a `colorHex` for a **list, goal or habit**.
+/// The swatch palettes offered wherever a user picks a `colorHex` — `colors` for a **list, goal
+/// or habit**, `sectionColors` for a **kanban section**.
 ///
 /// This existed three times: `ColorGrid.colors` (macOS, `#if os(macOS)`), `iOSListPalette.colors`
 /// (a deliberate iOS mirror of it, added precisely because `ColorGrid` could not be reached), and
@@ -20,9 +21,49 @@ enum CadenceColorPalette {
 
     /// One lap of the hue circle, warm through cool, ending on a neutral. Twelve reads as a 6×2 or
     /// 4×3 grid on macOS and wraps cleanly into a strip on iOS.
+    ///
+    /// **Five of the twelve are `Theme` accents, and they read the token rather than re-typing the
+    /// hex** (T-246): blue, purple, red, amber, green. Blue and green already did, through
+    /// `areaDefault` / `projectDefault`; purple, red and amber were literals that happened to match
+    /// `Theme.purpleHex` / `redHex` / `amberHex` exactly, which is the shape
+    /// `CadenceFeatureDestination.defaultColorHex` was in before T-166 — green forever under a
+    /// value test, and one hue change to `Theme` away from two purples. (T-246 was filed calling
+    /// this four; four is the number of *literals* it replaced, not the number of accents here.)
+    ///
+    /// The other seven are hues `Theme` does not carry, and that is deliberate rather than an
+    /// omission to be corrected. `Theme` holds **six** accents, several of them semantically
+    /// spoken for — red is danger, green is done — so a twelve-swatch menu cannot be built from it
+    /// without collisions. The no-hardcoded-colour rule reads "from `Theme.*`, **or** from a
+    /// user-owned `colorHex`", and this array is the menu of user-owned `colorHex` values: it is
+    /// that second clause, not an exception to the first. Do not "fix" these eight by adding a
+    /// second amber or a second purple to `Theme`.
     static let colors = [
-        areaDefault, "#6366f1", "#a78bfa", "#e879f9", "#f472b6", "#ff6b6b",
-        "#ffa94d", "#fbbf24", projectDefault, "#14b8a6", "#06b6d4", "#6b7a99",
+        areaDefault, "#6366f1", Theme.purpleHex, "#e879f9", "#f472b6", Theme.redHex,
+        Theme.amberHex, "#fbbf24", projectDefault, "#14b8a6", "#06b6d4", "#6b7a99",
+    ]
+
+    /// The swatches offered for a **kanban section**'s `colorHex` — the column editor's colour row.
+    ///
+    /// A fourth palette, and it lived in `macOS/Views/KanbanBoardSupport.swift` as a bare
+    /// `let kanbanSectionColorOptions` until T-246 moved it here **byte-identically**. Its eight
+    /// values did not change and must not be read as having been re-decided: three of them are
+    /// tokens now (`TaskSectionDefaults.defaultColorHex`, `Theme.blueHex`, `Theme.greenHex`) that
+    /// resolve to the same `#6b7a99` / `#4a9eff` / `#4ecb71` the literals spelled, and the
+    /// remaining five are the same five hexes in the same order.
+    ///
+    /// It is here rather than in `Theme` for the reason `colors` gives above, and here rather than
+    /// under `macOS/` because the three-way split `colors` exists to end is reopening on this very
+    /// field: iOS's `iOSSectionColorPicker` offers `TagSupport.colorOptions` plus the default — a
+    /// different set for the same `TaskSectionConfig.colorHex` — so a column tinted on the phone
+    /// opens on the Mac wearing a hue the Mac's grid does not contain.
+    /// `offeredSectionColors(for:)` is what stops that from silently replacing it; converging the
+    /// two sets is T-261.
+    ///
+    /// The default is first and comes from `TaskSectionDefaults` so the grid cannot stop offering
+    /// the colour every new section starts on.
+    static let sectionColors = [
+        TaskSectionDefaults.defaultColorHex, Theme.blueHex, Theme.greenHex, "#f59e0b",
+        "#ef4444", "#a855f7", "#14b8a6", "#f97316",
     ]
 
     /// The palette, plus `selected` when the palette no longer contains it.
@@ -33,11 +74,28 @@ enum CadenceColorPalette {
     /// is what makes consolidating the three palettes safe — a goal sitting on one of the retired
     /// tracking-only hues keeps it.
     static func offeredColors(for selected: String) -> [String] {
+        offering(selected, from: colors)
+    }
+
+    /// `sectionColors`, plus `selected` when the section palette does not contain it — the same
+    /// rule `offeredColors(for:)` applies to lists, and the kanban column editor did **not** have.
+    ///
+    /// That grid rendered a fixed eight and marked one selected with `editorColorHex == hex`, so a
+    /// section already wearing a hue the grid does not offer showed *nothing* selected and the next
+    /// tap silently replaced it. Not hypothetical: iOS offers a different set for this same field
+    /// (see `sectionColors`), and the old comparison was case-sensitive besides, so a stored
+    /// `#F59E0B` failed to match the `#f59e0b` right beside it. This is the same hazard
+    /// `CadenceIconPalette` documents for the icon grid.
+    static func offeredSectionColors(for selected: String) -> [String] {
+        offering(selected, from: sectionColors)
+    }
+
+    private static func offering(_ selected: String, from palette: [String]) -> [String] {
         let stored = selected.trimmingCharacters(in: .whitespaces)
-        guard !stored.isEmpty, !colors.contains(where: { matches($0, stored) }) else {
-            return colors
+        guard !stored.isEmpty, !palette.contains(where: { matches($0, stored) }) else {
+            return palette
         }
-        return colors + [stored]
+        return palette + [stored]
     }
 
     /// Hex comparison is case-insensitive: stored values predate any casing convention, so

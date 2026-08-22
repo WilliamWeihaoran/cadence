@@ -355,7 +355,7 @@ struct ListSectionKanbanColumn: View {
     private var columnEditor: some View {
         KanbanSectionEditorPopover(
             section: section,
-            editorColorOptions: kanbanSectionColorOptions,
+            editorColorOptions: CadenceColorPalette.offeredSectionColors(for: editorColorHex),
             editorName: $editorName,
             editorColorHex: $editorColorHex,
             editorDueDate: $editorDueDate,
