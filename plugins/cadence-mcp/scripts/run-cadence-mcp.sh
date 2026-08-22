@@ -3,7 +3,11 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
 XCODEBUILD="${XCODEBUILD:-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild}"
-DERIVED_DATA_PATH="$ROOT_DIR/.codex-build"
+# Defaults to the shared `.codex-build` so the installed plugin keeps reusing one warm build.
+# Override it when verifying an MCP change: the shared path is the one the live plugin process
+# and Codex are already using, and a concurrent rebuild into it is the `-derivedDataPath`
+# non-negotiable in the root `AGENTS.md`.
+DERIVED_DATA_PATH="${CADENCE_MCP_DERIVED_DATA:-$ROOT_DIR/.codex-build}"
 BINARY="$DERIVED_DATA_PATH/Build/Products/Debug/CadenceMCPServer"
 SOURCE_PATHS=(
   "$ROOT_DIR/CadenceMCPServer"

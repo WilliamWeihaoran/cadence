@@ -65,15 +65,23 @@ compiles in a view is not evidence it compiles here.
 - Opening the read-write container also runs `NoteMigrationService`, `TagSupport` seeding/sync and
   `DataIntegrityRepairService` against live data. A migration bug reaches users through this door
   as much as through app launch.
-- **Nothing under `CadenceMCPServer/` has unit coverage.** `CadenceTests` covers the app-side half
-  (`CadenceReadServiceTests`, `CadenceWriteServiceTests`, `CadenceSearchMatcherTests`) and nothing
-  else — the router, the tool definitions and the argument parsing are exercised only by
-  `plugins/cadence-mcp/scripts/smoke-test.py`. Do not assume `CadenceTests` passing says anything
-  about this folder.
+- **Nothing under `CadenceMCPServer/` is unit-*executed*.** `CadenceTests` covers the app-side half
+  (`CadenceReadServiceTests`, `CadenceWriteServiceTests`, `CadenceSearchMatcherTests`); the router,
+  the tool definitions and the argument parsing are *run* only by
+  `plugins/cadence-mcp/scripts/smoke-test.py`. None of those three files is in the app target's
+  Sources phase, so `CadenceTests` cannot reference a symbol in them and cannot call one.
+  `CadenceMCPToolContractTests` is therefore a **source scan**, not an execution: it pins the
+  three-way name contract below and the write gate, and nothing else. Do not read it as
+  behavioural coverage of the router.
 - **The 30 tool names are a contract in three places at once**: `CadenceMCPToolDefinitions.swift`
   (the advertised schema), `CadenceMCPToolRouter.swift` (30 `case` arms), and the smoke test's
   expectations. Renaming or adding one means all three, and the definitions/router pair will
-  compile perfectly while disagreeing.
+  compile perfectly while disagreeing. `CadenceTests/CadenceMCPToolContractTests.swift` is the
+  guard: it fails when those three sets diverge, and separately when
+  `CadenceMCPToolDefinitions.writeToolNames`, the router arms that call `requireWriteService`, and
+  the smoke test's `WRITE_TOOLS` stop naming the same eight tools. That second assertion is the
+  data-safety one — a mutating arm missing from `writeToolNames` is **advertised and executable in
+  the default read-only mode**, which is not a typo-class failure.
 
 ## Verification
 
@@ -94,7 +102,17 @@ non-negotiable in `../AGENTS.md` for what the shared one does to a running app.
 
 Run `plugins/cadence-mcp/scripts/smoke-test.py` after any router, tool-definition or
 argument-parsing change. It verifies read-only mode and then drives a temp fixture store via
-`CADENCE_MCP_STORE_URL`, so it never touches the app-group store.
+`CADENCE_MCP_STORE_URL`, so it never touches the app-group store — `resolvedStoreURL()` prefers
+that override over `CadenceStoreSupport.primaryStoreURL()`, and `auditLogURL()` and
+`refreshMarkerURL()` are both derived from it, so the entire write path lands in the temp
+directory. That is the whole safety argument: check it in
+`Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift` rather than trusting this line.
+
+Set `CADENCE_MCP_DERIVED_DATA` when you run it, or the launcher rebuilds into the shared
+`.codex-build` the installed plugin and Codex are using. Point it at a path you have **already**
+built into: the launcher builds lazily on first launch, that build outlasts the smoke test's
+45-second per-response timeout, and the failure reads `timed out waiting for response 100` rather
+than naming a build.
 
 ## Working Rules
 
