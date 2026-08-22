@@ -2,15 +2,27 @@ import CoreGraphics
 
 // MARK: - The register: where "derive a pane decision from handed width" may live
 //
-// One rule, six expressions, four files — and this is the house file, so the register lives here
+// One rule, seven expressions, four files — and this is the house file, so the register lives here
 // rather than in a doc that the code cannot be checked against. T-182 was raised as "four
-// expressions in four places"; the count was short by two. What is actually there:
+// expressions in four places"; the count was short by two, and T-248/T-249 added the seventh. What
+// is actually there:
 //
 //   Here, in `CadenceRegularPaneLayout.swift`
 //     - `CadenceRegularSplitLayout`     a *width*, for a chooser column beside a detail.
 //     - `CadenceCalendarWeekGridLayout` a *width*, N columns rather than two panes, and the
 //                                       supplier of the minimum the gate below reads.
 //     - `CadenceCalendarPaneLayout`     a *Bool* gate, plus the two widths behind it.
+//     - `CadenceSettingsTemplatesCardLayout`
+//                                       an *enum* (`CadenceSettingsCardLayout`), for the one
+//                                       settings *card* that splits. It is here rather than in a
+//                                       surface file because its two surfaces are
+//                                       `Cadence/macOS/Views/SettingsTemplatesSection.swift` and
+//                                       `Cadence/iOS/iOSSettingsTemplateAndListSections.swift` —
+//                                       one behind `#if os(macOS)`, one behind `#if os(iOS)` and
+//                                       therefore invisible to the macOS-built test target. There
+//                                       is no file either surface can put its parts in *except*
+//                                       out here, which is the same argument
+//                                       `CadenceNotesListSupport.swift` opens with.
 //   `CadenceTodayLayoutSupport.swift`
 //     - `CadenceTodayLayoutSupport`     an *enum* (`CadenceTodayLayout`), plus the fixed side's width.
 //   `CadenceNotesListSupport.swift`
@@ -348,5 +360,113 @@ enum CadenceCalendarPaneLayout {
         viewMode == .week
             ? CadenceCalendarWeekGridLayout.fullSizeWidth(isRegularWidth: true)
             : inspectorMinWidth
+    }
+}
+
+/// One column or two, inside a settings card that pairs a chooser with the thing it edits.
+///
+/// The seventh expression of the rule, and the first that is about a *card* rather than a page or a
+/// pane. That is the whole of what T-248/T-249 were: the defect does not care how big the container
+/// is, only that a fixed column was subtracted from a flexing one with nothing asserting what was
+/// left.
+nonisolated enum CadenceSettingsCardLayout: Equatable, Sendable {
+    /// Chooser above the editor, both full width. On iOS this is the phone's form, which already
+    /// ships; on macOS it is the same shape with the same rows.
+    case oneColumn
+    /// Chooser column beside the editor.
+    case twoColumn
+}
+
+/// How the Settings → Templates card divides between its template chooser and the editor beside it.
+///
+/// **T-177's defect, one level down.** Both surfaces split unconditionally — iOS on
+/// `horizontalSizeClass == .regular` alone, macOS on nothing at all — with a fixed
+/// `.frame(width:)` chooser beside a `maxWidth: .infinity` editor and no floor under what was left.
+/// Every term of the chain that ate the pane is chrome the card cannot see: on iOS, `paneWidth`
+/// less the 248pt settings rail, its 1pt divider, `settingsDetailScroll`'s 28pt horizontal padding
+/// on each side, `iOSSettingsCard`'s 16pt inset on each side, then the chooser, the divider and two
+/// 16pt gaps — `paneWidth − 630`. Measured with an `NSHostingView` reproduction of that exact
+/// modifier chain, the editor came out at **16.0pt on an iPad Pro 11" in portrait with the shell
+/// sidebar out** (646pt of pane — the primary target device in its default configuration, no
+/// multitasking), 0.0 at 570, 146 at 776, 204 at 834, 392 at 1022 and 580 at 1210. macOS's chain is
+/// `paneWidth − 596` and its ordinary minimum pane — a 960pt window less the stored 264pt sidebar —
+/// leaves the editor 100pt.
+///
+/// **The fallback is one column, not a dropped chooser**, and the two precedents in this file are
+/// what decide it. `CadenceCalendarPaneLayout` drops its inspector because the inspector *restates*
+/// a day column that is already on screen a finger's width away; nothing is lost. The template
+/// chooser is the only thing that selects what the editor is editing, so dropping it leaves a card
+/// permanently stuck on whichever template `selectedTemplateID` happens to hold. That makes this
+/// `CadenceTodayLayoutSupport`'s case rather than the calendar's: below the floor, render the form
+/// the narrow host already has.
+///
+/// The width this asks about is the one the split `HStack` is actually handed — the card's inner
+/// content width, measured with `onGeometryChange` — and **not** the pane. Every term between the
+/// two is chrome owned by the settings shell, and re-stating the shell's rail width and paddings
+/// here would be a second copy of them that nothing would keep in step. The pane translation, for
+/// the record and for the device the ticket was filed from: on iOS the card's content is
+/// `paneWidth − 249 − 56 − 32`, so `twoColumnMinimumWidth` of 613 is reached at **950pt of pane**,
+/// which an 11" iPad Pro sees in landscape (1022) and not in portrait (646).
+nonisolated enum CadenceSettingsTemplatesCardLayout {
+    /// macOS's chooser column, as `SettingsTemplatesSection` already had it.
+    static let desktopChooserWidth: CGFloat = 230
+    /// iOS's chooser column at regular width, as `iOSTemplatesSettingsSection` already had it. The
+    /// two differ because the rows do — macOS sets a 12pt title where iOS sets 15 — and unifying
+    /// them is a visual change this floor does not need to make.
+    static let regularChooserWidth: CGFloat = 260
+    /// The gap on each side of the divider. 16 on both surfaces already: `iOSEditorSheetMetrics
+    /// .groupSpacing` on one and the `HStack`'s own spacing on the other.
+    static let columnSpacing: CGFloat = 16
+    /// The 1pt rule between the two columns. Counted, because a floor that forgets it is a floor
+    /// that is one point wrong — the mistake `CadenceTodayLayoutSupport.taskPaneWidth` records.
+    static let columnDividerWidth: CGFloat = 1
+
+    /// The least the editor half may be handed before two columns is worse than one.
+    ///
+    /// **Borrowed, not invented**, and borrowed from the surface with the same content: it is
+    /// `CadenceNotesListMetrics.minimumEditorWidth`, which is in turn
+    /// `CadenceTodayLayoutSupport.inspectorPaneMinWidth`. The template editor is a title field, a
+    /// description field and a markdown body well — a note editor with two fields over it — so "the
+    /// least a markdown editor will accept before its own content starts clipping" is the same
+    /// question, already answered at 320. Spelled as a reference so the three cannot drift.
+    ///
+    /// The corroboration is that the choice does not have to be exactly right to be right *here*.
+    /// No plausible floor keeps the target iPad's portrait pane in two columns — even a 100pt
+    /// editor would need 730pt of pane against the 646 it has — so the only band where the number
+    /// changes an outcome is 776…950 of pane, and 834 (the same iPad with the shell sidebar folded)
+    /// is the case that decides it: 204pt of markdown well beside a 260pt chooser is the "worse
+    /// than one column" this floor exists to name.
+    static var minimumEditorWidth: CGFloat { CadenceNotesListMetrics.minimumEditorWidth }
+
+    static func chooserWidth(isDesktop: Bool) -> CGFloat {
+        isDesktop ? desktopChooserWidth : regularChooserWidth
+    }
+
+    /// 613pt of card content on iOS, 583 on macOS. **A sum, not a constant** — widen the chooser and
+    /// this moves with it, which is the whole reason it is spelled this way.
+    static func twoColumnMinimumWidth(isDesktop: Bool) -> CGFloat {
+        chooserWidth(isDesktop: isDesktop) + columnSpacing * 2 + columnDividerWidth + minimumEditorWidth
+    }
+
+    static func supportsTwoColumns(hostWidth: CGFloat, isDesktop: Bool) -> Bool {
+        hostWidth >= twoColumnMinimumWidth(isDesktop: isDesktop)
+    }
+
+    /// The form the card renders, given the width its content was actually handed.
+    ///
+    /// **`hostWidth <= 0` means "not measured yet" and answers `.oneColumn`** — the opposite call
+    /// from `CadenceNotesListMetrics.layout`, deliberately, and for the reason that file gives for
+    /// making it the other way. There, the two-column form is what the host almost always resolves
+    /// to, so assuming it avoids a flash. Here the majority host is the target iPad in portrait,
+    /// which resolves to one column; and the guess that is wrong for one frame is the one that
+    /// draws the 16pt editor this type exists to prevent. A frame of the fallback is a worse-looking
+    /// correct layout; a frame of the split is the bug.
+    static func layout(
+        isRegularWidth: Bool,
+        hostWidth: CGFloat,
+        isDesktop: Bool
+    ) -> CadenceSettingsCardLayout {
+        guard isRegularWidth else { return .oneColumn }
+        return supportsTwoColumns(hostWidth: hostWidth, isDesktop: isDesktop) ? .twoColumn : .oneColumn
     }
 }

@@ -4,6 +4,11 @@ import SwiftUI
 struct iOSTemplatesSettingsSection: View {
     @Binding var templateOverridesRaw: String
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// The width the card's own content was handed, which is **not** what the size class says about
+    /// it: the settings rail, the detail scroll's padding and the card's inset take 337pt off the
+    /// pane before this stack sees anything. Zero until the first measurement lands — see
+    /// `CadenceSettingsTemplatesCardLayout.layout`.
+    @State private var cardContentWidth: CGFloat = 0
     @State private var selectedTemplateID = "project-brief"
     @State private var bodyEditorFocused = false
     // Title and description are stored trimmed. Binding a text field straight at storage means the
@@ -21,29 +26,32 @@ struct iOSTemplatesSettingsSection: View {
         templates.first { $0.id == selectedTemplateID } ?? templates.first
     }
 
+    /// One column or two. The size class **and** the width — a regular-width card can still be far
+    /// too narrow to split, which on the target iPad in portrait it is: the chain from pane to card
+    /// content costs 337pt, so 646pt of pane left this `HStack` 341 and the editor 16 of it.
+    private var cardLayout: CadenceSettingsCardLayout {
+        CadenceSettingsTemplatesCardLayout.layout(
+            isRegularWidth: horizontalSizeClass == .regular,
+            hostWidth: cardContentWidth,
+            isDesktop: false
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             CadenceSettingsSectionLabel(text: "Note Templates")
 
             iOSSettingsCard {
-                if horizontalSizeClass == .regular {
-                    HStack(alignment: .top, spacing: iOSEditorSheetMetrics.groupSpacing) {
-                        templateList
-                            .frame(width: 260)
-
-                        Rectangle()
-                            .fill(Theme.borderSubtle)
-                            .frame(width: 1)
-
-                        templateEditor
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                templateCardContent
+                    // Measured, not wrapped: a `GeometryReader` here would become the layout
+                    // container for a stack that sizes itself from what is left over. Both branches
+                    // fill the width they are offered, so the measurement cannot chase itself.
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.width
+                    } action: { newWidth in
+                        cardContentWidth = newWidth
                     }
-                } else {
-                    VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
-                        templatePicker
-                        templateEditor
-                    }
-                }
             }
 
             iOSSettingsCard {
@@ -63,6 +71,29 @@ struct iOSTemplatesSettingsSection: View {
         }
         .onAppear(perform: loadDrafts)
         .onChange(of: selectedTemplateID) { _, _ in loadDrafts() }
+    }
+
+    @ViewBuilder
+    private var templateCardContent: some View {
+        switch cardLayout {
+        case .twoColumn:
+            HStack(alignment: .top, spacing: CadenceSettingsTemplatesCardLayout.columnSpacing) {
+                templateList
+                    .frame(width: CadenceSettingsTemplatesCardLayout.chooserWidth(isDesktop: false))
+
+                Rectangle()
+                    .fill(Theme.borderSubtle)
+                    .frame(width: CadenceSettingsTemplatesCardLayout.columnDividerWidth)
+
+                templateEditor
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        case .oneColumn:
+            VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
+                templatePicker
+                templateEditor
+            }
+        }
     }
 
     private var templatePicker: some View {

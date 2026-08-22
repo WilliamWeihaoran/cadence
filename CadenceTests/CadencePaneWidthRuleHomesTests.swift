@@ -3,9 +3,9 @@ import Foundation
 import Testing
 @testable import Cadence
 
-/// T-182: "derive a pane decision from the width you were handed" is one rule with six expressions
-/// living in four files, and the decision was to leave them in their surfaces and put a **register**
-/// at the top of `CadenceRegularPaneLayout.swift` saying so.
+/// T-182: "derive a pane decision from the width you were handed" is one rule with seven
+/// expressions living in four files, and the decision was to leave them in their surfaces and put a
+/// **register** at the top of `CadenceRegularPaneLayout.swift` saying so.
 ///
 /// A register is a comment, and a comment cannot fail. This file is what makes it fail.
 ///
@@ -30,21 +30,22 @@ struct CadencePaneWidthRuleHomesTests {
 
     // MARK: - The inventory
 
-    /// The house file. Holds three of the six expressions and the register naming all of them.
+    /// The house file. Holds four of the seven expressions and the register naming all of them.
     private static let houseFile = "Cadence/Shared/CadenceRegularPaneLayout.swift"
 
     /// Every file allowed to *declare* a function that takes a host-supplied width, and how many
     /// such functions each may declare.
     ///
-    /// - `CadenceRegularPaneLayout.swift` (5): `CadenceRegularSplitLayout.listPaneWidth`, and
+    /// - `CadenceRegularPaneLayout.swift` (7): `CadenceRegularSplitLayout.listPaneWidth`,
     ///   `CadenceCalendarPaneLayout`'s `inspectorWidth` / `calendarWidth` / `showsInspector` /
-    ///   `showsDayInspector`.
+    ///   `showsDayInspector`, and `CadenceSettingsTemplatesCardLayout`'s `supportsTwoColumns` /
+    ///   `layout` (T-248/T-249).
     /// - `CadenceTodayLayoutSupport.swift` (5): `supportsTwoPane`, `layout`, `inspectorPaneFloor`,
     ///   `taskPaneWidth`, `inspectorPaneIdealWidth`.
     /// - `CadenceRootShellLayout.swift` (3): `usesExpandedSidebar`, `sidebarWidth`, `detailWidth`.
     /// - `CadenceNotesListSupport.swift` (2): `supportsTwoColumns`, `layout`.
     private static let registeredHomes: [String: Int] = [
-        houseFile: 5,
+        houseFile: 7,
         "Cadence/Shared/CadenceTodayLayoutSupport.swift": 5,
         "Cadence/Shared/CadenceRootShellLayout.swift": 3,
         "Cadence/Shared/CadenceNotesListSupport.swift": 2,
@@ -57,7 +58,7 @@ struct CadencePaneWidthRuleHomesTests {
     private static let delegatingReader = "Cadence/Shared/CadenceCalendarAgendaSupport.swift"
     private static let delegatingReaderDeclarationCount = 1
 
-    /// The six expressions, by type name. Every one must be named in the register.
+    /// The seven expressions, by type name. Every one must be named in the register.
     private static let registeredTypeNames = [
         "CadenceRegularSplitLayout",
         "CadenceCalendarWeekGridLayout",
@@ -65,6 +66,7 @@ struct CadencePaneWidthRuleHomesTests {
         "CadenceTodayLayoutSupport",
         "CadenceNotesListMetrics",
         "CadenceRootShellLayout",
+        "CadenceSettingsTemplatesCardLayout",
     ]
 
     /// A function declaration whose parameter list takes a width its host measured and handed down.
@@ -106,10 +108,10 @@ struct CadencePaneWidthRuleHomesTests {
         }
     }
 
-    /// Six expressions, sixteen declarations, five files. The absolute total, so that a rename that
-    /// happened to keep every per-file count intact while moving a function between two registered
-    /// homes still trips something.
-    @Test func theInventoryIsStillSixteenDeclarationsAcrossFiveFiles() throws {
+    /// Seven expressions, eighteen declarations, five files. The absolute total, so that a rename
+    /// that happened to keep every per-file count intact while moving a function between two
+    /// registered homes still trips something.
+    @Test func theInventoryIsStillEighteenDeclarationsAcrossFiveFiles() throws {
         var total = 0
         var files: Set<String> = []
 
@@ -124,7 +126,7 @@ struct CadencePaneWidthRuleHomesTests {
             }
         }
 
-        #expect(total == 16, "the width rule is declared \(total) times, expected 16")
+        #expect(total == 18, "the width rule is declared \(total) times, expected 18")
         #expect(files.count == 5, "it is spread over \(files.count) files, expected 5")
         #expect(files == Set(Self.registeredHomes.keys).union([Self.delegatingReader]))
     }
@@ -152,7 +154,7 @@ struct CadencePaneWidthRuleHomesTests {
         }
     }
 
-    @Test func theRegisterNamesAllSixExpressionsAndTheModelToCopy() throws {
+    @Test func theRegisterNamesAllSevenExpressionsAndTheModelToCopy() throws {
         let register = try paneRuleSource(Self.houseFile)
 
         for name in Self.registeredTypeNames {
@@ -199,13 +201,16 @@ struct CadencePaneWidthRuleHomesTests {
     /// quotes its own sum is stripped before counting — which is also what
     /// `theCommentStrippingIsActuallyStripping` uses to prove the stripper runs.
     @Test func everyRegisteredFloorIsStillSpelledAsASumRatherThanTyped() throws {
-        let sums = [
-            "Cadence/Shared/CadenceTodayLayoutSupport.swift":
-                "taskPaneMinWidth + inspectorPaneMinWidth + paneDividerWidth",
-            "Cadence/Shared/CadenceNotesListSupport.swift":
-                "regularColumnWidth + columnDividerWidth + minimumEditorWidth",
-            Self.houseFile:
-                "inspectorMinWidth * 2 + paneDividerWidth",
+        // An array rather than a dictionary: the house file states two of them now, and a map
+        // keyed on the path can only hold one sum per file.
+        let sums: [(path: String, sum: String)] = [
+            ("Cadence/Shared/CadenceTodayLayoutSupport.swift",
+             "taskPaneMinWidth + inspectorPaneMinWidth + paneDividerWidth"),
+            ("Cadence/Shared/CadenceNotesListSupport.swift",
+             "regularColumnWidth + columnDividerWidth + minimumEditorWidth"),
+            (Self.houseFile, "inspectorMinWidth * 2 + paneDividerWidth"),
+            (Self.houseFile,
+             "chooserWidth(isDesktop: isDesktop) + columnSpacing * 2 + columnDividerWidth + minimumEditorWidth"),
         ]
 
         for (path, sum) in sums {

@@ -3,6 +3,12 @@ import SwiftUI
 
 struct SettingsTemplatesSection: View {
     @Binding var templateOverridesRaw: String
+    /// The width the card's own content was handed. The settings rail, its divider, the detail
+    /// column's padding and the card's inset take 333pt off the pane before this stack sees
+    /// anything, so a 960pt window with the stored 264pt sidebar hands it 363 — of which the fixed
+    /// chooser and the two gaps took 263, leaving the editor 100. Zero until the first measurement
+    /// lands; see `CadenceSettingsTemplatesCardLayout.layout`.
+    @State private var cardContentWidth: CGFloat = 0
     @State private var selectedTemplateID = "project-brief"
     // Title and description are stored trimmed. Binding a text field straight at storage means the
     // getter hands back the trimmed value on the next render, so a space typed at the end of the
@@ -19,21 +25,31 @@ struct SettingsTemplatesSection: View {
         templates.first { $0.id == selectedTemplateID } ?? templates.first
     }
 
+    /// One column or two. macOS has no size class, so width is the only input — and it is an input
+    /// this card never had: it split unconditionally, however little was left for the editor.
+    private var cardLayout: CadenceSettingsCardLayout {
+        CadenceSettingsTemplatesCardLayout.layout(
+            isRegularWidth: true,
+            hostWidth: cardContentWidth,
+            isDesktop: true
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SettingsSectionLabel(text: "Note Templates")
 
             SettingsCard {
-                HStack(alignment: .top, spacing: 16) {
-                    templateList
-                        .frame(width: 230)
-
-                    Divider()
-                        .background(Theme.borderSubtle)
-
-                    templateEditor
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
+                templateCardContent
+                    // Measured, not wrapped — the same call the iOS card and `iOSNotesView` make,
+                    // and for the same reason: a `GeometryReader` here would become the layout
+                    // container for a stack that sizes itself from what is left over.
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.width
+                    } action: { newWidth in
+                        cardContentWidth = newWidth
+                    }
             }
 
             SettingsCard {
@@ -50,6 +66,39 @@ struct SettingsTemplatesSection: View {
         }
         .onAppear(perform: loadDrafts)
         .onChange(of: selectedTemplateID) { _, _ in loadDrafts() }
+    }
+
+    /// **The one-column form macOS did not have.** iOS could be gated to a fallback that already
+    /// ships on the phone; here it had to be written, and it is written as the same rows stacked
+    /// above the editor rather than as a new horizontal chip strip. A chip strip would mean a macOS
+    /// near-copy of `iOSTemplateSettingsChip` for a layout reached only by narrowing the window
+    /// below ~1180pt, and the standing rule is one shared component over near-copies. `templateList`
+    /// is reused verbatim; its rows are already `maxWidth: .infinity`, so they simply run wide.
+    @ViewBuilder
+    private var templateCardContent: some View {
+        switch cardLayout {
+        case .twoColumn:
+            HStack(alignment: .top, spacing: CadenceSettingsTemplatesCardLayout.columnSpacing) {
+                templateList
+                    .frame(width: CadenceSettingsTemplatesCardLayout.chooserWidth(isDesktop: true))
+
+                Divider()
+                    .background(Theme.borderSubtle)
+
+                templateEditor
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        case .oneColumn:
+            VStack(alignment: .leading, spacing: 16) {
+                templateList
+
+                Divider()
+                    .background(Theme.borderSubtle)
+
+                templateEditor
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        }
     }
 
     private var templateList: some View {
