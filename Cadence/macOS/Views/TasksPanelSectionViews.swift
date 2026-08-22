@@ -374,80 +374,11 @@ struct TasksPanelCompletedSectionView: View {
     }
 }
 
-struct TasksPanelRolloverNoticeSectionView: View {
-    let tasks: [AppTask]
-    let onRollOver: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.amber)
-                    .frame(width: 22, height: 22)
-                    .background(Theme.amber.opacity(0.16))
-                    .clipShape(Circle())
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Leftover tasks are rolling over to today")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("Review these tasks, then confirm to move them into today's groups.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
-                }
-
-                Spacer()
-
-                // The pill's padding and fill live *inside* the button label. They used to be
-                // applied to the `Button` itself, which leaves the button's hit region at the
-                // bare text — the blue ring around "Roll Over" looked pressable and was inert.
-                Button(action: onRollOver) {
-                    Text("Roll Over")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.onColor)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Theme.blue)
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                        .contentShape(RoundedRectangle(cornerRadius: 7))
-                }
-                .buttonStyle(.plain)
-            }
-
-            // Plain rows, like every other task row in the panel. Each of these used to sit on a
-            // `Theme.amber.opacity(0.12)` wash, so a banner that already says "rolling over to
-            // today" said it again once per task. The dot keeps the list's own `colorHex`.
-            VStack(spacing: 4) {
-                ForEach(tasks) { task in
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(Color(hex: task.containerColor))
-                            .frame(width: 6, height: 6)
-                        Text(task.title.isEmpty ? "Untitled" : task.title)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-                        Spacer()
-                        if !task.containerName.isEmpty {
-                            Text(task.containerName)
-                                .font(.system(size: 10))
-                                .foregroundStyle(Theme.dim)
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Theme.surface)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.borderSubtle.opacity(0.6)).frame(height: 0.5)
-        }
-    }
-}
+// `TasksPanelRolloverNoticeSectionView` was here. It is
+// `Shared/Components/CadenceTodayRolloverBanner.swift` now, at `.panelBand` style — nothing in it
+// was AppKit-shaped, and it being under `macOS/Views/` was one of the three reasons Today's
+// rollover notice could not exist on iOS (T-195). `TasksPanel` builds the shared view directly;
+// there is deliberately no macOS-named wrapper to reach for.
 
 struct HoverFreezeObserver: View {
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager

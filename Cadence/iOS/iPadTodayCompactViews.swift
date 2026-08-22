@@ -8,6 +8,10 @@ struct iOSCompactTodayView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let completedTodayTasks: [AppTask]
     let todayTaskGroups: [CadenceTodayTaskGroup]
+    /// Today's rollover banner, or `nil` when there is nothing to roll. Forwarded straight to
+    /// `iOSTodayTaskSections`, which is where both widths draw it — this host does not decide
+    /// anything about it.
+    var rolloverNotice: iOSTodayRolloverNotice?
     /// The day's counts, as the two-pane column reads them. It used to take a `todayTasks` array
     /// purely to call `.count` on it for the header badge, which is the same number
     /// `CadenceTodaySummary.activeCount` already holds — and the rest of the summary was simply not
@@ -106,6 +110,7 @@ struct iOSCompactTodayView: View {
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
             showsCompleted: showCompleted,
+            rolloverNotice: rolloverNotice,
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
         )
@@ -114,7 +119,8 @@ struct iOSCompactTodayView: View {
             layout: .compact,
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
-            showsCompleted: showCompleted
+            showsCompleted: showCompleted,
+            rolloverNotice: rolloverNotice
         )
         #endif
     }

@@ -649,6 +649,68 @@ enum CadenceTaskMutationSupport {
         try? modelContext.save()
     }
 
+    /// Moves an unfinished task from a day that has gone by onto today, clearing the slot it used
+    /// to hold — the timeline start minute, the block it sat in, and any legacy calendar link.
+    ///
+    /// **Lifted out of `SchedulingActions.rollOverTaskToToday`** (T-195), which sat in
+    /// `macOS/Services/` while importing nothing platform-specific, and was therefore why Today's
+    /// rollover banner could not exist on iOS. The Mac spelling delegates to this and must not grow
+    /// a second body — same rule as `insertBundle(from:adding:)` (T-190).
+    ///
+    /// It does **not** save; the batch caller (`CadenceTodayRolloverSupport.rollOver`) saves once
+    /// for the whole roll.
+    ///
+    /// Order matters. The block is left first, so the write below lands on a task that no longer
+    /// belongs to yesterday's block rather than dragging the block's members with it; and a block
+    /// whose remaining members are all settled is deleted rather than left behind as an empty
+    /// timeline row on a past day.
+    static func rollOverTaskToToday(_ task: AppTask, todayKey: String, modelContext: ModelContext) {
+        if let bundle = task.bundle {
+            bundle.tasks = (bundle.tasks ?? []).filter { $0.id != task.id }
+            task.bundle = nil
+            task.bundleOrder = 0
+            normalizeBundleOrder(bundle)
+            deleteBundleIfFullySettled(bundle, modelContext: modelContext)
+        }
+        task.scheduledDate = todayKey
+        task.scheduledStartMin = -1
+        // Unconditional, not `if scheduledStartMin >= 0`. Nothing writes this field a non-empty
+        // value any more (see "Calendar / Events" in CLAUDE.md) and every write site clears it, so
+        // a stale identifier from an earlier build must not survive onto the new day.
+        task.calendarEventID = ""
+    }
+
+    /// The bundle's real members: `bundle.tasks` can still list a task whose own `bundle` has
+    /// already been reassigned, and the inverse is what decides membership.
+    private static func bundleMembers(in bundle: TaskBundle) -> [AppTask] {
+        (bundle.tasks ?? []).filter { $0.bundle?.id == bundle.id }
+    }
+
+    private static func normalizeBundleOrder(_ bundle: TaskBundle) {
+        let ordered = bundleMembers(in: bundle).sorted {
+            if $0.bundleOrder != $1.bundleOrder { return $0.bundleOrder < $1.bundleOrder }
+            return $0.createdAt < $1.createdAt
+        }
+        for (offset, member) in ordered.enumerated() {
+            member.bundleOrder = offset
+        }
+        bundle.tasks = ordered
+    }
+
+    private static func deleteBundleIfFullySettled(_ bundle: TaskBundle, modelContext: ModelContext) {
+        let members = bundleMembers(in: bundle)
+        guard members.allSatisfy({ $0.isDone || $0.isCancelled }) else { return }
+        for member in members {
+            member.bundle = nil
+            member.bundleOrder = 0
+            member.scheduledDate = bundle.dateKey
+            member.scheduledStartMin = -1
+            member.calendarEventID = ""
+        }
+        bundle.tasks = []
+        modelContext.delete(bundle)
+    }
+
     static func deleteBundle(_ bundle: TaskBundle, modelContext: ModelContext) {
         for task in bundle.tasks ?? [] {
             task.bundle = nil

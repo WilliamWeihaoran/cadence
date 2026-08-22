@@ -19,7 +19,7 @@ struct TasksPanel: View {
     let groupingMode: TaskGroupingMode
     let enableControls: Bool
     let useStandardHeaderHeight: Bool
-    @AppStorage("todayRolloverNoticeDismissedDate") private var rolloverNoticeDismissedDate = ""
+    @AppStorage(CadenceTodayRolloverSupport.dismissedDateStorageKey) private var rolloverNoticeDismissedDate = ""
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var isCompletedCollapsed = true
     @State private var localSortField: TaskSortField = .date
@@ -79,8 +79,15 @@ struct TasksPanel: View {
         )
     }
 
+    /// The `mode` clause is this surface's own — `TasksPanel` also draws All Tasks, which has no
+    /// Today and therefore no rollover. Everything after it is
+    /// `CadenceTodayRolloverSupport.isNoticeVisible`, the same predicate iOS's Today asks.
     private func shouldShowRolloverNotice(_ derived: TasksPanelDerivedState) -> Bool {
-        mode == .todayOverview && !derived.overdoTasks.isEmpty && rolloverNoticeDismissedDate != todayKey
+        mode == .todayOverview && CadenceTodayRolloverSupport.isNoticeVisible(
+            pastDoTaskCount: derived.overdoTasks.count,
+            dismissedDateKey: rolloverNoticeDismissedDate,
+            todayKey: todayKey
+        )
     }
 
     private func applyFreeze(_ sorted: [AppTask]) -> [AppTask] {
@@ -223,7 +230,7 @@ struct TasksPanel: View {
         let showsRollover = shouldShowRolloverNotice(derived)
 
         if showsRollover {
-            TasksPanelRolloverNoticeSectionView(tasks: derived.overdoTasks) {
+            CadenceTodayRolloverBanner(tasks: derived.overdoTasks, style: .panelBand) {
                 rollOverPastDoTasks()
             }
         }
@@ -477,11 +484,11 @@ struct TasksPanel: View {
 
     private func rollOverPastDoTasks() {
         withAnimation(.easeOut(duration: 0.2)) {
-            for task in derivedState.overdoTasks {
-                SchedulingActions.rollOverTaskToToday(task, todayKey: todayKey, in: modelContext)
-            }
-            rolloverNoticeDismissedDate = todayKey
-            try? modelContext.save()
+            rolloverNoticeDismissedDate = CadenceTodayRolloverSupport.rollOver(
+                derivedState.overdoTasks,
+                todayKey: todayKey,
+                modelContext: modelContext
+            )
         }
     }
 

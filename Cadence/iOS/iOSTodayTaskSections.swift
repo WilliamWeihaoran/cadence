@@ -1,6 +1,14 @@
 #if os(iOS)
 import SwiftUI
 
+/// Today's rollover notice, as a surface opts into it: the tasks the banner lists and the action
+/// its button runs, together, because the two are useless apart — the same shape as
+/// `iOSBoardTaskCardBundleDrop`.
+struct iOSTodayRolloverNotice {
+    let tasks: [AppTask]
+    let onRollOver: () -> Void
+}
+
 /// Today's list of counted task groups — **the** one, for both hosts.
 ///
 /// The phone's Today and the iPad task column each drew their own copy of this: the same four
@@ -20,6 +28,10 @@ struct iOSTodayTaskSections: View {
     let taskGroups: [CadenceTodayTaskGroup]
     let completedTasks: [AppTask]
     let showsCompleted: Bool
+    /// `nil` when there is nothing to roll over, or the day's notice has already been dismissed.
+    /// The host decides — `CadenceTodayRolloverSupport.isNoticeVisible` — because the host is what
+    /// holds the `@AppStorage` day key.
+    var rolloverNotice: iOSTodayRolloverNotice?
     #if DEBUG
     /// Debug-only, and passed by both hosts. See `iOSCompactSampleDataCard`.
     let sampleDataStatus: String?
@@ -41,12 +53,33 @@ struct iOSTodayTaskSections: View {
     /// `CadenceTaskQuerySupport.todayGroups` drops its empty groups, so an empty list of groups is
     /// an empty day — the two hosts each re-derived this from their own `todayTasks` array instead,
     /// which is one more chance for them to disagree about when Today is empty.
+    ///
+    /// **The rollover notice counts as content.** While it is up the grouped list is deliberately
+    /// *missing* the tasks it is offering, so a day whose only open work is yesterday's leftovers
+    /// has no groups — and without the last clause this view would draw "nothing planned" directly
+    /// under a banner listing four things to do.
     private var isEmpty: Bool {
-        taskGroups.isEmpty && (!showsCompleted || completedTasks.isEmpty)
+        taskGroups.isEmpty && (!showsCompleted || completedTasks.isEmpty) && rolloverNotice == nil
     }
 
     @ViewBuilder
     var body: some View {
+        // Above both branches: the notice is the day's first thing to read whether or not anything
+        // is left in the groups under it.
+        if let rolloverNotice {
+            VStack(alignment: .leading, spacing: metrics.groupSpacing) {
+                CadenceTodayRolloverBanner(tasks: rolloverNotice.tasks, style: .card) {
+                    rolloverNotice.onRollOver()
+                }
+                content
+            }
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if isEmpty {
             // Not carded by `metrics`: `iOSCompactTodayEmptyState` draws its own card, at the one
             // fill that reads against both hosts. A second card around it would be the stacked

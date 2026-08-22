@@ -154,17 +154,13 @@ enum SchedulingActions {
         bundle.tasks = ordered
     }
 
+    /// Today's rollover, in `SchedulingActions`' vocabulary.
+    ///
+    /// The body is `CadenceTaskMutationSupport.rollOverTaskToToday` — shared, and therefore
+    /// reachable from iOS's Today too (T-195). This spelling stays because the Mac's Today panel
+    /// and `TaskBundleTests` read better in it; it must not grow a second body.
     static func rollOverTaskToToday(_ task: AppTask, todayKey: String, in context: ModelContext) {
-        if let bundle = task.bundle {
-            removeTaskFromBundle(task, keepOnBundleDate: false)
-            cleanupInactiveBundleIfNeeded(bundle, in: context)
-        }
-        if task.scheduledStartMin >= 0 {
-            removeFromCalendar(task)
-        }
-        task.scheduledDate = todayKey
-        task.scheduledStartMin = -1
-        task.calendarEventID = ""
+        CadenceTaskMutationSupport.rollOverTaskToToday(task, todayKey: todayKey, modelContext: context)
     }
 
     static func completeBundle(_ bundle: TaskBundle, in context: ModelContext) {
@@ -216,12 +212,6 @@ enum SchedulingActions {
     /// Detach any legacy calendar-event reference from a task without deleting the calendar event.
     static func removeFromCalendar(_ task: AppTask) {
         task.calendarEventID = ""
-    }
-
-    private static func cleanupInactiveBundleIfNeeded(_ bundle: TaskBundle, in context: ModelContext) {
-        guard memberTasks(in: bundle).allSatisfy({ $0.isDone || $0.isCancelled }) else { return }
-        detachBundleMembers(bundle)
-        context.delete(bundle)
     }
 
     private static func detachBundleMembers(_ bundle: TaskBundle) {

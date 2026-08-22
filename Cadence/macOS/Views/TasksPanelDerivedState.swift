@@ -28,13 +28,11 @@ struct TasksPanelDerivedState {
         doTodayTasks = allTasks.filter {
             !$0.isDone && !$0.isCancelled && $0.scheduledDate == todayKey && !scheduledExclusions.contains($0.id)
         }
-        overdoTasks = allTasks.filter {
-            !$0.isDone &&
-            !$0.isCancelled &&
-            !$0.scheduledDate.isEmpty &&
-            $0.scheduledDate < todayKey &&
-            !scheduledExclusions.contains($0.id)
-        }
+        // The over-do bucket, from `CadenceTodayRolloverSupport` rather than re-spelled here: the
+        // banner that offers to roll these is shared now (T-195), and a predicate the banner and
+        // its contents disagreed about would show a notice over a list that did not match it.
+        // Same set as before — the exclusion set it derives is `scheduledExclusions`.
+        overdoTasks = CadenceTodayRolloverSupport.pastDoTasks(from: allTasks, todayKey: todayKey)
 
         overdueListSummaries = projects
             .filter { $0.isActive && !$0.dueDate.isEmpty && $0.dueDate < todayKey }
@@ -140,7 +138,11 @@ struct TasksPanelDerivedState {
     }
 
     func todayGroupedTaskItems(showRolloverNotice: Bool) -> [AppTask] {
-        uniqueTasks(from: showRolloverNotice ? (overdue + dueTodayTasks + doTodayTasks) : (overdue + overdoTasks + dueTodayTasks + doTodayTasks))
+        CadenceTodayRolloverSupport.groupedTasks(
+            from: todayEligibleTasks,
+            withholding: overdoTasks,
+            isNoticeVisible: showRolloverNotice
+        )
     }
 
     func isEmptyState(for mode: TasksPanelMode) -> Bool {

@@ -14,10 +14,13 @@ struct iPadTodayView: View {
     @AppStorage("ios.today.sortMode") private var sortModeRaw = CadenceTaskSortMode.priority.rawValue
     @AppStorage("ios.today.showCompleted") private var showCompleted = false
     @AppStorage("ios.today.sidePanel") private var sidePanelRaw = iPadTodaySidePanel.notes.rawValue
-    #if DEBUG
-    /// Only the sample-data seeder writes from this view now that capture is the composer sheet's
-    /// job, and the seeder is a debug affordance.
+    /// The **same** `UserDefaults` key macOS's Today reads — see
+    /// `CadenceTodayRolloverSupport.dismissedDateStorageKey` for why one key rather than two.
+    @AppStorage(CadenceTodayRolloverSupport.dismissedDateStorageKey) private var rolloverNoticeDismissedDate = ""
+    /// Written by the rollover banner's confirm, and — in DEBUG — by the sample-data seeder. It was
+    /// inside the `#if DEBUG` below when the seeder was its only writer.
     @Environment(\.modelContext) private var modelContext
+    #if DEBUG
     @State private var sampleDataStatus: String?
     #endif
 
@@ -55,8 +58,50 @@ struct iPadTodayView: View {
             .filter { $0.scheduledStartMin >= 0 }
     }
 
+    /// Yesterday's unfinished plans, as the rollover banner offers them. Shared with macOS's Today
+    /// (T-195), predicate and all.
+    private var pastDoTasks: [AppTask] {
+        CadenceTodayRolloverSupport.pastDoTasks(from: allTasks, todayKey: todayKey)
+    }
+
+    private var isRolloverNoticeVisible: Bool {
+        CadenceTodayRolloverSupport.isNoticeVisible(
+            pastDoTaskCount: pastDoTasks.count,
+            dismissedDateKey: rolloverNoticeDismissedDate,
+            todayKey: todayKey
+        )
+    }
+
+    /// The banner is already listing the tasks it is offering to roll, so the grouped list below it
+    /// withholds them — a Past Do section under the notice would be the same rows twice. Dismissing
+    /// merges them straight back in; `groupedTasks` returns the array whole once the notice is
+    /// down, and nothing is written to make that happen.
     private var todayTaskGroups: [CadenceTodayTaskGroup] {
-        CadenceTaskQuerySupport.todayGroups(from: todayTasks, todayKey: todayKey)
+        CadenceTaskQuerySupport.todayGroups(
+            from: CadenceTodayRolloverSupport.groupedTasks(
+                from: todayTasks,
+                withholding: pastDoTasks,
+                isNoticeVisible: isRolloverNoticeVisible
+            ),
+            todayKey: todayKey
+        )
+    }
+
+    /// `nil` when there is nothing to roll or the day's notice has already been dismissed. The
+    /// banner opts in whole — the tasks and the action are useless apart.
+    private var rolloverNotice: iOSTodayRolloverNotice? {
+        guard isRolloverNoticeVisible else { return nil }
+        return iOSTodayRolloverNotice(tasks: pastDoTasks, onRollOver: rollOverPastDoTasks)
+    }
+
+    private func rollOverPastDoTasks() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            rolloverNoticeDismissedDate = CadenceTodayRolloverSupport.rollOver(
+                pastDoTasks,
+                todayKey: todayKey,
+                modelContext: modelContext
+            )
+        }
     }
 
     private var todaySummary: CadenceTodaySummary {
@@ -168,6 +213,7 @@ struct iPadTodayView: View {
             showsHeader: showsCompactHeader,
             completedTodayTasks: completedTodayTasks,
             todayTaskGroups: todayTaskGroups,
+            rolloverNotice: rolloverNotice,
             summary: todaySummary,
             sortMode: sortModeBinding,
             showCompleted: $showCompleted,
@@ -179,6 +225,7 @@ struct iPadTodayView: View {
             showsHeader: showsCompactHeader,
             completedTodayTasks: completedTodayTasks,
             todayTaskGroups: todayTaskGroups,
+            rolloverNotice: rolloverNotice,
             summary: todaySummary,
             sortMode: sortModeBinding,
             showCompleted: $showCompleted
@@ -239,6 +286,7 @@ struct iPadTodayView: View {
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
             showsCompleted: showCompleted,
+            rolloverNotice: rolloverNotice,
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
         )
@@ -247,7 +295,8 @@ struct iPadTodayView: View {
             layout: .twoPane,
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
-            showsCompleted: showCompleted
+            showsCompleted: showCompleted,
+            rolloverNotice: rolloverNotice
         )
         #endif
     }
