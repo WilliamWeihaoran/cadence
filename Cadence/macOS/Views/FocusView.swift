@@ -250,7 +250,7 @@ struct FocusView: View {
     }
 
     private func selectedBundleTasks(_ bundle: TaskBundle) -> [AppTask] {
-        bundle.sortedTasks.filter { focusManager.selectedBundleTaskIDs.contains($0.id) }
+        CadenceFocusSupport.selectedTasks(in: bundle, selectedTaskIDs: focusManager.selectedBundleTaskIDs)
     }
 
     // MARK: - Idle layout

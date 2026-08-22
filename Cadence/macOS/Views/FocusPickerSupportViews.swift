@@ -1,83 +1,11 @@
 #if os(macOS)
 import SwiftUI
 
-enum FocusPickItem: Identifiable {
-    case task(AppTask)
-    case bundle(TaskBundle)
-
-    var id: String {
-        switch self {
-        case .task(let task): return "task-\(task.id.uuidString)"
-        case .bundle(let bundle): return "bundle-\(bundle.id.uuidString)"
-        }
-    }
-
-    static func filtered(tasks: [AppTask], bundles: [TaskBundle], query: String, todayKey: String) -> [FocusPickItem] {
-        let activeBundles = bundles
-            .filter { !$0.sortedTasks.isEmpty && !$0.isCompleted }
-            // Rank first, *then* the day inside a rank. Comparing "keys differ" before "ranks
-            // differ" meant two bundles in the same rank but on different days — every pair of
-            // future bundles, and every pair of past ones — compared as equal, so the day was
-            // never consulted and `startMin`/`createdAt` were never reached: a bundle eight days
-            // out could sort above tomorrow's. It also made the comparator inconsistent (A on the
-            // 13th "equals" both B and C on the 20th, while B and C order strictly by `startMin`),
-            // which is not a strict weak ordering and leaves `sorted(by:)` free to return anything.
-            .sorted { lhs, rhs in
-                let lhsRank = bundleDateRank(lhs.dateKey, todayKey: todayKey)
-                let rhsRank = bundleDateRank(rhs.dateKey, todayKey: todayKey)
-                if lhsRank != rhsRank {
-                    return lhsRank < rhsRank
-                }
-                if lhs.dateKey != rhs.dateKey {
-                    // Upcoming days read soonest-first; past days read most-recent-first, so a
-                    // bundle left over from yesterday sits above one from six months ago.
-                    return lhsRank == pastBundleRank
-                        ? lhs.dateKey > rhs.dateKey
-                        : lhs.dateKey < rhs.dateKey
-                }
-                if lhs.startMin != rhs.startMin {
-                    return lhs.startMin < rhs.startMin
-                }
-                return lhs.createdAt > rhs.createdAt
-            }
-
-        let items = tasks.map(FocusPickItem.task) + activeBundles.map(FocusPickItem.bundle)
-        let cleanedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanedQuery.isEmpty else {
-            return Array(items.prefix(18))
-        }
-
-        return items.filter { $0.matches(cleanedQuery) }
-    }
-
-    private static let pastBundleRank = 3
-
-    private static func bundleDateRank(_ dateKey: String, todayKey: String) -> Int {
-        if dateKey == todayKey { return 0 }
-        if dateKey.isEmpty { return 2 }
-        return dateKey > todayKey ? 1 : pastBundleRank
-    }
-
-    private func matches(_ query: String) -> Bool {
-        let needle = query.lowercased()
-        return searchText.lowercased().contains(needle)
-    }
-
-    private var searchText: String {
-        switch self {
-        case .task(let task):
-            return [
-                task.title,
-                task.containerName,
-                task.priority.label,
-                task.dueDate,
-                task.scheduledDate
-            ].joined(separator: " ")
-        case .bundle(let bundle):
-            return ([bundle.displayTitle, bundle.dateKey] + bundle.sortedTasks.map(\.title)).joined(separator: " ")
-        }
-    }
-}
+/// The picker's row model moved to `Shared/CadenceFocusBundleSupport.swift` under T-242: it was
+/// date-key arithmetic and string matching sitting inside `#if os(macOS)`, and that guard is why
+/// the iPhone's focus picker could list tasks but never a block. The Mac keeps the shorter
+/// spelling the views below read better with; there is no second body.
+typealias FocusPickItem = CadenceFocusPickItem
 
 struct FocusPickSessionCard: View {
     let title: String
@@ -341,15 +269,7 @@ private struct FocusPickItemRow: View {
     }
 
     private func bundleDetail(_ bundle: TaskBundle) -> String {
-        var parts = ["Bundle", "\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")"]
-        if !bundle.dateKey.isEmpty {
-            parts.append(bundle.dateKey == DateFormatters.todayKey() ? "Today" : DateFormatters.relativeDate(from: bundle.dateKey))
-        }
-        parts.append(TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin))
-        if bundle.totalEstimatedMinutes > 0 {
-            parts.append("\(bundle.totalEstimatedMinutes)m tasks")
-        }
-        return parts.joined(separator: " / ")
+        CadenceFocusBundlePresentation.summaryLine(for: bundle)
     }
 
     private var tint: Color {

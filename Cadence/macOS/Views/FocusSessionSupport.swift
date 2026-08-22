@@ -64,31 +64,12 @@ enum FocusSessionSupport {
         focusManager.reset()
     }
 
+    /// Delegation. The arithmetic moved to `CadenceFocusSupport.distributeMinutes(_:across:)` in
+    /// `Shared/` under T-242 — it touched nothing but models, and living behind `#if os(macOS)` is
+    /// why an iPhone could not run a block's timer at all. The Mac's spelling stays because the
+    /// popovers here read better in this file's vocabulary; it must not grow a body again.
     static func distributeBundleMinutes(_ totalMinutes: Int, across tasks: [AppTask]) {
-        guard totalMinutes > 0, !tasks.isEmpty else { return }
-        let weights = tasks.map { max($0.estimatedMinutes, 5) }
-        let totalWeight = max(weights.reduce(0, +), 1)
-        var remaining = totalMinutes
-
-        for (index, task) in tasks.enumerated() {
-            let minutes: Int
-            if index == tasks.count - 1 {
-                minutes = max(0, remaining)
-            } else {
-                minutes = min(
-                    remaining,
-                    max(0, Int((Double(totalMinutes) * Double(weights[index]) / Double(totalWeight)).rounded()))
-                )
-                remaining -= minutes
-            }
-            guard minutes > 0 else { continue }
-            task.actualMinutes += minutes
-            if let project = task.project {
-                project.loggedMinutes += minutes
-            } else if let area = task.area {
-                area.loggedMinutes += minutes
-            }
-        }
+        CadenceFocusSupport.distributeMinutes(totalMinutes, across: tasks)
     }
 
 }

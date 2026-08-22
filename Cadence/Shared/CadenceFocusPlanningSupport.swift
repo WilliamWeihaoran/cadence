@@ -122,18 +122,21 @@ enum CadenceFocusSupport {
     /// elapsed count: the seconds on the clock were measured against the task they were started
     /// on, and carrying them over would log one task's minutes onto another when the session is
     /// finished.
+    /// Forwards to the target-shaped rule in `CadenceFocusBundleSupport.swift`. Two bodies here
+    /// would be two answers to "does tapping play on another row inherit the clock", and a bundle
+    /// row is exactly another row.
     static func timerState(
         afterPlayTapOn tappedTaskID: UUID,
         selectedTaskID: UUID?,
         state: CadenceFocusTimerState,
         now: Date = Date()
     ) -> CadenceFocusTimerState {
-        var next = state
-        if selectedTaskID != tappedTaskID {
-            next.reset()
-        }
-        next.toggle(now: now)
-        return next
+        timerState(
+            afterPlayTapOn: .task(tappedTaskID),
+            selectedTarget: selectedTaskID.map { .task($0) },
+            state: state,
+            now: now
+        )
     }
 
     static func clockDisplay(elapsedSeconds: Int) -> String {
@@ -182,6 +185,9 @@ enum CadenceFocusSupport {
     /// session, and zeroing the clock there was the other half of the same discard. Under a whole
     /// minute nothing is written — `logElapsedSeconds` rounds to the nearest minute, and a zero is
     /// not worth a `save()`.
+    ///
+    /// Forwards to the subject-shaped version in `CadenceFocusBundleSupport.swift`, which is the
+    /// same rule with a `TaskBundle` allowed as the thing being left.
     static func commitElapsed(
         leaving outgoingTask: AppTask?,
         switchingTo nextTaskID: UUID,
@@ -189,18 +195,13 @@ enum CadenceFocusSupport {
         modelContext: ModelContext,
         now: Date = Date()
     ) -> CadenceFocusTimerState {
-        guard outgoingTask?.id != nextTaskID else { return state }
-
-        var next = state
-        next.reset()
-
-        guard let outgoingTask else { return next }
-        let seconds = state.elapsedSeconds(now: now)
-        guard minutes(fromElapsedSeconds: seconds) > 0 else { return next }
-
-        logElapsedSeconds(seconds, to: outgoingTask)
-        try? modelContext.save()
-        return next
+        commitElapsed(
+            leaving: outgoingTask.map { .task($0) },
+            switchingTo: .task(nextTaskID),
+            state: state,
+            modelContext: modelContext,
+            now: now
+        )
     }
 
     /// Completion must route through `CadenceTaskRecurrenceWorkflowSupport` rather than setting

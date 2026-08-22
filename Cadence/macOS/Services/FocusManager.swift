@@ -53,7 +53,7 @@ final class FocusManager {
             commitElapsed()
         }
         activeSession = .bundle(bundle)
-        selectedBundleTaskIDs = Set(bundle.sortedTasks.map(\.id))
+        selectedBundleTaskIDs = CadenceFocusSupport.defaultSelectedTaskIDs(for: bundle)
         isRunning = true
         wantsNavToFocus = true
     }
@@ -69,14 +69,13 @@ final class FocusManager {
     /// timer did not. It now goes through the same shared helper iOS uses.
     func commitElapsed() {
         guard elapsed > 0 else { return }
-        let minutes = CadenceFocusSupport.minutes(fromElapsedSeconds: elapsed)
         switch activeSession {
         case .task(let task):
             CadenceFocusSupport.logElapsedSeconds(elapsed, to: task)
         case .bundle(let bundle):
-            FocusSessionSupport.distributeBundleMinutes(
-                minutes,
-                across: bundle.sortedTasks.filter { selectedBundleTaskIDs.contains($0.id) }
+            CadenceFocusSupport.logElapsedSeconds(
+                elapsed,
+                across: CadenceFocusSupport.selectedTasks(in: bundle, selectedTaskIDs: selectedBundleTaskIDs)
             )
         case nil:
             break

@@ -259,29 +259,46 @@ struct FocusSessionSwitchCommitTests {
         let code = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSFocusView.swift"))
 
         #expect(code.components(separatedBy: "CadenceFocusSupport.commitElapsed(").count - 1 == 2)
-        // And the old spelling is gone from them: two live `resetTimer()` occurrences remain, its
-        // own declaration and `complete(_:)`. The reset *button* passes `resetTimer` unapplied.
-        #expect(code.components(separatedBy: "resetTimer()").count - 1 == 2)
+        // And the old spelling is gone from them. Three live `resetTimer()` occurrences remain:
+        // its own declaration, `complete(_:)`, and — since T-242 — `logBundleSession(_:)`, which
+        // hands a block's minutes to its ticked members and then clears the clock, the same shape
+        // `complete(_:)` has for a single task. The reset *button* passes `resetTimer` unapplied.
+        #expect(code.components(separatedBy: "resetTimer()").count - 1 == 3)
     }
 
     /// The scan is worthless if it reads nothing, and a scan that returns an empty string passes
     /// every count above by accident. This is the non-vacuity check.
+    ///
+    /// The two signatures took a `CadenceFocusPickItem` in T-242 rather than an `AppTask`, because
+    /// the row being picked can now be a block. Pinning the *new* spelling is the point: a scan
+    /// that still named the old one would go quietly vacuous the moment it stopped matching.
     @Test func theScanActuallyReachesTheIOSFocusView() throws {
         let code = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSFocusView.swift"))
 
         #expect(code.contains("struct iOSFocusView: View"))
-        #expect(code.contains("private func select(_ task: AppTask)"))
-        #expect(code.contains("private func toggleSession(for task: AppTask)"))
+        #expect(code.contains("private func select(_ item: CadenceFocusPickItem)"))
+        #expect(code.contains("private func toggleSession(for item: CadenceFocusPickItem)"))
         #expect(code.count > 8_000, "read \(code.count) characters of iOSFocusView and cannot be doing its job")
     }
 
-    /// iOS has no bundle-focus path to fix. macOS's `FocusManager` commits on
-    /// `startFocus(bundle:)` too; `iOSFocusView` never loads a `TaskBundle`, so there is no second
-    /// switch shape hiding here. If that changes, this fails and the commit has to be added there.
-    @Test func thereIsNoIOSBundleFocusPathToCommitFor() throws {
+    /// **T-242 fired this tripwire, and it is replaced rather than deleted.** It used to read
+    /// `code.contains("TaskBundle") == false` with the note "if that changes, this fails and the
+    /// commit has to be added there" — which is exactly what happened: `iOSFocusView` now loads a
+    /// `TaskBundle`, so the assertion has to become the positive one it was standing in for.
+    ///
+    /// What must hold is that **both** switch paths hand `commitElapsed` a `CadenceFocusSubject`,
+    /// not a task. A subject carries the block's ticked members with it, and that is the only thing
+    /// that knows where a block session's minutes go; passing `selectedItem` or a bare id would
+    /// either credit every member or none, unrecoverably, once the clock is reset.
+    @Test func theIOSBundleFocusPathCommitsThroughTheSubjectShapedRule() throws {
         let code = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSFocusView.swift"))
 
-        #expect(code.contains("TaskBundle") == false)
+        #expect(code.contains("TaskBundle"))
+        #expect(code.contains("private var selectedSubject: CadenceFocusSubject?"))
+        #expect(code.components(separatedBy: "leaving: selectedSubject").count - 1 == 2)
+        // And the task-shaped overload is gone from this screen: leaving a block through it is
+        // unspellable, which is the whole reason the subject type exists.
+        #expect(code.components(separatedBy: "leaving: selectedTask,").count - 1 == 0)
     }
 }
 
