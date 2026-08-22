@@ -251,3 +251,138 @@ struct CadenceCompactTabTests {
         #expect(CadenceTasksSection.resolved("allTasks") == .today)
     }
 }
+
+/// **T-169: the More tab is a grouped list, and the grouping is the design decision.**
+///
+/// The routing tests above flatten `compactMoreSections` before they look at it, so every one of
+/// them passes just as happily against a single section holding all six rows — which is precisely
+/// the "flat run that describes the tab bar's overflow rather than a design" the ticket was filed
+/// about. Nothing pinned the grouping itself. These do.
+struct CadenceMoreTabGroupingTests {
+    /// Three groups, in order, with their eyebrows and their contents.
+    ///
+    /// Spelled as literals rather than derived from the sections: a test that reads
+    /// `compactMoreSections` and asserts something about what it read agrees with any regrouping by
+    /// construction, which is the failure mode this is for. The shape is
+    /// `CadenceMobileSettingsLayout.groups`' — the precedent the ticket named — and the contents are
+    /// not: what a phone does *with* the app (Focus, Goals, Habits), what it organises the app
+    /// *with* (Lists), and what it does *to* the app (Search, Settings). Search sits beside Settings
+    /// rather than beside the task surfaces because from here it searches everything, not tasks.
+    @Test func theMoreTabIsThreeNamedGroupsRatherThanOneFlatRun() {
+        let sections = CadenceFeatureDestination.compactMoreSections
+
+        #expect(sections.count == 3)
+        #expect(sections.map(\.kind) == [.progress, .organize, .workspace])
+        #expect(sections.map(\.title) == ["Progress", "Organize", "Workspace"])
+        #expect(
+            sections.map(\.destinations) == [
+                [.focus, .goals, .habits],
+                [.lists],
+                [.search, .settings]
+            ]
+        )
+    }
+
+    /// The invariants a regrouping has to keep, stated so that moving a row is cheap and losing or
+    /// duplicating one is a failure.
+    ///
+    /// `Organize` holding a single row is deliberate and not a smell — Settings' `About` sits in a
+    /// group of one for the same reason — so this asserts groups are non-*empty*, not that they
+    /// hold more than one.
+    @Test func everyMoreRowIsFiledUnderExactlyOneNonEmptyGroup() {
+        let sections = CadenceFeatureDestination.compactMoreSections
+        let filed = sections.flatMap(\.destinations)
+
+        #expect(Set(filed).count == filed.count, "a More row is filed under two groups")
+        #expect(Set(filed) == Set(CadenceCompactTab.more.destinations))
+
+        for section in sections {
+            #expect(!section.destinations.isEmpty, "\(section.title) is an eyebrow over nothing")
+        }
+
+        // `CadenceFeatureSection` is `Identifiable` by its `kind`, so two sections of one kind
+        // would silently collapse into a single row of the `ForEach` that draws them rather than
+        // drawing twice.
+        #expect(Set(sections.map(\.id)).count == sections.count)
+    }
+
+    /// Nothing that has a tab of its own may also appear as a More row, in either direction. The
+    /// flattened version of this is already above; this one is per-group, so a row copied into a
+    /// second group cannot hide behind the union.
+    @Test func noGroupSmugglesInATabRoot() {
+        for section in CadenceFeatureDestination.compactMoreSections {
+            for destination in section.destinations {
+                #expect(
+                    destination.compactTab == .more,
+                    "\(destination.title) is under \(section.title) but its tab is \(destination.compactTab.title)"
+                )
+                #expect(!destination.isCompactTabRoot)
+            }
+        }
+    }
+}
+
+/// **The call site.** The grouping above is a value in `Shared/`; the view that draws it is in
+/// `Cadence/iOS/`, inside `#if os(iOS)` and therefore invisible to this macOS-built target.
+///
+/// That gap is the whole of T-161: a correct grouped value read by a view that flattens it back
+/// into one run of rows leaves every assertion above green and ships the bug. So this asserts the
+/// three structural facts that *are* the grouping — an outer loop over the sections, one eyebrow
+/// per section, an inner loop over that section's own destinations — positively rather than banning
+/// a needle like `flatMap`, which correct code could legitimately grow.
+struct CadenceMoreTabGroupingSurfaceTests {
+    @Test func theMoreTabDrawsOneEyebrowAndOneRowRunPerGroup() throws {
+        let source = try strippingComments(sourceFile("Cadence/iOS/iOSMoreTabView.swift"))
+
+        #expect(
+            source.contains("ForEach(CadenceFeatureDestination.compactMoreSections)"),
+            "the More tab stopped iterating the shared grouping"
+        )
+        #expect(
+            source.contains("SectionEyebrowLabel(text: section.title)"),
+            "the More tab's groups lost the eyebrow that names them"
+        )
+        #expect(
+            source.contains("ForEach(section.destinations)"),
+            "the More tab draws its rows from something other than the group it is inside"
+        )
+    }
+
+    /// The guard that stops all of the above going vacuous. Every `contains` assertion in a scan
+    /// that silently read nothing is a `contains` against the empty string, and a path that
+    /// resolves through a symlinked prefix on an isolated build tree produces exactly that.
+    @Test func theMoreTabScanReadsRealSourceAndReallyStripsComments() throws {
+        let raw = try sourceFile("Cadence/iOS/iOSMoreTabView.swift")
+        let stripped = try strippingComments(raw)
+
+        #expect(raw.count > 1_000, "the More tab scan read nothing")
+        #expect(raw.contains("/// "), "the fixture has no doc comments, so stripping proves nothing")
+        #expect(!stripped.contains("/// "), "strippingComments did not strip")
+        #expect(stripped.contains("struct iOSMoreTabView"), "the scan is reading some other file")
+    }
+}
+
+// MARK: - Source-reading helpers
+
+private func repositoryRoot() -> URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+}
+
+private func sourceFile(_ relativePath: String) throws -> String {
+    try String(contentsOf: repositoryRoot().appendingPathComponent(relativePath), encoding: .utf8)
+}
+
+/// Blanks out `//` line comments and `/* */` block comments so the assertions read code rather than
+/// prose. Crude on purpose: a `//` inside a string literal is blanked too, which can only make
+/// these checks stricter about what counts as a comment, never looser about live code.
+private func strippingComments(_ source: String) throws -> String {
+    var result = source
+    for pattern in ["//[^\n]*", "/\\*(?s:.)*?\\*/"] {
+        while let range = result.range(of: pattern, options: .regularExpression) {
+            result.replaceSubrange(range, with: String(repeating: " ", count: result.distance(from: range.lowerBound, to: range.upperBound)))
+        }
+    }
+    return result
+}

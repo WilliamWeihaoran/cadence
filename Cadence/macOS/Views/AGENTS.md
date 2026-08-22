@@ -14,7 +14,7 @@ Feature views in this folder are actively refactored into thin roots plus suppor
 
 - `TasksPanel*` - Today/all-task list orchestration, task rows, completion animation scoping, grouping/sorting.
 - `SchedulePanel*`, `Timeline*`, `CalendarPage*` - timeline rendering, schedule state, drag-to-create, event/task block layout.
-- `Kanban*` - list/all-task kanban boards, card state, section support. `KanbanCard`, `BoardColumnHeader` and `KanbanColumnScroll` are shared with the Calendar Board — parameterize them, never fork them.
+- `Kanban*` - list/all-task kanban boards, card state, section support. `KanbanCard` and `KanbanColumnScroll` (both declared here, both macOS-only) and `CadenceBoardColumnHeader` (in `Shared/Components/`, and read by iOS's list kanban, Calendar Board and month agenda too) are shared with the Calendar Board — parameterize them, never fork them. There is no type named `BoardColumnHeader`.
 - `CalendarBoard*`, `CalendarPageBoardSupportViews` - the Calendar page's Board mode: day columns plus the pinned Overdue/Unscheduled rails that replaced the Planning page. Rails, drop targets, and window math live in `Shared/CadenceCalendarPlanningSupport.swift`.
 - `ListDetail*`, `ListNotes*`, `LinksView` - area/project detail tabs (Tasks, Kanban, Notes, Links, Completed — Planning is gone from `ListDetailPage`, and `resolved(_:)` maps stale saved values back to `.tasks`).
 - `TaskInspector*`, `SchedulePanelPopoverSupportViews` - the task inspector. Generic field-row primitives, content sections, and the recurrence control live in `TaskInspector*`; only the stateful popover wrapper and the inspector's own header/schedule sections and placement breadcrumb live under `SchedulePanel*`. Do not park shared primitives in `SchedulePanel*`.

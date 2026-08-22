@@ -21,7 +21,7 @@ The user does not write code. Claude handles all implementation. When something 
 
 ## Platform Strategy
 - **macOS**: purpose-built sidebar + multi-column layout (`macOS/`). Fully featured, the primary product surface.
-- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 90 files at the time of writing — `ls Cadence/iOS/*.swift | wc -l`), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
+- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 93 files at the time of writing — `ls Cadence/iOS/*.swift | wc -l`), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
 - **watchOS**: not started
 - Use `#if os(macOS)` / `#if os(iOS)` for platform-specific branches
 
@@ -35,7 +35,7 @@ Cadence.xcodeproj       # single project; targets: Cadence, CadenceWidgets, Cade
 CadenceWidgets/         # widget extension — compiles Models/, Theme.swift, and Cadence*WidgetSupport.swift straight in
 CadenceMCPServer/       # native MCP server target (tool definitions, router, argument parsing)
 plugins/cadence-mcp/    # Codex MCP plugin wrapper + smoke-test scripts
-CadenceTests/           # unit tests (171 flat files at time of writing; re-count with
+CadenceTests/           # unit tests (177 flat files at time of writing; re-count with
                         #   `ls CadenceTests/*.swift | wc -l`). Always -only-testing:CadenceTests
 CadenceUITests/         # UI tests; cannot launch headless — never let an unscoped test run pull these in
 docs/                   # privacy/support site + App Review + release-readiness notes
@@ -86,6 +86,12 @@ Cadence/
 │   │                   #   CadenceCalendarDayBadge — month-grid day badge (state → style)
 │   │                   #   CadenceCalendarDateTitleSupport — CadenceCalendarDateTitleFormat + Support
 │   │                   #   CadenceCalendarTimedGridSupport — CadenceCalendarZoom, CadenceCalendarTimelineWindow
+│   │                   # The last three are in Shared/ but are **iOS-only in practice**: every
+│   │                   #   type in them has ZERO readers under Cadence/macOS (so does
+│   │                   #   CadenceLazyScrollAnchor). Only the first three are genuinely
+│   │                   #   cross-platform. Being under Shared/ is a statement about what a file
+│   │                   #   MAY import, not evidence that both platforms read it — check before
+│   │                   #   citing one as the shared spelling macOS already uses.
 │   ├── CalendarVisibilityPreferences (in CadenceCalendarVisibilityPreferences.swift) and
 │   │                   # CalendarWorkHoursPreferences — both shared, NOT macOS-only. The file name
 │   │                   # carries the Cadence prefix; the type does not.
@@ -116,7 +122,7 @@ Cadence/
 │                       # it; a stale number reads as a complete inventory and sends the next agent
 │                       # off to write a near-copy. That is not hypothetical — T-173 had to delete
 │                       # a third hand-written copy of CompactTagStrip for exactly this reason.
-├── iOS/                # Large adaptive iOS/iPadOS surface (90 files at time of writing;
+├── iOS/                # Large adaptive iOS/iPadOS surface (93 files at time of writing;
 │                    #   `ls Cadence/iOS/*.swift | wc -l`) — see "What's Built (iOS)"
 │   ├── iOSRootView.swift        # Adaptive root shell: iPad sidebar / iPhone tab bar; deep links, widget refresh
 │   ├── iOSTaskInspectorHost.swift  # THE task inspector presenter, installed once in iOSRootView.
@@ -124,7 +130,14 @@ Cadence/
 │   │                   #   see "Task Inspector" below and Cadence/iOS/AGENTS.md
 │   ├── iOSCompactTabShell.swift # iPhone bottom bar, per-tab paths, centre capture button
 │   ├── iOSTasksTabView.swift    # Tasks tab: date + greeting header, Today/All/Inbox switcher
-│   └── iOSMoreTabView.swift     # More tab: Focus, Goals, Habits, Lists, Search, Settings
+│   └── iOSMoreTabView.swift     # More tab, and it is **grouped**, not a flat run of six:
+│                            #   Progress (Focus, Goals, Habits) │ Organize (Lists) │
+│                            #   Workspace (Search, Settings), each under a quiet
+│                            #   SectionEyebrowLabel. The groups are the shared value
+│                            #   CadenceFeatureDestination.compactMoreSections, pinned by
+│                            #   CadenceMoreTabGroupingTests. This line read as a bare list
+│                            #   of six destinations, and T-169 was filed off it asking for
+│                            #   a grouping the code already had.
 └── macOS/
     ├── macOSRootView.swift + Views/macOSRoot*   # Shell, command routing, overlays, lifecycle, state
     ├── CadenceCalendarPicker.swift
@@ -136,7 +149,8 @@ Cadence/
     │                   #                       `scope`. `AllTasksListView` and `InboxView` were
     │                   #                       merged into it in `7e5459c`; neither file exists.
     │                   #   InboxSupportViews, ListDetail*, ListNotes*, LinksView
-    │                   #   Kanban*            — one shared KanbanCard + BoardColumnHeader + KanbanColumnScroll
+    │                   #   Kanban*            — one shared KanbanCard + KanbanColumnScroll (both
+    │                   #                        macOS-only) over the shared CadenceBoardColumnHeader
     │                   #   CalendarPage*      — Timeline presentation: Week/2W/Month, infinite scroll
     │                   #   CalendarBoard*, CalendarPageBoardSupportViews — Board presentation (replaced Planning)
     │                   #   Timeline*          — day canvas, metrics, task/event/bundle blocks, drag/drop
@@ -187,7 +201,10 @@ oversized view file. The rules that keep tripping agents up:
 - `SchedulePanel*` is a risk hotspot (timeline coordinate math, drag/drop, EventKit). Generic
   task-inspector chrome belongs in `TaskInspector*SupportViews.swift`, **not** here.
 - `Kanban*` components are shared by the list board, the All Tasks board, **and** the Calendar
-  Board. Parameterize `KanbanCard` / `BoardColumnHeader` / `KanbanColumnScroll`; never fork them.
+  Board. Parameterize `KanbanCard` / `CadenceBoardColumnHeader` / `KanbanColumnScroll`; never fork
+  them. The header is `CadenceBoardColumnHeader` and lives in `Shared/Components/` — there is no
+  type called `BoardColumnHeader` — and iOS's list kanban, Calendar Board and month agenda render
+  it too; the other two are macOS-only.
 - Markdown behavior fixes usually belong in `Cadence/Services/Markdown*Support.swift` (which has
   test coverage); `macOS/Editor/` is only the NSTextView lifecycle, drawing, and event layer.
 
@@ -332,8 +349,11 @@ Legacy, migration-source only (no UI): DailyNote, WeeklyNote, PermNote, Document
 ```
 
 Non-`@Model` helper types that also live in `Cadence/Models/`: `TaskSectionConfig` /
-`TaskSectionDefaults` (in `AppTask.swift`), `GoalContributionSummary` (+ resolvers for goal
-progress and habit momentum), `HabitInsights` (streaks, heatmap, frequency summaries).
+`TaskSectionDefaults` (in `AppTask.swift`) and `GoalContributionSummary` (+ resolvers for goal
+progress and habit momentum). `HabitInsights.swift` (streaks, heatmap, frequency summaries) is in
+the folder too but is **not a type** — the file is a bare `extension Habit`, so `HabitInsights.foo`
+does not compile and a grep for the symbol finds only comments. Same shape as
+`GoalPresentation.swift`.
 
 When accessing optional relationship arrays, always use `?? []`:
 ```swift
@@ -694,7 +714,7 @@ Shared behavior for the popovers:
 ## Recurrence
 - `TaskRecurrenceRule`: none / daily / weekly / monthly / yearly
 - **End conditions** (`TaskRecurrenceEndMode`): `never`, `onDate` (`recurrenceEndDate`), `afterCount` (`recurrenceEndCount`, counted against `recurrenceOccurrenceIndex`)
-- **Edit scope** (`TaskRecurrenceEditScope`): `thisTask` vs `thisAndFuture`. This used to be a system `confirmationDialog` raised after every edit; it is now an inline **"APPLY TO"** row at the top of the recurrence picker panel (`TaskInspectorWorkflowSupportViews.swift`), so the choice is made before the edit rather than defended after it.
+- **Edit scope** (`CadenceTaskRecurrenceEditScope`, in `Shared/CadenceTaskRecurrenceWorkflowSupport.swift` — there is no unprefixed `TaskRecurrenceEditScope`): `thisTask` vs `thisAndFuture`. In **the macOS task inspector** this is an inline **"APPLY TO"** row at the top of the recurrence picker panel (`TaskInspectorWorkflowSupportViews.swift`), so the choice is made before the edit rather than defended after it. **That is one surface, not the app.** The system `confirmationDialog` it replaced is still live in three places — macOS's note-embed field editor (`TaskEmbedFieldEditorPopover.swift:33`) and iOS's `iOSTaskDetailSheet.swift:111` and `iOSTaskRowActionViews.swift:733`. This line read as a completed app-wide replacement and was cited as one; if the row should win everywhere, that is unbuilt work.
 - Occurrences are tied together by `recurrenceSeriesIDRaw` / `recurrenceSourceTaskIDRaw`; completing one spawns the next through `TaskWorkflowService`
 - If a recurring task is scheduled, the next occurrence continues through the normal scheduling path
 
@@ -724,7 +744,7 @@ Is Presented By A Host, Never By A Row" — read it before adding any iOS surfac
 ## Calendar / Events
 - The Calendar page has two **presentations** (`CadenceCalendarPresentation`): **Timeline** and **Board**. Timeline has Week / 2 Weeks / Month view modes (`CadenceCalendarViewMode`; the picker exposes Week and Month).
 - **Board** is what the Planning page became — horizontally scrolling day columns flanked by two pinned rails, **Overdue** and **Unscheduled**. Planning's other three buckets (Today / This Week / Later) *are* day columns here, so they needed no equivalent; its bucketing, drag-to-reschedule, drag-back-to-unscheduled, and "N unscheduled · N overdue" summary all live on this surface now. Files: `CalendarPageBoardSupportViews`, `CalendarBoardDayColumnSupportViews`, `CalendarBoardRailSupportViews`, `CalendarBoardItemSupportViews`, plus `Shared/CadenceCalendarPlanningSupport.swift` (rails, drop targets, `CalendarBoardPlannerSupport`).
-- The Board reuses the kanban `KanbanCard` / `BoardColumnHeader` / `KanbanColumnScroll` components. Parameterize them; do not fork.
+- The Board reuses the kanban `KanbanCard` / `CadenceBoardColumnHeader` / `KanbanColumnScroll` components. Parameterize them; do not fork.
 - **Tasks cannot be attached to calendar events.** `AppTask.calendarEventID` exists and is still
   read, but **nothing writes it a non-empty value** — every write site clears it — and no attach UI
   exists on either platform. Outside its declaration in `Models/AppTask.swift`, the field is
@@ -946,7 +966,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Slash command picker opens at the insertion caret inside notes
 - [x] Focus timer with log session popover (logs actual minutes, propagates to goals/areas/projects)
 - [x] Area/Project detail: Tasks, Kanban, Notes, Links, Completed (`ListDetailPage`). **Planning is deleted** — `ListDetailPage.resolved(_:)` maps a persisted "Planning" value back to `.tasks` so the Settings default-page picker never lands empty
-- [x] Recurring tasks: end conditions (never / on date / after N) and a `thisTask` vs `thisAndFuture` edit scope shown as an inline "APPLY TO" row rather than a system dialog
+- [x] Recurring tasks: end conditions (never / on date / after N) and a `thisTask` vs `thisAndFuture` edit scope shown as an inline "APPLY TO" row rather than a system dialog — **in the task inspector only**; the note-embed field editor (`TaskEmbedFieldEditorPopover`) still raises the dialog, as does iOS
 - [x] Linked notes for calendar events
 - [x] Area/Project lifecycle: complete, archive, delete; completed/archived lists recoverable from Settings
 - [x] Section-based kanban with editable/reorderable/archiveable columns (Cmd+E on section header; autosave section editor)
@@ -969,7 +989,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Widget extensions (`CadenceWidgets` target): calendar/today/habit/milestone widgets with app-intent support and a refresh checkpoint (`CadenceWidgetRefreshCenter`) triggered on scenePhase changes — not documented further here yet; check `Cadence/Services/Cadence*WidgetSupport.swift` and `CadenceWidgets/` directly
 
 ## What's Built (iOS)
-`Cadence/iOS/` is a large, actively-developed surface (90 files at the time of writing — `ls Cadence/iOS/*.swift | wc -l`), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
+`Cadence/iOS/` is a large, actively-developed surface (93 files at the time of writing — `ls Cadence/iOS/*.swift | wc -l`), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
 - [x] **iPhone tab bar**: `[ Tasks ] [ Calendar ] ( + ) [ Notes ] [ More ]`. The centre `+` is **not a tab** — it presents task capture and never renders a selected state. Each tab owns its own type-erased `NavigationPath`, so switching tabs preserves position; the selected tab and Tasks segment persist across launches (`ios.compact.selectedTab`, `ios.compact.tasksSection`). Replaced `iOSCompactHomeView`, a grid of eight tiles that was standing in for navigation the app did not have.
 - [x] Tasks tab (`iOSTasksTabView`): date eyebrow + greeting, a **Today / All / Inbox** segmented switcher (the same control Calendar uses for Week/Month/Board), and a search shortcut
 - [x] Today (`iPadTodayView` + compact/schedule/support variants). The compact Today has **no capture bar of its own** — the tab bar's `+` is the capture affordance
@@ -991,7 +1011,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Notes with its own markdown editor stack (styling, preview, slash commands, task/wiki references)
 - [x] Lists (Area/Project detail, editors), and since `c84732e` **deleting** an area, a project or a context — the fourth instance of a capability sitting behind an `#if os(macOS)` that imported nothing platform-specific. iOS's confirmation is a modal sheet rather than a bottom action sheet, and is *more* informative than macOS's rather than merely as ceremonious: it enumerates real counts ("1 project", "7 tasks") where macOS's categorical sentence cannot, and the three cascade sentences live in `Shared/CadenceListDeletionSummary.swift` so the copy cannot drift. Deliberately **no** typed phrase — the privacy reset needs one because it is total, unrecoverable and cannot report its scope; a list delete is scoped and now shows the scope, and typed-phrase friction on routine cleanup is friction people learn to satisfy without reading. List **completion** is still macOS-only on purpose (T-214, open): the obvious shared substitute, `applyStatusCompletion`, routes through `markDone`, which spawns the next recurrence occurrence — right for one task, wrong for bulk container completion that must not mint new work
 - [x] Search
-- [x] Settings (overview, contexts, tags, templates + lists, calendar, notifications, reminders, **data safety** — including the account-and-data delete action the shipped privacy policy promises, behind a typed-phrase confirmation sheet — and About). Reminders appears in **both** iOS Settings and the iOS Inbox, matching macOS. iOS omits exactly two categories, `sidebar` and `account`; see the parity note under "What's Built (macOS)".
+- [x] Settings — **twelve** categories (`iOSSettingsCategory`, count the cases): navigation, Account & Sync, **data safety** (including the account-and-data delete action the shipped privacy policy promises, behind a typed-phrase confirmation sheet), calendar, reminders, notifications, organization (contexts), lists, tags, templates, AI, and About. Two of those, `sync` and `ai`, went unlisted here for a while, which made mobile Settings read as a much thinner surface than it is. Reminders appears in **both** iOS Settings and the iOS Inbox, matching macOS. iOS omits exactly two categories, `sidebar` and `account`; see the parity note under "What's Built (macOS)".
 - [x] Notification scheduling wiring (see "What's Built (macOS)" above — shared logic, not iOS-specific)
 - [x] `EstimatePickerPopoverContent` in `Shared/Components` is the estimate picker for **both** platforms; `EstimatePickerControl` is the iOS chip wrapper around it
 

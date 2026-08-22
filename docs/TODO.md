@@ -221,9 +221,12 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 
 - [T-214] **iOS list *completion* is still macOS-only, and the obvious shared substitute is wrong.**
-  T-187 shipped deletion and deliberately not completion. `TaskContainerLifecycleService` lives in
-  `TaskWorkflowService.swift` behind `#if os(macOS)` with nothing platform-specific in it — the
-  fourth-instance shape again — so un-guarding it makes iOS completion a call site and nothing more.
+  T-187 shipped deletion and deliberately not completion. `TaskContainerLifecycleService` **no
+  longer lives** in `TaskWorkflowService.swift` behind `#if os(macOS)`: [[T-215]] moved it to
+  `Cadence/Services/CadenceTaskContainerLifecycleService.swift`, so the un-guard half of this ticket
+  is done and what remains is genuinely only the call site — an iOS affordance that offers
+  "Complete" and calls `completeRemainingActiveTasks`. Nothing on iOS offers it today, so this stays
+  open.
   Do **not** reach for `applyStatusCompletion` instead: it routes through `markDone`, which **spawns
   the next recurrence occurrence**, which is correct for one task and wrong for bulk container
   completion that must not mint new work.
@@ -232,13 +235,19 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   An existing silent divergence found by T-187, in the same blocked file as [[T-212]] and [[T-214]].
   One line, but decide it deliberately: archiving *should* probably settle the work, and if so iOS is
   the wrong one — which also makes it [[T-212]]'s bug, since that is the path macOS uses.
-
-- [T-216] **Docs need a pass for the `ListDeleteHelpers` move.** `Cadence/Services/` count 48 → 49;
-  `AGENTS.md`'s `macOS/Services/` bullet now has **three** tombstones, not two; `CLAUDE.md`'s
-  project-structure block, its "What's Built (iOS)" Settings line, and the `Shared/` inventory (two
-  new files) are all stale. Deliberately not done by the agent that moved the file, because the docs
-  agent held those files at the time.
-
+  **Decided and implemented, uncommitted at the time of writing.** macOS is the right one, so the
+  wind-down crossed over. `TaskContainerLifecycleService` moved out of
+  `macOS/Services/TaskWorkflowService.swift`'s `#if os(macOS)` — it imported nothing
+  platform-specific, the sixth instance of that shape — to
+  `Cadence/Services/CadenceTaskContainerLifecycleService.swift`, and
+  `Cadence/iOS/iOSListArchiveSupport.swift` is the one iOS archive call site.
+  Two decisions worth carrying: the confirmation is a modal sheet that states the count and is
+  **conditional** — `CadenceListArchiveSummary.requiresConfirmation` is false when nothing is open,
+  because a sheet over a list where nothing happens is one people learn to dismiss unread — and the
+  count comes from `remainingActiveTasks`, the settle's *own* array, so it cannot over-promise.
+  The wind-down still routes through `settleWithoutAdvancingSeries` and spawns nothing.
+  Docs still owed: `Cadence/Services/` 49 → **50** in root `AGENTS.md` and `CLAUDE.md`, and
+  `CLAUDE.md`'s `macOS/Services/` block still lists `TaskWorkflowService` without noting the move.
 
 - [T-208] **Today's Completed section lists cancelled tasks but the header's "N done" does not count
   them.** Introduced deliberately by `9d11135` and documented at `CadenceTaskQuerySharedSupport.swift`
@@ -302,28 +311,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   reset `scheduledStartMin`, drop the linked event — would need lifting into `Shared/` first.
 
 
-- [T-198] **Six stale counts across the guides, and one refuted shared-component claim.** From the
-  T-32 audit, re-verify each before editing: `Cadence/iOS/` said 79 in three places (actual 82 at the
-  time); `Cadence/Services/` said 43 (actual 45 top-level, 54 with `AI/` and `MCPReadOnly/`);
-  `Markdown*Support` said 22 (actual 25); `CadenceTests/` said "~140" (actual 158); `macOS/Views/`
-  said ~168 in one guide and ~165 in another. Separately, both root guides list "`KanbanCard`,
-  `BoardColumnHeader` and `KanbanColumnScroll` are now shared" — **there is no `BoardColumnHeader`**
-  (the type is `CadenceBoardColumnHeader`), and `KanbanCard` and `KanbanColumnScroll` are macOS-only.
-  The claim is true across the three *macOS* boards and false as a cross-platform statement;
-  `iOS/iOSListSupportViews.swift:424` compounds it by naming all three as the vocabulary the iOS
-  board is written in, when two cannot be referenced from that file.
-
-- [T-199] **Four smaller refuted doc claims.** `CLAUDE.md` lists `HabitInsights` as a non-`@Model`
-  helper *type* in `Models/`; there is no such type — `Models/HabitInsights.swift` is an
-  `extension Habit`. `CLAUDE.md` understates iOS Settings (it has **13** categories, not the seven
-  listed) and implies macOS ⊃ iOS, when the relation is two-way: iOS lacks `sidebar` and `account`,
-  **macOS lacks `sync`, `coverage` and `about`**. `CLAUDE.md`'s `Shared/` map implies the T-120
-  calendar files serve both platforms, but `CadenceCalendarDayBadge`,
-  `CadenceCalendarDateTitleFormat`/`Support`, `CadenceCalendarZoom`, `CadenceCalendarTimelineWindow`
-  and `CadenceLazyScrollAnchor` have **zero** readers under `Cadence/macOS`. And the recurrence-scope
-  "APPLY TO" row replacing a `confirmationDialog` is macOS-only — iOS still raises the dialog at
-  `iOSTaskDetailSheet.swift:113`.
-
 
 - [T-15] **Several dark palettes — decided, and the colours are not the hard part.** User's call, and
   it narrows what was an open-ended ask: **stay dark-only**, offer alternate near-black palettes
@@ -361,6 +348,18 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   with nothing asserting the flexing side stays usable. Worth one sweep for other fixed column widths
   — `CadenceRegularSplitLayout.listPaneWidth`, the calendar rails, the settings rail — asking in each
   case what the other side gets at the narrowest host that reaches it.
+  **Swept 2026-08-22; findings are [[T-248]] through [[T-252]] and nothing was changed here.** Every
+  three-digit `.frame(width:)` and every `frame(minWidth:)` in `Cadence/` was classified as *has a
+  floor*, *no floor but cannot be squeezed* (popovers, sheets, drag previews and overlay panels, which
+  are the large majority), or *no floor and starves its neighbour*. Four of the last kind: the two
+  Settings → Templates cards ([[T-248]], [[T-249]]), three macOS `HSplitView` pages against a 960pt
+  window floor ([[T-250]]), and the Calendar Board's rail pair ([[T-251]]); [[T-252]] is the
+  consistency question the sweep raised about the register itself. Two things worth carrying whatever
+  is done next: **an `HSplitView` propagates none of its children's `minWidth` upward**, so a page's
+  pane minimums never reach the window and the window happily gets narrower than the page
+  (`sizeThatFits(width: 1).width == 1.0`, measured) — and the three registered surfaces that *do*
+  state a floor were all correct at every reachable width, so the rule works where it has been
+  applied and the gap is only where it has not.
 
 
 - [T-179] **`control action=detach` ignores the `udid` argument and closes every simulator panel.**
@@ -384,17 +383,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   *(b)* iPhone **landscape** layout for the running timer and its tasks. The compact shell
   (`iOSCompactTabShell`) is built around a portrait tab bar; landscape focus wants the timer large
   and the chrome gone, which is a different shape rather than the same one rotated.
-
-- [T-169] **iPhone "More" tab: make it a grouped list, not a flat one.** User's call.
-  `iOSMoreTabView` is currently the six destinations that did not fit the four-slot tab bar — Focus,
-  Goals, Habits, Lists, Search, Settings — in one flat list, which describes the tab bar's overflow
-  rather than a design. Group it the way the Settings screen already groups its categories: work
-  (Goals, Habits, Focus), organisation (Lists), then Search and Settings. `CadenceMobileSettingsLayout
-  .groups` is the precedent and its doc explains the reasoning ("three groups, not twelve loose
-  rows"); reuse the shape, not the contents.
-  The failure mode to avoid is named in the ticket's history: this replaced `iOSCompactHomeView`, a
-  grid of eight tiles standing in for navigation the app did not have, so do **not** turn it back
-  into a dashboard.
 
 - [T-170] **Decide how far iPadOS and iPhone layout should converge.** Standing rule is that they
   are one *style* and differ only in *layout* — sidebar vs tab bar, two panes vs one. The open
@@ -599,16 +587,256 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `775833d` — category list plus value rows — and macOS has not caught up; it is the older
   twelve-category shell. Bringing macOS to the same vocabulary would also settle which of the two is
   the reference.
-- [T-21] **Verify the Apple Reminders integration end to end.** `RemindersManager` is macOS-only,
-  separately authorised from Calendar, surfaced at Settings → Reminders. The app must keep working
-  when access is denied — that path is the one most likely to be untested.
+- [T-21] **Verify the Apple Reminders integration end to end.** Verified; one defect found and
+  fixed, four spun off as [[T-253]]–[[T-256]]. **The ticket's own premise was stale and is corrected
+  here:** `RemindersManager` is *not* macOS-only — it moved to
+  `Cadence/Services/CadenceRemindersManager.swift` (prefixed file, unprefixed type) and is
+  cross-platform, and Reminders is surfaced on **both** platforms in **both** Settings
+  (`SettingsRemindersSection` / `iOSRemindersSettingsSection`) and **both** Inboxes
+  (`InboxAppleRemindersSectionView` from `TasksListView`, `iOSInboxRemindersSection` from
+  `iOSTaskCollectionPage`, one gate: `CadenceTasksPageScope.showsRemindersStrip`).
+  The denied path was **not** the untested one the ticket predicted — `RemindersConnectionStateTests`
+  already pinned all three states, `.writeOnly`, and the deprecated `.authorized` raw value. What was
+  untested was the *transition into* denial from inside the app: tapping **Don't Allow** on the
+  system prompt left both iOS surfaces on "Reminders access required" with a live **Allow Access**
+  button for the rest of the launch, and iOS never prompts twice, so the button was dead. Cause was
+  not a missing `.onAppear` — `EKEventStore.authorizationStatus` is cached per process in the
+  *denial* direction too, the mirror of the grant-direction hazard `requestAccess()` already worked
+  around. Measured on the iOS 26 simulator with the TCC row reading denied while the running app
+  showed the not-determined card, and the same build relaunched against the same row rendering it
+  correctly. Fixed by carrying the request's own `false`: new
+  `RemindersConnectionState.isDenied(status:deniedInThisSession:)` plus a stored, observable
+  `deniedInThisSession` on the manager, cleared whenever a real grant lands.
+  Also confirmed on device: iOS **terminates** Cadence on a Settings-app grant or revoke, so
+  "granted then revoked while a page is open" cannot strand a stale connected state there — see
+  [[T-253]] for macOS, where nothing terminates.
 - [T-22] **Audit against Apple's App Review guidelines** before publishing. `docs/app-review-notes.md`
   and `docs/privacy.html` are the existing submission material and are the place to start. Likely
   areas: what the privacy manifest declares versus what is actually collected, Sign in with Apple
   being entitlement-gated and optional, the AI feature requiring a user-supplied key, and EventKit
   usage strings matching real behaviour.
 
+- [T-247] **Archiving a kanban column on iOS settles nothing, and it is a draft toggle rather than
+  an action.** The sibling of [[T-215]], one level down. macOS's `KanbanSectionColumnView` calls
+  `TaskContainerLifecycleService.cancelRemainingActiveTasks(in:area:project:)` when a column is
+  archived and `completeRemainingActiveTasks` when it is completed; on iOS a column's `Completed`
+  and `Archived` are two `Toggle`s on a `CadenceSectionDraft` inside `iOSSectionDraftRow`
+  (`iOSListEditorViews.swift`), saved with every other edit in the sheet, and no task changes status.
+  The service is cross-platform since [[T-215]] and its section overload is public and tested, so the
+  mutation is available — what has to be *decided* is the interaction, which is why this is not a
+  one-liner: a toggle flipped mid-edit and saved alongside a rename is a bad shape for an
+  irreversible bulk cancellation, and there is nowhere in that sheet to state a count. Either the
+  toggle becomes a confirmed action (the shape `iOSListArchiveSupport` uses for lists), or column
+  archiving deliberately stays a flag on iOS and it is macOS's behaviour that changes.
+  Do **not** reach for `markDone` / `markCancelled` / `applyStatusCompletion` here either — see
+  [[T-213]] and [[T-214]]: the successor inherits `sectionName`, so a column wind-down routed
+  through them refills the column it just archived.
+
+- [T-248] **Settings → Templates draws a 16pt editor on the target iPad in portrait — [[T-177]]'s
+  defect, one level down, in a card rather than a page.** The split is gated on
+  `horizontalSizeClass == .regular` alone (`iOSSettingsTemplateAndListSections.swift:29`), with no
+  width input and no floor, and the list beside it is a fixed `.frame(width: 260)` (line 32) while
+  the editor is `maxWidth: .infinity`. The chain that eats the pane, every term of it read from the
+  code: `paneWidth − 248` (`iOSSettingsRail`, `iOSSettingsComponents.swift:259`) `− 1` (divider,
+  `iOSSettingsView.swift:113`) `− 56` (`settingsDetailScroll`'s `.padding(.horizontal, 28)`) `− 32`
+  (`iOSSettingsCard`'s `.padding(16)`) `− 260 − 1 − 32` (two `iOSEditorSheetMetrics.groupSpacing`)
+  = **`paneWidth − 630`**.
+  Measured rather than derived: an `NSHostingView` reproduction of that exact modifier chain reports
+  the editor at **16.0pt at a 646pt pane**, 146.0 at 776, 204.0 at 834, 392.0 at 1022, 580.0 at 1210,
+  and **0.0 at 570**. 646 is the iPad Pro 11" in portrait with the shell sidebar out (834 − 188) —
+  the default configuration of the primary target device, no multitasking involved, and the width
+  `CadenceRegularPaneLayoutTests`' own file comment already names as the narrowest normal pane.
+  The one-column form already exists and ships on iPhone (`templatePicker` chips above
+  `templateEditor`), so the work is a gate, not a new layout.
+  **Not taken in T-183 because the fix is a seventh width-derived pane decision.** The register at
+  the top of `CadenceRegularPaneLayout.swift` and `CadencePaneWidthRuleHomesTests` require it to
+  join one of the four registered files, be named in the register prose, and move two hard-coded
+  expectations (`registeredHomes`, and the literal 16 in
+  `theInventoryIsStillSixteenDeclarationsAcrossFiveFiles`) — correct, but not something to land
+  inside an audit. The floor should not be invented either: `CadenceNotesListMetrics
+  .minimumEditorWidth` (= `CadenceTodayLayoutSupport.inspectorPaneMinWidth`, 320) is the figure the
+  notes editor already borrows for the same kind of content, which puts the card's two-column floor
+  at `260 + 1 + 320 + 32` = 613 of *card* width, i.e. 950 of pane — landscape only on the target
+  iPad, which is the right answer rather than a convenient one.
+
+- [T-249] **macOS Settings → Templates has the same missing floor, and no compact form to fall back
+  to.** `SettingsTemplatesSection.swift:29` is a fixed `.frame(width: 230)` beside a
+  `maxWidth: .infinity` editor, inside a `SettingsCard` (`.padding(14)`) inside the detail column
+  beside a 248pt rail (`SettingsRailMetrics.columnWidth`), so the editor is **`paneWidth − 596`**.
+  Same `NSHostingView` reproduction: 0.0 at a 570pt pane, 100.0 at 696, 144.0 at 740, 364.0 at 960,
+  604.0 at 1200. The pane is the window less the sidebar, which is 220–390 wide and defaults to 264
+  (`macOSRootShellViews.swift:12/15/16`) against a 960pt window floor (`CadenceApp.swift:57`) — so
+  696 is the ordinary minimum and 570 the worst case.
+  Less urgent than [[T-248]]: the MacBook Pro 14" target is 1512 wide, which leaves 1248 of pane and
+  a 652pt editor. Recorded because it is the same defect and because the macOS side has **no**
+  one-column branch at all, so closing it means writing one rather than gating to one that exists.
+
+- [T-250] **Three macOS pages declare more `HSplitView` minimum width than the window's own floor can
+  pay, and `HSplitView` does not report that upward, so the window lets you reach it.** Measured, not
+  reasoned: an `NSHostingView` of each split returns `sizeThatFits(width: 1).width == 1.0`, i.e. a
+  child `minWidth` inside an `HSplitView` propagates nothing, and `fittingSize.width` for the whole
+  shell stays exactly **960** whichever page is mounted. What happens instead is that the
+  `NSSplitView` lays out at the sum of its minimums and overflows **leading-aligned** from the detail
+  pane's origin, so the overflow leaves by the trailing edge of the window.
+  The sums: Today `449 + 300 + 343` + 2 dividers = **1094** (`TodayView.swift:8/12/16`); Goals
+  `560 + 340` = **901** (`GoalsView.swift:129/139`); Focus `520 + 320` = **841**
+  (`FocusView.swift:78/86`). The pane available is the window less the sidebar: **570** at the 390pt
+  sidebar maximum, **696** at the 264pt default, 740 at the 220pt minimum, 960 with the sidebar
+  hidden by `Cmd+O`. Measured visible widths at a 960pt window, Today's three panes, sidebar at
+  220 / 264 (the stored default) / 390: `449, 290, 0` — `449, 246, 0` — `449, 120, 0`. **The Schedule
+  pane is entirely off the right edge in all three**, and at the widest sidebar the task column keeps
+  120 of its 300. The MacBook Pro 14" target at its full 1512 is fine (`449, 454, 343`), so this is
+  reachable by narrowing the window rather than on sight — which is exactly why nothing has caught it.
+  The 960 floor's own comment derives it from the list-detail Kanban tab bar (~950pt), which is a
+  different page — nothing ever checked it against these three. A related figure inside the same
+  overflow: `GoalTimelineView.leftRailWidth` is a fixed 300 inside the 560pt Goals pane, so the Gantt
+  canvas is 260 of 560 when that pane is at its own minimum.
+  Not fixed because which side gives is a product decision, and both directions have a cost: raising
+  the floor to 1314 puts it past a 1280-wide display, and lowering the pane minimums or gating a pane
+  away (the `CadenceTodayLayoutSupport` answer) changes what the page *is* at that width.
+
+- [T-251] **The macOS Calendar Board's two rails are 496pt of fixed width with nothing underneath the
+  day columns.** `CalendarPageBoardSupportViews.swift:60-66` is `HStack(spacing: 0) { rail;
+  dayColumns; rail }` with each rail at `calendarBoardRailWidth` = 248
+  (`KanbanBoardSupport.swift:17`) and `dayColumns` a horizontal `ScrollView` at
+  `.frame(maxWidth: .infinity)`. A horizontal scroller has no minimum width, so the rails are the
+  only thing the `HStack` has to satisfy — measured, the board reports **496** as its minimum and the
+  columns get `paneWidth − 496`: **74.0pt at a 570 pane, 200.0 at 696, 244.0 at 740**, 464.0 at 960,
+  against a `calendarBoardDayColumnWidth` of **306** plus 22pt of padding each side.
+  So at the default sidebar and the minimum window the Board shows two thirds of one day column
+  between two inboxes holding 71% of the surface. Nothing clips and the columns scroll, which is why
+  this is a floor question rather than a [[T-250]]-shaped break — but it is the fixed-rail pair
+  [[T-183]] was asked to look at and the register does not cover it.
+
+- [T-252] **`CadenceRegularSplitLayout` is the one registered width rule with no "two panes is worse
+  than one" fallback, and it shows on the target iPad.** Today gates to `.compact` at 761, Notes to
+  `.oneColumn` at 601, Calendar drops its inspector under 681; `listPaneWidth` only clamps the
+  *proportion* (`min(preferred, (paneWidth − 1) / 2)`), so there is no width at which Goals, Habits,
+  Focus or Lists stop splitting. At the 646pt portrait pane that is a **300pt chooser beside a 345pt
+  detail**, on the same device and orientation where Today is one column and Calendar has no
+  inspector — three registered rules answering the same width three different ways.
+  `CadenceRegularPaneLayoutTests.theNarrowestRegularPaneGivesTheMajorityToTheDetail` pins 300/345
+  today, so this is a decision to revisit rather than a regression, and it is not taken here because
+  none of those four details states a floor to derive a gate from. Inventing one is precisely the
+  failure mode [[T-183]] exists to avoid.
+
+- [T-253] **macOS Settings → Reminders never re-derives authorization after it first appears, and
+  it is the surface most likely to be on screen when authorization changes.**
+  `macOS/Views/SettingsRemindersSection.swift` has `.onAppear { refreshAuthorizationState() }` and
+  nothing else, while macOS's Inbox (`TasksListView`) carries **both** `.onAppear` **and**
+  `.onChange(of: scenePhase)`. The asymmetry matters on macOS specifically: revoking in System
+  Settings does **not** terminate the app the way iOS does (measured — iOS kills Cadence on both
+  grant and revoke, so its surfaces always re-read from a fresh process), so a user who follows this
+  card's own **Open Reminders Settings** button, revokes, and comes back lands on a view that never
+  disappeared and is still claiming "Apple Reminders connected" over a stale list. `iOSRemindersSettingsSection`
+  has the same single hook; it is far less exposed for the termination reason above, but the two
+  Settings sections should match the two Inboxes rather than each other. Not fixed here because
+  macOS TCC cannot be driven without touching the host machine's real Reminders permission, so the
+  fix would ship unverified — see the note in [[T-21]].
+
+- [T-254] **macOS's Inbox reminders section is the only one of the four reminders surfaces that does
+  not read `RemindersConnectionState`.** `InboxAppleRemindersSectionView`
+  (`macOS/Views/InboxSupportViews.swift`) branches `if isAuthorized { rows } else {
+  AppleRemindersAccessRow(isDenied:) }` and hand-writes its own copy — "Reminders access is off" /
+  "Show Apple Reminders in Inbox", "Connect" / "Open Settings" — while Settings on both platforms and
+  the iOS Inbox all read `state.accessTitle` / `accessMessage` / `accessAction`. Two consequences.
+  The copy can drift, which is the standing no-near-copies rule. And the **branch order differs**:
+  the shared resolver puts `isDenied` ahead of `isAuthorized` precisely so a live denial beats a
+  stale authorized snapshot, and this view puts `isAuthorized` first, so in that window macOS's
+  Inbox draws stale reminder rows with completion buttons that no longer write while macOS's
+  Settings, one category away, says access is denied. Fold it onto `RemindersConnectionState` the
+  way `iOSInboxRemindersSection` already is.
+
+- [T-255] **A reminder completion that fails leaves the row looking completed, on both platforms.**
+  `AppleReminderTaskRow.complete()` (macOS) and `iOSInboxReminderRow.complete()` (iOS) are the same
+  optimistic sequence: set `isCompleting = true`, animate to struck-through at 0.65 opacity, then
+  call `onComplete` 220ms later. `RemindersManager.completeReminder(id:)` has three silent exits —
+  not authorized, the identifier no longer resolves, the calendar refuses content modifications —
+  and a fourth on a `store.save` throw, which calls `reload()`. None of them tells the row, and
+  `isCompleting` is local `@State` that is never reset, so the row stays visibly ticked while
+  Apple Reminders still has the item open. The row needs the write's answer back, or the tick has to
+  follow the write rather than lead it.
+
+- [T-256] **`.restricted` is presented as a denial the user can undo, and it is not.**
+  `RemindersConnectionState.resolve(status:)` folds `.restricted` into `.denied`, so the card reads
+  "Reminders access denied" and offers "Allow Cadence from Settings, Privacy & Security, Reminders."
+  Under a device restriction — Screen Time, MDM, a managed profile — that pane will not let them,
+  and the button sends them somewhere that cannot help. The pure mapping is already tested for the
+  state; what is missing is a fourth *presentation* that says the restriction is not theirs to lift.
+  Low frequency, but it is the same class of mistake as the dead **Allow Access** button [[T-21]]
+  fixed: an affordance offered in a state where it cannot work.
+
+- [T-257] **`HEAD` does not build from a clean clone.** `Cadence/Services/CadenceTaskContainerLifecycleService.swift`
+  is untracked (`git status` shows `??`, and it is not in `.gitignore`), but the type it declares is
+  referenced by **committed** code at `HEAD`: four call sites in `macOS/Sheets/EditListSheet.swift`
+  and seven in `CadenceTests/CadenceCancelledTaskReachabilityTests.swift`, landed by `aa33ae6`
+  (D-159). Anyone cloning the repo, and any isolation procedure that restores `HEAD`'s bytes and
+  drops added paths, gets a target that does not compile. Found while isolating for [[T-21]], which
+  had to special-case the file to build at all. `git add` it.
+
 ## Done
+
+- [D-163] Three doc-accuracy tickets closed, and two of the three had largely been overtaken
+  (T-198, T-199, T-216). Every claim re-derived against `HEAD` rather than trusted.
+  **T-216 was entirely obsolete**: `Cadence/Services/` already reads 49 in all three guides, the
+  `macOS/Services/` bullet already says **three** tombstones, and `CLAUDE.md`'s structure block,
+  iOS Lists line and `Shared/` inventory (`CadenceListDeletionSummary.swift`) were all current.
+  **T-198's six counts were all already fixed** — and four had gone stale *again* in the other
+  direction, which is the finding: `Cadence/iOS/` 90 → **93** in six places and `CadenceTests/`
+  171 → **177**. Counts were taken from `git ls-files` at `HEAD`, not the worktree: with eight
+  agents live the worktree read 94 / 180 / 50 / 21 for iOS / tests / Services /
+  `Shared/Components` from untracked files whose authors had not landed yet — and three of those
+  four moved *while this entry was being written*. Counting the worktree would have made every
+  figure wrong the moment those commits landed. `Cadence/Services/AGENTS.md` is currently the one
+  guide reading 50, bumped by the agent adding
+  `Cadence/Services/CadenceTaskContainerLifecycleService.swift`; the root guides stay at 49 until
+  that file is committed, and whoever lands it owns bringing them along.
+  Still stale and fixed from T-198: **there is no `BoardColumnHeader`.** Three guides spelled the
+  header that way in five places (`AGENTS.md`, `CLAUDE.md` x3, `macOS/Views/AGENTS.md`); the type is
+  `CadenceBoardColumnHeader`, it lives in `Shared/Components/`, and iOS's list kanban, Calendar
+  Board and month agenda all render it — while `KanbanCard` and `KanbanColumnScroll` really are
+  macOS-only. The bullet had been landing as "a cross-platform trio", which is two-thirds wrong in
+  the direction that invites a fork. T-198's third sub-claim (`iOSListSupportViews.swift:424`) was
+  already repaired — that comment now says "the vocabulary the three *macOS* boards share".
+  From T-199: `HabitInsights` is **not a type** (`Models/HabitInsights.swift` is a bare
+  `extension Habit`) — corrected in `CLAUDE.md` and `Models/AGENTS.md`. The three T-120 calendar
+  files `CadenceCalendarDayBadge` / `CadenceCalendarDateTitleSupport` /
+  `CadenceCalendarTimedGridSupport` (and `CadenceLazyScrollAnchor`) have **zero** readers under
+  `Cadence/macOS` and are now labelled iOS-only-in-practice, with the general point stated once:
+  living in `Shared/` says what a file may import, not that both platforms read it.
+  T-199's settings claim was **wrong about the code**: it said macOS lacks `sync`, `coverage` and
+  `about`, but `592b967` added `.sync`, `940c4da` added `.about` and deleted `.coverage` outright,
+  so macOS offers all **14** `CadenceSettingsCategoryKind`s and the relation really is one-way.
+  iOS has **12**, not the 13 the ticket claimed; `CLAUDE.md`'s iOS Settings line listed nine and
+  silently dropped `sync` and `ai`, and now enumerates all twelve.
+  T-199's recurrence claim was right but understated. The inline "APPLY TO" row is not just
+  macOS-vs-iOS — it is **one surface**, the macOS task inspector. The `confirmationDialog` it
+  "replaced" is still live in three places including macOS's own `TaskEmbedFieldEditorPopover`.
+  Also corrected there: the type is `CadenceTaskRecurrenceEditScope`; no unprefixed
+  `TaskRecurrenceEditScope` exists.
+  Two stale claims found outside all three tickets and fixed in passing, both in
+  `Models/AGENTS.md`: it called `ModelEnums.swift` "the eleven data enums" while listing and
+  holding **ten**, and it still carried the refuted "a duplicate `GoalListLink` double-counts that
+  list's tasks" rationale that `CLAUDE.md` already records as false (`contributingTasks` ends in
+  `dedupe(...)`). Docs only; no source changed.
+
+- [D-162] The iPhone More tab was already grouped, and nothing pinned the grouping (T-169). The
+  ticket's premise — "`iOSMoreTabView` is currently the six destinations … in one flat list" — was
+  false against `HEAD`: `CadenceFeatureDestination.compactMoreSections` has held three
+  `CadenceFeatureSection`s (Progress: Focus, Goals, Habits │ Organize: Lists │ Workspace: Search,
+  Settings) for some time, the view draws an eyebrow per section, and that is exactly the grouping
+  the ticket prescribed. No design change was made or needed.
+  What was missing is the reason the ticket could have been "done" twice: **every existing test
+  flattened the sections before looking at them.** `everyDestinationIsEitherATabRootOrReachableFromMore`
+  opens `compactMoreSections.flatMap(\.destinations)`, so it passes identically against one section
+  holding all six rows — the flat list the ticket was filed about was, and had always been, one
+  refactor away with the whole suite green. Now pinned in `CadenceCompactTabTests`: the three groups
+  as literals (kinds, eyebrow titles, membership, order), the exactly-once/non-empty/unique-`id`
+  invariants, no tab root smuggled into a group, and — because `Cadence/iOS/` is invisible to the
+  macOS-built target and a correct value read by a flattening view is T-161 exactly — a source scan
+  of the nested `ForEach` + `SectionEyebrowLabel` structure, with a non-vacuity guard.
+  Worth keeping: the ticket was written from `CLAUDE.md`'s account of the More tab rather than from
+  the file, and the file had moved on. Read the code before believing a ticket's "currently".
 
 - [D-161] `223e46a` Drop a task on a task on iOS and the two become a block (T-190). The ticket's
   central claim was false — there was a third `TaskBundle(` constructor in `Shared/`, in a file with

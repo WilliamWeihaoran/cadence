@@ -29,18 +29,22 @@ area.tasks = (area.tasks ?? []) + [task]
 - `Goal`, `GoalListLink`, `Habit`, `HabitCompletion` - long-running progress and recurring behavior. `Goal` nests via `parentGoal`/`subGoals`: a top-level goal is a direction (usually `kind == .ongoing`), its sub-goals read as milestones.
   **`GoalListLink` has one write path** — `ModelContext.attachList` / `detachGoalListLink` /
   `toggleGoalListLink` in `Shared/GoalListLinkHelpers.swift`, never a hand-rolled
-  `insert(GoalListLink(...))`. Attach is idempotent because a duplicate link double-counts that
-  list's tasks in the goal's progress, and detach severs the link's own references before deleting
+  `insert(GoalListLink(...))`. Attach is idempotent — but **not** because a duplicate link
+  double-counts that list's tasks in the goal's progress. It cannot: `contributingTasks` ends in
+  `dedupe(...)`, which filters by task `id`. What a duplicate breaks is everything counting
+  *links* — `linkedListCount`, the "N lists" chip, the attribution line, two MCP DTOs, and a second
+  identical row in both inspectors. Detach severs the link's own references before deleting
   the row. Rationale and the substring-grep trap: `Cadence/Shared/AGENTS.md`.
 - `Note` - the single live note model (see below).
 - `SavedLink`, `MarkdownImageAsset` - list bookmarks and editor image assets.
 
 Non-`@Model` types that live in this folder: `TaskSectionConfig` / `TaskSectionDefaults`
-(in `AppTask.swift`), `GoalContributionSummary`, `HabitInsights`, `GoalPresentation.swift` (an
-`extension Goal`), and two files this list omitted for a long time and that carry rules of their
-own:
+(in `AppTask.swift`) and `GoalContributionSummary`. Two more *files* here declare no type at all —
+`GoalPresentation.swift` (an `extension Goal`) and `HabitInsights.swift` (an `extension Habit`,
+listed here as a type for a long time; there is no `HabitInsights` symbol to reference) — and two
+this list omitted for a long time carry rules of their own:
 
-- **`ModelEnums.swift`** — the eleven data enums (`TaskPriority`, `TaskStatus`,
+- **`ModelEnums.swift`** — the ten data enums (`TaskPriority`, `TaskStatus`,
   `TaskRecurrenceRule`, `TaskRecurrenceEndMode`, `ProjectStatus`, `AreaStatus`, `GoalStatus`,
   `GoalKind`, `GoalProgressType`, `HabitFrequency`). Every one is `nonisolated`, and a new one
   must be too. The project sets `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which hands a bare

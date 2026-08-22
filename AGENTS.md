@@ -67,10 +67,10 @@ past a `grep "/Cadence/"` entirely.
 - `Cadence/macOS/Views/` - macOS feature screens and support views (167 `.swift` files at the time of writing; re-count with `ls Cadence/macOS/Views/*.swift | wc -l` rather than trusting this figure).
 - `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, hotkeys, task creation, hover state, task deletion, scheduling, note export, Apple account. **Not** reminders, **not** the privacy data reset, and since `c84732e` **not the list/context delete cascades**: `RemindersManager`, `PrivacyDataResetService` and `ListDeleteHelpers` are all cross-platform and live in `Cadence/Services/` (`CadenceRemindersManager.swift`, `CadencePrivacyDataResetService.swift`, `CadenceListDeleteHelpers.swift`), each leaving a tombstone under its old unprefixed name. That is **three** tombstones, not the two this line used to imply, and there is no longer a fourth: the `CalendarVisibilityPreferences.swift` tombstone was deleted outright by `6f71a70` once no file of that base name existed anywhere to collide with. Details in `Cadence/macOS/Services/AGENTS.md`.
 - `Cadence/macOS/Editor/` - AppKit-backed markdown editor bridge (11 files since the T-105 split). High risk; preserve NSTextView behavior carefully.
-- `Cadence/iOS/` - large, real iOS/iPadOS surface covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search and Settings (90 `.swift` files at the time of writing; re-count with `ls Cadence/iOS/*.swift | wc -l`). iPhone runs a four-tab bottom bar (`iOSCompactTabShell`); iPad keeps its sidebar. Do not assume feature parity with macOS. **Adding a task surface here: read "The Task Inspector Is Presented By A Host, Never By A Row" in `Cadence/iOS/AGENTS.md` first** — a row that owns a `.sheet` presenting the inspector is a shipped bug, four times over, not a style choice.
+- `Cadence/iOS/` - large, real iOS/iPadOS surface covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search and Settings (93 `.swift` files at the time of writing; re-count with `ls Cadence/iOS/*.swift | wc -l`). iPhone runs a four-tab bottom bar (`iOSCompactTabShell`); iPad keeps its sidebar. Do not assume feature parity with macOS. **Adding a task surface here: read "The Task Inspector Is Presented By A Host, Never By A Row" in `Cadence/iOS/AGENTS.md` first** — a row that owns a `.sheet` presenting the inspector is a shipped bug, four times over, not a style choice.
 - `CadenceWidgets/` - widget extension. Compiles a subset of app sources (models, `Theme.swift`, `Cadence*WidgetSupport.swift`) directly into the extension target.
 - `CadenceMCPServer/` and `plugins/cadence-mcp/` - MCP server/plugin surfaces. Separate integration boundaries with their own build and verification procedure — read `CadenceMCPServer/AGENTS.md` before changing shared models or services that they compile.
-- `CadenceTests/`, `CadenceUITests/` - test targets. `CadenceTests/` is a flat directory of 171 `.swift` files at the time of writing; **look for an existing file before adding one**, and re-count with `ls CadenceTests/*.swift | wc -l` instead of trusting this number. It is the figure the guides cite when they tell you to reuse a test file, so an undercount is what produces duplicate suites — it read "~140" through 158, 164, 167 and now 171.
+- `CadenceTests/`, `CadenceUITests/` - test targets. `CadenceTests/` is a flat directory of 177 `.swift` files at the time of writing; **look for an existing file before adding one**, and re-count with `ls CadenceTests/*.swift | wc -l` instead of trusting this number. It is the figure the guides cite when they tell you to reuse a test file, so an undercount is what produces duplicate suites — it read "~140" through 158, 164, 167, 171 and now 177.
 - `docs/` - support, privacy, and App Review notes (the public site + submission material).
 
 ## Scoped Guides
@@ -116,9 +116,14 @@ code, and every one of them has been violated by a shipped change at least once.
   and the notes action menu. If a row already has a `rowBackground`, do not add a second
   `.background()` on another layer.
 - **Prefer one shared component over near-copies.** The three kanban boards and the two
-  estimate pickers each drifted apart before being unified. `KanbanCard`, `BoardColumnHeader`
-  and `KanbanColumnScroll` are now shared by the list board, the All Tasks board, and the
-  Calendar Board — parameterize them, never fork them.
+  estimate pickers each drifted apart before being unified. `KanbanCard`,
+  `CadenceBoardColumnHeader` and `KanbanColumnScroll` are now shared by the list board, the
+  All Tasks board, and the Calendar Board — parameterize them, never fork them. **The header's
+  name is `CadenceBoardColumnHeader`**, and there is no `BoardColumnHeader`: three guides spelled
+  it that way in five places, which reads as a macOS type when it is a `Shared/Components/` one
+  that iOS's list kanban, Calendar Board and month agenda render too. `KanbanCard` and
+  `KanbanColumnScroll` really are macOS-only, so this bullet is a statement about the three *macOS*
+  boards plus a shared header, not a cross-platform trio.
 - **Build into a private `-derivedDataPath` whenever another build may be running.** The shared
   DerivedData is a single mutable directory: a clean build deletes `Build/Products/`, and anything
   launched from there dies in `libsecinit` before `main()` with an `EXC_BREAKPOINT` that looks like
@@ -139,6 +144,30 @@ code, and every one of them has been violated by a shipped change at least once.
   `grep xcodebuild` over `ps aux` reports your own grep as a hit. Match the binary path —
   `pgrep -f "Developer/usr/bin/xcodebuild test"` — or capture the PID when you launch and wait on
   that.
+- **Never create a simulator device; launch the macOS app only through the wrapper.** Two recurring
+  leaks the user has had to clear by hand.
+  *Simulators:* agents kept running `simctl create` and naming devices after themselves
+  (`Cadence-T195-Agent`, `…-iPad`, …). A created device **persists in the pool with all its data**
+  after `simctl shutdown`, so shutting it down is not cleanup — the Devices directory went 3.8 GB →
+  7.7 GB in one batch, and enough booted devices push the load average past 40 and kill other agents
+  on a 600 s watchdog. Share one existing **stock** device, boot it only if
+  `xcrun simctl list devices booted` is empty, and never `erase`, `shutdown` or `delete` it: another
+  agent is probably mid-run on it.
+  *The macOS app:* launching it is legitimate — macOS is the primary surface and some things can only
+  be confirmed by looking. Launching the **shipping configuration** is not: it opens the user's real
+  CloudKit-backed app-group store as a *second writer* while their own copy may be running, and such
+  instances have hung and needed a force-quit, one of them for 15 hours. Use
+  `./scripts/run-macos-app.sh start <path/to/Cadence.app> <id>`, which sets
+  `CADENCE_LOCAL_STORE_ONLY=1` (no CloudKit, and `CadenceAppDelegate` skips
+  `registerForRemoteNotifications()`) and `CADENCE_UI_TEST_STORE_ID=<id>` (store redirected to
+  `$TMPDIR/CadenceUITestStores/<id>/`), refuses to start if the user's own Cadence is running, and
+  records the PID. **Pair every `start` with a `stop <id>` in the same turn** — `stop` is idempotent,
+  escalates to `kill -9` if the app hangs, and removes the private store.
+  `./scripts/agent-cleanup.sh` reports these leaks and `--apply` reclaims them; a `SubagentStop` hook
+  runs it automatically. It deliberately spares scratch directories touched in the last 30 minutes
+  and **never** touches a `Build/Products/Debug/Cadence.app` process while any `xcodebuild` is alive,
+  because that path also matches xcodebuild's own **test host** and killing it mid-suite reads as a
+  flaky test. Treat the hook as a safety net, not a licence to skip your own cleanup.
 - **One directory per agent, and clean only inside it.** The scratchpad root is shared. Make
   **one** directory of your own under it — the session scratchpad path plus your PID, e.g.
   `.../scratchpad/agent-$$/` — put both your isolated source tree and your `-derivedDataPath`

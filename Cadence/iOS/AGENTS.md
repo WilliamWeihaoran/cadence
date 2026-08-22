@@ -1,6 +1,6 @@
 # iOS Guide
 
-The iOS/iPadOS app is a large, actively-developed surface (90 `.swift` files at the time of writing, covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings) — not early/stubbed. Re-count with `ls Cadence/iOS/*.swift | wc -l` when you add one rather than trusting the figure. Do not assume macOS feature parity by default; check the actual view file.
+The iOS/iPadOS app is a large, actively-developed surface (93 `.swift` files at the time of writing, covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings) — not early/stubbed. Re-count with `ls Cadence/iOS/*.swift | wc -l` when you add one rather than trusting the figure. Do not assume macOS feature parity by default; check the actual view file.
 
 ## Working Rules
 
@@ -128,6 +128,40 @@ Three things about the board wiring that are easy to get wrong:
 The `.dropDestination` is attached in an `if let` branch rather than always-on-returning-`false`,
 because `isTargeted` fires whether or not the closure accepts the drop — an always-attached version
 would highlight cards on surfaces that cannot bundle.
+
+## Archiving A List Is A Wind-Down, Not A Status Flip
+
+**T-215.** `archive(_ area:)` here was `area.status = .archived` and a save. macOS's archive has
+always also **cancelled the list's remaining active tasks**, through
+`TaskContainerLifecycleService`, which sat inside `macOS/Services/TaskWorkflowService.swift`'s
+`#if os(macOS)` while importing nothing platform-specific. So the same area wound down to two
+different sets of open work depending on which device the swipe happened on, and the Mac's All
+Tasks kept surfacing work the phone had filed away. The service is
+`Cadence/Services/CadenceTaskContainerLifecycleService.swift` now — sixth instance of that shape.
+
+Three things about the iOS wiring that are easy to get wrong:
+
+- **One archive call site.** `ModelContext.archiveList(_:)` in `iOSListArchiveSupport.swift` is the
+  only place `status = .archived` is written on this platform, and the only place the wind-down is
+  reached. `CadenceListArchiveSurfaceTests` sweeps the whole folder for a hand-written
+  `status = .archived` and fails on a second one — which is the bug the ticket was about.
+- **The confirmation is conditional, and that is the design.** macOS's archive is behind an edit
+  sheet you had to open; iOS's is a row swipe and a long-press item, so the ceremony has to come
+  from somewhere. But a sheet that appears over a list where nothing is open is a sheet people
+  learn to dismiss without reading. `CadenceListArchiveSummary.requiresConfirmation` is the test,
+  it is asked **once** (in `iOSListsView.requestArchive`), and the iPad pane calls up into that
+  rather than deciding for itself.
+- **The count comes from the settle's own array.** `TaskContainerLifecycleService.remainingActiveTasks`
+  is public for exactly this: a confirmation that counted by a second walk would eventually
+  over-promise. An area rolls up its child projects, because a child keeps its own `status` and its
+  tasks stay reachable after the parent is filed away.
+
+Deliberately not changed: list **completion** is still macOS-only (T-214) — un-guarding the service
+makes it a call site and nothing more, but nothing on iOS offers the action yet — and archiving a
+kanban **column** on iOS is still a draft toggle in the list editor that settles nothing (T-247).
+Do **not** reach for `markDone` / `markCancelled` / `applyStatusCompletion` for either: they spawn
+the next recurrence occurrence into the same area, project and section, so a wind-down routed
+through them refills the container it just closed.
 
 ## The markdown styling layer
 
