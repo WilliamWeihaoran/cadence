@@ -645,29 +645,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   `775833d` — category list plus value rows — and macOS has not caught up; it is the older
   twelve-category shell. Bringing macOS to the same vocabulary would also settle which of the two is
   the reference.
-- [T-21] **Verify the Apple Reminders integration end to end.** Verified; one defect found and
-  fixed, four spun off as [[T-253]]–[[T-256]]. **The ticket's own premise was stale and is corrected
-  here:** `RemindersManager` is *not* macOS-only — it moved to
-  `Cadence/Services/CadenceRemindersManager.swift` (prefixed file, unprefixed type) and is
-  cross-platform, and Reminders is surfaced on **both** platforms in **both** Settings
-  (`SettingsRemindersSection` / `iOSRemindersSettingsSection`) and **both** Inboxes
-  (`InboxAppleRemindersSectionView` from `TasksListView`, `iOSInboxRemindersSection` from
-  `iOSTaskCollectionPage`, one gate: `CadenceTasksPageScope.showsRemindersStrip`).
-  The denied path was **not** the untested one the ticket predicted — `RemindersConnectionStateTests`
-  already pinned all three states, `.writeOnly`, and the deprecated `.authorized` raw value. What was
-  untested was the *transition into* denial from inside the app: tapping **Don't Allow** on the
-  system prompt left both iOS surfaces on "Reminders access required" with a live **Allow Access**
-  button for the rest of the launch, and iOS never prompts twice, so the button was dead. Cause was
-  not a missing `.onAppear` — `EKEventStore.authorizationStatus` is cached per process in the
-  *denial* direction too, the mirror of the grant-direction hazard `requestAccess()` already worked
-  around. Measured on the iOS 26 simulator with the TCC row reading denied while the running app
-  showed the not-determined card, and the same build relaunched against the same row rendering it
-  correctly. Fixed by carrying the request's own `false`: new
-  `RemindersConnectionState.isDenied(status:deniedInThisSession:)` plus a stored, observable
-  `deniedInThisSession` on the manager, cleared whenever a real grant lands.
-  Also confirmed on device: iOS **terminates** Cadence on a Settings-app grant or revoke, so
-  "granted then revoked while a page is open" cannot strand a stale connected state there — see
-  [[T-253]] for macOS, where nothing terminates.
+
 - [T-22] **Audit against Apple's App Review guidelines** before publishing. `docs/app-review-notes.md`
   and `docs/privacy.html` are the existing submission material and are the place to start. Likely
   areas: what the privacy manifest declares versus what is actually collected, Sign in with Apple
@@ -824,15 +802,70 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   Low frequency, but it is the same class of mistake as the dead **Allow Access** button [[T-21]]
   fixed: an affordance offered in a state where it cannot work.
 
-- [T-257] **`HEAD` does not build from a clean clone.** `Cadence/Services/CadenceTaskContainerLifecycleService.swift`
-  is untracked (`git status` shows `??`, and it is not in `.gitignore`), but the type it declares is
-  referenced by **committed** code at `HEAD`: four call sites in `macOS/Sheets/EditListSheet.swift`
-  and seven in `CadenceTests/CadenceCancelledTaskReachabilityTests.swift`, landed by `aa33ae6`
-  (D-159). Anyone cloning the repo, and any isolation procedure that restores `HEAD`'s bytes and
-  drops added paths, gets a target that does not compile. Found while isolating for [[T-21]], which
-  had to special-case the file to build at all. `git add` it.
+- [T-257] ~~**`HEAD` does not build from a clean clone.**~~ **Withdrawn — the premise is false, and
+  following the instruction breaks the build.** `TaskContainerLifecycleService` *is* declared at
+  `HEAD`, in the committed `Cadence/macOS/Services/TaskWorkflowService.swift:58`; the untracked
+  `Cadence/Services/CadenceTaskContainerLifecycleService.swift` is another agent's uncommitted
+  **move** of that type — which is why `Cadence/macOS/Services/TaskWorkflowService.swift` shows as
+  modified in the same `git status` the ticket was written from. So the committed call sites in
+  `EditListSheet.swift` and `CadenceCancelledTaskReachabilityTests.swift` resolve fine, and a clean
+  clone builds. What does *not* build is `HEAD` plus that one untracked file, which is exactly the
+  isolation [[T-21]] was told to construct: measured on 2026-08-22, three errors — `invalid
+  redeclaration of 'TaskContainerLifecycleService'` and two `has no member 'remainingActiveTasks'`
+  against `HEAD`'s smaller version of the type. Dropping the file instead gave macOS TEST SUCCEEDED
+  and an iOS BUILD SUCCEEDED. Do **not** `git add` it — that would commit half of somebody else's
+  in-flight refactor. The general rule stands and is the one worth keeping: the project uses Xcode
+  **file-system-synchronized groups** (6 `PBXFileSystemSynchronizedRootGroup` entries in
+  `project.pbxproj`), so any `.swift` file under `Cadence/` is compiled by directory membership with
+  no `project.pbxproj` change to show for it. An untracked file therefore silently joins every
+  build, and restoring `HEAD` means **deleting** it, not keeping it.
+
+
+- [T-264] **Both Inboxes head the Apple Reminders group with a count of `0` in every state where the
+  count is meaningless.** `iOSInboxRemindersSection` passes `count: remindersManager.reminders.count`
+  to `iOSTaskGroupHeader`, and `InboxAppleRemindersSectionView` passes
+  `regularCount: reminders.count` to `TaskListGroupHeader`; neither heading suppresses a zero, so
+  not-determined, denied and restricted all render **APPLE REMINDERS 0** directly above a card that
+  says Cadence cannot see the reminders at all. Screenshotted on the iOS 26 simulator in both the
+  not-determined and denied states. It is the softer half of the "renders *no reminders* when the
+  truth is *not authorized*" failure — the *copy* is clean everywhere ("No open reminders" is
+  reachable only inside `.connected` on all four surfaces, verified state by state under [[T-21]]),
+  and it is only the capsule that still asserts a quantity nobody measured. Fix is a decision, not a
+  line: either the count is `nil`-able and the heading drops the capsule, or the section passes the
+  count only when `state.isConnected`. Do it in the shared `CadenceTaskGroupHeading` /
+  `TaskListGroupHeader` vocabulary rather than twice.
+
+- [T-265] **`RemindersManager.requestAccess()` has a second exit that returns `false` without
+  recording a denial — the same doorway [[T-21]] just closed, one branch over.** The
+  `guard status == .notDetermined else { refreshAuthorizationState(); return false }` arm is taken
+  by every status that is neither `.fullAccess` nor `.notDetermined`. For `.denied` and
+  `.restricted` that is harmless, because `isDenied` already reads them from the cached status. For
+  anything else it is the dead-button bug again: `resolve(status:)` folds unknown statuses through
+  `default` into `.notDetermined`, so the card offers **Allow Access**, the tap takes this arm, and
+  nothing changes. Today the only such value is `.writeOnly`, which EventKit does not return for
+  reminders — so this is a latent hazard, not a live defect, and it is filed rather than fixed for
+  that reason. The cheap version is to set `deniedInThisSession = true` on this arm too, since the
+  arm already means "asking cannot help". Related: [[T-256]], which is the same shape for
+  `.restricted` — an affordance offered in a state where it cannot work.
 
 ## Done
+
+- [D-169] `e6e05a4` The test-host mutex did not exclude (T-263) — filed independently by the T-21 agent
+  and already fixed by the time it reported. Both diagnoses agree and were reached separately, which
+  is worth more than either alone: `acquire` recorded the PID of its own short-lived process, so every
+  later caller found the lock "stale" within seconds and took it. Measured by that agent as a lock
+  stolen inside 90s and **three** concurrent macOS test runs — the fix for T-236 reproducing T-236.
+  Now records `$PPID` (the caller's shell, alive for the run) and refuses a release from a foreign id
+  while the owner lives.
+
+- [D-168] `3392fd3` Refusing the reminders prompt says "denied" (T-21).
+  EventKit keeps reporting `.notDetermined` after a refusal, so both iOS surfaces offered an Allow
+  Access button the OS will never answer again. Fixed with an observable `deniedInThisSession` behind
+  a shared rule. The state map is otherwise clean — "no reminders" copy is reachable only inside
+  `.connected`, so the classic misleading default is absent.
+  **Keep the test lesson:** the predecessor's scan asserted a symbol name that also appears in the
+  manager's *doc comment*, so deleting the real call left the suite green. Mutation caught it; the
+  repair uses `strippingComments` plus a guard that the stripper ran.
 
 - [D-167] `c82e120` The section palette gets an address, not new `Theme` accents (T-246). No resolved
   hue changed — 31 values compared programmatically, 0 differences. The ticket's count was off by one
