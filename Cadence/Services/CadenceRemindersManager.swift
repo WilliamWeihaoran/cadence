@@ -29,9 +29,17 @@ final class RemindersManager {
     private(set) var isAuthorized = false
     private(set) var isLoading = false
 
+    /// Set when a request that started from `.notDetermined` came back refused. See
+    /// `RemindersConnectionState.isDenied(status:deniedInThisSession:)` for why the cached status
+    /// is not enough on its own. Stored rather than computed so `@Observable` re-renders the
+    /// surfaces the moment it flips.
+    private(set) var deniedInThisSession = false
+
     var isDenied: Bool {
-        let status = EKEventStore.authorizationStatus(for: .reminder)
-        return status == .denied || status == .restricted
+        RemindersConnectionState.isDenied(
+            status: EKEventStore.authorizationStatus(for: .reminder),
+            deniedInThisSession: deniedInThisSession
+        )
     }
 
     private let store = EKEventStore()
@@ -49,6 +57,9 @@ final class RemindersManager {
         isAuthorized = status == .fullAccess
 
         if isAuthorized {
+            // A real grant retires the session record — it can only ever add a denial the cached
+            // status has not caught up with, never contradict one it has.
+            deniedInThisSession = false
             startObserving()
             reload()
         } else {
@@ -72,6 +83,12 @@ final class RemindersManager {
 
         let granted = (try? await store.requestFullAccessToReminders()) ?? false
         guard granted else {
+            // Trust the request's own `false` for exactly the reason the `true` below is trusted:
+            // `authorizationStatus` is cached per process and keeps answering `.notDetermined`
+            // after the user taps Don't Allow, which left both surfaces offering an "Allow Access"
+            // button that can never prompt again. Record it before re-deriving, so the re-derive
+            // reads the denial rather than the stale cache.
+            deniedInThisSession = true
             refreshAuthorizationState()
             return false
         }
@@ -88,6 +105,7 @@ final class RemindersManager {
         // serving its pre-authorization view of the database.
         store.reset()
         isAuthorized = true
+        deniedInThisSession = false
         startObserving()
         reload()
         return true

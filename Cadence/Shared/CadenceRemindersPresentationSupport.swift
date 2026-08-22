@@ -29,6 +29,27 @@ enum RemindersConnectionState: Equatable {
         }
     }
 
+    /// Whether reminders access is denied, given EventKit's cached answer **and** whether this
+    /// launch already watched the user refuse the in-app prompt.
+    ///
+    /// **`EKEventStore.authorizationStatus` is cached per process, in both directions.** The grant
+    /// direction is already worked around in `RemindersManager.requestAccess()`, which trusts
+    /// EventKit's own `granted` answer and resets the store because the class method keeps
+    /// reporting `.notDetermined` for the rest of the launch after the user taps Allow. The denial
+    /// direction is the mirror image and was left on the cached path: after **Don't Allow** the
+    /// status still reads `.notDetermined`, so the surface stayed on "Reminders access required"
+    /// and kept a live **Allow Access** button that can never prompt again — measured on the iOS 26
+    /// simulator, on Settings > Reminders and on the Inbox strip, with the simulator's TCC row
+    /// already recording the denial and a relaunch of the same build rendering it correctly.
+    ///
+    /// So the request's `false` is the denial, and has to be carried for the rest of the launch the
+    /// same way its `true` is. `deniedInThisSession` is that record; it is cleared the moment a
+    /// real grant lands, so it can only ever add a denial the cached status has not caught up with.
+    static func isDenied(status: EKAuthorizationStatus, deniedInThisSession: Bool) -> Bool {
+        if deniedInThisSession { return true }
+        return status == .denied || status == .restricted
+    }
+
     /// The view reads `RemindersManager`'s published flags rather than EventKit directly,
     /// because only `isAuthorized` is observable. `isDenied` is evaluated live, so it wins
     /// over a stale `isAuthorized` when access is revoked from System Settings mid-session.

@@ -92,6 +92,134 @@ struct RemindersConnectionStateTests {
         #expect(RemindersConnectionState.resolve(isAuthorized: false, isDenied: false) == .notDetermined)
     }
 
+    // MARK: - The in-app "Don't Allow", which the cached status cannot see
+
+    /// **T-21, measured on the iOS 26 simulator.** `EKEventStore.authorizationStatus` is cached per
+    /// process in *both* directions. The grant direction was already known and worked around; the
+    /// denial direction was not, and its consequence is worse: after the user taps **Don't Allow**
+    /// on the in-app prompt the status still reads `.notDetermined`, so Settings > Reminders and
+    /// the Inbox strip both stayed on "Reminders access required" with a live **Allow Access**
+    /// button — which iOS will never answer again, because the app has had its one prompt.
+    ///
+    /// Reproduced with the simulator's own TCC row already reading denied (`auth_value 0`) while
+    /// the running app showed the not-determined card, and the *same build relaunched* against the
+    /// *same* TCC row rendering "Reminders access denied" correctly. The process was the only
+    /// variable, which is what makes it the cache and not a missing `.onAppear`.
+    @Test func aRefusedInAppPromptIsDeniedEvenWhileTheCachedStatusStillSaysNotDetermined() {
+        #expect(RemindersConnectionState.isDenied(status: .notDetermined, deniedInThisSession: true))
+
+        // And it has to reach the state the views actually render, not just the flag.
+        let state = RemindersConnectionState.resolve(
+            isAuthorized: false,
+            isDenied: RemindersConnectionState.isDenied(status: .notDetermined, deniedInThisSession: true)
+        )
+        #expect(state == .denied)
+        #expect(state.accessAction == .openSystemSettings)
+        #expect(state.accessAction != .requestAccess, "the dead Allow Access button is back")
+    }
+
+    /// The record only ever *adds* a denial the cached status has not caught up with. Without a
+    /// refusal in this launch the answer is exactly the old one, so a fresh launch against a
+    /// `.notDetermined` store still offers to ask.
+    @Test func withoutARefusalTheAnswerIsStillEventKitsOwn() {
+        #expect(RemindersConnectionState.isDenied(status: .notDetermined, deniedInThisSession: false) == false)
+        #expect(RemindersConnectionState.isDenied(status: .denied, deniedInThisSession: false))
+        #expect(RemindersConnectionState.isDenied(status: .restricted, deniedInThisSession: false))
+        #expect(RemindersConnectionState.isDenied(status: .fullAccess, deniedInThisSession: false) == false)
+    }
+
+    /// A refusal must not outlive the grant that overturns it — otherwise a user who denies, then
+    /// allows from System Settings, is locked out of a working integration for the rest of the
+    /// launch. `RemindersManager` clears the record whenever a real grant lands; this pins the
+    /// pure half, and `theManagerDerivesDenialThroughTheSharedRuleRatherThanRespellingIt` pins
+    /// that the manager is the thing asking.
+    @Test func agrantOverturnsARefusalRatherThanBeingOutlivedByIt() {
+        // The clearing is the manager's job, so the pure function is asked the question it will
+        // actually be asked after a grant: status full, record cleared.
+        #expect(RemindersConnectionState.isDenied(status: .fullAccess, deniedInThisSession: false) == false)
+        #expect(
+            RemindersConnectionState.resolve(
+                isAuthorized: true,
+                isDenied: RemindersConnectionState.isDenied(status: .fullAccess, deniedInThisSession: false)
+            ) == .connected
+        )
+    }
+
+    /// **The call-site pin.** The function above is pure and would stay green with nobody calling
+    /// it — the exact shape `CadenceInboxRemindersSurfaceTests` exists to guard against. The
+    /// manager must ask it, must record the refusal, and must not keep its own copy of the
+    /// `.denied || .restricted` rule beside it.
+    @Test func theManagerDerivesDenialThroughTheSharedRuleRatherThanRespellingIt() throws {
+        let source = try remindersManagerSource()
+
+        #expect(
+            source.contains("RemindersConnectionState.isDenied("),
+            "RemindersManager stopped asking the shared denial rule"
+        )
+        #expect(
+            source.contains("deniedInThisSession = true"),
+            "RemindersManager stopped recording a refused in-app prompt"
+        )
+        #expect(
+            source.range(of: "status == \\.denied\\s*\\|\\|\\s*status == \\.restricted", options: .regularExpression) == nil,
+            "RemindersManager has its own copy of the denial rule again"
+        )
+        // The record has to be stored, not computed: `@Observable` only re-renders on stored
+        // property mutations, and the whole point is that the surface updates without a relaunch.
+        #expect(
+            source.contains("private(set) var deniedInThisSession = false"),
+            "deniedInThisSession is no longer a stored, observable property"
+        )
+    }
+
+    /// Stops the scan above going vacuous the way a `/tmp` against `/private/tmp` mismatch once did
+    /// — and, second half, proves the stripper actually stripped rather than silently returning the
+    /// file unchanged. A stripper that no-ops puts the doc comment's prose mention of
+    /// `RemindersConnectionState.isDenied(` back in front of the scan and makes it unfailable again.
+    @Test func theManagerSourceScanActuallyReadsTheFileAndStrippedItsComments() throws {
+        let source = try remindersManagerSource()
+        #expect(source.contains("final class RemindersManager"))
+        #expect(source.contains("func requestAccess"))
+        #expect(source.count > 2000, "the manager source read \(source.count) characters")
+
+        let raw = try remindersManagerRawSource()
+        #expect(raw.contains("/// Set when a request that started from"), "the manager's doc comments moved; re-pick the needle")
+        #expect(source.contains("/// Set when a request that started from") == false, "strippingComments left a doc comment behind")
+        // The needle the scan above depends on: it must survive stripping exactly once, as code.
+        #expect(occurrences(of: "RemindersConnectionState.isDenied(", in: raw) == 2, "expected the prose mention and the call")
+        #expect(occurrences(of: "RemindersConnectionState.isDenied(", in: source) == 1, "expected only the call to survive stripping")
+    }
+
+    private func occurrences(of needle: String, in haystack: String) -> Int {
+        var count = 0
+        var index = haystack.startIndex
+        while let range = haystack.range(of: needle, range: index..<haystack.endIndex) {
+            count += 1
+            index = range.upperBound
+        }
+        return count
+    }
+
+    /// **Comments stripped, and that is the whole point of this helper existing.** The manager's
+    /// doc comment on `deniedInThisSession` names
+    /// `RemindersConnectionState.isDenied(status:deniedInThisSession:)` in prose, so a raw
+    /// `contains("RemindersConnectionState.isDenied(")` over the file stays green with the actual
+    /// call deleted — the "cannot fail at all" failure mode written up in
+    /// `Cadence/Shared/AGENTS.md`, "Source-Scanning Tests: The Two Ways They Go Wrong". Mutation
+    /// tested: removing the call from `isDenied` while leaving the comment fails this scan only
+    /// once the stripper is in front of it.
+    private func remindersManagerSource() throws -> String {
+        try strippingComments(remindersManagerRawSource())
+    }
+
+    private func remindersManagerRawSource() throws -> String {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        return try String(
+            contentsOf: root.appendingPathComponent("Cadence/Services/CadenceRemindersManager.swift"),
+            encoding: .utf8
+        )
+    }
+
     // MARK: - Synced-reminder summary
 
     @Test func listRowsGroupLoadedRemindersByListBusiestFirst() {
@@ -130,5 +258,18 @@ struct RemindersConnectionStateTests {
             allowsCompletion: true
         )
     }
+}
+
+/// The repo's standard comment stripper, kept `private` per test file exactly as
+/// `CadenceNoteReferencePanelSurfaceTests` and five others keep theirs. Replaces each comment with
+/// the same number of spaces so offsets and line numbers in a failure message still line up.
+private func strippingComments(_ source: String) throws -> String {
+    var result = source
+    for pattern in ["//[^\n]*", "/\\*(?s:.)*?\\*/"] {
+        while let range = result.range(of: pattern, options: .regularExpression) {
+            result.replaceSubrange(range, with: String(repeating: " ", count: result.distance(from: range.lowerBound, to: range.upperBound)))
+        }
+    }
+    return result
 }
 #endif
