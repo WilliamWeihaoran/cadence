@@ -25,6 +25,15 @@
 
 set -uo pipefail
 LOCK="${TMPDIR:-/tmp}/cadence-macos-test-host.lock"
+# A held lock survives this long without a release before anyone may reclaim it.
+# Longer than the slowest cold build+test seen here (~25 min), short enough that a
+# killed agent does not block the queue for the rest of the night.
+LEASE=${CADENCE_LOCK_LEASE:-2700}
+# CADENCE_LOCK_LEASE exists for testing this script. It is floored at the default
+# for any lock this process did not create, because a short override reclaims a
+# lock another agent is actively holding -- which is exactly what happened once
+# while testing it against the live lock.
+(( LEASE < 2700 )) && [[ -z "${CADENCE_LOCK_TESTING:-}" ]] && LEASE=2700
 CMD="${1:-status}"
 
 case "$CMD" in
@@ -48,12 +57,17 @@ case "$CMD" in
         print -r -- "$PPID" > "$LOCK/pid"; print -r -- "$ID" > "$LOCK/id"; date +%s > "$LOCK/since"
         print -r -- "acquired after ${waited}s (id $ID, owner pid $PPID)"; exit 0
       fi
-      # Reclaim a lock whose owner is gone -- an agent killed by a watchdog or a
-      # usage limit never runs its release.
-      if [[ -f "$LOCK/pid" ]]; then
-        owner=$(<"$LOCK/pid")
-        if ! kill -0 "$owner" 2>/dev/null; then
-          print -r -- "owner $owner is dead; reclaiming stale lock"
+      # Reclaim on a LEASE, not on liveness. Agents run each shell command in a
+      # separate process, so the pid recorded at `acquire` is already dead by the
+      # time the build runs in the next call -- a liveness check therefore hands a
+      # held lock straight to the next caller. Measured: one agent's lock "expired
+      # during the long build window" and rolled over to two other agents while its
+      # own test run was still going. A lease expires only on wall-clock age, which
+      # survives the acquiring shell exiting.
+      if [[ -f "$LOCK/since" ]]; then
+        age=$(( $(date +%s) - $(cat "$LOCK/since" 2>/dev/null || print 0) ))
+        if (( age > LEASE )); then
+          print -r -- "lease expired after ${age}s (limit ${LEASE}s); reclaiming from $(cat "$LOCK/id" 2>/dev/null)"
           rm -rf "$LOCK"; continue
         fi
       fi
@@ -79,7 +93,8 @@ case "$CMD" in
   status)
     if [[ -d "$LOCK" ]]; then
       owner=$(cat "$LOCK/pid" 2>/dev/null); since=$(cat "$LOCK/since" 2>/dev/null); oid=$(cat "$LOCK/id" 2>/dev/null)
-      alive=$(kill -0 "$owner" 2>/dev/null && print held || print STALE)
+      age=$(( $(date +%s) - ${since:-0} ))
+      alive=$( (( age > LEASE )) && print "LEASE EXPIRED" || print held )
       print -r -- "locked by ${oid:-?} / pid $owner ($alive) for $(( $(date +%s) - ${since:-0} ))s"
     else
       print -r -- "free"

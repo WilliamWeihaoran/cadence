@@ -95,4 +95,4 @@ say "== after =="
 say "  booted simulators: $(xcrun simctl list devices booted 2>/dev/null | grep -c Booted)"
 say "  scratchpad: $(du -sh "$SCRATCH_ROOT" 2>/dev/null | cut -f1)"
 df -h /System/Volumes/Data | tail -1 | awk '{print "  disk free: "$4}'
-(( APPLY )) || say ""; say "  (dry run — pass --apply to reclaim)"
+if (( ! APPLY )); then say ""; say "  (dry run — pass --apply to reclaim)"; fi
