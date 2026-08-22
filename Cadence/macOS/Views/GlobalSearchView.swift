@@ -10,6 +10,10 @@ struct GlobalSearchOverlay: View {
     @Environment(GlobalSearchManager.self) private var searchManager
     @Environment(CalendarManager.self) private var calendarManager
     @AppStorage(CadencePreferenceKeys.sidebarHiddenTabs) private var sidebarHiddenTabsRaw = ""
+    /// The palette draws every command and page row in the tint the *sidebar* draws that
+    /// destination in, override included — so retinting Today in Settings → Sidebar retints it
+    /// here too. Before T-244 this preference was never read on this screen.
+    @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = CadencePreferenceKeys.emptySidebarPreference
 
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -42,7 +46,8 @@ struct GlobalSearchOverlay: View {
             notes: notes,
             goals: goals,
             habits: habits,
-            eventResults: eventResults
+            eventResults: eventResults,
+            sidebarTabColorsRaw: sidebarTabColorsRaw
         )
     }
 

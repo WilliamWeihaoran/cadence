@@ -16,12 +16,21 @@ enum GlobalSearchIndexSupport {
         notes: [Note],
         goals: [Goal],
         habits: [Habit],
-        eventResults: [GlobalSearchResult]
+        eventResults: [GlobalSearchResult],
+        sidebarTabColorsRaw: String
     ) -> GlobalSearchIndexedSource {
         var sections: [GlobalSearchSection] = []
 
-        appendSection(.commands, results: commandResults(query: query), into: &sections)
-        appendSection(.pages, results: pageResults(query: query, hiddenTabs: hiddenTabs), into: &sections)
+        appendSection(
+            .commands,
+            results: commandResults(query: query, sidebarTabColorsRaw: sidebarTabColorsRaw),
+            into: &sections
+        )
+        appendSection(
+            .pages,
+            results: pageResults(query: query, hiddenTabs: hiddenTabs, sidebarTabColorsRaw: sidebarTabColorsRaw),
+            into: &sections
+        )
         appendSection(.areas, results: areaResults(areas: areas, query: query), into: &sections)
         appendSection(.projects, results: projectResults(projects: projects, query: query), into: &sections)
         appendSection(.tasks, results: taskResults(tasks: tasks, query: query), into: &sections)
@@ -50,7 +59,11 @@ enum GlobalSearchIndexSupport {
         sections.append(.init(category: category, results: results))
     }
 
-    static func commandResults(query: String) -> [GlobalSearchResult] {
+    /// `sidebarTabColorsRaw` is `CadencePreferenceKeys.sidebarTabColors` — the same preference
+    /// Settings → Sidebar writes and both sidebars read. Threading it this far is the point of
+    /// T-244: the palette hand-assigned its own `Theme` accents and never read this string, so a
+    /// retinted destination kept its old colour here.
+    static func commandResults(query: String, sidebarTabColorsRaw: String) -> [GlobalSearchResult] {
         rankedResults(
             GlobalSearchCommandDefinition.all.compactMap { definition in
                 guard matches(query: query, fields: [definition.title, definition.subtitle, definition.aliases]) else { return nil }
@@ -60,7 +73,7 @@ enum GlobalSearchIndexSupport {
                     title: definition.title,
                     subtitle: definition.subtitle,
                     icon: definition.icon,
-                    tintHex: definition.tintHex,
+                    tintHex: definition.tintHex(sidebarTabColorsRaw: sidebarTabColorsRaw),
                     destination: .command(definition.command)
                 )
             },
@@ -68,8 +81,16 @@ enum GlobalSearchIndexSupport {
         )
     }
 
-    static func pageResults(query: String, hiddenTabs: Set<SidebarStaticDestination>) -> [GlobalSearchResult] {
+    static func pageResults(
+        query: String,
+        hiddenTabs: Set<SidebarStaticDestination>,
+        sidebarTabColorsRaw: String
+    ) -> [GlobalSearchResult] {
         rankedResults(GlobalSearchPageDefinition.all.compactMap { page in
+            // A destination the sidebar does not route to as a page cannot be a palette row.
+            // Every entry in the catalog has one; this is the guard rather than a fallback so a
+            // future `.lists` or `.search` entry drops out instead of opening the wrong page.
+            guard let item = page.item else { return nil }
             let subtitle = if let toggleable = page.toggleable, hiddenTabs.contains(toggleable) {
                 "\(page.baseSubtitle) • Hidden from sidebar"
             } else {
@@ -82,8 +103,8 @@ enum GlobalSearchIndexSupport {
                 title: page.label,
                 subtitle: subtitle,
                 icon: page.icon,
-                tintHex: page.tintHex,
-                destination: .sidebar(page.item)
+                tintHex: page.tintHex(sidebarTabColorsRaw: sidebarTabColorsRaw),
+                destination: .sidebar(item)
             )
         }, query: query)
     }
@@ -248,7 +269,7 @@ enum GlobalSearchIndexSupport {
             title: item.title,
             subtitle: subtitle,
             icon: "calendar",
-            tintHex: item.calendarColor.globalSearchHexString() ?? (Theme.purple.globalSearchHexString() ?? "#9E8CFF"),
+            tintHex: item.calendarColor.globalSearchHexString() ?? Theme.purpleHex,
             destination: .event(item.id)
         )
     }
@@ -287,7 +308,7 @@ enum GlobalSearchIndexSupport {
                 title: title,
                 subtitle: dateLabel,
                 icon: "doc.text",
-                tintHex: Theme.purple.globalSearchHexString() ?? "#9E8CFF",
+                tintHex: Theme.purpleHex,
                 destination: .eventNote(note.id)
             )
         }, query: query).prefix(query.isEmpty ? 8 : 12))

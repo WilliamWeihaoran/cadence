@@ -15,6 +15,12 @@ struct iOSSearchView: View {
     @Query(sort: \Goal.order) private var goals: [Goal]
     @Query(sort: \Habit.order) private var habits: [Habit]
 
+    /// iOS Search draws a page row in the tint the sidebar draws that destination in, override
+    /// included — the same `CadenceSidebarTint` reading `iOSRootSidebar` uses. It read
+    /// `destination.tint` (the *default*) until T-244, which agreed on hue with the sidebar and
+    /// silently disagreed with it for anyone who had retinted a row.
+    @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = CadencePreferenceKeys.emptySidebarPreference
+
     @State private var query = ""
     @State private var selectedTask: AppTask?
     @State private var selectedNote: Note?
@@ -84,7 +90,7 @@ struct iOSSearchView: View {
                 subtitle: destination.subtitle,
                 detail: destination.searchSummary,
                 icon: destination.systemImage,
-                color: destination.tint,
+                color: Color(hex: CadenceSidebarTint.hex(for: destination, overridesRaw: sidebarTabColorsRaw)),
                 destination: destination,
                 fields: [destination.title, destination.subtitle, destination.searchSummary, destination.searchAliases]
             )

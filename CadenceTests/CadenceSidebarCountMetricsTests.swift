@@ -286,6 +286,220 @@ struct CadenceFeatureDestinationTintTests {
 }
 
 
+/// Where the **command palette** gets a destination's tint from (T-244).
+///
+/// Cmd+K hand-assigned each row a `Theme` accent, and three of them named a different hue than the
+/// sidebar draws the same destination in — Focus `Theme.red` against the sidebar's teal, Calendar
+/// `Theme.purple` against the sidebar's red, Settings `Theme.dim` against the sidebar's blue. It
+/// also never read `CadencePreferenceKeys.sidebarTabColors`, so a retinted destination kept its
+/// old colour in the palette. The sidebar is the source of truth for a destination's identity
+/// colour — it is where Settings → Sidebar lets the user *change* it — so the palette follows it.
+///
+/// **The assertions are relations, and the second is the mutation-proof one.** T-166's lesson is
+/// that replacing a token with its own current value as a literal passes every value assertion; so
+/// the override half feeds in hexes that are in no palette at all (`#010203`…). No hand-assigned
+/// colour, `Theme` token or literal can produce those — only a read of the preference can.
+@MainActor
+struct GlobalSearchDestinationTintTests {
+
+    /// A synthetic `sidebarTabColors` string covering every destination, with a hex that appears
+    /// in no palette in this app. `CadenceSidebarTint.hex` is the only way a row can wear one.
+    private var syntheticOverrides: [CadenceFeatureDestination: String] {
+        CadenceFeatureDestination.allCases.enumerated().reduce(into: [:]) { partial, pair in
+            partial[pair.element] = String(format: "#%02X0203", pair.offset + 1)
+        }
+    }
+
+    private var syntheticRaw: String {
+        syntheticOverrides
+            .map { "\($0.key.rawValue):\($0.value)" }
+            .sorted()
+            .joined(separator: ",")
+    }
+
+    /// Every page row, keyed by the destination it opens. Built from the catalog rather than from
+    /// a hand-written list, so a new page is covered the day it is added.
+    private func pageRows(overridesRaw: String) -> [CadenceFeatureDestination: GlobalSearchResult] {
+        let results = GlobalSearchDataSupport.pageResults(
+            query: "",
+            hiddenTabs: [],
+            sidebarTabColorsRaw: overridesRaw
+        )
+        return GlobalSearchPageDefinition.all.reduce(into: [:]) { partial, page in
+            guard let result = results.first(where: { $0.id == "page-\(page.label)" }) else { return }
+            partial[page.feature] = result
+        }
+    }
+
+    private func commandRows(overridesRaw: String) -> [GlobalSearchCommand: GlobalSearchResult] {
+        let results = GlobalSearchDataSupport.commandResults(query: "", sidebarTabColorsRaw: overridesRaw)
+        return results.reduce(into: [:]) { partial, result in
+            guard case let .command(command) = result.destination else { return }
+            partial[command] = result
+        }
+    }
+
+    /// Non-vacuity. Every assertion below is a loop over these, and a loop over nothing passes.
+    @Test func thePaletteOffersEveryPageAndCommandItsCatalogDeclares() {
+        let pages = pageRows(overridesRaw: "")
+        #expect(pages.count == GlobalSearchPageDefinition.all.count)
+        #expect(pages.count >= 9, "read \(pages.count) page rows")
+        // `item` is derived from `feature` and `pageResults` drops a row whose destination the
+        // sidebar cannot route to, so this is also the guard on that `guard let`.
+        for page in GlobalSearchPageDefinition.all {
+            #expect(page.item != nil, "\(page.label) has no routable sidebar item")
+            #expect(pages[page.feature] != nil, "\(page.label) produced no palette row")
+        }
+
+        let commands = commandRows(overridesRaw: "")
+        #expect(commands.count == GlobalSearchCommandDefinition.all.count)
+        #expect(commands.count >= 6, "read \(commands.count) command rows")
+
+        // And the rows are not all one colour, so an "everything matches" pass is meaningful.
+        #expect(Set(pages.values.map(\.tintHex)).count >= 3)
+    }
+
+    /// Hue half: with nothing overridden, every palette row is the colour the **sidebar** draws
+    /// that destination in. This is the half that fails against `Theme.red` for Focus.
+    @Test func everyPageRowUsesTheSidebarsDefaultTintForItsDestination() {
+        for (destination, result) in pageRows(overridesRaw: "") {
+            #expect(
+                result.tintHex == destination.defaultColorHex,
+                "\(destination.rawValue) page row is \(result.tintHex), sidebar draws it \(destination.defaultColorHex)"
+            )
+        }
+    }
+
+    @Test func everyCommandRowUsesTheSidebarsDefaultTintForItsDestination() {
+        for (command, result) in commandRows(overridesRaw: "") {
+            #expect(
+                result.tintHex == command.tintSource.defaultColorHex,
+                "\(command.rawValue) command row is \(result.tintHex), not \(command.tintSource.defaultColorHex)"
+            )
+        }
+    }
+
+    /// The three rows the palette and the sidebar disagreed about, named so the regression has a
+    /// test that says its own name. Spelled as a relation against `CadenceSidebarTint` rather than
+    /// as three expected strings — a literal is exactly what this ticket was about.
+    @Test func theThreeRowsThatDisagreedWithTheSidebarNowFollowIt() {
+        let pages = pageRows(overridesRaw: "")
+        for destination in [CadenceFeatureDestination.focus, .calendar, .settings] {
+            #expect(
+                pages[destination]?.tintHex == CadenceSidebarTint.hex(for: destination, overridesRaw: ""),
+                "\(destination.rawValue) still names its own colour"
+            )
+        }
+        // Non-vacuity for this trio specifically: three destinations, three different hues, so
+        // "they all match" is not three copies of one assertion.
+        #expect(Set([CadenceFeatureDestination.focus, .calendar, .settings].map(\.defaultColorHex)).count == 3)
+    }
+
+    /// Override half — the one no literal can pass. `#010203`-shaped hexes are in no palette, so a
+    /// row wearing one proves the palette read `CadencePreferenceKeys.sidebarTabColors`.
+    @Test func aRetintedDestinationIsRetintedInThePaletteToo() {
+        let raw = syntheticRaw
+        #expect(!raw.isEmpty)
+
+        for (destination, result) in pageRows(overridesRaw: raw) {
+            #expect(
+                result.tintHex == syntheticOverrides[destination],
+                "\(destination.rawValue) page row ignored the override: \(result.tintHex)"
+            )
+            #expect(result.tintHex != destination.defaultColorHex, "the override must actually differ")
+        }
+
+        for (command, result) in commandRows(overridesRaw: raw) {
+            #expect(
+                result.tintHex == syntheticOverrides[command.tintSource],
+                "\(command.rawValue) command row ignored the override: \(result.tintHex)"
+            )
+        }
+    }
+
+    /// `toggleable` is derived from the destination now rather than typed beside it, so this pins
+    /// the derivation through the behaviour it drives: a hidden row says so in its subtitle, and
+    /// Inbox — a view inside Tasks, with no sidebar row and so no toggle — never can.
+    @Test func aHiddenDestinationStillSaysSoInItsSubtitle() {
+        let results = GlobalSearchDataSupport.pageResults(
+            query: "",
+            hiddenTabs: [.focus],
+            sidebarTabColorsRaw: ""
+        )
+        let focus = results.first { $0.id == "page-Focus" }
+        #expect(focus?.subtitle.contains("Hidden from sidebar") == true)
+
+        let calendar = results.first { $0.id == "page-Calendar" }
+        #expect(calendar?.subtitle.contains("Hidden from sidebar") == false)
+
+        #expect(GlobalSearchPageDefinition.all.first { $0.feature == .inbox }?.toggleable == nil)
+        #expect(GlobalSearchPageDefinition.all.first { $0.feature == .focus }?.toggleable == .focus)
+    }
+
+    /// iOS's Search page is the same surface on the other platform, and it is inside
+    /// `#if os(iOS)` — invisible to this macOS-built target — so this is a source scan. It already
+    /// agreed with the sidebar on *hue* (it read `destination.tint`), and silently disagreed with
+    /// it for anyone who had retinted a row, because a default is not an override.
+    @Test func iOSSearchResolvesItsPageTintThroughTheSharedHelperToo() throws {
+        let source = strippingSwiftComments(try tintSourceFile("Cadence/iOS/iOSSearchView.swift"))
+
+        // Non-vacuity: the file was read, and the stripper ran (the prose naming the old spelling
+        // sits in a doc comment directly above the fixed line).
+        #expect(source.count > 5_000, "read \(source.count) characters")
+        #expect(source.contains("private var pageResults: [iOSSearchResult]"))
+        #expect(!source.contains("until T-244"))
+
+        #expect(source.contains("CadenceSidebarTint.hex(for: destination, overridesRaw: sidebarTabColorsRaw)"))
+        #expect(source.contains("CadencePreferenceKeys.sidebarTabColors"))
+        // The specific spelling that ignores the override, and only that — `tint:` arguments
+        // elsewhere in this file are unrelated controls, so the needle is qualified.
+        #expect(!source.contains("color: destination.tint"))
+    }
+
+    /// **The relation the value assertions above cannot make: one resolver, not two.**
+    ///
+    /// Every check in this suite is behavioural, and behaviour cannot tell `CadenceSidebarTint.hex`
+    /// apart from a second copy of its body inlined here — `overrides(from:)[feature] ?? default`
+    /// returns the same string for every input. That is exactly the shape T-244 was: two lists
+    /// answering "what colour is this destination", agreeing until one of them was changed. The
+    /// sidebar's list moved to teal and red and the palette's did not.
+    ///
+    /// It is also the shape T-166's mutation exposed — a token replaced by its own current value
+    /// passes every value assertion. So this asserts the *call*, positively, in both surfaces.
+    @Test func bothSearchSurfacesResolveADestinationsTintThroughTheOneSharedFunction() throws {
+        let files = [
+            "Cadence/macOS/Views/GlobalSearchSupportViews.swift",
+            "Cadence/iOS/iOSSearchView.swift"
+        ]
+
+        for path in files {
+            let source = strippingSwiftComments(try tintSourceFile(path))
+
+            // Non-vacuity, per file: a scan that silently read nothing passes every assertion.
+            #expect(source.count > 3_000, "\(path) read \(source.count) characters")
+
+            let calls = regexMatches("CadenceSidebarTint\\.hex\\(for: ", in: source)
+            #expect(!calls.isEmpty, "\(path) resolves a destination tint without the shared helper")
+
+            // And no hand-typed palette literal anywhere in the file, which is what both surfaces
+            // spelled before: the palette's `?? "#5AA2FF"` fallbacks and the drifted `#9E8CFF`.
+            let literals = regexMatches(hexLiteralPattern, in: source)
+            #expect(literals.isEmpty, "\(path) spells a hex literal: \(literals)")
+        }
+    }
+
+    /// Self-check on that last needle, so a typo cannot quietly pass the scan: it must match the
+    /// spelling this test bans and must not match the one that replaced it.
+    @Test func theIOSNeedleMatchesTheOldSpellingAndNotTheNewOne() {
+        let banned = "                color: destination.tint,"
+        let wanted = "                color: Color(hex: CadenceSidebarTint.hex(for: destination, overridesRaw: sidebarTabColorsRaw)),"
+
+        #expect(banned.contains("color: destination.tint"))
+        #expect(!wanted.contains("color: destination.tint"))
+    }
+}
+
+
 /// Every non-overlapping match of `pattern`. Spelled as a loop over `range(of:options:)` rather
 /// than `ranges(of:options:)` so the scan does not depend on which Foundation overload the test
 /// target resolves.

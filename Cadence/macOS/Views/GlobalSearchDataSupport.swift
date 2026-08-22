@@ -12,7 +12,8 @@ enum GlobalSearchDataSupport {
         notes: [Note],
         goals: [Goal],
         habits: [Habit],
-        eventResults: [GlobalSearchResult]
+        eventResults: [GlobalSearchResult],
+        sidebarTabColorsRaw: String
     ) -> [GlobalSearchSection] {
         GlobalSearchIndexSupport.buildIndexedSource(
             query: query,
@@ -23,16 +24,25 @@ enum GlobalSearchDataSupport {
             notes: notes,
             goals: goals,
             habits: habits,
-            eventResults: eventResults
+            eventResults: eventResults,
+            sidebarTabColorsRaw: sidebarTabColorsRaw
         ).sections
     }
 
-    static func commandResults(query: String) -> [GlobalSearchResult] {
-        GlobalSearchIndexSupport.commandResults(query: query)
+    static func commandResults(query: String, sidebarTabColorsRaw: String) -> [GlobalSearchResult] {
+        GlobalSearchIndexSupport.commandResults(query: query, sidebarTabColorsRaw: sidebarTabColorsRaw)
     }
 
-    static func pageResults(query: String, hiddenTabs: Set<SidebarStaticDestination>) -> [GlobalSearchResult] {
-        GlobalSearchIndexSupport.pageResults(query: query, hiddenTabs: hiddenTabs)
+    static func pageResults(
+        query: String,
+        hiddenTabs: Set<SidebarStaticDestination>,
+        sidebarTabColorsRaw: String
+    ) -> [GlobalSearchResult] {
+        GlobalSearchIndexSupport.pageResults(
+            query: query,
+            hiddenTabs: hiddenTabs,
+            sidebarTabColorsRaw: sidebarTabColorsRaw
+        )
     }
 
     static func areaResults(areas: [Area], query: String) -> [GlobalSearchResult] {

@@ -34,23 +34,75 @@ enum GlobalSearchCommand: String, Hashable {
     case settings
 }
 
+extension GlobalSearchCommand {
+    /// The destination whose sidebar tint this command's row is drawn in.
+    ///
+    /// `.newTask` is the only one that is not itself a destination — it opens the capture sheet
+    /// rather than a page — and it takes the Tasks tint because that is the family it belongs to,
+    /// which is also the colour it has always been drawn in.
+    var tintSource: CadenceFeatureDestination {
+        switch self {
+        case .newTask: return .allTasks
+        case .focus: return .focus
+        case .today: return .today
+        case .allTasks: return .allTasks
+        case .calendar: return .calendar
+        case .settings: return .settings
+        }
+    }
+}
+
+/// A row in Cmd+K's **Commands** section.
+///
+/// **It carries no colour of its own.** Every tint here used to be a hand-assigned `Theme` accent
+/// (T-244), and three of them named a different hue than the sidebar draws the same destination
+/// in: Focus was `Theme.red` against the sidebar's teal, Calendar was `Theme.purple` against the
+/// sidebar's red — the sidebar's *Notes* colour, on the Calendar row — and Settings was
+/// `Theme.dim` against the sidebar's blue. The ticket named the first two; the third was found
+/// while fixing them. The sidebar is the
+/// source of truth — it is where Settings → Sidebar lets the user *retint* a destination — so the
+/// tint is resolved from `CadenceSidebarTint` at build time instead, which also makes an override
+/// reach this palette. It never did before: nothing here read
+/// `CadencePreferenceKeys.sidebarTabColors` at all.
 struct GlobalSearchCommandDefinition {
     let command: GlobalSearchCommand
     let title: String
     let subtitle: String
     let icon: String
-    let tintHex: String
     let aliases: String
+
+    func tintHex(sidebarTabColorsRaw: String) -> String {
+        CadenceSidebarTint.hex(for: command.tintSource, overridesRaw: sidebarTabColorsRaw)
+    }
 }
 
+/// A row in Cmd+K's **Pages** section.
+///
+/// The destination is the one stored fact, and the three things that used to be typed beside it
+/// all follow from it: the selection the row opens (`item`), the tint it is drawn in, and the
+/// sidebar toggle its subtitle reports on (`toggleable`). See `GlobalSearchCommandDefinition` for
+/// why the tint is not spelled here.
 struct GlobalSearchPageDefinition {
     let label: String
-    let item: SidebarItem
+    let feature: CadenceFeatureDestination
     let icon: String
-    let tintHex: String
     let baseSubtitle: String
     let aliases: String
-    let toggleable: SidebarStaticDestination?
+
+    /// `nil` for a destination the sidebar does not route to as a page — `.lists` is the
+    /// scrolling region and `.search` is the header button, so neither can be a palette row.
+    var item: SidebarItem? { feature.macSidebarItem }
+
+    /// The Settings → Sidebar handle this row reports "Hidden from sidebar" against, or `nil` for
+    /// a destination Settings offers no handle for. Inbox is the interesting one: it is a *view*
+    /// inside the Tasks destination rather than a sidebar row, so there is no visibility toggle
+    /// for this entry to report on — and it stays its own palette row anyway, because it is still
+    /// its own view.
+    var toggleable: SidebarStaticDestination? { feature.sidebarStaticDestination }
+
+    func tintHex(sidebarTabColorsRaw: String) -> String {
+        CadenceSidebarTint.hex(for: feature, overridesRaw: sidebarTabColorsRaw)
+    }
 }
 
 struct GlobalSearchResult: Identifiable, Hashable {
@@ -104,12 +156,12 @@ struct GlobalSearchSection: Identifiable {
 extension GlobalSearchCommandDefinition {
     static var all: [GlobalSearchCommandDefinition] {
         [
-            .init(command: .newTask, title: "New Task", subtitle: "Create a task from anywhere in the app", icon: "plus.circle.fill", tintHex: Theme.blue.globalSearchHexString() ?? "#5AA2FF", aliases: "create task add"),
-            .init(command: .focus, title: "Focus", subtitle: "Jump straight to the Focus page", icon: "timer", tintHex: Theme.red.globalSearchHexString() ?? "#FF6B6B", aliases: "pomodoro timer focus"),
-            .init(command: .today, title: "Today", subtitle: "Open the Today page", icon: "sun.max.fill", tintHex: Theme.amber.globalSearchHexString() ?? "#FFB84D", aliases: "today dashboard daily"),
-            .init(command: .allTasks, title: "All Tasks", subtitle: "Open the full task index", icon: "checklist", tintHex: Theme.blue.globalSearchHexString() ?? "#5AA2FF", aliases: "tasks all"),
-            .init(command: .calendar, title: "Calendar", subtitle: "Open the calendar and timeline", icon: "calendar", tintHex: Theme.purple.globalSearchHexString() ?? "#9E8CFF", aliases: "calendar schedule events"),
-            .init(command: .settings, title: "Settings", subtitle: "Open app settings", icon: "gearshape.fill", tintHex: Theme.dim.globalSearchHexString() ?? "#7B8492", aliases: "preferences settings")
+            .init(command: .newTask, title: "New Task", subtitle: "Create a task from anywhere in the app", icon: "plus.circle.fill", aliases: "create task add"),
+            .init(command: .focus, title: "Focus", subtitle: "Jump straight to the Focus page", icon: "timer", aliases: "pomodoro timer focus"),
+            .init(command: .today, title: "Today", subtitle: "Open the Today page", icon: "sun.max.fill", aliases: "today dashboard daily"),
+            .init(command: .allTasks, title: "All Tasks", subtitle: "Open the full task index", icon: "checklist", aliases: "tasks all"),
+            .init(command: .calendar, title: "Calendar", subtitle: "Open the calendar and timeline", icon: "calendar", aliases: "calendar schedule events"),
+            .init(command: .settings, title: "Settings", subtitle: "Open app settings", icon: "gearshape.fill", aliases: "preferences settings")
         ]
     }
 }
@@ -117,19 +169,15 @@ extension GlobalSearchCommandDefinition {
 extension GlobalSearchPageDefinition {
     static var all: [GlobalSearchPageDefinition] {
         [
-            .init(label: "Today", item: .today, icon: "sun.max.fill", tintHex: Theme.amber.globalSearchHexString() ?? "#FFB84D", baseSubtitle: "Daily dashboard and timeline", aliases: "today dashboard daily", toggleable: .today),
-            .init(label: "All Tasks", item: .allTasks, icon: "checklist", tintHex: Theme.blue.globalSearchHexString() ?? "#5AA2FF", baseSubtitle: "Everything across your workspace", aliases: "tasks all", toggleable: .allTasks),
-            // `toggleable: nil`, unlike every other task page here: Inbox is a *view* inside the
-            // Tasks destination now, not a sidebar row, so there is no visibility toggle for this
-            // entry to report on. It stays its own palette entry because it is still its own view —
-            // selecting it opens the Tasks page with Inbox selected.
-            .init(label: "Inbox", item: .inbox, icon: "tray.fill", tintHex: Theme.blue.globalSearchHexString() ?? "#5AA2FF", baseSubtitle: "Unsorted capture tasks", aliases: "inbox capture", toggleable: nil),
-            .init(label: "Focus", item: .focus, icon: "timer", tintHex: Theme.red.globalSearchHexString() ?? "#FF6B6B", baseSubtitle: "Focus timer and active task", aliases: "focus timer pomodoro", toggleable: .focus),
-            .init(label: "Calendar", item: .calendar, icon: "calendar", tintHex: Theme.purple.globalSearchHexString() ?? "#9E8CFF", baseSubtitle: "Full calendar and time blocks", aliases: "calendar schedule events", toggleable: .calendar),
-            .init(label: "Goals", item: .goals, icon: "flag.fill", tintHex: Theme.green.globalSearchHexString() ?? "#4ECB71", baseSubtitle: "Directions, milestones, and progress", aliases: "goals milestones targets stages directions", toggleable: .goals),
-            .init(label: "Habits", item: .habits, icon: "flame.fill", tintHex: Theme.amber.globalSearchHexString() ?? "#FFB84D", baseSubtitle: "Habits and streaks", aliases: "habits streaks", toggleable: .habits),
-            .init(label: "Notes", item: .notes, icon: "doc.text", tintHex: Theme.purple.globalSearchHexString() ?? "#9E8CFF", baseSubtitle: "Workspace notes", aliases: "notes docs", toggleable: nil),
-            .init(label: "Settings", item: .settings, icon: "gearshape.fill", tintHex: Theme.dim.globalSearchHexString() ?? "#7B8492", baseSubtitle: "Appearance, calendar, and sidebar preferences", aliases: "settings preferences", toggleable: nil)
+            .init(label: "Today", feature: .today, icon: "sun.max.fill", baseSubtitle: "Daily dashboard and timeline", aliases: "today dashboard daily"),
+            .init(label: "All Tasks", feature: .allTasks, icon: "checklist", baseSubtitle: "Everything across your workspace", aliases: "tasks all"),
+            .init(label: "Inbox", feature: .inbox, icon: "tray.fill", baseSubtitle: "Unsorted capture tasks", aliases: "inbox capture"),
+            .init(label: "Focus", feature: .focus, icon: "timer", baseSubtitle: "Focus timer and active task", aliases: "focus timer pomodoro"),
+            .init(label: "Calendar", feature: .calendar, icon: "calendar", baseSubtitle: "Full calendar and time blocks", aliases: "calendar schedule events"),
+            .init(label: "Goals", feature: .goals, icon: "flag.fill", baseSubtitle: "Directions, milestones, and progress", aliases: "goals milestones targets stages directions"),
+            .init(label: "Habits", feature: .habits, icon: "flame.fill", baseSubtitle: "Habits and streaks", aliases: "habits streaks"),
+            .init(label: "Notes", feature: .notes, icon: "doc.text", baseSubtitle: "Workspace notes", aliases: "notes docs"),
+            .init(label: "Settings", feature: .settings, icon: "gearshape.fill", baseSubtitle: "Appearance, calendar, and sidebar preferences", aliases: "settings preferences")
         ]
     }
 }
