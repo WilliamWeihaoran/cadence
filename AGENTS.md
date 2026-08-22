@@ -61,7 +61,7 @@ past a `grep "/Cadence/"` entirely.
 
 - `Cadence/CadenceApp.swift` - app entry, model container, CloudKit setup, recovery.
 - `Cadence/Models/` - shared SwiftData models. Read this before changing persistence or relationships.
-- `Cadence/Services/` - 49 shared services (`ls Cadence/Services/*.swift | wc -l`): schema, migrations, notifications, widget support, the list/context delete cascades (`CadenceListDeleteHelpers.swift`), the 27 `Markdown*` parsing/mutation files (25 of them named `*Support.swift`; re-count when you add one), plus `AI/` and `MCPReadOnly/`. Note the markdown *logic* lives here, not in `macOS/Editor/`.
+- `Cadence/Services/` - 50 shared services (`ls Cadence/Services/*.swift | wc -l`): schema, migrations, notifications, widget support, the list/context delete cascades (`CadenceListDeleteHelpers.swift`), the 27 `Markdown*` parsing/mutation files (25 of them named `*Support.swift`; re-count when you add one), plus `AI/` and `MCPReadOnly/`. Note the markdown *logic* lives here, not in `macOS/Editor/`.
 - `Cadence/Shared/` - design tokens (`Theme.swift`), shared components, date/time utilities, hover styling, and cross-platform presentation/query support (`Cadence*Support.swift`).
 - `Cadence/macOS/` - main product surface. Most active work happens here.
 - `Cadence/macOS/Views/` - macOS feature screens and support views (167 `.swift` files at the time of writing; re-count with `ls Cadence/macOS/Views/*.swift | wc -l` rather than trusting this figure).

@@ -16,6 +16,7 @@ struct iOSListsView: View {
     @State private var editorMode: iOSListEditorMode?
     @State private var selectedRoute: iOSListRoute?
     @State private var pendingDeletion: iOSListDeletionTarget?
+    @State private var pendingArchive: iOSListArchiveTarget?
 
     private var activeAreas: [Area] {
         areas.filter(\.isActive)
@@ -68,6 +69,7 @@ struct iOSListsView: View {
             iOSListEditorSheet(mode: mode)
         }
         .iOSListDeletion(target: $pendingDeletion)
+        .iOSListArchive(target: $pendingArchive)
         .navigationDestination(for: iOSListRoute.self) { route in
             listDetail(for: route)
         }
@@ -342,14 +344,27 @@ struct iOSListsView: View {
         selectedRoute = firstActiveRoute
     }
 
+    /// The one archive decision on iOS, for both the iPhone list and the iPad pane.
+    ///
+    /// Archiving cancels the list's remaining active tasks — it has on macOS all along, and T-215
+    /// is iOS catching up rather than a new behaviour. That makes a swipe a settlement, so it is
+    /// confirmed *when there is something to settle* and performed immediately when there is not;
+    /// `CadenceListArchiveSummary.requiresConfirmation` owns that test so the two surfaces cannot
+    /// answer it differently.
+    private func requestArchive(_ target: iOSListArchiveTarget) {
+        guard target.summary.requiresConfirmation else {
+            modelContext.archiveList(target)
+            return
+        }
+        pendingArchive = target
+    }
+
     private func archive(_ area: Area) {
-        area.status = .archived
-        try? modelContext.save()
+        requestArchive(.area(area))
     }
 
     private func archive(_ project: Project) {
-        project.status = .archived
-        try? modelContext.save()
+        requestArchive(.project(project))
     }
 
     private func restore(_ area: Area) {

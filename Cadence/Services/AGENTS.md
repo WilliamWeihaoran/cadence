@@ -1,6 +1,6 @@
 # Services Guide
 
-This folder contains shared app services and persistence-adjacent support (49 top-level `.swift`
+This folder contains shared app services and persistence-adjacent support (50 top-level `.swift`
 files at the time of writing — `ls Cadence/Services/*.swift | wc -l` — plus `AI/` and `MCPReadOnly/`). It is cross-platform: macOS-only managers live in `Cadence/macOS/Services/`.
 
 ## Families
@@ -26,6 +26,22 @@ files at the time of writing — `ls Cadence/Services/*.swift | wc -l` — plus 
   sites (`EditListSheet` x2, `SettingsView` x3) *and* iOS, so that copy cannot drift; the
   `CadenceListDeletionSummary` counts ("1 project", "7 tasks") are read by iOS alone, because
   macOS's dialog reports scope categorically and cannot state a number.
+- **Container wind-down** - `CadenceTaskContainerLifecycleService.swift` (prefixed file, unprefixed
+  `TaskContainerLifecycleService` type). Completing or archiving an area, a project or a kanban
+  column settles the work still open inside it. It lived in `macOS/Services/TaskWorkflowService.swift`
+  behind that file's `#if os(macOS)` until T-215 while importing only Foundation, SwiftData, the
+  models and `CadenceTaskRecurrenceWorkflowSupport` — the sixth instance of the shape the three
+  tombstones in `macOS/Services/` record — and the guard is what left iOS's list archive a bare
+  `status = .archived` while macOS's cancelled the list's remaining active tasks. It settles through
+  `CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries` and **must not** be rerouted
+  through `markDone` / `markCancelled` / `applyStatusCompletion`: those spawn the next recurrence
+  occurrence into the same area, project and section, so a wind-down would refill the container it
+  just closed (T-213, T-214). `remainingActiveTasks(...)` is public so a confirmation can count
+  before the fact from the *same* array the settle walks; `CadenceListArchiveSummary` in the same
+  file is that count plus its one sentence, and it is what `Cadence/iOS/iOSListArchiveSupport.swift`
+  reads. It is deliberately **not** in `Shared/`: this is a persistence mutation, and
+  `Shared/CadenceTaskRecurrenceWorkflowSupport.swift` compiles into `CadenceWidgets` and
+  `CadenceMCPServer`, which have no business with a bulk container wind-down.
 - **EventKit reminders** - `CadenceRemindersManager.swift` (prefixed file, unprefixed `RemindersManager` type — the old path keeps a tombstone under the unprefixed name). Separately authorized from calendar, and cross-platform: both platforms read it in the Inbox and in Settings -> Reminders. It lived under `macOS/Services/` behind an `#if os(macOS)` for a long time despite touching no AppKit. Its pure presentation half (`RemindersConnectionState`, `RemindersSyncSummary`) is in `Shared/CadenceRemindersPresentationSupport.swift`, where `CadenceTests` can reach it.
 - **Widgets** - `Cadence*WidgetSupport.swift`, `CadenceWidgetIntents.swift`, `CadenceWidgetRefreshCenter.swift`, `CadenceDeepLink.swift`. These compile into the `CadenceWidgets` target too.
 - **`AI/`** - `AIActionService.swift`, `AIProvider.swift`, `AISettingsManager.swift`. Optional, user-supplied OpenAI key.

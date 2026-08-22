@@ -70,7 +70,14 @@ Beyond the long-standing managers, note:
 
 - `CalendarManager.swift` can trigger permission prompts and external calendar side effects.
 - `SchedulingService.swift` links task creation/drop behavior with timeline/calendar UI.
-- `TaskWorkflowService.swift` handles recurring completion flow.
+- `TaskWorkflowService.swift` handles recurring completion flow. It no longer declares
+  `TaskContainerLifecycleService`: T-215 moved that to
+  `Cadence/Services/CadenceTaskContainerLifecycleService.swift`, because it sat inside this
+  file's `#if os(macOS)` while importing nothing platform-specific, and the guard is what left
+  iOS's list archive a bare `status = .archived` while macOS's cancelled the list's remaining
+  active tasks. That is a **comment** tombstone at the top-level of the surviving file, not a
+  fourth whole-file tombstone — `TaskWorkflowService` itself stays here, so the count of
+  tombstone *files* in this folder is still three.
 - `TaskDeleteHelpers.swift` here, and `Cadence/Services/CadenceListDeleteHelpers.swift`, are crash-sensitive because of SwiftData inverse relationships. The `ListDeleteHelpers.swift` still in this folder is a tombstone comment — editing it changes nothing.
 
 ## Verification

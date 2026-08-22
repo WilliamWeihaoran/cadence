@@ -48,8 +48,8 @@ Use the scoped `AGENTS.md` in each folder as the working map.
 Cadence/
 ├── CadenceApp.swift    # App entry, ModelContainer + CloudKit setup + error recovery
 ├── Models/             # 100% shared. See "Data Models" below and Models/AGENTS.md
-├── Services/           # 49 shared, cross-platform services
-│   │                   #   (`ls Cadence/Services/*.swift | wc -l` — it read 48 before T-187):
+├── Services/           # 50 shared, cross-platform services
+│   │                   #   (`ls Cadence/Services/*.swift | wc -l` — 48 before T-187, 49 before T-215):
 │   │                   #   CadenceSchema / CadenceStoreSupport / PersistenceController (legacy shim)
 │   │                   #   NoteMigrationService, PursuitToGoalMigration, DataIntegrityRepairService
 │   │                   #   NotificationScheduling + NotificationManager (reconciliation, see "Notifications")
@@ -183,6 +183,12 @@ Cadence/
                         #    CalendarVisibilityPreferences.swift tombstone this block used to say
                         #    "could be deleted" WAS deleted, by 6f71a70. Do not go looking for it.)
                         #   FocusManager, SchedulingService, TaskWorkflowService, TaskCreationManager
+                        #   (TaskWorkflowService no longer declares TaskContainerLifecycleService —
+                        #    T-215 moved that to Services/CadenceTaskContainerLifecycleService.swift,
+                        #    which is what let iOS's archive settle a list's remaining active tasks
+                        #    instead of only writing `status = .archived`. That is a COMMENT
+                        #    tombstone inside a surviving file, so the three whole-file tombstones
+                        #    above are still three.)
                         #   GlobalHotKeyManager, QuickTaskPanelController, GlobalSearchManager
                         #   Hovered{Task,Editable,TaskDatePicker,KanbanColumn,Section}Manager
                         #   {Task,Section}CompletionAnimationManager, DeleteConfirmationManager
