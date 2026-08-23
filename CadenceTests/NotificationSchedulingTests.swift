@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -302,5 +303,211 @@ struct NotificationSchedulingTests {
 
         #expect(input?.tasks.map(\.id) == [task.id])
         #expect(input?.habits.map(\.id) == [habit.id])
+    }
+}
+
+/// T-241: a bulk container wind-down settled its tasks and never reconciled notifications, so
+/// completing or archiving a list left every one of its tasks' pending "starting now" / "due today"
+/// nudges live until the next `scenePhase` checkpoint swept them. The single-task transitions
+/// (`TaskWorkflowService.markDone` / `markCancelled` / `markTodo`) have always reconciled; the bulk
+/// path never did.
+///
+/// **These tests are about the seam, not about notifications.** `scheduleReconcile` spawns an
+/// unstructured `Task` that fetches the whole store and calls into the `@MainActor`
+/// `NotificationManager` singleton, which is why the fix was deferred twice rather than added as a
+/// one-liner: an unconditional call would have left every existing wind-down test doing async store
+/// work after its body returned. `CadenceWindDownReconciler` is the answer — its `default` is inert
+/// inside a test host, so nothing here reaches `NotificationManager` or `UNUserNotificationCenter`
+/// at all, and a test that wants to prove the wiring injects its own and watches it fire.
+@MainActor
+struct ContainerWindDownReconcileTests {
+
+    /// Records one entry per `run(in:)`, and records it as *what the reconciler could see* — the
+    /// number of settled tasks visible in the context it was handed. A reconciler invoked before
+    /// the settle loop would record zero, so this pins the ordering as well as the call.
+    ///
+    /// `@MainActor` explicitly: a nested type does not inherit the enclosing suite's isolation, and
+    /// `CadenceWindDownReconciler` is main-actor isolated.
+    @MainActor
+    private final class Recorder {
+        var settledCountsSeen: [Int] = []
+
+        func reconciler() -> CadenceWindDownReconciler {
+            CadenceWindDownReconciler { context in
+                let tasks = (try? context.fetch(FetchDescriptor<AppTask>())) ?? []
+                self.settledCountsSeen.append(tasks.filter { $0.isDone || $0.isCancelled }.count)
+            }
+        }
+    }
+
+    private func container() throws -> ModelContainer {
+        try CadenceModelContainerFactory.makeInMemoryContainer()
+    }
+
+    private func openTask(_ title: String) -> AppTask {
+        AppTask(title: title)
+    }
+
+    // MARK: - The default is inert in a test host
+
+    /// The whole reason the fix could be a one-liner and still was not. If `default` is ever
+    /// "simplified" back to an unconditional `.live`, the eighteen wind-down tests in
+    /// `CadenceListArchiveSurfaceTests` and `CadenceCancelledTaskReachabilityTests` quietly start
+    /// spawning store fetches into the notification layer, and nothing else goes red.
+    @Test func theDefaultReconcilerIsInertInsideATestHost() {
+        #expect(NotificationManager.isTestEnvironment)
+        #expect(CadenceWindDownReconciler.default.isLive == false)
+        #expect(CadenceWindDownReconciler.live.isLive)
+        #expect(CadenceWindDownReconciler.inert.isLive == false)
+    }
+
+    // MARK: - Every entry point reconciles
+
+    @Test func archivingAnAreaReconcilesAfterSettlingItsTasks() throws {
+        let modelContext = ModelContext(try container())
+        let area = Area(name: "Home")
+        let child = Project(name: "Kitchen", area: area)
+        let own = openTask("own")
+        own.area = area
+        let inChild = openTask("in child")
+        inChild.project = child
+        for model in [own, inChild] { modelContext.insert(model) }
+        modelContext.insert(area)
+        modelContext.insert(child)
+        area.tasks = [own]
+        area.projects = [child]
+        child.tasks = [inChild]
+        try modelContext.save()
+
+        let recorder = Recorder()
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(
+            in: area,
+            includingChildProjects: true,
+            in: modelContext,
+            reconciler: recorder.reconciler()
+        )
+
+        #expect(own.isCancelled)
+        #expect(inChild.isCancelled)
+        // One reconcile for the batch, and it saw both cancellations already written.
+        #expect(recorder.settledCountsSeen == [2])
+    }
+
+    @Test func completingAnAreaReconciles() throws {
+        let modelContext = ModelContext(try container())
+        let area = Area(name: "Home")
+        let task = openTask("open")
+        task.area = area
+        modelContext.insert(task)
+        modelContext.insert(area)
+        area.tasks = [task]
+        try modelContext.save()
+
+        let recorder = Recorder()
+        TaskContainerLifecycleService.completeRemainingActiveTasks(
+            in: area,
+            includingChildProjects: false,
+            in: modelContext,
+            reconciler: recorder.reconciler()
+        )
+
+        #expect(task.isDone)
+        #expect(recorder.settledCountsSeen == [1])
+    }
+
+    @Test func windingAProjectDownReconcilesInBothDirections() throws {
+        let modelContext = ModelContext(try container())
+        let cancelProject = Project(name: "Cancel")
+        let completeProject = Project(name: "Complete")
+        let toCancel = openTask("to cancel")
+        toCancel.project = cancelProject
+        let toComplete = openTask("to complete")
+        toComplete.project = completeProject
+        for model in [toCancel, toComplete] { modelContext.insert(model) }
+        modelContext.insert(cancelProject)
+        modelContext.insert(completeProject)
+        cancelProject.tasks = [toCancel]
+        completeProject.tasks = [toComplete]
+        try modelContext.save()
+
+        let recorder = Recorder()
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(
+            in: cancelProject,
+            in: modelContext,
+            reconciler: recorder.reconciler()
+        )
+        TaskContainerLifecycleService.completeRemainingActiveTasks(
+            in: completeProject,
+            in: modelContext,
+            reconciler: recorder.reconciler()
+        )
+
+        #expect(toCancel.isCancelled)
+        #expect(toComplete.isDone)
+        #expect(recorder.settledCountsSeen == [1, 2])
+    }
+
+    @Test func windingAKanbanColumnDownReconcilesInBothDirections() throws {
+        let modelContext = ModelContext(try container())
+        let project = Project(name: "Board")
+        let doing = TaskSectionConfig(name: "Doing")
+        let review = TaskSectionConfig(name: "Review")
+        let inDoing = openTask("in doing")
+        inDoing.project = project
+        inDoing.sectionName = "Doing"
+        let inReview = openTask("in review")
+        inReview.project = project
+        inReview.sectionName = "Review"
+        for model in [inDoing, inReview] { modelContext.insert(model) }
+        modelContext.insert(project)
+        project.tasks = [inDoing, inReview]
+        try modelContext.save()
+
+        let recorder = Recorder()
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(
+            in: doing,
+            area: nil,
+            project: project,
+            in: modelContext,
+            reconciler: recorder.reconciler()
+        )
+        TaskContainerLifecycleService.completeRemainingActiveTasks(
+            in: review,
+            area: nil,
+            project: project,
+            in: modelContext,
+            reconciler: recorder.reconciler()
+        )
+
+        #expect(inDoing.isCancelled)
+        #expect(inReview.isDone)
+        #expect(recorder.settledCountsSeen == [1, 2])
+    }
+
+    // MARK: - Nothing settled, nothing to reconcile
+
+    /// The reconcile diffs a desired set derived from the store against what is pending, so an
+    /// unchanged store diffs to a no-op. Archiving an already-empty list should not pay for two
+    /// full-store fetches to discover that.
+    @Test func aWindDownThatSettlesNothingDoesNotReconcile() throws {
+        let modelContext = ModelContext(try container())
+        let area = Area(name: "Empty")
+        let alreadyDone = openTask("done")
+        alreadyDone.status = .done
+        alreadyDone.area = area
+        modelContext.insert(alreadyDone)
+        modelContext.insert(area)
+        area.tasks = [alreadyDone]
+        try modelContext.save()
+
+        let recorder = Recorder()
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(
+            in: area,
+            includingChildProjects: true,
+            in: modelContext,
+            reconciler: recorder.reconciler()
+        )
+
+        #expect(recorder.settledCountsSeen.isEmpty)
     }
 }

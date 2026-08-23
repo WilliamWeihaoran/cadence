@@ -5,10 +5,10 @@ import SwiftUI
 /// The one thing an iOS archive confirmation can be about.
 ///
 /// Areas and projects only — a context is not archivable from any iOS surface, and a kanban column
-/// is archived by a toggle in the list editor rather than by an action on a row (`docs/TODO.md`
-/// T-247). It carries the model object for the same reason `iOSListDeletionTarget` does: the
-/// confirmation has to identify *which* list is going quiet, and the archive itself takes the
-/// object.
+/// is its own target (`iOSColumnWindDownTarget`) because a column is a `TaskSectionConfig` value
+/// inside one of these two rather than a model of its own. It carries the model object for the same
+/// reason `iOSListDeletionTarget` does: the confirmation has to identify *which* list is going
+/// quiet, and the archive itself takes the object.
 enum iOSListArchiveTarget: Identifiable {
     case area(Area)
     case project(Project)
@@ -55,7 +55,7 @@ enum iOSListArchiveTarget: Identifiable {
         }
     }
 
-    var summary: CadenceListArchiveSummary {
+    var summary: CadenceContainerWindDownSummary {
         switch self {
         case .area(let area): return .forArea(area)
         case .project(let project): return .forProject(project)
@@ -95,7 +95,7 @@ extension ModelContext {
 extension View {
     /// Attaches the one archive confirmation.
     ///
-    /// Its host sets the binding only when `CadenceListArchiveSummary.requiresConfirmation` says
+    /// Its host sets the binding only when `CadenceContainerWindDownSummary.requiresConfirmation` says
     /// the archive would cancel something; an empty list is archived on the spot. Both the iPhone
     /// list and the iPad pane route their swipe and their context menu through that one decision,
     /// so the two cannot answer it differently.
@@ -110,148 +110,31 @@ private struct iOSListArchiveModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.sheet(item: $target) { target in
-            iOSListArchiveConfirmationSheet(target: target) {
+            iOSWindDownConfirmationSheet(subject: target.windDownSubject) {
                 modelContext.archiveList(target)
             }
         }
     }
 }
 
-/// The confirmation. One view for iPhone and iPad — they differ in the width it is handed, not in
-/// what it says or how it is armed.
+/// Everything the confirmation needs from a list, in the vocabulary the sheet speaks.
 ///
-/// **Why a confirmation at all, when macOS has none.** macOS's archive lives in the footer of an
-/// edit sheet you had to open; iOS's is a row swipe and a long-press menu item. The cancellation
-/// underneath them is identical, so the ceremony has to come from somewhere, and here it is the
-/// only place it can. It is deliberately *conditional*: `requiresConfirmation` is false when the
-/// list has no open work, and then the swipe just archives. A sheet that appears every time —
-/// including over a list where the answer is "nothing happens" — is a sheet people learn to
-/// dismiss without reading, which is the same argument the delete confirmation makes against a
-/// typed phrase.
-///
-/// **Why no typed phrase here either.** Archiving is scoped, the scope is knowable, and it is
-/// stated: N open tasks. The list itself is recoverable from Archived; what is not is the
-/// cancellation, and saying so plainly is a better signal than making someone type a word.
-struct iOSListArchiveConfirmationSheet: View {
-    let target: iOSListArchiveTarget
-    let onConfirm: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    private var summary: CadenceListArchiveSummary {
-        target.summary
-    }
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    iOSSettingsCard {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
-                                iOSIconTile(
-                                    systemImage: "archivebox.fill",
-                                    color: Theme.amber,
-                                    size: 34,
-                                    iconSize: 16
-                                )
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Archiving settles what is left")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundStyle(Theme.text)
-
-                                    Text("The \(target.noun.lowercased()) moves to Archived and can be restored from there. Restoring it does not reopen the work cancelled below.")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Theme.subdued)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-
-                                Spacer(minLength: 0)
-                            }
-
-                            iOSRowDivider()
-
-                            Text("Cadence syncs through your private iCloud database, so this reaches your other devices.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Theme.dim)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-
-                    CadenceSettingsSectionLabel(text: "What Gets Cancelled")
-
-                    iOSSettingsCard {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: iOSSettingsMetrics.glyphLabelSpacing) {
-                                iOSIconTile(
-                                    systemImage: target.icon,
-                                    color: Color(hex: target.colorHex),
-                                    size: iOSSettingsMetrics.glyphSlot,
-                                    iconSize: 15
-                                )
-
-                                Text(target.name)
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(Theme.text)
-                                    .lineLimit(2)
-
-                                Spacer(minLength: 0)
-                            }
-
-                            iOSRowDivider()
-
-                            if let line = summary.settledLine {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "xmark.circle")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(Theme.red)
-
-                                    Text(line)
-                                        .font(.system(size: 13, weight: .medium))
-                                        .foregroundStyle(Theme.text)
-
-                                    Spacer(minLength: 0)
-                                }
-                            } else {
-                                Text("Nothing is still open in this \(target.noun.lowercased()) — archiving it cancels no work.")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Theme.subdued)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    }
-
-                    iOSActionButton(
-                        title: "Archive \(target.noun)",
-                        systemImage: "archivebox.fill",
-                        role: .destructive,
-                        size: .regular,
-                        fullWidth: true,
-                        action: {
-                            dismiss()
-                            onConfirm()
-                        }
-                    )
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 28)
-            }
-            .scrollIndicators(.hidden)
-            .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle("Archive \(target.noun)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .tint(Theme.blue)
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
+/// Built here rather than in the sheet because the sheet is shared with the kanban column
+/// (`iOSColumnWindDownSupport`), and the two containers agree on nothing except that a wind-down
+/// settles work irreversibly. See `iOSWindDownSubject`.
+extension iOSListArchiveTarget {
+    var windDownSubject: iOSWindDownSubject {
+        iOSWindDownSubject(
+            title: "Archive \(noun)",
+            actionIcon: "archivebox.fill",
+            headline: "Archiving settles what is left",
+            explanation: "The \(noun.lowercased()) moves to Archived and can be restored from there. Restoring it does not reopen the work cancelled below.",
+            name: name,
+            icon: icon,
+            colorHex: colorHex,
+            emptyNote: "Nothing is still open in this \(noun.lowercased()) — archiving it cancels no work.",
+            summary: summary
+        )
     }
 }
 #endif

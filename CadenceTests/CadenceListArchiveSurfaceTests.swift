@@ -66,7 +66,7 @@ struct CadenceListArchiveSurfaceTests {
         child.tasks = [openInChild]
         try modelContext.save()
 
-        let summary = CadenceListArchiveSummary.forArea(area)
+        let summary = CadenceContainerWindDownSummary.forArea(area)
         #expect(summary.openTasks == 3)
         #expect(summary.requiresConfirmation)
         #expect(!summary.isEmpty)
@@ -81,7 +81,7 @@ struct CadenceListArchiveSurfaceTests {
         #expect(cancelled == [true, true, true])
         #expect(alreadyDone.status == .done)
         #expect(alreadyCancelled.status == .cancelled)
-        #expect(CadenceListArchiveSummary.forArea(area).openTasks == 0)
+        #expect(CadenceContainerWindDownSummary.forArea(area).openTasks == 0)
     }
 
     /// A task carrying both an `area` and a `project` under that area appears in two of the
@@ -103,7 +103,7 @@ struct CadenceListArchiveSurfaceTests {
         child.tasks = [subject]
         try modelContext.save()
 
-        #expect(CadenceListArchiveSummary.forArea(area).openTasks == 1)
+        #expect(CadenceContainerWindDownSummary.forArea(area).openTasks == 1)
     }
 
     /// A project's summary is its own tasks and nothing else — there is no container below it.
@@ -121,7 +121,7 @@ struct CadenceListArchiveSurfaceTests {
         project.tasks = [open, done]
         try modelContext.save()
 
-        #expect(CadenceListArchiveSummary.forProject(project).openTasks == 1)
+        #expect(CadenceContainerWindDownSummary.forProject(project).openTasks == 1)
     }
 
     /// The conditional-confirmation rule. Archiving a list with nothing open in it flips one flag
@@ -137,17 +137,17 @@ struct CadenceListArchiveSurfaceTests {
         area.tasks = [done]
         try modelContext.save()
 
-        let summary = CadenceListArchiveSummary.forArea(area)
+        let summary = CadenceContainerWindDownSummary.forArea(area)
         #expect(summary.isEmpty)
         #expect(!summary.requiresConfirmation)
         #expect(summary.settledLine == nil)
     }
 
     @Test func theSettledLineCountsAndPluralizesAndSaysNothingAtZero() {
-        #expect(CadenceListArchiveSummary(openTasks: 1).settledLine == "1 open task will be cancelled")
-        #expect(CadenceListArchiveSummary(openTasks: 7).settledLine == "7 open tasks will be cancelled")
-        #expect(CadenceListArchiveSummary(openTasks: 0).settledLine == nil)
-        #expect(CadenceListArchiveSummary().isEmpty)
+        #expect(CadenceContainerWindDownSummary(openTasks: 1).settledLine == "1 open task will be cancelled")
+        #expect(CadenceContainerWindDownSummary(openTasks: 7).settledLine == "7 open tasks will be cancelled")
+        #expect(CadenceContainerWindDownSummary(openTasks: 0).settledLine == nil)
+        #expect(CadenceContainerWindDownSummary().isEmpty)
     }
 
     // MARK: - The wind-down is no longer macOS-only
@@ -212,7 +212,8 @@ struct CadenceListArchiveSurfaceTests {
     @Test func theLifecycleServiceLivesInServicesWithNoPlatformConditional() throws {
         let moved = try strippingComments(sourceFile("Cadence/Services/CadenceTaskContainerLifecycleService.swift"))
         #expect(moved.contains("enum TaskContainerLifecycleService {"))
-        #expect(moved.contains("struct CadenceListArchiveSummary"))
+        #expect(moved.contains("struct CadenceContainerWindDownSummary"))
+        #expect(moved.contains("enum CadenceWindDownOutcome"))
         #expect(moved.components(separatedBy: "#if os(").count - 1 == 0)
 
         let old = try strippingComments(sourceFile("Cadence/macOS/Services/TaskWorkflowService.swift"))
@@ -259,7 +260,9 @@ struct CadenceListArchiveSurfaceTests {
     /// iPhone row swipe, its context menu, and the iPad pane's copies of both — routes up to
     /// `iOSListsView`, so the phone and the tablet cannot come to ask different questions.
     @Test func everyIOSArchiveSurfaceGoesThroughTheOneDecision() throws {
-        try expectCallSites(of: "iOSListArchiveConfirmationSheet", at: [
+        // The sheet is `iOSWindDownConfirmationSheet` since T-247 shared it with the kanban
+        // column; the list surface still builds it in exactly one place.
+        try expectCallSites(of: "iOSWindDownConfirmationSheet", at: [
             "Cadence/iOS/iOSListArchiveSupport.swift": 1,
             "Cadence/iOS/iOSListViews.swift": 0,
             "Cadence/iOS/iOSListsRegularPane.swift": 0
@@ -302,7 +305,8 @@ struct CadenceListArchiveSurfaceTests {
         // And it must be reading *code*, through the same reader the absence checks use.
         let support = try strippingComments(sourceFile("Cadence/iOS/iOSListArchiveSupport.swift"))
         #expect(support.contains("enum iOSListArchiveTarget: Identifiable"))
-        #expect(support.contains("struct iOSListArchiveConfirmationSheet: View"))
+        let confirmation = try strippingComments(sourceFile("Cadence/iOS/iOSWindDownConfirmation.swift"))
+        #expect(confirmation.contains("struct iOSWindDownConfirmationSheet: View"))
 
         // The `status = .archived` sweep above would pass vacuously if the one file that *does*
         // spell it had stopped spelling it, or if the sweep were reading the wrong folder.

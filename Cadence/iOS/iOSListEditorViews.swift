@@ -39,6 +39,9 @@ struct iOSListEditorSheet: View {
     @State private var hasLoaded = false
     @State private var showContextPicker = false
     @State private var showAreaPicker = false
+    /// Set only when `CadenceContainerWindDownSummary.requiresConfirmation` says the column has
+    /// open work to settle. See `requestColumnWindDown`.
+    @State private var pendingColumnWindDown: iOSColumnWindDownTarget?
 
     private var isProjectMode: Bool {
         switch mode {
@@ -178,7 +181,7 @@ struct iOSListEditorSheet: View {
 
                 Section {
                     ForEach($sectionDrafts) { $draft in
-                        iOSSectionDraftRow(draft: $draft)
+                        iOSSectionDraftRow(draft: $draft, lifecycle: lifecycle(for: draft))
                     }
                     .onDelete { offsets in
                         sectionDrafts.remove(atOffsets: offsets)
@@ -225,8 +228,99 @@ struct iOSListEditorSheet: View {
                 }
             }
             .onAppear(perform: load)
+            .iOSColumnWindDown(target: $pendingColumnWindDown, perform: applyColumnWindDown)
         }
         .preferredColorScheme(.dark)
+    }
+
+    // MARK: - Column lifecycle
+
+    /// The list being edited, or `nil` for a list that does not exist yet. A column can only be
+    /// wound down against a saved list, because until then it has no `TaskSectionConfig` on disk
+    /// and no task can point at it.
+    private var editedArea: Area? {
+        if case .editArea(let area) = mode { return area }
+        return nil
+    }
+
+    private var editedProject: Project? {
+        if case .editProject(let project) = mode { return project }
+        return nil
+    }
+
+    /// The column **as the model has it**, matched by `uuid` — deliberately not the draft. The
+    /// settle walks `AppTask.resolvedSectionName` against the column's name, so a column renamed in
+    /// this sheet but not yet saved must still be counted and settled under the name its tasks
+    /// actually carry.
+    private func liveConfig(for draft: CadenceSectionDraft) -> TaskSectionConfig? {
+        let configs = editedArea?.sectionConfigs ?? editedProject?.sectionConfigs ?? []
+        return configs.first { $0.uuid == draft.id }
+    }
+
+    /// `nil` — no Complete, no Archive — for two columns, and the second reason is a model
+    /// invariant rather than a taste.
+    ///
+    /// A column added during this edit has no `TaskSectionConfig` on disk and no task can point at
+    /// it. And the **Default** column cannot be wound down at all: `normalizedSectionConfigs`
+    /// forces `isCompleted = false` and `isArchived = false` on it on every read *and* every write,
+    /// so the flag would be discarded while the settle underneath it still cancelled or finished
+    /// every task in the column — a confirmation stating a number and then leaving the column
+    /// visibly Active. macOS gates its Archive item the same way (`KanbanColumnSupportViews`,
+    /// `if !section.isDefault`); its *completion* item is not gated, which is the same defect one
+    /// door down (`docs/TODO.md` T-268).
+    private func lifecycle(for draft: CadenceSectionDraft) -> iOSSectionRowLifecycle? {
+        guard let config = liveConfig(for: draft), !config.isDefault else { return nil }
+        return iOSSectionRowLifecycle(
+            isCompleted: config.isCompleted,
+            isArchived: config.isArchived,
+            complete: { requestColumnWindDown(.init(config: config, area: editedArea, project: editedProject, action: .complete)) },
+            archive: { requestColumnWindDown(.init(config: config, area: editedArea, project: editedProject, action: .archive)) },
+            reopen: { reopenColumn(config) }
+        )
+    }
+
+    /// The one column wind-down decision on iOS.
+    ///
+    /// Archiving a column cancels its remaining active tasks and completing one marks them done —
+    /// macOS has done both all along, and T-247 is iOS catching up rather than a new behaviour.
+    /// That makes this an irreversible settlement wearing a reversible word, so it is confirmed
+    /// *when there is something to settle* and performed immediately when there is not;
+    /// `CadenceContainerWindDownSummary.requiresConfirmation` owns that test, exactly as it does
+    /// for a whole list.
+    private func requestColumnWindDown(_ target: iOSColumnWindDownTarget) {
+        guard target.summary.requiresConfirmation else {
+            applyColumnWindDown(target)
+            return
+        }
+        pendingColumnWindDown = target
+    }
+
+    /// **Applied to the model now, not drafted for Save**, which is the shape half of T-247. A
+    /// draft flag committed with a rename and a colour change has no moment at which a count could
+    /// be stated, and it makes one gesture mean two things: flip-and-flip-back settles nothing,
+    /// flip-and-save settles twelve tasks forever. The draft is then brought into step so the row
+    /// reads truthfully and so the sheet's own Save cannot write the flag back off.
+    private func applyColumnWindDown(_ target: iOSColumnWindDownTarget) {
+        modelContext.windDownColumn(target)
+        updateDraft(target.config.uuid) { draft in
+            switch target.action {
+            case .archive: draft.isArchived = true
+            case .complete: draft.isCompleted = true
+            }
+        }
+    }
+
+    private func reopenColumn(_ config: TaskSectionConfig) {
+        modelContext.reopenColumn(config, area: editedArea, project: editedProject)
+        updateDraft(config.uuid) { draft in
+            draft.isArchived = false
+            draft.isCompleted = false
+        }
+    }
+
+    private func updateDraft(_ id: UUID, _ mutate: (inout CadenceSectionDraft) -> Void) {
+        guard let index = sectionDrafts.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&sectionDrafts[index])
     }
 
     private func load() {
@@ -377,8 +471,15 @@ struct iOSListEditorSheet: View {
 ///
 /// The 7pt dot + name is the board's own column header in miniature, so a column is recognisable
 /// between the editor and the board.
+///
+/// **Completed and Archived are not drafted here, and that is T-247.** They were two `Toggle`s on
+/// the draft, saved with the rename and the colour and settling nothing, while macOS cancelled or
+/// finished the column's remaining active tasks on the same transitions. They are actions now,
+/// handed in whole as `iOSSectionRowLifecycle` and confirmed by the host when there is open work —
+/// `nil` for a column added during this edit, which has nothing on the model to act on.
 private struct iOSSectionDraftRow: View {
     @Binding var draft: CadenceSectionDraft
+    let lifecycle: iOSSectionRowLifecycle?
     @State private var hasDueDate = false
     @State private var dueDate = Date()
 
@@ -411,13 +512,9 @@ private struct iOSSectionDraftRow: View {
                 }
             }
 
-            Toggle("Completed", isOn: $draft.isCompleted)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.subdued)
-
-            Toggle("Archived", isOn: $draft.isArchived)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.subdued)
+            if let lifecycle {
+                lifecycleControls(lifecycle)
+            }
         }
         .padding(.vertical, 8)
         .onAppear {
@@ -432,28 +529,90 @@ private struct iOSSectionDraftRow: View {
             draft.dueDate = DateFormatters.dateKey(from: newValue)
         }
     }
+
+    /// State first, then only the transitions available from it. An archived column offers one
+    /// button, because archiving it again is not a thing and completing it after the fact would be
+    /// a second settle over work already cancelled.
+    @ViewBuilder
+    private func lifecycleControls(_ lifecycle: iOSSectionRowLifecycle) -> some View {
+        HStack(spacing: 6) {
+            Text("Status")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.subdued)
+            Spacer(minLength: 0)
+            Text(lifecycle.stateLabel)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(statusColor(lifecycle))
+        }
+
+        HStack(spacing: 8) {
+            if lifecycle.isArchived {
+                iOSActionButton(
+                    title: "Unarchive Column",
+                    systemImage: "tray.and.arrow.up.fill",
+                    size: .compact,
+                    action: lifecycle.reopen
+                )
+            } else {
+                if lifecycle.isCompleted {
+                    iOSActionButton(
+                        title: "Reopen",
+                        systemImage: "arrow.uturn.backward",
+                        size: .compact,
+                        action: lifecycle.reopen
+                    )
+                } else {
+                    iOSActionButton(
+                        title: "Complete",
+                        systemImage: "checkmark.circle",
+                        size: .compact,
+                        tint: Theme.green,
+                        action: lifecycle.complete
+                    )
+                }
+
+                iOSActionButton(
+                    title: "Archive",
+                    systemImage: "archivebox",
+                    role: .destructive,
+                    size: .compact,
+                    action: lifecycle.archive
+                )
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func statusColor(_ lifecycle: iOSSectionRowLifecycle) -> Color {
+        if lifecycle.isArchived { return Theme.amber }
+        if lifecycle.isCompleted { return Theme.green }
+        return Theme.muted
+    }
 }
 
-/// The section palette is `TagSupport.colorOptions` plus the section default, so the swatch row
-/// can always show the colour a column already has rather than silently offering to change it.
+/// The section palette is `CadenceColorPalette.offeredSectionColors(for:)` — the same swatch menu
+/// the Mac's kanban column editor draws, for the same `TaskSectionConfig.colorHex` field.
+///
+/// It was `[TaskSectionDefaults.defaultColorHex] + TagSupport.colorOptions`, nine hues overlapping
+/// the Mac's eight in exactly one, so a column tinted `#e671b8` on the phone opened on the Mac
+/// wearing a hue the Mac could not offer (T-261). Borrowing the **tag** palette was the deeper
+/// problem: its own doc comment says tags are a separate palette with a separate job, so a hue
+/// decision about tags silently redrew this row — and three of the eight it lent (`#ffb84d`,
+/// `#5aa2ff`, `#9e8cff`) are the pre-T-166 drifted near-copies of `Theme`'s amber, blue and purple.
+///
+/// The keep-the-stored-value rule comes with it: a column already wearing one of the tag hues still
+/// shows a selected swatch and keeps its colour, because `offeredSectionColors(for:)` appends it.
 private struct iOSSectionColorPicker: View {
     @Binding var selectedHex: String
-
-    private var options: [String] {
-        var options = [TaskSectionDefaults.defaultColorHex] + TagSupport.colorOptions
-        if !options.contains(where: { $0.caseInsensitiveCompare(selectedHex) == .orderedSame }) {
-            options.append(selectedHex)
-        }
-        return options
-    }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
-                ForEach(options, id: \.self) { option in
+                ForEach(CadenceColorPalette.offeredSectionColors(for: selectedHex), id: \.self) { option in
                     iOSListColorSwatch(
                         hex: option,
-                        isSelected: selectedHex.caseInsensitiveCompare(option) == .orderedSame
+                        isSelected: CadenceColorPalette.matches(option, selectedHex)
                     ) {
                         selectedHex = option
                     }

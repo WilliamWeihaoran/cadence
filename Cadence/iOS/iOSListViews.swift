@@ -80,13 +80,24 @@ struct iOSListsView: View {
     }
 
     private var compactLayout: some View {
+        oneColumnLayout(showsBack: true)
+    }
+
+    /// The same one column at regular width, where `CadenceRegularSplitLayout` has decided the pane
+    /// cannot pay for two — and where this page is the sidebar's selection rather than a push, so
+    /// there is nothing behind it for a chevron to return to.
+    private var narrowLayout: some View {
+        oneColumnLayout(showsBack: false)
+    }
+
+    private func oneColumnLayout(showsBack: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             // The nav bar above is hidden (see `.toolbar(.hidden…)` on the body), which is what
             // left iPhone with no way back other than the swipe gesture. The chevron lives here.
             iOSListsPageHeader(
                 areaCount: activeAreas.count,
                 projectCount: activeProjects.count,
-                onBack: { dismiss() }
+                onBack: showsBack ? { dismiss() } : nil
             )
 
             iOSListCreateButtonsRow(editorMode: $editorMode)
@@ -148,6 +159,8 @@ struct iOSListsView: View {
                 )
                 .background(Theme.bg)
             }
+        } narrow: {
+            narrowLayout
         }
         .background(Theme.bg.ignoresSafeArea())
     }
@@ -349,7 +362,7 @@ struct iOSListsView: View {
     /// Archiving cancels the list's remaining active tasks — it has on macOS all along, and T-215
     /// is iOS catching up rather than a new behaviour. That makes a swipe a settlement, so it is
     /// confirmed *when there is something to settle* and performed immediately when there is not;
-    /// `CadenceListArchiveSummary.requiresConfirmation` owns that test so the two surfaces cannot
+    /// `CadenceContainerWindDownSummary.requiresConfirmation` owns that test so the two surfaces cannot
     /// answer it differently.
     private func requestArchive(_ target: iOSListArchiveTarget) {
         guard target.summary.requiresConfirmation else {

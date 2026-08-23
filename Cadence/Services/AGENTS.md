@@ -37,11 +37,24 @@ files at the time of writing — `ls Cadence/Services/*.swift | wc -l` — plus 
   through `markDone` / `markCancelled` / `applyStatusCompletion`: those spawn the next recurrence
   occurrence into the same area, project and section, so a wind-down would refill the container it
   just closed (T-213, T-214). `remainingActiveTasks(...)` is public so a confirmation can count
-  before the fact from the *same* array the settle walks; `CadenceListArchiveSummary` in the same
-  file is that count plus its one sentence, and it is what `Cadence/iOS/iOSListArchiveSupport.swift`
-  reads. It is deliberately **not** in `Shared/`: this is a persistence mutation, and
+  before the fact from the *same* array the settle walks; `CadenceContainerWindDownSummary` in the
+  same file is that count plus its one sentence, and it is what
+  `Cadence/iOS/iOSListArchiveSupport.swift` and `Cadence/iOS/iOSColumnWindDownSupport.swift` read.
+  That struct was `CadenceListArchiveSummary` until T-247 gave the kanban column the same confirmed
+  action, which needed the identical four members with one word changed — hence the `outcome`
+  dimension (`CadenceWindDownOutcome.cancelled` / `.done`) rather than a second struct beside it. It is deliberately **not** in `Shared/`: this is a persistence mutation, and
   `Shared/CadenceTaskRecurrenceWorkflowSupport.swift` compiles into `CadenceWidgets` and
   `CadenceMCPServer`, which have no business with a bulk container wind-down.
+  Since T-241 the settle also **reconciles notifications** for the batch, which is what finally
+  makes the `in context:` parameters on all six entry points load-bearing — they were declared and
+  unread from T-212 until then. It goes through an injected `CadenceWindDownReconciler` rather than
+  calling `HabitNotificationReconcileSupport.scheduleReconcile` directly: that helper spawns an
+  unstructured `Task` doing two full-store fetches into the `@MainActor` `NotificationManager`, so
+  an unconditional call would have handed eighteen existing wind-down tests async work outliving
+  their bodies. `nil` (the default) resolves to `.live` in the app and `.inert` under
+  `NotificationManager.isTestEnvironment`; a test proves the wiring by injecting a recorder, which
+  is why deleting the call is a red test and not a silent regression.
+
 - **EventKit reminders** - `CadenceRemindersManager.swift` (prefixed file, unprefixed `RemindersManager` type — the old path keeps a tombstone under the unprefixed name). Separately authorized from calendar, and cross-platform: both platforms read it in the Inbox and in Settings -> Reminders. It lived under `macOS/Services/` behind an `#if os(macOS)` for a long time despite touching no AppKit. Its pure presentation half (`RemindersConnectionState`, `RemindersSyncSummary`) is in `Shared/CadenceRemindersPresentationSupport.swift`, where `CadenceTests` can reach it.
 - **Widgets** - `Cadence*WidgetSupport.swift`, `CadenceWidgetIntents.swift`, `CadenceWidgetRefreshCenter.swift`, `CadenceDeepLink.swift`. These compile into the `CadenceWidgets` target too.
 - **`AI/`** - `AIActionService.swift`, `AIProvider.swift`, `AISettingsManager.swift`. Optional, user-supplied OpenAI key.
