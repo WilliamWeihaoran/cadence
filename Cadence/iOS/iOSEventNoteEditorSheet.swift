@@ -112,14 +112,18 @@ struct iOSEventNoteEditorSheet: View {
         )
     }
 
+    // This header is the same shape as `iOSLinkedNoteEditorSheet`'s (T-73 sweep) — same title +
+    // eyebrow block, same regular-width rail — and had drifted from it in three ways nothing
+    // recorded: a hand-rolled uppercase caption at 12pt where that sheet uses the shared
+    // `SectionEyebrowLabel` (10pt, kerned 0.8), a title fixed at 24pt on every width against that
+    // sheet's `isRegularWidth ? 24 : 22` ramp, and 4pt of block spacing against its 8. All three are
+    // now the same note-editor-header spelling; no behavior changes on regular width, where the
+    // title was already 24.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(subtitle)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .textCase(.uppercase)
+        VStack(alignment: .leading, spacing: 8) {
+            SectionEyebrowLabel(text: subtitle)
             Text(title)
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(size: isRegularWidth ? 24 : 22, weight: .bold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(2)
         }
