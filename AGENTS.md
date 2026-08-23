@@ -225,6 +225,21 @@ code, and every one of them has been violated by a shipped change at least once.
   cat "$D"/*.exit
   ```
 
+  **Launch and wait in the SAME call.** The failure is not forgetting to poll — it is launching the
+  background job in one call and *returning*, expecting to be told when it finishes. Four agents
+  stalled that way in one night, each with its code already written. The launch and the wait belong
+  in one invocation:
+
+  ```
+  "$D/run.sh" "$D" > "$D/runner.log" 2>&1 &
+  i=0; until [[ -f "$D/DONE" ]] || (( i >= 180 )); do sleep 10; (( i++ )); done
+  cat "$D"/*.exit
+  ```
+
+  Have the runner `touch "$D/DONE"` as its last line — a marker is what makes a single bounded wait
+  possible. The same applies to `test-host-lock.sh acquire`, which **blocks**: put the acquire, the
+  build and the release in one invocation and the queue wait costs you nothing extra.
+
   **The loop must be inside ONE tool call.** Polling with one call per check is the single most
   expensive mistake available here: an agent doing that made **1113 tool calls** in 68 minutes and
   still ended stalled, having produced nothing the ticket asked for. The loop above is one call that
