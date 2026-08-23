@@ -315,19 +315,24 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     @ViewBuilder
     private var headerControls: some View {
         Group {
-            Button(action: onToggleCompletion) {
-                TaskCompletionProgressGlyph(
-                    icon: section.isCompleted ? "checkmark.circle.fill" : "circle",
-                    color: section.isCompleted || isPendingCompletion ? Theme.green : Theme.dim,
-                    progress: isPendingCompletion ? completionProgress : nil,
-                    size: 12,
-                    lineWidth: 1.5
-                )
-                .frame(width: 18, height: 18)
-                .contentShape(Rectangle())
+            // Not offered on Default, for the same reason Archive is not (T-268): the model
+            // refuses the flag and the settle underneath the button does not. See
+            // `TaskSectionConfig.supportsLifecycle`.
+            if section.supportsLifecycle {
+                Button(action: onToggleCompletion) {
+                    TaskCompletionProgressGlyph(
+                        icon: section.isCompleted ? "checkmark.circle.fill" : "circle",
+                        color: section.isCompleted || isPendingCompletion ? Theme.green : Theme.dim,
+                        progress: isPendingCompletion ? completionProgress : nil,
+                        size: 12,
+                        lineWidth: 1.5
+                    )
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.cadencePlain)
+                .help(section.isCompleted ? "Mark column active" : "Mark column completed")
             }
-            .buttonStyle(.cadencePlain)
-            .help(section.isCompleted ? "Mark column active" : "Mark column completed")
 
             Button(action: onOpenEditor) {
                 Image(systemName: "ellipsis")
@@ -441,7 +446,7 @@ struct KanbanSectionEditorPopover: View {
                 .foregroundStyle(Theme.text)
 
             if section.isDefault {
-                Text("Default always stays available and cannot be renamed, archived, or deleted.")
+                Text("Default always stays available and cannot be renamed, completed, archived, or deleted.")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
                     .fixedSize(horizontal: false, vertical: true)
@@ -505,25 +510,31 @@ struct KanbanSectionEditorPopover: View {
                 }
             }
 
-            Divider().background(Theme.borderSubtle)
+            // **Everything below the rule is a lifecycle action, and Default has no lifecycle.**
+            // Completion sat outside this gate for as long as Archive sat inside it, which read
+            // as a deliberate asymmetry and was not (T-268): `normalizedSectionConfigs` discards
+            // both flags on Default, and completion was the one of the two that settled the
+            // column's open tasks on the way out. The divider comes inside with them — a rule
+            // with nothing under it is a control the user goes looking for.
+            if section.supportsLifecycle {
+                Divider().background(Theme.borderSubtle)
 
-            Button(action: onToggleCompletion) {
-                HStack(spacing: 8) {
-                    Image(systemName: section.isCompleted ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(section.isCompleted ? "Mark Section Active" : "Mark Section Completed")
-                        .font(.system(size: 12, weight: .semibold))
-                    Spacer()
+                Button(action: onToggleCompletion) {
+                    HStack(spacing: 8) {
+                        Image(systemName: section.isCompleted ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(section.isCompleted ? "Mark Section Active" : "Mark Section Completed")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                    }
+                    .foregroundStyle(section.isCompleted ? Theme.blue : Theme.green)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                .foregroundStyle(section.isCompleted ? Theme.blue : Theme.green)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 9)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.cadencePlain)
+                .buttonStyle(.cadencePlain)
 
-            if !section.isDefault {
                 Button(action: onToggleArchive) {
                     HStack(spacing: 8) {
                         Image(systemName: section.isArchived ? "tray.and.arrow.up.fill" : "archivebox.fill")

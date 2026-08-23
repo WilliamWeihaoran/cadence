@@ -98,6 +98,18 @@ through the `sectionConfigs` computed property. `AppTask.sectionName` is only th
 points at one. The legacy `sectionNamesRaw` is the pre-config fallback the getter migrates from.
 Never hand-edit the raw strings; go through `sectionConfigs`.
 
+**The Default column has no lifecycle, and that is a model rule, not a UI preference.**
+`Area.normalizedSectionConfigs` / `Project.normalizedSectionConfigs` force `isCompleted` and
+`isArchived` false on the column named `Default` on **every read and every write** — it is
+*synthesised* when absent, `AppTask.resolvedSectionName` funnels every task with no section name
+into it, and `sectionNames` hides archived columns, so a completed-or-archived Default would be an
+invisible bucket still collecting every new task in the list. Ask `TaskSectionConfig
+.supportsLifecycle` before offering a column a Complete or Archive control. Offering one anyway is
+not a no-op: the settle beside the flag (`TaskContainerLifecycleService`) marks every open task in
+the column done or cancelled and only the *flag* is discarded, so the action appears to work and
+the column re-renders Active with its cards gone. That shipped on macOS's kanban column
+(`docs/TODO.md` T-268).
+
 ## Notes: One Live Model, Five Legacy Ones
 
 `Note` is the canonical note model. `NoteKind` is `daily` / `weekly` / `permanent` / `list` /

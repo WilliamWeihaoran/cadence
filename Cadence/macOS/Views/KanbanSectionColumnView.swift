@@ -146,8 +146,15 @@ struct ListSectionKanbanColumn: View {
                 hoveredKanbanColumnManager.beginHovering(id: sectionHoverID) {
                     isComposing = true
                 }
-                hoveredSectionManager.beginHovering(id: section.id) {
-                    toggleSectionCompletion()
+                // Cmd+Return over a column is the third route to completion, and the only one
+                // with no visible control to hide. Default does not register at all rather than
+                // registering a no-op: `triggerToggleComplete()` reports whether it handled the
+                // key, so a registered target would swallow Cmd+Return instead of letting it
+                // through (T-268).
+                if section.supportsLifecycle {
+                    hoveredSectionManager.beginHovering(id: section.id) {
+                        toggleSectionCompletion()
+                    }
                 }
             } else {
                 hoveredKanbanColumnManager.endHovering(id: sectionHoverID)
@@ -452,7 +459,20 @@ struct ListSectionKanbanColumn: View {
         KanbanSectionStateSupport.removeSection(sectionID: section.id, area: area, project: project)
     }
 
+    /// **The Default column has no lifecycle, and this is where every route to one converges** —
+    /// the header glyph, the editor's "Mark Section Completed", and Cmd+Return over the hovered
+    /// column. All three are gated at their own site so the affordance is never *offered*; this
+    /// guard is what makes a fourth route safe by default rather than only the three that exist.
+    ///
+    /// The damage it prevents is not a no-op. `Area.normalizedSectionConfigs` /
+    /// `Project.normalizedSectionConfigs` force `isCompleted` and `isArchived` false on Default on
+    /// every read *and* every write, so the flag is discarded — but `saveSection` has already run
+    /// `TaskContainerLifecycleService.completeRemainingActiveTasks` by then and marked every open
+    /// card in the column done. The column re-renders Active with its cards gone, which is worse
+    /// than either refusing or persisting: the tasks stay done and nothing on screen says so
+    /// (`docs/TODO.md` T-268).
     private func toggleSectionCompletion() {
+        guard section.supportsLifecycle else { return }
         sectionCompletionAnimationManager.toggleCompletion(
             for: section,
             getCurrent: currentSection,

@@ -20,6 +20,25 @@ nonisolated struct TaskSectionConfig: Codable, Hashable, Identifiable {
         name.caseInsensitiveCompare(TaskSectionDefaults.defaultName) == .orderedSame
     }
 
+    /// Whether this column can carry `isCompleted` / `isArchived` at all. `false` for Default, and
+    /// that is a model invariant rather than a policy choice.
+    ///
+    /// `Area.normalizedSectionConfigs` / `Project.normalizedSectionConfigs` force both flags false
+    /// on the Default column on every read *and* every write, because Default is not a column the
+    /// user made: the normalizer *synthesises* it when it is absent, `AppTask.resolvedSectionName`
+    /// sends every task with no section name into it, and `sectionNames` hides archived columns —
+    /// so a completed-or-archived Default would be an invisible bucket that still collects every
+    /// new task in the list. The flags are refused rather than stored for that reason.
+    ///
+    /// **Read this before putting a wind-down control on a column.** Offering one on Default does
+    /// not produce a no-op: the settle that runs beside the flag
+    /// (`TaskContainerLifecycleService.completeRemainingActiveTasks` /
+    /// `cancelRemainingActiveTasks`) still marks every open task in the column done or cancelled,
+    /// and only the flag is discarded — so the action appears to work, the cards disappear, and
+    /// the column re-renders Active (`docs/TODO.md` T-268). iOS's
+    /// `iOSListEditorSheet.lifecycle(for:)` states the same rule about the same column.
+    var supportsLifecycle: Bool { !isDefault }
+
     private enum CodingKeys: String, CodingKey {
         case uuid
         case name
