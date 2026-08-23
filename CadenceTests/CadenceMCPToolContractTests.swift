@@ -64,6 +64,95 @@ struct CadenceMCPToolContractTests {
         #expect(Set(touchesWriteService.keys) == declaredWrites)
     }
 
+    // MARK: - Dead argument-parsing helpers
+
+    /// T-260: `Dictionary.int(_:)` and `Dictionary.stringArray(_:)` sat in
+    /// `CadenceMCPArgumentParsing.swift` with zero call sites, one keystroke away from the two
+    /// helpers that *are* wired up and with quietly different semantics — `int` returns `nil`
+    /// where `strictInt` throws, `stringArray` drops non-strings where `flexibleStringArray`
+    /// throws. Picking the wrong one turns a tool error into a silently ignored argument, in the
+    /// one folder with no unit *execution* at all. Deleting them fixed it once; this keeps it.
+    ///
+    /// The needle is `arguments.<name>(`, deliberately not `.<name>(`, and that is the whole
+    /// point: the ticket had to warn that a scan for `.int(` reports the dead helper as live,
+    /// because the tool definitions build JSON-schema payloads with `MCP.Value.int(...)`.
+    @Test func everyArgumentParsingHelperIsCalledByTheRouter() throws {
+        let helpers = try argumentParsingHelperNames()
+        let router = strippingComments(try sourceFile(Self.routerPath))
+        let uncalled = helpers.filter { !router.contains("arguments.\($0)(") }
+
+        #expect(uncalled.isEmpty, "argument-parsing helpers with no router call site: \(uncalled.sorted())")
+    }
+
+    /// The smoke test is the only thing that *executes* the router, and it dispatched 21 of its
+    /// 30 arms when T-259 was filed — a gap nothing reported, because coverage was a property of
+    /// what someone had remembered to write rather than something checked. It now records every
+    /// `tools/call` it sends and compares that set against the server's own `tools/list` before
+    /// printing OK. Deleting those few lines of Python restores the silent gap and breaks no
+    /// build, so it is pinned here.
+    @Test func theSmokeTestStillChecksItDispatchesEveryAdvertisedTool() throws {
+        let smoke = strippingPythonComments(try sourceFile(Self.smokeTestPath))
+
+        #expect(smoke.contains("DISPATCHED.add("))
+        #expect(smoke.contains("tool_names - DISPATCHED"))
+        #expect(smoke.contains("tools advertised but never dispatched"))
+    }
+
+    // MARK: - List-tool DTO shapes (T-269)
+
+    /// Six `list_*` tools — `list_task_bundles`, `list_goals`, `list_habits`, `list_links`,
+    /// `list_contexts`, `list_containers` — are dispatched by the smoke test only against a fresh
+    /// fixture store, because MCP has no write tool that can put a bundle, a goal, a habit, a
+    /// link, a context or a container into one. `create_task` and `append_core_note` are the only
+    /// constructors on the surface. So the smoke test can exercise the argument wiring and the
+    /// empty-result path for all six, but never observes one row of `CadenceTaskBundleSummary`,
+    /// `CadenceGoalSummary`, `CadenceHabitSummary`, `CadenceSavedLinkSummary`, `CadenceContextRef`
+    /// or `CadenceContainerRef` coming back over the wire — a renamed or dropped field on any of
+    /// them reaches a user's editor with nothing red anywhere.
+    ///
+    /// T-269 weighed seeding a fixture store out-of-band (a second process opening the same
+    /// SwiftData store the server is about to open, with a fixture that has to be hand-kept in
+    /// step with `CadenceSchema`) against pinning the DTOs' declared stored-property lists as a
+    /// source scan. The scan is what ships: it is cheap, deterministic, needs no store, and this
+    /// file is already source-scanning by necessity (see the header comment above) — a seeded
+    /// fixture would be the first thing in this target that opens a real `ModelContainer`, which
+    /// is a materially different kind of test with its own migration/CloudKit-shape hazards. What
+    /// it gives up is real: this cannot catch a *runtime* encoding difference (a custom
+    /// `encode(to:)`, a `CodingKeys` remap, or a computed property masquerading as stored). None of
+    /// the six DTOs below has one today — plain `nonisolated struct ...: Codable, Sendable` with
+    /// only stored `let` properties — so synthesized `Codable` is exactly the declared property
+    /// list, which is what makes the scan sound for as long as that stays true.
+    ///
+    /// One more thing this scan does *not* need, on purpose: the smoke test's `check_keys` takes
+    /// optional field names separately because Swift's synthesized `Codable` uses
+    /// `encodeIfPresent`, so a `nil` optional is an *absent* key in the actual JSON rather than a
+    /// present-but-null one — a runtime key-set comparison that doesn't account for that fails on
+    /// correct code. That subtlety is about the wire format of a specific value at a specific
+    /// moment; it does not apply to a compile-time scan of the struct's *declaration*, which lists
+    /// every stored property — `String?` included — regardless of what any instance happens to
+    /// hold. So the assertion below is exact-set equality against the full declared field list, not
+    /// a subset-with-named-optionals comparison; optionality is irrelevant to what this test reads.
+    @Test func listToolDTOsDeclareTheirEstablishedStoredProperties() throws {
+        let source = strippingComments(try sourceFile(Self.readDTOsPath))
+        for spec in Self.listToolDTOSpecs {
+            let fields = structStoredPropertyNames(spec.structName, in: source)
+            #expect(
+                fields == spec.expectedFields,
+                "\(spec.structName): declared \(fields.sorted()), expected \(spec.expectedFields.sorted())"
+            )
+        }
+    }
+
+    @Test func listToolDTOScanIsNotVacuous() throws {
+        let source = strippingComments(try sourceFile(Self.readDTOsPath))
+        #expect(source.count > 3_000)
+        #expect(Self.listToolDTOSpecs.count == 6)
+        for spec in Self.listToolDTOSpecs {
+            #expect(spec.expectedFields.isEmpty == false)
+            #expect(structStoredPropertyNames(spec.structName, in: source).isEmpty == false)
+        }
+    }
+
     // MARK: - Non-vacuity and regex self-checks
     //
     // Every zero-count assertion above passes against an empty string, which is what a `/tmp`
@@ -87,6 +176,18 @@ struct CadenceMCPToolContractTests {
         #expect(advertised.contains("mcp_diagnostics"))
         #expect(writes.contains("create_task"))
         #expect(writes.contains("list_tasks") == false)
+
+        // The helper scan reads a real extension, and its needle really is discriminating: the
+        // definitions file does contain `.int(` while nothing calls the deleted `int` helper, so
+        // a receiver-less needle would be unfailable here rather than merely imprecise.
+        let helpers = try argumentParsingHelperNames()
+        #expect(helpers.count >= 8)
+        #expect(helpers.contains("strictInt"))
+        #expect(helpers.contains("flexibleStringArray"))
+        #expect(helpers.contains("int") == false)
+        #expect(helpers.contains("stringArray") == false)
+        #expect(definitions.contains(".int("))
+        #expect(definitions.contains("arguments.int(") == false)
     }
 
     @Test func extractorsMatchWhatTheyClaimAndRejectWhatTheyShould() throws {
@@ -134,6 +235,50 @@ struct CadenceMCPToolContractTests {
         // vacuous against them.
         #expect(strippingComments("let a = 1 // note\n/* block */let b = 2").contains("note") == false)
         #expect(strippingComments("let a = 1 // note\n/* block */let b = 2").contains("let b = 2"))
+
+        // The Python stripper has to be quote-aware or it truncates every line holding a `#`
+        // inside a string literal — and the markers above live in string literals, so a naive
+        // stripper would make that whole test vacuous rather than merely wrong.
+        let python = "value = \"a#b\"  # trailing note\n# whole line\nkeep = 1"
+        #expect(strippingPythonComments(python).contains("a#b"))
+        #expect(strippingPythonComments(python).contains("trailing note") == false)
+        #expect(strippingPythonComments(python).contains("whole line") == false)
+        #expect(strippingPythonComments(python).contains("keep = 1"))
+
+        // Helper-name extraction takes the extension's own funcs and not the private statics
+        // beside them, which are called from inside the same file and have no router call site.
+        let helperFixture = """
+        extension Dictionary where Key == String, Value == MCP.Value {
+            func alpha(_ key: String) -> String? { nil }
+
+            private static func beta(_ value: String) -> Int? { nil }
+        }
+        """
+        #expect(helperNames(inSwift: helperFixture) == ["alpha"])
+
+        // DTO stored-property needle (T-269): must stop at its own struct's closing brace rather
+        // than bleeding into the next declaration, must ignore a doc comment that mentions a
+        // plausible-looking field name in prose, and must not be fooled by a second struct whose
+        // name is the first's with a suffix appended — `Alpha` vs `AlphaSummary` mirrors
+        // `CadenceContainerRef` vs `CadenceContainerSummary` in the real file.
+        let dtoFixture = strippingComments("""
+        nonisolated struct Alpha: Codable, Sendable {
+            let id: String
+            /// mentions let bogusField: Int only in prose, never as a declaration
+            let name: String?
+        }
+
+        nonisolated struct AlphaSummary: Codable, Sendable {
+            let id: String
+            let alpha: Alpha?
+            let title: String
+        }
+        """)
+        #expect(structStoredPropertyNames("Alpha", in: dtoFixture) == ["id", "name"])
+        #expect(structStoredPropertyNames("AlphaSummary", in: dtoFixture) == ["id", "alpha", "title"])
+        #expect(structStoredPropertyNames("Alpha", in: dtoFixture).contains("bogusField") == false)
+        #expect(structStoredPropertyNames("Alpha", in: dtoFixture).contains("title") == false)
+        #expect(structStoredPropertyNames("Missing", in: dtoFixture).isEmpty)
     }
 }
 
@@ -143,6 +288,49 @@ private extension CadenceMCPToolContractTests {
     static let definitionsPath = "CadenceMCPServer/CadenceMCPToolDefinitions.swift"
     static let routerPath = "CadenceMCPServer/CadenceMCPToolRouter.swift"
     static let smokeTestPath = "plugins/cadence-mcp/scripts/smoke-test.py"
+    static let argumentParsingPath = "CadenceMCPServer/CadenceMCPArgumentParsing.swift"
+    static let readDTOsPath = "Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift"
+
+    /// The six `list_*` result-element DTOs `CadenceReadService` returns that T-269 found with no
+    /// runtime coverage: `listTaskBundles` -> `CadenceTaskBundleSummary`, `listGoals` ->
+    /// `CadenceGoalSummary`, `listHabits` -> `CadenceHabitSummary`, `listLinks` ->
+    /// `CadenceSavedLinkSummary`, `listContexts` -> `CadenceContextRef`, `listContainers` ->
+    /// `CadenceContainerRef` (`CadenceReadService.swift`). `list_tasks`, `list_tags` and
+    /// `list_notes` are excluded on purpose — the smoke test already asserts their DTOs
+    /// (`TASK_SUMMARY_KEYS`, `TAG_SUMMARY_KEYS`/`TAG_DETAIL_KEYS`, `NOTE_SUMMARY_KEYS`) against real
+    /// rows created through `create_task` and `append_core_note`, which is stronger than a scan.
+    struct DTOFieldSpec {
+        let structName: String
+        let expectedFields: Set<String>
+    }
+
+    static let listToolDTOSpecs: [DTOFieldSpec] = [
+        DTOFieldSpec(structName: "CadenceTaskBundleSummary", expectedFields: [
+            "id", "title", "dateKey", "startMin", "durationMinutes", "endMin",
+            "totalEstimatedMinutes", "taskCount", "activeTaskCount", "createdAt",
+        ]),
+        DTOFieldSpec(structName: "CadenceGoalSummary", expectedFields: [
+            "id", "title", "description", "startDate", "endDate", "progressType", "targetHours",
+            "loggedHours", "colorHex", "icon", "kind", "status", "progress", "contextId",
+            "contextName", "parentGoalId", "parentGoalTitle", "isTopLevel", "linkedListCount",
+            "taskCount", "subGoalCount", "habitCount", "createdAt",
+        ]),
+        DTOFieldSpec(structName: "CadenceHabitSummary", expectedFields: [
+            "id", "title", "icon", "colorHex", "frequencyType", "frequencyDays", "targetCount",
+            "order", "contextId", "contextName", "goal", "currentStreak", "completionCount",
+            "completedToday", "createdAt",
+        ]),
+        DTOFieldSpec(structName: "CadenceSavedLinkSummary", expectedFields: [
+            "id", "title", "url", "container", "order", "createdAt",
+        ]),
+        DTOFieldSpec(structName: "CadenceContextRef", expectedFields: [
+            "id", "name", "colorHex", "icon", "order", "isArchived", "areaCount", "projectCount",
+            "activeTaskCount", "goalCount", "habitCount",
+        ]),
+        DTOFieldSpec(structName: "CadenceContainerRef", expectedFields: [
+            "kind", "id", "name", "contextId", "contextName", "status", "colorHex", "icon",
+        ]),
+    ]
 
     func advertisedToolNames() throws -> Set<String> {
         toolNames(inSwift: strippingComments(try sourceFile(Self.definitionsPath)))
@@ -173,8 +361,37 @@ private extension CadenceMCPToolContractTests {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
     }
 
+    func argumentParsingHelperNames() throws -> Set<String> {
+        helperNames(inSwift: strippingComments(try sourceFile(Self.argumentParsingPath)))
+    }
+
+    /// Four-space-indented `func` only, so the `private static func` parsers beside them are
+    /// excluded — those are implementation detail of the eight the router calls.
+    func helperNames(inSwift source: String) -> Set<String> {
+        matches(of: #"^    func ([a-zA-Z]+)\("#, in: source)
+    }
+
     func toolNames(inSwift source: String) -> Set<String> {
         matches(of: #"Tool\(name: "([a-z_]+)""#, in: source)
+    }
+
+    /// Every stored `let` property of one exact-named `struct ...: Codable, Sendable { ... }`
+    /// declaration. `source` must already be comment-stripped by the caller, matching every other
+    /// extractor in this file. The search string includes `: Codable, Sendable {` so a struct name
+    /// that is a prefix of another's (`CadenceContainerRef` / `CadenceContainerSummary`) cannot
+    /// cross-match, and the scan stops at the first bare `}` line after the declaration, so a
+    /// field on a later, unrelated struct is never counted. Returns an empty set — not a thrown
+    /// error — for a struct name that no longer exists, exactly like `armsSplittingCases` returning
+    /// nothing for a deleted arm: the caller's `#expect(fields == expected)` is what turns that
+    /// into a readable failure instead of a bare crash.
+    func structStoredPropertyNames(_ structName: String, in source: String) -> Set<String> {
+        guard let declRange = source.range(of: "struct \(structName): Codable, Sendable {"),
+              let closeRange = source.range(of: "\n}", range: declRange.upperBound..<source.endIndex)
+        else {
+            return []
+        }
+        let body = String(source[declRange.upperBound..<closeRange.lowerBound])
+        return matches(of: #"^    let ([a-zA-Z]+):"#, in: body)
     }
 
     /// Line-anchored so that only a real `case "name":` arm counts. Bodies run to the next arm or
@@ -231,6 +448,38 @@ private extension CadenceMCPToolContractTests {
             found.insert(String(source[captured]))
         }
         return found
+    }
+
+    /// Python has no block comments, so this is a line scan — but a naive one deletes the tail of
+    /// any line with a `#` inside a string literal, and the markers this file looks for are in
+    /// string literals.
+    func strippingPythonComments(_ source: String) -> String {
+        source.components(separatedBy: "\n").map { line -> String in
+            var quote: Character?
+            var escaped = false
+            var result = ""
+            for character in line {
+                if let open = quote {
+                    result.append(character)
+                    if escaped {
+                        escaped = false
+                    } else if character == "\\" {
+                        escaped = true
+                    } else if character == open {
+                        quote = nil
+                    }
+                    continue
+                }
+                if character == "\"" || character == "'" {
+                    quote = character
+                    result.append(character)
+                    continue
+                }
+                if character == "#" { break }
+                result.append(character)
+            }
+            return result
+        }.joined(separator: "\n")
     }
 
     func strippingComments(_ source: String) -> String {

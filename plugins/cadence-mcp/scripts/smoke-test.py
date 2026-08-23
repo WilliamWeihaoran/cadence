@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import select
@@ -51,6 +52,50 @@ EXPECTED_TOOLS = {
     "get_recent_mcp_writes",
 } | WRITE_TOOLS
 READ_ONLY_TOOLS = EXPECTED_TOOLS - WRITE_TOOLS
+MISSING_UUID = "00000000-0000-0000-0000-000000000000"
+
+# Every tool name the read-write phase actually dispatches, recorded by `send` and compared
+# against the server's own `tools/list` before this script prints OK. This is the guard, not the
+# list above it: T-259 was filed because the smoke test dispatched 21 of the router's 30 arms and
+# nothing said so, and a coverage claim that lives in a comment goes stale the first time an arm
+# is added. The read-only phase deliberately does not record — a `create_task` refused because
+# writes are off has exercised the gate, not the arm.
+DISPATCHED = set()
+
+# Response DTO shapes, so a renamed or dropped field on a list payload fails here rather than in
+# a user's editor. Swift's synthesized `Codable` emits optionals with `encodeIfPresent`, so a nil
+# optional is an *absent* key and not a null — which is why `check_keys` takes the optional names
+# separately instead of comparing sets outright.
+TASK_SUMMARY_KEYS = {
+    "id", "title", "status", "priority", "dueDate", "scheduledDate", "scheduledStartMin",
+    "estimatedMinutes", "container", "goal", "sectionName", "tags", "isDone", "isCancelled",
+}
+TASK_SUMMARY_OPTIONAL = {"container", "goal"}
+TASK_DETAIL_KEYS = {"summary", "notes", "actualMinutes", "subtasks", "createdAt", "completedAt"}
+TASK_DETAIL_OPTIONAL = {"completedAt"}
+TAG_SUMMARY_KEYS = {"id", "slug", "name", "colorHex", "description", "isArchived"}
+TAG_DETAIL_KEYS = {"summary", "taskCount", "noteCount", "createdAt", "updatedAt"}
+NOTE_SUMMARY_KEYS = {"id", "kind", "title", "key", "container", "updatedAt", "excerpt", "tags"}
+NOTE_SUMMARY_OPTIONAL = {"key", "container"}
+
+
+def check_keys(payload: dict, expected: set, optional: set, label: str) -> None:
+    actual = set(payload)
+    unexpected = sorted(actual - expected)
+    missing = sorted(expected - optional - actual)
+    if unexpected or missing:
+        raise AssertionError(f"{label}: unexpected keys {unexpected}, missing keys {missing}")
+
+
+def assert_day(actual: str, offset: int, label: str, before: datetime.date) -> None:
+    """Accepts the day computed from either side of the call, so a run straddling midnight is not
+    a flake. `before` is read before the request; `date.today()` here is read after it."""
+    allowed = {
+        (before + datetime.timedelta(days=offset)).isoformat(),
+        (datetime.date.today() + datetime.timedelta(days=offset)).isoformat(),
+    }
+    if actual not in allowed:
+        raise AssertionError(f"{label}: expected one of {sorted(allowed)}, got {actual}")
 
 
 def prepare_fixture_store() -> tempfile.TemporaryDirectory:
@@ -199,6 +244,10 @@ def main() -> int:
     )
 
     def send(message: dict) -> None:
+        # Recording here rather than at each call site is what makes the coverage check total: a
+        # block added later cannot forget to opt in.
+        if message.get("method") == "tools/call":
+            DISPATCHED.add(message["params"]["name"])
         assert process.stdin is not None
         process.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
         process.stdin.flush()
@@ -225,6 +274,36 @@ def main() -> int:
                 raise RuntimeError(f"server exited {process.returncode}: {stderr}")
 
         raise TimeoutError(f"timed out waiting for response {expected_id}")
+
+    # Named `dispatch`, not `call`: `call` is already a local holding a get_today_brief response
+    # further down, and shadowing it fails at runtime as "'dict' object is not callable".
+    def dispatch(request_id: int, name: str, arguments: dict = None) -> dict:
+        send({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments if arguments is not None else {}},
+        })
+        return read_response(request_id)
+
+    def call_ok(request_id: int, name: str, arguments: dict = None):
+        response = dispatch(request_id, name, arguments)
+        if response["result"].get("isError", False):
+            raise AssertionError(f"{name}: {response['result']['content'][0]['text']}")
+        return json.loads(response["result"]["content"][0]["text"])
+
+    def call_error(request_id: int, name: str, arguments: dict, why: str, expects: str = None) -> str:
+        response = dispatch(request_id, name, arguments)
+        if not response["result"].get("isError", False):
+            raise AssertionError(f"{name} should have returned an MCP tool error: {why}")
+        message = response["result"]["content"][0]["text"]
+        # Asserting the message and not just `isError` is what gives an error-path check teeth. A
+        # deleted router arm answers "Unknown tool", a renamed argument key answers a different
+        # "Missing required argument", and a bare `isError` check is green for both — which is how
+        # an arm can be "covered" by a call that never reaches it.
+        if expects is not None and expects not in message:
+            raise AssertionError(f"{name}: expected an error mentioning {expects!r}, got {message!r}")
+        return message
 
     try:
         send(
@@ -641,6 +720,246 @@ def main() -> int:
         if not invalid_limit["result"].get("isError", False):
             raise AssertionError("list_tags with a non-integer limit should return an MCP tool error")
 
+        # --- Read arms nothing had ever dispatched (T-259) ------------------------------
+        # A fresh fixture store holds no bundles, containers or goals, and MCP has no tool that
+        # creates one, so what these can establish is the argument wiring and the not-found path.
+        # That is not nothing: `bundleId`, `goalId` and `containerKind`+`containerId` are each
+        # read by exactly one arm, so a renamed key here fails nowhere else. Each asserts the
+        # error *message*, because "Unknown tool" is also an error.
+        call_error(40, "get_task_bundle", {}, "missing bundleId", "Missing required argument: bundleId")
+        call_error(
+            41,
+            "get_task_bundle",
+            {"bundleId": MISSING_UUID},
+            "unknown bundleId",
+            f"No task bundle found with id {MISSING_UUID}.",
+        )
+
+        containers = call_ok(42, "list_containers", {"limit": 3})
+        if containers != []:
+            raise AssertionError(f"expected no containers in a fresh store, got {containers}")
+        call_error(43, "list_containers", {"kind": "folder"}, "invalid container kind", "Invalid container kind: folder")
+
+        call_error(
+            44,
+            "get_container_summary",
+            {"containerId": MISSING_UUID},
+            "missing containerKind",
+            "Missing required argument: containerKind",
+        )
+        call_error(
+            45,
+            "get_container_summary",
+            {"containerKind": "project", "containerId": MISSING_UUID},
+            "unknown container",
+            f"No project found with id {MISSING_UUID}.",
+        )
+
+        call_error(46, "get_goal", {}, "missing goalId", "Missing required argument: goalId")
+        call_error(
+            47,
+            "get_goal",
+            {"goalId": MISSING_UUID},
+            "unknown goalId",
+            f"No goal found with id {MISSING_UUID}.",
+        )
+
+        # --- The five write tools that ran nowhere at all (T-259) ------------------------
+        # `update_task`, `schedule_task`, `complete_task`, `reopen_task` and `cancel_task` are
+        # five of the eight write tools and had no execution path in this file or in any test.
+        # Each carries its own argument wiring, and `schedule_task` is the only arm that reads
+        # `minuteOfDay`, `durationMinutes` and `clearScheduledDate` together — a reordered
+        # `CadenceScheduleTaskOptions` initialiser would compile, advertise itself, and go wrong
+        # only in the user's store. The probe stays outside the `MCP smoke` title prefix so the
+        # bulk-cancel counts below keep meaning what they meant before.
+        probe = call_ok(50, "create_task", {"title": "Coverage probe lifecycle", "estimatedMinutes": 25})
+        check_keys(probe, TASK_DETAIL_KEYS, TASK_DETAIL_OPTIONAL, "create_task detail")
+        check_keys(probe["summary"], TASK_SUMMARY_KEYS, TASK_SUMMARY_OPTIONAL, "create_task summary")
+        probe_id = probe["summary"]["id"]
+
+        before = datetime.date.today()
+        updated = call_ok(
+            51,
+            "update_task",
+            {
+                "taskId": probe_id,
+                "title": "Coverage probe lifecycle (updated)",
+                "notes": "probe notes",
+                "priority": "high",
+                "dueDate": "today",
+                "estimatedMinutes": "45m",
+                "tagNames": "coverage-alpha, coverage-beta",
+            },
+        )
+        if updated["summary"]["title"] != "Coverage probe lifecycle (updated)":
+            raise AssertionError(f"expected update_task to rewrite the title, got {updated['summary']}")
+        if updated["notes"] != "probe notes":
+            raise AssertionError(f"expected update_task to write notes, got {updated}")
+        if updated["summary"]["priority"] != "high":
+            raise AssertionError(f"expected update_task to set priority, got {updated['summary']}")
+        assert_day(updated["summary"]["dueDate"], 0, "update_task dueDate", before)
+        if updated["summary"]["estimatedMinutes"] != 45:
+            raise AssertionError(f"expected 45m to parse to 45, got {updated['summary']}")
+        if len(updated["summary"]["tags"]) != 2:
+            raise AssertionError(f"expected two tags on the updated task, got {updated['summary']}")
+
+        cleared_due = call_ok(52, "update_task", {"taskId": probe_id, "clearDueDate": True})
+        if cleared_due["summary"]["dueDate"] != "":
+            raise AssertionError(f"expected clearDueDate to empty the due date, got {cleared_due['summary']}")
+        call_error(
+            53,
+            "update_task",
+            {"taskId": probe_id, "dueDate": "today", "clearDueDate": True},
+            "clearDueDate combined with dueDate",
+            "clearDueDate cannot be combined with dueDate.",
+        )
+        call_error(54, "update_task", {"taskId": probe_id}, "no fields to change", "No valid changes were provided.")
+
+        before = datetime.date.today()
+        scheduled = call_ok(
+            55,
+            "schedule_task",
+            {
+                "taskId": probe_id,
+                "scheduledDate": "today",
+                "scheduledStartMin": "4:30 pm",
+                "estimatedMinutes": "1.5h",
+            },
+        )["summary"]
+        assert_day(scheduled["scheduledDate"], 0, "schedule_task scheduledDate", before)
+        if scheduled["scheduledStartMin"] != 990:
+            raise AssertionError(f"expected 4:30 pm to parse to 990, got {scheduled}")
+        if scheduled["estimatedMinutes"] != 90:
+            raise AssertionError(f"expected 1.5h to parse to 90, got {scheduled}")
+        call_error(
+            56,
+            "schedule_task",
+            {"taskId": probe_id, "scheduledStartMin": "9 am"},
+            "scheduledStartMin without scheduledDate",
+            "scheduledDate is required when scheduledStartMin is provided.",
+        )
+        call_error(
+            57,
+            "schedule_task",
+            {"taskId": probe_id, "clearScheduledDate": True, "scheduledDate": "today"},
+            "clearScheduledDate combined with scheduledDate",
+            "clearScheduledDate cannot be combined with scheduledDate",
+        )
+        unscheduled = call_ok(58, "schedule_task", {"taskId": probe_id, "clearScheduledDate": True})["summary"]
+        if unscheduled["scheduledDate"] != "" or unscheduled["scheduledStartMin"] != -1:
+            raise AssertionError(f"expected clearScheduledDate to free the slot, got {unscheduled}")
+
+        completed = call_ok(59, "complete_task", {"taskId": probe_id})
+        check_keys(completed, {"task", "spawnedRecurringTask"}, {"spawnedRecurringTask"}, "complete_task result")
+        if completed["task"]["summary"]["status"] != "done" or not completed["task"]["summary"]["isDone"]:
+            raise AssertionError(f"expected complete_task to finish the task, got {completed['task']['summary']}")
+        if completed.get("spawnedRecurringTask") is not None:
+            raise AssertionError("a non-recurring task must not spawn an occurrence")
+
+        reopened = call_ok(60, "reopen_task", {"taskId": probe_id})
+        if reopened["summary"]["status"] != "todo" or reopened["summary"]["isDone"]:
+            raise AssertionError(f"expected reopen_task to return the task to todo, got {reopened['summary']}")
+        if reopened.get("completedAt") is not None:
+            raise AssertionError(f"expected reopen_task to clear completedAt, got {reopened}")
+
+        cancelled = call_ok(61, "cancel_task", {"taskId": probe_id})
+        # Shape first, then state: `cancel_task` and `complete_task` differ by one word at the
+        # call site and return *different* DTOs, so checking the keys is what turns that
+        # copy-paste into a legible failure rather than a KeyError.
+        check_keys(cancelled, TASK_DETAIL_KEYS, TASK_DETAIL_OPTIONAL, "cancel_task detail")
+        if cancelled["summary"]["status"] != "cancelled" or not cancelled["summary"]["isCancelled"]:
+            raise AssertionError(f"expected cancel_task to cancel the task, got {cancelled['summary']}")
+        call_error(
+            62,
+            "complete_task",
+            {"taskId": probe_id},
+            "completing a cancelled task",
+            f"Cancelled task {probe_id} cannot be completed.",
+        )
+        call_error(
+            63,
+            "complete_task",
+            {"taskId": MISSING_UUID},
+            "unknown taskId",
+            f"No task found with id {MISSING_UUID}.",
+        )
+
+        # --- Natural language, past the one sample per helper ----------------------------
+        # `dateKey`, `durationMinutes` and `minuteOfDay` were each exercised at a single point
+        # ("tomorrow", "1h"/"three hours", "4 PM"), so every other branch of their parsers was
+        # unrun. The rejections matter as much as the successes: a parser that silently returns
+        # nil turns a mistyped argument into a task with no date rather than an error.
+        for index, (offset, phrase) in enumerate(
+            [(0, "today"), (-1, "yesterday"), (3, "in 3 days"), (2, "+2 days"), (-2, "2 days ago")]
+        ):
+            before = datetime.date.today()
+            parsed = call_ok(
+                64 + index,
+                "create_task",
+                {"title": f"Coverage probe date {phrase}", "scheduledDate": phrase},
+            )["summary"]
+            assert_day(parsed["scheduledDate"], offset, f"scheduledDate {phrase}", before)
+        call_error(
+            69,
+            "create_task",
+            {"title": "Coverage probe bad date", "scheduledDate": "next tuesday"},
+            "unparseable relative date",
+            "Invalid scheduledDate: next tuesday",
+        )
+
+        for index, (phrase, minutes) in enumerate(
+            [("30m", 30), ("1.5h", 90), ("45 minutes", 45), ("two and a half hours", 150)]
+        ):
+            parsed = call_ok(
+                70 + index,
+                "create_task",
+                {"title": f"Coverage probe duration {phrase}", "estimatedMinutes": phrase},
+            )["summary"]
+            if parsed["estimatedMinutes"] != minutes:
+                raise AssertionError(f"expected {phrase} to parse to {minutes}, got {parsed['estimatedMinutes']}")
+
+        for index, (phrase, minute_of_day) in enumerate([("12 am", 0), ("12 pm", 720), ("11:05 AM", 665)]):
+            parsed = call_ok(
+                74 + index,
+                "create_task",
+                {
+                    "title": f"Coverage probe time {phrase}",
+                    "scheduledDate": "today",
+                    "scheduledStartMin": phrase,
+                },
+            )["summary"]
+            if parsed["scheduledStartMin"] != minute_of_day:
+                raise AssertionError(f"expected {phrase} to parse to {minute_of_day}, got {parsed['scheduledStartMin']}")
+        call_error(
+            77,
+            "create_task",
+            {"title": "Coverage probe bad time", "scheduledDate": "today", "scheduledStartMin": "13 pm"},
+            "hour outside the 12-hour clock",
+            "Invalid scheduledStartMin: 13 pm",
+        )
+
+        # --- List DTO shapes -------------------------------------------------------------
+        # The `list_*` arms this file already called ran against an empty store and returned
+        # `[]`, so no list payload's shape had ever been observed. Tags are seeded when the
+        # read-write container opens, and tasks and notes exist by now, so those three can be
+        # checked against real rows. Bundles, goals, habits, links, contexts and containers have
+        # no MCP creation path and stay empty here — that half of the gap is still open.
+        tag_details = call_ok(78, "list_tags", {"limit": 50})
+        if not tag_details:
+            raise AssertionError("expected seeded default tags in the fixture store")
+        check_keys(tag_details[0], TAG_DETAIL_KEYS, set(), "list_tags element")
+        check_keys(tag_details[0]["summary"], TAG_SUMMARY_KEYS, set(), "list_tags summary")
+
+        task_rows = call_ok(79, "list_tasks", {"limit": 50, "includeCompleted": True})
+        if not task_rows:
+            raise AssertionError("expected the created probe tasks in list_tasks")
+        check_keys(task_rows[0], TASK_SUMMARY_KEYS, TASK_SUMMARY_OPTIONAL, "list_tasks element")
+
+        note_rows = call_ok(80, "list_notes", {"limit": 10})
+        if not note_rows:
+            raise AssertionError("expected the appended daily note in list_notes")
+        check_keys(note_rows[0], NOTE_SUMMARY_KEYS, NOTE_SUMMARY_OPTIONAL, "list_notes element")
+
         send(
             {
                 "jsonrpc": "2.0",
@@ -694,6 +1013,16 @@ def main() -> int:
             raise AssertionError(f"expected at least 3 bulk_cancel_tasks audit entries, got {len(bulk_cancel_audits)}")
         if any("MCP smoke invalid duration" in entry["summary"] for entry in audit_entries):
             raise AssertionError("invalid write should not be present in the audit log")
+        # The audit log is the write path's only record, so a tool that mutates without landing
+        # here is a write with no trace.
+        audited_tools = {entry["tool"] for entry in audit_entries}
+        unaudited = sorted(WRITE_TOOLS - audited_tools)
+        if unaudited:
+            raise AssertionError(f"write tools that mutated without an audit entry: {', '.join(unaudited)}")
+
+        undispatched = sorted(tool_names - DISPATCHED)
+        if undispatched:
+            raise AssertionError(f"tools advertised but never dispatched: {', '.join(undispatched)}")
 
         server_info = initialize["result"]["serverInfo"]
         print(f"OK {server_info['name']} {server_info['version']}")
@@ -715,6 +1044,11 @@ def main() -> int:
         print("OK recent MCP writes")
         print(f"OK audit log entries={len(audit_entries)}")
         print("OK tool error paths")
+        print("OK write lifecycle update/schedule/complete/reopen/cancel")
+        print("OK bundle/container/goal read arms")
+        print("OK natural date/duration/time parsing branches")
+        print("OK list DTO shapes")
+        print(f"OK dispatched {len(DISPATCHED)}/{len(tool_names)} advertised tools")
         return 0
     finally:
         process.terminate()

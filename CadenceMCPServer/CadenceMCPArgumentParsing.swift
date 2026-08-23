@@ -45,22 +45,6 @@ extension Dictionary where Key == String, Value == MCP.Value {
         }
     }
 
-    func int(_ key: String) -> Int? {
-        if let intValue = self[key]?.intValue {
-            return intValue
-        }
-        if let doubleValue = self[key]?.doubleValue {
-            guard doubleValue.rounded() == doubleValue else { return nil }
-            return Int(doubleValue)
-        }
-        if let stringValue = self[key]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !stringValue.isEmpty,
-           let intValue = Self.parseIntegerString(stringValue) {
-            return intValue
-        }
-        return nil
-    }
-
     func strictInt(_ key: String) throws -> Int? {
         guard let value = self[key] else { return nil }
         if let intValue = value.intValue {
@@ -130,11 +114,6 @@ extension Dictionary where Key == String, Value == MCP.Value {
         if let intValue = Int(raw) { return intValue }
         if let parsed = Self.parseMinuteOfDay(raw) { return parsed }
         throw ToolArgumentError.invalid("Invalid \(key): \(raw). Expected minutes from midnight or a time like 4 PM.")
-    }
-
-    func stringArray(_ key: String) -> [String]? {
-        guard case .array(let values)? = self[key] else { return nil }
-        return values.compactMap(\.stringValue)
     }
 
     func flexibleStringArray(_ key: String) throws -> [String]? {

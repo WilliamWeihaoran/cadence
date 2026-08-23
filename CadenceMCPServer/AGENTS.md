@@ -71,8 +71,19 @@ compiles in a view is not evidence it compiles here.
   `plugins/cadence-mcp/scripts/smoke-test.py`. None of those three files is in the app target's
   Sources phase, so `CadenceTests` cannot reference a symbol in them and cannot call one.
   `CadenceMCPToolContractTests` is therefore a **source scan**, not an execution: it pins the
-  three-way name contract below and the write gate, and nothing else. Do not read it as
+  three-way name contract below, the write gate, that every non-private helper in
+  `CadenceMCPArgumentParsing` has a router call site (T-260 deleted two that did not), and that the
+  smoke test still checks its own dispatch coverage. It executes nothing. Do not read it as
   behavioural coverage of the router.
+- **The smoke test dispatches all 30 arms and asserts that it does.** It ran 21 of them until
+  T-259, with `update_task`, `schedule_task`, `complete_task`, `reopen_task` and `cancel_task`
+  executed by nothing anywhere — five of the eight write tools, each with its own argument wiring,
+  and `schedule_task` the only place `minuteOfDay`, `durationMinutes` and `clearScheduledDate` are
+  read together. It now drives a full create → update → schedule → complete → reopen → cancel
+  lifecycle against the fixture store, asserts the resulting DTO key sets, and records every
+  `tools/call` so an unexercised arm fails the run. Its error-path checks assert the error *text*,
+  because a deleted arm answers "Unknown tool" and a renamed argument key answers a different
+  "Missing required argument" — both errors, and a bare `isError` check is green for both.
 - **The 30 tool names are a contract in three places at once**: `CadenceMCPToolDefinitions.swift`
   (the advertised schema), `CadenceMCPToolRouter.swift` (30 `case` arms), and the smoke test's
   expectations. Renaming or adding one means all three, and the definitions/router pair will
