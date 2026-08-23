@@ -37,7 +37,12 @@ nonisolated struct CadenceTaskGroupHeadingMetrics: Equatable, Sendable {
 struct CadenceTaskGroupHeading: View {
     let title: String
     let tint: Color
-    let count: Int
+    /// `nil` suppresses the capsule entirely rather than drawing `0`. **T-264:** a group that
+    /// stands for reminders Cadence has not been allowed to look at does not know its own count,
+    /// and `0` states a fact the app does not have — it reads as "nothing pending" when the truth
+    /// is "cannot say". Every group that always has a real number keeps passing a plain `Int`,
+    /// which converts implicitly.
+    let count: Int?
     /// `true` where the heading owns the full width of its container and pushes the count to the
     /// trailing edge; `false` where it is a fragment of a wider row its host is assembling — macOS
     /// puts a disclosure chevron in front of this and lets the host's own `Spacer` place it.
@@ -52,11 +57,13 @@ struct CadenceTaskGroupHeading: View {
                 Spacer(minLength: CadenceTaskGroupHeadingMetrics.spacing)
             }
 
-            countBadge
+            if let count {
+                countBadge(count)
+            }
         }
     }
 
-    private var countBadge: some View {
+    private func countBadge(_ count: Int) -> some View {
         Text("\(count)")
             .font(.system(size: CadenceTaskGroupHeadingMetrics.countSize, weight: .bold))
             .monospacedDigit()

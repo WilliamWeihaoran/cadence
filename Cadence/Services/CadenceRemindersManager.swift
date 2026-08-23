@@ -42,6 +42,16 @@ final class RemindersManager {
         )
     }
 
+    /// **T-256.** Read live, exactly like `isDenied`, and with no session fold: a restriction is
+    /// imposed by whoever manages the device, not by a choice made at the in-app prompt, so there
+    /// is no refusal for a launch to remember here the way `deniedInThisSession` remembers one for
+    /// `.denied`. `isDenied` above still folds `.restricted` into its own `true` too — that flag
+    /// answers "will a request button do anything", and the answer is no either way — so callers
+    /// that need to tell the two apart check `isRestricted` first.
+    var isRestricted: Bool {
+        EKEventStore.authorizationStatus(for: .reminder) == .restricted
+    }
+
     private let store = EKEventStore()
     private var storeObserver: NSObjectProtocol?
 

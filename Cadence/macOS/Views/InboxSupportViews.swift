@@ -24,6 +24,10 @@ struct InboxAppleRemindersSectionView: View {
     let reminders: [AppleReminderItem]
     let isAuthorized: Bool
     let isDenied: Bool
+    /// **T-256.** A device restriction (Screen Time, an MDM profile) rather than a user refusal —
+    /// `isDenied` is still `true` here too (see `RemindersManager.isDenied`), so this is checked
+    /// first, exactly as `RemindersConnectionState.resolve` checks it first.
+    let isRestricted: Bool
     let isLoading: Bool
     let onRequestAccess: () -> Void
     let onOpenSettings: () -> Void
@@ -34,7 +38,9 @@ struct InboxAppleRemindersSectionView: View {
             TaskListGroupHeader(
                 title: "Apple Reminders",
                 isCollapsed: false,
-                regularCount: reminders.count,
+                // **T-264.** `nil`, not `0`, whenever Cadence has not been allowed to look —
+                // matching `iOSInboxRemindersSection`'s `state.isConnected` gate.
+                regularCount: isAuthorized ? reminders.count : nil,
                 accent: Theme.purple,
                 isToggleEnabled: false,
                 onToggle: { }
@@ -64,6 +70,7 @@ struct InboxAppleRemindersSectionView: View {
             } else {
                 AppleRemindersAccessRow(
                     isDenied: isDenied,
+                    isRestricted: isRestricted,
                     action: isDenied ? onOpenSettings : onRequestAccess
                 )
                 .padding(.leading, TaskListDisplayMetrics.taskLeadingInset)
@@ -191,7 +198,24 @@ private struct AppleReminderTaskRow: View {
 
 private struct AppleRemindersAccessRow: View {
     let isDenied: Bool
+    /// **T-256.** Checked ahead of `isDenied` — see `InboxAppleRemindersSectionView.isRestricted`.
+    /// A restricted device gets its own copy and no button, the same decision every other
+    /// reminders surface now makes, borrowed from the canonical `RemindersConnectionState.restricted`
+    /// strings rather than a fourth hand-written pair that could drift from them.
+    let isRestricted: Bool
     let action: () -> Void
+
+    private var title: String {
+        if isRestricted { return RemindersConnectionState.restricted.accessTitle }
+        return isDenied ? "Reminders access is off" : "Show Apple Reminders in Inbox"
+    }
+
+    private var message: String {
+        if isRestricted { return RemindersConnectionState.restricted.accessMessage }
+        return isDenied
+            ? "Allow Cadence in Privacy & Security to show your active reminders."
+            : "Cadence can display active reminders and mark them complete here."
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -203,24 +227,27 @@ private struct AppleRemindersAccessRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(isDenied ? "Reminders access is off" : "Show Apple Reminders in Inbox")
+                Text(title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.text)
-                Text(isDenied
-                     ? "Allow Cadence in Privacy & Security to show your active reminders."
-                     : "Cadence can display active reminders and mark them complete here.")
+                Text(message)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
             }
 
             Spacer(minLength: 12)
 
-            CadenceActionButton(
-                title: isDenied ? "Open Settings" : "Connect",
-                role: .primary,
-                size: .compact,
-                action: action
-            )
+            // No button at all when restricted: there is no settings pane that can lift a
+            // device restriction, so offering one would be the dead-button bug T-256 exists to
+            // close, not fix it a third time.
+            if !isRestricted {
+                CadenceActionButton(
+                    title: isDenied ? "Open Settings" : "Connect",
+                    role: .primary,
+                    size: .compact,
+                    action: action
+                )
+            }
         }
         .padding(16)
         .cadenceCard(background: Theme.surface.opacity(0.72), cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)

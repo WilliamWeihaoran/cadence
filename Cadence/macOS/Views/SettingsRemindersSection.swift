@@ -13,7 +13,8 @@ struct SettingsRemindersSection: View {
     private var state: RemindersConnectionState {
         RemindersConnectionState.resolve(
             isAuthorized: remindersManager.isAuthorized,
-            isDenied: remindersManager.isDenied
+            isDenied: remindersManager.isDenied,
+            isRestricted: remindersManager.isRestricted
         )
     }
 
@@ -57,11 +58,14 @@ struct SettingsRemindersSection: View {
                     ) {
                         Text(action.title)
                     }
-                } else {
+                } else if state.isConnected {
                     SettingsActionButton(tone: .tinted(Theme.blue), action: remindersManager.reload) {
                         Text("Refresh")
                     }
                 }
+                // `.restricted` falls through both branches above: `accessAction` is `nil` and the
+                // state is not connected, so there is neither an action to offer nor a fetch to
+                // refresh. Rendering nothing here is deliberate — see T-256.
             }
         }
     }

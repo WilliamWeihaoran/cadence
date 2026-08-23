@@ -229,6 +229,7 @@ struct TasksListView: View {
                         reminders: remindersManager.reminders,
                         isAuthorized: remindersManager.isAuthorized,
                         isDenied: remindersManager.isDenied,
+                        isRestricted: remindersManager.isRestricted,
                         isLoading: remindersManager.isLoading,
                         onRequestAccess: requestRemindersAccess,
                         onOpenSettings: openRemindersPrivacySettings,

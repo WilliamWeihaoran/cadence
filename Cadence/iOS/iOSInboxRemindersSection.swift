@@ -32,7 +32,8 @@ struct iOSInboxRemindersSection: View {
     private var state: RemindersConnectionState {
         RemindersConnectionState.resolve(
             isAuthorized: remindersManager.isAuthorized,
-            isDenied: remindersManager.isDenied
+            isDenied: remindersManager.isDenied,
+            isRestricted: remindersManager.isRestricted
         )
     }
 
@@ -41,10 +42,14 @@ struct iOSInboxRemindersSection: View {
             // The Inbox's own group header, not a second heading vocabulary: this reads as one more
             // group of unprocessed things, which is what it is. No drop identity — a new Cadence
             // task cannot inherit "is an Apple Reminder".
+            //
+            // **T-264:** the count is `nil` — not `0` — in every state but `.connected`. Cadence has
+            // not been allowed to look at Reminders in `.notDetermined`, `.denied` or `.restricted`,
+            // and `0` states a fact it does not have.
             iOSTaskGroupHeader(
                 title: "Apple Reminders",
                 color: Theme.purple,
-                count: remindersManager.reminders.count
+                count: state.isConnected ? remindersManager.reminders.count : nil
             )
 
             if state.isConnected {

@@ -20,7 +20,8 @@ struct iOSRemindersSettingsSection: View {
     private var state: RemindersConnectionState {
         RemindersConnectionState.resolve(
             isAuthorized: remindersManager.isAuthorized,
-            isDenied: remindersManager.isDenied
+            isDenied: remindersManager.isDenied,
+            isRestricted: remindersManager.isRestricted
         )
     }
 
@@ -74,7 +75,7 @@ struct iOSRemindersSettingsSection: View {
                             action: { perform(action) }
                         )
                         .padding(.top, 2)
-                    } else {
+                    } else if state.isConnected {
                         iOSActionButton(
                             title: "Refresh",
                             systemImage: "arrow.clockwise",
@@ -84,6 +85,8 @@ struct iOSRemindersSettingsSection: View {
                         )
                         .padding(.top, 2)
                     }
+                    // `.restricted` offers neither button: no action can help, and there is
+                    // nothing connected yet to refresh. See T-256.
                 }
 
                 Spacer(minLength: 0)

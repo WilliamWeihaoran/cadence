@@ -56,12 +56,58 @@ struct RemindersConnectionStateTests {
         #expect(RemindersConnectionState.resolve(isAuthorized: true, isDenied: true) == .denied)
     }
 
+    // MARK: - T-256: a restriction is not a denial the user can undo
+
+    /// **The whole ticket.** A restricted device (Screen Time, an MDM profile) offered the exact
+    /// same "Reminders access denied" / "Open Reminders Settings" pair a plain denial gets, and
+    /// that pane will not let a restricted user grant anything — an affordance offered in a state
+    /// where it cannot work, the same class of bug as the pre-T-21 dead **Allow Access** button.
+    @Test func restrictedOffersNoActionAndNamesTheRestrictionRatherThanADenial() {
+        let state = RemindersConnectionState.resolve(isAuthorized: false, isDenied: false, isRestricted: true)
+
+        #expect(state == .restricted)
+        #expect(state != .denied)
+        #expect(state.isConnected == false)
+        #expect(state.badgeTitle == "Restricted")
+        #expect(state.badgeTitle != "Access denied")
+        // No settings trip: there is no pane that lifts a restriction for this user.
+        #expect(state.accessAction == nil)
+        #expect(state.accessTitle != RemindersConnectionState.denied.accessTitle)
+        #expect(state.accessMessage != RemindersConnectionState.denied.accessMessage)
+        // The copy says the restriction is not Cadence's (or the user's) to lift, and does not
+        // send anyone to a settings pane the way the denied copy does.
+        #expect(state.accessMessage.localizedCaseInsensitiveContains("restrict"))
+        #expect(state.accessMessage.localizedCaseInsensitiveContains("Settings") == false)
+    }
+
+    /// `isRestricted` wins over `isDenied` when both are `true` — which is exactly what
+    /// `RemindersManager.isDenied` hands the resolver, since it folds `.restricted` into its own
+    /// answer too (see its doc comment). If restricted did not win here, its presentation would
+    /// be unreachable through the manager's real flags.
+    @Test func restrictedOutranksADenialThatAlsoReadsTrueForTheSameStatus() {
+        #expect(RemindersConnectionState.resolve(isAuthorized: false, isDenied: true, isRestricted: true) == .restricted)
+    }
+
+    /// `isRestricted` defaults to `false`, so every call written before T-256 — including every
+    /// test above this section — keeps resolving exactly as it did.
+    @Test func omittingIsRestrictedPreservesThePreT256Behavior() {
+        #expect(RemindersConnectionState.resolve(isAuthorized: false, isDenied: false) == .notDetermined)
+        #expect(RemindersConnectionState.resolve(isAuthorized: false, isDenied: true) == .denied)
+        #expect(RemindersConnectionState.resolve(isAuthorized: true, isDenied: false) == .connected)
+    }
+
     // MARK: - EventKit status mapping
 
+    /// **`.restricted` cannot be produced with `simctl privacy` or any other host-side toggle** —
+    /// there is no "restrict this app" lever to flip, only real MDM/Screen Time configuration this
+    /// suite has no business touching. This pure mapping is therefore the only place the state can
+    /// be pinned; it is not simulator-verified, and no report of this ticket should claim otherwise.
     @Test func fullAccessIsTheOnlyStatusThatCountsAsConnected() {
         #expect(RemindersConnectionState.resolve(status: .fullAccess) == .connected)
         #expect(RemindersConnectionState.resolve(status: .denied) == .denied)
-        #expect(RemindersConnectionState.resolve(status: .restricted) == .denied)
+        // **T-256.** This used to fold into `.denied`; `.restricted` is its own state now,
+        // because the two need different second halves — see the tests above.
+        #expect(RemindersConnectionState.resolve(status: .restricted) == .restricted)
         #expect(RemindersConnectionState.resolve(status: .notDetermined) == .notDetermined)
     }
 

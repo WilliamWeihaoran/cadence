@@ -18,7 +18,9 @@ import SwiftUI
 struct iOSTaskGroupHeader: View {
     let title: String
     let color: Color
-    let count: Int
+    /// `nil` suppresses the count capsule — see `CadenceTaskGroupHeading.count` (T-264). Every
+    /// group that always knows its size keeps passing a plain `Int`, which converts implicitly.
+    let count: Int?
     /// What this group is, so a dropped `+` knows what to inherit from it. `nil` — or an identity
     /// that resolves to nothing — means the header is not a drop target and takes no highlight.
     /// See `CadenceTaskDropSupport.dropKey(forGroup:)`.

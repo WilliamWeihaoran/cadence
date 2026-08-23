@@ -1,11 +1,12 @@
 import EventKit
 import SwiftUI
 
-/// The three states the Reminders settings surface can be in, derived from EventKit's
+/// The four states the Reminders settings surface can be in, derived from EventKit's
 /// authorization status. This is the whole decision the UI makes, kept pure and away from
 /// the view so it can be tested without an EventKit grant: `notDetermined` is the only
 /// state where a request button does anything, because neither platform re-prompts once the
-/// user has denied access — from there the only path is the system Settings app.
+/// user has denied access — from there the only path is the system Settings app, and even
+/// that path is closed under `.restricted` (T-256), which offers no action at all.
 ///
 /// Lives in `Shared/` and outside any platform guard because both Settings surfaces read it:
 /// `macOS/Views/SettingsRemindersSection.swift` and `iOS/iOSRemindersSettingsSection.swift`.
@@ -13,6 +14,13 @@ enum RemindersConnectionState: Equatable {
     case notDetermined
     case connected
     case denied
+    /// A device restriction — Screen Time, an MDM profile, a managed device — is blocking
+    /// Reminders access. **T-256:** this used to fold into `.denied`, which told the user
+    /// "Allow Cadence from Settings, Privacy & Security, Reminders" over a pane that a
+    /// restriction will not let them act on. Restricted and denied need different second
+    /// halves for exactly the reason `.notDetermined` and `.denied` do: one names something
+    /// the user can do about it, and the other two do not — and they don't agree on which one.
+    case restricted
 
     /// EventKit's own status is the source of truth. `.authorized` is the pre-macOS-14
     /// spelling of `.fullAccess` (same case), so matching `.fullAccess` covers both;
@@ -22,7 +30,9 @@ enum RemindersConnectionState: Equatable {
         switch status {
         case .fullAccess:
             return .connected
-        case .denied, .restricted:
+        case .restricted:
+            return .restricted
+        case .denied:
             return .denied
         default:
             return .notDetermined
@@ -53,7 +63,16 @@ enum RemindersConnectionState: Equatable {
     /// The view reads `RemindersManager`'s published flags rather than EventKit directly,
     /// because only `isAuthorized` is observable. `isDenied` is evaluated live, so it wins
     /// over a stale `isAuthorized` when access is revoked from System Settings mid-session.
-    static func resolve(isAuthorized: Bool, isDenied: Bool) -> RemindersConnectionState {
+    ///
+    /// `isRestricted` is checked first, ahead of `isDenied`: `RemindersManager.isDenied` folds
+    /// `.restricted` into its own answer too (a restriction means no request button will do
+    /// anything, which is the question *that* flag answers), so the two can both be `true` at
+    /// once and restricted has to win, or its own presentation would never be reachable.
+    /// `isRestricted` defaults to `false` so every existing caller — every test written before
+    /// T-256 and any surface that genuinely cannot distinguish the two — keeps resolving exactly
+    /// as it did.
+    static func resolve(isAuthorized: Bool, isDenied: Bool, isRestricted: Bool = false) -> RemindersConnectionState {
+        if isRestricted { return .restricted }
         if isDenied { return .denied }
         return isAuthorized ? .connected : .notDetermined
     }
@@ -64,6 +83,7 @@ enum RemindersConnectionState: Equatable {
         switch self {
         case .connected: return "Connected"
         case .denied: return "Access denied"
+        case .restricted: return "Restricted"
         case .notDetermined: return "Not connected"
         }
     }
@@ -72,6 +92,7 @@ enum RemindersConnectionState: Equatable {
         switch self {
         case .connected: return "Apple Reminders connected"
         case .denied: return "Reminders access denied"
+        case .restricted: return "Reminders access restricted"
         case .notDetermined: return "Reminders access required"
         }
     }
@@ -100,6 +121,11 @@ enum RemindersConnectionState: Equatable {
             #else
             return "Allow Cadence from Settings, Privacy & Security, Reminders."
             #endif
+        case .restricted:
+            // No `#if` split: unlike `.denied`, this never names a settings pane to visit,
+            // because there isn't one that will help — a restriction is imposed by whoever
+            // manages the device, not by a toggle either OS exposes to this user.
+            return "A restriction on this device — Screen Time, a management profile — is blocking Reminders access, and it is not Cadence's to lift."
         case .notDetermined:
             #if os(macOS)
             return "Allow Cadence to read your active reminders and mark them complete."
@@ -110,11 +136,15 @@ enum RemindersConnectionState: Equatable {
     }
 
     /// `nil` for `.connected` — nothing to ask for — and never a request button once denied,
-    /// which would silently do nothing.
+    /// which would silently do nothing. `nil` for `.restricted` too, and for the same reason:
+    /// there is no pane `.openSystemSettings` could send this user to that would let them lift
+    /// the restriction, so offering the button would be [[T-256]]'s dead-`.denied`-button bug in
+    /// a state Cadence cannot even ask the user to fix themselves.
     var accessAction: RemindersAccessAction? {
         switch self {
         case .connected: return nil
         case .denied: return .openSystemSettings
+        case .restricted: return nil
         case .notDetermined: return .requestAccess
         }
     }

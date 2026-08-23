@@ -96,7 +96,11 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
     let title: String
     let isCollapsed: Bool
     let overdueCount: Int?
-    let regularCount: Int
+    /// `nil` suppresses the "N task(s)" capsule entirely, the same decision
+    /// `CadenceTaskGroupHeading.count` makes (T-264) — a group standing for reminders Cadence has
+    /// not been allowed to look at does not know its own count, and `0` states a fact it does not
+    /// have. Every group that always knows its size keeps passing a plain `Int`.
+    let regularCount: Int?
     var accent: Color = Theme.dim
     var isToggleEnabled: Bool = true
     let onToggle: () -> Void
@@ -106,7 +110,7 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
         title: String,
         isCollapsed: Bool,
         overdueCount: Int? = nil,
-        regularCount: Int,
+        regularCount: Int?,
         accent: Color = Theme.dim,
         isToggleEnabled: Bool = true,
         onToggle: @escaping () -> Void,
@@ -182,21 +186,23 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
                     .clipShape(Capsule())
                 }
 
-                HStack(spacing: 4) {
-                    Text("\(regularCount)")
-                        .font(.system(size: 11, weight: .bold))
-                    Text(regularCount == 1 ? "task" : "tasks")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                }
-                .foregroundStyle(accent)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(accent.opacity(0.11))
-                .clipShape(Capsule())
-                .overlay {
-                    Capsule()
-                        .strokeBorder(accent.opacity(0.2), lineWidth: 1)
+                if let regularCount {
+                    HStack(spacing: 4) {
+                        Text("\(regularCount)")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(regularCount == 1 ? "task" : "tasks")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                    }
+                    .foregroundStyle(accent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(accent.opacity(0.11))
+                    .clipShape(Capsule())
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(accent.opacity(0.2), lineWidth: 1)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
@@ -223,7 +229,7 @@ extension TaskListGroupHeader where LeadingContent == EmptyView {
         title: String,
         isCollapsed: Bool,
         overdueCount: Int? = nil,
-        regularCount: Int,
+        regularCount: Int?,
         accent: Color = Theme.dim,
         isToggleEnabled: Bool = true,
         onToggle: @escaping () -> Void

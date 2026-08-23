@@ -179,6 +179,114 @@ struct CadenceInboxRemindersSurfaceTests {
         )
     }
 
+    // MARK: - T-264: the count capsule is not a lie above the access card
+
+    /// **T-264.** Both Inbox headers used to pass `reminders.count` unconditionally, so
+    /// not-determined, denied and restricted all rendered "APPLE REMINDERS 0" directly above a
+    /// card admitting Cadence cannot see the reminders at all — a count of zero states a fact the
+    /// app does not have. The fix is the count becoming `nil` (not `0`) whenever the section is not
+    /// connected, and `CadenceTaskGroupHeading` / `TaskListGroupHeader` suppress the capsule for a
+    /// `nil` count rather than drawing it.
+    @Test func neitherInboxHeaderPassesTheRawReminderCountUnconditionally() throws {
+        let macSource = try strippingComments(sourceFile("Cadence/macOS/Views/InboxSupportViews.swift"))
+        #expect(
+            macSource.range(of: "regularCount:\\s*reminders\\.count\\s*,", options: .regularExpression) == nil,
+            "macOS's Inbox header passes the raw reminder count again, with no gate on authorization"
+        )
+        #expect(
+            macSource.range(of: "regularCount:\\s*isAuthorized\\s*\\?\\s*reminders\\.count\\s*:\\s*nil", options: .regularExpression) != nil,
+            "macOS's Inbox header stopped hiding the count while unauthorized"
+        )
+
+        let iosSource = try strippingComments(sourceFile("Cadence/iOS/iOSInboxRemindersSection.swift"))
+        #expect(
+            iosSource.range(of: "count:\\s*remindersManager\\.reminders\\.count\\s*\\n", options: .regularExpression) == nil,
+            "iOS's Inbox header passes the raw reminder count again, with no gate on authorization"
+        )
+        #expect(
+            iosSource.range(
+                of: "count:\\s*state\\.isConnected\\s*\\?\\s*remindersManager\\.reminders\\.count\\s*:\\s*nil",
+                options: .regularExpression
+            ) != nil,
+            "iOS's Inbox header stopped hiding the count while unauthorized"
+        )
+    }
+
+    /// The heading component itself must be able to suppress the capsule, or the two call-site
+    /// fixes above have nowhere to route a `nil` to. Pins the declaration rather than the call
+    /// sites, so a future revert of either component (not just the two headers) is caught here.
+    @Test func theSharedHeadingComponentsAcceptAnOptionalCount() throws {
+        let heading = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTaskGroupHeading.swift"))
+        #expect(heading.contains("let count: Int?"), "CadenceTaskGroupHeading.count is no longer optional")
+
+        let iosHeader = try strippingComments(sourceFile("Cadence/iOS/iOSTaskGroupSection.swift"))
+        #expect(iosHeader.contains("let count: Int?"), "iOSTaskGroupHeader.count is no longer optional")
+
+        let macHeader = try strippingComments(sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift"))
+        #expect(macHeader.contains("let regularCount: Int?"), "TaskListGroupHeader.regularCount is no longer optional")
+    }
+
+    // MARK: - T-256: isRestricted reaches every live consumer
+
+    /// The manager exposes the live status directly, with no session fold — a restriction is a
+    /// device policy, not something the in-app prompt can produce or reverse, so there is nothing
+    /// here for `deniedInThisSession` to have an opinion about (contrast `isDenied`, which does
+    /// fold a session record in, per its own doc comment).
+    @Test func theManagerReadsRestrictedLiveWithNoSessionFold() throws {
+        let source = try strippingComments(sourceFile("Cadence/Services/CadenceRemindersManager.swift"))
+        #expect(source.contains("var isRestricted: Bool"), "RemindersManager stopped exposing isRestricted")
+        #expect(
+            source.range(
+                of: "isRestricted:\\s*Bool\\s*\\{\\s*EKEventStore\\.authorizationStatus\\(for:\\s*\\.reminder\\)\\s*==\\s*\\.restricted",
+                options: .regularExpression
+            ) != nil,
+            "RemindersManager.isRestricted no longer reads the live EventKit status directly"
+        )
+    }
+
+    /// **The call-site pin.** `isRestricted` is pure infrastructure until something reads it —
+    /// exactly the "cannot fail at all" shape this file's own header warns about for
+    /// `showsRemindersStrip`. Every surface that resolves a `RemindersConnectionState` from the
+    /// manager's flags must pass this one too, or `.restricted`'s presentation is unreachable in
+    /// the running app no matter how well the pure type is tested in `RemindersConnectionStateTests`.
+    @Test func everyLiveResolverIsHandedIsRestricted() throws {
+        for path in [
+            "Cadence/macOS/Views/SettingsRemindersSection.swift",
+            "Cadence/macOS/Views/SettingsView.swift",
+            "Cadence/iOS/iOSRemindersSettingsSection.swift",
+            "Cadence/iOS/iOSInboxRemindersSection.swift",
+        ] {
+            let source = try strippingComments(sourceFile(path))
+            #expect(
+                source.contains("isRestricted: remindersManager.isRestricted"),
+                "\(path) stopped resolving RemindersConnectionState with isRestricted"
+            )
+        }
+    }
+
+    /// macOS's Inbox strip does not build a `RemindersConnectionState` at all — it takes
+    /// `isAuthorized` / `isDenied` / `isRestricted` as three separate booleans instead — so it is
+    /// pinned on its own rather than folded into the loop above.
+    @Test func macOSInboxPassesIsRestrictedThroughToItsAccessRow() throws {
+        let callSite = try strippingComments(sourceFile("Cadence/macOS/Views/TasksListView.swift"))
+        #expect(
+            callSite.contains("isRestricted: remindersManager.isRestricted"),
+            "TasksListView stopped handing the Inbox reminders section a live isRestricted"
+        )
+
+        let section = try strippingComments(sourceFile("Cadence/macOS/Views/InboxSupportViews.swift"))
+        #expect(section.contains("let isRestricted: Bool"), "InboxAppleRemindersSectionView dropped its isRestricted parameter")
+        #expect(
+            section.contains("isRestricted: isRestricted"),
+            "InboxAppleRemindersSectionView stopped forwarding isRestricted to AppleRemindersAccessRow"
+        )
+        // No button at all when restricted — the dead-`.denied`-button bug closed a second time.
+        #expect(
+            section.contains("if !isRestricted {"),
+            "AppleRemindersAccessRow no longer withholds its button when restricted"
+        )
+    }
+
     // MARK: - The row's two tints
 
     /// EventKit's priority is inverted — **1 is the most urgent, 9 the least** — and 0 means unset.

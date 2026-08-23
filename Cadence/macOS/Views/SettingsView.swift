@@ -133,7 +133,8 @@ struct SettingsView: View {
             case .reminders:
                 let remindersState = RemindersConnectionState.resolve(
                     isAuthorized: remindersManager.isAuthorized,
-                    isDenied: remindersManager.isDenied
+                    isDenied: remindersManager.isDenied,
+                    isRestricted: remindersManager.isRestricted
                 )
                 SettingsStatusBadge(title: remindersState.badgeTitle, isActive: remindersState.isConnected)
             case .notifications:
