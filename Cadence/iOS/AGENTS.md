@@ -148,20 +148,90 @@ Three things about the iOS wiring that are easy to get wrong:
 - **The confirmation is conditional, and that is the design.** macOS's archive is behind an edit
   sheet you had to open; iOS's is a row swipe and a long-press item, so the ceremony has to come
   from somewhere. But a sheet that appears over a list where nothing is open is a sheet people
-  learn to dismiss without reading. `CadenceListArchiveSummary.requiresConfirmation` is the test,
-  it is asked **once** (in `iOSListsView.requestArchive`), and the iPad pane calls up into that
-  rather than deciding for itself.
+  learn to dismiss without reading. `CadenceContainerWindDownSummary.requiresConfirmation` is the
+  test, it is asked **once** (in `iOSListsView.requestArchive`), and the iPad pane calls up into
+  that rather than deciding for itself. (The type was `CadenceListArchiveSummary` until T-247
+  shared it with the kanban column, which needed the identical four members with one word changed.)
 - **The count comes from the settle's own array.** `TaskContainerLifecycleService.remainingActiveTasks`
   is public for exactly this: a confirmation that counted by a second walk would eventually
   over-promise. An area rolls up its child projects, because a child keeps its own `status` and its
   tasks stay reachable after the parent is filed away.
 
 Deliberately not changed: list **completion** is still macOS-only (T-214) — un-guarding the service
-makes it a call site and nothing more, but nothing on iOS offers the action yet — and archiving a
-kanban **column** on iOS is still a draft toggle in the list editor that settles nothing (T-247).
-Do **not** reach for `markDone` / `markCancelled` / `applyStatusCompletion` for either: they spawn
-the next recurrence occurrence into the same area, project and section, so a wind-down routed
-through them refills the container it just closed.
+makes it a call site and nothing more, but nothing on iOS offers the action yet. Do **not** reach
+for `markDone` / `markCancelled` / `applyStatusCompletion` for it: they spawn the next recurrence
+occurrence into the same area, project and section, so a wind-down routed through them refills the
+container it just closed.
+
+## A Kanban Column Winds Down Too, And It Is An Action Rather Than A Draft
+
+**T-247, the sibling of T-215 one level down.** macOS's `KanbanSectionColumnView` has called
+`TaskContainerLifecycleService` on both column transitions all along — cancel on archive, done on
+complete. iOS drew them as two `Toggle`s bound to a `CadenceSectionDraft` inside
+`iOSSectionDraftRow`, committed with the rename and the colour on the list editor's Save, and no
+task changed status. Same divergence as T-215, in a shape that could not have been fixed by adding
+a call at the save.
+
+- **A draft flag cannot host a truthful count.** The confirmation's number has to be the settle's
+  own array (`remainingActiveTasks(in:area:project:)`), and a flag is committed arbitrarily later —
+  after `reassignTasks` has re-pointed `AppTask.sectionName` for every renamed or removed column.
+  Any number stated at flip time is a promise about a different array. That is the whole reason the
+  toggle became an action rather than gaining a confirmation where it stood.
+- **A draft flag also makes one gesture mean two things.** Flip and flip back and Save settles
+  nothing; flip and Save cancels twelve tasks forever. `applyColumnWindDown` writes the flag *and*
+  the settle to the model together, then brings the draft into step so the row reads truthfully and
+  the sheet's own Save cannot write the flag back off.
+- **Reversal is not a wind-down.** `ModelContext.reopenColumn` clears both flags and settles
+  nothing, so it asks nothing — and it has to stay in the editor, because `Area.sectionNames`
+  filters archived columns out and iOS has no "Show Archived" board mode, so the editor is the only
+  surface where an archived column is visible at all.
+- **No `!isCompleted` guard on the archive branch, unlike macOS.** macOS skips the cancel when the
+  column is already complete. That is normally a no-op and is wrong the moment a task is added to a
+  completed column: the count promised and the settle performed would disagree. The settle here
+  always walks the array `summary` counted.
+- **One decision point, one sheet.** `iOSListEditorSheet.requestColumnWindDown` asks
+  `requiresConfirmation` once; `iOSWindDownConfirmationSheet` (in `iOSWindDownConfirmation.swift`)
+  is the *same* sheet the list archive presents, parameterised by `iOSWindDownSubject`.
+  `CadenceColumnWindDownSurfaceTests` sweeps the folder for `$draft.isArchived` /
+  `$draft.isCompleted` — the `$` is what makes it the bug — and fails on either.
+
+## Today's Rollover Notice Is Shared, And Only Half Of T-195 Is Done
+
+**T-195, banner half.** Today's "leftover tasks are rolling over" notice was macOS-only in three
+separate pieces, none of them AppKit-shaped: the `@AppStorage` key, an inline visibility predicate
+on `TasksPanel`, and a withhold-while-showing method on `TasksPanelDerivedState` — over a mutation
+(`SchedulingActions.rollOverTaskToToday`) that sat in `macOS/Services/` importing nothing
+platform-specific. All four are now `Shared/CadenceTodayRolloverSupport.swift`,
+`Shared/Components/CadenceTodayRolloverBanner.swift` and
+`CadenceTaskMutationSupport.rollOverTaskToToday`, and **macOS was rewired onto them** rather than
+left beside them.
+
+Four things about the iOS wiring that are easy to get wrong:
+
+- **The host decides, the list draws.** `iPadTodayView` holds the `@AppStorage` day key and builds
+  an `iOSTodayRolloverNotice` (tasks + action, opted into whole — the same shape as
+  `iOSBoardTaskCardBundleDrop`); `iOSTodayTaskSections` is the only thing that renders the banner,
+  which is what makes "both widths show it" true by construction instead of by remembering. The
+  iPad's compact pane forwards the value and decides nothing. A second
+  `CadenceTodayRolloverBanner(` anywhere under this folder is a test failure.
+- **One `UserDefaults` key, deliberately.** `CadenceTodayRolloverSupport.dismissedDateStorageKey`
+  is the *same* key macOS reads. Dismissing is a statement about the day — the value is a
+  `yyyy-MM-dd` key, so it expires at midnight without anything clearing it — not about the device.
+  Two keys would mean the phone re-offered a roll the Mac had already performed, over tasks that
+  are no longer past-do.
+- **While the banner is up, the grouped list is deliberately short of the tasks it lists**, so
+  `todayGroups` can legitimately return *nothing* on a day whose only open work is yesterday's.
+  `iOSTodayTaskSections.isEmpty` therefore counts the notice as content; without that clause the
+  list draws "nothing planned" directly under a banner listing four things to do.
+- **The banner's bucket yields to a due date.** `pastDoTasks` excludes anything Overdue or Due
+  Today already claims, because `CadenceTaskQuerySupport.todayGroups` hands those groups their
+  tasks before `.pastDo` sees what is left. A predicate that disagreed would put a task in the
+  banner and in a section under it at once.
+
+**The other half of T-195 is untouched.** Sections-due-today — `TodayOverdueSectionSummary` /
+`TodayOverdueListSummary`, built in `TasksPanelDerivedState.init` and rendered by
+`TasksPanelSupportViews` — still has zero references under this folder. Do not read the closed
+banner half as the ticket being finished; see `docs/TODO.md` T-195 for what remains.
 
 ## The markdown styling layer
 

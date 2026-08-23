@@ -95,12 +95,15 @@ Cadence/
 │   ├── CalendarVisibilityPreferences (in CadenceCalendarVisibilityPreferences.swift) and
 │   │                   # CalendarWorkHoursPreferences — both shared, NOT macOS-only. The file name
 │   │                   # carries the Cadence prefix; the type does not.
-│   └── Components/     # 20 files: CadenceBoardColumnHeader, CadenceBoardMetadataChip,
+│   └── Components/     # 21 files: CadenceBoardColumnHeader, CadenceBoardMetadataChip,
 │                       # CadenceButtons, CadenceContextPicker, CadenceDatePicker,
 │                       # CadenceInlineEmpty, CadenceScrollElasticity, CadenceSidebarCountLabel,
 │                       # CadenceStartupIssueBanner, CadenceTagChip (also declares
 │                       #   CompactTagStrip — see below), CadenceTaskDetailLineLabel,
-│                       # CadenceTaskGroupHeading, CadenceValueTile, CadenceWrappingHStack,
+│                       # CadenceTaskGroupHeading, CadenceTodayRolloverBanner (Today's
+│                       #   "leftover tasks are rolling over" notice, both platforms — `.panelBand`
+│                       #   for the Mac's task column, `.card` for iOS; T-195),
+│                       # CadenceValueTile, CadenceWrappingHStack,
 │                       # CommitmentSharedViews (CommitmentPageHeader + CommitmentIconTile),
 │                       # EmptyStateView, EstimatePickerControl (iOS chip; its popover is shared),
 │                       # GoalProgressBar, HabitProgressViews (HabitIconTile, HabitInfoCard, the
@@ -548,7 +551,9 @@ Both badges also take `breadcrumbSegment: Bool`. When set, the trigger renders a
 ## Today view task scope
 The Today **tasks** column only includes tasks that are **do today**, **due today**, **past do** (over-do), or **past due**, plus work tied to **sections due today**. A one-time **rollover** banner can appear when there are over-do tasks from the previous day; dismissing it merges those tasks into normal grouping.
 
-Page-level filters should carry through to the page's internal sections. In practice, the Today **Completed** section only shows tasks whose `completedAt` is **today**.
+**The rollover banner is shared; sections-due-today is not.** Both were macOS-only (T-195) and only the first half has moved. The banner is `Shared/Components/CadenceTodayRolloverBanner`, its decision is `Shared/CadenceTodayRolloverSupport` (over-do predicate, visibility test, withhold-while-showing filter, batch roll) and its mutation is `CadenceTaskMutationSupport.rollOverTaskToToday` — `SchedulingActions.rollOverTaskToToday` delegates to that and must not grow a second body, the same rule as `insertBundle(from:adding:)`. macOS was rewired onto all three rather than left beside them. Both platforms read **one** `UserDefaults` key, `todayRolloverNoticeDismissedDate`, because dismissing is a statement about the day (the value is a `yyyy-MM-dd` key, so it expires overnight by itself) and not about the device. `TodayOverdueSectionSummary` / `TodayOverdueListSummary` are still declared and built under `macOS/Views/` with zero iOS readers — do not read the shared banner as the whole ticket.
+
+Page-level filters should carry through to the page's internal sections. In practice, the Today **Completed** section only shows tasks whose `completedAt` is **today** — and since T-229 that is true of **both** platforms, through one function, `CadenceTaskQuerySupport.completedTodayTasks`, which macOS's `TasksPanelDerivedState` calls in `.todayOverview` mode. It was true of macOS only: iOS's copy tested `scheduledDate == todayKey || dueDate == todayKey` **before** it consulted `completedAt` and returned on either, so a task finished in January and do-dated today was listed under a heading reading "Completed Today" and counted into the day's `1 done` summary. Those two grounds were original iOS code that no decision ever chose, and the shared `completedSectionTitle`'s own doc comment had already asserted — wrongly — that the two platforms sat over one predicate. `.byDoDate` is the **logbook** and still has no date test at all.
 
 **A cancellation is timestamped, which is why a cancelled task can reach that section at all.**
 `CadenceTaskRecurrenceWorkflowSupport.markCancelled` sets `completedAt = now` (`f15db8b`); it used
@@ -561,8 +566,20 @@ the same event rather than one by settlement and its neighbour by creation; and 
 cancelled" guard must read **status alone**, because spelling it as a status clause plus
 `completedAt == nil` was only correct while a cancelled task had a nil timestamp — two MCP
 write-path idempotency guards would otherwise have started re-stamping and double-auditing on
-re-cancel. The section's header count is a separate decision: `completedTaskCount` counts `isDone`
-only, so the section can show three rows above a count of two (T-208, open).
+re-cancel.
+
+**The "three rows above a count of two" this used to warn about is not in Today's Completed
+section, and was checked rather than repeated.** The sentence read: "the section's header count is
+a separate decision: `completedTaskCount` counts `isDone` only, so the section can show three rows
+above a count of two (T-208, open)". Both counts a user actually reads there are `tasks.count` over
+the settled array — `TasksPanelIntentSectionHeader(count:)` / `iOSTaskGroupSection`'s capsule for
+the section, and `CadenceTodaySummary.completedCount` for the `· N done` in the column header — so
+a cancelled row is counted by both. `completedTaskCount`'s `isDone`-only rule is real and
+deliberate (`CadenceTaskQuerySharedSupport`), but it has exactly **three** call sites — the iOS
+Settings **Completed** tile and the two overdue *section* summary cards macOS builds in
+`TasksPanelDerivedState` — and none of them is this section. (Three MCP DTO fields carry the same
+name over an inline `filter(\.isDone).count`; also not this section.) Re-read T-208 against the
+code before acting on it.
 
 When unfinished tasks are rolled from yesterday into today, Cadence clears their old timeline slot:
 - `scheduledDate` is moved to today
@@ -787,9 +804,34 @@ plus `iOSSettingsTagsSection`). Shared logic is in `Cadence/Services/TagSupport.
 ## Task Bundles
 `TaskBundle` groups several tasks into a single timeline block (`dateKey`, `startMin`,
 `durationMinutes`). The `tasks` relationship uses a `.nullify` delete rule — deleting a bundle
-must not delete its tasks. Rendered by `TimelineBundleBlock*`; pickable in Focus
-(`FocusBundleTaskSupportViews`, **macOS only** — T-242) and assignable via
-`TaskBundlePickerSupportViews`.
+must not delete its tasks. Rendered by `TimelineBundleBlock*`; pickable in Focus on **both**
+platforms and assignable via `TaskBundlePickerSupportViews`.
+
+**Focusing a block is cross-platform since T-242, and the shared half is where the rules live.**
+`Shared/CadenceFocusBundleSupport.swift` owns `CadenceFocusPickItem` (the picker row model, ex
+`FocusPickItem` — the Mac keeps that name as a typealias and none of the body), the estimate-weighted
+`CadenceFocusSupport.distributeMinutes(_:across:)` (ex `FocusSessionSupport.distributeBundleMinutes`,
+likewise now a delegation), `CadenceFocusBundlePresentation`'s one "Bundle / 2 tasks / Today / 9:30 –
+10:25 AM" sentence, and the member selection. All of it was arithmetic and string matching sitting
+inside `#if os(macOS)` — the sixth instance of that shape.
+
+Two things are stated against a **target/subject**, not a bare `UUID`, and must stay that way: a
+bundle and one of its own members are different sessions that equal ids cannot tell apart
+(`CadenceFocusTarget`), and leaving a block has to carry the member ticks with it or the commit path
+guesses where the minutes go (`CadenceFocusSubject`). The task-shaped `commitElapsed` /
+`timerState(afterPlayTapOn:)` are forwarders now; do not give either a second body.
+
+`FocusManager` is **still macOS-only and deliberately so.** It imports nothing platform-specific —
+`import SwiftUI` for `@Observable`, zero `NS*`/AppKit symbols — but it is not what needed lifting:
+iOS's focus screen holds its stopwatch in the already-shared `CadenceFocusTimerState`, and
+`FocusManager`'s reason to exist is `wantsNavToFocus` plus the pointer-hover ▶ entry points
+(`TasksPanelComponents`, `TimelineBundleBlock`, `CalendarBoardItemSupportViews`), none of which iOS
+has. Un-guarding it would give the phone a second timer authority with no reader, not a feature.
+
+A block's third transport control **logs**; it does not complete. "Finish the block" would be one
+decision about every member at once, including the ones you unticked — so on iOS the checkmark is
+replaced by `tray.and.arrow.down`, and completion stays on the member's own circle in the block's
+inspector.
 
 **Three ways a bundle comes into existence, and all three now go through `Shared/`:**
 - `CadenceTaskMutationSupport.insertBundle(title:dateKey:startMin:durationMinutes:)` — an empty
