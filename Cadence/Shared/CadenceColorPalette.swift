@@ -52,18 +52,60 @@ enum CadenceColorPalette {
     /// remaining five are the same five hexes in the same order.
     ///
     /// It is here rather than in `Theme` for the reason `colors` gives above, and here rather than
-    /// under `macOS/` because the three-way split `colors` exists to end is reopening on this very
-    /// field: iOS's `iOSSectionColorPicker` offers `TagSupport.colorOptions` plus the default — a
+    /// under `macOS/` because the three-way split `colors` exists to end had reopened on this very
+    /// field: iOS's `iOSSectionColorPicker` offered `TagSupport.colorOptions` plus the default — a
     /// different set for the same `TaskSectionConfig.colorHex` — so a column tinted on the phone
-    /// opens on the Mac wearing a hue the Mac's grid does not contain.
-    /// `offeredSectionColors(for:)` is what stops that from silently replacing it; converging the
-    /// two sets is T-261.
+    /// opened on the Mac wearing a hue the Mac's grid did not contain.
+    /// `offeredSectionColors(for:)` is what stopped that from silently replacing it; T-261 then
+    /// pointed **both** pickers here.
+    ///
+    /// **These eight won the convergence, and iOS's nine lost, on their contents rather than on
+    /// seniority.** iOS's set was `[TaskSectionDefaults.defaultColorHex] + TagSupport.colorOptions`
+    /// — a *borrowed* palette, whose own doc comment says tags are deliberately separate with a
+    /// separate job, so a hue decision about tags would have silently redrawn every kanban column
+    /// editor on the phone. And three of the eight it borrowed (`#ffb84d`, `#5aa2ff`, `#9e8cff`)
+    /// are the pre-T-166 drifted near-copies of `Theme.amberHex` / `blueHex` / `purpleHex`:
+    /// adopting them here would have re-imported into a second palette the exact literals T-166
+    /// deleted from the sidebar for having drifted. This set already leads with the default every
+    /// section starts on and reads three `Theme` tokens by name.
     ///
     /// The default is first and comes from `TaskSectionDefaults` so the grid cannot stop offering
     /// the colour every new section starts on.
     static let sectionColors = [
         TaskSectionDefaults.defaultColorHex, Theme.blueHex, Theme.greenHex, "#f59e0b",
         "#ef4444", "#a855f7", "#14b8a6", "#f97316",
+    ]
+
+    /// The swatches offered for a **sidebar destination's glyph tint** — Settings → Sidebar's
+    /// per-tab colour editor, stored in `CadencePreferenceKeys.sidebarTabColors`.
+    ///
+    /// **This is the one swatch menu that *is* `Theme`, and the exception is principled rather
+    /// than convenient.** `colors` and `sectionColors` are menus of *user-owned* `colorHex` values
+    /// — the second clause of the no-hardcoded-colour rule — so they may not be built out of six
+    /// semantically loaded accents. A destination tint is not user-owned data: it is app chrome,
+    /// and `CadenceFeatureDestination.defaultColorHex` already assigns every destination a `Theme`
+    /// accent by name (T-166), which the sidebar, the iPad column and the Cmd+K palette all draw
+    /// from. The menu that *edits* that value should offer the same six families the app itself
+    /// assigns, and no more.
+    ///
+    /// Pointing this editor at `colors` was T-245: `Theme.tealHex` is not in the twelve, so Focus —
+    /// the one destination whose default is teal — opened its editor showing a **thirteenth**
+    /// swatch beside the palette's own `#14b8a6`, two teals for one decision, which `ColorGrid`'s
+    /// comment forbids in as many words. Worse than cosmetic: `offered(_:from:)` appends the stored
+    /// value, so teal was reachable only while it was already selected. One tap on any other hue
+    /// and Focus's own default dropped out of the grid permanently, with no reset anywhere. Every
+    /// default is offered here, so that is now unreachable.
+    ///
+    /// Rejected: adding `Theme.tealHex` to `colors` (a second teal in the *list* palette, and a
+    /// permanent 13th swatch instead of a conditional one); swapping `#14b8a6` for `Theme.tealHex`
+    /// in `colors` (re-decides the list/goal/habit menu, and `sectionColors`' `#14b8a6` beside it,
+    /// over a sidebar bug); a new `Theme` accent (T-166 rejected that outright).
+    ///
+    /// Hue order, warm through cool, so the row reads as one lap like `colors` does. Six is the
+    /// whole of `Theme`'s accent set — adding a seventh entry here means adding a seventh accent,
+    /// which is the decision T-166 says to bring to the user rather than take.
+    static let destinationTints = [
+        Theme.redHex, Theme.amberHex, Theme.greenHex, Theme.tealHex, Theme.blueHex, Theme.purpleHex,
     ]
 
     /// The palette, plus `selected` when the palette no longer contains it.
@@ -74,7 +116,7 @@ enum CadenceColorPalette {
     /// is what makes consolidating the three palettes safe — a goal sitting on one of the retired
     /// tracking-only hues keeps it.
     static func offeredColors(for selected: String) -> [String] {
-        offering(selected, from: colors)
+        offered(selected, from: colors)
     }
 
     /// `sectionColors`, plus `selected` when the section palette does not contain it — the same
@@ -87,10 +129,14 @@ enum CadenceColorPalette {
     /// `#F59E0B` failed to match the `#f59e0b` right beside it. This is the same hazard
     /// `CadenceIconPalette` documents for the icon grid.
     static func offeredSectionColors(for selected: String) -> [String] {
-        offering(selected, from: sectionColors)
+        offered(selected, from: sectionColors)
     }
 
-    private static func offering(_ selected: String, from palette: [String]) -> [String] {
+    /// The keep-the-stored-value rule itself, for a grid that is handed its palette rather than
+    /// naming one — `ColorGrid` takes a `palette` so the sidebar tint editor and the four list
+    /// grids are one view rather than two. It was `private` while every caller went through a
+    /// named accessor above; it is the same body, still the only implementation of the rule.
+    static func offered(_ selected: String, from palette: [String]) -> [String] {
         let stored = selected.trimmingCharacters(in: .whitespaces)
         guard !stored.isEmpty, !palette.contains(where: { matches($0, stored) }) else {
             return palette

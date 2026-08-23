@@ -43,6 +43,14 @@ struct CreateContextSheet: View {
 
 struct ColorGrid: View {
     @Binding var selected: String
+    /// Which swatch menu this grid draws. `colors` is the list/goal/habit palette every caller but
+    /// one wants; Settings → Sidebar's per-tab editor passes `destinationTints`, because a
+    /// destination's glyph tint is app chrome rather than user-owned data and its defaults are
+    /// `Theme` accents. Parameterised rather than forked — the grid's own "no second blue, no
+    /// second green" rule below is what a second copy of this view would drift away from, and
+    /// pointing the sidebar editor at the list palette is what put a second *teal* on screen
+    /// (T-245).
+    var palette: [String] = CadenceColorPalette.colors
     var columns: Int = 8
     var swatchSize: CGFloat = 28
     var spacing: CGFloat = 8
@@ -56,7 +64,7 @@ struct ColorGrid: View {
             columns: Array(repeating: .init(.fixed(swatchSize + 4), spacing: spacing), count: columns),
             spacing: spacing
         ) {
-            ForEach(CadenceColorPalette.offeredColors(for: selected), id: \.self) { hex in
+            ForEach(CadenceColorPalette.offered(selected, from: palette), id: \.self) { hex in
                 let isSelected = CadenceColorPalette.matches(hex, selected)
                 Circle()
                     .fill(Color(hex: hex))

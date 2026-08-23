@@ -299,7 +299,12 @@ struct SidebarTabEditorSheet: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.dim)
 
-                ColorGrid(selected: $tintHex)
+                // `destinationTints`, not the list palette: this edits a destination's glyph tint,
+                // whose default is a `Theme` accent, and the twelve-hue list palette does not
+                // contain `Theme.tealHex` — so Focus's editor drew a thirteenth swatch beside the
+                // palette's own `#14b8a6` and could never get teal back once anything else was
+                // tapped (T-245).
+                ColorGrid(selected: $tintHex, palette: CadenceColorPalette.destinationTints)
             }
 
             settingsPanelRow(

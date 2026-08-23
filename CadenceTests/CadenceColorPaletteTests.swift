@@ -165,7 +165,7 @@ struct CadenceColorPaletteSourceTests {
         ]
         let palette = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/Shared/CadenceColorPalette.swift"))
 
-        for array in ["colors", "sectionColors"] {
+        for array in ["colors", "sectionColors", "destinationTints"] {
             let body = try paletteArrayBody(named: array, in: palette)
             #expect(!body.isEmpty, "\(array) body did not extract")
             for (name, hex) in accents {
@@ -309,4 +309,192 @@ private func paletteBracedBody(after header: String, in source: String) throws -
         index = source.index(after: index)
     }
     return String(source[start.upperBound..<index])
+}
+
+// MARK: - T-245 / T-261: two menus pointed at the wrong palette
+
+/// The sidebar tint editor's menu.
+///
+/// T-245: `SidebarTabEditorSheet` rendered `ColorGrid`, i.e. the twelve-hue **list** palette, for a
+/// field that is not a list colour. `Theme.tealHex` is not among the twelve, so Focus — whose
+/// default tint *is* teal — drew a thirteenth swatch beside the palette's own `#14b8a6`.
+///
+/// The decision this pins: a destination tint is **app chrome**, not user-owned data, and every
+/// `CadenceFeatureDestination.defaultColorHex` arm already reads a `Theme` accent by name (T-166).
+/// So this one menu is legitimately built from `Theme`'s six accents, while `colors` and
+/// `sectionColors` may not be — they are menus of user-owned `colorHex` values, which is the
+/// "or from a user-owned `colorHex`" half of the no-hardcoded-colour rule. No `Theme` accent was
+/// added to make this fit; T-166 rejected that and so does this.
+@MainActor
+struct CadenceDestinationTintPaletteTests {
+    @Test func theDestinationTintMenuIsExactlyThemesSixAccents() {
+        #expect(CadenceColorPalette.destinationTints == [
+            "#ff6b6b", "#ffa94d", "#4ecb71", "#45CBC4", "#4a9eff", "#a78bfa",
+        ])
+
+        let accents = [Theme.redHex, Theme.amberHex, Theme.greenHex, Theme.tealHex, Theme.blueHex, Theme.purpleHex]
+        #expect(CadenceColorPalette.destinationTints == accents)
+        #expect(Set(accents.map { $0.lowercased() }).count == 6, "six accents, all distinct")
+    }
+
+    /// **The relation the ticket is actually about**, and the one a value list cannot state: the
+    /// menu that edits a destination's tint must offer every tint the app assigns by default.
+    ///
+    /// A menu that does not is worse than untidy. `offered(_:from:)` appends the stored value, so
+    /// an unoffered default is reachable *only while it is already selected* — one tap on any other
+    /// hue and it leaves the grid for good, with no reset control anywhere in Settings.
+    @Test func everyDestinationDefaultIsOfferedByTheMenuThatEditsIt() {
+        for destination in CadenceFeatureDestination.allCases {
+            let hex = destination.defaultColorHex
+            #expect(
+                CadenceColorPalette.offered(hex, from: CadenceColorPalette.destinationTints)
+                    == CadenceColorPalette.destinationTints,
+                "\(destination.rawValue)'s default \(hex) is outside the menu that edits it"
+            )
+        }
+        #expect(CadenceFeatureDestination.allCases.count == 11, "non-vacuity: the loop ran")
+
+        // And the same check over the six rows Settings → Sidebar actually draws an editor for.
+        for destination in SidebarStaticDestination.allCases {
+            #expect(CadenceColorPalette.destinationTints.contains { CadenceColorPalette.matches($0, destination.defaultColorHex) })
+        }
+        #expect(SidebarStaticDestination.allCases.count == 6, "non-vacuity: the loop ran")
+    }
+
+    /// The defect, stated as the failure of that same relation against the palette that used to be
+    /// wired up. Focus is the only destination the list palette misses, and `#14b8a6` sitting in
+    /// the twelve is why the extra swatch read as a *second teal* rather than as a stray hue.
+    @Test func theListPaletteFailsThatRelationForFocusWhichIsWhatTwoTealsMeant() {
+        let focusTint = CadenceFeatureDestination.focus.defaultColorHex
+        #expect(CadenceColorPalette.matches(focusTint, Theme.tealHex))
+
+        let viaListPalette = CadenceColorPalette.offeredColors(for: focusTint)
+        #expect(viaListPalette.count == CadenceColorPalette.colors.count + 1, "the thirteenth swatch")
+        #expect(viaListPalette.last == focusTint)
+
+        #expect(CadenceColorPalette.colors.contains("#14b8a6"), "the palette's own teal")
+        #expect(!CadenceColorPalette.matches("#14b8a6", Theme.tealHex), "two teals, one decision")
+
+        // Every other destination default is in the twelve, so Focus really is the whole of it.
+        let misses = CadenceFeatureDestination.allCases.filter { destination in
+            !CadenceColorPalette.colors.contains { CadenceColorPalette.matches($0, destination.defaultColorHex) }
+        }
+        #expect(misses == [.focus])
+    }
+
+    /// Source half. The array must read the six tokens by name and spell no hex — the T-166 shape,
+    /// where a literal equal to its own token passes every value assertion above and still reopens
+    /// the drift, because the next hue change to `Theme` will not reach it.
+    @Test func theDestinationTintArrayReadsThemeTokensAndSpellsNoHex() throws {
+        let palette = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/Shared/CadenceColorPalette.swift"))
+        let body = try paletteArrayBody(named: "destinationTints", in: palette)
+
+        #expect(!body.isEmpty, "destinationTints body did not extract")
+        #expect(
+            palettteRegexMatches(paletteHexLiteralPattern, in: body).isEmpty,
+            "destinationTints hand-types a colour: \(palettteRegexMatches(paletteHexLiteralPattern, in: body))"
+        )
+        for token in ["Theme.redHex", "Theme.amberHex", "Theme.greenHex", "Theme.tealHex", "Theme.blueHex", "Theme.purpleHex"] {
+            #expect(body.contains(token), "destinationTints no longer reads \(token)")
+        }
+    }
+
+    /// Call site. `ColorGrid` is parameterised rather than forked, and the sidebar editor is the
+    /// one caller that passes a palette — the bug was the *absence* of that argument, so its bare
+    /// spelling is banned by name.
+    @Test func theSidebarTabEditorAsksForTheDestinationTintMenu() throws {
+        let settings = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Views/SettingsSupportViews.swift"))
+        #expect(settings.contains("struct SidebarTabEditorSheet"), "non-vacuity: still the file with the editor")
+
+        #expect(settings.contains("ColorGrid(selected: $tintHex, palette: CadenceColorPalette.destinationTints)"))
+        #expect(!settings.contains("ColorGrid(selected: $tintHex)"), "the sidebar editor is back on the list palette")
+        // The context editor in the same file keeps the list palette, and says so by omission.
+        #expect(settings.contains("ColorGrid(selected: $editColor)"))
+
+        let grid = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Sheets/CreateContextSheet.swift"))
+        #expect(grid.contains("struct ColorGrid: View"), "non-vacuity: still the file with the grid")
+        #expect(grid.contains("var palette: [String] = CadenceColorPalette.colors"))
+        #expect(grid.contains("ForEach(CadenceColorPalette.offered(selected, from: palette)"))
+    }
+}
+
+/// T-261 — one swatch menu for one field, across two platforms.
+///
+/// `TaskSectionConfig.colorHex` is edited from exactly two places: the Mac's kanban column editor
+/// and iOS's `iOSSectionColorPicker`. They offered different sets — eight against nine, overlapping
+/// in one — so a column tinted on the phone opened on the Mac wearing a hue the Mac could not
+/// offer. `CadenceColorPalette.sectionColors` wins; iOS's borrowed `TagSupport.colorOptions` loses.
+@MainActor
+struct CadenceSectionPaletteConvergenceTests {
+    /// The relation, not a value list: both editors of one field name **the same function**, so a
+    /// hue decision cannot be made on one platform only.
+    @Test func bothPlatformsOfferOneMenuForASectionsColour() throws {
+        let mac = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
+        let ios = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/iOS/iOSListEditorViews.swift"))
+
+        #expect(mac.contains("struct ListSectionKanbanColumn"), "non-vacuity: still the Mac column")
+        #expect(ios.contains("struct iOSSectionColorPicker"), "non-vacuity: still the iOS picker")
+
+        let menu = "CadenceColorPalette.offeredSectionColors(for:"
+        #expect(mac.contains(menu))
+        #expect(ios.contains(menu))
+    }
+
+    /// The borrowing stops. `TagSupport.colorOptions` is a separate palette with a separate job,
+    /// and three of the eight hues it lent (`#ffb84d`, `#5aa2ff`, `#9e8cff`) are the pre-T-166
+    /// drifted near-copies of `Theme`'s amber, blue and purple — adopting iOS's set would have
+    /// re-imported the very literals T-166 deleted for having drifted.
+    ///
+    /// Comment-stripping is load-bearing in **both** directions here, which is why it is proved
+    /// rather than assumed: the picker's doc comment names `TagSupport.colorOptions` to explain
+    /// what it stopped doing, so an unstripped negative would fail on correct code.
+    @Test func theIOSSectionPickerNoLongerBorrowsTheTagPalette() throws {
+        let raw = try paletteSourceFile("Cadence/iOS/iOSListEditorViews.swift")
+        let stripped = paletteStrippingSwiftComments(raw)
+
+        #expect(raw.contains("TagSupport.colorOptions"), "the prose still explains the borrowing")
+        #expect(!stripped.contains("TagSupport.colorOptions"), "the code still borrows the tag palette")
+
+        #expect(stripped.contains("ForEach(CadenceColorPalette.offeredSectionColors(for: selectedHex)"))
+        #expect(stripped.contains("CadenceColorPalette.matches(option, selectedHex)"))
+        #expect(!stripped.contains("selectedHex.caseInsensitiveCompare(option)"), "a second spelling of matches")
+
+        // The tag palette itself is untouched — separate palette, separate job, out of scope.
+        #expect(TagSupport.colorOptions.count == 8)
+        #expect(TagSupport.colorOptions.contains("#ffb84d"))
+        #expect(TagSupport.colorOptions.contains("#5aa2ff"))
+        #expect(TagSupport.colorOptions.contains("#9e8cff"))
+        for drifted in ["#ffb84d", "#5aa2ff", "#9e8cff"] {
+            #expect(
+                !CadenceColorPalette.sectionColors.contains { CadenceColorPalette.matches($0, drifted) },
+                "the section menu picked up a drifted near-copy of a Theme accent"
+            )
+        }
+    }
+
+    /// Nothing already stored is dropped by either menu, on either platform. The corpus is every
+    /// hue **both** old menus could have written, plus a hue neither could, plus a casing variant.
+    @Test func noStoredHexIsDroppedByEitherNewMenu() {
+        let iOSOldSectionMenu = [TaskSectionDefaults.defaultColorHex] + TagSupport.colorOptions
+        let corpus = iOSOldSectionMenu
+            + CadenceColorPalette.sectionColors
+            + CadenceColorPalette.colors
+            + CadenceColorPalette.destinationTints
+            + ["#F59E0B", "#45cbc4", "#123456"]
+        #expect(corpus.count == 38, "non-vacuity: the corpus is the size it looks")
+
+        for stored in corpus {
+            let sectionMenu = CadenceColorPalette.offeredSectionColors(for: stored)
+            #expect(
+                sectionMenu.contains { CadenceColorPalette.matches($0, stored) },
+                "a section wearing \(stored) shows nothing selected, so the next tap replaces it"
+            )
+
+            let tintMenu = CadenceColorPalette.offered(stored, from: CadenceColorPalette.destinationTints)
+            #expect(
+                tintMenu.contains { CadenceColorPalette.matches($0, stored) },
+                "a destination tinted \(stored) shows nothing selected, so the next tap replaces it"
+            )
+        }
+    }
 }
