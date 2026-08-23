@@ -98,22 +98,23 @@ struct CadenceCancelledTaskReachabilityTests {
         )
     }
 
-    /// Today's Completed section admits a cancelled task on the same three grounds a done one gets
-    /// in: planned today, due today, or settled today.
-    @Test func aCancelledTaskReachesTodaysCompletedSection() {
-        let planned = task("planned", status: .cancelled, doDate: todayKey)
-        let due = task("due", status: .cancelled, dueDate: todayKey)
-        let settled = task(
-            "settled",
-            status: .cancelled,
-            completedAt: DateFormatters.date(from: todayKey)
-        )
-        let elsewhere = task("elsewhere", status: .cancelled, doDate: "2026-08-01")
-        let all = [planned, due, settled, elsewhere]
+    /// Today's Completed section admits a cancelled task on exactly the ground a done one gets in:
+    /// **settled inside today**, whatever its dates say. It used to be three grounds — planned
+    /// today and due today were tested first, and admitted work finished on any other day at all;
+    /// see the T-229 section below for why they are gone.
+    ///
+    /// All three subjects here carry today's timestamp, because that is what `markCancelled`
+    /// records; the dates vary so that the *dates* cannot be what is carrying them in.
+    @Test func aCancelledTaskReachesTodaysCompletedSection() throws {
+        let planned = task("planned", status: .cancelled, doDate: todayKey, completedAt: try instant(todayKey))
+        let due = task("due", status: .cancelled, dueDate: todayKey, completedAt: try instant(todayKey))
+        let dateless = task("dateless", status: .cancelled, completedAt: try instant(todayKey))
+        let elsewhere = task("elsewhere", status: .cancelled, doDate: "2026-08-01", completedAt: try instant("2026-08-01"))
+        let all = [planned, due, dateless, elsewhere]
 
         #expect(
             CadenceTaskQuerySupport.completedTodayTasks(from: all, todayKey: todayKey)
-                .map(\.title).sorted() == ["due", "planned", "settled"]
+                .map(\.title).sorted() == ["dateless", "due", "planned"]
         )
         #expect(
             CadenceTaskQuerySupport.activeTodayTasks(from: all, todayKey: todayKey, sortMode: .listOrder)
@@ -440,6 +441,223 @@ struct CadenceCancelledTaskReachabilityTests {
 
         #expect(subject.completedAt == nil)
         #expect(CadenceTaskQuerySupport.completedTodayTasks(from: [subject], todayKey: todayKey).isEmpty)
+    }
+
+    // MARK: - T-229: "Completed Today" means settled today, on both platforms
+
+    /// What macOS's Today draws under `CadenceTodayPresentationSupport.completedSectionTitle`.
+    /// The parameters that do not vary here — `.todayOverview`, no lists, `.date` ascending —
+    /// are the mode the section only exists in and a sort the assertions re-sort past anyway.
+    private func macOSTodayCompletedTitles(_ tasks: [AppTask]) -> [String] {
+        TasksPanelDerivedState(
+            allTasks: tasks,
+            areas: [],
+            projects: [],
+            mode: .todayOverview,
+            todayKey: todayKey,
+            sortField: .date,
+            sortDirection: .ascending
+        )
+        .doneTasks
+        .map(\.title)
+        .sorted()
+    }
+
+    /// The bug, stated the way a user meets it: a task finished weeks ago, do-dated today, listed
+    /// under a heading that says "Completed Today".
+    ///
+    /// `completedTodayTasks` tested `scheduledDate == todayKey || dueDate == todayKey` **before**
+    /// it consulted `completedAt` and returned `true` on either, so the timestamp never got a
+    /// vote. macOS's Today has never had those grounds, so this row appeared on the phone and not
+    /// on the Mac — under one shared title, over what a shared doc comment already described as
+    /// one predicate.
+    @Test func aTaskFinishedInJanuaryIsNotInTodaysCompletedSectionForBeingDoDatedToday() throws {
+        let subject = task(
+            "finished in January",
+            status: .done,
+            doDate: todayKey,
+            completedAt: try instant("2026-01-14")
+        )
+
+        #expect(CadenceTaskQuerySupport.completedTodayTasks(from: [subject], todayKey: todayKey).isEmpty)
+        #expect(macOSTodayCompletedTitles([subject]).isEmpty)
+    }
+
+    /// The due-date half of the same clause, and the more ordinary way to meet it: finishing
+    /// something early. Before this it read as done *today* on its due date, three days late.
+    @Test func aTaskFinishedEarlyIsNotInTodaysCompletedSectionOnItsDueDate() throws {
+        let subject = task(
+            "finished on Monday",
+            status: .done,
+            dueDate: todayKey,
+            completedAt: try instant("2026-08-17")
+        )
+
+        #expect(CadenceTaskQuerySupport.completedTodayTasks(from: [subject], todayKey: todayKey).isEmpty)
+        #expect(macOSTodayCompletedTitles([subject]).isEmpty)
+    }
+
+    /// The other half of the ticket. `markCancelled` records the time now (`f15db8b`), but rows
+    /// cancelled by an earlier build carry no timestamp at all, and the date clause let those in
+    /// whenever their dates happened to land on today — so a task abandoned months ago could
+    /// appear in a section listing what was settled today.
+    ///
+    /// It stays reachable everywhere a date is not being asked about, which is the T-147
+    /// guarantee and the only one it ever had.
+    @Test func aLegacyCancellationWithNoTimestampStaysOutOfTodaysCompletedSection() {
+        let subject = task("abandoned by an earlier build", status: .cancelled, dueDate: todayKey)
+
+        #expect(subject.completedAt == nil)
+        #expect(CadenceTaskQuerySupport.completedTodayTasks(from: [subject], todayKey: todayKey).isEmpty)
+        #expect(macOSTodayCompletedTitles([subject]).isEmpty)
+        #expect(CadenceTaskQuerySupport.completedTasks(from: [subject]).map(\.title) == ["abandoned by an earlier build"])
+        #expect(CadenceTaskQuerySupport.completedInboxTasks(from: [subject]).map(\.title) == ["abandoned by an earlier build"])
+    }
+
+    /// The two platforms over one universe, rather than two assertions that happen to agree.
+    /// macOS calls the shared query now, so this is what says so — fork either spelling and the
+    /// sets diverge.
+    ///
+    /// Both halves are non-vacuous on purpose: three rows belong in the section and five do not,
+    /// so a predicate that admitted everything and one that admitted nothing both fail.
+    @Test func macOSAndTheSharedQueryAgreeAboutEveryTodayCompletedCandidate() throws {
+        let universe = [
+            task("settled today", status: .done, completedAt: try instant(todayKey)),
+            task("abandoned today", status: .cancelled, completedAt: try instant(todayKey)),
+            task("settled today, dated elsewhere", status: .done, doDate: "2026-01-02", dueDate: "2026-01-03", completedAt: try instant(todayKey)),
+            task("settled yesterday", status: .done, completedAt: try instant("2026-08-19")),
+            task("settled in January, do-dated today", status: .done, doDate: todayKey, completedAt: try instant("2026-01-14")),
+            task("settled in January, due today", status: .cancelled, dueDate: todayKey, completedAt: try instant("2026-01-14")),
+            task("legacy cancellation, due today", status: .cancelled, dueDate: todayKey),
+            task("still open, planned today", doDate: todayKey)
+        ]
+
+        let expected = ["abandoned today", "settled today", "settled today, dated elsewhere"]
+        #expect(
+            CadenceTaskQuerySupport.completedTodayTasks(from: universe, todayKey: todayKey)
+                .map(\.title).sorted() == expected
+        )
+        #expect(macOSTodayCompletedTitles(universe) == expected)
+    }
+
+    /// The calendar day is half-open at both ends, and the ends are where a range test differs
+    /// from the per-task `dateKey(from:)` comparison it replaced. One second before midnight is
+    /// today; midnight itself is tomorrow.
+    @Test func todaysCompletedSectionEndsAtMidnight() throws {
+        let lastMoment = task("11:59:59 tonight", status: .done, completedAt: try instant("2026-08-21").addingTimeInterval(-1))
+        let firstMoment = task("midnight tomorrow", status: .done, completedAt: try instant("2026-08-21"))
+        let all = [lastMoment, firstMoment]
+
+        #expect(
+            CadenceTaskQuerySupport.completedTodayTasks(from: all, todayKey: todayKey)
+                .map(\.title) == ["11:59:59 tonight"]
+        )
+        #expect(macOSTodayCompletedTitles(all) == ["11:59:59 tonight"])
+    }
+
+    /// The user-visible consequence, one level up from the section: `CadenceTodaySummary.line` is
+    /// the "· 1 done" beside the date in Today's column header on both platforms, and it counts
+    /// the array the section lists. A day on which nothing was finished said `1 done` because a
+    /// task finished in January was do-dated into it.
+    @Test func theDaysDoneSummaryNoLongerCountsWorkFinishedOnAnotherDay() throws {
+        let january = task("finished in January", status: .done, doDate: todayKey, completedAt: try instant("2026-01-14"))
+        let quiet = CadenceTodayPresentationSupport.summary(
+            activeTasks: [],
+            timedTasks: [],
+            completedTasks: CadenceTaskQuerySupport.completedTodayTasks(from: [january], todayKey: todayKey)
+        )
+
+        #expect(quiet.completedCount == 0)
+        #expect(quiet.line == nil)
+
+        // …and a day on which something genuinely was finished still says so.
+        let busy = CadenceTodayPresentationSupport.summary(
+            activeTasks: [],
+            timedTasks: [],
+            completedTasks: CadenceTaskQuerySupport.completedTodayTasks(
+                from: [task("finished today", status: .done, completedAt: try instant(todayKey))],
+                todayKey: todayKey
+            )
+        )
+        #expect(busy.line == "1 done")
+    }
+
+    /// The half of macOS's `doneTasks` that is **not** Today: `.byDoDate` is the logbook —
+    /// everything ever settled, no date test — and it went through the same rewrite. Pinned
+    /// because the mode branch is the only thing keeping the day filter off it.
+    @Test func theByDoDateLogbookStillListsEverythingEverSettled() throws {
+        let universe = [
+            task("settled today", status: .done, completedAt: try instant(todayKey)),
+            task("settled in January", status: .done, completedAt: try instant("2026-01-14")),
+            task("legacy cancellation", status: .cancelled),
+            task("still open", doDate: todayKey)
+        ]
+
+        let logbook = TasksPanelDerivedState(
+            allTasks: universe,
+            areas: [],
+            projects: [],
+            mode: .byDoDate,
+            todayKey: todayKey,
+            sortField: .date,
+            sortDirection: .ascending
+        )
+        #expect(
+            logbook.doneTasks.map(\.title).sorted()
+                == ["legacy cancellation", "settled in January", "settled today"]
+        )
+    }
+
+    /// macOS's half of this is a **refactor**, not a change of behaviour — its `doneTasks` was
+    /// already `completedAt`-inside-today on Today and everything-ever-settled otherwise, so all
+    /// that moved is where the expression lives. This recomputes both modes with the code that
+    /// used to be inline in `TasksPanelDerivedState.init`, verbatim, and asserts the new arrays are
+    /// identical — order included, because the section renders this array directly. Same shape as
+    /// `CadenceTodayRolloverSurfaceTests.theMacDerivedStateStillDerivesExactlyWhatItUsedTo`.
+    @Test func theMacDoneTasksStillDeriveExactlyWhatTheyUsedTo() throws {
+        let tasks = [
+            task("settled today", status: .done, completedAt: try instant(todayKey)),
+            task("abandoned today", status: .cancelled, doDate: "2026-08-01", completedAt: try instant(todayKey)),
+            task("settled yesterday", status: .done, doDate: todayKey, completedAt: try instant("2026-08-19")),
+            task("legacy cancellation", status: .cancelled, dueDate: todayKey),
+            task("still open", doDate: todayKey)
+        ]
+
+        let calendar = Calendar.current
+        let todayRange: Range<Date>? = {
+            guard let parsedToday = DateFormatters.date(from: todayKey) else { return nil }
+            let dayStart = calendar.startOfDay(for: parsedToday)
+            guard let nextDay = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+            return dayStart..<calendar.startOfDay(for: nextDay)
+        }()
+        func legacyDoneTasks(mode: TasksPanelMode) -> [AppTask] {
+            tasks
+                .filter { subject in
+                    guard subject.isDone || subject.isCancelled else { return false }
+                    guard mode == .todayOverview else { return true }
+                    guard let completedAt = subject.completedAt else { return false }
+                    guard let todayRange else {
+                        return DateFormatters.dateKey(from: completedAt) == todayKey
+                    }
+                    return todayRange.contains(completedAt)
+                }
+                .taskCompletionSorted()
+        }
+
+        for mode in [TasksPanelMode.todayOverview, .byDoDate] {
+            let derived = TasksPanelDerivedState(
+                allTasks: tasks,
+                areas: [],
+                projects: [],
+                mode: mode,
+                todayKey: todayKey,
+                sortField: .date,
+                sortDirection: .ascending
+            )
+            let legacy = legacyDoneTasks(mode: mode)
+            #expect(!legacy.isEmpty, "fixture no longer exercises \(mode)")
+            #expect(derived.doneTasks.map(\.id) == legacy.map(\.id))
+        }
     }
 
     // MARK: - T-212: winding a container down settles its work, and advances no series

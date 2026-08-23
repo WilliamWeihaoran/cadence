@@ -105,32 +105,16 @@ struct TasksPanelDerivedState {
 
         byDoDateBaseTasks = CadenceTaskQuerySupport.openTasks(from: allTasks)
         byDoDateBaseSortedTasks = byDoDateBaseTasks.taskSorted(by: sortField, direction: sortDirection)
-        // Built once, not once per completed task: `DateFormatters.dateKey(from:)` was being
-        // called for every completed task the user has ever created, on every rebuild. The
-        // half-open day range is the same predicate — `dateKey(from:) == todayKey` is exactly
-        // "falls inside today's calendar day" for the same calendar `todayKey` came from.
-        let calendar = Calendar.current
-        let todayRange: Range<Date>? = {
-            guard let parsedToday = DateFormatters.date(from: todayKey) else { return nil }
-            let dayStart = calendar.startOfDay(for: parsedToday)
-            // `startOfDay` on both ends rather than `dayStart + 1 day`, so a DST day whose
-            // midnight does not exist still ends on tomorrow's real first instant.
-            guard let nextDay = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
-            return dayStart..<calendar.startOfDay(for: nextDay)
-        }()
-        doneTasks = allTasks
-            .filter { task in
-                guard task.isDone || task.isCancelled else { return false }
-                guard mode == .todayOverview else { return true }
-                guard let completedAt = task.completedAt else { return false }
-                guard let todayRange else {
-                    // Unreachable in practice (`todayKey` is produced by the same formatter);
-                    // keep the original per-task comparison as the safety net.
-                    return DateFormatters.dateKey(from: completedAt) == todayKey
-                }
-                return todayRange.contains(completedAt)
-            }
-            .taskCompletionSorted()
+        // Today's Completed section is `CadenceTaskQuerySupport.completedTodayTasks` on both
+        // platforms now (T-229). This used to be a second, hand-rolled spelling of it — the same
+        // `completedAt`-inside-today test with the day range precomputed — sitting beside an iOS
+        // one that *also* admitted anything do-dated or due-dated today, so the same day's finished
+        // work differed by platform under one shared heading. The precompute moved into the shared
+        // function rather than being given up. The `.byDoDate` logbook is a different thing —
+        // everything ever settled — and keeps no date test at all.
+        doneTasks = mode == .todayOverview
+            ? CadenceTaskQuerySupport.completedTodayTasks(from: allTasks, todayKey: todayKey)
+            : CadenceTaskQuerySupport.completedTasks(from: allTasks)
     }
 
     var todayEligibleTasks: [AppTask] {

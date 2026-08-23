@@ -53,6 +53,13 @@ enum CadenceTodayPresentationSupport {
     /// The heading over the day's finished work, on every Today. macOS said "Completed" and iOS
     /// said "Completed Today" for the same section over the same predicate — `completedAt` inside
     /// today, on both — so one of them was describing a logbook it was not showing.
+    ///
+    /// **That last clause was not true when it was written, and T-229 is what made it true.** iOS's
+    /// `completedTodayTasks` also admitted anything do-dated or due-dated today, whatever day it
+    /// was actually finished, so unifying the *title* had quietly put one heading over two
+    /// predicates. Both platforms call `CadenceTaskQuerySupport.completedTodayTasks` now. Worth
+    /// keeping as a warning about the shape: a comment asserting two call sites agree is not a
+    /// check that they do.
     static let completedSectionTitle = "Completed Today"
 
     /// And its accent. `Theme.green` is `Theme.doneFill`'s hue and the completion circle's, so the

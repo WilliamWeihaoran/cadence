@@ -30,17 +30,56 @@ enum CadenceTaskQuerySupport {
 
     /// Today's Completed section — including cancelled work. `isFinishedTask` carries the whole
     /// account of why; the three `completed*` queries below are its only callers on this surface.
+    ///
+    /// **The predicate is "settled inside today's calendar day", and nothing else — on both
+    /// platforms.** It used to admit finished work on two further grounds, `scheduledDate ==
+    /// todayKey` or `dueDate == todayKey`, tested *before* `completedAt` ever came up. So a task
+    /// finished in January and do-dated today was listed under a heading reading "Completed
+    /// Today" and counted into the day's "N done" summary, on a day nothing had been finished
+    /// (T-229). Those two grounds are original iOS code that no decision ever chose: macOS's
+    /// `TasksPanelDerivedState` has never had them, and `completedSectionTitle`'s own doc comment
+    /// justified unifying the two headings on the claim that both sat "over the same predicate —
+    /// `completedAt` inside today, on both", which was false when it was written.
+    ///
+    /// macOS calls **this** now (`TasksPanelDerivedState`, `.todayOverview`), so there is one
+    /// predicate rather than two that agree by inspection.
+    ///
+    /// Nothing became unreachable. Every settled transition records the timestamp — `markDone`,
+    /// `markCancelled`, `TaskContainerLifecycleService`, and the completion animation's
+    /// context-less fallback — and `normalizeCompletionState` preserves whatever a settled status
+    /// was given (T-213). Work settled on another day is still listed by `completedTasks`,
+    /// `completedInboxTasks` and the list logbook, none of which test a date; what a legacy
+    /// nil-stamp row loses is a place on *today's* page, which is the only place it was never
+    /// entitled to.
     static func completedTodayTasks(from tasks: [AppTask], todayKey: String) -> [AppTask] {
-        tasks
+        // Built once, not once per candidate: `DateFormatters.dateKey(from:)` was being called for
+        // every completed task the user has ever created, on every rebuild.
+        let todayRange = calendarDayRange(for: todayKey)
+        return tasks
             .filter { task in
-                guard isFinishedTask(task) else { return false }
-                if task.scheduledDate == todayKey || task.dueDate == todayKey { return true }
-                if let completedAt = task.completedAt {
+                guard isFinishedTask(task), let completedAt = task.completedAt else { return false }
+                guard let todayRange else {
+                    // Unreachable in practice (`todayKey` is produced by the same formatter);
+                    // keep the per-task comparison as the safety net.
                     return DateFormatters.dateKey(from: completedAt) == todayKey
                 }
-                return false
+                return todayRange.contains(completedAt)
             }
             .taskCompletionSorted()
+    }
+
+    /// The half-open span of instants belonging to the calendar day `dateKey` names, or `nil` if it
+    /// does not parse. `dateKey(from:) == dateKey` is exactly `range.contains(_:)` for the calendar
+    /// the key came from, so this is a form of the same test that costs one date formatting per
+    /// query instead of one per task.
+    ///
+    /// `startOfDay` on **both** ends rather than `dayStart + 1 day`, so a DST day whose midnight
+    /// does not exist still ends on tomorrow's real first instant.
+    static func calendarDayRange(for dateKey: String, calendar: Calendar = .current) -> Range<Date>? {
+        guard let parsed = DateFormatters.date(from: dateKey) else { return nil }
+        let dayStart = calendar.startOfDay(for: parsed)
+        guard let nextDay = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+        return dayStart..<calendar.startOfDay(for: nextDay)
     }
 
     /// The same four sections macOS's `todayDateSections` draws, in the same order. A due date
