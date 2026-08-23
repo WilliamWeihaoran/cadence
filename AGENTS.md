@@ -142,8 +142,13 @@ code, and every one of them has been violated by a shipped change at least once.
   line contains that string — including the shell running your own wait loop, so
   `until ! pgrep -f "xcodebuild test"; do sleep 10; done` never exits, and a plain
   `grep xcodebuild` over `ps aux` reports your own grep as a hit. Match the binary path —
-  `pgrep -f "Developer/usr/bin/xcodebuild test"` — or capture the PID when you launch and wait on
-  that.
+  `pgrep -f '^/Applications/.*/xcodebuild test'` — **anchored** — or capture the PID when you launch
+  and wait on that. The anchor is not cosmetic: `pgrep -f` matches the *whole command line*, so the
+  unanchored form counts every agent shell whose own text contains the literal, which includes the
+  wait loops written to avoid contention. That inverts the belt into a deadlock — each waiting agent
+  sees the others waiting and counts them as running hosts. Measured: one agent held the lock 23
+  minutes with **zero** real hosts on the machine, and a `pgrep -f` returning 2 where only one process
+  was xcodebuild. To count actual test hosts rather than build processes, `pgrep -x Cadence`.
 - **Never create a simulator device; launch the macOS app only through the wrapper.** Two recurring
   leaks the user has had to clear by hand.
   *Simulators:* agents kept running `simctl create` and naming devices after themselves

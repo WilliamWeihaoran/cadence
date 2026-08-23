@@ -99,6 +99,11 @@ case "$CMD" in
     else
       print -r -- "free"
     fi
-    print -r -- "live test hosts: $(pgrep -f 'Developer/usr/bin/xcodebuild test' | wc -l | tr -d ' ')"
+    # ANCHOR the pattern. `pgrep -f` matches whole command lines, so the unanchored
+    # form counts every agent shell whose own command text contains the literal --
+    # including the wait loops written to avoid contention. That inverts them into a
+    # deadlock: each waiting agent sees the others waiting and counts them as
+    # running. One agent held the lock 23 minutes with zero real hosts on the box.
+    print -r -- "live test hosts: $(pgrep -f '^/Applications/.*/xcodebuild test' | wc -l | tr -d ' ')"
     ;;
 esac
