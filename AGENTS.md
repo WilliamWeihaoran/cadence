@@ -153,6 +153,20 @@ code, and every one of them has been violated by a shipped change at least once.
   on a 600 s watchdog. Share one existing **stock** device, boot it only if
   `xcrun simctl list devices booted` is empty, and never `erase`, `shutdown` or `delete` it: another
   agent is probably mid-run on it.
+  **On a shared device, an app vanishing to the Home screen is an *external* termination until the
+  log says otherwise.** `xcrun simctl privacy <udid> grant|revoke|reset <service> <bundle-id>` kills
+  a *running* app by design — tccd logs
+  `Terminating com.haoranwei.Cadence[<pid>] because access to the kTCCServiceReminders service
+  changed` and launchd_sim logs `exited with exit reason (namespace: 11 code: 0x0) - OS_REASON_TCC`.
+  It writes **nothing** to `~/Library/Logs/DiagnosticReports`, raises no exception, and truncates
+  the app's own log mid-sentence, so it reads exactly like a `SIGKILL`-shaped SwiftUI crash. Another
+  agent running it lands on *your* session with no warning. That misread cost T-267 a top-priority
+  crash ticket against a date picker that was never at fault. One command settles it before you
+  start bisecting a view:
+  `xcrun simctl spawn <udid> log show --last 5m --style compact --predicate 'process == "tccd" OR process == "launchd_sim"' | grep -E "Terminating|OS_REASON"`.
+  The `sender_pid` on the preceding `TCCAccessSetInternal` is CoreSimulatorBridge when a host
+  `simctl` call caused it. `frontboard(10) code:force-quit` and `runningboard(15)` (an
+  `installcoordinationd` reinstall) are the other two external kills that look like crashes here.
   *The macOS app:* launching it is legitimate — macOS is the primary surface and some things can only
   be confirmed by looking. Launching the **shipping configuration** is not: it opens the user's real
   CloudKit-backed app-group store as a *second writer* while their own copy may be running, and such
@@ -195,6 +209,22 @@ code, and every one of them has been violated by a shipped change at least once.
      `shasum < <tree>/<path>`. This is the part `git archive` gave for free.
   3. `shasum` your own changed files into your scratchpad, so at report time you can prove what you
      tested is still what is on disk.
+- **Poll for your own background results; never wait for a notification.** Completion notifications
+  are delivered to the **main session**, not to subagents — so a subagent that "waits for the
+  notification" simply ends its turn, and the task stops there with its work half done. Two agents
+  stalled this way in one night, each having already written its code. Launch long work in the
+  background and poll a marker file with a bounded loop:
+
+  ```
+  i=0; until [[ -f "$D/all.done" ]] || (( i >= 120 )); do sleep 10; (( i++ )); done
+  cat "$D"/*.exit
+  ```
+
+  Related: run a long build in the background against a log you poll rather than in the foreground —
+  a 10-minute tool timeout will not survive a cold build of this project, and an agent was killed by
+  exactly that. And acquire the test-host lock and run the build **in the same shell invocation**,
+  because each command runs in a separate process (which is why the lock is a lease, not a liveness
+  check).
 - **Check the log says which tree it built.** An isolated tree can be deleted out from under a
   running build (see above); the failed `cd` then falls through to the live repo and the run reports
   **exit 0 against the wrong sources**. This happened on 2026-08-18 and was caught only by grepping
