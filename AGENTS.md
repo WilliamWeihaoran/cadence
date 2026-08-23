@@ -216,9 +216,15 @@ code, and every one of them has been violated by a shipped change at least once.
   background and poll a marker file with a bounded loop:
 
   ```
-  i=0; until [[ -f "$D/all.done" ]] || (( i >= 120 )); do sleep 10; (( i++ )); done
+  i=0; until [[ -f "$D/all.done" ]] || (( i >= 180 )); do sleep 10; (( i++ )); done
   cat "$D"/*.exit
   ```
+
+  **The loop must be inside ONE tool call.** Polling with one call per check is the single most
+  expensive mistake available here: an agent doing that made **1113 tool calls** in 68 minutes and
+  still ended stalled, having produced nothing the ticket asked for. The loop above is one call that
+  waits up to 30 minutes. The same applies to the lock — acquire, build and release in one
+  invocation with a `trap`, not by re-checking from separate calls.
 
   Related: run a long build in the background against a log you poll rather than in the foreground —
   a 10-minute tool timeout will not survive a cold build of this project, and an agent was killed by
