@@ -61,29 +61,41 @@ struct FocusView: View {
                 onClose: { focusManager.endSession() }
             )
 
-            HSplitView {
-                VStack(spacing: 14) {
-                    FocusTimerPanel(
-                        clockDisplay: clockDisplay,
-                        isRunning: focusManager.isRunning,
-                        accent: Color(hex: task.containerColor),
-                        controls: { timerControls(task: task) }
+            GeometryReader { proxy in
+                HSplitView {
+                    VStack(spacing: 14) {
+                        FocusTimerPanel(
+                            clockDisplay: clockDisplay,
+                            isRunning: focusManager.isRunning,
+                            accent: Color(hex: task.containerColor),
+                            controls: { timerControls(task: task) }
+                        )
+                        .frame(height: 218)
+
+                        FocusNotesPanel(task: task)
+                            .frame(minHeight: 280)
+                    }
+                    .padding(18)
+                    .frame(
+                        minWidth: CadenceDesktopSplitLayout.focusSessionPaneMinWidth,
+                        idealWidth: 720
                     )
-                    .frame(height: 218)
+                    .background(Theme.bg)
 
-                    FocusNotesPanel(task: task)
-                        .frame(minHeight: 280)
+                    if CadenceDesktopSplitLayout.focusShowsSidebar(paneWidth: proxy.size.width) {
+                        FocusSidebar(
+                            task: task,
+                            nextTasks: Array(readyTasks.filter { $0.id != task.id }.prefix(4)),
+                            onSelectTask: { focusManager.startFocus(task: $0) }
+                        )
+                        .frame(
+                            minWidth: CadenceDesktopSplitLayout.focusSidebarPaneMinWidth,
+                            idealWidth: 360,
+                            maxWidth: 430
+                        )
+                    }
                 }
-                .padding(18)
-                .frame(minWidth: 520, idealWidth: 720)
-                .background(Theme.bg)
-
-                FocusSidebar(
-                    task: task,
-                    nextTasks: Array(readyTasks.filter { $0.id != task.id }.prefix(4)),
-                    onSelectTask: { focusManager.startFocus(task: $0) }
-                )
-                .frame(minWidth: 320, idealWidth: 360, maxWidth: 430)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .padding(.top, 34)
@@ -157,35 +169,47 @@ struct FocusView: View {
                 onClose: { focusManager.endSession() }
             )
 
-            HSplitView {
-                VStack(spacing: 14) {
-                    FocusTimerPanel(
-                        clockDisplay: clockDisplay,
-                        isRunning: focusManager.isRunning,
-                        accent: Theme.amber,
-                        controls: { bundleTimerControls(bundle: bundle) }
-                    )
-                    .frame(height: 218)
-
-                    FocusBundleTasksPanel(
-                        bundle: bundle,
-                        selectedTaskIDs: Binding(
-                            get: { focusManager.selectedBundleTaskIDs },
-                            set: { focusManager.selectedBundleTaskIDs = $0 }
+            GeometryReader { proxy in
+                HSplitView {
+                    VStack(spacing: 14) {
+                        FocusTimerPanel(
+                            clockDisplay: clockDisplay,
+                            isRunning: focusManager.isRunning,
+                            accent: Theme.amber,
+                            controls: { bundleTimerControls(bundle: bundle) }
                         )
-                    )
-                    .frame(minHeight: 280)
-                }
-                .padding(18)
-                .frame(minWidth: 520, idealWidth: 720)
-                .background(Theme.bg)
+                        .frame(height: 218)
 
-                FocusBundleSidebar(
-                    bundle: bundle,
-                    nextTasks: Array(readyTasks.filter { !bundle.sortedTasks.map(\.id).contains($0.id) }.prefix(4)),
-                    onSelectTask: { focusManager.startFocus(task: $0) }
-                )
-                .frame(minWidth: 320, idealWidth: 360, maxWidth: 430)
+                        FocusBundleTasksPanel(
+                            bundle: bundle,
+                            selectedTaskIDs: Binding(
+                                get: { focusManager.selectedBundleTaskIDs },
+                                set: { focusManager.selectedBundleTaskIDs = $0 }
+                            )
+                        )
+                        .frame(minHeight: 280)
+                    }
+                    .padding(18)
+                    .frame(
+                        minWidth: CadenceDesktopSplitLayout.focusSessionPaneMinWidth,
+                        idealWidth: 720
+                    )
+                    .background(Theme.bg)
+
+                    if CadenceDesktopSplitLayout.focusShowsSidebar(paneWidth: proxy.size.width) {
+                        FocusBundleSidebar(
+                            bundle: bundle,
+                            nextTasks: Array(readyTasks.filter { !bundle.sortedTasks.map(\.id).contains($0.id) }.prefix(4)),
+                            onSelectTask: { focusManager.startFocus(task: $0) }
+                        )
+                        .frame(
+                            minWidth: CadenceDesktopSplitLayout.focusSidebarPaneMinWidth,
+                            idealWidth: 360,
+                            maxWidth: 430
+                        )
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .padding(.top, 34)
@@ -256,30 +280,41 @@ struct FocusView: View {
     // MARK: - Idle layout
 
     private var idleLayout: some View {
-        HSplitView {
-            VStack(alignment: .leading, spacing: 0) {
-                FocusPickSessionCard(
-                    title: "Pick a task",
-                    subtitle: "Search across tasks and bundles, then start the cleanest next session.",
-                    clockDisplay: clockDisplay,
-                    searchText: $idleSearchText,
-                    items: focusPickerItems,
-                    onSelectTask: { focusManager.startFocus(task: $0) },
-                    onSelectBundle: { focusManager.startFocus(bundle: $0) }
+        GeometryReader { proxy in
+            HSplitView {
+                VStack(alignment: .leading, spacing: 0) {
+                    FocusPickSessionCard(
+                        title: "Pick a task",
+                        subtitle: "Search across tasks and bundles, then start the cleanest next session.",
+                        clockDisplay: clockDisplay,
+                        searchText: $idleSearchText,
+                        items: focusPickerItems,
+                        onSelectTask: { focusManager.startFocus(task: $0) },
+                        onSelectBundle: { focusManager.startFocus(bundle: $0) }
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                }
+                .padding(18)
+                .frame(
+                    minWidth: CadenceDesktopSplitLayout.focusSessionPaneMinWidth,
+                    idealWidth: 720
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            }
-            .padding(18)
-            .frame(minWidth: 520, idealWidth: 720)
-            .background(Theme.bg)
+                .background(Theme.bg)
 
-            VStack(spacing: 0) {
-                SchedulePanel(presentation: .compact)
+                if CadenceDesktopSplitLayout.focusShowsSidebar(paneWidth: proxy.size.width) {
+                    VStack(spacing: 0) {
+                        SchedulePanel(presentation: .compact)
+                    }
+                    .frame(
+                        minWidth: CadenceDesktopSplitLayout.focusSidebarPaneMinWidth,
+                        idealWidth: 360,
+                        maxWidth: 430
+                    )
+                    .background(Theme.surface)
+                }
             }
-            .frame(minWidth: 320, idealWidth: 360, maxWidth: 430)
-            .background(Theme.surface)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     // MARK: - Helpers
 

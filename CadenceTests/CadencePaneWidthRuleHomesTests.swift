@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import Cadence
 
-/// T-182: "derive a pane decision from the width you were handed" is one rule with seven
+/// T-182: "derive a pane decision from the width you were handed" is one rule with eight
 /// expressions living in four files, and the decision was to leave them in their surfaces and put a
 /// **register** at the top of `CadenceRegularPaneLayout.swift` saying so.
 ///
@@ -30,22 +30,24 @@ struct CadencePaneWidthRuleHomesTests {
 
     // MARK: - The inventory
 
-    /// The house file. Holds four of the seven expressions and the register naming all of them.
+    /// The house file. Holds five of the eight expressions and the register naming all of them.
     private static let houseFile = "Cadence/Shared/CadenceRegularPaneLayout.swift"
 
     /// Every file allowed to *declare* a function that takes a host-supplied width, and how many
     /// such functions each may declare.
     ///
-    /// - `CadenceRegularPaneLayout.swift` (7): `CadenceRegularSplitLayout.listPaneWidth`,
-    ///   `CadenceCalendarPaneLayout`'s `inspectorWidth` / `calendarWidth` / `showsInspector` /
-    ///   `showsDayInspector`, and `CadenceSettingsTemplatesCardLayout`'s `supportsTwoColumns` /
-    ///   `layout` (T-248/T-249).
+    /// - `CadenceRegularPaneLayout.swift` (11): `CadenceRegularSplitLayout`'s `listPaneWidth` /
+    ///   `supportsTwoPanes` (T-252), `CadenceCalendarPaneLayout`'s `inspectorWidth` /
+    ///   `calendarWidth` / `showsInspector` / `showsDayInspector`,
+    ///   `CadenceSettingsTemplatesCardLayout`'s `supportsTwoColumns` / `layout` (T-248/T-249), and
+    ///   `CadenceDesktopSplitLayout`'s `todayLayout` / `goalsShowsInspector` / `focusShowsSidebar`
+    ///   (T-250).
     /// - `CadenceTodayLayoutSupport.swift` (5): `supportsTwoPane`, `layout`, `inspectorPaneFloor`,
     ///   `taskPaneWidth`, `inspectorPaneIdealWidth`.
     /// - `CadenceRootShellLayout.swift` (3): `usesExpandedSidebar`, `sidebarWidth`, `detailWidth`.
     /// - `CadenceNotesListSupport.swift` (2): `supportsTwoColumns`, `layout`.
     private static let registeredHomes: [String: Int] = [
-        houseFile: 7,
+        houseFile: 11,
         "Cadence/Shared/CadenceTodayLayoutSupport.swift": 5,
         "Cadence/Shared/CadenceRootShellLayout.swift": 3,
         "Cadence/Shared/CadenceNotesListSupport.swift": 2,
@@ -58,7 +60,7 @@ struct CadencePaneWidthRuleHomesTests {
     private static let delegatingReader = "Cadence/Shared/CadenceCalendarAgendaSupport.swift"
     private static let delegatingReaderDeclarationCount = 1
 
-    /// The seven expressions, by type name. Every one must be named in the register.
+    /// The eight expressions, by type name. Every one must be named in the register.
     private static let registeredTypeNames = [
         "CadenceRegularSplitLayout",
         "CadenceCalendarWeekGridLayout",
@@ -67,6 +69,7 @@ struct CadencePaneWidthRuleHomesTests {
         "CadenceNotesListMetrics",
         "CadenceRootShellLayout",
         "CadenceSettingsTemplatesCardLayout",
+        "CadenceDesktopSplitLayout",
     ]
 
     /// A function declaration whose parameter list takes a width its host measured and handed down.
@@ -108,10 +111,10 @@ struct CadencePaneWidthRuleHomesTests {
         }
     }
 
-    /// Seven expressions, eighteen declarations, five files. The absolute total, so that a rename
-    /// that happened to keep every per-file count intact while moving a function between two
+    /// Eight expressions, twenty-two declarations, five files. The absolute total, so that a
+    /// rename that happened to keep every per-file count intact while moving a function between two
     /// registered homes still trips something.
-    @Test func theInventoryIsStillEighteenDeclarationsAcrossFiveFiles() throws {
+    @Test func theInventoryIsStillTwentyTwoDeclarationsAcrossFiveFiles() throws {
         var total = 0
         var files: Set<String> = []
 
@@ -126,7 +129,7 @@ struct CadencePaneWidthRuleHomesTests {
             }
         }
 
-        #expect(total == 18, "the width rule is declared \(total) times, expected 18")
+        #expect(total == 22, "the width rule is declared \(total) times, expected 22")
         #expect(files.count == 5, "it is spread over \(files.count) files, expected 5")
         #expect(files == Set(Self.registeredHomes.keys).union([Self.delegatingReader]))
     }
@@ -154,7 +157,7 @@ struct CadencePaneWidthRuleHomesTests {
         }
     }
 
-    @Test func theRegisterNamesAllSevenExpressionsAndTheModelToCopy() throws {
+    @Test func theRegisterNamesAllEightExpressionsAndTheModelToCopy() throws {
         let register = try paneRuleSource(Self.houseFile)
 
         for name in Self.registeredTypeNames {
@@ -211,6 +214,15 @@ struct CadencePaneWidthRuleHomesTests {
             (Self.houseFile, "inspectorMinWidth * 2 + paneDividerWidth"),
             (Self.houseFile,
              "chooserWidth(isDesktop: isDesktop) + columnSpacing * 2 + columnDividerWidth + minimumEditorWidth"),
+            // T-252: derived from this type's own share, because the four details state no floor.
+            (Self.houseFile, "listPaneMinWidth / listPaneFraction"),
+            // T-250: three macOS pages, each summing the panes' own declared minimums.
+            (Self.houseFile,
+             "todayNotesPaneMinWidth + todayTaskPaneMinWidth + todaySchedulePaneMinWidth"),
+            (Self.houseFile, "todayTaskPaneMinWidth + todaySchedulePaneMinWidth + paneDividerWidth"),
+            (Self.houseFile, "goalListPaneMinWidth + goalInspectorPaneMinWidth + paneDividerWidth"),
+            (Self.houseFile,
+             "focusSessionPaneMinWidth + focusSidebarPaneMinWidth + paneDividerWidth"),
         ]
 
         for (path, sum) in sums {

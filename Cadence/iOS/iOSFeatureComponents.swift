@@ -74,6 +74,15 @@ struct iOSFeatureListPane<Content: View>: View {
     var actionTitle: String? = nil
     var actionSystemImage = "plus"
     var action: (() -> Void)? = nil
+    /// Whether this pane is the whole screen rather than the chooser column of a split — the
+    /// `role` distinction, and it is asked rather than inferred.
+    ///
+    /// It **was** inferred, from `onBack != nil`, on the reasoning that a back chevron means a
+    /// pushed screen. That held while the only full-width host was the phone's push stack. T-252
+    /// added a second: a regular-width pane too narrow to split renders this same list at full
+    /// width, as the root of its own stack — a page with nothing behind it to go back to — and the
+    /// inference read that as a chooser column and drew the narrower header.
+    var isPage = false
     /// Set on iPhone, where this pane is a pushed screen with its navigation bar hidden. See
     /// `iOSHidesCompactNavigationBar()`.
     var onBack: (() -> Void)? = nil
@@ -81,12 +90,8 @@ struct iOSFeatureListPane<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // `onBack` is the tell, and it is already documented as "set on iPhone, where this pane
-            // is a pushed screen": with it this row is the top of a screen, without it it is the
-            // top of a chooser column in a split. That is exactly the `role` distinction, so it is
-            // read here rather than asked of every caller.
             iOSPageHeader(
-                role: onBack == nil ? .pane : .page,
+                role: isPage ? .page : .pane,
                 eyebrow: eyebrow,
                 title: title,
                 count: count,
@@ -137,20 +142,39 @@ struct iOSFeatureListPane<Content: View>: View {
 /// with no width on either side, which is what let an `HStack` hand a 13" iPad's 844pt pane to the
 /// two of them in equal halves. The proportion comes from `CadenceRegularSplitLayout` — measured
 /// against the pane, capped so the chooser never outgrows the thing it is choosing for.
-struct iOSFeatureSplitLayout<List: View, Detail: View>: View {
+///
+/// **And since T-252 it also decides whether there is a split at all.** This was the one registered
+/// width rule with no "two panes is worse than one" fallback: Today gates to one column at 761,
+/// Notes at 601 and Calendar drops its day inspector at 681, while `listPaneWidth` only clamped the
+/// *proportion*, so a 646pt portrait pane on the primary target iPad — the same device and
+/// orientation where the other three have already folded — went on splitting into a 300pt chooser
+/// beside a 345pt detail. The floor is `CadenceRegularSplitLayout.twoPaneMinimumWidth`, derived
+/// there from the chooser's own share rather than invented here.
+///
+/// `narrow` is the surface's own one-column form, not a dropped pane. Dropping the chooser strands
+/// the detail on whatever was selected — `CadenceSettingsTemplatesCardLayout`'s case, not
+/// `CadenceCalendarPaneLayout`'s — so what each caller passes is the same list it draws on a phone,
+/// with rows that push instead of select.
+struct iOSFeatureSplitLayout<List: View, Detail: View, Narrow: View>: View {
     @ViewBuilder let list: () -> List
     @ViewBuilder let detail: () -> Detail
+    @ViewBuilder let narrow: () -> Narrow
 
     var body: some View {
         GeometryReader { proxy in
-            HStack(spacing: 0) {
-                list()
-                    .frame(width: CadenceRegularSplitLayout.listPaneWidth(forPaneWidth: proxy.size.width))
-                    .frame(maxHeight: .infinity)
+            if CadenceRegularSplitLayout.supportsTwoPanes(paneWidth: proxy.size.width) {
+                HStack(spacing: 0) {
+                    list()
+                        .frame(width: CadenceRegularSplitLayout.listPaneWidth(forPaneWidth: proxy.size.width))
+                        .frame(maxHeight: .infinity)
 
-                Divider().background(Theme.borderSubtle)
+                    Divider().background(Theme.borderSubtle)
 
-                detail()
+                    detail()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else {
+                narrow()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }

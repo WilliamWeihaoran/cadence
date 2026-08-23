@@ -57,6 +57,74 @@ struct CadenceRegularSplitLayoutTests {
     func aZeroWidthPaneDoesNotProduceANegativeChooser() {
         #expect(listPane(0) == CadenceRegularSplitLayout.listPaneMinWidth)
     }
+
+    // MARK: - T-252: two panes is worse than one, below 750
+
+    /// 750pt, and derived rather than typed: `listPaneMinWidth / listPaneFraction` is the width at
+    /// which the chooser's floor and the share it asks for stop agreeing. Asserted both ways round
+    /// so a change to either part has to be deliberate.
+    @Test
+    func theTwoPaneFloorIsTheWidthAtWhichTheChoosersFloorStopsBeingItsShare() {
+        #expect(CadenceRegularSplitLayout.twoPaneMinimumWidth == 750)
+        #expect(
+            750 * CadenceRegularSplitLayout.listPaneFraction
+                == CadenceRegularSplitLayout.listPaneMinWidth
+        )
+        #expect(CadenceRegularSplitLayout.supportsTwoPanes(paneWidth: 750))
+        #expect(!CadenceRegularSplitLayout.supportsTwoPanes(paneWidth: 749))
+    }
+
+    /// The ticket's device, and the point of the change: at 646 of pane — an 11" iPad Pro in
+    /// portrait with the shell sidebar out, the primary target in its default configuration — the
+    /// split used to hand a 300pt chooser to a 345pt detail on the same screen where Today is one
+    /// column and Calendar has dropped its inspector. Three registered rules now answer alike.
+    @Test
+    func theTargetIPadsPortraitPaneIsOneColumnLikeTodayAndCalendar() {
+        #expect(!CadenceRegularSplitLayout.supportsTwoPanes(paneWidth: 646))
+        #expect(CadenceTodayLayoutSupport.layout(isRegularWidth: true, paneWidth: 646) == .compact)
+        #expect(!CadenceCalendarPaneLayout.showsInspector(paneWidth: 646))
+    }
+
+    /// And it still splits everywhere the proportion is affordable, so the fallback is a floor
+    /// rather than a retreat: the sidebar folded in portrait (834), landscape with it out (1022)
+    /// and landscape folded (1210).
+    @Test
+    func everyPaneThatCanAffordTheProportionStillSplits() {
+        for paneWidth in [CGFloat(834), 1022, 1210] {
+            #expect(
+                CadenceRegularSplitLayout.supportsTwoPanes(paneWidth: paneWidth),
+                "pane \(paneWidth) stopped splitting"
+            )
+            #expect(listPane(paneWidth) >= CadenceRegularSplitLayout.listPaneMinWidth)
+        }
+    }
+
+    /// Above the gate the half-pane clamp never binds — the chooser gets the width it asked for,
+    /// bounded only by its own floor and maximum. That is what "the floor stopped being the share"
+    /// means, stated as a property over the whole range rather than at three sampled widths, and it
+    /// is the half `listPaneWidth` alone could not promise.
+    @Test
+    func aboveTheGateTheChooserAlwaysGetsTheWidthItAsksFor() {
+        var paneWidth = CadenceRegularSplitLayout.twoPaneMinimumWidth
+        while paneWidth <= 1400 {
+            let wish = min(
+                max(paneWidth * CadenceRegularSplitLayout.listPaneFraction,
+                    CadenceRegularSplitLayout.listPaneMinWidth),
+                CadenceRegularSplitLayout.listPaneMaxWidth
+            )
+            #expect(
+                listPane(paneWidth) == wish,
+                "the half-pane clamp bound at pane \(paneWidth): \(listPane(paneWidth)) not \(wish)"
+            )
+            paneWidth += 1
+        }
+        // And below it, it does — otherwise the assertion above is about nothing.
+        #expect(listPane(600) < min(
+            max(600 * CadenceRegularSplitLayout.listPaneFraction,
+                CadenceRegularSplitLayout.listPaneMinWidth),
+            CadenceRegularSplitLayout.listPaneMaxWidth
+        ))
+    }
 }
 
 struct CadenceCalendarPaneLayoutTests {

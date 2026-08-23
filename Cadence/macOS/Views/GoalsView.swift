@@ -119,28 +119,48 @@ struct GoalsView: View {
         }
     }
 
+    /// The mission column is not the side that yields: the page header, the search field, the
+    /// status filter and the only New Goal button are all inside it, and `goalListPaneMinWidth` is
+    /// their floor. Below `goalsSplitMinimumWidth` the inspector goes instead — it is nine points
+    /// wide at the app's minimum window with the sidebar out, which is not a narrow inspector but
+    /// an invisible one. See `CadenceDesktopSplitLayout`.
     private func missionContent(groups: [GoalMissionGroup]) -> some View {
-        HSplitView {
-            VStack(spacing: 0) {
-                header
-                Divider().background(Theme.borderSubtle)
-                goalList(groups: groups)
-            }
-            .frame(minWidth: 560, idealWidth: 760)
-            .background(Theme.bg)
+        GeometryReader { proxy in
+            let showsInspector = CadenceDesktopSplitLayout.goalsShowsInspector(
+                paneWidth: proxy.size.width
+            )
 
-            if let goal = selectedGoal {
-                GoalInspectorView(
-                    goal: goal,
-                    onEdit: { showEditGoal = true },
-                    onAttachWork: { showAttachWork = true },
-                    onDetachList: detachList
-                )
-                .frame(minWidth: 340, idealWidth: 400)
-            } else {
-                GoalsEmptyDetail()
-                    .frame(minWidth: 340, idealWidth: 400)
+            HSplitView {
+                VStack(spacing: 0) {
+                    header
+                    Divider().background(Theme.borderSubtle)
+                    goalList(groups: groups)
+                }
+                .frame(minWidth: CadenceDesktopSplitLayout.goalListPaneMinWidth, idealWidth: 760)
+                .background(Theme.bg)
+
+                if showsInspector {
+                    if let goal = selectedGoal {
+                        GoalInspectorView(
+                            goal: goal,
+                            onEdit: { showEditGoal = true },
+                            onAttachWork: { showAttachWork = true },
+                            onDetachList: detachList
+                        )
+                        .frame(
+                            minWidth: CadenceDesktopSplitLayout.goalInspectorPaneMinWidth,
+                            idealWidth: 400
+                        )
+                    } else {
+                        GoalsEmptyDetail()
+                            .frame(
+                                minWidth: CadenceDesktopSplitLayout.goalInspectorPaneMinWidth,
+                                idealWidth: 400
+                            )
+                    }
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Theme.bg)
     }

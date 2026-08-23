@@ -2,13 +2,14 @@ import CoreGraphics
 
 // MARK: - The register: where "derive a pane decision from handed width" may live
 //
-// One rule, seven expressions, four files — and this is the house file, so the register lives here
+// One rule, eight expressions, four files — and this is the house file, so the register lives here
 // rather than in a doc that the code cannot be checked against. T-182 was raised as "four
-// expressions in four places"; the count was short by two, and T-248/T-249 added the seventh. What
-// is actually there:
+// expressions in four places"; the count was short by two, T-248/T-249 added the seventh and
+// T-250/T-252 the eighth. What is actually there:
 //
 //   Here, in `CadenceRegularPaneLayout.swift`
-//     - `CadenceRegularSplitLayout`     a *width*, for a chooser column beside a detail.
+//     - `CadenceRegularSplitLayout`     a *width*, for a chooser column beside a detail, **and**
+//                                       since T-252 the gate under it.
 //     - `CadenceCalendarWeekGridLayout` a *width*, N columns rather than two panes, and the
 //                                       supplier of the minimum the gate below reads.
 //     - `CadenceCalendarPaneLayout`     a *Bool* gate, plus the two widths behind it.
@@ -23,6 +24,13 @@ import CoreGraphics
 //                                       is no file either surface can put its parts in *except*
 //                                       out here, which is the same argument
 //                                       `CadenceNotesListSupport.swift` opens with.
+//     - `CadenceDesktopSplitLayout`     an *enum* (`CadenceDesktopTodayLayout`) and two *Bool*
+//                                       gates, for the three macOS `HSplitView` pages. Here for
+//                                       the `CadenceSettingsTemplatesCardLayout` reason one level
+//                                       further along: its three surfaces are all behind
+//                                       `#if os(macOS)`, and it is the first expression written
+//                                       because the *window* could not hold the rule — see its
+//                                       own doc for why raising `CadenceApp`'s floor was rejected.
 //   `CadenceTodayLayoutSupport.swift`
 //     - `CadenceTodayLayoutSupport`     an *enum* (`CadenceTodayLayout`), plus the fixed side's width.
 //   `CadenceNotesListSupport.swift`
@@ -103,6 +111,35 @@ enum CadenceRegularSplitLayout {
         let preferred = min(max(paneWidth * listPaneFraction, listPaneMinWidth), listPaneMaxWidth)
         // Never more than the detail beside it. This is the guarantee; `preferred` is the wish.
         return min(preferred, (paneWidth - paneDividerWidth) / 2)
+    }
+
+    /// 750pt of pane — the width below which two panes is worse than one, and the last of the
+    /// registered rules to get one (T-252).
+    ///
+    /// **Derived, and derived from this type's own parts, because the four details cannot supply a
+    /// floor.** Goals, Habits, Focus and Lists each put a different thing in the detail pane and
+    /// none of them states a minimum, so there is nothing to borrow the way
+    /// `CadenceSettingsTemplatesCardLayout` borrows `CadenceNotesListMetrics.minimumEditorWidth`.
+    /// Inventing one is what T-183 exists to prevent. What *is* already stated here is the
+    /// proportion the split is for: the chooser asks for `listPaneFraction` of the pane, and
+    /// `listPaneMinWidth` is the least it can be and still draw a row. Below
+    /// `listPaneMinWidth / listPaneFraction` those two disagree — the floor is bigger than the
+    /// share — and from there on every point the pane loses comes out of the detail, which is the
+    /// side the split exists to serve. That is the same sentence as "two starved panes are worse
+    /// than one whole one", said in terms this file already has.
+    ///
+    /// It lands where the ticket said it had to: the 11" iPad Pro in portrait with the shell
+    /// sidebar out is 646pt of pane and becomes one column, on the same device and orientation
+    /// where `CadenceTodayLayoutSupport` gives Today one column (761) and
+    /// `CadenceCalendarPaneLayout` drops the day inspector (681). With the sidebar folded it is
+    /// 834 and splits, at a 333.6pt chooser — the proportion, not the floor. `listPaneWidth` is
+    /// unchanged and still answers for every width; this only decides whether anything asks it.
+    static var twoPaneMinimumWidth: CGFloat {
+        listPaneMinWidth / listPaneFraction
+    }
+
+    static func supportsTwoPanes(paneWidth: CGFloat) -> Bool {
+        paneWidth >= twoPaneMinimumWidth
     }
 }
 
@@ -468,5 +505,153 @@ nonisolated enum CadenceSettingsTemplatesCardLayout {
     ) -> CadenceSettingsCardLayout {
         guard isRegularWidth else { return .oneColumn }
         return supportsTwoColumns(hostWidth: hostWidth, isDesktop: isDesktop) ? .twoColumn : .oneColumn
+    }
+}
+
+/// Which of Today's three panes a macOS window is wide enough to draw.
+///
+/// Ordered by what the page cannot do without. The task column is Today; the notepad and the
+/// timeline are companions, and both have a whole page of their own — the daily note is the Notes
+/// page's Daily tab, the day's timeline is the Calendar page.
+nonisolated enum CadenceDesktopTodayLayout: Equatable, Sendable {
+    /// Task column only.
+    case tasksOnly
+    /// Task column and the day's timeline.
+    case tasksAndSchedule
+    /// The full three-pane page.
+    case notesTasksAndSchedule
+}
+
+/// How many panes each macOS `HSplitView` page can actually draw at the width it was handed.
+///
+/// **The eighth expression of the rule, and the first written because a *window* could not hold
+/// it.** Today, Goals and Focus each declared more `HSplitView` minimum width than
+/// `CadenceApp`'s 960pt window floor can pay, and an `HSplitView` propagates none of it upward:
+/// measured with `NSHostingView`, each of the three splits reports `fittingSize.width == 0` and
+/// `intrinsicContentSize.width == -1` whatever its children declare. So the floor never hears the
+/// page, the window goes narrower than the page needs, and `NSSplitView` lays out at the sum of
+/// its minimums and overflows **leading-aligned** — off the trailing edge.
+///
+/// What that looked like, measured at the 960pt floor with the sidebar at its 220pt minimum, its
+/// stored 264pt default and its 390pt maximum (740 / 696 / 570 of pane):
+///
+///   - Today, `449 + 300 + 343` + 2 dividers = **1094**: `449, 290, 0` — `449, 246, 0` —
+///     `449, 120, 0`. The Schedule pane is **entirely off the right edge in all three**, and so is
+///     the divider that would drag it back.
+///   - Goals, `560 + 340` + 1 = **901**: the inspector shows 179, 135 and **9** of its 340.
+///   - Focus, `520 + 320` + 1 = **841**: the sidebar shows 219, 175 and **49** of its 320.
+///
+/// **The window floor was the other candidate and it was rejected on measurement, not taste.** The
+/// pane is the window *less the sidebar*, and the sidebar is independently 220–390pt
+/// (`macOSRootShellViews.swift`) and can be hidden outright with `Cmd+O`. A floor that pays for
+/// Today's 1094 at the stored 264pt sidebar is 1358; at the 390pt maximum it is **1484**, which is
+/// wider than a 13" MacBook Air's whole 1470pt screen — so the floor that actually closes the bug
+/// makes the app unopenable at full width on a shipping Mac, and any floor short of it leaves the
+/// bug live for everyone who has widened their sidebar. **A single window minimum cannot express a
+/// rule whose input is `window − sidebar`.** It would also tax every page that already fits — the
+/// 960 was derived from the list-detail Kanban tab bar and nothing else asks for more — and it
+/// would not fix what is broken, because the next pane minimum anyone raises re-opens the same
+/// silent overflow. Below, a raised minimum simply changes where a page folds.
+///
+/// **Which pane gives is decided per page, and each answer has a reason.**
+///
+/// *Today* drops the **notepad** first, and that is a measurement rather than a preference: the
+/// ordinary minimum pane is 696 (960 less the stored sidebar), `tasks + schedule` is 644 and fits,
+/// and `notes + tasks` is 750 and does not — dropping the notepad is the only two-pane form the
+/// app's own minimum window can pay for. It is also the pair with a behaviour: a task dragged out
+/// of the task column onto the timeline is the whole unprefixed drag payload in `TaskDragPayload`,
+/// and it exists only while those two panes are on screen together. Below 644 the task column takes
+/// the window.
+///
+/// *Goals* drops the **inspector**. Its list column is not just a list — the page header, the
+/// search field, the status filter and the only "New Goal" button are all inside it, which is what
+/// the 560 is a floor for, so the list is not the side that can yield. The inspector is already
+/// unusable rather than merely tight at every width below the floor: at the 390pt sidebar it is
+/// nine points of a 340pt layout. The cost is stated rather than glossed — Edit and Attach List
+/// live in the inspector header and mission mode has no other route to them, so below 901 they are
+/// out of reach. They were already clipped there; see `docs/TODO.md` for the follow-up.
+///
+/// *Focus* drops the **sidebar**, which is the `CadenceCalendarPaneLayout` case: a status chip
+/// restating the session header and four "Next up" shortcuts into the same picker the idle screen
+/// already is. The idle layout's trailing pane is a compact `SchedulePanel`, i.e. a second reading
+/// of the Calendar page. Nothing there is reachable only from there.
+///
+/// Every floor is a **sum of the panes' own declared minimums**, and the views read the constants
+/// back rather than re-typing them, so raising a pane moves the floor with it. That is the property
+/// this whole file exists for; a floor typed as `1094` satisfies every value assertion on the day
+/// it is written and stops following its parts the next day.
+///
+/// `paneWidth <= 0` means "not measured", and answers with the fewest panes for
+/// `CadenceSettingsTemplatesCardLayout`'s reason: a frame of the fallback is a correct layout that
+/// looks sparse, and a frame of the split is the bug. In practice the three surfaces read their
+/// width from a `GeometryReader` they fill, so there is no unmeasured frame to guess at.
+nonisolated enum CadenceDesktopSplitLayout {
+    /// The `Divider` an `HSplitView` puts between two panes. Counted, for the reason
+    /// `CadenceTodayLayoutSupport.taskPaneWidth` records: a floor that forgets it is a floor that
+    /// is a point wrong, and a point is what comes off the trailing edge.
+    static let paneDividerWidth: CGFloat = 1
+
+    // MARK: - Today — notepad │ tasks │ schedule
+
+    /// `NotePanel`'s declared minimum, as `TodayView` already had it.
+    static let todayNotesPaneMinWidth: CGFloat = 449
+    /// `TasksPanel`'s. **Not** `CadenceTodayLayoutSupport.taskPaneMinWidth`, which is 440: that is
+    /// the iPad's task column, which is one of *two* panes and carries the day's whole task list
+    /// with no notepad beside it. Two different pages that happen to share a name.
+    static let todayTaskPaneMinWidth: CGFloat = 300
+    /// `SchedulePanel`'s.
+    static let todaySchedulePaneMinWidth: CGFloat = 343
+
+    /// 1094pt of pane. Reached at the 960pt window floor only with the sidebar hidden and a window
+    /// 134pt wider than the floor; at the stored sidebar it needs a 1358pt window.
+    static var todayThreePaneMinimumWidth: CGFloat {
+        todayNotesPaneMinWidth + todayTaskPaneMinWidth + todaySchedulePaneMinWidth
+            + paneDividerWidth * 2
+    }
+
+    /// 644pt of pane — under the 696 the app's own minimum window leaves at the stored sidebar,
+    /// which is the point of dropping the notepad rather than the timeline.
+    static var todayTwoPaneMinimumWidth: CGFloat {
+        todayTaskPaneMinWidth + todaySchedulePaneMinWidth + paneDividerWidth
+    }
+
+    static func todayLayout(paneWidth: CGFloat) -> CadenceDesktopTodayLayout {
+        if paneWidth >= todayThreePaneMinimumWidth { return .notesTasksAndSchedule }
+        return paneWidth >= todayTwoPaneMinimumWidth ? .tasksAndSchedule : .tasksOnly
+    }
+
+    // MARK: - Goals — mission list │ inspector
+
+    /// The mission column's declared minimum, as `GoalsView` already had it. It is a floor for the
+    /// page *header* inside it — title, view-mode toggle, New Goal, search, status filter — not
+    /// for the cards, which is why this is not the side that yields.
+    static let goalListPaneMinWidth: CGFloat = 560
+    /// `GoalInspectorView`'s.
+    static let goalInspectorPaneMinWidth: CGFloat = 340
+
+    /// 901pt of pane.
+    static var goalsSplitMinimumWidth: CGFloat {
+        goalListPaneMinWidth + goalInspectorPaneMinWidth + paneDividerWidth
+    }
+
+    static func goalsShowsInspector(paneWidth: CGFloat) -> Bool {
+        paneWidth >= goalsSplitMinimumWidth
+    }
+
+    // MARK: - Focus — session │ sidebar
+
+    /// The timer-and-notes column's declared minimum, as all three of `FocusView`'s splits already
+    /// had it — the active task layout, the active bundle layout and the idle picker.
+    static let focusSessionPaneMinWidth: CGFloat = 520
+    /// `FocusSidebar` / `FocusBundleSidebar` / the idle layout's compact `SchedulePanel`.
+    static let focusSidebarPaneMinWidth: CGFloat = 320
+
+    /// 841pt of pane.
+    static var focusSplitMinimumWidth: CGFloat {
+        focusSessionPaneMinWidth + focusSidebarPaneMinWidth + paneDividerWidth
+    }
+
+    static func focusShowsSidebar(paneWidth: CGFloat) -> Bool {
+        paneWidth >= focusSplitMinimumWidth
     }
 }

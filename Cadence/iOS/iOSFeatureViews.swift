@@ -103,8 +103,15 @@ struct iOSGoalsView: View {
         modelContext.deleteGoal(goal)
     }
 
+    /// `narrow` is the phone's own list, in its own `NavigationStack` — the rows push, so they need
+    /// one, and the regular shell does not wrap this page. Local rather than hoisted into
+    /// `iOSRootView.detailView` so the split path this page normally takes is left untouched.
     private var horizontalLayout: some View {
-        iOSFeatureSplitLayout(list: { listPane(pushes: false) }, detail: { detailPane })
+        iOSFeatureSplitLayout(
+            list: { listPane(pushes: false) },
+            detail: { detailPane },
+            narrow: { NavigationStack { listPane(pushes: true) } }
+        )
     }
 
     private var compactLayout: some View {
@@ -135,7 +142,8 @@ struct iOSGoalsView: View {
             actionTitle: "New Goal",
             actionSystemImage: "plus",
             action: { editorMode = .new(nil) },
-            onBack: pushes ? { dismiss() } : nil
+            isPage: pushes,
+            onBack: pushes && horizontalSizeClass == .compact ? { dismiss() } : nil
         ) {
             ForEach(topLevelGoals) { goal in
                 goalLink(goal, pushes: pushes)
@@ -297,8 +305,15 @@ struct iOSHabitsView: View {
         modelContext.deleteHabit(habit)
     }
 
+    /// `narrow` is the phone's own list, in its own `NavigationStack` — the rows push, so they need
+    /// one, and the regular shell does not wrap this page. Local rather than hoisted into
+    /// `iOSRootView.detailView` so the split path this page normally takes is left untouched.
     private var horizontalLayout: some View {
-        iOSFeatureSplitLayout(list: { listPane(pushes: false) }, detail: { detailPane })
+        iOSFeatureSplitLayout(
+            list: { listPane(pushes: false) },
+            detail: { detailPane },
+            narrow: { NavigationStack { listPane(pushes: true) } }
+        )
     }
 
     private var compactLayout: some View {
@@ -325,7 +340,8 @@ struct iOSHabitsView: View {
             actionTitle: "New Habit",
             actionSystemImage: "plus",
             action: { editorMode = .new(nil) },
-            onBack: pushes ? { dismiss() } : nil
+            isPage: pushes,
+            onBack: pushes && horizontalSizeClass == .compact ? { dismiss() } : nil
         ) {
             ForEach(habits) { habit in
                 habitRow(habit, pushes: pushes)

@@ -94,8 +94,14 @@ struct iOSFocusView: View {
         )
     }
 
+    /// The narrow fallback is the phone's own stacked form. It pushes nothing, so unlike Goals and
+    /// Habits it needs no `NavigationStack` of its own.
     private var horizontalLayout: some View {
-        iOSFeatureSplitLayout(list: { taskListPane }, detail: { focusDetailPane })
+        iOSFeatureSplitLayout(
+            list: { taskListPane },
+            detail: { focusDetailPane },
+            narrow: { compactLayout }
+        )
     }
 
     /// The eyebrow carries the session's state, because the title already says "Focus" and a
@@ -113,7 +119,9 @@ struct iOSFocusView: View {
                     eyebrow: statusEyebrow,
                     title: "Focus",
                     color: Theme.red,
-                    onBack: { dismiss() }
+                    // This layout is also the regular-width narrow fallback, where it is the page
+                    // the sidebar selected and there is nothing behind it to go back to.
+                    onBack: isCompact ? { dismiss() } : nil
                 )
 
                 if pickItems.isEmpty {
