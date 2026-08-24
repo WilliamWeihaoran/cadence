@@ -656,6 +656,42 @@ struct FocusHandoffCallSiteTests {
         #expect(code.count > 4_000, "read \(code.count) characters of iOSRootView and cannot be doing its job")
     }
 
+    /// **A handoff that changes subject has to bank the outgoing session first, and the only thing
+    /// making that true is that `accept(_:)` goes through `select(_:)` rather than `adopt(_:)`.**
+    ///
+    /// Demonstrated rather than assumed: replacing `select(item)` with `adopt(item)` inside
+    /// `accept` — which is precisely the "point the session at this row and clear the clock" shape
+    /// T-242 removed from the picker — passed every assertion this file had.
+    /// `CadenceFocusSupport.commitElapsed(` was still spelled twice, `leaving: selectedSubject`
+    /// three times and `resetTimer()` three times, because all of those are counted over the whole
+    /// file and `accept` never spelled one of them. Every "Focus this" that named a different
+    /// subject discarded the minutes measured on the one being left — the T-242 bug, restored, with
+    /// a green suite.
+    ///
+    /// This cannot be a value assertion: `iOSFocusView` is inside `#if os(iOS)` and the macOS test
+    /// target never compiles it, so there is no `accept` to call. What is available is the source,
+    /// and the fix is to stop counting over the file — the body is brace-matched out of `accept`
+    /// first, so a needle counted here is a needle *in* `accept`.
+    @Test func acceptingAHandoffGoesThroughTheCommittingSelectionPath() throws {
+        let body = try focusFunctionBody(
+            "private func accept(_ handoff: CadenceFocusHandoff)",
+            in: focusStrippingComments(focusSourceFile("Cadence/iOS/iOSFocusView.swift"))
+        )
+
+        #expect(
+            body.components(separatedBy: "select(item)").count - 1 == 1,
+            "accept no longer hands the incoming row to select(_:), so nothing banks the outgoing session"
+        )
+        #expect(
+            body.components(separatedBy: "adopt(").count - 1 == 0,
+            "accept moved the selection through adopt(_:), which skips commitElapsed entirely"
+        )
+        // Non-vacuity: this really is `accept`'s body and not an empty string, which would pass the
+        // zero-count above by accident.
+        #expect(body.contains("startRequestFor: handoff.target"))
+        #expect(body.contains("focusHandoffCenter.consume(handoff)"))
+    }
+
     /// Every affordance, and both halves of `CadenceFocusTarget`. Shipping only the task half would
     /// leave the block half — the thing T-242 had just built — reachable from nowhere but Focus.
     ///
@@ -730,4 +766,42 @@ struct FocusHandoffCallSiteTests {
         }
         #expect(CadenceFeatureDestination.focus.defaultColorHex == Theme.tealHex)
     }
+}
+
+/// The brace-matched body of one function, so a count can be scoped to it instead of to the whole
+/// file. Every needle in this file is a `components(separatedBy:)` count over an entire source
+/// file, which is blind to a call moving *between* two functions in it — the exact hole a mutation
+/// of `accept(_:)` walked through.
+///
+/// It throws rather than returning an empty string on a miss. A "" body passes every zero-count
+/// assertion written against it, which is the vacuity trap `Cadence/Shared/AGENTS.md` names.
+private func focusFunctionBody(_ declaration: String, in code: String) throws -> String {
+    guard let declRange = code.range(of: declaration) else {
+        throw FocusBodyScanError.notFound(declaration)
+    }
+    guard let open = code.range(of: "{", options: [], range: declRange.upperBound..<code.endIndex) else {
+        throw FocusBodyScanError.notFound(declaration)
+    }
+    var depth = 0
+    var index = open.lowerBound
+    while index < code.endIndex {
+        let character = code[index]
+        if character == "{" { depth += 1 }
+        if character == "}" {
+            depth -= 1
+            if depth == 0 {
+                let body = String(code[code.index(after: open.lowerBound)..<index])
+                guard body.count > 40 else { throw FocusBodyScanError.tooShort(declaration) }
+                return body
+            }
+        }
+        index = code.index(after: index)
+    }
+    throw FocusBodyScanError.unbalanced(declaration)
+}
+
+private enum FocusBodyScanError: Error {
+    case notFound(String)
+    case tooShort(String)
+    case unbalanced(String)
 }
