@@ -514,6 +514,22 @@ struct iOSTaskRowContextMenu: View {
             Label("Edit", systemImage: "square.and.pencil")
         }
 
+        // T-266: the phone's answer to macOS's hover ▶ on `MacTaskRow`. It goes in the long-press
+        // menu rather than the swipe tray because a swipe is for the two or three things you do to
+        // a task without looking, and this one takes you to another screen — and because the menu
+        // is attached to `iOSTaskRow`, which is *the* task row on every iOS surface, so one entry
+        // reaches Today, All Tasks, Inbox, list detail, the calendar inspector and the month agenda
+        // at once.
+        //
+        // `.shared` rather than `@Environment`: this view only ever writes to the inbox. The two
+        // views that observe it — the shell, which navigates, and `iOSFocusView`, which adopts —
+        // take it from the environment. Same division `CadenceDeepLinkManager` already uses.
+        Button {
+            CadenceFocusHandoffCenter.shared.request(.task(task.id))
+        } label: {
+            Label("Focus", systemImage: CadenceFeatureDestination.focus.systemImage)
+        }
+
         priorityMenu
         recurrenceMenu
         doDateMenu

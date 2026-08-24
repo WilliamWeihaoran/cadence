@@ -58,6 +58,10 @@ struct CadenceApp: App {
 #else
             iOSRootView()
                 .environment(CadenceDeepLinkManager.shared)
+                // Injected beside the deep-link manager because it is the same kind of thing: a
+                // one-slot inbox a distant surface drops a navigation request into. iOS only —
+                // macOS says this with `FocusManager.startFocus(…)`, which it already has.
+                .environment(CadenceFocusHandoffCenter.shared)
                 .environment(AISettingsManager.shared)
                 .environment(iOSCalendarManager.shared)
                 .environment(NotificationManager.shared)

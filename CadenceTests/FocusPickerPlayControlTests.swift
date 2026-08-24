@@ -295,7 +295,12 @@ struct FocusSessionSwitchCommitTests {
 
         #expect(code.contains("TaskBundle"))
         #expect(code.contains("private var selectedSubject: CadenceFocusSubject?"))
-        #expect(code.components(separatedBy: "leaving: selectedSubject").count - 1 == 2)
+        // Three since T-266, and the third is a different act rather than a third switch path:
+        // `.onDisappear` ends the session outright through `endSession(leaving:…)`, which the two
+        // switch paths reach only via `commitElapsed`'s identity guard. The count is still exact —
+        // a fourth `leaving: selectedSubject` means a commit was added somewhere unaccounted for.
+        #expect(code.components(separatedBy: "leaving: selectedSubject").count - 1 == 3)
+        #expect(code.components(separatedBy: "CadenceFocusSupport.endSession(").count - 1 == 1)
         // And the task-shaped overload is gone from this screen: leaving a block through it is
         // unspellable, which is the whole reason the subject type exists.
         #expect(code.components(separatedBy: "leaving: selectedTask,").count - 1 == 0)
@@ -324,4 +329,343 @@ private func focusStrippingComments(_ source: String) throws -> String {
         }
     }
     return result
+}
+
+
+/// T-266: iOS could only enter a focus session from the Focus screen. macOS reaches one from four
+/// other places, all through `FocusManager.startFocus(…)` — a singleton that is macOS-only on
+/// purpose, because iOS's clock lives in `iOSFocusView`'s own `CadenceFocusTimerState` and a second
+/// authority would have nothing incrementing it. What iOS was missing is the *message*, and these
+/// are the two decisions the message forced: how a handoff starts the clock, and what happens to
+/// the session already on it.
+@MainActor
+struct FocusHandoffTests {
+    private let taskA = CadenceFocusTarget.task(UUID())
+    private let taskB = CadenceFocusTarget.task(UUID())
+
+    private var epoch: Date { Date(timeIntervalSince1970: 1_000_000) }
+
+    private func runningClock(from seconds: Int, at start: Date) -> CadenceFocusTimerState {
+        var state = CadenceFocusTimerState()
+        state.accumulatedSeconds = seconds
+        state.toggle(now: start)
+        return state
+    }
+
+    // MARK: - Starting
+
+    /// **The load-bearing one.** A handoff is not a play tap: routing it through
+    /// `timerState(afterPlayTapOn:)` would *pause* the running session whenever the subject asked
+    /// for is the subject already running — "Focus this" on the task you are already focusing would
+    /// stop the clock. It has to leave a running session running.
+    @Test func askingToFocusTheRunningSubjectLeavesItsClockAlone() {
+        let running = runningClock(from: 0, at: epoch)
+
+        let next = CadenceFocusSupport.timerState(
+            startRequestFor: taskA,
+            selectedTarget: taskA,
+            state: running,
+            now: epoch.addingTimeInterval(300)
+        )
+
+        #expect(next.isRunning)
+        // Still counting from where it started, not restarted at zero.
+        #expect(next.elapsedSeconds(now: epoch.addingTimeInterval(300)) == 300)
+    }
+
+    /// The same subject, paused: the handoff resumes it rather than discarding the banked seconds.
+    @Test func askingToFocusThePausedSelectedSubjectResumesIt() {
+        var banked = CadenceFocusTimerState()
+        banked.accumulatedSeconds = 420
+
+        let next = CadenceFocusSupport.timerState(
+            startRequestFor: taskA,
+            selectedTarget: taskA,
+            state: banked,
+            now: epoch
+        )
+
+        #expect(next.isRunning)
+        #expect(next.elapsedSeconds(now: epoch) == 420)
+    }
+
+    /// A *different* subject starts from zero, for the reason the play control does: the seconds on
+    /// the clock were earned by what they were started on. Banking them is `commitElapsed`'s job,
+    /// which the caller runs first.
+    @Test func askingToFocusADifferentSubjectStartsFromZero() {
+        let running = runningClock(from: 0, at: epoch)
+
+        let next = CadenceFocusSupport.timerState(
+            startRequestFor: taskB,
+            selectedTarget: taskA,
+            state: running,
+            now: epoch.addingTimeInterval(300)
+        )
+
+        #expect(next.isRunning)
+        #expect(next.elapsedSeconds(now: epoch.addingTimeInterval(300)) == 0)
+        #expect(next.elapsedSeconds(now: epoch.addingTimeInterval(310)) == 10)
+    }
+
+    /// Cold start: the screen has never been opened, so nothing is selected.
+    @Test func askingToFocusWithNothingSelectedStartsRunningFromZero() {
+        let next = CadenceFocusSupport.timerState(
+            startRequestFor: taskA,
+            selectedTarget: nil,
+            state: CadenceFocusTimerState(),
+            now: epoch
+        )
+
+        #expect(next.isRunning)
+        #expect(next.elapsedSeconds(now: epoch) == 0)
+    }
+
+    /// A bundle and one of its members carry equal-looking ids in every other vocabulary; the
+    /// target type is what keeps them apart, and the reset rule has to read it that way.
+    @Test func aBundleAndItsMemberAreDifferentSubjectsEvenWithTheSameID() {
+        let shared = UUID()
+        let running = runningClock(from: 0, at: epoch)
+
+        let next = CadenceFocusSupport.timerState(
+            startRequestFor: .bundle(shared),
+            selectedTarget: .task(shared),
+            state: running,
+            now: epoch.addingTimeInterval(300)
+        )
+
+        #expect(next.elapsedSeconds(now: epoch.addingTimeInterval(300)) == 0)
+    }
+
+    // MARK: - Leaving
+
+    private func makeContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: CadenceSchema.schema,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+    }
+
+    /// Walking away from the Focus screen banks what the session earned. Before T-266 the screen's
+    /// clock was `@State` with nothing reading it on the way out, so a pop threw the minutes away —
+    /// and a route *into* Focus from a task row makes backing straight out of it routine.
+    @Test func endingASessionBanksItsMinutesOnTheTaskAndItsList() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let project = Project(name: "Website")
+        let task = AppTask(title: "Write copy")
+        task.project = project
+        context.insert(project)
+        context.insert(task)
+
+        var running = CadenceFocusTimerState()
+        running.toggle(now: epoch)
+
+        let next = CadenceFocusSupport.endSession(
+            leaving: .task(task),
+            state: running,
+            modelContext: context,
+            now: epoch.addingTimeInterval(18 * 60)
+        )
+
+        #expect(task.actualMinutes == 18)
+        #expect(project.loggedMinutes == 18)
+        #expect(next.isRunning == false)
+        #expect(next.elapsedSeconds(now: epoch.addingTimeInterval(18 * 60)) == 0)
+    }
+
+    /// A block's minutes go to the members that were ticked while it ran, and to no one else — the
+    /// whole reason the subject carries the selection rather than the bundle alone.
+    @Test func endingABundleSessionCreditsOnlyTheTickedMembers() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let bundle = TaskBundle(title: "Morning", dateKey: "2026-08-24", startMin: 540, durationMinutes: 60)
+        let included = AppTask(title: "Draft")
+        let excluded = AppTask(title: "Email")
+        included.bundle = bundle
+        excluded.bundle = bundle
+        // Assigned explicitly: the inverse is not back-populated before a save, and `sortedTasks`
+        // reads `bundle.tasks`.
+        bundle.tasks = [included, excluded]
+        context.insert(bundle)
+        context.insert(included)
+        context.insert(excluded)
+
+        var banked = CadenceFocusTimerState()
+        banked.accumulatedSeconds = 30 * 60
+
+        _ = CadenceFocusSupport.endSession(
+            leaving: .bundle(bundle, selectedTaskIDs: [included.id]),
+            state: banked,
+            modelContext: context,
+            now: epoch
+        )
+
+        #expect(included.actualMinutes == 30)
+        #expect(excluded.actualMinutes == 0)
+    }
+
+    /// Under a whole minute writes nothing: `minutes(fromElapsedSeconds:)` rounds to the nearest
+    /// minute and a zero is not a record. `actualMinutes` is the field to assert on —
+    /// `estimatedMinutes` defaults to 30, so it would be asserting the default.
+    @Test func endingASessionUnderOneMinuteWritesNothing() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Write copy")
+        context.insert(task)
+
+        var banked = CadenceFocusTimerState()
+        banked.accumulatedSeconds = 20
+
+        _ = CadenceFocusSupport.endSession(
+            leaving: .task(task),
+            state: banked,
+            modelContext: context,
+            now: epoch
+        )
+
+        #expect(task.actualMinutes == 0)
+    }
+
+    /// Leaving with nothing loaded banks nothing and must not crash on the way through — the
+    /// `onDisappear` that calls this fires on every exit, including one from an empty screen.
+    @Test func endingWithNoSubjectBanksNothing() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+
+        var banked = CadenceFocusTimerState()
+        banked.accumulatedSeconds = 25 * 60
+
+        let next = CadenceFocusSupport.endSession(
+            leaving: nil,
+            state: banked,
+            modelContext: context,
+            now: epoch
+        )
+
+        #expect(next.elapsedSeconds(now: epoch) == 0)
+    }
+
+    /// The switching form still forwards through here, so re-selecting what is already focused is
+    /// still not "leaving" — the identity guard lives above the bank, not inside it.
+    @Test func reSelectingTheFocusedSubjectStillBanksNothing() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Write copy")
+        context.insert(task)
+
+        var banked = CadenceFocusTimerState()
+        banked.accumulatedSeconds = 12 * 60
+
+        let next = CadenceFocusSupport.commitElapsed(
+            leaving: .task(task),
+            switchingTo: .task(task.id),
+            state: banked,
+            modelContext: context,
+            now: epoch
+        )
+
+        #expect(task.actualMinutes == 0)
+        #expect(next.elapsedSeconds(now: epoch) == 12 * 60)
+    }
+
+    // MARK: - The inbox
+
+    /// Two taps on the same task are two events. Without the token they would be `Equatable`-equal
+    /// to the request already sitting in the inbox, so the `onChange` that drives navigation would
+    /// not fire and the second tap would do nothing.
+    @Test func twoRequestsForTheSameSubjectAreDistinctEvents() {
+        let center = CadenceFocusHandoffCenter()
+        let id = UUID()
+
+        center.request(.task(id))
+        let first = center.pending
+        center.request(.task(id))
+        let second = center.pending
+
+        #expect(first?.target == .task(id))
+        #expect(second?.target == .task(id))
+        #expect(first?.id != second?.id)
+    }
+
+    /// Consuming is by token, so a request made while an older one was being adopted is not
+    /// swallowed by the adopter of the older one.
+    @Test func consumingClearsOnlyTheMatchingHandoff() {
+        let center = CadenceFocusHandoffCenter()
+        center.request(.task(UUID()))
+        let stale = center.pending
+
+        center.request(.bundle(UUID()))
+        let current = center.pending
+
+        center.consume(stale!)
+        #expect(center.pending?.id == current?.id)
+
+        center.consume(current!)
+        #expect(center.pending == nil)
+    }
+
+    /// The handoff navigates through the shared routing table rather than a hand-spelled tab, so
+    /// "which tab owns Focus" has one answer. On the compact shell that is More, *pushed* — Focus
+    /// is not a tab root, and a route that cleared the stack instead would land on the More menu.
+    @Test func aHandoffRoutesToTheTabThatOwnsFocus() {
+        let route = CadenceFocusHandoff.destination.compactRoute
+
+        #expect(CadenceFocusHandoff.destination == .focus)
+        #expect(route.tab == .more)
+        #expect(route.pushedDestination == .focus)
+        #expect(route.tasksSection == nil)
+    }
+}
+
+/// The iOS wiring, read out of the source. `Cadence/iOS/` is inside `#if os(iOS)` and invisible to
+/// this macOS-built target, so source text is the only handle on it — and the lesson from T-161 is
+/// that pinning a helper while nothing observes its call sites is how a fix becomes revertible with
+/// a green suite.
+@MainActor
+struct FocusHandoffCallSiteTests {
+
+    /// The Focus screen adopts a handoff, and adopts it through the *start* rule rather than the
+    /// play control's toggle.
+    @Test func theFocusScreenAdoptsAHandoffThroughTheStartRule() throws {
+        let code = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSFocusView.swift"))
+
+        #expect(code.contains("private func accept(_ handoff: CadenceFocusHandoff)"))
+        #expect(code.components(separatedBy: "startRequestFor: handoff.target").count - 1 == 1)
+        // And not through the toggle, which would pause the session it was asked to start.
+        #expect(code.components(separatedBy: "afterPlayTapOn: handoff").count - 1 == 0)
+        // Both arrival routes: cold (the screen is built by the navigation) and warm (it was
+        // already standing behind another tab). Dropping either makes the affordance work only
+        // sometimes, which is worse than not working.
+        #expect(code.contains(".onAppear"))
+        #expect(code.components(separatedBy: "focusHandoffCenter.pending").count - 1 >= 3)
+        #expect(code.count > 8_000, "read \(code.count) characters of iOSFocusView and cannot be doing its job")
+    }
+
+    /// The shell navigates and the screen adopts — two pieces of knowledge, two places. A root view
+    /// that also decided what happens to the running clock would be the second timer authority
+    /// T-242 rejected, one level up.
+    @Test func theShellRoutesToFocusWithoutTouchingTheSession() throws {
+        let code = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSRootView.swift"))
+
+        #expect(code.contains("func routeToFocus()"))
+        #expect(code.contains("CadenceFocusHandoff.destination.compactRoute"))
+        #expect(code.contains("focusHandoffCenter.pending?.id"))
+        // No session vocabulary here at all.
+        #expect(code.contains("CadenceFocusTimerState") == false)
+        #expect(code.contains("commitElapsed") == false)
+        #expect(code.count > 4_000, "read \(code.count) characters of iOSRootView and cannot be doing its job")
+    }
+
+    /// Both affordances, and both halves of `CadenceFocusTarget`. Shipping only the task half would
+    /// leave the block half — the thing T-242 had just built — reachable from nowhere but Focus.
+    @Test func bothAffordancesRequestAHandoff() throws {
+        let rowCode = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSTaskRowActionViews.swift"))
+        let blockCode = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift"))
+
+        #expect(rowCode.contains("struct iOSTaskRowContextMenu: View"))
+        #expect(rowCode.contains("CadenceFocusHandoffCenter.shared.request(.task(task.id))"))
+
+        #expect(blockCode.contains("struct iOSCalendarBundleDetailSheet: View"))
+        #expect(blockCode.contains("CadenceFocusHandoffCenter.shared.request(.bundle(bundle.id))"))
+    }
 }

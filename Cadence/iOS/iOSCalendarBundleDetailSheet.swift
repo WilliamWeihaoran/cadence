@@ -46,6 +46,7 @@ struct iOSCalendarBundleDetailSheet: View {
                     titleSection
                     scheduleSection
                     taskSection
+                    focusSection
                     deleteSection
                 }
                 .padding(18)
@@ -193,6 +194,30 @@ struct iOSCalendarBundleDetailSheet: View {
                     }
                 }
             }
+        }
+    }
+
+    /// T-266: the block half of "start a session from somewhere other than the Focus screen".
+    ///
+    /// It lives here rather than on `iOSCalendarBoardBundleCard` and `iOSTimelineBundleBlock` —
+    /// the two surfaces that correspond to macOS's `CalendarBoardItemSupportViews` and
+    /// `TimelineBundleBlock` — because on iOS both of those *open this sheet*. macOS puts the ▶ on
+    /// the block because a pointer can reveal a control without committing to it; a finger cannot,
+    /// so a permanently visible play glyph on every block card is clutter on the one surface whose
+    /// whole job is reading a day at a glance. One entry here is reachable from both.
+    ///
+    /// The session is started before the sheet is dismissed, not after: the request is a value in
+    /// an inbox, so the shell can route underneath while this is still on screen, and there is no
+    /// dismissal callback to hang the second half on.
+    private var focusSection: some View {
+        iOSActionButton(
+            title: "Focus This Block",
+            systemImage: CadenceFeatureDestination.focus.systemImage,
+            tint: Theme.amber,
+            fullWidth: true
+        ) {
+            CadenceFocusHandoffCenter.shared.request(.bundle(bundle.id))
+            dismiss()
         }
     }
 

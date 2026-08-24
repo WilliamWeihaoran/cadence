@@ -6,6 +6,9 @@ struct iOSFocusView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// The inbox a "Focus this" tap from a task row or a block sheet arrives in. This screen is the
+    /// only thing that adopts one, because this screen is where the clock lives.
+    @Environment(CadenceFocusHandoffCenter.self) private var focusHandoffCenter
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query private var allBundles: [TaskBundle]
@@ -44,8 +47,18 @@ struct iOSFocusView: View {
     /// chosen the head of the list is offered.
     private var selectedItem: CadenceFocusPickItem? {
         guard let selectedTarget else { return pickItems.first }
-        if let match = pickItems.first(where: { $0.target == selectedTarget }) { return match }
-        switch selectedTarget {
+        return pickItem(for: selectedTarget)
+    }
+
+    /// Resolve a target to a row, falling back to the whole store when the picker does not list it.
+    ///
+    /// The fallback is not a nicety here: a handoff arrives from surfaces that have no idea what
+    /// "ready" means — a task do-dated next month has a context menu like any other — so a lookup
+    /// confined to `pickItems` would make "Focus this" silently do nothing on exactly the tasks a
+    /// user had to go looking for.
+    private func pickItem(for target: CadenceFocusTarget) -> CadenceFocusPickItem? {
+        if let match = pickItems.first(where: { $0.target == target }) { return match }
+        switch target {
         case .task(let id):
             return allTasks.first { $0.id == id }.map(CadenceFocusPickItem.task)
         case .bundle(let id):
@@ -82,9 +95,34 @@ struct iOSFocusView: View {
         .background(Theme.bg.ignoresSafeArea())
         .iOSHidesCompactNavigationBar()
         .onAppear {
-            if selectedTarget == nil, let first = pickItems.first {
+            if let handoff = focusHandoffCenter.pending {
+                accept(handoff)
+            } else if selectedTarget == nil, let first = pickItems.first {
                 adopt(first)
             }
+        }
+        // The screen may already be standing when the request is made — the compact shell keeps a
+        // visited tab's stack alive behind the one on screen — so arriving is not the only way a
+        // handoff lands. `onAppear` covers the cold route (More has never been visited, or was
+        // showing something else); this covers the warm one, where there is a running session to
+        // be banked before the new subject takes the clock.
+        .onChange(of: focusHandoffCenter.pending?.id) { _, _ in
+            if let handoff = focusHandoffCenter.pending {
+                accept(handoff)
+            }
+        }
+        // Leaving the screen banks what the session earned, the same act macOS calls
+        // `FocusManager.endSession()`. Without it, backing out of Focus threw the minutes away —
+        // and a route *into* Focus from a task row makes backing straight out of it the common
+        // case rather than a rare one. A tab switch is not a disappear here: the compact shell
+        // keeps every visited tab in the hierarchy at zero opacity, so this fires on a genuine pop
+        // or a sidebar change, which are the two ways the session's state is actually destroyed.
+        .onDisappear {
+            timerState = CadenceFocusSupport.endSession(
+                leaving: selectedSubject,
+                state: timerState,
+                modelContext: modelContext
+            )
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
@@ -500,6 +538,30 @@ struct iOSFocusView: View {
             modelContext: modelContext
         )
         adopt(item)
+    }
+
+    /// Adopt a session handed over from another surface, and start it running.
+    ///
+    /// Routed through `select(_:)` rather than calling `commitElapsed` a third time: leaving the
+    /// outgoing subject is the same act here as it is in the picker, and a second body for it is
+    /// how a commit path acquires a branch that forgets to bank. What this adds on top is the
+    /// *start*, and it deliberately does not use the play control's rule —
+    /// `timerState(afterPlayTapOn:…)` toggles, so asking to focus the task already running would
+    /// pause it. `timerState(startRequestFor:…)` never pauses.
+    ///
+    /// The outgoing target is read before `select(_:)` moves it, because "did the subject change"
+    /// is the question that decides whether the clock restarts at zero.
+    private func accept(_ handoff: CadenceFocusHandoff) {
+        defer { focusHandoffCenter.consume(handoff) }
+        guard let item = pickItem(for: handoff.target) else { return }
+
+        let outgoingTarget = selectedItem?.target
+        select(item)
+        timerState = CadenceFocusSupport.timerState(
+            startRequestFor: handoff.target,
+            selectedTarget: outgoingTarget,
+            state: timerState
+        )
     }
 
     /// Start, or pause, from the row itself — the second way the selection can move, so it commits

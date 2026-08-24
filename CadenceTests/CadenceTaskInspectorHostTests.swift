@@ -245,11 +245,24 @@ struct CadenceTaskInspectorHostTests {
         )
     }
 
-    /// One host, applied once, above both shells — the same "both shells, one call" placement
-    /// `cadenceStartupIssueBanner` has, and for the same reason. The two live mentions are the
-    /// declaration and that single application; a second application anywhere would mean two hosts
-    /// racing to present, which on iOS means the inner one silently does nothing.
-    @Test func exactlyOneHostIsInstalledAndItIsAboveBothShells() throws {
+    /// One host above both shells, plus one **inside** the one sheet that presents a whole page.
+    ///
+    /// This test read "exactly one" and said a second application "would mean two hosts racing to
+    /// present, which on iOS means the inner one silently does nothing". The second half is
+    /// backwards, and `iOSTaskInspectorHost`'s own documentation has always said so: the
+    /// environment resolves to the **innermost** host, and it is the *outer* one that does nothing
+    /// — it is already presenting the sheet, so a request from inside cannot open anything. That
+    /// is the same fact the five-presenter test above records when it says three of the four
+    /// exceptions "present from inside a sheet, where a host above the sheet is the wrong owner".
+    ///
+    /// So the exception is stated positively rather than the assertion loosened: still an exact
+    /// set, so a third application anywhere is still a failure. `iOSTodayOverdueListSheet` (T-195,
+    /// second half) presents `iOSListDetailView` — a whole page of task rows, every one of which
+    /// asks the environment for the inspector — from Today's past-due summary cards. A nested host
+    /// is what those rows reach; without it every one of them is a dead tap, which is the defect
+    /// class this whole suite exists to catch. It costs the five-presenter count nothing: the host
+    /// is the presenter, so `iOSTaskDetailSheet(` still appears in exactly five files.
+    @Test func theHostIsInstalledAboveBothShellsAndInsideTheOneSheetThatCarriesAPage() throws {
         var applications: [String: Int] = [:]
         for path in try swiftFiles(under: "Cadence") {
             let count = try strippingComments(sourceFile(path))
@@ -262,7 +275,9 @@ struct CadenceTaskInspectorHostTests {
         #expect(
             applications == [
                 "Cadence/iOS/iOSTaskInspectorHost.swift": 1,
-                "Cadence/iOS/iOSRootView.swift": 1
+                "Cadence/iOS/iOSRootView.swift": 1,
+                // The nearer owner, inside a sheet the root host cannot present through.
+                "Cadence/iOS/iOSTodayTaskSections.swift": 1
             ],
             "iOSTaskInspectorHost applications changed: \(applications)"
         )

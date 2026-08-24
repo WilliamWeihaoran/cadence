@@ -20,6 +20,9 @@ enum iOSSidebarItem: Hashable {
 
 struct iOSRootView: View {
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
+    /// T-266. "Focus this" from a task row or a block sheet lands here as a `CadenceFocusHandoff`;
+    /// this view is the only thing that can answer it, because navigation state lives here.
+    @Environment(CadenceFocusHandoffCenter.self) private var focusHandoffCenter
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Area.order) private var areas: [Area]
@@ -90,6 +93,13 @@ struct iOSRootView: View {
         }
         .onChange(of: deepLinkManager.route?.token) { _, _ in
             handleDeepLinkRoute()
+        }
+        // The shell navigates; the Focus screen adopts. Split that way because they are two
+        // different pieces of knowledge — which tab owns Focus, and what happens to the session
+        // already on the clock — and only one of them belongs to a root view.
+        .onChange(of: focusHandoffCenter.pending?.id) { _, pending in
+            guard pending != nil else { return }
+            routeToFocus()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active {
@@ -162,6 +172,25 @@ private extension iOSRootView {
         let destination = deepLink.featureDestination
         selection = destination.item
         apply(deepLink.compactRoute)
+    }
+
+    /// Show the Focus screen on whichever shell is up, without disturbing a Focus screen already
+    /// standing.
+    ///
+    /// The route comes from `CadenceCompactRoute` rather than being spelled here, so "the More tab,
+    /// pushed" has one source and stays true if Focus ever moves. The equality guard is the part
+    /// that is not decoration: replacing the stack with an equal-valued `NavigationPath` while the
+    /// user is *on* Focus risks handing SwiftUI a fresh view identity, and a fresh `iOSFocusView`
+    /// is a fresh `@State` clock — the running session would vanish at the exact moment the
+    /// handoff was meant to be banked into it.
+    func routeToFocus() {
+        let route = CadenceFocusHandoff.destination.compactRoute
+        selection = CadenceFocusHandoff.destination.item
+        selectedTabRaw = route.tab.rawValue
+        let path = route.pushedDestination.map { NavigationPath([$0]) } ?? NavigationPath()
+        if compactPaths[route.tab] != path {
+            compactPaths[route.tab] = path
+        }
     }
 
     /// Only the target tab's stack is touched. Pushing onto — or clearing — a tab the link did not

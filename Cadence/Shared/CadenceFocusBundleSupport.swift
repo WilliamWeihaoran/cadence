@@ -262,7 +262,27 @@ extension CadenceFocusSupport {
         now: Date = Date()
     ) -> CadenceFocusTimerState {
         guard outgoing?.target != next else { return state }
+        return endSession(leaving: outgoing, state: state, modelContext: modelContext, now: now)
+    }
 
+    /// Leave a focus session for **nothing**: bank the seconds it earned and clear the clock.
+    ///
+    /// The half of `commitElapsed(leaving:switchingTo:…)` that is not about the incoming subject,
+    /// named after the act macOS spells `FocusManager.endSession()` — closing a session is the same
+    /// act of leaving one, so it banks the same way. It exists separately because the switching
+    /// form cannot express it: its first parameter of that decision is "am I being handed the
+    /// subject I already have", and there is no target to compare against when you are simply
+    /// walking away from the screen.
+    ///
+    /// Same two silences as the switching form, deliberately: no subject writes nothing, and a
+    /// clock under a whole minute writes nothing, because `minutes(fromElapsedSeconds:)` rounds to
+    /// the nearest minute and a zero is not worth a `save()`.
+    static func endSession(
+        leaving outgoing: CadenceFocusSubject?,
+        state: CadenceFocusTimerState,
+        modelContext: ModelContext,
+        now: Date = Date()
+    ) -> CadenceFocusTimerState {
         var reset = state
         reset.reset()
 
@@ -287,6 +307,34 @@ extension CadenceFocusSupport {
     /// Tapping a *different* row's control starts that subject from zero rather than inheriting the
     /// elapsed count: the seconds on the clock were measured against what they were started on, and
     /// carrying them over would log one subject's minutes onto another.
+    /// The stopwatch state after a session is **handed over** from another surface — a task row's
+    /// context menu, a block's inspector — as opposed to tapped on a pick row.
+    ///
+    /// The difference from `timerState(afterPlayTapOn:…)` is the one that matters, and it is why
+    /// this is a second function rather than a second caller of that one: a play control *toggles*,
+    /// so routing a handoff through it would **pause** the session when the subject asked for is
+    /// the subject already running. "Focus this" is never a pause. Asking for the running subject
+    /// therefore leaves its clock exactly where it is rather than restarting it at zero, which
+    /// would silently discard the minutes measured so far.
+    ///
+    /// A *different* subject still starts from zero, for the reason the play control does: the
+    /// seconds on the clock were earned by what they were started on. Banking them is the caller's
+    /// job, through `commitElapsed(leaving:switchingTo:…)`, before this is reached.
+    static func timerState(
+        startRequestFor requested: CadenceFocusTarget,
+        selectedTarget: CadenceFocusTarget?,
+        state: CadenceFocusTimerState,
+        now: Date = Date()
+    ) -> CadenceFocusTimerState {
+        var next = state
+        if selectedTarget != requested {
+            next.reset()
+        }
+        guard !next.isRunning else { return next }
+        next.toggle(now: now)
+        return next
+    }
+
     static func timerState(
         afterPlayTapOn tapped: CadenceFocusTarget,
         selectedTarget: CadenceFocusTarget?,
