@@ -144,19 +144,55 @@ final class RemindersManager {
         }
     }
 
-    func completeReminder(id: String) {
-        guard isAuthorized,
-              let reminder = store.calendarItem(withIdentifier: id) as? EKReminder,
-              reminder.calendar.allowsContentModifications else { return }
+    /// **T-255.** This returned `Void` and had four ways to do nothing — not authorized, the
+    /// identifier no longer resolving, a list that refuses content modifications, and a `save`
+    /// throw that only `print`ed — while both Inbox rows had already animated themselves to
+    /// completed. The row could not tell success from any of the four, so it stayed ticked over a
+    /// reminder Apple Reminders still had open until the next relaunch un-ticked it.
+    ///
+    /// The refusal ordering is `AppleReminderCompletionOutcome.refusal(...)` rather than a `guard`
+    /// chain, so it is a value the test target can exercise without an EventKit grant, and the
+    /// rows turn whatever comes back into `AppleReminderCompletionResolution` — one policy for
+    /// both platforms.
+    ///
+    /// Two outcomes also reconcile the *manager's* own view of the world before returning, because
+    /// in both the row is being shown something that is no longer true: a lost grant re-derives
+    /// authorization (which replaces every row with the access card, and is why that outcome's
+    /// resolution says nothing itself), and an unresolvable identifier refetches.
+    @discardableResult
+    func completeReminder(id: String) -> AppleReminderCompletionOutcome {
+        // Not queried at all while unauthorized — `refusal` answers `.notAuthorized` first
+        // regardless, and an unauthorized store has nothing to say about an identifier.
+        let reminder = isAuthorized ? store.calendarItem(withIdentifier: id) as? EKReminder : nil
+
+        if let refusal = AppleReminderCompletionOutcome.refusal(
+            isAuthorized: isAuthorized,
+            reminderResolves: reminder != nil,
+            allowsContentModifications: reminder?.calendar.allowsContentModifications ?? false
+        ) {
+            switch refusal {
+            case .notAuthorized:
+                refreshAuthorizationState()
+            case .reminderUnavailable:
+                reload()
+            default:
+                break
+            }
+            return refusal
+        }
+
+        guard let reminder else { return .reminderUnavailable }
 
         reminder.isCompleted = true
         reminder.completionDate = Date()
         do {
             try store.save(reminder, commit: true)
             reminders.removeAll { $0.id == id }
+            return .completed
         } catch {
             print("RemindersManager: failed to complete reminder: \(error)")
             reload()
+            return .saveFailed
         }
     }
 

@@ -31,7 +31,7 @@ struct InboxAppleRemindersSectionView: View {
     let isLoading: Bool
     let onRequestAccess: () -> Void
     let onOpenSettings: () -> Void
-    let onComplete: (String) -> Void
+    let onComplete: (String) -> AppleReminderCompletionOutcome
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -82,11 +82,51 @@ struct InboxAppleRemindersSectionView: View {
 
 private struct AppleReminderTaskRow: View {
     let reminder: AppleReminderItem
-    let onComplete: (String) -> Void
+    let onComplete: (String) -> AppleReminderCompletionOutcome
     @State private var isHovered = false
     @State private var isCompleting = false
+    /// **T-255.** Set from `AppleReminderCompletionResolution.notice` when the write came back
+    /// refused and nothing else on screen is going to explain it. Cleared the moment the row is
+    /// tapped again, so a stale sentence cannot outlive the attempt it describes.
+    @State private var failureNotice: String?
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            row
+
+            // **T-255.** Only ever present after a refused write, so the row keeps its single-line
+            // shape in the state it is in almost all of the time.
+            if let failureNotice {
+                Text(failureNotice)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.red)
+                    .lineLimit(2)
+                    // Aligned under the title rather than under the priority strip: 8 + 3 for the
+                    // strip and its inset, 8 + 18 + 8 for the completion button and its padding.
+                    .padding(.leading, 45)
+                    .padding(.trailing, 6)
+            }
+        }
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isHovered ? Theme.purple.opacity(0.06) : Color.clear)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isHovered ? Theme.purple.opacity(0.18) : Color.clear, lineWidth: 1)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.borderSubtle.opacity(0.22)).frame(height: 0.5)
+        }
+        .opacity(isCompleting ? 0.65 : 1)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.16), value: isCompleting)
+        .animation(.easeOut(duration: 0.16), value: failureNotice)
+    }
+
+    private var row: some View {
         HStack(spacing: 0) {
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(priorityColor)
@@ -139,22 +179,6 @@ private struct AppleReminderTaskRow: View {
             .padding(.leading, 6)
             .padding(.trailing, 6)
         }
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isHovered ? Theme.purple.opacity(0.06) : Color.clear)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(isHovered ? Theme.purple.opacity(0.18) : Color.clear, lineWidth: 1)
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.borderSubtle.opacity(0.22)).frame(height: 0.5)
-        }
-        .opacity(isCompleting ? 0.65 : 1)
-        .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.16), value: isCompleting)
     }
 
     /// Both tints are `AppleReminderRowPresentation`'s rather than this row's own. They were
@@ -189,9 +213,23 @@ private struct AppleReminderTaskRow: View {
         guard reminder.allowsCompletion, !isCompleting else { return }
         withAnimation(.easeOut(duration: 0.16)) {
             isCompleting = true
+            failureNotice = nil
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            onComplete(reminder.id)
+            apply(AppleReminderCompletionResolution.resolve(onComplete(reminder.id)))
+        }
+    }
+
+    /// **T-255.** The tick led the write and nothing ever came back, so a refused completion left
+    /// this row struck through over a reminder Apple Reminders still had open. The optimistic
+    /// animation stays — it has to land before the reload removes the row — and this is the
+    /// reconcile it never had. The policy is `AppleReminderCompletionResolution`'s, shared with
+    /// `iOSInboxReminderRow`, so the two rows cannot come to disagree about what a failure means.
+    private func apply(_ resolution: AppleReminderCompletionResolution) {
+        guard resolution.revertsTick else { return }
+        withAnimation(.easeOut(duration: 0.16)) {
+            isCompleting = false
+            failureNotice = resolution.notice
         }
     }
 }

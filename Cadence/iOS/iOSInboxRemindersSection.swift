@@ -151,9 +151,13 @@ struct iOSInboxRemindersSection: View {
 /// only chrome. One layer, at one radius.
 private struct iOSInboxReminderRow: View {
     let reminder: AppleReminderItem
-    let onComplete: (String) -> Void
+    let onComplete: (String) -> AppleReminderCompletionOutcome
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var isCompleting = false
+    /// **T-255.** Set from `AppleReminderCompletionResolution.notice` when the write came back
+    /// refused and nothing else on screen is going to explain it. Cleared the moment the row is
+    /// tapped again, so a stale sentence cannot outlive the attempt it describes.
+    @State private var failureNotice: String?
 
     private var metrics: CadenceTaskRowMetrics {
         .metrics(isRegularWidth: horizontalSizeClass == .regular)
@@ -172,6 +176,17 @@ private struct iOSInboxReminderRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 metadata
+
+                // **T-255.** Only ever present after a refused write, so the row keeps its usual
+                // shape in the state it is in almost all of the time. Inside the title column, so
+                // it sits under the sentence it is about rather than under the completion circle.
+                if let failureNotice {
+                    Text(failureNotice)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         .padding(.horizontal, metrics.horizontalPadding)
@@ -184,6 +199,7 @@ private struct iOSInboxReminderRow: View {
         }
         .opacity(isCompleting ? 0.65 : 1)
         .animation(.easeOut(duration: 0.16), value: isCompleting)
+        .animation(.easeOut(duration: 0.16), value: failureNotice)
     }
 
     /// The circle carries priority and nothing else, exactly as `iOSTaskRow`'s does — and it is the
@@ -256,9 +272,24 @@ private struct iOSInboxReminderRow: View {
         guard reminder.allowsCompletion, !isCompleting else { return }
         withAnimation(.easeOut(duration: 0.16)) {
             isCompleting = true
+            failureNotice = nil
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            onComplete(reminder.id)
+            apply(AppleReminderCompletionResolution.resolve(onComplete(reminder.id)))
+        }
+    }
+
+    /// **T-255.** The tick led the write and nothing ever came back, so a refused completion left
+    /// this row struck through over a reminder Apple Reminders still had open. The optimistic
+    /// animation stays — it has to land before the reload removes the row — and this is the
+    /// reconcile it never had. The policy is `AppleReminderCompletionResolution`'s, shared with
+    /// macOS's `AppleReminderTaskRow`, so the two rows cannot come to disagree about what a
+    /// failure means.
+    private func apply(_ resolution: AppleReminderCompletionResolution) {
+        guard resolution.revertsTick else { return }
+        withAnimation(.easeOut(duration: 0.16)) {
+            isCompleting = false
+            failureNotice = resolution.notice
         }
     }
 }

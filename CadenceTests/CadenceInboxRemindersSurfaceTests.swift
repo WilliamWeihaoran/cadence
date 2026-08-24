@@ -321,6 +321,167 @@ struct CadenceInboxRemindersSurfaceTests {
         )
     }
 
+    // MARK: - T-255: a completion that fails does not stay ticked
+
+    /// **The refusal ordering, as a value.** It used to be a `guard` chain inside a method
+    /// returning `Void`, which is why four separate failures were indistinguishable from success.
+    /// Authorization is asked first because an unauthorized store cannot be trusted to resolve an
+    /// identifier at all; "gone" beats "read-only" for the same reason — there is no list to ask
+    /// about a reminder that is not there.
+    @Test func theCompletionRefusalsAreOrderedFromTheOutsideIn() {
+        #expect(
+            AppleReminderCompletionOutcome.refusal(
+                isAuthorized: false,
+                reminderResolves: false,
+                allowsContentModifications: false
+            ) == .notAuthorized
+        )
+        // Authorization wins even when the two inner answers are fine.
+        #expect(
+            AppleReminderCompletionOutcome.refusal(
+                isAuthorized: false,
+                reminderResolves: true,
+                allowsContentModifications: true
+            ) == .notAuthorized
+        )
+        #expect(
+            AppleReminderCompletionOutcome.refusal(
+                isAuthorized: true,
+                reminderResolves: false,
+                allowsContentModifications: true
+            ) == .reminderUnavailable
+        )
+        #expect(
+            AppleReminderCompletionOutcome.refusal(
+                isAuthorized: true,
+                reminderResolves: true,
+                allowsContentModifications: false
+            ) == .listIsReadOnly
+        )
+        // The one combination that lets the write through.
+        #expect(
+            AppleReminderCompletionOutcome.refusal(
+                isAuthorized: true,
+                reminderResolves: true,
+                allowsContentModifications: true
+            ) == nil
+        )
+    }
+
+    /// **The bug, stated on a value.** The tick asserts "Apple Reminders has this completed", so
+    /// only the outcome that confirms a save may leave it standing. Every other outcome — the
+    /// three refusals and the `save` throw — has to put the row back, or the user is looking at a
+    /// completed reminder that Apple Reminders still has open until the next relaunch un-ticks it.
+    @Test func onlyAConfirmedSaveLeavesTheRowTicked() {
+        #expect(AppleReminderCompletionResolution.resolve(.completed) == .keepCompleted)
+        #expect(!AppleReminderCompletionResolution.resolve(.completed).revertsTick)
+
+        for outcome: AppleReminderCompletionOutcome in [
+            .notAuthorized, .reminderUnavailable, .listIsReadOnly, .saveFailed
+        ] {
+            #expect(
+                AppleReminderCompletionResolution.resolve(outcome).revertsTick,
+                "\(outcome) leaves the row ticked over a reminder Apple Reminders still has open"
+            )
+        }
+    }
+
+    /// **Revert *and* say why — but only where nothing else will.** A tick that quietly undoes
+    /// itself reads as a misclick, so silence is not the whole answer; an alert on every transient
+    /// EventKit refusal is noise, and arrives per row when a sync conflict or a revoked grant hits
+    /// a whole list at once. `.notAuthorized` is the one case that stays silent, because the
+    /// section replaces every row with its access card and says far more than a line under one row
+    /// could.
+    @Test func onlyTheOutcomeTheSurfaceAlreadyExplainsRevertsSilently() {
+        #expect(AppleReminderCompletionResolution.resolve(.notAuthorized) == .revertSilently)
+        #expect(AppleReminderCompletionResolution.resolve(.notAuthorized).notice == nil)
+        #expect(AppleReminderCompletionResolution.resolve(.completed).notice == nil)
+
+        for outcome: AppleReminderCompletionOutcome in [.reminderUnavailable, .listIsReadOnly, .saveFailed] {
+            let notice = AppleReminderCompletionResolution.resolve(outcome).notice
+            #expect(notice != nil, "\(outcome) reverts the tick with no explanation at all")
+            #expect(notice?.isEmpty == false)
+        }
+
+        // Three distinct sentences: a reminder that is gone, a list that will not take writes and
+        // a save that threw are three different things to do about it.
+        let notices = [
+            AppleReminderCompletionOutcome.reminderUnavailable,
+            .listIsReadOnly,
+            .saveFailed
+        ].compactMap { AppleReminderCompletionResolution.resolve($0).notice }
+        #expect(Set(notices).count == 3, "two failures share one sentence")
+    }
+
+    /// **The production method, exercised.** Everything above is pure; this is the real
+    /// `RemindersManager` answering a completion that cannot possibly succeed — no grant needed,
+    /// and true whether or not this host happens to have one, because no store contains this
+    /// identifier. Under the old signature there was nothing to return and nothing to assert.
+    @MainActor
+    @Test func theManagerReportsACompletionItCouldNotPerform() {
+        let outcome = RemindersManager.shared.completeReminder(id: "cadence-t255-no-such-reminder")
+
+        #expect(outcome != .completed, "a reminder that does not exist reported a successful save")
+        #expect(
+            AppleReminderCompletionResolution.resolve(outcome).revertsTick,
+            "the row would keep its tick after a completion that never happened"
+        )
+    }
+
+    /// **The call-site pin.** The policy above is infrastructure until both rows apply it —
+    /// exactly the "cannot fail at all" shape this file's own header warns about. A positive scan,
+    /// which is the polarity `Cadence/Shared/AGENTS.md` recommends: a row that goes back to
+    /// discarding the outcome, or grows its own second policy, fails here. iOS has no other tool
+    /// available — `Cadence/iOS/` is invisible to a macOS-built test target — and macOS's row is
+    /// `private` inside a view file, so neither is referenceable.
+    @Test func bothReminderRowsApplyTheOneCompletionPolicy() throws {
+        try expectCallSites(
+            of: "AppleReminderCompletionResolution.resolve",
+            at: [
+                "Cadence/macOS/Views/InboxSupportViews.swift": 1,
+                "Cadence/iOS/iOSInboxRemindersSection.swift": 1,
+            ]
+        )
+
+        for path in [
+            "Cadence/macOS/Views/InboxSupportViews.swift",
+            "Cadence/iOS/iOSInboxRemindersSection.swift",
+        ] {
+            let source = try strippingComments(sourceFile(path))
+            #expect(
+                source.contains("let onComplete: (String) -> AppleReminderCompletionOutcome"),
+                "\(path) takes a completion handler that cannot report a failure again"
+            )
+            #expect(
+                source.contains("resolution.revertsTick"),
+                "\(path) stopped asking the shared policy whether to put the tick back"
+            )
+            #expect(
+                source.contains("failureNotice = resolution.notice"),
+                "\(path) stopped showing the shared policy's sentence"
+            )
+        }
+    }
+
+    /// The manager has to hand the answer back at all. Pinned on the declaration rather than on
+    /// its callers, so a revert to `-> Void` fails here even if a caller is deleted at the same
+    /// time — and the refusal ordering has to stay the shared one rather than becoming a second
+    /// `guard` chain that no test can reach.
+    @Test func theManagerReturnsTheWritesAnswerAndDoesNotRespellTheRefusals() throws {
+        let source = try strippingComments(sourceFile("Cadence/Services/CadenceRemindersManager.swift"))
+
+        #expect(
+            source.contains("func completeReminder(id: String) -> AppleReminderCompletionOutcome"),
+            "RemindersManager.completeReminder discards the write's answer again"
+        )
+        #expect(
+            source.contains("AppleReminderCompletionOutcome.refusal("),
+            "RemindersManager stopped reading the shared refusal ordering"
+        )
+        #expect(source.contains("return .completed"), "the success path stopped reporting success")
+        #expect(source.contains("return .saveFailed"), "a save throw stopped reporting a failure")
+    }
+
     // MARK: - The row's two tints
 
     /// EventKit's priority is inverted — **1 is the most urgent, 9 the least** — and 0 means unset.

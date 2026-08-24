@@ -216,3 +216,111 @@ enum AppleReminderRowPresentation {
         return dayOffset == 0 ? Theme.amber : Theme.dim
     }
 }
+
+/// What `RemindersManager.completeReminder(id:)` actually did.
+///
+/// **T-255.** That method used to return `Void` and had four ways to do nothing: not authorized,
+/// the identifier no longer resolving, a calendar that refuses content modifications, and a
+/// `store.save` throw that only `print`ed. Both Inbox rows tick optimistically — set
+/// `isCompleting`, animate to struck-through at 0.65 opacity, then call through 220ms later — and
+/// `isCompleting` is local `@State` that nothing ever resets, so every one of those four exits left
+/// a row visibly ticked over a reminder Apple Reminders still had open. The next relaunch un-ticked
+/// it silently.
+///
+/// Optimistic is still the right shape here: the success path is the common one, and the tick has
+/// to land *before* the reload removes the row or the gesture has no visible result at all. What
+/// was missing is the reconcile, so the write now answers and the row applies
+/// `AppleReminderCompletionResolution` to that answer.
+/// `nonisolated`, unlike its neighbours in this file: both of these are pure decisions over their
+/// arguments, and the default `MainActor` isolation would otherwise put the synthesized `Equatable`
+/// conformance on the main actor and warn at every `#expect` that compares one from a nonisolated
+/// test context. Same spelling and same reason as `TaskOrdering` and `TaskDragPayload`.
+nonisolated enum AppleReminderCompletionOutcome: Equatable, Sendable {
+    /// EventKit saved it. This is the **only** outcome that may leave the tick standing.
+    case completed
+    /// Access is gone — most often revoked from the Settings app while this page stayed open.
+    case notAuthorized
+    /// The identifier no longer resolves to a reminder: completed or deleted somewhere else.
+    case reminderUnavailable
+    /// The reminder's list refuses content modifications. The row disables its button for the
+    /// same reason, but that comes from the snapshot taken at fetch time, so a list that turned
+    /// read-only afterwards reaches here with an enabled control.
+    case listIsReadOnly
+    /// EventKit's `save` threw. Transient (a sync conflict) or not; either way nothing was written.
+    case saveFailed
+
+    /// The three refusals reachable before `store.save` is ever called, in the order the manager
+    /// has to ask them: authorization first (an unauthorized store cannot be trusted to resolve
+    /// anything), then whether the item is still there, then whether its list will take a write.
+    /// `nil` means the write may proceed.
+    ///
+    /// Extracted from the manager for the same reason `isDenied(status:deniedInThisSession:)` is:
+    /// it is the decision, EventKit is not available to the test target without a real grant, and
+    /// a `guard` chain inside a method returning `Void` is exactly what hid this bug.
+    static func refusal(
+        isAuthorized: Bool,
+        reminderResolves: Bool,
+        allowsContentModifications: Bool
+    ) -> AppleReminderCompletionOutcome? {
+        if !isAuthorized { return .notAuthorized }
+        if !reminderResolves { return .reminderUnavailable }
+        if !allowsContentModifications { return .listIsReadOnly }
+        return nil
+    }
+}
+
+/// What the row does with that answer: whether the tick stands, and what — if anything — the row
+/// says about it.
+///
+/// **The rule is that the tick may not assert an outcome EventKit did not confirm**, so everything
+/// but `.completed` reverts. The interesting half is the second one, and it is deliberately not
+/// uniform:
+///
+/// - **Revert alone is confusing.** A tick that quietly undoes itself reads as a misclick, and the
+///   user's next move is to tap it again, which fails again.
+/// - **An alert on every failure is noise, and worse than noise here.** Three of these arrive in
+///   bursts — a revoked grant, or an iCloud sync conflict, hits every visible row at once — so a
+///   modal per row is a queue of sheets over a list the user was only scanning. It also steals
+///   focus for something a second tap may well fix.
+///
+/// So: revert always, and speak only when nothing else on screen will. `.notAuthorized` is the one
+/// case where something else does — the section replaces every row with its access card, which says
+/// far more than a line under one row could — so that one reverts silently. The rest carry a short
+/// inline notice on the row itself: non-modal, tied to the thing that failed, and gone as soon as
+/// the row is tapped again or reloaded away.
+nonisolated enum AppleReminderCompletionResolution: Equatable, Sendable {
+    /// Leave the tick. The row is on its way out of a list it does not own.
+    case keepCompleted
+    /// Undo the tick and say nothing — the surface around the row is already explaining it.
+    case revertSilently
+    /// Undo the tick and show this sentence on the row.
+    case revertWithNotice(String)
+
+    static func resolve(_ outcome: AppleReminderCompletionOutcome) -> AppleReminderCompletionResolution {
+        switch outcome {
+        case .completed:
+            return .keepCompleted
+        case .notAuthorized:
+            return .revertSilently
+        case .reminderUnavailable:
+            // Honest about the one thing Cadence knows: the item is not there to complete. If it
+            // really is gone the reload takes the row with it and this is never read; if the
+            // lookup was merely stale, the row stays and un-ticked is the truthful state.
+            return .revertWithNotice("That reminder is no longer in Apple Reminders.")
+        case .listIsReadOnly:
+            return .revertWithNotice("Apple Reminders will not let Cadence change this list.")
+        case .saveFailed:
+            return .revertWithNotice("Apple Reminders did not save that. Try again.")
+        }
+    }
+
+    /// `false` only for `.completed`. Read by both rows so neither can invent a fifth policy.
+    var revertsTick: Bool {
+        self != .keepCompleted
+    }
+
+    var notice: String? {
+        guard case let .revertWithNotice(text) = self else { return nil }
+        return text
+    }
+}
