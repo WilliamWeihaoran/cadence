@@ -8,6 +8,11 @@ import SwiftUI
 /// the board canvas (`Theme.bg`); a rail sits on `Theme.surfaceRecessed`, because a rail is an
 /// *inbox* — Overdue and Unscheduled are not dates, and must not read as though they were. The
 /// recess is also what tells the eye these two columns are pinned while the days scroll past them.
+///
+/// **`form` is a reduction, not a fork** (T-251). The plate, the insets, the closing hairline, the
+/// drop destination and the accessibility label are the same in both forms and are applied once, to
+/// the whole column; only what is inside changes. That is what keeps a collapsed rail a working
+/// drop target for the drag it exists to receive.
 struct CalendarBoardRailColumn: View {
     let rail: CalendarBoardRail
     let tasks: [AppTask]
@@ -15,27 +20,25 @@ struct CalendarBoardRailColumn: View {
     /// `.presentSheet`: a backlog has neither a day nor a list, so there is nothing for the inline
     /// composer the day columns use to pre-fill.
     let add: KanbanColumnAddBehavior?
+    /// Full inbox column, or the identity strip the board falls back to when the pane cannot pay
+    /// for two of them and a whole day column. See `CadenceCalendarBoardLayout`.
+    var form: CadenceCalendarBoardRailForm = .expanded
+    /// `nil` above `CadenceCalendarBoardLayout.expandedRailsMinimumWidth`, where the form is not the
+    /// user's to change. Below it this both expands a collapsed rail and closes an expanded one, so
+    /// there is exactly one control and one piece of state behind the toggle.
+    var onToggleForm: (() -> Void)? = nil
     let onDrop: ([String]) -> Bool
 
     @State private var isDropTargeted = false
     @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            CadenceBoardColumnHeader(dotColor: rail.dotColor, title: rail.label, count: tasks.count)
-
-            KanbanColumnScroll(isColumnHovered: isHovered, add: add) {
-                ForEach(tasks) { task in
-                    KanbanCard(task: task, showsContainerChip: true)
-                        .draggable(TaskDragPayload.string(for: task.id))
-                }
-            }
-        }
+        content
         // Matches `CalendarBoardDayColumn`'s insets exactly so the rail header sits on the same
         // baseline as the day headers even though the rail is narrower.
-        .padding(.horizontal, 8)
+        .padding(.horizontal, CadenceCalendarBoardLayout.railHorizontalPadding)
         .padding(.vertical, 10)
-        .frame(width: calendarBoardRailWidth)
+        .frame(width: CadenceCalendarBoardLayout.railWidth(form: form))
         .frame(maxHeight: .infinity, alignment: .top)
         .onHover { isHovered = $0 }
         .background(Theme.surfaceRecessed)
@@ -62,6 +65,87 @@ struct CalendarBoardRailColumn: View {
             onTargetChange: { isDropTargeted = $0 }
         ))
         .accessibilityLabel("\(rail.label.capitalized), \(tasks.count) task\(tasks.count == 1 ? "" : "s")")
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch form {
+        case .expanded:  expandedContent
+        case .collapsed: collapsedContent
+        }
+    }
+
+    private var expandedContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            CadenceBoardColumnHeader(dotColor: rail.dotColor, title: rail.label, count: tasks.count) {
+                // The shared header's own trailing slot — the same one the section board puts its
+                // completion and overflow buttons in. A second chrome layer for one chevron is
+                // exactly the near-copy the board components exist to avoid.
+                if let onToggleForm {
+                    Button(action: onToggleForm) {
+                        Image(systemName: rail == .overdue ? "chevron.left" : "chevron.right")
+                            .font(.system(size: CadenceBoardColumnHeaderMetrics.labelSize, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                            .frame(width: 16, height: 16)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .modifier(CadenceHoverHighlight(cornerRadius: 5))
+                    .help("Collapse \(rail.label.capitalized)")
+                }
+            }
+
+            KanbanColumnScroll(isColumnHovered: isHovered, add: add) {
+                ForEach(tasks) { task in
+                    KanbanCard(task: task, showsContainerChip: true)
+                        .draggable(TaskDragPayload.string(for: task.id))
+                }
+            }
+        }
+    }
+
+    /// The rail reduced to what identifies it — dot, count, name — and nothing else. It stays a drop
+    /// target because the drop modifier is applied to the column rather than to this content, so
+    /// dragging a card out of a day column onto Unscheduled works collapsed exactly as expanded.
+    private var collapsedContent: some View {
+        Button {
+            onToggleForm?()
+        } label: {
+            VStack(spacing: 9) {
+                Circle()
+                    .fill(rail.dotColor)
+                    .frame(
+                        width: CadenceBoardColumnHeaderMetrics.dotSize,
+                        height: CadenceBoardColumnHeaderMetrics.dotSize
+                    )
+
+                Text("\(tasks.count)")
+                    .font(.system(size: CadenceBoardColumnHeaderMetrics.countSize, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.dim)
+
+                // Rotation is a render transform and leaves layout bounds alone, so the slot is
+                // stated rather than measured — see `collapsedRailLabelSlotHeight`.
+                Text(rail.label)
+                    .font(.system(size: CadenceBoardColumnHeaderMetrics.labelSize, weight: .semibold))
+                    .kerning(CadenceBoardColumnHeaderMetrics.labelKerning)
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize()
+                    .rotationEffect(.degrees(-90))
+                    .frame(
+                        width: CadenceBoardColumnHeaderMetrics.labelSize,
+                        height: CadenceCalendarBoardLayout.collapsedRailLabelSlotHeight
+                    )
+
+                Spacer(minLength: 0)
+            }
+            .padding(.top, CadenceBoardColumnHeaderMetrics.topPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .modifier(CadenceHoverHighlight(cornerRadius: kanbanColumnCornerRadius))
+        .help("\(rail.label.capitalized) — \(tasks.count) task\(tasks.count == 1 ? "" : "s"). Click to expand.")
     }
 }
 

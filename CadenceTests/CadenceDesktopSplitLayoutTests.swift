@@ -237,6 +237,64 @@ struct CadenceDesktopSplitLayoutTests {
         }
     }
 
+    // MARK: - T-271 — the pane may go, the commands may not
+
+    /// Dropping a pane is only free when nothing is reachable *only* from it.
+    ///
+    /// `CadenceCalendarPaneLayout` drops its day inspector because that inspector restates a day
+    /// column already on screen; Today drops its notepad because the daily note is the Notes page's
+    /// Daily tab. Goals' inspector is neither: Edit, Attach List and per-list detach exist nowhere
+    /// else in mission mode, so for one release below 901 the page had an unusable control replaced
+    /// by an absent one. The fallback is `CadenceSettingsTemplatesCardLayout`'s — render the form
+    /// the narrow host already has — and the narrow host is `iOSFeatureRowLink`: select beside a
+    /// pane, open without one.
+    ///
+    /// Counted rather than asserted-as-contains, because the failure this guards is a *deleted*
+    /// route, and "contains" cannot see one route becoming two or none.
+    @Test
+    func goalsKeepsARouteToItsInspectorAtTheWidthsThatDropTheColumn() throws {
+        let page = try desktopSplitStrippingComments(
+            desktopSplitSource("Cadence/macOS/Views/GoalsView.swift")
+        )
+
+        // One presenter, one gate, one place the gate is spent.
+        #expect(desktopSplitOccurrences(of: "GoalInspectorSheet(", in: page) == 1)
+        #expect(desktopSplitOccurrences(of: "showGoalDetail = true", in: page) == 1)
+        #expect(
+            desktopSplitOccurrences(of: "if !showsInspector", in: page) == 1,
+            "the sheet is opened unconditionally — at full width a card would both select and raise a modal"
+        )
+        // Both cards go through one selection function, so a direction is not left without a route.
+        #expect(desktopSplitOccurrences(of: "onSelect: { select($0, showsInspector: showsInspector) }", in: page) == 1)
+
+        let sheet = try desktopSplitStrippingComments(
+            desktopSplitSource("Cadence/macOS/Views/GoalInspectorView.swift")
+        )
+
+        // The sheet re-presents the inspector rather than re-implementing it: exactly one call, and
+        // `struct GoalInspectorView: View` carries no parenthesis, so this counts uses only.
+        #expect(desktopSplitOccurrences(of: "GoalInspectorView(", in: sheet) == 1)
+        // …carrying all three of the commands the column used to be the only home for. Spelled with
+        // their bodies: `GoalInspectorView` declares `let onEdit: () -> Void` in the same file, so a
+        // bare `onEdit:` would count the property and pass whatever the sheet does.
+        #expect(desktopSplitOccurrences(of: "onEdit: { showEditGoal = true }", in: sheet) == 1)
+        #expect(desktopSplitOccurrences(of: "onAttachWork: { showAttachWork = true }", in: sheet) == 1)
+        #expect(desktopSplitOccurrences(of: "onDetachList: onDetachList", in: sheet) == 1)
+        #expect(desktopSplitOccurrences(of: "CreateGoalSheet(goal: goal)", in: sheet) == 1)
+        #expect(desktopSplitOccurrences(of: "AttachWorkSheet(", in: sheet) == 1)
+
+        // And it is the column restored, not a second opinion about how wide an inspector is:
+        // borrowed by reference, so raising the pane minimum raises the sheet with it.
+        #expect(
+            desktopSplitOccurrences(of: "CadenceDesktopSplitLayout.goalInspectorPaneMinWidth", in: sheet) == 1,
+            "the sheet no longer borrows the column's own minimum"
+        )
+        #expect(
+            desktopSplitOccurrences(of: "width: 340", in: sheet) == 0,
+            "the sheet types the floor instead of reading it, and stops following it tomorrow"
+        )
+    }
+
     /// The iPad half of the same decision (T-252): `iOSFeatureSplitLayout` is the one place all
     /// four regular-width split surfaces go through, so the gate belongs there rather than four
     /// times over — and the fallback is each surface's own one column, not a dropped chooser.
@@ -274,6 +332,7 @@ struct CadenceDesktopSplitLayoutTests {
         for path in [
             "Cadence/macOS/Views/TodayView.swift",
             "Cadence/macOS/Views/GoalsView.swift",
+            "Cadence/macOS/Views/GoalInspectorView.swift",
             "Cadence/macOS/Views/FocusView.swift",
             "Cadence/iOS/iOSFeatureComponents.swift",
             "Cadence/iOS/iOSFeatureViews.swift",

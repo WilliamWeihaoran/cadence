@@ -15,6 +15,8 @@ struct GoalsView: View {
     @State private var showCreateGoal = false
     @State private var showEditGoal = false
     @State private var showAttachWork = false
+    /// The narrow-width route to the inspector. See `GoalInspectorSheet`.
+    @State private var showGoalDetail = false
     @State private var searchText = ""
     @State private var statusFilter: GoalStatusFilter = .active
 
@@ -83,6 +85,17 @@ struct GoalsView: View {
                     )
                 }
             }
+            .sheet(isPresented: $showGoalDetail) {
+                if let goal = selectedGoal {
+                    GoalInspectorSheet(
+                        goal: goal,
+                        contexts: allContexts,
+                        areas: areas,
+                        projects: projects,
+                        onDetachList: detachList
+                    )
+                }
+            }
             .onAppear {
                 if selectedGoalID == nil {
                     selectedGoalID = visibleGoals.first?.id ?? allGoals.first?.id
@@ -98,6 +111,18 @@ struct GoalsView: View {
             }
     }
 
+    /// **Timeline mode hands `select` a literal `false` because the roadmap has no inspector
+    /// column at any width.** It is a fixed left rail plus a horizontally scrolling Gantt; there is
+    /// nothing for a wide window to put a column beside, so the sheet T-271 gave narrow mission
+    /// mode is not a fallback here but the only route. Spending the same `select` rather than
+    /// setting `showGoalDetail` a second time keeps one place that decides what opening a goal
+    /// means — the mission branch's own rule, that two answers cannot disagree if there is one.
+    ///
+    /// This replaced `onEditGoal`, which is the whole of T-272: the roadmap offered **Edit** from
+    /// both its rows and every bar and **Attach List** from nowhere, at every width, since before
+    /// T-250 — the timeline never had an inspector to lose. Edit is a button inside
+    /// `GoalInspectorView`, so opening the inspector is a superset of what the double-click did,
+    /// not a trade; Attach List and `GoalLinkedListRow`'s per-list detach come with it.
     @ViewBuilder
     private func content(groups: [GoalMissionGroup]) -> some View {
         if goalsViewMode == .timeline {
@@ -109,10 +134,7 @@ struct GoalsView: View {
                 searchText: $searchText,
                 statusFilter: $statusFilter,
                 onCreateGoal: { showCreateGoal = true },
-                onEditGoal: { goal in
-                    selectedGoalID = goal.id
-                    showEditGoal = true
-                }
+                onOpenGoal: { select($0, showsInspector: false) }
             )
         } else {
             missionContent(groups: groups)
@@ -124,6 +146,11 @@ struct GoalsView: View {
     /// their floor. Below `goalsSplitMinimumWidth` the inspector goes instead — it is nine points
     /// wide at the app's minimum window with the sidebar out, which is not a narrow inspector but
     /// an invisible one. See `CadenceDesktopSplitLayout`.
+    ///
+    /// `showsInspector` is also what a card's tap *means*, which is the T-271 half: with a column
+    /// beside it a card selects and the column re-subjects itself, and without one the card opens
+    /// `GoalInspectorSheet`. One gate, read once, answering both — a second `goalsShowsInspector`
+    /// call for the sheet would be a second place for the two answers to disagree.
     private func missionContent(groups: [GoalMissionGroup]) -> some View {
         GeometryReader { proxy in
             let showsInspector = CadenceDesktopSplitLayout.goalsShowsInspector(
@@ -134,7 +161,7 @@ struct GoalsView: View {
                 VStack(spacing: 0) {
                     header
                     Divider().background(Theme.borderSubtle)
-                    goalList(groups: groups)
+                    goalList(groups: groups, showsInspector: showsInspector)
                 }
                 .frame(minWidth: CadenceDesktopSplitLayout.goalListPaneMinWidth, idealWidth: 760)
                 .background(Theme.bg)
@@ -197,7 +224,7 @@ struct GoalsView: View {
         }
     }
 
-    private func goalList(groups: [GoalMissionGroup]) -> some View {
+    private func goalList(groups: [GoalMissionGroup], showsInspector: Bool) -> some View {
         Group {
             if groups.isEmpty {
                 EmptyStateView(
@@ -213,13 +240,28 @@ struct GoalsView: View {
                             GoalMissionGroupView(
                                 group: group,
                                 selectedGoalID: selectedGoalID,
-                                onSelect: { selectedGoalID = $0.id }
+                                onSelect: { select($0, showsInspector: showsInspector) }
                             )
                         }
                     }
                     .padding(20)
                 }
             }
+        }
+    }
+
+    /// Selecting a goal, at both widths. The selection is written either way — it is what the
+    /// inspector is *about*, so re-widening the window has to find the same goal under the column —
+    /// and only the second half is width-dependent: with no column to re-subject, the card has to
+    /// open the inspector itself or the tap does nothing a user can see.
+    ///
+    /// Both cards go through here. `GoalDirectionHeaderCard` is selectable and editable exactly as
+    /// `GoalMissionCard` is, so a route hung on one of the two would leave every top-level direction
+    /// without one — which is what a `contextMenu` per card would have cost, in two copies.
+    private func select(_ goal: Goal, showsInspector: Bool) {
+        selectedGoalID = goal.id
+        if !showsInspector {
+            showGoalDetail = true
         }
     }
 

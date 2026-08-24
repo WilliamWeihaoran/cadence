@@ -1,5 +1,6 @@
 import Testing
 import CoreGraphics
+import Foundation
 @testable import Cadence
 
 /// A pane is the window less the shell sidebar — 188pt when it is out, 0 when the user folds it.
@@ -429,4 +430,254 @@ struct CadenceCalendarWeekGridLayoutTests {
                 == CadenceCalendarWeekGridLayout.preferredDayColumnWidth(isRegularWidth: true)
         )
     }
+}
+
+/// T-251. The macOS Calendar Board's pane is `window − sidebar`: a 960pt window floor against a
+/// 220–390pt sidebar gives **570 … 740**, and 960 with the sidebar hidden outright. Those are the
+/// widths the ticket measured 74.0 / 200.0 / 244.0 / 464.0 day-column widths at, against a 306pt
+/// column.
+struct CadenceCalendarBoardLayoutTests {
+    /// Every pane the app's own minimum window can produce, plus the two roomy ones.
+    private static let reachablePanes: [CGFloat] = [570, 696, 740, 960, 1248, 1512]
+
+    // MARK: - The guarantee
+
+    @Test
+    func everyReachablePaneKeepsOneWholeDayColumnOnScreen() {
+        for paneWidth in Self.reachablePanes {
+            let columns = CadenceCalendarBoardLayout.dayColumnsWidth(paneWidth: paneWidth)
+            #expect(
+                columns >= CadenceCalendarBoardLayout.oneDayColumnMinimumWidth,
+                "day columns got \(columns) at a \(paneWidth) pane, under the \(CadenceCalendarBoardLayout.oneDayColumnMinimumWidth) floor"
+            )
+        }
+    }
+
+    /// The before/after the ticket is about, stated as values rather than as a direction, so a
+    /// later change that quietly re-narrows the columns fails here.
+    @Test
+    func theNarrowPanesGetTheirColumnsBack() {
+        // 570 and 696 used to be 74 and 200 — both under one 306pt column.
+        #expect(CadenceCalendarBoardLayout.dayColumnsWidth(paneWidth: 570) == 450)
+        #expect(CadenceCalendarBoardLayout.dayColumnsWidth(paneWidth: 696) == 576)
+        #expect(CadenceCalendarBoardLayout.dayColumnsWidth(paneWidth: 740) == 620)
+        // Above the gate nothing moves: 960 and 1248 are `paneWidth − 496` exactly as before.
+        #expect(CadenceCalendarBoardLayout.dayColumnsWidth(paneWidth: 960) == 464)
+        #expect(CadenceCalendarBoardLayout.dayColumnsWidth(paneWidth: 1248) == 752)
+    }
+
+    // MARK: - The gate
+
+    @Test
+    func theGateIsTwoExpandedRailsAndOneWholeDayColumn() {
+        #expect(CadenceCalendarBoardLayout.oneDayColumnMinimumWidth == 350)
+        #expect(CadenceCalendarBoardLayout.expandedRailsMinimumWidth == 846)
+        #expect(CadenceCalendarBoardLayout.railForm(paneWidth: 846) == .expanded)
+        #expect(CadenceCalendarBoardLayout.railForm(paneWidth: 845.9) == .collapsed)
+    }
+
+    /// The MacBook that has always been fine stays byte-identical, which is the half of the change
+    /// that must not be visible.
+    @Test
+    func aRoomyMacIsUntouched() {
+        for paneWidth in [CGFloat(960), 1248, 1512] {
+            #expect(CadenceCalendarBoardLayout.railForm(paneWidth: paneWidth) == .expanded)
+            #expect(
+                CadenceCalendarBoardLayout.railWidth(
+                    form: CadenceCalendarBoardLayout.railForm(paneWidth: paneWidth)
+                ) == CadenceCalendarBoardLayout.expandedRailWidth
+            )
+        }
+    }
+
+    /// `CadenceSettingsTemplatesCardLayout`'s call: an unmeasured frame answers with the fallback,
+    /// because a frame of the wide form is the 74pt day column this type exists to prevent.
+    @Test
+    func anUnmeasuredPaneAnswersWithTheStrip() {
+        for paneWidth in [CGFloat(0), -1, 1] {
+            #expect(CadenceCalendarBoardLayout.railForm(paneWidth: paneWidth) == .collapsed)
+        }
+        #expect(CadenceCalendarBoardLayout.dayColumnsWidth(paneWidth: 0) == 0)
+    }
+
+    // MARK: - The floors are borrowed, not typed
+
+    /// The collapsed strip's floor **is** the control minimum this file already states, by
+    /// reference. A strip is hit under a card already in motion, so the floor applies to it at
+    /// least as strongly as to a button.
+    @Test
+    func theStripBorrowsTheControlMinimumRatherThanRestatingIt() {
+        #expect(
+            CadenceCalendarBoardLayout.collapsedRailWidth
+                == CadenceCalendarWeekGridLayout.minimumTouchTarget
+                    + CadenceCalendarBoardLayout.railHorizontalPadding * 2
+        )
+        #expect(CadenceCalendarBoardLayout.collapsedRailWidth == 60)
+    }
+
+    /// A rail is never wider collapsed than expanded, and a strip always costs strictly less — the
+    /// property that makes collapsing worth doing at all.
+    @Test
+    func aStripIsStrictlyCheaperThanAColumn() {
+        #expect(
+            CadenceCalendarBoardLayout.railWidth(form: .collapsed)
+                < CadenceCalendarBoardLayout.railWidth(form: .expanded)
+        )
+    }
+
+    // MARK: - What collapsing must not cost
+
+    /// The rails may be reduced but never dropped, and this is the measurement behind that: the
+    /// Board's day columns are floored at today, so past-dated work has no column, and the day
+    /// bucketing keys strictly on the do date, so do-dateless work has none either. Both
+    /// populations exist only on a rail.
+    @Test
+    func neitherRailsWorkHasADayColumnToFallBackOn() {
+        let todayKey = "2026-08-24"
+        let overdue = AppTask(title: "late")
+        overdue.scheduledDate = "2026-08-01"
+        let unscheduled = AppTask(title: "someday")
+        unscheduled.dueDate = "2026-09-01"
+
+        #expect(CalendarBoardPlannerSupport.rail(for: overdue, todayKey: todayKey) == .overdue)
+        #expect(CalendarBoardPlannerSupport.rail(for: unscheduled, todayKey: todayKey) == .unscheduled)
+
+        // The macOS board's own bucketing: neither task lands in any day column.
+        let byDate = CalendarBoardPlannerSupport.tasksByBoardDate(from: [overdue, unscheduled])
+        #expect(byDate["2026-09-01"] == nil, "a do-dateless task must not appear under its due day")
+        #expect(byDate.values.flatMap { $0 }.contains { $0.id == unscheduled.id } == false)
+        // Overdue does key a day — one the board no longer renders, which is why the rail is the
+        // only route to it.
+        #expect(byDate["2026-08-01"]?.count == 1)
+        let windowStart = CalendarBoardPlannerSupport.plannerWindowStart(
+            for: DateFormatters.date(from: "2026-08-01") ?? Date(),
+            notBefore: DateFormatters.date(from: todayKey) ?? Date()
+        )
+        #expect(DateFormatters.dateKey(from: windowStart) == todayKey)
+    }
+
+    // MARK: - The surface asks, and asks once
+
+    /// A layout type nothing calls is a passing test suite over a broken page. Pinned the way
+    /// `CadenceDesktopSplitLayoutTests.eachSplitIsGatedOnTheWidthItWasHanded` pins its three: the
+    /// board reads its width from a `GeometryReader` and asks the house file exactly once.
+    @Test
+    func theBoardIsGatedOnTheWidthItWasHanded() throws {
+        let path = "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift"
+        let code = try boardLayoutStrippingComments(boardLayoutSource(path))
+
+        #expect(boardLayoutOccurrences(of: "CadenceCalendarBoardLayout.railForm(paneWidth:", in: code) == 1)
+        #expect(boardLayoutOccurrences(of: "GeometryReader", in: code) == 1)
+        // And the surface declares no width rule of its own — it passes the *answer* down.
+        // `CadencePaneWidthRuleHomesTests` enforces this globally; this says it about the one file
+        // the ticket is on, so a regression names the board rather than a count.
+        #expect(boardLayoutOccurrences(of: "paneWidth: CGFloat", in: code) == 0)
+    }
+
+    /// The four board metrics moved to the house file so the floor could be a sum of them. If one
+    /// gets re-typed back into the macOS view layer the sum stops following it, which is the exact
+    /// failure `everyRegisteredFloorIsStillSpelledAsASumRatherThanTyped` exists for one level up.
+    @Test
+    func theBoardsGeometryIsSpelledOnceAndReadBack() throws {
+        for path in [
+            "Cadence/macOS/Views/KanbanBoardSupport.swift",
+            "Cadence/macOS/Views/CalendarBoardRailSupportViews.swift",
+            "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift",
+        ] {
+            let code = try boardLayoutStrippingComments(boardLayoutSource(path))
+            for gone in [
+                "calendarBoardDayColumnWidth",
+                "calendarBoardRailWidth",
+                "calendarBoardColumnSpacing",
+                "calendarBoardHorizontalPadding",
+            ] {
+                #expect(
+                    boardLayoutOccurrences(of: gone, in: code) == 0,
+                    "\(path) still spells \(gone); it is CadenceCalendarBoardLayout's now"
+                )
+            }
+        }
+        // The rail reads both its widths from the one place, and the strip is a reduction of the
+        // same column rather than a second view: one `.frame(width:)`, one drop modifier.
+        let rail = try boardLayoutStrippingComments(
+            boardLayoutSource("Cadence/macOS/Views/CalendarBoardRailSupportViews.swift")
+        )
+        #expect(boardLayoutOccurrences(of: "CadenceCalendarBoardLayout.railWidth(form:", in: rail) == 1)
+        #expect(boardLayoutOccurrences(of: ".modifier(CalendarBoardRailDropModifier(", in: rail) == 1)
+    }
+
+    // MARK: - Non-vacuity
+
+    /// Every source assertion above is a count over a file read from disk, and a read that silently
+    /// returns nothing makes the zero-expectations pass.
+    @Test
+    func theSourceScanActuallyReadsTheBoardFiles() throws {
+        for path in [
+            "Cadence/macOS/Views/KanbanBoardSupport.swift",
+            "Cadence/macOS/Views/CalendarBoardRailSupportViews.swift",
+            "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift",
+        ] {
+            let code = try boardLayoutStrippingComments(boardLayoutSource(path))
+            #expect(code.count > 400, "\(path) read as \(code.count) characters")
+            #expect(boardLayoutOccurrences(of: "struct", in: code) >= 1, "\(path)")
+        }
+    }
+
+    /// Proof the stripper runs, from a case in the tree rather than a synthetic one: the
+    /// tombstone left in `KanbanBoardSupport.swift` names the constants it no longer declares, so
+    /// raw source sees them and stripped source does not.
+    @Test
+    func theCommentStrippingIsActuallyStripping() throws {
+        let path = "Cadence/macOS/Views/KanbanBoardSupport.swift"
+        let raw = try boardLayoutSource(path)
+        let stripped = try boardLayoutStrippingComments(raw)
+        #expect(boardLayoutOccurrences(of: "CadenceCalendarBoardLayout", in: raw) >= 1)
+        #expect(boardLayoutOccurrences(of: "CadenceCalendarBoardLayout", in: stripped) == 0)
+    }
+
+    /// The Timeline's "unscheduled tasks" are a different population entirely — a task with a day
+    /// and no start minute — so it is not a second route to the Unscheduled rail's contents and
+    /// cannot be cited as one.
+    @Test
+    func theTimelinesUnscheduledChipsAreNotTheUnscheduledRail() {
+        let railTask = AppTask(title: "no day at all")
+        let timelineChip = AppTask(title: "today, no slot")
+        timelineChip.scheduledDate = "2026-08-24"
+        timelineChip.scheduledStartMin = -1
+
+        let byDate = CadenceScheduleSupport.unscheduledTasksByDate([railTask, timelineChip])
+        #expect(byDate.values.flatMap { $0 }.contains { $0.id == railTask.id } == false)
+        #expect(byDate["2026-08-24"]?.count == 1)
+    }
+}
+
+// MARK: - Source-reading helpers
+
+/// Prefixed rather than shared, exactly as `CadencePaneWidthRuleHomesTests` and
+/// `CadenceDesktopSplitLayoutTests` keep theirs private to their own files.
+private func boardLayoutRepositoryRoot() -> URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+}
+
+private func boardLayoutSource(_ relativePath: String) throws -> String {
+    try String(contentsOf: boardLayoutRepositoryRoot().appendingPathComponent(relativePath), encoding: .utf8)
+}
+
+private func boardLayoutStrippingComments(_ source: String) throws -> String {
+    var result = source
+    for pattern in ["//[^\n]*", "/\\*(?s:.)*?\\*/"] {
+        while let range = result.range(of: pattern, options: .regularExpression) {
+            result.replaceSubrange(
+                range,
+                with: String(repeating: " ", count: result.distance(from: range.lowerBound, to: range.upperBound))
+            )
+        }
+    }
+    return result
+}
+
+private func boardLayoutOccurrences(of needle: String, in haystack: String) -> Int {
+    haystack.components(separatedBy: needle).count - 1
 }

@@ -16,7 +16,7 @@ struct GoalTimelineBarView: View {
     let dayWidth: CGFloat
     let isSelected: Bool
     let onSelect: () -> Void
-    let onEdit: () -> Void
+    let onOpen: () -> Void
 
     @State private var activeDragMode: GoalTimelineBarDragMode?
     @State private var activeDeltaDays = 0
@@ -72,9 +72,9 @@ struct GoalTimelineBarView: View {
             barContent
                 .frame(width: max(40, frame.width), height: 28)
                 .offset(x: frame.x)
-                // Higher count first — see `GoalTimelineRowBackground`. Reversed, the single-tap
-                // recognizer swallows the event and double-click-to-edit never fires.
-                .onTapGesture(count: 2, perform: onEdit)
+                // Higher count first — see `GoalTimelineGoalRailRow`. Reversed, the single-tap
+                // recognizer swallows the event and double-click-to-open never fires.
+                .onTapGesture(count: 2, perform: onOpen)
                 .onTapGesture(perform: onSelect)
         }
     }

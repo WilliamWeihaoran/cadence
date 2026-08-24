@@ -56,7 +56,9 @@ struct GoalTimelineView: View {
     @Binding var searchText: String
     @Binding var statusFilter: GoalStatusFilter
     let onCreateGoal: () -> Void
-    let onEditGoal: (Goal) -> Void
+    /// Opens the goal's inspector. See `GoalsView.content(groups:)` — the roadmap has no inspector
+    /// column to select into, so this is its only route to Edit, Attach List and per-list detach.
+    let onOpenGoal: (Goal) -> Void
 
     @State private var referenceDate = Date()
     @State private var showsFilter = false
@@ -228,14 +230,24 @@ struct GoalTimelineView: View {
             ForEach(rows) { row in
                 switch row.kind {
                 case .group(let group):
-                    GoalTimelineGroupRow(group: group)
-                        .frame(height: row.height)
+                    // A direction gets the same route its milestones get. Hanging it on the bar
+                    // alone would give it one only while it has *both* dates — `timelineBody` skips
+                    // the bar otherwise — so an undated direction, which is the shape a linked list
+                    // is most likely to hang off, would be the one goal on the page with no way to
+                    // attach one. Same argument `GoalsView.select` makes about the two card kinds.
+                    GoalTimelineGroupRow(
+                        group: group,
+                        isSelected: group.parentGoal.map { $0.id == selectedGoalID } ?? false,
+                        onSelect: { selectedGoalID = $0.id },
+                        onOpen: { onOpenGoal($0) }
+                    )
+                    .frame(height: row.height)
                 case .goal(let goal):
                     GoalTimelineGoalRailRow(
                         goal: goal,
                         isSelected: selectedGoalID == goal.id,
                         onSelect: { selectedGoalID = goal.id },
-                        onEdit: { onEditGoal(goal) }
+                        onOpen: { onOpenGoal(goal) }
                     )
                     .frame(height: row.height)
                 }
@@ -276,7 +288,7 @@ struct GoalTimelineView: View {
                         dayWidth: scale.dayWidth,
                         isSelected: selectedGoalID == goal.id,
                         onSelect: { selectedGoalID = goal.id },
-                        onEdit: { onEditGoal(goal) }
+                        onOpen: { onOpenGoal(goal) }
                     )
                     .offset(y: layout.y + 7)
                 }

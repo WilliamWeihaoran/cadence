@@ -166,8 +166,17 @@ struct GoalTimelineRowBackground: View {
     }
 }
 
+/// The left rail's row for a direction — and, since T-272, a route to the direction itself.
+///
+/// The gestures are attached unconditionally while the callbacks take the direction as an argument,
+/// so a group that somehow has no `parentGoal` simply has nothing to hand them. `GoalMissionGrouping`
+/// builds every group from a top-level goal, but the field is optional and a `!` here would be a
+/// crash where a dead tap will do.
 struct GoalTimelineGroupRow: View {
     let group: GoalMissionGroup
+    let isSelected: Bool
+    let onSelect: (Goal) -> Void
+    let onOpen: (Goal) -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -188,9 +197,27 @@ struct GoalTimelineGroupRow: View {
                 .clipShape(Capsule())
         }
         .padding(.horizontal, 18)
-        .background(Theme.surface.opacity(0.9))
+        .contentShape(Rectangle())
+        // One background layer at one radius: the group band keeps its own fill and the selection
+        // wash composites over it, rather than a second `.background` further down the chain that
+        // would land *behind* the fill and never be seen.
+        .background {
+            ZStack {
+                Theme.surface.opacity(0.9)
+                if isSelected {
+                    Theme.blue.opacity(0.08)
+                }
+            }
+        }
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.borderSubtle).frame(height: 1)
+        }
+        // Higher count first — see `GoalTimelineGoalRailRow`.
+        .onTapGesture(count: 2) {
+            if let goal = group.parentGoal { onOpen(goal) }
+        }
+        .onTapGesture {
+            if let goal = group.parentGoal { onSelect(goal) }
         }
     }
 }
@@ -199,7 +226,7 @@ struct GoalTimelineGoalRailRow: View {
     let goal: Goal
     let isSelected: Bool
     let onSelect: () -> Void
-    let onEdit: () -> Void
+    let onOpen: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -225,11 +252,11 @@ struct GoalTimelineGoalRailRow: View {
             Rectangle().fill(Theme.borderSubtle.opacity(0.55)).frame(height: 1)
         }
         // Higher count first: attached the other way round the single-tap recognizer consumes
-        // the event and `onEdit` never fires. Every other double-tap site in the app attaches
+        // the event and `onOpen` never fires. Every other double-tap site in the app attaches
         // `count: 2` alone, so this pair was the only place the ordering mattered — and it left
-        // Timeline mode with no working way to edit a goal at all, since its toolbar has no
-        // Edit button either.
-        .onTapGesture(count: 2, perform: onEdit)
+        // Timeline mode with no working way to reach a goal at all, since its toolbar acts on the
+        // page rather than on a goal.
+        .onTapGesture(count: 2, perform: onOpen)
         .onTapGesture(perform: onSelect)
     }
 }

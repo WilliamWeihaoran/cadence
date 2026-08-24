@@ -2,10 +2,10 @@ import CoreGraphics
 
 // MARK: - The register: where "derive a pane decision from handed width" may live
 //
-// One rule, eight expressions, four files — and this is the house file, so the register lives here
+// One rule, nine expressions, four files — and this is the house file, so the register lives here
 // rather than in a doc that the code cannot be checked against. T-182 was raised as "four
-// expressions in four places"; the count was short by two, T-248/T-249 added the seventh and
-// T-250/T-252 the eighth. What is actually there:
+// expressions in four places"; the count was short by two, T-248/T-249 added the seventh,
+// T-250/T-252 the eighth and T-251 the ninth. What is actually there:
 //
 //   Here, in `CadenceRegularPaneLayout.swift`
 //     - `CadenceRegularSplitLayout`     a *width*, for a chooser column beside a detail, **and**
@@ -31,6 +31,18 @@ import CoreGraphics
 //                                       `#if os(macOS)`, and it is the first expression written
 //                                       because the *window* could not hold the rule — see its
 //                                       own doc for why raising `CadenceApp`'s floor was rejected.
+//     - `CadenceCalendarBoardLayout`    an *enum* (`CadenceCalendarBoardRailForm`) and the widths
+//                                       behind it, for the macOS Calendar Board's two pinned
+//                                       rails. Here for `CadenceDesktopSplitLayout`'s reason, plus
+//                                       one this file had not met before: the parts the floor sums
+//                                       — the day column's width, the rail's, their insets — were
+//                                       top-level `let`s in `macOS/Views/KanbanBoardSupport.swift`,
+//                                       behind `#if os(macOS)`, so the floor could not have been
+//                                       written as a sum of them without moving them. It is also
+//                                       the first expression where the **fixed** side is the one
+//                                       that yields, and the first whose fallback is a *reduced*
+//                                       column rather than a dropped one — see its own doc for why
+//                                       neither rail may vanish.
 //   `CadenceTodayLayoutSupport.swift`
 //     - `CadenceTodayLayoutSupport`     an *enum* (`CadenceTodayLayout`), plus the fixed side's width.
 //   `CadenceNotesListSupport.swift`
@@ -563,13 +575,22 @@ nonisolated enum CadenceDesktopTodayLayout: Equatable, Sendable {
 /// and it exists only while those two panes are on screen together. Below 644 the task column takes
 /// the window.
 ///
-/// *Goals* drops the **inspector**. Its list column is not just a list — the page header, the
-/// search field, the status filter and the only "New Goal" button are all inside it, which is what
-/// the 560 is a floor for, so the list is not the side that can yield. The inspector is already
-/// unusable rather than merely tight at every width below the floor: at the 390pt sidebar it is
-/// nine points of a 340pt layout. The cost is stated rather than glossed — Edit and Attach List
-/// live in the inspector header and mission mode has no other route to them, so below 901 they are
-/// out of reach. They were already clipped there; see `docs/TODO.md` for the follow-up.
+/// *Goals* drops the **inspector** *as a column*. Its list column is not just a list — the page
+/// header, the search field, the status filter and the only "New Goal" button are all inside it,
+/// which is what the 560 is a floor for, so the list is not the side that can yield. The inspector
+/// is already unusable rather than merely tight at every width below the floor: at the 390pt
+/// sidebar it is nine points of a 340pt layout.
+///
+/// **But the inspector is not only a column, and T-271 is that correction.** Dropping it took Edit,
+/// Attach List and per-list detach with it, and mission mode has no other route to any of the
+/// three — so for one release the page traded an unusable control for an absent one. It is
+/// `CadenceSettingsTemplatesCardLayout`'s case rather than `CadenceCalendarPaneLayout`'s in exactly
+/// that respect: a day inspector restates a day column that is on screen a finger's width away and
+/// costs nothing when it goes, whereas this one is the only thing that can *change* a goal. So
+/// below 901 the same `GoalInspectorView` is reached by opening a card instead of by selecting it
+/// (`GoalInspectorSheet`), which is `iOSFeatureRowLink`'s own rule — select beside a pane, push
+/// without one — spelled for a page that has no navigation stack. The gate is still this one, read
+/// once: it decides both whether the column is drawn and what tapping a card means.
 ///
 /// *Focus* drops the **sidebar**, which is the `CadenceCalendarPaneLayout` case: a status chip
 /// restating the session header and four "Next up" shortcuts into the same picker the idle screen
@@ -653,5 +674,164 @@ nonisolated enum CadenceDesktopSplitLayout {
 
     static func focusShowsSidebar(paneWidth: CGFloat) -> Bool {
         paneWidth >= focusSplitMinimumWidth
+    }
+}
+
+/// Which form the macOS Calendar Board's two pinned rails take at the width the page was handed.
+///
+/// **Collapsed is not dropped**, and that distinction is the whole of T-251. See
+/// `CadenceCalendarBoardLayout` for why neither rail may vanish.
+nonisolated enum CadenceCalendarBoardRailForm: Equatable, Sendable {
+    /// The full inbox column: header, cards, add row, drop target.
+    case expanded
+    /// The same column reduced to what identifies it — its dot, its count and its name — and still
+    /// a drop target. `CadenceRootShellLayout`'s labelled-column-to-icon-rail fallback, for a board.
+    case collapsed
+}
+
+/// How the macOS Calendar Board divides its pane between the two pinned rails and the day columns
+/// scrolling between them.
+///
+/// **The ninth expression of the rule, and the first where the *fixed* side is the one that has to
+/// give.** `CalendarPageBoardView` is `HStack(spacing: 0) { rail; dayColumns; rail }` with each rail
+/// at a fixed `expandedRailWidth` and the day columns a horizontal `ScrollView` at
+/// `.frame(maxWidth: .infinity)`. A horizontal scroller declares no minimum — measured, the board
+/// reports **496** as its own minimum, which is exactly the two rails — so the columns get
+/// `paneWidth − 496`: **74.0pt at a 570 pane, 200.0 at 696, 244.0 at 740** and 464.0 at 960, against
+/// a 306pt day column. At the app's own minimum window with the stored sidebar the Board showed two
+/// thirds of one day column between two inboxes holding 71% of the surface.
+///
+/// **What gives is the rails, and the reason is which side is already unusable.** Goals' inspector
+/// was nine points of a 340pt layout below its floor, so dropping it cost an already-unusable
+/// control; here the rails render perfectly at every reachable width and the *day columns* are the
+/// unreadable side. The subject of a board of days is the days.
+///
+/// **But the rails may not be dropped, and that is measured rather than assumed.** The
+/// `CadenceCalendarPaneLayout` case — drop it, because it restates something on screen a finger's
+/// width away — was checked against this surface and does not hold for either rail:
+///
+///   - *Overdue.* The board's day columns are floored at today
+///     (`CalendarBoardPlannerSupport.plannerWindowStart(notBefore:)`) **because** this rail already
+///     shows every past-dated card. The one route was removed in favour of the other; dropping the
+///     rail leaves neither, and the Board would then have no reading of late work at all.
+///   - *Unscheduled.* `tasksByBoardDate` buckets strictly by do date, so a task with no do date has
+///     no day column anywhere on the board. The Timeline presentation's all-day chips are **not**
+///     the same set: `CadenceScheduleSupport.unscheduledTasksByDate` requires `!scheduledDate
+///     .isEmpty` — it means "has a day, no start minute", the opposite population.
+///
+/// So this is `CadenceSettingsTemplatesCardLayout`'s case, not the calendar inspector's: the fallback
+/// is a reduced form of the same thing, not its absence. A collapsed rail keeps its dot, its count,
+/// its name and — the part that matters — its **drop destination**, so dragging a card out of a day
+/// column onto Unscheduled still works at every width. Tapping one expands it in place over the
+/// board, which is the only state where a day column is squeezed and is the user's own, reversible,
+/// one-click choice.
+///
+/// **Three alternatives were rejected on measurement.**
+///
+/// 1. *Compress the rails instead of collapsing them.* `CadenceCalendarWeekGridLayout`'s shape, and
+///    it cannot reach. The narrowest reachable pane is 570 (the 960pt window floor less the 390pt
+///    maximum sidebar), which leaves 220pt for two rails once one whole day column is paid for —
+///    110pt each, narrower than any column of `KanbanCard`s in the app. Compression would only
+///    change the answer between 750 and 846pt of pane, and buying that band costs a second mechanism
+///    and a second invented minimum.
+/// 2. *Un-pin the rails into the same horizontal scroller.* Nothing is dropped and the day columns
+///    get the whole pane, but the pair loses its behaviour: dragging a card from a day column to
+///    Unscheduled needs both on screen at once, and un-pinned they never are below 816pt. That is
+///    the same argument that keeps Today's task column and timeline together.
+/// 3. *Raise `CadenceApp`'s window floor.* Rejected by `CadenceDesktopSplitLayout` already, for a
+///    reason that applies unchanged here: the pane is `window − sidebar` and the sidebar is
+///    independently 220–390pt and hideable, so no single window minimum can express it.
+// Not `nonisolated`, unlike `CadenceSettingsTemplatesCardLayout` and `CadenceDesktopSplitLayout`
+// above, and the reason is the borrowed floor: `collapsedRailWidth` reads
+// `CadenceCalendarWeekGridLayout.minimumTouchTarget`, and that type — like `CadenceRegularSplitLayout`
+// and `CadenceCalendarPaneLayout`, its neighbours here — takes the project's default actor
+// isolation. A `nonisolated` type reading a main-actor static is a main-actor isolation warning
+// against a zero baseline, and the two ways out are to stop borrowing (which is the whole point of
+// the reference) or to sit where the thing it borrows from sits. This sits.
+enum CadenceCalendarBoardLayout {
+    // MARK: The board's own parts
+    //
+    // These four moved here from `Cadence/macOS/Views/KanbanBoardSupport.swift`, which is behind
+    // `#if os(macOS)` and so cannot be read by a file that is not. They are the parts the floor
+    // below is a sum of, and the register's second reason is why they had to travel with it: a
+    // floor in one file whose terms live in another stops following them.
+
+    /// The Calendar Board's day columns run wider than a kanban column because they stack calendar
+    /// events and bundle blocks above the task cards, not task cards alone.
+    static let dayColumnWidth: CGFloat = 306
+    /// The `LazyHStack`'s inset at each end of the day-column run.
+    static let dayColumnHorizontalPadding: CGFloat = 22
+    /// The gap between two day columns.
+    static let dayColumnSpacing: CGFloat = 14
+    /// The Overdue / Unscheduled rails are inboxes rather than days, so they sit narrower than a day
+    /// column. `CadenceBoardColumnHeader` fills whatever width it is handed, so the narrower rail
+    /// still lines its dot, label, count and closing hairline up with the day columns beside it.
+    static let expandedRailWidth: CGFloat = 248
+    /// A rail's own inset, matching `CalendarBoardDayColumn`'s so the two headers share a baseline.
+    static let railHorizontalPadding: CGFloat = 8
+
+    /// The rotated name on a collapsed rail needs a slot tall enough for the longest of them —
+    /// "UNSCHEDULED" at `CadenceBoardColumnHeaderMetrics.labelSize`. A rotation is a render
+    /// transform and does not change layout bounds, so the slot has to be stated rather than
+    /// measured.
+    static let collapsedRailLabelSlotHeight: CGFloat = 96
+
+    // MARK: The guarantee
+
+    /// One whole day column with the run's inset on both sides — 350pt. The least the scrolling
+    /// region can be handed and still show the thing the Board is a board *of*.
+    ///
+    /// One rather than two deliberately. Two columns and the gap between them is 670, which with
+    /// two expanded rails needs 1166pt of pane — a 1430pt window at the stored sidebar, wider than
+    /// the target Mac. One column is what the app's own minimum window can be made to pay for, and
+    /// `dayColumnSpacing` is not in the sum because nothing is guaranteed to sit beside it.
+    static var oneDayColumnMinimumWidth: CGFloat {
+        dayColumnWidth + dayColumnHorizontalPadding * 2
+    }
+
+    /// **Borrowed, not invented.** A collapsed rail is not primarily a click target — it is a *drop*
+    /// target, hit under a card already in motion — so the floor any control has to clear applies to
+    /// it at least as strongly as to a button. That floor is stated once in this file already, as
+    /// `CadenceCalendarWeekGridLayout.minimumTouchTarget`, and it is spelled as a reference here for
+    /// the reason `CadenceSettingsTemplatesCardLayout.minimumEditorWidth` is: typing `44` satisfies
+    /// every value assertion on the day it is written and stops following its source the next.
+    /// Plus the rail's own inset on each side, which is `minimumDayColumnWidth`'s construction.
+    static var collapsedRailWidth: CGFloat {
+        CadenceCalendarWeekGridLayout.minimumTouchTarget + railHorizontalPadding * 2
+    }
+
+    /// 846pt of pane — two expanded rails and one whole day column. Above this the Board is exactly
+    /// what it was; below it the rails collapse.
+    ///
+    /// A sum of this type's own parts, so widening a rail or a day column moves the gate with it.
+    /// Reached at the 960pt window floor only with the sidebar hidden; at the stored 264pt sidebar
+    /// it needs a 1110pt window, and a MacBook Pro 14" at 1512 has always cleared it — which is why
+    /// this shipped.
+    static var expandedRailsMinimumWidth: CGFloat {
+        expandedRailWidth * 2 + oneDayColumnMinimumWidth
+    }
+
+    /// The form both rails take unasked.
+    ///
+    /// `paneWidth <= 0` means "not measured" and answers `.collapsed`, for
+    /// `CadenceSettingsTemplatesCardLayout`'s reason: a frame of the fallback is a correct layout
+    /// that looks sparse, and a frame of the wide form is the 74pt day column this type exists to
+    /// prevent. In practice the Board fills its pane in both axes and reads the width from a
+    /// `GeometryReader`, so there is no unmeasured frame.
+    static func railForm(paneWidth: CGFloat) -> CadenceCalendarBoardRailForm {
+        paneWidth >= expandedRailsMinimumWidth ? .expanded : .collapsed
+    }
+
+    /// What one rail is drawn at in a given form. Not width-derived — a rail the user has expanded
+    /// under the gate is expanded at whatever width the pane happens to be.
+    static func railWidth(form: CadenceCalendarBoardRailForm) -> CGFloat {
+        form == .expanded ? expandedRailWidth : collapsedRailWidth
+    }
+
+    /// What the scrolling day-column region is actually handed, both rails in their unasked form.
+    /// This is the number T-251 measured, and the guarantee is that it never falls below
+    /// `oneDayColumnMinimumWidth` at any pane the app can produce.
+    static func dayColumnsWidth(paneWidth: CGFloat) -> CGFloat {
+        max(0, paneWidth - railWidth(form: railForm(paneWidth: paneWidth)) * 2)
     }
 }

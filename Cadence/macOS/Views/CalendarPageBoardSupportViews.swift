@@ -10,9 +10,9 @@ import SwiftUI
 /// needed no equivalent. Everything else Planning did — its bucketing, its drag-to-reschedule, its
 /// drag-back-to-unscheduled, its "N unscheduled · N overdue" summary — lives on this surface now.
 struct CalendarPageBoardView: View {
-    private static let columnWidth = calendarBoardDayColumnWidth
-    private static let columnSpacing = calendarBoardColumnSpacing
-    private static let horizontalPadding = calendarBoardHorizontalPadding
+    private static let columnWidth = CadenceCalendarBoardLayout.dayColumnWidth
+    private static let columnSpacing = CadenceCalendarBoardLayout.dayColumnSpacing
+    private static let horizontalPadding = CadenceCalendarBoardLayout.dayColumnHorizontalPadding
 
     let anchorDate: Date
     @Binding var selectedDate: Date
@@ -30,6 +30,10 @@ struct CalendarPageBoardView: View {
     @State private var isEchoingSelectedDate = false
     @State private var isProgrammaticScroll = false
     @State private var windowStartDate: Date?
+    /// Which rail the user has opened while the pane is too narrow to keep both open. One at a
+    /// time, so the fixed side never costs more than one expanded rail plus one strip — the whole
+    /// point of the gate. Ignored above `CadenceCalendarBoardLayout.expandedRailsMinimumWidth`.
+    @State private var userExpandedRail: CalendarBoardRail?
 
     private let calendar = Calendar.current
 
@@ -56,18 +60,45 @@ struct CalendarPageBoardView: View {
     }
 
     var body: some View {
+        // The width read here is the guarantee. The `HStack` below has two fixed-width children
+        // and one horizontal `ScrollView`, and a horizontal scroller declares no minimum — so
+        // nothing but this measurement stands between the day columns and 74pt. See
+        // `CadenceCalendarBoardLayout`, and `CadenceDesktopSplitLayout` for why the window floor
+        // is not where this can be fixed. A `GeometryReader` rather than `onGeometryChange` for
+        // `TodayView`'s reason: the board fills its pane in both axes, so there is no unmeasured
+        // first frame to guess a layout for.
+        GeometryReader { proxy in
+            // The surface asks the house file and passes the *answer* down, never the width —
+            // `TodayView`'s shape, and what keeps `CadencePaneWidthRuleHomesTests`' scan honest
+            // about where a width-derived decision may be declared.
+            board(boardForm: CadenceCalendarBoardLayout.railForm(paneWidth: proxy.size.width))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Theme.bg)
+    }
+
+    private func board(boardForm: CadenceCalendarBoardRailForm) -> some View {
         let rails = railTasks
 
-        VStack(spacing: 0) {
+        return VStack(spacing: 0) {
             summary(rails)
 
             HStack(spacing: 0) {
-                rail(.overdue, tasks: rails[.overdue] ?? [])
+                rail(.overdue, tasks: rails[.overdue] ?? [], boardForm: boardForm)
                 dayColumns
-                rail(.unscheduled, tasks: rails[.unscheduled] ?? [])
+                rail(.unscheduled, tasks: rails[.unscheduled] ?? [], boardForm: boardForm)
             }
         }
-        .background(Theme.bg)
+    }
+
+    /// What one rail draws: the board's own answer where the pane can pay for both, and otherwise
+    /// the strip — unless this is the one the user has opened.
+    private func form(
+        for rail: CalendarBoardRail,
+        boardForm: CadenceCalendarBoardRailForm
+    ) -> CadenceCalendarBoardRailForm {
+        guard boardForm == .collapsed else { return .expanded }
+        return userExpandedRail == rail ? .expanded : .collapsed
     }
 
     /// The Planning page's "N unscheduled · N overdue" line, kept because it is the one thing the
@@ -83,15 +114,31 @@ struct CalendarPageBoardView: View {
             .padding(.bottom, 8)
     }
 
-    private func rail(_ rail: CalendarBoardRail, tasks: [AppTask]) -> some View {
+    private func rail(
+        _ rail: CalendarBoardRail,
+        tasks: [AppTask],
+        boardForm: CadenceCalendarBoardRailForm
+    ) -> some View {
         // Only the Unscheduled rail takes drops or offers an add row; the Overdue rail gets `nil`
         // for both because a card cannot be dragged — or created — *into* being late.
         CalendarBoardRailColumn(
             rail: rail,
             tasks: tasks,
             add: addBehavior(for: .rail(rail)),
+            form: form(for: rail, boardForm: boardForm),
+            // `nil` where the pane can pay for both rails: there is nothing to toggle, so there is
+            // no control offering to.
+            onToggleForm: boardForm == .collapsed ? { toggleRail(rail) } : nil,
             onDrop: { items in rail == .unscheduled ? unschedule(items) : false }
         )
+    }
+
+    /// One rail open at a time. Opening the other closes the first rather than stacking two
+    /// expanded columns back onto a pane that was too narrow for them.
+    private func toggleRail(_ rail: CalendarBoardRail) {
+        withAnimation(kanbanColumnStateAnimation) {
+            userExpandedRail = userExpandedRail == rail ? nil : rail
+        }
     }
 
     private var dayColumns: some View {
