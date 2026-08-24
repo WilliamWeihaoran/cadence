@@ -198,11 +198,49 @@ enum CadenceScheduleSupport {
     /// Germany the header read `So Mo Di…` over columns that started on Monday, and in Saudi
     /// Arabia the skew was six columns. The labels being in the right language is what made it
     /// hard to see. Rotating here keeps the headings and the columns derived from one place.
-    static func weekdaySymbols(calendar: Calendar = .current) -> [String] {
-        let symbols = calendar.shortWeekdaySymbols
+    /// How wide a weekday heading spells itself. Both month grids read this rather than each
+    /// hand-rolling an array, because they drifted apart while they did: the macOS date picker
+    /// hard-coded a Sunday-first `["Su", "Mo", …]` while this function rotated a *localized* array,
+    /// so the two disagreed about the order in Monday-first regions and about the language
+    /// everywhere else.
+    enum WeekdaySymbolWidth {
+        /// `Sun` — the iOS month grid, which has the room.
+        case short
+        /// `Su` — the compact date-picker panel, which does not.
+        case compact
+    }
+
+    /// English weekday headings, rotated to the locale's own week start.
+    ///
+    /// The split is deliberate and is the whole point of this function. **Language is pinned**, for
+    /// the reason `DateFormatters` pins every fixed-format formatter: the app is English-only, so a
+    /// localized array rendered `周日 周一` beside untranslated chrome. **Week start is not pinned**,
+    /// because `firstWeekday` is not a language preference — a UK or German user wants Monday first
+    /// in an English app, and honouring that is correct rather than a half-measure.
+    ///
+    /// When the app is actually localized (`docs/TODO.md` T-18) the pin comes off and this returns
+    /// `calendar.shortWeekdaySymbols` again.
+    static func weekdaySymbols(
+        calendar: Calendar = .current,
+        width: WeekdaySymbolWidth = .short
+    ) -> [String] {
+        var english = Calendar(identifier: calendar.identifier)
+        english.locale = Locale(identifier: "en_US_POSIX")
+        let base = english.shortWeekdaySymbols
+        let symbols = width == .compact ? base.map { String($0.prefix(2)) } : base
         let offset = calendar.firstWeekday - 1
         guard symbols.count == 7, offset > 0, offset < 7 else { return symbols }
         return Array(symbols[offset...] + symbols[..<offset])
+    }
+
+    /// How many blank cells precede the 1st in a month grid, given where the locale starts its week.
+    ///
+    /// The macOS picker computed this as `weekday - 1`, which is Sunday-first unconditionally — so
+    /// in a Monday-first region its grid was shifted by one against its own headings. Sharing the
+    /// arithmetic is what stops the headings and the cells disagreeing.
+    static func leadingBlankCount(forFirstOf month: Date, calendar: Calendar = .current) -> Int {
+        let weekday = calendar.component(.weekday, from: month)
+        return (weekday - calendar.firstWeekday + 7) % 7
     }
 
     static func monthGridDays(for monthDate: Date, calendar: Calendar = .current) -> [Date] {

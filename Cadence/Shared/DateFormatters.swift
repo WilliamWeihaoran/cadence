@@ -33,9 +33,23 @@ nonisolated enum DateFormatters {
         return f
     }()
 
+    /// The six formatters below are locale-pinned for the reason `monthYear` and `shortMonthYear`
+    /// state: **this repo pins every fixed-format formatter**, because the app is English-only and
+    /// an unpinned one follows the host's locale. They were the only fixed-format formatters that
+    /// did not, which shipped half-translated dates beside English chrome — on a German Mac
+    /// `"EEEE, MMMM d"` rendered `Montag, August 24` and `"EEE"` rendered `Mo.`, next to untranslated
+    /// buttons and headings. `dayNumber` is pinned too even though it is only `"d"`: numerals follow
+    /// the locale as well, so an Arabic-Indic locale rendered the month grid in digits the rest of
+    /// the UI never uses.
+    ///
+    /// **When localisation actually happens this inverts** (`docs/TODO.md` T-18): the pins come off,
+    /// and the fixed patterns must become `setLocalizedDateFormatFromTemplate` or `Date.FormatStyle`,
+    /// because idiomatic zh is `8月24日` rather than a translated `MMMM d`. Pinning is right only
+    /// while there is exactly one language.
     /// `EEEE, MMMM d` — "Saturday, March 28"
     static let longDate: DateFormatter = {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "EEEE, MMMM d"
         return f
     }()
@@ -78,6 +92,7 @@ nonisolated enum DateFormatters {
     /// `MMM d` — "Mar 28"
     static let shortDate: DateFormatter = {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "MMM d"
         return f
     }()
@@ -85,6 +100,7 @@ nonisolated enum DateFormatters {
     /// `MMM d, yyyy` — "Mar 28, 2026"
     static let fullShortDate: DateFormatter = {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "MMM d, yyyy"
         return f
     }()
@@ -92,6 +108,7 @@ nonisolated enum DateFormatters {
     /// `EEE` — "Sat"
     static let dayOfWeek: DateFormatter = {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "EEE"
         return f
     }()
@@ -99,6 +116,7 @@ nonisolated enum DateFormatters {
     /// `d` — day-of-month number only: "28"
     static let dayNumber: DateFormatter = {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "d"
         return f
     }()
@@ -106,6 +124,7 @@ nonisolated enum DateFormatters {
     /// `MMM` — "Mar"
     static let monthAbbrev: DateFormatter = {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "MMM"
         return f
     }()

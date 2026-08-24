@@ -90,7 +90,11 @@ struct MonthCalendarPanel: View {
     var inlineStyle: Bool = false
 
     private let cal = Calendar.current
-    private let dayNames = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
+    // Was a hard-coded Sunday-first array, which disagreed with the iOS month grid's ordering in
+    // every Monday-first region. Both grids now read one function.
+    private var dayNames: [String] {
+        CadenceScheduleSupport.weekdaySymbols(calendar: cal, width: .compact)
+    }
     private let visibleMonthOffsets = Array(-24...24)
 
     var body: some View {
@@ -187,9 +191,11 @@ struct MonthCalendarPanel: View {
         var comps = cal.dateComponents([.year, .month], from: month)
         comps.day = 1
         guard let firstOfMonth = cal.date(from: comps) else { return [] }
-        let firstWeekday = cal.component(.weekday, from: firstOfMonth) - 1
+        // `weekday - 1` here was Sunday-first unconditionally, so the cells shifted against the
+        // headings above them wherever the locale starts its week on Monday.
+        let leadingBlanks = CadenceScheduleSupport.leadingBlankCount(forFirstOf: firstOfMonth, calendar: cal)
         let daysInMonth = cal.range(of: .day, in: .month, for: firstOfMonth)?.count ?? 30
-        var days: [Date?] = Array(repeating: nil, count: firstWeekday)
+        var days: [Date?] = Array(repeating: nil, count: leadingBlanks)
         for day in 1...daysInMonth {
             days.append(cal.date(byAdding: .day, value: day - 1, to: firstOfMonth))
         }
