@@ -10,7 +10,7 @@
   <main class="page">
     <p class="eyebrow">Cadence</p>
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: August 21, 2026</p>
+    <p class="updated">Last updated: August 24, 2026</p>
 
     <section>
       <h2>Overview</h2>
@@ -26,7 +26,7 @@
 
     <section>
       <h2>Calendar Access</h2>
-      <p>Cadence requests Calendar access so it can show calendar events and create, update, or delete scheduled task events when you ask it to. Calendar events are accessed through Apple's EventKit APIs. You can revoke Calendar access at any time in System Settings on macOS, or in the Settings app on iPhone and iPad.</p>
+      <p>Cadence requests Calendar access so it can show calendar events and create, update, or delete calendar events when you ask it to — for example when you drag out a new event on the timeline or calendar board, or edit or remove an event that already exists on the calendar. These calendar events are independent of your Cadence tasks: Cadence does not attach a task to a calendar event. Calendar events are accessed through Apple's EventKit APIs. You can revoke Calendar access at any time in System Settings on macOS, or in the Settings app on iPhone and iPad.</p>
     </section>
 
     <section>
@@ -59,6 +59,12 @@
       <p>Either route removes Cadence-created content from the current store, removes local Cadence backups and pending restores, and removes the saved OpenAI API key. On macOS it also clears the local Apple account profile; on iPhone and iPad there is no Cadence account profile to clear. Because Cadence syncs through your private iCloud database, these deletions reach your other devices.</p>
       <p>Deletion always asks you to confirm first, and it cannot be undone.</p>
       <p>Apple Calendar events that already exist in Calendar are managed by Calendar. You can delete those events directly in Calendar or through Cadence calendar features where available.</p>
+    </section>
+
+    <section>
+      <h2>Exporting Your Data</h2>
+      <p>Settings, Data Safety on macOS, iPhone and iPad offers Export an Archive. It writes a single JSON file containing everything Cadence stores &mdash; tasks, lists, notes, goals, habits, tags, saved links and embedded images &mdash; which you can open in any text editor and keep wherever you choose. The file leaves Cadence entirely: nothing is uploaded, and Cadence keeps no copy of where you put it.</p>
+      <p>Cadence also keeps automatic copies of its local store, but those live inside the app and are removed when you delete Cadence's data. An exported archive is the copy that outlives the app. Cadence cannot read an archive back in yet.</p>
     </section>
 
     <section>

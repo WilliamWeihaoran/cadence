@@ -828,6 +828,27 @@ iOS's focus screen holds its stopwatch in the already-shared `CadenceFocusTimerS
 (`TasksPanelComponents`, `TimelineBundleBlock`, `CalendarBoardItemSupportViews`), none of which iOS
 has. Un-guarding it would give the phone a second timer authority with no reader, not a feature.
 
+**So the way *into* a session from elsewhere on iOS is a handed-over target, not a lifted
+singleton** (T-266). `Shared/CadenceFocusHandoff.swift` holds `CadenceFocusHandoff` (a
+`CadenceFocusTarget` plus a token, because two taps on the same subject are two events) and the
+one-slot `CadenceFocusHandoffCenter` it passes through — the same shape as `CadenceDeepLinkManager`,
+injected beside it in `CadenceApp`, and iOS-only for the same reason `FocusManager` is macOS-only.
+The division is the load-bearing part: **`iOSRootView.routeToFocus()` navigates and knows nothing
+about clocks; `iOSFocusView.accept(_:)` adopts and knows nothing about tabs.** A root view that also
+decided what happens to a running session would be the second timer authority one level up.
+Two affordances ship, one per `CadenceFocusTarget` case — **Focus** in `iOSTaskRowContextMenu`
+(one entry, and it reaches every iOS task surface because `iOSTaskRow` is the row everywhere) and
+**Focus This Block** in `iOSCalendarBundleDetailSheet` (which is what both the board card and the
+timeline block open). A swipe action was rejected: a swipe is for what you do without looking, and
+this changes screens. `iOSTaskDetailSheet` still has none — that is T-273, deliberately scoped out.
+Two session rules live in `Shared/` with tests rather than in the view:
+`CadenceFocusSupport.timerState(startRequestFor:…)`, which unlike the play control's
+`afterPlayTapOn` **never pauses** (asking to focus the subject already running would otherwise stop
+its clock, and asking for a different one still starts at zero after `commitElapsed` banks the
+outgoing), and `endSession(leaving:…)`, which `iOSFocusView.onDisappear` now calls — leaving the
+Focus screen used to throw the measured minutes away, because the clock is `@State`, and a route
+*into* Focus from a task row makes backing straight out of it routine.
+
 A block's third transport control **logs**; it does not complete. "Finish the block" would be one
 decision about every member at once, including the ones you unticked — so on iOS the checkmark is
 replaced by `tray.and.arrow.down`, and completion stays on the member's own circle in the block's
@@ -901,6 +922,22 @@ prose was not. Trust the test, not this file.
   **macOS**: Settings → Account or Settings → Data Safety, gated by a window-modal `confirmationDialog` that enumerates what goes. It additionally calls `AppleAccountManager.signOut()`, which is macOS-only.
   **iOS/iPadOS**: Settings → Data Safety (`iOSDataResetSettingsSection`). The card's button only *presents*; the destructive control lives in a modal sheet and stays disabled until `PrivacyDataResetConfirmation.authorizes(_:)` accepts the typed phrase (`DELETE`). The mechanism differs from macOS on purpose — a mobile `confirmationDialog` is a bottom action sheet, i.e. one thumb-reachable tap — and the *bar* is the same or higher. There is no Account category on iOS, so there is no account profile to clear, and the copy does not claim one.
   This service lived under `macOS/Services/` behind an `#if os(macOS)` it never needed, which is why `docs/privacy.html` and `docs/app-review-notes.md` shipped promising iOS a deletion route that did not exist. Both documents now state the routes per platform.
+- **Exporting a copy** (`Services/CadenceDataExportService.swift`, **cross-platform**) is the other
+  half, and it is not `StoreBackupManager`. That manager snapshots the SQLite store at every launch
+  and can restore one — but every copy lives inside the app's own container, is deleted by
+  `deleteCadenceDataAndLocalArtifacts`, and is an opaque CoreData file readable only by a build with
+  this exact schema. `exportArchive(in:)` writes one JSON document holding **every** entity in
+  `CadenceSchema` (legacy note models and `Pursuit` included, `Goal.dependsOnGoalIDsJSON` and
+  `AppTask.calendarEventID` included — this exporter is those two fields' only reader), with
+  relationships as id references, image bytes as base64, ISO-8601 dates, and sorted pretty-printed
+  keys so two archives diff. **Add a new `@Model` here whenever you add one to `CadenceSchema`**:
+  `CadenceDataExportSurfaceTests` drives its coverage off the schema exactly as the reset's tests
+  do, so an omission fails the suite. Both Settings > Data Safety screens call that one function and
+  read their copy from `Shared/CadenceDataExportPresentation.swift`; neither re-spells the encoder.
+  **There is no import.** The archive decodes as a value and the round trip is pinned, but nothing
+  writes one back into a store — a restore into a CloudKit-synced container is not a local
+  operation. `docs/TODO.md` T-274 holds what an import must settle first; the card tells the user in
+  as many words that this is a copy to keep, not a restore point.
 - `DataIntegrityRepairService` is the conservative, idempotent repair pass for stale relationships.
 - `docs/privacy.html` and `docs/app-review-notes.md` are the shipped privacy/App Review material.
 
@@ -1043,7 +1080,9 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Today (`iPadTodayView` + compact/schedule/support variants). The compact Today has **no capture bar of its own** — the tab bar's `+` is the capture affordance
 - [x] Tasks (task rows/detail, All Tasks compact view, Inbox) — both keep their own inline capture bars
 - [x] Calendar (EventKit-backed via `iOSCalendarManager`): board view, month/timeline views, event edit/quick-create sheets, inspector
-- [x] Focus timer
+- [x] Focus timer, now enterable from outside the Focus screen — **Focus** in the task row's
+      long-press menu and **Focus This Block** in the block inspector, both through the
+      `CadenceFocusHandoffCenter` inbox described under "Task Bundles" (T-266)
 - [x] Goals (top-level directions plus their nested milestones), including a **Linked Lists**
       section with attach / unlink and a progress-attribution line. Before `23eb847` `GoalListLink`
       had zero references under `Cadence/iOS/` while `GoalContributionSummary` folded linked-list
@@ -1057,7 +1096,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Habits, whose detail reads the shared `HabitIconTile` / `HabitInfoCard` / `HabitHeatmap` /
       `HabitLast7DayStrip` — iOS's own copy of the 7-day strip was deleted in T-219
 - [x] Notes with its own markdown editor stack (styling, preview, slash commands, task/wiki references)
-- [x] Lists (Area/Project detail, editors), and since `c84732e` **deleting** an area, a project or a context — the fourth instance of a capability sitting behind an `#if os(macOS)` that imported nothing platform-specific. iOS's confirmation is a modal sheet rather than a bottom action sheet, and is *more* informative than macOS's rather than merely as ceremonious: it enumerates real counts ("1 project", "7 tasks") where macOS's categorical sentence cannot, and the three cascade sentences live in `Shared/CadenceListDeletionSummary.swift` so the copy cannot drift. Deliberately **no** typed phrase — the privacy reset needs one because it is total, unrecoverable and cannot report its scope; a list delete is scoped and now shows the scope, and typed-phrase friction on routine cleanup is friction people learn to satisfy without reading. List **completion** is still macOS-only on purpose (T-214, open): the obvious shared substitute, `applyStatusCompletion`, routes through `markDone`, which spawns the next recurrence occurrence — right for one task, wrong for bulk container completion that must not mint new work
+- [x] Lists (Area/Project detail, editors), and since `c84732e` **deleting** an area, a project or a context — the fourth instance of a capability sitting behind an `#if os(macOS)` that imported nothing platform-specific. iOS's confirmation is a modal sheet rather than a bottom action sheet, and is *more* informative than macOS's rather than merely as ceremonious: it enumerates real counts ("1 project", "7 tasks") where macOS's categorical sentence cannot, and the three cascade sentences live in `Shared/CadenceListDeletionSummary.swift` so the copy cannot drift. Deliberately **no** typed phrase — the privacy reset needs one because it is total, unrecoverable and cannot report its scope; a list delete is scoped and now shows the scope, and typed-phrase friction on routine cleanup is friction people learn to satisfy without reading. Since T-214 iOS can also **complete** a list, from the row's context menu on both the iPhone list and the iPad pane — the same `iOSWindDownConfirmationSheet` the archive and the kanban column present, with the outcome flipped to `.done`. It routes through `TaskContainerLifecycleService.completeRemainingActiveTasks`, **never** through `applyStatusCompletion`: that goes to `markDone`, which spawns the next recurrence occurrence into the same area, project and section, so the list would read finished and immediately refill itself. Two things about the completion that differ from the archive and are decisions rather than accidents: the conditional-confirmation rule is the *same* (`requiresConfirmation` asks whether anything irreversible happens, not how big a claim the action makes), and the copy is *not* — a completion asserts the work happened, which `GoalContributionSummary.progress` reads (`completedTasks / totalTasks` over `filter(\.isDone)`), so it can move a goal's bar where a bulk cancellation cannot; and a completed list leaves the Lists page for Settings › Lists rather than sitting under "Archived" one tap from Restore. Completion is a context-menu item and deliberately **not** a swipe action: the tray already carries Archive, and a second flick with no beat to read anything in is not where "this work is finished" belongs
 - [x] Search
 - [x] Settings — **twelve** categories (`iOSSettingsCategory`, count the cases): navigation, Account & Sync, **data safety** (including the account-and-data delete action the shipped privacy policy promises, behind a typed-phrase confirmation sheet), calendar, reminders, notifications, organization (contexts), lists, tags, templates, AI, and About. Two of those, `sync` and `ai`, went unlisted here for a while, which made mobile Settings read as a much thinner surface than it is. Reminders appears in **both** iOS Settings and the iOS Inbox, matching macOS. iOS omits exactly two categories, `sidebar` and `account`; see the parity note under "What's Built (macOS)".
 - [x] Notification scheduling wiring (see "What's Built (macOS)" above — shared logic, not iOS-specific)

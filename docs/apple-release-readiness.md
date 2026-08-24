@@ -32,7 +32,7 @@ Use this table when filling App Store Connect privacy details. If implementation
 | Email address | Optional Sign in with Apple private relay or email if Apple returns it | Collected, linked to user, app functionality |
 | User ID | Optional Apple user identifier for Cadence identity | Collected, linked to user, app functionality |
 | User content | Tasks, notes, documents, goals, habits, saved links, tags, calendar-link metadata, and app settings | Collected, linked to user, app functionality |
-| Calendar access | Apple Calendar events are shown and Cadence-created scheduled task events may be created, updated, or deleted when the user asks | Permission-gated app functionality; describe in review notes and privacy policy |
+| Calendar access | Apple Calendar events are shown, and calendar events (not tied to Cadence tasks) may be created, updated, or deleted when the user asks | Permission-gated app functionality; describe in review notes and privacy policy |
 | iCloud/CloudKit | Cadence may sync app data through the user's private iCloud database | App functionality; explain in privacy policy |
 | OpenAI API use | Optional AI actions send selected note content only after the user runs an AI command and saves their own API key | Disclose as optional third-party processing of selected user content |
 | Diagnostics/backups | Local migration/recovery backups and local error messages remain on device | App functionality; no tracking |
@@ -55,7 +55,7 @@ Current privacy manifest requirements:
 | iCloud container `iCloud.com.haoranwei.Cadence` | App | Syncs Cadence data through the user's private CloudKit database |
 | CloudKit service | App | Supports private iCloud sync |
 | APS environment | App | Allows CloudKit's silent remote notifications, which tell the app its private database changed. Registered for at launch on macOS (`CadenceRemoteNotificationRegistrar`). No alert/sound/badge payloads, no Cadence-operated sender, and no user-facing push notifications — task and habit reminders are *local* notifications through `UNUserNotificationCenter` |
-| Calendar personal information | App | Reads Apple Calendar events and creates, updates, or deletes scheduled task events when requested |
+| Calendar personal information | App | Reads Apple Calendar events and creates, updates, or deletes calendar events when requested; these writes are independent of Cadence tasks, which do not attach to a calendar event |
 | Reminders usage description (`NSRemindersFullAccessUsageDescription`) | App | Reads incomplete Apple Reminders for the Inbox and marks one complete when the user checks it off; Cadence never creates, edits, or deletes a reminder. Requested separately from Calendar access, and there is no reminders-specific App Sandbox entitlement to ship alongside it |
 | Network client | App | Supports optional OpenAI API calls and CloudKit/network-backed app functionality |
 | Sign in with Apple | App | Optional Cadence identity flow; local use and iCloud sync do not depend on it |

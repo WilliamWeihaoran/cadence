@@ -9,7 +9,8 @@ Platform:
 - macOS is the fuller surface. Where a feature is available on only one platform, these notes say which.
 
 Calendar access:
-- Cadence requests Calendar access to show Apple Calendar events and to create, update, or delete scheduled task events when the user asks it to.
+- Cadence requests Calendar access to show Apple Calendar events and to create, update, or delete calendar events when the user asks it to — for example dragging out a new event on the timeline or calendar board, or editing or removing an event that is already on the calendar.
+- These calendar writes are independent of Cadence tasks. Cadence does not attach a task to a calendar event, and scheduling a task inside Cadence does not create a calendar event for it.
 - Calendar access is optional, but calendar features are limited when permission is not granted.
 
 Reminders access:
@@ -33,6 +34,7 @@ AI features:
 Account and data deletion:
 - On macOS, users delete their Cadence account and data in Settings > Account or Settings > Data Safety.
 - On iPhone and iPad, users delete their Cadence data in Settings > Data Safety. There is no Account category on those platforms because Sign in with Apple is macOS-only, so there is no separate account to delete.
+- On every platform, Settings > Data Safety also offers Export an Archive: a single JSON file holding all Cadence-created content, written through the system save panel to a destination the user picks. Nothing is uploaded and the app retains no copy of the exported file. Cadence cannot import an archive back in.
 - Both platforms run the same deletion: it removes Cadence-created content from the current store, removes local Cadence backups and pending restores, removes the saved OpenAI API key, and cancels pending Cadence notifications. On macOS it additionally clears the local Apple account profile.
 - Deletion is confirmed before anything is removed. macOS asks for confirmation in a modal dialog that lists what will be deleted. iPhone and iPad open a confirmation sheet that lists the same items and requires the word DELETE to be typed before the destructive button becomes active.
 - Because Cadence syncs through the user's private iCloud database, deletions propagate to the user's other devices. Apple Calendar events that already exist in Calendar are managed by Calendar and are not deleted.

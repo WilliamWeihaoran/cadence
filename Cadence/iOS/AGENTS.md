@@ -129,9 +129,9 @@ The `.dropDestination` is attached in an `if let` branch rather than always-on-r
 because `isTargeted` fires whether or not the closure accepts the drop — an always-attached version
 would highlight cards on surfaces that cannot bundle.
 
-## Archiving A List Is A Wind-Down, Not A Status Flip
+## Archiving *Or Completing* A List Is A Wind-Down, Not A Status Flip
 
-**T-215.** `archive(_ area:)` here was `area.status = .archived` and a save. macOS's archive has
+**T-215, and T-214 beside it.** `archive(_ area:)` here was `area.status = .archived` and a save. macOS's archive has
 always also **cancelled the list's remaining active tasks**, through
 `TaskContainerLifecycleService`, which sat inside `macOS/Services/TaskWorkflowService.swift`'s
 `#if os(macOS)` while importing nothing platform-specific. So the same area wound down to two
@@ -139,29 +139,57 @@ different sets of open work depending on which device the swipe happened on, and
 Tasks kept surfacing work the phone had filed away. The service is
 `Cadence/Services/CadenceTaskContainerLifecycleService.swift` now — sixth instance of that shape.
 
-Three things about the iOS wiring that are easy to get wrong:
+**T-214** is the other direction, and closing it did not add a second mechanism. iOS offered no
+**Complete** action for a list at all while macOS's `EditListSheet` had one on both branches; the
+service was already cross-platform, public and tested (that was T-215's un-guard), so what was
+missing was an affordance. `iOSListArchiveSupport.swift` is `iOSListWindDownSupport.swift` now, with
+an `iOSListWindDownAction` beside the list — exactly the shape `iOSColumnWindDownTarget` already
+had, because the column needed both directions first.
 
-- **One archive call site.** `ModelContext.archiveList(_:)` in `iOSListArchiveSupport.swift` is the
-  only place `status = .archived` is written on this platform, and the only place the wind-down is
-  reached. `CadenceListArchiveSurfaceTests` sweeps the whole folder for a hand-written
-  `status = .archived` and fails on a second one — which is the bug the ticket was about.
+Five things about the iOS wiring that are easy to get wrong:
+
+- **One wind-down call site, for both directions.** `ModelContext.windDownList(_:)` in
+  `iOSListWindDownSupport.swift` is the only place `status = .archived` or a list's
+  `status = .done` is written on this platform, and the only place the settle is reached.
+  `CadenceListWindDownSurfaceTests` sweeps the whole folder for both and fails on a second one —
+  which is the bug both tickets were about. The `.done` sweep is spelled `area.status = .done` /
+  `project.status = .done` rather than bare, because `AppTask` legitimately carries that status and
+  `iOSSampleDataSupport` writes it.
 - **The confirmation is conditional, and that is the design.** macOS's archive is behind an edit
   sheet you had to open; iOS's is a row swipe and a long-press item, so the ceremony has to come
   from somewhere. But a sheet that appears over a list where nothing is open is a sheet people
   learn to dismiss without reading. `CadenceContainerWindDownSummary.requiresConfirmation` is the
-  test, it is asked **once** (in `iOSListsView.requestArchive`), and the iPad pane calls up into
+  test, it is asked **once** (in `iOSListsView.requestWindDown`), and the iPad pane calls up into
   that rather than deciding for itself. (The type was `CadenceListArchiveSummary` until T-247
   shared it with the kanban column, which needed the identical four members with one word changed.)
+- **The rule does not get stricter for completion, and the copy does.** `requiresConfirmation` asks
+  whether anything irreversible happens, not how big a claim the action makes, so completing an
+  empty list is still one tap. What differs is what the settle *asserts*: a cancellation records
+  that work was abandoned, a completion records that it happened, and
+  `GoalContributionSummary.progress` reads `completedTasks / totalTasks` over `filter(\.isDone)` —
+  so bulk completion can move a goal's bar where bulk cancellation cannot, since a cancelled task
+  stays in the denominator and out of the numerator. The completion sheet says so and names where
+  the list goes; the destination is **not** symmetrical — an archived list stays on the Lists page
+  under "Archived" one tap from Restore, a completed one leaves the page and is reopened from
+  Settings › Lists.
+- **Completion is a context-menu item on both surfaces and a swipe action on neither.**
+  `iOSListRowSwipeActions` (in `iOSListSupportViews.swift`) still declares `archive` and nothing
+  else, and a test fails if it grows a `complete`. A swipe is one flick with no beat to read
+  anything in, and the confirmation deliberately does not appear for a list with nothing open — so a
+  two-action tray would put "this work is finished" one mis-flick from "file it away". It is also
+  not `role: .destructive`: finishing work is not destruction, and the sheet derives its own green
+  from the outcome.
 - **The count comes from the settle's own array.** `TaskContainerLifecycleService.remainingActiveTasks`
   is public for exactly this: a confirmation that counted by a second walk would eventually
   over-promise. An area rolls up its child projects, because a child keeps its own `status` and its
-  tasks stay reachable after the parent is filed away.
+  tasks stay reachable after the parent is filed away. `forArea` / `forProject` take the outcome as
+  a **required** argument rather than defaulting to `.cancelled`, so a completion cannot quietly
+  promise the wrong verb over the right number.
 
-Deliberately not changed: list **completion** is still macOS-only (T-214) — un-guarding the service
-makes it a call site and nothing more, but nothing on iOS offers the action yet. Do **not** reach
-for `markDone` / `markCancelled` / `applyStatusCompletion` for it: they spawn the next recurrence
-occurrence into the same area, project and section, so a wind-down routed through them refills the
-container it just closed.
+Do **not** reach for `markDone` / `markCancelled` / `applyStatusCompletion` on either branch: they
+spawn the next recurrence occurrence into the same area, project and section, so a wind-down routed
+through them refills the container it just closed. That bites hardest on completion — the list
+would read finished and immediately carry fresh open work.
 
 ## A Kanban Column Winds Down Too, And It Is An Action Rather Than A Draft
 
@@ -194,6 +222,59 @@ a call at the save.
   is the *same* sheet the list archive presents, parameterised by `iOSWindDownSubject`.
   `CadenceColumnWindDownSurfaceTests` sweeps the folder for `$draft.isArchived` /
   `$draft.isCompleted` — the `$` is what makes it the bug — and fails on either.
+
+## A Focus Session Is Entered By Handing Over A Target, Not By Un-Guarding `FocusManager`
+
+**T-266.** macOS starts a session from four places outside its Focus screen, all of them
+`FocusManager.startFocus(…)` — whose `wantsNavToFocus` is what moves the shell. That singleton is
+**still macOS-only and still correctly so**: iOS keeps its stopwatch in `iOSFocusView`'s own
+`CadenceFocusTimerState`, so a cross-platform `FocusManager` would be a second timer authority with
+nothing incrementing its `elapsed`. What iOS was missing is the *message*, and that is
+`Shared/CadenceFocusHandoff.swift` — a `CadenceFocusHandoff` (a `CadenceFocusTarget` plus a token)
+in a one-slot `CadenceFocusHandoffCenter`, the same shape as `CadenceDeepLinkManager` and injected
+beside it.
+
+Five things about the wiring that are easy to get wrong:
+
+- **The shell routes, the screen adopts.** `iOSRootView.routeToFocus()` knows which tab owns Focus
+  and nothing about clocks; `iOSFocusView.accept(_:)` knows about the clock and nothing about tabs.
+  A root view that also decided what happens to a running session would be the thing T-242 rejected,
+  one level up. The route reads `CadenceFocusHandoff.destination.compactRoute` rather than spelling
+  "More, pushed", and it **guards on path equality** — replacing the stack with an equal-valued
+  `NavigationPath` while the user is on Focus risks a fresh view identity, and a fresh
+  `iOSFocusView` is a fresh `@State` clock, i.e. the running session vanishing at the exact moment
+  the handoff was meant to be banked into it.
+- **Both arrival routes, or the affordance works only sometimes.** `onAppear` covers the cold case
+  (More was never visited, or was showing Goals); `onChange(of:pending?.id)` covers the warm one —
+  the compact shell keeps every *visited* tab alive at zero opacity, so a Focus screen with a
+  running session is usually still standing behind whatever tab you are on.
+- **A handoff is not a play tap.** `CadenceFocusSupport.timerState(afterPlayTapOn:…)` *toggles*, so
+  routing a handoff through it would **pause** the session whenever the subject asked for is the
+  subject already running. `timerState(startRequestFor:…)` never pauses; a different subject still
+  starts from zero, after `commitElapsed` has banked the outgoing one.
+- **The commit is not re-spelled.** `accept(_:)` calls `select(_:)`, which already commits, and
+  only adds the start on top. `FocusSessionSwitchCommitTests` counts
+  `CadenceFocusSupport.commitElapsed(` in this file **exactly twice** for that reason — a third
+  would mean a second body for "leaving a session".
+- **The target is not a `UUID`, and the lookup is not the picker.** `pickItem(for:)` falls back to
+  the whole store, because a handoff arrives from surfaces that have no idea what "ready" means: a
+  task do-dated next month has a long-press menu like any other, and a lookup confined to
+  `pickItems` would make Focus silently do nothing on exactly the task you went looking for.
+
+**Leaving the screen now banks the session** (`.onDisappear` → `CadenceFocusSupport.endSession`),
+which is what macOS calls `FocusManager.endSession()`. That was a pre-existing discard — the clock
+is `@State` — and it is fixed here rather than filed because a route *into* Focus from a task row
+makes backing straight out of it the common case. A tab switch is not a disappear in this shell.
+
+**Where the affordances are, and why not elsewhere.** `iOSTaskRowContextMenu` for tasks: one entry
+reaching Today, All Tasks, Inbox, list detail, the calendar inspector and the month agenda, because
+`iOSTaskRow` is *the* task row. `iOSCalendarBundleDetailSheet` for blocks, because on iOS both the
+board card and the timeline block open that sheet — a permanently visible ▶ on every block card is
+clutter on the one surface whose job is reading a day at a glance, and a finger cannot reveal a
+control without committing to it the way a pointer can. The **swipe tray was rejected**: a swipe is
+for the two or three things you do to a task without looking, and this one changes screens.
+`iOSTaskDetailSheet` has no Focus action yet — see T-273, and note that the sheet is presented by a
+host, so its button has to dismiss while the shell routes underneath.
 
 ## Today's Rollover Notice Is Shared, And Only Half Of T-195 Is Done
 

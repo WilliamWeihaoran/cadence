@@ -66,12 +66,26 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   third belongs in the same test.
 
 - [T-272] **Goals' *timeline* mode has never had an Attach List route, at any width.**
-  Found while doing [[T-271]] and separate from it: `GoalTimelineView` is handed only `onEditGoal`
-  (`GoalsView.content(groups:)`), so the roadmap presentation offers Edit at every width and Attach
+  Found while doing [[T-271]] and separate from it: `GoalTimelineView` was handed only `onEditGoal`
+  (`GoalsView.content(groups:)`), so the roadmap presentation offered Edit at every width and Attach
   List at none. This is not [[T-250]] fallout — the timeline layout never had an inspector to lose —
-  which is why it was left out of T-271 rather than folded into it. `GoalInspectorSheet` now exists
-  and takes the goal plus the three `@Query` arrays, so the plumbing is a bar/row action on the
-  timeline goal, not a new view.
+  which is why it was left out of T-271 rather than folded into it.
+  **Fixed in the working tree, uncommitted, and it composes with [[T-271]] rather than adding a
+  second route** — verified, not assumed: `GoalInspectorSheet` and its
+  `.sheet(isPresented: $showGoalDetail)` hang off `GoalsView.body`, which wraps *both* presentations,
+  so the presenter was already installed over the timeline and only the mission branch ever spent it.
+  What was missing was the row action. `onEditGoal` became `onOpenGoal`, wired to the same
+  `select(_:showsInspector:)` the mission cards call with a literal `false`, because the Gantt has no
+  column to select into at any width — one flag, one gate, no second `showGoalDetail = true` for the
+  two answers to disagree over. Edit did not move: it is a button inside `GoalInspectorView`, so the
+  double-click now reaches a superset of what it did, with Attach List and `GoalLinkedListRow`'s
+  per-list detach beside it. `GoalTimelineGroupRow` gained the route too, not just the milestone rail
+  row and the bar: `timelineBody` skips the bar unless the goal has **both** dates, so hanging it on
+  the bar would have left an undated *direction* — the shape a linked list is most likely to hang off
+  — as the one goal on the page with no way to attach one. That is T-271's own argument about its two
+  card kinds. No `GoalListLink` write was added anywhere; the sheet reaches `AttachWorkSheet` and
+  `ModelContext.detachGoalListLink` exactly as the mission inspector does. Pinned by
+  `CadenceGoalTimelineRouteTests` (5 tests, four mutations each failing only their own).
 
 - [T-268] **macOS offers "Mark Section Completed" on the Default kanban column, and the model
   throws the flag away while the settle still runs.** Found while doing [[T-247]].
@@ -773,6 +787,73 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   Method: read-only audit agents first, findings triaged and recorded here, then implementation
   agents, each followed by an **independent verifier agent** that checks the work against the code
   rather than against the implementer's report.
+
+  **Audit pass, 2026-08-24, against `af03fb1`.** Re-derived every count in this entry and in the
+  guides rather than trusting them, per the method above.
+  - **Item 3 (MCP) is done by inspection.** `CadenceMCPServer/AGENTS.md` already states the full
+    boundary — why the old "do not touch" rule was wrong (`670e299`/`62dc384` broke the target
+    silently, `0040f24` shipped a stale schema silently) and the procedure that replaced it. There
+    is nothing left to refactor that the doc doesn't already explain; a future pass should cite a
+    specific file before re-opening this rather than re-asking the general question.
+  - **The proportions line is dated but the trend is real, not a reason to reset it.** At filing:
+    macOS 218/51.9k, iOS 79/30.4k, Shared 74/11.5k. At `af03fb1`: macOS 216/51.2k (flat), iOS
+    96/35.0k (+17 files), **Shared 106/19.0k (+32 files, +7.5k, +65%)**. Item 1's sharing sweep is
+    visibly happening.
+  - **Two file counts elsewhere had drifted**, caught by re-deriving instead of trusting them: iOS's
+    `.swift` count read "93" in four places (root `AGENTS.md`, `CLAUDE.md` ×2, `Cadence/iOS/AGENTS.md`)
+    against an actual `ls Cadence/iOS/*.swift | wc -l` of 96; `CadenceTests/` read "177" in two
+    places (root `AGENTS.md`, `CLAUDE.md`) against an actual 186. Fixed in root `AGENTS.md` (both
+    counts) in this pass. **Not fixed in `CLAUDE.md` or `Cadence/iOS/AGENTS.md`**: both files were
+    mid-edit by other agents for unrelated work (the `CadenceFocusHandoff`/T-266 addition and the
+    T-214/T-215 archive→wind-down rename) while this pass ran, so editing them risked colliding
+    with in-flight work rather than being unsafe on its own terms — still open. Everything else
+    checked out exactly and needed no correction: `Shared/Components/` 21 files (matches the named
+    list), `macOS/Views/` 167, `Services/` 50, `Markdown*.swift` 27 (25 of them `*Support`),
+    `SettingsCategory` 14 cases, `iOSSettingsCategory` 12 cases.
+  - **One concrete near-copy found, filed separately as [T-275]** rather than fixed here: fixing it
+    is a visible macOS change, and item 2 above requires those to be screenshotted rather than
+    argued, which a read-only pass isn't positioned to do.
+  - **Checked and clean, no action needed:** no `Color(hex: "#...")` literals outside `Theme.swift`,
+    no bare `Color.white`/`.black`/`.gray`, priority/status colour fully routed through
+    `Theme.priorityColor`/`statusColor`, `CadenceFeatureDestination` tints read from one source on
+    both platforms (the `e181dea` fix holds), `GoalLinkTarget`'s one write path holds on macOS too
+    (`.area`/`.project` shorthand at both `CreateGoalSheet` and `GoalAttachWorkSheet` call sites,
+    not a bare `GoalListLink(` construction).
+  - **Narrowed scope going forward:** item 3 is closed. Item 1 is the real remaining work, and the
+    productive unit of audit is one hand-rolled UI pattern (a header, a label style, a literal
+    list) at a time, grepped across both platform folders before calling it shared or
+    platform-only — the method that found [T-275] and the two stale counts above.
+
+- [T-275] **`SectionEyebrowLabel` exists to stop exactly this, and nine call sites don't use it.**
+  Found by a [[T-123]] grep sweep for the shape the component's own doc comment says it
+  consolidates — `.font(.system(size: 10, weight: .semibold))` plus a dim tint plus
+  `textCase(.uppercase)` — hand-rolled instead of the shared component. All nine are plain
+  section/row eyebrows with nothing about them that would justify a bespoke spelling:
+  - iOS: `iOSFeatureDetailViews.swift:340` ("Next", `.kerning(0.6)`), `iPadTodayScheduleViews.swift:463`
+    ("Ready to Schedule", `.kerning(0.7)`).
+  - macOS: `SchedulePanelShellViews.swift:32` ("Today", no kerning), `TaskBundlePickerSupportViews.swift:196`
+    (`resultSectionLabel`, no kerning), `FocusPickerSupportViews.swift:24` ("Ready to focus", no
+    kerning), `FocusSidebarSupportViews.swift:39` (`sidebarLabel`, no kerning),
+    `FocusChromeSupportViews.swift:13` (`eyebrow` parameter, no kerning), `TasksPanel.swift:542`
+    (`overdueSectionHeading`, size **11** not 10, `.kerning(0.8)` applied to the whole `HStack` —
+    title and count both — not just the label), `ListNotesViewSupportViews.swift:73` (section
+    title, tint `Theme.muted` — the only one of the nine that also disagrees on **colour**, not
+    just kerning).
+  `SectionEyebrowLabel` itself is `.kerning(0.8)`. Six of the nine specify no kerning at all (system
+  default 0); the other three specify 0.6, 0.7, and 0.8 — one matches by coincidence, two don't.
+  Same shape `e181dea` fixed for destination tints — independent hand-typed copies of one value
+  drifting apart — for a label style instead of a colour. **Gratuitous, not deliberate**: nothing
+  about any of the nine sites needs a size, weight, tint or kerning different from the shared
+  label; several sit in files that use `SectionEyebrowLabel` correctly elsewhere for the identical
+  visual role.
+  **Not fixed in this pass**: converting all nine is a visible macOS change (six of the nine sites),
+  and item 2 of [[T-123]] requires every macOS visual change to be screenshotted rather than argued
+  — a read-only audit isn't positioned to do that verification, and this tree had 14 other agents
+  live in it at audit time, several editing adjacent Focus files. `TasksPanel.swift:542` also needs
+  a decision, not just a swap: its label shares a size-11 `HStack` with a count `Text`, so adopting
+  `SectionEyebrowLabel` means either accepting its fixed 10pt (shrinking the row a point) or the
+  count keeping its own explicit size while the label switches — a one-line call, but a real one,
+  not proven safe by grep alone.
 
 - [T-122] **Flip `SWIFT_VERSION` to 6.0 — now an open question rather than a blocked one.** `D-95`
   cleared the last macOS error, so nothing in the app's source blocks it. What remains: 10
