@@ -6,8 +6,8 @@ struct TasksPanelDerivedState {
     let dueTodayTasks: [AppTask]
     let doTodayTasks: [AppTask]
     let overdoTasks: [AppTask]
-    let overdueListSummaries: [TodayOverdueListSummary]
-    let overdueSectionSummaries: [TodayOverdueSectionSummary]
+    let overdueListSummaries: [CadenceTodayOverdueListSummary]
+    let overdueSectionSummaries: [CadenceTodayOverdueSectionSummary]
     let byDoDateBaseTasks: [AppTask]
     let byDoDateBaseSortedTasks: [AppTask]
     let doneTasks: [AppTask]
@@ -34,74 +34,21 @@ struct TasksPanelDerivedState {
         // Same set as before — the exclusion set it derives is `scheduledExclusions`.
         overdoTasks = CadenceTodayRolloverSupport.pastDoTasks(from: allTasks, todayKey: todayKey)
 
-        overdueListSummaries = projects
-            .filter { $0.isActive && !$0.dueDate.isEmpty && $0.dueDate < todayKey }
-            .sorted { lhs, rhs in
-                if lhs.dueDate != rhs.dueDate { return lhs.dueDate < rhs.dueDate }
-                return lhs.order < rhs.order
-            }
-            .map { project in
-                TodayOverdueListSummary(
-                    id: "project-\(project.id.uuidString)",
-                    areaID: nil,
-                    projectID: project.id,
-                    title: project.name,
-                    icon: project.icon,
-                    color: Color(hex: project.colorHex),
-                    dueDateKey: project.dueDate,
-                    activeTaskCount: CadenceTaskQuerySupport.openTaskCount(for: project)
-                )
-            }
-
-        let areaSummaries = areas
-            .filter(\.isActive)
-            .flatMap { area in
-                area.sectionConfigs.compactMap { config -> TodayOverdueSectionSummary? in
-                    guard !config.isArchived, !config.isCompleted, !config.dueDate.isEmpty, config.dueDate < todayKey else { return nil }
-                    let tasks = (area.tasks ?? []).filter { $0.resolvedSectionName.caseInsensitiveCompare(config.name) == .orderedSame }
-                    let openCount = CadenceTaskQuerySupport.openTaskCount(from: tasks)
-                    let doneCount = CadenceTaskQuerySupport.completedTaskCount(from: tasks)
-                    return TodayOverdueSectionSummary(
-                        id: "area-\(area.id.uuidString)-section-\(config.id.uuidString)",
-                        areaID: area.id,
-                        projectID: nil,
-                        sectionName: config.name,
-                        parentName: area.name,
-                        parentIcon: area.icon,
-                        parentColor: Color(hex: area.colorHex),
-                        dueDateKey: config.dueDate,
-                        openTaskCount: openCount,
-                        completedTaskCount: doneCount
-                    )
-                }
-            }
-        let projectSummaries = projects
-            .filter(\.isActive)
-            .flatMap { project in
-                project.sectionConfigs.compactMap { config -> TodayOverdueSectionSummary? in
-                    guard !config.isArchived, !config.isCompleted, !config.dueDate.isEmpty, config.dueDate < todayKey else { return nil }
-                    let tasks = (project.tasks ?? []).filter { $0.resolvedSectionName.caseInsensitiveCompare(config.name) == .orderedSame }
-                    let openCount = CadenceTaskQuerySupport.openTaskCount(from: tasks)
-                    let doneCount = CadenceTaskQuerySupport.completedTaskCount(from: tasks)
-                    return TodayOverdueSectionSummary(
-                        id: "project-\(project.id.uuidString)-section-\(config.id.uuidString)",
-                        areaID: nil,
-                        projectID: project.id,
-                        sectionName: config.name,
-                        parentName: project.name,
-                        parentIcon: project.icon,
-                        parentColor: Color(hex: project.colorHex),
-                        dueDateKey: config.dueDate,
-                        openTaskCount: openCount,
-                        completedTaskCount: doneCount
-                    )
-                }
-            }
-        overdueSectionSummaries = (areaSummaries + projectSummaries).sorted { lhs, rhs in
-            if lhs.dueDateKey != rhs.dueDateKey { return lhs.dueDateKey < rhs.dueDateKey }
-            if lhs.parentName != rhs.parentName { return lhs.parentName.localizedCaseInsensitiveCompare(rhs.parentName) == .orderedAscending }
-            return lhs.sectionName.localizedCaseInsensitiveCompare(rhs.sectionName) == .orderedAscending
-        }
+        // The two past-due summaries, and the `sectionConfigs` walk behind them, are
+        // `CadenceTodayOverdueSummarySupport` rather than re-spelled here (T-195, second half):
+        // both were declared and derived under `macOS/Views/` with zero readers under
+        // `Cadence/iOS/`, and neither the project due-date filter nor the column walk touches
+        // AppKit. `CadenceTodayOverdueSummarySurfaceTests` recomputes both with the old inline
+        // expressions and asserts they are identical, member for member and in order.
+        overdueListSummaries = CadenceTodayOverdueSummarySupport.listSummaries(
+            projects: projects,
+            todayKey: todayKey
+        )
+        overdueSectionSummaries = CadenceTodayOverdueSummarySupport.sectionSummaries(
+            areas: areas,
+            projects: projects,
+            todayKey: todayKey
+        )
 
         byDoDateBaseTasks = CadenceTaskQuerySupport.openTasks(from: allTasks)
         byDoDateBaseSortedTasks = byDoDateBaseTasks.taskSorted(by: sortField, direction: sortDirection)

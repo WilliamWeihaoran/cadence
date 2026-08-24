@@ -12,6 +12,9 @@ struct iOSCompactTodayView: View {
     /// `iOSTodayTaskSections`, which is where both widths draw it — this host does not decide
     /// anything about it.
     var rolloverNotice: iOSTodayRolloverNotice?
+    /// Today's past-due lists and columns, or `nil` when there are none. Forwarded, like the notice
+    /// above — this host decides nothing about them either. See `iOSTodayOverdueSummaries`.
+    var overdueSummaries: iOSTodayOverdueSummaries?
     /// The day's counts, as the two-pane column reads them. It used to take a `todayTasks` array
     /// purely to call `.count` on it for the header badge, which is the same number
     /// `CadenceTodaySummary.activeCount` already holds — and the rest of the summary was simply not
@@ -111,6 +114,7 @@ struct iOSCompactTodayView: View {
             completedTasks: completedTodayTasks,
             showsCompleted: showCompleted,
             rolloverNotice: rolloverNotice,
+            overdueSummaries: overdueSummaries,
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
         )
@@ -120,7 +124,8 @@ struct iOSCompactTodayView: View {
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
             showsCompleted: showCompleted,
-            rolloverNotice: rolloverNotice
+            rolloverNotice: rolloverNotice,
+            overdueSummaries: overdueSummaries
         )
         #endif
     }

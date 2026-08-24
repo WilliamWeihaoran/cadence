@@ -20,29 +20,13 @@ enum TaskGroupingMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-struct TodayOverdueListSummary: Identifiable {
-    let id: String
-    let areaID: UUID?
-    let projectID: UUID?
-    let title: String
-    let icon: String
-    let color: Color
-    let dueDateKey: String
-    let activeTaskCount: Int
-}
-
-struct TodayOverdueSectionSummary: Identifiable {
-    let id: String
-    let areaID: UUID?
-    let projectID: UUID?
-    let sectionName: String
-    let parentName: String
-    let parentIcon: String
-    let parentColor: Color
-    let dueDateKey: String
-    let openTaskCount: Int
-    let completedTaskCount: Int
-}
+// `TodayOverdueListSummary` and `TodayOverdueSectionSummary` were declared here, and derived in
+// `TasksPanelDerivedState.init`, with zero readers under `Cadence/iOS/`. Both are
+// `CadenceTodayOverdueListSummary` / `CadenceTodayOverdueSectionSummary` in
+// `Shared/CadenceTodayOverdueSummarySupport.swift` now (T-195, second half), together with the
+// `sectionConfigs` walk that builds them — and this panel is rewired onto them rather than left
+// beside them. They carry the list's `colorHex` rather than a resolved `Color`, which is what lets
+// `CadenceTodayOverdueSummarySurfaceTests` recompute the whole derivation without SwiftUI.
 
 enum MacTaskRowStyle {
     case standard
@@ -200,19 +184,36 @@ enum TasksPanelSupport {
         TaskDragPayload.taskID(from: payload)
     }
 
-    static func openOverdueListSummary(_ summary: TodayOverdueListSummary, listNavigationManager: ListNavigationManager) {
-        if let projectID = summary.projectID {
-            listNavigationManager.open(projectID: projectID, page: .tasks)
-        } else if let areaID = summary.areaID {
-            listNavigationManager.open(areaID: areaID, page: .tasks)
-        }
+    /// The tap target for a past-due **list** card.
+    ///
+    /// *Which* list and *which* page is `CadenceTodayOverdueSummarySupport.openRequest(for:)`, so
+    /// iOS's Today lands on the same page from the same card. What stays here is the hop —
+    /// `ListNavigationManager` is macOS-only, and is the one genuinely platform-shaped piece of
+    /// this feature.
+    static func openOverdueListSummary(
+        _ summary: CadenceTodayOverdueListSummary,
+        listNavigationManager: ListNavigationManager
+    ) {
+        guard let request = CadenceTodayOverdueSummarySupport.openRequest(for: summary) else { return }
+        open(request, listNavigationManager: listNavigationManager)
     }
 
-    static func openOverdueSectionSummary(_ summary: TodayOverdueSectionSummary, listNavigationManager: ListNavigationManager) {
-        if let projectID = summary.projectID {
-            listNavigationManager.open(projectID: projectID, page: .kanban, sectionName: summary.sectionName)
-        } else if let areaID = summary.areaID {
-            listNavigationManager.open(areaID: areaID, page: .kanban, sectionName: summary.sectionName)
+    static func openOverdueSectionSummary(
+        _ summary: CadenceTodayOverdueSectionSummary,
+        listNavigationManager: ListNavigationManager
+    ) {
+        guard let request = CadenceTodayOverdueSummarySupport.openRequest(for: summary) else { return }
+        open(request, listNavigationManager: listNavigationManager)
+    }
+
+    /// One translation from the shared request to the macOS router, so the two cards above cannot
+    /// disagree about how a request is spent.
+    private static func open(_ request: CadenceListOpenRequest, listNavigationManager: ListNavigationManager) {
+        switch request.target {
+        case .project(let projectID):
+            listNavigationManager.open(projectID: projectID, page: request.page, sectionName: request.sectionName)
+        case .area(let areaID):
+            listNavigationManager.open(areaID: areaID, page: request.page, sectionName: request.sectionName)
         }
     }
 

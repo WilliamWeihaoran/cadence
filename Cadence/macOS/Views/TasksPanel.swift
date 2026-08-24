@@ -537,13 +537,13 @@ struct TasksPanel: View {
         .background(Theme.surface)
     }
 
-    private func overdueListsSection(summaries: [TodayOverdueListSummary]) -> some View {
+    private func overdueListsSection(summaries: [CadenceTodayOverdueListSummary]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            overdueSectionHeading("Past Due Lists", count: summaries.count)
+            overdueSectionHeading(CadenceTodayOverdueSummarySupport.listsHeading, count: summaries.count)
 
             VStack(spacing: 8) {
                 ForEach(summaries) { summary in
-                    TodayOverdueListCard(summary: summary) {
+                    CadenceTodayOverdueListCard(summary: summary) {
                         openOverdueListSummary(summary)
                     }
                 }
@@ -553,13 +553,13 @@ struct TasksPanel: View {
         }
     }
 
-    private func overdueSectionsSection(summaries: [TodayOverdueSectionSummary]) -> some View {
+    private func overdueSectionsSection(summaries: [CadenceTodayOverdueSectionSummary]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            overdueSectionHeading("Past Due Sections", count: summaries.count)
+            overdueSectionHeading(CadenceTodayOverdueSummarySupport.sectionsHeading, count: summaries.count)
 
             VStack(spacing: 8) {
                 ForEach(summaries) { summary in
-                    TodayOverdueSectionCard(summary: summary) {
+                    CadenceTodayOverdueSectionCard(summary: summary) {
                         openOverdueSectionSummary(summary)
                     }
                 }
@@ -569,18 +569,11 @@ struct TasksPanel: View {
         }
     }
 
-    /// Neutral eyebrow with its count beside it. It used to be `Theme.red` — the third telling of
-    /// "late" over rows that already say so, above cards that said so twice more.
+    /// The shared heading, with this column's own gutter. Neutral rather than `Theme.red` — see
+    /// `CadenceTodayOverdueSummaryHeading`, which iOS's Today draws too.
     private func overdueSectionHeading(_ title: String, count: Int) -> some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .kerning(0.8)
-                .textCase(.uppercase)
-            Text("\(count)")
-        }
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(Theme.dim)
-        .padding(.horizontal, 16)
+        CadenceTodayOverdueSummaryHeading(title: title, count: count)
+            .padding(.horizontal, 16)
     }
 
     // MARK: - Grouping
@@ -722,11 +715,11 @@ struct TasksPanel: View {
         TasksPanelSupport.regularCount(in: tasks, todayKey: todayKey)
     }
 
-    private func openOverdueListSummary(_ summary: TodayOverdueListSummary) {
+    private func openOverdueListSummary(_ summary: CadenceTodayOverdueListSummary) {
         TasksPanelSupport.openOverdueListSummary(summary, listNavigationManager: listNavigationManager)
     }
 
-    private func openOverdueSectionSummary(_ summary: TodayOverdueSectionSummary) {
+    private func openOverdueSectionSummary(_ summary: CadenceTodayOverdueSectionSummary) {
         TasksPanelSupport.openOverdueSectionSummary(summary, listNavigationManager: listNavigationManager)
     }
 

@@ -1,4 +1,5 @@
 #if os(iOS)
+import SwiftData
 import SwiftUI
 
 /// Today's rollover notice, as a surface opts into it: the tasks the banner lists and the action
@@ -7,6 +8,24 @@ import SwiftUI
 struct iOSTodayRolloverNotice {
     let tasks: [AppTask]
     let onRollOver: () -> Void
+}
+
+/// Today's past-due summaries, as a surface opts into them: the two arrays and the one thing that
+/// can act on either, together — the same shape as `iOSTodayRolloverNotice` above.
+///
+/// **The action is a closure, and that is the whole platform-shaped half of T-195's second
+/// piece.** macOS's cards hop `ListNavigationManager`, a shell-level router that exists because the
+/// Mac's sidebar is always on screen: opening a list there is a change of pane, and Today is one
+/// click back. iOS has no equivalent and does not grow one here. See `iPadTodayView`, which
+/// presents rather than navigates, and says why.
+struct iOSTodayOverdueSummaries {
+    let listSummaries: [CadenceTodayOverdueListSummary]
+    let sectionSummaries: [CadenceTodayOverdueSectionSummary]
+    let onOpen: (CadenceListOpenRequest) -> Void
+
+    var isEmpty: Bool {
+        listSummaries.isEmpty && sectionSummaries.isEmpty
+    }
 }
 
 /// Today's list of counted task groups — **the** one, for both hosts.
@@ -32,6 +51,9 @@ struct iOSTodayTaskSections: View {
     /// The host decides — `CadenceTodayRolloverSupport.isNoticeVisible` — because the host is what
     /// holds the `@AppStorage` day key.
     var rolloverNotice: iOSTodayRolloverNotice?
+    /// `nil` when nothing is past due. Like the notice above, the host derives it and this view is
+    /// the only thing that draws it, so "both widths show it" is true by construction.
+    var overdueSummaries: iOSTodayOverdueSummaries?
     #if DEBUG
     /// Debug-only, and passed by both hosts. See `iOSCompactSampleDataCard`.
     let sampleDataStatus: String?
@@ -58,23 +80,82 @@ struct iOSTodayTaskSections: View {
     /// *missing* the tasks it is offering, so a day whose only open work is yesterday's leftovers
     /// has no groups — and without the last clause this view would draw "nothing planned" directly
     /// under a banner listing four things to do.
+    ///
+    /// **The past-due summaries count as content too**, for the same reason the notice does: a day
+    /// with nothing planned but three columns whose deadlines have gone by would otherwise read
+    /// "nothing planned" directly under three cards saying otherwise.
     private var isEmpty: Bool {
-        taskGroups.isEmpty && (!showsCompleted || completedTasks.isEmpty) && rolloverNotice == nil
+        taskGroups.isEmpty
+            && (!showsCompleted || completedTasks.isEmpty)
+            && rolloverNotice == nil
+            && (overdueSummaries?.isEmpty ?? true)
     }
 
     @ViewBuilder
     var body: some View {
-        // Above both branches: the notice is the day's first thing to read whether or not anything
-        // is left in the groups under it.
-        if let rolloverNotice {
+        // Above both branches: the notice and the past-due cards are the day's first things to
+        // read whether or not anything is left in the groups under them.
+        if rolloverNotice != nil || !(overdueSummaries?.isEmpty ?? true) {
             VStack(alignment: .leading, spacing: metrics.groupSpacing) {
-                CadenceTodayRolloverBanner(tasks: rolloverNotice.tasks, style: .card) {
-                    rolloverNotice.onRollOver()
+                if let rolloverNotice {
+                    CadenceTodayRolloverBanner(tasks: rolloverNotice.tasks, style: .card) {
+                        rolloverNotice.onRollOver()
+                    }
                 }
+                overdueSummarySections
                 content
             }
         } else {
             content
+        }
+    }
+
+    /// The two runs of past-due cards, each headed by the shared eyebrow. Lists first: a whole
+    /// project past its date is a larger statement than one of its columns being past its own, and
+    /// the columns underneath frequently belong to it.
+    @ViewBuilder
+    private var overdueSummarySections: some View {
+        if let overdueSummaries, !overdueSummaries.isEmpty {
+            if !overdueSummaries.listSummaries.isEmpty {
+                overdueSummaryRun(
+                    title: CadenceTodayOverdueSummarySupport.listsHeading,
+                    count: overdueSummaries.listSummaries.count
+                ) {
+                    ForEach(overdueSummaries.listSummaries) { summary in
+                        CadenceTodayOverdueListCard(summary: summary) {
+                            guard let request = CadenceTodayOverdueSummarySupport.openRequest(for: summary) else { return }
+                            overdueSummaries.onOpen(request)
+                        }
+                    }
+                }
+            }
+
+            if !overdueSummaries.sectionSummaries.isEmpty {
+                overdueSummaryRun(
+                    title: CadenceTodayOverdueSummarySupport.sectionsHeading,
+                    count: overdueSummaries.sectionSummaries.count
+                ) {
+                    ForEach(overdueSummaries.sectionSummaries) { summary in
+                        CadenceTodayOverdueSectionCard(summary: summary) {
+                            guard let request = CadenceTodayOverdueSummarySupport.openRequest(for: summary) else { return }
+                            overdueSummaries.onOpen(request)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func overdueSummaryRun<Cards: View>(
+        title: String,
+        count: Int,
+        @ViewBuilder cards: () -> Cards
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            CadenceTodayOverdueSummaryHeading(title: title, count: count)
+            VStack(spacing: 8) {
+                cards()
+            }
         }
     }
 
@@ -136,6 +217,59 @@ struct iOSTodayTaskSections: View {
                 .padding(metrics.cardPadding)
         } else {
             stack
+        }
+    }
+}
+
+/// The list a past-due summary card opens, as Today presents it.
+///
+/// It is `iOSListDetailView` and nothing else — the same page the Lists tab pushes, at the page the
+/// request names, with the named column scrolled into view. Wrapping it rather than writing a
+/// reduced "here are the overdue cards" panel is the point: the reason to tap the card is to *work
+/// on* the column, and a read-only excerpt would send you to the Lists tab to do anything about it.
+///
+/// **It carries its own task-inspector host.** The root's host is already presenting this sheet, and
+/// a host that is presenting cannot present again — a task row inside here would be a dead tap
+/// without a nearer owner. `iOSTaskInspectorHost` records that the environment resolves to the
+/// innermost host for exactly this case.
+struct iOSTodayOverdueListSheet: View {
+    let request: CadenceListOpenRequest
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
+
+    var body: some View {
+        content
+            .iOSTaskInspectorHost()
+    }
+
+    /// A list can be deleted or archived on another device between the card being drawn and the
+    /// card being tapped, so the miss is a real state and not a defensive `else` — the same one
+    /// `iOSRootView` and `iOSSearchView` already answer with this view.
+    @ViewBuilder
+    private var content: some View {
+        switch request.target {
+        case .area(let id):
+            if let area = areas.first(where: { $0.id == id }) {
+                iOSListDetailView(
+                    area: area,
+                    initialPage: request.page,
+                    highlightedSectionName: request.sectionName,
+                    isPresentedModally: true
+                )
+            } else {
+                iOSMissingListView()
+            }
+        case .project(let id):
+            if let project = projects.first(where: { $0.id == id }) {
+                iOSListDetailView(
+                    project: project,
+                    initialPage: request.page,
+                    highlightedSectionName: request.sectionName,
+                    isPresentedModally: true
+                )
+            } else {
+                iOSMissingListView()
+            }
         }
     }
 }

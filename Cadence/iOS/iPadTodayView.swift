@@ -11,6 +11,11 @@ struct iPadTodayView: View {
     var showsCompactHeader = true
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    /// For the past-due summaries only. A *column*'s due date lives in `sectionConfigsRaw` on the
+    /// list, not on any task, so no query over `AppTask` can find one — see
+    /// `CadenceTodayOverdueSummarySupport`.
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
     @AppStorage("ios.today.sortMode") private var sortModeRaw = CadenceTaskSortMode.priority.rawValue
     @AppStorage("ios.today.showCompleted") private var showCompleted = false
     @AppStorage("ios.today.sidePanel") private var sidePanelRaw = iPadTodaySidePanel.notes.rawValue
@@ -20,6 +25,9 @@ struct iPadTodayView: View {
     /// Written by the rollover banner's confirm, and — in DEBUG — by the sample-data seeder. It was
     /// inside the `#if DEBUG` below when the seeder was its only writer.
     @Environment(\.modelContext) private var modelContext
+    /// Set by a tap on a past-due summary card, cleared when the sheet closes. See
+    /// `openList(_:)` for why this is a presentation and not a navigation.
+    @State private var pendingListOpen: CadenceListOpenRequest?
     #if DEBUG
     @State private var sampleDataStatus: String?
     #endif
@@ -94,6 +102,45 @@ struct iPadTodayView: View {
         return iOSTodayRolloverNotice(tasks: pastDoTasks, onRollOver: rollOverPastDoTasks)
     }
 
+    /// The day's past-due lists and columns, or `nil` when there are none — the second half of
+    /// T-195, and the same "opted into whole" shape as the notice above.
+    private var overdueSummaries: iOSTodayOverdueSummaries? {
+        let lists = CadenceTodayOverdueSummarySupport.listSummaries(projects: projects, todayKey: todayKey)
+        let sections = CadenceTodayOverdueSummarySupport.sectionSummaries(
+            areas: areas,
+            projects: projects,
+            todayKey: todayKey
+        )
+        guard !lists.isEmpty || !sections.isEmpty else { return nil }
+        return iOSTodayOverdueSummaries(
+            listSummaries: lists,
+            sectionSummaries: sections,
+            onOpen: openList
+        )
+    }
+
+    /// **The card presents the list; it does not navigate to it.** This is the one genuinely
+    /// platform-shaped piece of T-195's second half, and it resolves differently from macOS on
+    /// purpose.
+    ///
+    /// macOS's cards hop `ListNavigationManager`, which sets a request the sidebar and
+    /// `ListDetailView` consume. That is right there because the Mac's sidebar never leaves the
+    /// screen: opening a list is a change of pane and Today is one click back. Neither iOS shell
+    /// can say the same thing that cheaply. On iPhone, Today is the Tasks tab's root, so a push
+    /// buries the day you were triaging under a stack; on iPad it is a detail pane with **no
+    /// `NavigationStack` around it at all** (`iOSRootView.detailView(for:)` wraps Notes, Lists and
+    /// Search and not Today), so a `navigationDestination` here would be a control that compiles
+    /// and does nothing. Routing through the shell instead would mean teaching `iOSRootView` a
+    /// second router — one more thing that has to know about both shells — for a card whose whole
+    /// job is a glance.
+    ///
+    /// A sheet says what the excursion actually is: look at the column, close it, carry on reading
+    /// your day. It is also the one answer that is *identical* on both widths, which is the
+    /// standing rule about iPhone and iPad sharing one style rather than one layout.
+    private func openList(_ request: CadenceListOpenRequest) {
+        pendingListOpen = request
+    }
+
     private func rollOverPastDoTasks() {
         withAnimation(.easeOut(duration: 0.2)) {
             rolloverNoticeDismissedDate = CadenceTodayRolloverSupport.rollOver(
@@ -146,6 +193,14 @@ struct iPadTodayView: View {
         // "THURSDAY, AUGUST 13 / Today", the iPad one with `iPadTodayTaskHeader` — so a large nav
         // title said "Today" a second time, 60pt above the first.
         .iOSHidesCompactNavigationBar()
+        // Presented by the **page**, not by a card. The rule this looks like it is breaking —
+        // "the task inspector is presented by a host, never by a row" — is about a presenter that
+        // its own query can remove out from under the sheet. A card here sits in a `ForEach` over
+        // summaries that a write inside the list *can* empty, which is exactly why the presenter is
+        // `iPadTodayView` and not `CadenceTodayOverdueListCard`.
+        .sheet(item: $pendingListOpen) { request in
+            iOSTodayOverdueListSheet(request: request)
+        }
     }
 
     @ViewBuilder
@@ -214,6 +269,7 @@ struct iPadTodayView: View {
             completedTodayTasks: completedTodayTasks,
             todayTaskGroups: todayTaskGroups,
             rolloverNotice: rolloverNotice,
+            overdueSummaries: overdueSummaries,
             summary: todaySummary,
             sortMode: sortModeBinding,
             showCompleted: $showCompleted,
@@ -226,6 +282,7 @@ struct iPadTodayView: View {
             completedTodayTasks: completedTodayTasks,
             todayTaskGroups: todayTaskGroups,
             rolloverNotice: rolloverNotice,
+            overdueSummaries: overdueSummaries,
             summary: todaySummary,
             sortMode: sortModeBinding,
             showCompleted: $showCompleted
@@ -287,6 +344,7 @@ struct iPadTodayView: View {
             completedTasks: completedTodayTasks,
             showsCompleted: showCompleted,
             rolloverNotice: rolloverNotice,
+            overdueSummaries: overdueSummaries,
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
         )
@@ -296,7 +354,8 @@ struct iPadTodayView: View {
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
             showsCompleted: showCompleted,
-            rolloverNotice: rolloverNotice
+            rolloverNotice: rolloverNotice,
+            overdueSummaries: overdueSummaries
         )
         #endif
     }
