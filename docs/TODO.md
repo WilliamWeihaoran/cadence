@@ -29,42 +29,49 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
+- [T-271] **macOS Goals in mission mode has no route to Edit or Attach List below 901pt of pane.**
+  Fallout from [[T-250]]. `GoalInspectorView`'s header carries the only Edit and Attach List buttons
+  the mission layout has — and `GoalLinkedListRow`'s per-list detach the only one anywhere — and
+  below `CadenceDesktopSplitLayout.goalsSplitMinimumWidth` the inspector is not drawn. It was
+  already unusable rather than usable there: measured, the column was handed 340 and showed
+  179 / 135 / **9** points of it at the 960pt window floor with the sidebar at 220 / 264 / 390.
+  **Fixed in the working tree, uncommitted.** The pane decision stands — it is a real drop — but the
+  inspector stopped being *only* a pane: below the gate a card **opens** `GoalInspectorSheet`
+  instead of selecting into a column that is not there, which is `iOSFeatureRowLink`'s own rule
+  ("at regular width the row selects … on the phone the row pushes") spelled for a page with no
+  navigation stack. Same `GoalInspectorView`, same closures, no second inspector; Edit and Attach
+  List are presented from inside the sheet so nothing has to dismiss-and-re-raise in one update.
+  Width borrowed as `goalInspectorPaneMinWidth`, so it is the column restored rather than a second
+  opinion. Rejected: a `contextMenu` on the cards (hidden-only route, leaves detach out, and needs
+  duplicating onto `GoalDirectionHeaderCard`), a header menu acting on the selection (a page header
+  growing per-item commands), an in-place disclosure (scroll inside scroll, relayout on every
+  selection), and raising the window floor (measured impossible in [[T-250]] — 1484pt against a 13"
+  Air's 1470pt screen). Pinned by
+  `CadenceDesktopSplitLayoutTests.goalsKeepsARouteToItsInspectorAtTheWidthsThatDropTheColumn`.
+
 
 ## Open — decided, not started
 
-- [T-271] **macOS Goals in mission mode has no route to Edit or Attach List below 901pt of pane.**
-  Fallout from [[T-250]], stated rather than glossed. `GoalInspectorView`'s header carries the only
-  Edit and Attach List buttons the mission layout has — the timeline layout has its own `onEditGoal`
-  — and below `CadenceDesktopSplitLayout.goalsSplitMinimumWidth` the inspector is not drawn. It was
-  already unusable there rather than usable: measured, the pane was handed 340 and showed 179 / 135 /
-  **9** points of it at the 960pt window floor with the sidebar at 220 / 264 / 390, with "Attach List"
-  running off the visible edge in the two narrower cases. So nothing *reachable* was lost, but a
-  narrow window now offers no route at all. The cheap fix is a `contextMenu` on `GoalMissionCard`
-  carrying Edit and Attach List, which the card is already a `Button` for; it was left out of T-250
-  because plumbing two more closures into the card is a feature change and not a layout fix.
+- [T-273] **A task on the Calendar Board or the day timeline still cannot be focused on iOS.**
+  Fallout scoped out of [[T-266]] rather than missed by it. `iOSBoardTaskCard` and
+  `iOSTimelineTaskBlock` both open `iOSTaskDetailSheet`, and that sheet has no Focus action — so
+  the *task* half of the handoff is reachable only from a row's long-press menu, while the *block*
+  half is reachable from the block's own inspector. The fix is one `iOSActionButton` in
+  `iOSTaskDetailSheet`, calling `CadenceFocusHandoffCenter.shared.request(.task(task.id))` and
+  then `dismiss()`, exactly as `iOSCalendarBundleDetailSheet.focusSection` does. It was left out
+  to keep T-266 to the smallest complete path, not because it is wrong: the inspector is presented
+  by a host (`iOSTaskInspectorHost`), so the button has to dismiss *and* the shell has to route
+  underneath, and that interaction deserves its own simulator pass rather than riding on another
+  ticket's. `FocusHandoffCallSiteTests.bothAffordancesRequestAHandoff` pins the two that exist; a
+  third belongs in the same test.
 
-- [T-270] **The T-236 "belt and braces" guard that agents keep writing beside the test-host mutex
-  deadlocks the mutex.** Found while doing [[T-268]], and observed live: `t256` held the lock for
-  23+ minutes with **zero** `Cadence.app` test hosts and zero compiling `xcodebuild` processes on
-  the machine, while `t250` and this agent queued behind it.
-  The guard is `until pgrep -f "Developer/usr/bin/xcodebuild test" reads 0 three times`. `pgrep -f`
-  matches the whole command line, and an agent that launches its run as `zsh -c '<script text>'`
-  has *the guard's own source*, including the literal `xcodebuild test`, in its command line. So
-  every **waiting** agent is counted as a running test host by every other agent's guard: the
-  count can never reach zero while anyone is queued, the lock holder spins forever inside its own
-  guard, and the queue drains only when the 2700s lease expires. `AGENTS.md` already documents
-  this exact self-match trap for `pgrep -f "xcodebuild test"` — the recommended belt reintroduces
-  it one quotation mark further along, because `Developer/usr/bin/` is not a word boundary when
-  the haystack is a shell script that quotes the path.
-  Two spellings that actually work, and T-268 used both: anchor the pattern so only the binary
-  matches (`pgrep -f "^/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test"` — a
-  waiter's command line starts with `zsh`/`bash`, not with the path), and additionally count the
-  thing that really shares the app-group container, `pgrep -f "Cadence.app/Contents/MacOS/Cadence"`.
-  Worth fixing in `AGENTS.md` rather than in each agent's head: the guard is copied from the guide,
-  so the guide is where the broken spelling propagates from. `scripts/test-host-lock.sh status`
-  reports the same false count in its own "live test hosts:" line and should be fixed with it —
-  it read "live test hosts: 2" throughout an interval when there were none.
-
+- [T-272] **Goals' *timeline* mode has never had an Attach List route, at any width.**
+  Found while doing [[T-271]] and separate from it: `GoalTimelineView` is handed only `onEditGoal`
+  (`GoalsView.content(groups:)`), so the roadmap presentation offers Edit at every width and Attach
+  List at none. This is not [[T-250]] fallout — the timeline layout never had an inspector to lose —
+  which is why it was left out of T-271 rather than folded into it. `GoalInspectorSheet` now exists
+  and takes the goal plus the three `@Query` arrays, so the plumbing is a bar/row action on the
+  timeline goal, not a new view.
 
 - [T-268] **macOS offers "Mark Section Completed" on the Default kanban column, and the model
   throws the flag away while the settle still runs.** Found while doing [[T-247]].
@@ -429,6 +436,32 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   the next recurrence occurrence**, which is correct for one task and wrong for bulk container
   completion that must not mint new work.
 
+  **Built, uncommitted (2026-08-24).** Extended [[T-215]]'s and [[T-247]]'s machinery rather than
+  writing a second one: `iOSListArchiveSupport.swift` became `Cadence/iOS/iOSListWindDownSupport.swift`
+  with an `iOSListWindDownAction` (`.archive` / `.complete`) beside the list — the shape
+  `iOSColumnWindDownTarget` already had — `archiveList` became `windDownList`, and
+  `CadenceContainerWindDownSummary.forArea` / `forProject` gained the required `outcome:` that
+  `forColumn` already carried. Same sheet, same one decision point (`iOSListsView.requestWindDown`),
+  covered by the renamed `CadenceTests/CadenceListWindDownSurfaceTests.swift`.
+
+  Two judgements worth keeping, because both could plausibly have gone the other way:
+  - **The conditional-confirmation rule does not get stricter for completion.**
+    `requiresConfirmation` asks whether anything irreversible happens, not how large a claim the
+    action makes; completing an empty list writes one `status` and settles nothing, and a sheet over
+    a no-op is what teaches people to dismiss the one that matters.
+  - **The copy does differ, in substance and not only in the verb.** A cancellation records that
+    work was abandoned; a completion records that it *happened*, and
+    `GoalContributionSummary.progress` reads `completedTasks / totalTasks` over `filter(\.isDone)`
+    — so bulk completion can move a goal's bar where bulk cancellation cannot (a cancelled task
+    stays in the denominator and out of the numerator). And the destination is asymmetrical on iOS:
+    an archived list stays on the Lists page under "Archived", a completed one leaves it and is
+    reopened from Settings › Lists. Both facts are in the completion sheet's explanation, because a
+    confirmation that did not name the destination would make completion look like a deletion.
+  Completion is a context-menu item on the iPhone list and the iPad pane and a swipe action on
+  neither — the tray already carries Archive, and a two-action tray puts "this work is finished" one
+  mis-flick from "file it away" on a control with no beat in which to read anything. It is also not
+  `role: .destructive`.
+
 
 - [T-208] **Today's Completed section lists cancelled tasks but the header's "N done" does not count
   them.** Introduced deliberately by `9d11135` and documented at `CadenceTaskQuerySharedSupport.swift`
@@ -466,26 +499,6 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   so no fixed point size can stay above it. Fixing it means making the iOS ramp relative to
   `preferredFont(.body).pointSize` rather than absolute, which is a different change from unifying
   the ramps.
-
-- [T-204] **Agents leak simulators and MCP servers, and it is measurably starving the machine.**
-  Found on 2026-08-21 at the user's prompting. **Ten** simulators were booted at once, each running
-  Cadence, two of them for over a day and one for nine hours — 54 `SimMetalHost`/`MTLCompilerService`
-  processes between them. Alongside that, **11** `CadenceMCPServer` processes, the oldest 18 hours,
-  one holding 4 open handles on the live SwiftData store. Shutting down eight simulators and three
-  stale servers took the load average from **60.6 to 27.3**.
-  This is not cosmetic: two agents died to a 600s watchdog stall on 2026-08-20, and the diagnosis at
-  the time was "five concurrent builds saturate the machine". Leaked simulators were the other half
-  of that, and nobody was counting them.
-  Two things to fix. **(a)** Agents boot a device, use it, then boot another without shutting the
-  first down — the brief already forbids the host Simulator app and `control action=detach` (T-179),
-  but says nothing about *shutting down what you booted*. Add that to `AGENTS.md`'s verification
-  rules, next to the scratchpad-cleanup rule it parallels exactly. **(b)** The `CadenceMCPServer`
-  instances are spawned by `ChatGPT.app`'s codex app-server, not by this repo's agents, so they are
-  outside our control — but [[T-124]] recorded 32 of them once already, so the count is worth checking
-  whenever the machine feels slow. A `pgrep -c CadenceMCPServer` in the pre-verification checklist
-  would cost nothing.
-
-
 
 - [T-194] **Note export on iOS: markdown *and* PDF.** User's call — the fuller option, chosen
   knowing the cost. Unlike [[T-187]]–[[T-193]] this is the one gap that is genuinely AppKit-bound
@@ -611,11 +624,17 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   applied and the gap is only where it has not.
 
 
-- [T-179] **`control action=detach` ignores the `udid` argument and closes every simulator panel.**
-  An agent detaching its own device closed three other agents' panels (iPhone 17e, iPhone 17 Pro Max,
-  iPad Air 11-inch). No device or app state was altered and they can re-attach, but under parallel
-  agents this is a cross-agent side effect worth knowing: either pass no `udid` and expect it to be
-  global, or do not detach at all when others may be attached.
+- [T-179] **CLOSED, EXTERNAL CONSTRAINT — `control action=detach` ignores the `udid` argument and
+  closes every simulator panel.** Re-verified 2026-08-24: this is a bug in the iOS Simulator control
+  tool itself (the `mcp__Claude_Code_iOS_Simulator__control` action), not in anything under this
+  repo, so there is no code here that can fix it. An agent detaching its own device once closed
+  three other agents' panels (iPhone 17e, iPhone 17 Pro Max, iPad Air 11-inch); no device or app
+  state was altered and every closed panel could just re-`attach`, so the blast radius is annoyance,
+  not data loss. The one mitigation available from this side of the boundary is documentation, and
+  it is now in place: `AGENTS.md`'s simulator bullet states `detach` as global regardless of `udid`
+  and tells agents to only call it when they have reason to believe no one else is attached. Closing
+  rather than leaving open because there is nothing left to *build* — reopen only if the tool itself
+  changes or a repo-side workaround (e.g. an attach-tracking convention) is actually designed.
 
 
 - [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
@@ -789,6 +808,24 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   rather than as a rule — my own fresh-DD runs this session resolved packages fine, so do not add
   those flags by default.
 
+  **Re-checked 2026-08-24 under 14 concurrently-building agents: not reproduced, and the tell is now
+  in `AGENTS.md`.** Live `ps` found no bare `xcodebuild` pinned at 0% CPU; every process that looked
+  stalled at a glance was a `test-host-lock.sh acquire` wait (T-236's mutex, working as designed —
+  `sleep 10` in a loop, not a hang) or a polling wrapper shell around one. The user's Xcode was not
+  running at all, so one of the two confirmed claimants from the original report was simply absent
+  tonight — consistent with the mitigation ("quit Xcode when a batch of agents is running") rather
+  than with the mechanism having gone away. Two processes stranded the same night — an `xcodebuild
+  test` at 3h14m against a suite that normally runs ~15 minutes, and a runner script at 4h30m — were
+  both killed before anyone captured a `sample`, so neither can be attributed to this ticket by
+  evidence; that would be a third confirmation resting on inference, which is exactly the shape T-119
+  warns against. The runner script fits `58e20a4` ("agents stall by launching a background job and
+  returning," the same night, four other agents confirmed) far better than it fits a project-file
+  deadlock: a wrapper script outliving the agent that launched it, with no one left to read its
+  `DONE` file, is that failure's signature, not this one's. Downgrading the open half of this ticket
+  accordingly: the mechanism from the original two `sample` captures stands and the mitigation stays,
+  but there is nothing further to *fix* here — this is a recognition guide, not open work. See
+  `AGENTS.md`'s new bullet (after the T-236 test-host mutex entry) for the exact tell command.
+
 - [T-115] **The iOS Swift 6 flip is blocked by a toolchain bug, not app code.** With `D-86`'s three
   errors fixed the iOS module is diagnostically clean, and swift-frontend then crashes in IRGen on a
   reabstraction thunk carrying an `(any Actor)?` parameter. Attributed, not assumed: pristine HEAD
@@ -804,6 +841,42 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   three hosts) and so is the page-header family (`D-62`). What is left of the original list —
   `iPadTodayView` vs the compact Today, and the compact/regular branches inside the task row — is
   in flight now.
+
+  **2026-08-24 mechanical re-sweep: both named remainder items are already closed, and nothing else
+  in scope needs a code change.** Checked against HEAD (`9582956`), not the working tree, which had
+  five other agents' uncommitted changes in it at the time. `iPadTodayView` does not near-copy the
+  compact layout any more — both widths render through the one `iOSTodayTaskSections` (comment at
+  `iPadTodayView.swift:258` records the second-copy defect `D-54`/`D-66` already fixed: 15pt vs 14pt
+  group spacing, an 18-vs-14-padded empty state, and a `todayTasks`-derived branch duplicating the
+  groups). The task row is one `iOSTaskRow` reading `CadenceTaskRowMetrics.metrics(isRegularWidth:)`
+  for every figure (`iOSTaskViews.swift:5-9` records the deleted `iOSTaskRowDensity` axis this used
+  to hide behind). Grepped every `horizontalSizeClass` site under `Cadence/iOS` and `Cadence/Shared`
+  (38 files) rather than trusting impression: the rest are legitimate layout swaps already reached
+  through shared factories (`CadencePageHeaderMetrics`, `iOSEditorSheetMetrics`,
+  `CadenceRegularPaneLayout`, `iOSCalendarMetrics`) or `iOSFeatureSplitLayout`/`iOSFeatureRowLink`
+  (list-pane-vs-push, one implementation parameterised by `pushes`), each with a code comment
+  recording the drift it already closed. `iOSCalendarToolbar.toolbar` is the model worth naming: it
+  used to be an `if horizontalSizeClass == .compact` beside a `ViewThatFits` fallback described in
+  its own comment as "the phone's own two-row shape" — i.e., the phone's layout was already correct
+  for the iPad and was being withheld from it. It is one `ViewThatFits`, chosen by whether the row
+  fits, now.
+
+  One drift found in passing, adjacent to but not itself iPhone/iPad divergence — a near-copy of two
+  *iOS* note-editor sheets rather than of one sheet across two widths: `iOSEventNoteEditorSheet`'s
+  header (hand-rolled 12pt uppercase caption, title fixed at 24pt on every width, 4pt block spacing)
+  had drifted from `iOSLinkedNoteEditorSheet`'s near-identical header
+  (`Cadence/iOS/iOSMarkdownReferenceSupport.swift`), which already uses the shared
+  `SectionEyebrowLabel` (10pt, kerned) and ramps the title `isRegularWidth ? 24 : 22` with 8pt
+  spacing — that sheet's own comment records converting "a fourth hand-rolled uppercase caption",
+  and the event-note sheet was never swept into it. **Fixed in the working tree, uncommitted**:
+  `iOSEventNoteEditorSheet.swift`'s `header` now matches the linked-note sheet's spelling exactly;
+  no visible change at regular width (title was already 24 there), compact width now reads 22pt to
+  match. Not folded into a single shared header type in this pass — the two sheets' surrounding
+  chrome (toolbar items, AI actions button, calendar sync) differ enough that extracting one would
+  be a larger, unaudited change; a future pass can revisit if a third near-copy appears.
+
+  Nothing else ticketed out of this sweep: no missing-capability divergence (a control present at
+  one width and absent at the other) turned up anywhere the grep reached.
 
 
 - [T-86] **Agents building into the shared DerivedData can crash a running Mac app.** On 2026-08-17
@@ -842,17 +915,116 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 - [T-17] **Expand the target device list.** Directly reverses [T-08]; anything deleted as
   "unnecessary for the three targets" would need reinstating, so [T-08] should be done in a way that
   is easy to read back out of git history. Backlogged.
+
+  **Axis decided 2026-08-24, still backlogged.** The user's answer: *more iPhone and iPad sizes* —
+  not a lower OS floor and not a new platform family. Both of those are explicitly out of scope, so
+  do not touch `IPHONEOS_DEPLOYMENT_TARGET` / `MACOSX_DEPLOYMENT_TARGET` or add a
+  `TARGETED_DEVICE_FAMILY` entry on the strength of this ticket. **The user will name the exact
+  devices and OS versions when they want this done — do not start it before then.**
+  Investigated 2026-08-24 without changes. `TARGETED_DEVICE_FAMILY = "1,2"` on every target already,
+  so any iPhone or iPad can install today; nothing at the build level blocks it and **no
+  `project.pbxproj` edit is needed for this axis**. T-08 removed no device-specific code — it deleted
+  width clamps unreachable at the three targeted sizes (`inspectorMaxWidth` 430, two 540 inspector
+  caps, a 760 task cap) and replaced them with proportion-pinning tests, so there is nothing to
+  reinstate. The whole cost is layout auditing: the current breakpoints (Goals' inspector gate at
+  901, Today's 761/841/900/928 bands, the Calendar Board's rails, the Settings templates card) were
+  tuned and tested against three screen profiles only. D-155, b1239e0 and 8b73c78 each found a real
+  defect at a width nobody had measured, so expect more of that shape rather than a settings flip.
+
 - [T-18] **Chinese localisation.** Backlogged. Nothing is localised today: user-facing strings are
   hardcoded English at the call site, and `DateFormatters` uses fixed formats. Two known hazards
   already documented in this repo — `Calendar.current` is not Gregorian everywhere (a `yyyy-MM-dd`
   storage key becomes `2569-…` under a Buddhist calendar), and weekday symbol arrays are indexed by
   weekday number rather than by `firstWeekday`. Both bit us before; both get worse with a second
   locale.
+  **Scoped 2026-08-24; no code changed.** Measured with
+  `python3 count_strings.py` (comment-stripped regex over `Text(`/`Label(`/`Button(` &c., the
+  `.navigationTitle`/`.help`/`.accessibilityLabel` modifiers, `return "…"` display copy, and
+  labelled `title:`/`message:`/`subtitle:` arguments): **~2,000 hard-coded call sites, ~1,233 unique
+  strings, ~4,660 English words** across `macOS` (848) / `iOS` (707) / `Shared` (271) /
+  `Services` (188) / `Models` (68). Infrastructure is **zero** — no `.strings`, `.xcstrings` or
+  `.lproj` anywhere, `knownRegions = (en, Base)`, zero `NSLocalizedString` / `String(localized:)` /
+  `LocalizedStringKey`. 250 of the unique strings carry `\(…)` interpolation, and 57 do English
+  pluralisation inline as `\(n == 1 ? "" : "s")` — those are the restructuring cost, not the
+  translation cost. `CadenceTests` holds **342** `== "Capitalised copy"` assertions that pin English
+  literals; they are the loudest thing a translation breaks.
+  **Storage boundary (do not cross):** `DateFormatters.ymd`, every `dateKey`, `weekKey`, and
+  `TaskSectionDefaults.defaultName = "Default"` are storage. The last one is the sharp edge — it is
+  the default value of the persisted `AppTask.sectionName` *and* the subject of
+  `TaskSectionConfig.isDefault`'s `caseInsensitiveCompare`, so it is a display string that is also a
+  comparison key. Translating it silently orphans every existing task's column.
+  Two latent defects found while scoping, both **already wrong today** and neither Chinese-specific:
+  - `DateFormatters.longDate` / `shortDate` / `fullShortDate` / `dayOfWeek` / `monthAbbrev` are the
+    only fixed-format formatters in the file that are **not** locale-pinned, while `monthYear`'s doc
+    comment states pinning as the repo's rule. Verified against Foundation: on a `zh_Hans_CN` device
+    `"EEEE, MMMM d"` already renders `星期一, 八月 24` and `"EEE"` renders `周一` — half-translated
+    output beside English chrome, which is the exact outcome `monthYear` was pinned to prevent.
+  - `MonthCalendarPanel` (`Shared/Components/CadenceDatePicker.swift`) hardcodes
+    `["Su","Mo","Tu","We","Th","Fr","Sa"]` and derives its leading blanks from
+    `component(.weekday,…) - 1`, i.e. Sunday-first unconditionally — it ignores `firstWeekday`. Its
+    sibling `CadenceScheduleSupport.weekdaySymbols` rotates by `firstWeekday` over
+    `calendar.shortWeekdaySymbols`, and its doc comment records that exact skew shipping in Germany
+    and Saudi Arabia. So the two shared month grids already disagree in Monday-first regions, and on
+    a Chinese device the iOS grid reads `周日 周一…` while the macOS picker reads `Su Mo…`.
+  Not a hazard after all: the `Calendar.current`-is-not-Gregorian storage risk this ticket names is
+  contained — `%04d-%02d-%02d` key derivation exists in exactly two files and both route through
+  `DateFormatters.storageCalendar`, and `zh_Hans_CN` is Gregorian and Sunday-first anyway.
+  Also out of scope by decision: `CadenceMCPServer` / `Services/MCPReadOnly` strings are a
+  machine-facing protocol surface and must stay English.
+
 - [T-19] **Data safety, backup and controls.** `PrivacyDataResetService` (wipes every model),
   `StoreBackupManager`, and `DataIntegrityRepairService` exist; Settings → Data Safety is the
   surface. Worth reviewing as a whole: what a reset actually removes, whether backups are
   restorable, and whether the controls say plainly what they do. Note the standing rule that every
   new `@Model` must be added to the reset path or a wipe leaves orphans.
+
+  **Narrowed and part-shipped 2026-08-24 (uncommitted).** The review found the deletion half done
+  and the *keeping* half missing. `StoreBackupManager` does snapshot the store at every launch and
+  does restore — but every copy it writes lives in the app's own container beside the store it is
+  protecting, `deleteCadenceDataAndLocalArtifacts` deletes all of them, and the file is an opaque
+  SwiftData/CoreData store readable only by a build with this exact schema. iOS had **no** control
+  over any of it — no create, no list, no restore, no route off the device — so the only
+  data-safety action a phone offered was the irreversible one. Two copy defects on macOS's Backups
+  card, both of the kind this ticket names: it said backups are taken "before migration work" (they
+  are taken at every launch) and never said where they live.
+  Shipped: `Cadence/Services/CadenceDataExportService.swift` — one JSON archive covering **every**
+  entity in `CadenceSchema`, relationships as id references, image bytes included, pretty-printed
+  with sorted keys and ISO-8601 dates so two exports diff; `Shared/CadenceDataExportPresentation.swift`
+  (the `FileDocument` and the copy both platforms read); a `.fileExporter` card in Settings → Data
+  Safety on **both** platforms, above the delete control; the corrected backup copy. Coverage is
+  `CadenceDataExportSurfaceTests`, driven off `CadenceSchema` in the same two steps as
+  `CadencePrivacyDataResetSurfaceTests` — a model added to the schema and not to the export is a red
+  test, not a quietly incomplete backup.
+  Deferred to [[T-274]]: reading an archive back in. The archive decodes as a *value* and that round
+  trip is pinned, but nothing applies one to a live store, and the card says so in as many words.
+- [T-274] **Importing a Cadence archive.** [[T-19]] shipped the export and deliberately stopped
+  there: an unverified restore is worse than none, because it invites the user to trust it.
+  `CadenceDataExportService.decode` already returns a `CadenceArchive`, and
+  `CadenceDataExportSurfaceTests.theArchiveRoundTripsThroughJSON` proves encode → decode → equal, so
+  the *parsing* half is done and tested. What is not decided, and what makes this a design ticket
+  rather than a loop over twenty arrays:
+  1. **CloudKit.** The store is `.private("iCloud.com.haoranwei.Cadence")`. An import is not a local
+     write — every row inserted is uploaded to every other device, so "restore my backup" on one
+     device is "push 4,000 rows at the others" from theirs. A restore has to state whether it
+     targets the syncing store at all, or whether it goes through the `CADENCE_LOCAL_STORE_ONLY`
+     path and asks the user to re-enable sync afterwards.
+  2. **Identity.** Records carry their original `id`s. Re-inserting them means the merge policy
+     decides which copy of a row wins, and nothing in the app currently reasons about that. The
+     three plausible modes — replace the store, merge by id, import as copies with fresh ids — have
+     different answers and only one of them can be the default.
+  3. **Referential integrity.** Relationships are stored as id references, so an import is a
+     two-pass rebuild: insert every row, then wire every reference. A reference to a row the archive
+     does not contain (a hand-edited file, or an archive from a newer `formatVersion`) has to fail
+     loudly rather than silently produce an orphan — `DataIntegrityRepairService` is the repair pass
+     for stale relationships, not a substitute for validating input.
+  4. **The legacy note models.** `DailyNote` / `WeeklyNote` / `PermNote` / `EventNote` / `Document`
+     are exported because a pre-migration archive is the only copy of them. Importing one into a
+     store where `NoteMigrationService` has already run would re-create rows that were already
+     folded into `Note`, i.e. duplicate every note. The importer has to run the migration after the
+     insert, or refuse those tables when the destination has already migrated.
+  Do **not** ship this behind a confirmation and call it verified. The bar is a test that imports an
+  archive into a container and asserts the graph came back — every foreign key resolved, counts
+  equal, and a second import of the same file changing nothing.
 - [T-20] **Settings UI for macOS**, and possibly iPad/iOS after. iOS Settings was rebuilt in
   `775833d` — category list plus value rows — and macOS has not caught up; it is the older
   twelve-category shell. Bringing macOS to the same vocabulary would also settle which of the two is
@@ -864,6 +1036,47 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   being entitlement-gated and optional, the AI feature requiring a user-supplied key, and EventKit
   usage strings matching real behaviour.
 
+  **Audited 2026-08-24 (uncommitted).** Went claim by claim against the code rather than against the
+  docs themselves. Two findings, both fixed:
+  1. **The Calendar usage string oversold what it withheld.** `NSCalendarsFullAccessUsageDescription`
+     (both in `Cadence.xcodeproj/project.pbxproj`'s build settings and the literal
+     `Cadence/Info.plist`), `docs/app-review-notes.md`, `docs/privacy.html`, and
+     `docs/apple-release-readiness.md` all said Cadence creates/updates/deletes "**scheduled task**
+     events" — language that reads as the still-unbuilt task-to-event attachment this file already
+     tracks under "What's Not Built Yet" (`AppTask.calendarEventID` has readers, no writer:
+     `SchedulingService.swift` only ever assigns it `""`). What the code actually does is broader and
+     unrelated to tasks: `CalendarManager.createStandaloneEvent` (macOS, its own doc comment reads
+     "direct iCal event, not linked to a task") backs the timeline's and month view's drag-to-create
+     flow, `iOSCalendarManager.createEvent` is its iOS counterpart, and `TimelineEventBlock` can
+     update or delete *any* event shown on the timeline, Cadence-created or not. Reworded all five
+     sites to "create, update, or delete calendar events" plus one sentence stating the writes are
+     independent of Cadence tasks, rather than inventing a task-linking claim that isn't there either.
+  2. **`docs/support.html`** — listed as a reviewer-facing doc by name in `apple-release-readiness.md`
+     — had the same shape of platform gap the push-notification and account-deletion falsehoods did:
+     its Calendar-access check named only "macOS System Settings" (Calendar is EventKit on both
+     platforms) and its account-deletion bullet said "open Settings, Account" unqualified, which does
+     not exist on iOS/iPadOS (`iOSSettingsCategory` has 12 cases, no `.account`). Split both bullets
+     by platform and scoped the backup/restore bullet to macOS, since iOS's Data Safety section has no
+     backup-browsing or restore UI (`StoreBackupManager.listBackups`/`scheduleRestore` have zero iOS
+     call sites outside a doc comment).
+
+  Everything else checked out against the code as written and needed no change: the single
+  multiplatform target and single entitlements file (`SDKROOT = auto`, one `PBXNativeTarget`, one
+  `CODE_SIGN_ENTITLEMENTS` for both platform configs); the push-notifications section's claim that
+  registration happens "at launch on macOS" (`registerForRemoteNotifications` has exactly one call
+  site, `CadenceAppDelegate`, inside `#if os(macOS)` — iOS never registers, so the doc's own scoping
+  is correct rather than aspirational); local notifications' single `AppStorage` toggle and
+  single request site in Settings on both platforms; `AppleAccountManager` being
+  `#if os(macOS)`-only with no `.account` case on iOS; the AI key living in Keychain
+  (`KeychainCredentialStore`) and `AIProvider` exposing exactly the two actions the docs name;
+  Reminders staying in-memory (`[AppleReminderItem]`, not a `@Model`) with `completeReminder` as the
+  only EventKit write, gated on `allowsContentModifications`; the account/data deletion sweep
+  (`PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts`) running identically on both
+  platforms with macOS's confirmation dialog and iOS's typed-`DELETE` sheet both gating the same
+  function; no StoreKit, ads, or third-party SDKs anywhere in the tree; and the privacy manifest's
+  declared API reasons (`CA92.1`, `C617.1`) matching actual `UserDefaults`/file-timestamp call sites
+  with no undeclared boot-time or disk-space API usage found.
+
 - [T-247] **Archiving a kanban column on iOS settles nothing, and it is a draft toggle rather than
   an action.** The sibling of [[T-215]], one level down. macOS's `KanbanSectionColumnView` calls
   `TaskContainerLifecycleService.cancelRemainingActiveTasks(in:area:project:)` when a column is
@@ -874,7 +1087,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   mutation is available — what has to be *decided* is the interaction, which is why this is not a
   one-liner: a toggle flipped mid-edit and saved alongside a rename is a bad shape for an
   irreversible bulk cancellation, and there is nowhere in that sheet to state a count. Either the
-  toggle becomes a confirmed action (the shape `iOSListArchiveSupport` uses for lists), or column
+  toggle becomes a confirmed action (the shape `iOSListWindDownSupport` uses for lists), or column
   archiving deliberately stays a flag on iOS and it is macOS's behaviour that changes.
   Do **not** reach for `markDone` / `markCancelled` / `applyStatusCompletion` here either — see
   [[T-213]] and [[T-214]]: the successor inherits `sectionName`, so a column wind-down routed
@@ -984,6 +1197,32 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   between two inboxes holding 71% of the surface. Nothing clips and the columns scroll, which is why
   this is a floor question rather than a [[T-250]]-shaped break — but it is the fixed-rail pair
   [[T-183]] was asked to look at and the register does not cover it.
+
+  **Decided: the rails collapse, they are not dropped, and the gate is `CadenceCalendarBoardLayout`
+  (the ninth registered expression).** The floor is a sum of the board's own parts —
+  `expandedRailWidth * 2 + oneDayColumnMinimumWidth` = **846pt of pane** — and below it each rail
+  renders as a 60pt identity strip (dot, count, rotated name) that *keeps its drop destination*, so
+  the one behaviour the pair has — dragging a card out of a day column onto Unscheduled — survives
+  at every width. Tapping a strip expands that rail in place; one at a time, so the fixed side never
+  costs more than one column plus one strip. Measured with an `NSHostingView` reproduction of the
+  exact modifier chain (it reproduces the before figures above to the tenth of a point): day columns
+  go **74.0 → 450.0 at a 570 pane, 200.0 → 576.0 at 696, 244.0 → 620.0 at 740**, and are unchanged
+  at 846 (350.0), 960 (464.0) and 1248 (752.0) — so no Mac that already fits sees any difference.
+  *Dropping* the rails, the `CadenceCalendarPaneLayout` answer, was checked against this surface and
+  rejected on measurement rather than taste: the day columns are floored at today **because** the
+  Overdue rail exists (`plannerWindowStart(notBefore:)`), and `tasksByBoardDate` keys strictly on the
+  do date, so do-dateless work has no day column anywhere. Neither rail restates anything on screen;
+  both are the only route to their pile on this surface. The Timeline's "unscheduled tasks" chips
+  are a different population (`!scheduledDate.isEmpty` — a day with no start minute) and are not a
+  second route. Compression alone was rejected because it cannot reach: 570pt of pane leaves 220 for
+  two rails once one day column is paid for, i.e. 110 each. Un-pinning the rails into the day
+  scroller was rejected because the drag needs both on screen and un-pinned they never are below
+  816. Raising the window floor was rejected for [[T-250]]'s reason, unchanged.
+  The four board metrics moved from `macOS/Views/KanbanBoardSupport.swift` into the house file,
+  because the floor has to be a *sum* of them and that file is behind `#if os(macOS)`.
+  **Cost, stated rather than glossed:** below 846 reading either pile takes one click, and while a
+  rail is expanded there the day region is squeezed again — a user-chosen, one-click-reversible
+  state, not something the app does unasked. Verified but **not committed**.
 
 - [T-252] **`CadenceRegularSplitLayout` is the one registered width rule with no "two panes is worse
   than one" fallback, and it shows on the target iPad.** Today gates to `.compact` at 761, Notes to
@@ -1115,8 +1354,54 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   has no hover, so the macOS affordance does not transfer literally; the swipe action and the
   long-press menu on `iOSTaskRow` are the candidates. `iOSCalendarBundleDetailSheet` contains the
   string `Focus` zero times and is the obvious home for the block half.
+  **Built and verified, awaiting commit.** The route is a value in a one-slot inbox
+  (`Shared/CadenceFocusHandoff.swift`: `CadenceFocusHandoff` + `CadenceFocusHandoffCenter`), the
+  same shape as `CadenceDeepLinkManager` and for the same reason — the surface making the request
+  cannot reach navigation state, and the Focus screen it hands to may not have been built yet.
+  `FocusManager` was **not** un-guarded. Two affordances shipped, one per `CadenceFocusTarget`
+  case: **Focus** in `iOSTaskRowContextMenu` (one entry, every iOS task surface, because
+  `iOSTaskRow` is the row everywhere) and **Focus This Block** in `iOSCalendarBundleDetailSheet`
+  (which is what both the board card and the timeline block open). The swipe tray was rejected —
+  a swipe is for things you do without looking, and this one changes screens.
+  Two session decisions, both in `Shared/` with tests: `timerState(startRequestFor:…)`, which
+  unlike the play control's `afterPlayTapOn` **never pauses** (asking to focus the running subject
+  would otherwise stop its clock), and `endSession(leaving:…)`, now called from `iOSFocusView`'s
+  `.onDisappear`. That last one is a bug fix riding along: the screen's clock is `@State`, so
+  leaving Focus threw the measured minutes away — pre-existing, but a route *into* Focus from a
+  task row makes backing straight out of it routine. Deferred half is [[T-273]].
 
 ## Done
+
+- [D-171] `353bf16` `50429a6` `b6f9ea8` `e6e05a4` `62df126` `263833d` `9714f18` Agents leak
+  simulators and MCP servers, and it was measurably starving the machine (T-204). Re-verified
+  2026-08-24 rather than re-diagnosed: both halves of the original finding are addressed, by a
+  different mechanism than either proposed fix.
+  **(a) Simulators.** The ticket asked for a rule that agents shut down what they booted.
+  `AGENTS.md`'s simulator bullet instead forecloses the leak at its source: share one existing
+  **stock** device, boot it only if none is booted, and never `erase`/`shutdown`/`delete` it — so
+  there is no per-agent device to remember to close. `scripts/agent-cleanup.sh` (dry-run by default,
+  `--apply` to reclaim) additionally targets devices an agent *did* create by name pattern
+  (`Cadence-*-Agent`, `*-Agent[-iPad]`, `agent-t[0-9]+`), and a `SubagentStop` hook now runs it with
+  `--apply` after every subagent exits (`.claude/settings.json`), so cleanup no longer depends on
+  any agent remembering. Measured live with 14 agents concurrently building/testing: 1 booted
+  simulator (the shared stock device), load average 16, 148 GB free — against the ticket's original
+  10 booted simulators and a 60.6 load average.
+  **(b) `CadenceMCPServer`.** The ticket asked only for a `pgrep -c` in a pre-verification checklist.
+  `agent-cleanup.sh` does more: it unconditionally reclaims every exact-match `CadenceMCPServer`
+  process (`pgrep -x`, immune to the self-match trap below) whenever the hook runs. Verified live:
+  `pgrep -x CadenceMCPServer` reads 0 right now; the 39 hits from an unanchored `pgrep -fl
+  CadenceMCPServer` are other agents' own build-script command lines naming the scheme, not leaked
+  processes — the same self-match shape as [[T-270]].
+  Nothing further to build here; re-open only if a live leak is measured against the current scripts.
+
+- [D-170] `9714f18` The T-236 "belt and braces" guard agents kept writing beside the test-host mutex
+  deadlocked the mutex (T-270). Verified by reproducing the exact failure in isolation and then
+  disproving it against the fix: a `zsh -c` wait-loop shell whose own command line contains the
+  literal `xcodebuild test` is matched by `pgrep -f 'xcodebuild test'` (the deadlock — every waiting
+  agent counts every other waiting agent as a running host) and is **not** matched by the anchored
+  `pgrep -f '^/Applications/.*/xcodebuild test'` the fix uses. Both `scripts/test-host-lock.sh`'s
+  `status` output and `AGENTS.md`'s guidance now use the anchored form; no unanchored spelling of
+  the pattern remains in either. Closed.
 
 - [D-169] `e6e05a4` The test-host mutex did not exclude (T-263) — filed independently by the T-21 agent
   and already fixed by the time it reported. Both diagnoses agree and were reached separately, which
