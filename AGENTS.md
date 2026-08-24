@@ -149,6 +149,27 @@ code, and every one of them has been violated by a shipped change at least once.
   sees the others waiting and counts them as running hosts. Measured: one agent held the lock 23
   minutes with **zero** real hosts on the machine, and a `pgrep -f` returning 2 where only one process
   was xcodebuild. To count actual test hosts rather than build processes, `pgrep -x Cadence`.
+- **A bare `xcodebuild` pinned at 0% CPU is a project-file lock, not a broken build.** `docs/TODO.md`
+  T-117, confirmed twice by `sample`: `NSFileCoordinator` serializes reads of
+  `Cadence.xcodeproj`/`project.pbxproj`, and a run can block in `_blockOnAccessClaim` behind another
+  claimant — a concurrent `xcodebuild`, or the user's Xcode if it has the project open. It produces
+  **no diagnostic**: the run just sits at the "Command line invocation" line forever, which reads
+  exactly like a broken checkout. The tell: `ps -eo pid,etime,%cpu,command | grep xcodebuild` for a
+  real `xcodebuild` binary (not a wrapper shell — same anchoring caveat as above) idle at 0.0% CPU
+  for several minutes *and* its log not advancing past that first line; a genuinely slow build's CPU
+  is bursty, never pinned at zero, and its log keeps moving. If both hold, `sample <pid> 5` should
+  show `NSFileCoordinator`/`_blockOnAccessClaim` on the stack. Rule: quit Xcode before a batch of
+  agent builds where you can, and treat total silence at "Command line invocation" as this rather
+  than as a checkout worth debugging.
+  **Re-checked 2026-08-24 under 14 concurrently-building agents: not reproduced.** Every apparently
+  stalled process was a `test-host-lock.sh acquire` wait, not a bare hang, and the user's Xcode
+  was not even running — one of the two confirmed claimants was simply absent. Two processes
+  stranded the same night (an `xcodebuild test` at 3h14m against a ~15-minute suite, and a runner
+  script at 4h30m) were killed before anyone captured a `sample`, so neither is attributable to this
+  by evidence — do not count either as a third confirmation. The runner script in particular matches
+  `58e20a4`'s "launch a background job and return" failure (four other agents confirmed the same
+  night) far better than a project-file deadlock: a wrapper script outliving its launching agent,
+  with nothing left to read its `DONE` file, is that failure's shape.
 - **Never create a simulator device; launch the macOS app only through the wrapper.** Two recurring
   leaks the user has had to clear by hand.
   *Simulators:* agents kept running `simctl create` and naming devices after themselves
@@ -172,6 +193,12 @@ code, and every one of them has been violated by a shipped change at least once.
   The `sender_pid` on the preceding `TCCAccessSetInternal` is CoreSimulatorBridge when a host
   `simctl` call caused it. `frontboard(10) code:force-quit` and `runningboard(15)` (an
   `installcoordinationd` reinstall) are the other two external kills that look like crashes here.
+  **`control action=detach` ignores its own `udid` argument and closes every agent's simulator
+  panel, not just the caller's** (docs/TODO.md T-179) — a bug in the simulator tooling itself, not
+  in this repo, so there is no code fix available here. On a device several agents share, treat
+  `detach` as global: either skip it and let the panel be closed by something else, or only call it
+  when you have reason to believe no other agent is attached. There is nothing to reclaim afterward
+  — no device or app state changes, and every closed panel can just re-`attach`.
   *The macOS app:* launching it is legitimate — macOS is the primary surface and some things can only
   be confirmed by looking. Launching the **shipping configuration** is not: it opens the user's real
   CloudKit-backed app-group store as a *second writer* while their own copy may be running, and such
