@@ -8,21 +8,52 @@ struct iOSListDetailView: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     let area: Area?
     let project: Project?
+    /// The column to bring into view on the Kanban page, and briefly ring. Set only by a caller
+    /// that named one — Today's past-due **section** card is the only one so far. It stays a
+    /// `let` rather than becoming `@State` because it is the request, not the board's own state;
+    /// `iOSListKanbanPanel` owns the fade-out.
+    let highlightedSectionName: String?
+    /// Set when this page is *presented* rather than navigated to. The header's back control is
+    /// otherwise compact-only, and correctly so: at regular width this view is a detail pane with
+    /// nothing behind it. Inside a sheet there always is something behind it, on both widths, and a
+    /// form sheet on iPad with no visible way out is the same class of defect as a chevron that
+    /// looks wired and does nothing.
+    let isPresentedModally: Bool
     @State private var editorMode: iOSListEditorMode?
     /// `nil` until the reader taps a tab — the page they see before that is the one they chose in
     /// Settings, read live rather than copied into `@State` in `onAppear`, so changing the
     /// preference does not need a relaunch to take effect and a stale copy cannot outlive it.
+    ///
+    /// A caller that opened this page *at* a particular tab seeds it here, which is why the seed is
+    /// an `init` argument and not an `onAppear` write: the first render has to be the right page,
+    /// or the board scroll below lands on a tab nobody is looking at.
     @State private var selectedPage: ListDetailPage?
     @AppStorage(CadencePreferenceKeys.listDetailDefaultPage) private var defaultPageRaw = ListDetailPage.defaultPage.rawValue
 
-    init(area: Area) {
+    init(
+        area: Area,
+        initialPage: ListDetailPage? = nil,
+        highlightedSectionName: String? = nil,
+        isPresentedModally: Bool = false
+    ) {
         self.area = area
         self.project = nil
+        self.highlightedSectionName = highlightedSectionName
+        self.isPresentedModally = isPresentedModally
+        _selectedPage = State(initialValue: initialPage)
     }
 
-    init(project: Project) {
+    init(
+        project: Project,
+        initialPage: ListDetailPage? = nil,
+        highlightedSectionName: String? = nil,
+        isPresentedModally: Bool = false
+    ) {
         self.area = nil
         self.project = project
+        self.highlightedSectionName = highlightedSectionName
+        self.isPresentedModally = isPresentedModally
+        _selectedPage = State(initialValue: initialPage)
     }
 
     private var title: String {
@@ -120,7 +151,7 @@ struct iOSListDetailView: View {
                 eyebrow: subtitle.isEmpty ? (area == nil ? "Project" : "Area") : subtitle,
                 title: title,
                 colorHex: colorHex,
-                onBack: horizontalSizeClass == .compact ? { dismiss() } : nil,
+                onBack: (isPresentedModally || horizontalSizeClass == .compact) ? { dismiss() } : nil,
                 onEdit: presentEditor
             )
 
@@ -187,7 +218,8 @@ struct iOSListDetailView: View {
                 sectionConfigs: sectionConfigs,
                 accent: accent,
                 container: containerSelection,
-                listName: title
+                listName: title,
+                highlightedSectionName: highlightedSectionName
             )
         case .documents:
             // `iOSListNotesView`, not the old `iOSListNotesPanel`: this list may hold many notes,

@@ -331,17 +331,25 @@ struct CadenceContainerWindDownSummary: Equatable, Sendable {
         return "\(openTasks) open \(openTasks == 1 ? "task" : "tasks") will be \(outcome.settledPhrase)"
     }
 
-    static func forArea(_ area: Area) -> Self {
+    /// An area, in whichever direction it is being wound down.
+    ///
+    /// The `outcome` is a required argument rather than a defaulted `.cancelled`, and the reason is
+    /// the one the column factory already had: the walk is identical in both directions and only
+    /// the sentence over it changes, so a default would let a completion quietly promise
+    /// "cancelled" — the failure mode this whole type exists to prevent, wearing the right number.
+    /// It was `.cancelled` unconditionally until T-214, when iOS gained the Complete action macOS
+    /// has had all along.
+    static func forArea(_ area: Area, outcome: CadenceWindDownOutcome) -> Self {
         Self(
             openTasks: TaskContainerLifecycleService.remainingActiveTasks(in: area, includingChildProjects: true).count,
-            outcome: .cancelled
+            outcome: outcome
         )
     }
 
-    static func forProject(_ project: Project) -> Self {
+    static func forProject(_ project: Project, outcome: CadenceWindDownOutcome) -> Self {
         Self(
             openTasks: TaskContainerLifecycleService.remainingActiveTasks(in: project).count,
-            outcome: .cancelled
+            outcome: outcome
         )
     }
 

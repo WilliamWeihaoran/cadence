@@ -243,7 +243,7 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
     /// The fix must not be read as "columns no longer wind down". Every non-default column still
     /// settles its open work on completion and on archive — removing those calls would satisfy
     /// every gate assertion above and be the wrong fix, the same trap
-    /// `CadenceListArchiveSurfaceTests` guards against one level up.
+    /// `CadenceListWindDownSurfaceTests` guards against one level up.
     @Test func theMacColumnStillWindsDownEveryOtherColumn() throws {
         let code = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
         #expect(code.components(separatedBy: "TaskContainerLifecycleService.completeRemainingActiveTasks(").count - 1 == 1)

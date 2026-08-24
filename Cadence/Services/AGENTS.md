@@ -11,6 +11,22 @@ files at the time of writing — `ls Cadence/Services/*.swift | wc -l` — plus 
 - **Notes/tags/tasks** - `MarkdownNoteSupport.swift`, `NoteReferenceSupport.swift`, `TagSupport.swift`, `TaskCreationService.swift`.
 - **Notifications** - `NotificationScheduling.swift` (pure planner) + `NotificationManager.swift` (reconciler). Stateless reconciliation, not schedule-on-mutation.
 - **Privacy data reset** - `CadencePrivacyDataResetService.swift` (prefixed file, unprefixed `PrivacyDataResetService` type — the old `macOS/Services/` path keeps a tombstone under the unprefixed name). Wipes every model in `CadenceSchema`, including the legacy note types and `Pursuit`, and cancels pending Cadence notifications; `deleteCadenceDataAndLocalArtifacts` adds the OpenAI key, the widget snapshot, the pending restore and the local backups, and is the one sequence **both** Settings > Data Safety screens run. **Add a new `@Model` here whenever you add one to `CadenceSchema`** — `CadencePrivacyDataResetSurfaceTests` drives the coverage check off the schema, so it fails if you don't. Same story as reminders below: it sat under `macOS/Services/` behind an `#if os(macOS)` while importing only Foundation and SwiftData, and the shipped privacy policy promised iOS a deletion route that did not exist.
+- **Data export** - `CadenceDataExportService.swift`. The *other* half of data safety, and the one
+  `StoreBackupManager` does not cover: that manager's snapshots are opaque SwiftData stores kept
+  inside the app's own container and deleted by the reset, so they survive a bad launch and nothing
+  else. This produces one JSON archive of **every** entity in `CadenceSchema` — relationships as id
+  references rather than nesting, image bytes as base64, ISO-8601 dates, pretty-printed with sorted
+  keys so two exports diff. **Add a new `@Model` here whenever you add one to `CadenceSchema`**, the
+  same standing rule as the reset above and enforced the same way:
+  `CadenceDataExportSurfaceTests` compares `CadenceArchive.recordCountsByEntityName` to the schema
+  as a set and then checks a seeded row of every entity comes back, so an omission is a red test
+  rather than a backup that quietly restores less than it claims. `exportArchive(in:)` is the one
+  call both Settings > Data Safety screens make; the copy they show is
+  `Shared/CadenceDataExportPresentation.swift`, which also holds the `FileDocument`. **Export only** —
+  the archive decodes as a value and that round trip is pinned, but nothing applies one to a live
+  store, because a restore into a CloudKit-synced container is not a local write. See `docs/TODO.md`
+  T-274 before building an import; do not ship one this file's tests do not exercise end to end.
+
 - **List/context deletion** - `CadenceListDeleteHelpers.swift` (prefixed file, unprefixed
   `ListDeleteHelpers` name on the `ModelContext` extension it declares). `deleteContext`,
   `deleteArea` and `deleteProject` — the recursive cascades that take a list's tasks, notes, links,
@@ -39,10 +55,14 @@ files at the time of writing — `ls Cadence/Services/*.swift | wc -l` — plus 
   just closed (T-213, T-214). `remainingActiveTasks(...)` is public so a confirmation can count
   before the fact from the *same* array the settle walks; `CadenceContainerWindDownSummary` in the
   same file is that count plus its one sentence, and it is what
-  `Cadence/iOS/iOSListArchiveSupport.swift` and `Cadence/iOS/iOSColumnWindDownSupport.swift` read.
+  `Cadence/iOS/iOSListWindDownSupport.swift` and `Cadence/iOS/iOSColumnWindDownSupport.swift` read.
   That struct was `CadenceListArchiveSummary` until T-247 gave the kanban column the same confirmed
   action, which needed the identical four members with one word changed — hence the `outcome`
-  dimension (`CadenceWindDownOutcome.cancelled` / `.done`) rather than a second struct beside it. It is deliberately **not** in `Shared/`: this is a persistence mutation, and
+  dimension (`CadenceWindDownOutcome.cancelled` / `.done`) rather than a second struct beside it.
+  All three factories — `forArea`, `forProject`, `forColumn` — take that `outcome` as a **required**
+  argument since T-214 gave iOS a list Complete action; the first two defaulted to `.cancelled`
+  while archive was the only direction a list had, and a default there is how a completion comes to
+  promise "cancelled" over a correct number. It is deliberately **not** in `Shared/`: this is a persistence mutation, and
   `Shared/CadenceTaskRecurrenceWorkflowSupport.swift` compiles into `CadenceWidgets` and
   `CadenceMCPServer`, which have no business with a bulk container wind-down.
   Since T-241 the settle also **reconciles notifications** for the batch, which is what finally

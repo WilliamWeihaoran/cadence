@@ -11,6 +11,11 @@ struct iOSListsRegularPane: View {
     let projectSubtitle: (Project) -> String
     let archiveArea: (Area) -> Void
     let archiveProject: (Project) -> Void
+    /// Only *requests* the completion, like `archiveArea` above and `requestDeletion` below.
+    /// `iOSListsView.requestWindDown` asks `requiresConfirmation` and presents the sheet, so the
+    /// iPad pane cannot come to a different answer than the iPhone list about the same list.
+    let completeArea: (Area) -> Void
+    let completeProject: (Project) -> Void
     let restoreArea: (Area) -> Void
     let restoreProject: (Project) -> Void
     /// Only *requests* the delete. The confirmation and the cascade live on `iOSListsView`, which
@@ -72,6 +77,15 @@ struct iOSListsRegularPane: View {
                             Label("Edit Area", systemImage: "square.and.pencil")
                         }
 
+                        // Completion is a context-menu item and never a swipe action — see
+                        // `iOSListsView.completeAreaButton` — and it is not `.destructive`,
+                        // because finishing work is not destruction.
+                        Button {
+                            completeArea(area)
+                        } label: {
+                            Label("Complete Area", systemImage: iOSListWindDownAction.complete.icon)
+                        }
+
                         Button(role: .destructive) {
                             archiveArea(area)
                         } label: {
@@ -108,6 +122,12 @@ struct iOSListsRegularPane: View {
                             editorMode = .editProject(project)
                         } label: {
                             Label("Edit Project", systemImage: "square.and.pencil")
+                        }
+
+                        Button {
+                            completeProject(project)
+                        } label: {
+                            Label("Complete Project", systemImage: iOSListWindDownAction.complete.icon)
                         }
 
                         Button(role: .destructive) {

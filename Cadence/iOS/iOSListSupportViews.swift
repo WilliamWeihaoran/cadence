@@ -380,6 +380,15 @@ struct iOSListKanbanPanel: View {
     /// `CadenceTaskDropSupport.groupIdentity(container:listName:sectionName:)`.
     let container: TaskContainerSelection
     let listName: String
+    /// A column to bring into view and briefly ring on arrival. Today's past-due **section** card
+    /// is the only caller so far — it names a column, and a board that opened at the far left would
+    /// have answered a different question than the card asked.
+    var highlightedSectionName: String?
+
+    /// Which column the ring is currently on. Separate from `highlightedSectionName` because the
+    /// request outlives the emphasis: the ring fades after a beat and the request is still the
+    /// reason this board is on screen, so clearing one must not clear the other.
+    @State private var activeHighlightName: String?
 
     /// **Every configured column, filled or not.** An unfilled column is the case the drop rule
     /// exists for, and it was the one case that could not happen here: `sectionGroups` discarded
@@ -410,30 +419,78 @@ struct iOSListKanbanPanel: View {
                     )
                 )
             } else {
-                ScrollView(.horizontal) {
-                    HStack(alignment: .top, spacing: 14) {
-                        ForEach(columns) { column in
-                            iOSListKanbanColumn(
-                                title: column.title,
-                                dotColor: dotColor(for: column.title),
-                                tasks: column.tasks,
-                                dropIdentity: CadenceTaskDropSupport.groupIdentity(
-                                    container: container,
-                                    listName: listName,
-                                    sectionName: column.title
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal) {
+                        HStack(alignment: .top, spacing: 14) {
+                            ForEach(columns) { column in
+                                iOSListKanbanColumn(
+                                    title: column.title,
+                                    dotColor: dotColor(for: column.title),
+                                    tasks: column.tasks,
+                                    isHighlighted: isHighlighted(column.title),
+                                    dropIdentity: CadenceTaskDropSupport.groupIdentity(
+                                        container: container,
+                                        listName: listName,
+                                        sectionName: column.title
+                                    )
                                 )
-                            )
+                                .id(column.title)
+                            }
                         }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 16)
+                        .frame(maxHeight: .infinity, alignment: .top)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 16)
-                    .frame(maxHeight: .infinity, alignment: .top)
+                    .scrollIndicators(.hidden)
+                    // Both arrival routes, for the same reason `iOSFocusView` covers both: this
+                    // board is built fresh when the sheet opens (`onAppear`), and is *updated*
+                    // rather than rebuilt when the page it is on is already standing.
+                    .onAppear { applyHighlightIfNeeded(with: proxy) }
+                    .onChange(of: highlightedSectionName) { _, _ in
+                        applyHighlightIfNeeded(with: proxy)
+                    }
                 }
-                .scrollIndicators(.hidden)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg)
+    }
+
+    private func isHighlighted(_ name: String) -> Bool {
+        activeHighlightName?.caseInsensitiveCompare(name) == .orderedSame
+    }
+
+    /// Scroll to the named column and ring it, then let the ring go.
+    ///
+    /// The match is a **case-insensitive name** comparison, because that is the only handle there
+    /// is: a section is a `TaskSectionConfig` value in `sectionConfigsRaw`, and a task points at one
+    /// through `AppTask.sectionName` — a string. `columns` is keyed by the same names, including the
+    /// ones that exist only on a task, so a column the list no longer configures is still reachable.
+    ///
+    /// The fade-out is deliberately not a `withAnimation` on the request itself: the request is the
+    /// reason the board is open and outlives the emphasis.
+    private func applyHighlightIfNeeded(with proxy: ScrollViewProxy) {
+        guard let highlightedSectionName,
+              let match = columns.first(where: {
+                  $0.title.caseInsensitiveCompare(highlightedSectionName) == .orderedSame
+              }) else {
+            activeHighlightName = nil
+            return
+        }
+
+        activeHighlightName = match.title
+        withAnimation(.easeInOut(duration: 0.22)) {
+            proxy.scrollTo(match.title, anchor: .center)
+        }
+
+        let ringedName = match.title
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            guard activeHighlightName?.caseInsensitiveCompare(ringedName) == .orderedSame else { return }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                activeHighlightName = nil
+            }
+        }
     }
 
     private func dotColor(for name: String) -> Color {
@@ -450,6 +507,10 @@ private struct iOSListKanbanColumn: View {
     let title: String
     let dotColor: Color
     let tasks: [AppTask]
+    /// Set for the one column a caller arrived here to look at. It is emphasis, not selection —
+    /// nothing about the column behaves differently — so it draws a ring at the card radius and
+    /// nothing else, and the panel takes it away after a beat.
+    var isHighlighted = false
     /// See `iOSTaskGroupHeader.dropIdentity` — the header is the drop target here for the same
     /// reason, and reaches the same place a card cannot: a column with nothing in it.
     var dropIdentity: CadenceTaskGroupDropIdentity?
@@ -478,6 +539,13 @@ private struct iOSListKanbanColumn: View {
             .scrollIndicators(.hidden)
         }
         .frame(width: iOSBoardColumnWidth, alignment: .topLeading)
+        // One layer at one radius. The ring is an overlay on the column itself rather than a second
+        // background under the header, which is the stacked-hover shape the standing rule rules out.
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                .strokeBorder(isHighlighted ? dotColor : Color.clear, lineWidth: 2)
+                .allowsHitTesting(false)
+        }
     }
 }
 

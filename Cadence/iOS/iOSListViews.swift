@@ -16,7 +16,9 @@ struct iOSListsView: View {
     @State private var editorMode: iOSListEditorMode?
     @State private var selectedRoute: iOSListRoute?
     @State private var pendingDeletion: iOSListDeletionTarget?
-    @State private var pendingArchive: iOSListArchiveTarget?
+    /// Set only when `CadenceContainerWindDownSummary.requiresConfirmation` says the wind-down
+    /// would settle something. See `requestWindDown`.
+    @State private var pendingWindDown: iOSListWindDownTarget?
 
     private var activeAreas: [Area] {
         areas.filter(\.isActive)
@@ -69,7 +71,7 @@ struct iOSListsView: View {
             iOSListEditorSheet(mode: mode)
         }
         .iOSListDeletion(target: $pendingDeletion)
-        .iOSListArchive(target: $pendingArchive)
+        .iOSListWindDown(target: $pendingWindDown)
         .navigationDestination(for: iOSListRoute.self) { route in
             listDetail(for: route)
         }
@@ -143,6 +145,8 @@ struct iOSListsView: View {
                 projectSubtitle: projectSubtitle,
                 archiveArea: archive,
                 archiveProject: archive,
+                completeArea: complete,
+                completeProject: complete,
                 restoreArea: restore,
                 restoreProject: restore,
                 requestDeletion: { pendingDeletion = $0 }
@@ -196,6 +200,8 @@ struct iOSListsView: View {
                 Label("Edit Area", systemImage: "square.and.pencil")
             }
 
+            completeAreaButton(area)
+
             archiveAreaButton(area, title: "Archive Area")
 
             iOSListDeleteMenuButton(target: .area(area)) { pendingDeletion = $0 }
@@ -235,6 +241,8 @@ struct iOSListsView: View {
             } label: {
                 Label("Edit Project", systemImage: "square.and.pencil")
             }
+
+            completeProjectButton(project)
 
             archiveProjectButton(project, title: "Archive Project")
 
@@ -313,6 +321,32 @@ struct iOSListsView: View {
         }
     }
 
+    /// Completion is offered in the **context menu only**, never on the row swipe, and the swipe
+    /// keeps carrying Archive alone. Not squeamishness: a swipe is one flick with no second beat to
+    /// read anything in, and the conditional confirmation deliberately does not appear for a list
+    /// with nothing open — so a two-action swipe would put "mark this list finished" one
+    /// mis-flick away from "file it away", on a control where the only difference is how far your
+    /// thumb travelled. A long-press names both actions before either can be chosen.
+    ///
+    /// Not `role: .destructive` either, for the same reason the confirmation's button is not:
+    /// finishing work is not destruction, and a red "Complete Area" would be the control lying
+    /// about what it does. `iOSWindDownConfirmationSheet` derives its own colour from the outcome.
+    private func completeAreaButton(_ area: Area) -> some View {
+        Button {
+            complete(area)
+        } label: {
+            Label("Complete Area", systemImage: iOSListWindDownAction.complete.icon)
+        }
+    }
+
+    private func completeProjectButton(_ project: Project) -> some View {
+        Button {
+            complete(project)
+        } label: {
+            Label("Complete Project", systemImage: iOSListWindDownAction.complete.icon)
+        }
+    }
+
     private func projectSubtitle(_ project: Project) -> String {
         [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " / ")
     }
@@ -357,27 +391,47 @@ struct iOSListsView: View {
         selectedRoute = firstActiveRoute
     }
 
-    /// The one archive decision on iOS, for both the iPhone list and the iPad pane.
+    /// The one list wind-down decision on iOS, for both directions and for both the iPhone list and
+    /// the iPad pane.
     ///
-    /// Archiving cancels the list's remaining active tasks — it has on macOS all along, and T-215
-    /// is iOS catching up rather than a new behaviour. That makes a swipe a settlement, so it is
-    /// confirmed *when there is something to settle* and performed immediately when there is not;
-    /// `CadenceContainerWindDownSummary.requiresConfirmation` owns that test so the two surfaces cannot
-    /// answer it differently.
-    private func requestArchive(_ target: iOSListArchiveTarget) {
+    /// Archiving cancels the list's remaining active tasks and completing marks them done — macOS
+    /// has done both all along, so T-215 and T-214 are iOS catching up rather than new behaviour.
+    /// Either way the gesture settles work irreversibly, so it is confirmed *when there is something
+    /// to settle* and performed immediately when there is not.
+    ///
+    /// **The conditional rule is deliberately the same for completion as for archive**, and the
+    /// reason it is not a stronger bar is that `requiresConfirmation` is not a measure of how big a
+    /// claim the action makes — it is a test of whether anything irreversible happens at all.
+    /// Completing an empty list writes one `status` and settles nothing; friction there is friction
+    /// people learn to dismiss without reading, which is what makes the *other* sheet worth
+    /// stopping for. What completion does get is different copy: it settles as `.done`, which
+    /// asserts the work happened and feeds every surface that counts finished work, and it files the
+    /// list somewhere else. See `iOSListWindDownTarget.windDownSubject`.
+    ///
+    /// `CadenceContainerWindDownSummary.requiresConfirmation` owns the test and is asked here, once,
+    /// so no surface can answer it differently.
+    private func requestWindDown(_ target: iOSListWindDownTarget) {
         guard target.summary.requiresConfirmation else {
-            modelContext.archiveList(target)
+            modelContext.windDownList(target)
             return
         }
-        pendingArchive = target
+        pendingWindDown = target
     }
 
     private func archive(_ area: Area) {
-        requestArchive(.area(area))
+        requestWindDown(.area(area, .archive))
     }
 
     private func archive(_ project: Project) {
-        requestArchive(.project(project))
+        requestWindDown(.project(project, .archive))
+    }
+
+    private func complete(_ area: Area) {
+        requestWindDown(.area(area, .complete))
+    }
+
+    private func complete(_ project: Project) {
+        requestWindDown(.project(project, .complete))
     }
 
     private func restore(_ area: Area) {

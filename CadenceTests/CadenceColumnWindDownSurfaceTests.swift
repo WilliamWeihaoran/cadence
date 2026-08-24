@@ -14,7 +14,7 @@ import Testing
 /// `AppTask.sectionName` is a plain string pointing at one. Half of these tests are about that
 /// query being the same array the confirmation counts.
 ///
-/// The other half are source-text assertions, for the reason `CadenceListArchiveSurfaceTests`
+/// The other half are source-text assertions, for the reason `CadenceListWindDownSurfaceTests`
 /// records: `Cadence/iOS/` is entirely inside `#if os(iOS)` and this target builds for macOS, so
 /// there is no iOS symbol to reference. They strip comments rather than allowlist, count exactly
 /// rather than "contains", and end in a non-vacuity test.
@@ -273,7 +273,7 @@ struct CadenceColumnWindDownSurfaceTests {
         // One confirmation, built in one place, and it is the same sheet the list archive uses.
         try expectCallSites(of: "iOSWindDownConfirmationSheet", at: [
             "Cadence/iOS/iOSColumnWindDownSupport.swift": 1,
-            "Cadence/iOS/iOSListArchiveSupport.swift": 1,
+            "Cadence/iOS/iOSListWindDownSupport.swift": 1,
             "Cadence/iOS/iOSListEditorViews.swift": 0
         ])
     }
