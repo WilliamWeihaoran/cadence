@@ -1053,6 +1053,16 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   Also out of scope by decision: `CadenceMCPServer` / `Services/MCPReadOnly` strings are a
   machine-facing protocol surface and must stay English.
 
+  **The two date defects are fixed and pushed (`c09f67d`); the rest stays backlogged.** Six
+  fixed-format formatters are now locale-pinned — `dayNumber` was the sixth, missed by the original
+  count and the same class, since numerals follow the locale too. And both month grids read one
+  function, `CadenceScheduleSupport.weekdaySymbols` / `leadingBlankCount`, with language pinned and
+  **week start honoured from `firstWeekday`** — that is a real preference, not a language one.
+  Three mutations killed at 0 compile errors each; 2480 passed / 0 failed.
+  **This inverts when localisation actually happens**, and both doc comments say so: the pins come
+  off and the fixed patterns must become `setLocalizedDateFormatFromTemplate` or `Date.FormatStyle`,
+  because idiomatic zh is `8月24日` rather than a translated `MMMM d`.
+
 - [T-19] **Data safety, backup and controls.** `PrivacyDataResetService` (wipes every model),
   `StoreBackupManager`, and `DataIntegrityRepairService` exist; Settings → Data Safety is the
   surface. Worth reviewing as a whole: what a reset actually removes, whether backups are
