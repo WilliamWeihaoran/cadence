@@ -213,7 +213,12 @@ struct iOSCalendarBundleDetailSheet: View {
         iOSActionButton(
             title: "Focus This Block",
             systemImage: CadenceFeatureDestination.focus.systemImage,
-            tint: Theme.amber,
+            // The destination's own tint, beside the destination's own glyph. This was a literal
+            // `Theme.amber` — a token `CadenceFeatureDestination.defaultColorHex` assigns to Today
+            // and Habits, and the exact drift that property's doc comment was written about. T-273
+            // added the second Focus entry (`iOSTaskDetailSheet.focusSection`); two buttons naming
+            // one screen in two colours is what made it worth one line to settle.
+            tint: CadenceFeatureDestination.focus.tint,
             fullWidth: true
         ) {
             CadenceFocusHandoffCenter.shared.request(.bundle(bundle.id))

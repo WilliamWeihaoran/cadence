@@ -161,6 +161,7 @@ struct iOSTaskDetailSheet: View {
             subtasksSection
             notesSection
             statusActionsSection
+            focusSection
         }
     }
 
@@ -226,6 +227,43 @@ struct iOSTaskDetailSheet: View {
     private var statusActionsSection: some View {
         iOSTaskStatusActionsSection(task: task) { status in
             CadenceTaskMutationSupport.setStatus(status, for: task, modelContext: modelContext)
+        }
+    }
+
+    /// T-273: the task half of "start a session from somewhere other than the Focus screen",
+    /// finishing what [[T-266]] left. The row long-press menu already carried one — but
+    /// `iOSTaskRowContextMenu` is attached to `iOSTaskRow` and to nothing else, so a task met on
+    /// the Calendar Board or on a day timeline had no route to a session at all.
+    ///
+    /// It goes **here** rather than onto `iOSBoardTaskCard` and `iOSTimelineTaskBlock` for the same
+    /// reason `iOSCalendarBundleDetailSheet.focusSection` is on the block sheet rather than on the
+    /// two cards that open it: both of those surfaces open *this* sheet (pinned by
+    /// `CadenceTaskInspectorHostTests.noRowOrCardStillPresentsTheInspector`), so one entry is
+    /// reachable from both, and neither a permanently visible play glyph on every board card nor a
+    /// long-press on an 11pt timeline block is an affordance those surfaces can afford — the
+    /// timeline carries a `simultaneousGesture` pinch that a long-press competes with (T-243).
+    ///
+    /// The request is made **before** `dismiss()`, not after: it is a value dropped in an inbox, so
+    /// the shell routes underneath while this sheet is still on screen, and there is no dismissal
+    /// callback to hang a second half on. Sequence matters only in that order — reversing it would
+    /// post the request from a view being torn down.
+    ///
+    /// One reachable rough edge, left rather than papered over: `iOSCalendarBundleDetailSheet`
+    /// presents this sheet for a block's member tasks, and `dismiss()` there closes only this one,
+    /// so the block sheet is still standing over the routed Focus screen and needs its own Close.
+    /// Fixing it would mean a third observer of `CadenceFocusHandoffCenter`, and "the shell routes,
+    /// the Focus screen adopts" is the division T-266 is built on.
+    private var focusSection: some View {
+        iOSEditorSection(title: nil, style: .ruled, contentSpacing: 10) {
+            iOSActionButton(
+                title: "Focus This Task",
+                systemImage: CadenceFeatureDestination.focus.systemImage,
+                tint: CadenceFeatureDestination.focus.tint,
+                fullWidth: true
+            ) {
+                CadenceFocusHandoffCenter.shared.request(.task(task.id))
+                dismiss()
+            }
         }
     }
 

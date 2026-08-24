@@ -64,6 +64,36 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   underneath, and that interaction deserves its own simulator pass rather than riding on another
   ticket's. `FocusHandoffCallSiteTests.bothAffordancesRequestAHandoff` pins the two that exist; a
   third belongs in the same test.
+  **Built and verified, awaiting commit**, and built as the ticket describes rather than as a
+  second mechanism: one `iOSActionButton` in `iOSTaskDetailSheet.focusSection`, `request(.task(…))`
+  then `dismiss()`, no new type and no change to `CadenceFocusHandoff`. The card and the block gain
+  nothing of their own — both open this sheet, which
+  `CadenceTaskInspectorHostTests.noRowOrCardStillPresentsTheInspector` already pins, so one entry
+  reaches both. A `contextMenu` on the two surfaces was rejected: it duplicates a menu at two call
+  sites, and `iOSCalendarTimelineViews` carries the `simultaneousGesture` pinch a long-press
+  competes with ([[T-243]]). A swipe was rejected for [[T-266]]'s reason, unchanged. The test is
+  `everyAffordanceRequestsAHandoff` now — renamed rather than left saying "both" over three — beside
+  three new ones pinning that the section is rendered, that the request precedes the dismissal, and
+  that both Focus entries read `CadenceFeatureDestination.focus.tint`. That last one is a one-line
+  fix riding along: `iOSCalendarBundleDetailSheet` shipped `tint: Theme.amber`, the token
+  `defaultColorHex` gives Today and Habits, so two buttons named the same screen in two colours.
+  One rough edge left deliberately: the bundle sheet presents this sheet for a member task, and
+  `dismiss()` closes only the inner one, so Focus is routed *underneath* a block sheet that still
+  needs its own Close. Papering over it means a third observer of `CadenceFocusHandoffCenter`,
+  against the "shell routes, Focus screen adopts" division the whole design rests on.
+
+- [T-276] **iOS offers "Focus" on a settled task; macOS hides it.** Found while doing [[T-273]] and
+  deliberately not fixed there. `MacTaskRow.focusButtonSlot` gates its hover ▶ on
+  `!task.isDone && !task.isCancelled` and draws a `Color.clear` spacer instead. Neither iOS entry
+  gates: `iOSTaskRowContextMenu`'s **Focus** item ([[T-266]]) and
+  `iOSTaskDetailSheet.focusSection` ([[T-273]]) are offered on a task that is done or cancelled, and
+  the handoff resolves — `iOSFocusView.pickItem(for:)` falls back to the whole store on purpose, so
+  the session really starts and its minutes really land in `actualMinutes`. So this is a
+  divergence, not a dead button, which is why it is filed rather than patched: whether logging time
+  against work you have already settled is meaningful is a product call, and picking a side inside
+  T-273 would have silently re-decided an affordance T-266 shipped hours earlier. Either gate both
+  iOS entries on the macOS predicate, or drop the macOS gate — one predicate, in `Shared/` with a
+  test, either way.
 
 - [T-272] **Goals' *timeline* mode has never had an Attach List route, at any width.**
   Found while doing [[T-271]] and separate from it: `GoalTimelineView` was handed only `onEditGoal`
@@ -1364,7 +1394,24 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
   Settings, one category away, says access is denied. Fold it onto `RemindersConnectionState` the
   way `iOSInboxRemindersSection` already is.
 
-- [T-255] **A reminder completion that fails leaves the row looking completed, on both platforms.**
+- [T-255] ~~**A reminder completion that fails leaves the row looking completed, on both
+  platforms.**~~ **Fixed.** Confirmed exactly as written, on both rows and on all four exits.
+  `completeReminder(id:)` now returns `AppleReminderCompletionOutcome` — the three refusals come
+  from the shared `AppleReminderCompletionOutcome.refusal(isAuthorized:reminderResolves:
+  allowsContentModifications:)` rather than a `guard` chain a test cannot reach — and both rows turn
+  it into `AppleReminderCompletionResolution` (`Shared/CadenceRemindersPresentationSupport.swift`).
+  **The tick may not assert an outcome EventKit did not confirm**, so everything but `.completed`
+  reverts; the tick still *leads* the write, because it has to land before the reload removes the
+  row. A modal alert was rejected: a revoked grant or a sync conflict refuses every visible row at
+  once, so it is a queue of sheets over a list. A bare silent revert was rejected too — it reads as
+  a misclick — so the three outcomes nothing else on screen explains carry a short inline sentence
+  on the row, and `.notAuthorized` is silent because the section is already replacing every row
+  with its access card. Two outcomes also reconcile the manager: `.notAuthorized` re-derives
+  authorization, `.reminderUnavailable` refetches. Pinned by six tests in
+  `CadenceInboxRemindersSurfaceTests`, three of them mutation-checked.
+  Original report follows.
+
+  **A reminder completion that fails leaves the row looking completed, on both platforms.**
   `AppleReminderTaskRow.complete()` (macOS) and `iOSInboxReminderRow.complete()` (iOS) are the same
   optimistic sequence: set `isCompleting = true`, animate to struck-through at 0.65 opacity, then
   call `onComplete` 220ms later. `RemindersManager.completeReminder(id:)` has three silent exits —

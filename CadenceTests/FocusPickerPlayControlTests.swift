@@ -656,16 +656,78 @@ struct FocusHandoffCallSiteTests {
         #expect(code.count > 4_000, "read \(code.count) characters of iOSRootView and cannot be doing its job")
     }
 
-    /// Both affordances, and both halves of `CadenceFocusTarget`. Shipping only the task half would
+    /// Every affordance, and both halves of `CadenceFocusTarget`. Shipping only the task half would
     /// leave the block half — the thing T-242 had just built — reachable from nowhere but Focus.
-    @Test func bothAffordancesRequestAHandoff() throws {
+    ///
+    /// It read `bothAffordancesRequestAHandoff` while there were two; the third (T-273) is the task
+    /// inspector, which is what gives a task met on the Calendar Board or a day timeline a route —
+    /// `iOSTaskRowContextMenu` hangs off `iOSTaskRow` and off nothing else.
+    @Test func everyAffordanceRequestsAHandoff() throws {
         let rowCode = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSTaskRowActionViews.swift"))
         let blockCode = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift"))
+        let sheetCode = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSTaskDetailSheet.swift"))
 
         #expect(rowCode.contains("struct iOSTaskRowContextMenu: View"))
         #expect(rowCode.contains("CadenceFocusHandoffCenter.shared.request(.task(task.id))"))
 
         #expect(blockCode.contains("struct iOSCalendarBundleDetailSheet: View"))
         #expect(blockCode.contains("CadenceFocusHandoffCenter.shared.request(.bundle(bundle.id))"))
+
+        #expect(sheetCode.contains("struct iOSTaskDetailSheet: View"))
+        #expect(sheetCode.contains("CadenceFocusHandoffCenter.shared.request(.task(task.id))"))
+        // Non-vacuity: three needles that also match a doc comment would make this unfailable, so
+        // the comment-stripped text has to be real code of a plausible size.
+        #expect(sheetCode.count > 8_000, "read \(sheetCode.count) characters of iOSTaskDetailSheet and cannot be doing its job")
+    }
+
+    /// The inspector's entry is drawn *and* rendered — a `focusSection` that no `body` composes is
+    /// a request no finger can make, and the source scan above cannot tell the difference.
+    @Test func theInspectorRendersItsFocusEntry() throws {
+        let sheetCode = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSTaskDetailSheet.swift"))
+
+        #expect(sheetCode.components(separatedBy: "focusSection").count - 1 == 2)
+        #expect(sheetCode.contains("private var focusSection: some View"))
+    }
+
+    /// The request is posted before the sheet dismisses, in that order.
+    ///
+    /// Reversed, the tap would be asking a view that is already being torn down to post it. The
+    /// block sheet established the order; the inspector has the same two lines and there is no
+    /// second place for them to disagree.
+    @Test func theInspectorRequestsBeforeItDismisses() throws {
+        for path in [
+            "Cadence/iOS/iOSTaskDetailSheet.swift",
+            "Cadence/iOS/iOSCalendarBundleDetailSheet.swift"
+        ] {
+            let code = try focusStrippingComments(focusSourceFile(path))
+            let request = try #require(code.range(of: "CadenceFocusHandoffCenter.shared.request("))
+            let dismissAfter = try #require(code.range(of: "dismiss()", range: request.upperBound ..< code.endIndex))
+            // …and nothing else between them but whitespace and the closing paren of the request.
+            let between = code[request.upperBound ..< dismissAfter.lowerBound]
+            #expect(
+                between.filter { !$0.isWhitespace }.count < 40,
+                "\(path): dismiss() is no longer the next statement after the handoff request"
+            )
+        }
+    }
+
+    /// Both Focus entries name the Focus destination's own tint and glyph rather than spelling a
+    /// palette decision twice. The block sheet shipped `Theme.amber` — the token
+    /// `CadenceFeatureDestination.defaultColorHex` gives Today and Habits — and a second button
+    /// naming one screen in a second colour is what that property's doc comment calls the drift.
+    @Test func bothFocusEntriesReadTheDestinationsOwnTint() throws {
+        for path in [
+            "Cadence/iOS/iOSTaskDetailSheet.swift",
+            "Cadence/iOS/iOSCalendarBundleDetailSheet.swift"
+        ] {
+            let code = try focusStrippingComments(focusSourceFile(path))
+            #expect(code.contains("tint: CadenceFeatureDestination.focus.tint"), "\(path)")
+            #expect(code.contains("systemImage: CadenceFeatureDestination.focus.systemImage"), "\(path)")
+            // The exact retired spelling, not a bare `Theme.amber`: the block sheet legitimately
+            // draws an amber overdue glyph, and a needle that fails on that is a needle that
+            // forces the next agent to re-tint something unrelated.
+            #expect(code.contains("tint: Theme.amber") == false, "\(path)")
+        }
+        #expect(CadenceFeatureDestination.focus.defaultColorHex == Theme.tealHex)
     }
 }
