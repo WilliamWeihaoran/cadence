@@ -96,10 +96,11 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
     let title: String
     let isCollapsed: Bool
     let overdueCount: Int?
-    /// `nil` suppresses the "N task(s)" capsule entirely, the same decision
-    /// `CadenceTaskGroupHeading.count` makes (T-264) — a group standing for reminders Cadence has
-    /// not been allowed to look at does not know its own count, and `0` states a fact it does not
-    /// have. Every group that always knows its size keeps passing a plain `Int`.
+    /// `nil` suppresses the "N task(s)" capsule entirely, through the same function
+    /// `CadenceTaskGroupHeading` asks — `CadenceTaskGroupHeadingMetrics.showsCapsule` (T-264). A
+    /// group standing for reminders Cadence has not been allowed to look at does not know its own
+    /// count, and `0` states a fact it does not have. Every group that always knows its size keeps
+    /// passing a plain `Int`.
     let regularCount: Int?
     var accent: Color = Theme.dim
     var isToggleEnabled: Bool = true
@@ -186,7 +187,12 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
                     .clipShape(Capsule())
                 }
 
-                if let regularCount {
+                // Same rule as the shared heading's, asked of the same function — see
+                // `CadenceTaskGroupHeadingMetrics.showsCapsule`. The `let` after it is only the
+                // unwrap; do not collapse the two back into a bare `if let regularCount`.
+                // (`overdueCount` above is a *different* rule on purpose: a group that knows it is
+                // zero days late is stating a fact, so it hides a flag it has no reason to raise.)
+                if CadenceTaskGroupHeadingMetrics.showsCapsule(for: regularCount), let regularCount {
                     HStack(spacing: 4) {
                         Text("\(regularCount)")
                             .font(.system(size: 11, weight: .bold))

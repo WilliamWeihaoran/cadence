@@ -215,6 +215,13 @@ struct CadenceInboxRemindersSurfaceTests {
     /// The heading component itself must be able to suppress the capsule, or the two call-site
     /// fixes above have nowhere to route a `nil` to. Pins the declaration rather than the call
     /// sites, so a future revert of either component (not just the two headers) is caught here.
+    ///
+    /// **This test pins the *type*, not the decision, and that is not enough on its own.** A
+    /// verifier rewrote `CadenceTaskGroupHeading.body` from `if let count` to
+    /// `countBadge(count ?? 0)` — restoring "APPLE REMINDERS 0" over the access card — and the
+    /// whole suite stayed green, because `let count: Int?` still read exactly as before. The two
+    /// tests below are what close that: `onlyAnUnknownCountSuppressesTheCapsule` states the rule
+    /// on a value, and `bothGroupHeadersReadTheOneCapsuleRule` says both bodies ask for it.
     @Test func theSharedHeadingComponentsAcceptAnOptionalCount() throws {
         let heading = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTaskGroupHeading.swift"))
         #expect(heading.contains("let count: Int?"), "CadenceTaskGroupHeading.count is no longer optional")
@@ -224,6 +231,33 @@ struct CadenceInboxRemindersSurfaceTests {
 
         let macHeader = try strippingComments(sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift"))
         #expect(macHeader.contains("let regularCount: Int?"), "TaskListGroupHeader.regularCount is no longer optional")
+    }
+
+    /// The rule itself, exercised directly. `nil` is "cannot say" and draws nothing; every real
+    /// count — **including zero**, which is a real answer — keeps its capsule.
+    @Test func onlyAnUnknownCountSuppressesTheCapsule() {
+        #expect(!CadenceTaskGroupHeadingMetrics.showsCapsule(for: nil))
+        #expect(CadenceTaskGroupHeadingMetrics.showsCapsule(for: 0))
+        for count in [1, 2, 7, 99, Int.max] {
+            #expect(CadenceTaskGroupHeadingMetrics.showsCapsule(for: count))
+        }
+    }
+
+    /// **The half that catches a rewritten view body.** `onlyAnUnknownCountSuppressesTheCapsule`
+    /// above says what the rule is; nothing in a macOS-built test target can watch a SwiftUI
+    /// `body` decide to obey it, so this asserts that both bodies *ask*. That makes it a source
+    /// scan — the thing that failed here before — but a **positive** one, which is the polarity
+    /// `Cadence/Shared/AGENTS.md` recommends: the `?? 0` rewrite that survived the old assertion
+    /// deletes the call and fails this, and a header that keeps the behaviour with its own private
+    /// copy of the rule fails it too. Both mutations were run and both fail here.
+    @Test func bothGroupHeadersReadTheOneCapsuleRule() throws {
+        try expectCallSites(
+            of: "CadenceTaskGroupHeadingMetrics.showsCapsule",
+            at: [
+                "Cadence/Shared/Components/CadenceTaskGroupHeading.swift": 1,
+                "Cadence/macOS/Views/ListDetailSupportViews.swift": 1,
+            ]
+        )
     }
 
     // MARK: - T-256: isRestricted reaches every live consumer

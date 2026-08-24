@@ -21,6 +21,21 @@ nonisolated struct CadenceTaskGroupHeadingMetrics: Equatable, Sendable {
 
     static let countPaddingH: CGFloat = 8
     static let countPaddingV: CGFloat = 4
+
+    /// **Whether a group draws a count capsule at all (T-264).** `nil` means the group does not
+    /// know its own size — Apple Reminders while Cadence has not been allowed to look at them —
+    /// and a capsule reading `0` there states a fact the app does not have: it reads as "nothing
+    /// pending" when the truth is "cannot say". A real `0` is a real answer and keeps its capsule.
+    ///
+    /// This is a *decision*, not a measurement, and it is here rather than inline in either header
+    /// because inline it was untestable. The rule lived twice, as an `if let` in two view bodies,
+    /// and a macOS-built test target cannot call a SwiftUI `body` — so the only assertion anyone
+    /// could write read the file as text, and it pinned `count`'s **type** rather than what the
+    /// header does with it. A verifier changed one body to `countBadge(count ?? 0)`, putting
+    /// "APPLE REMINDERS 0" back over the access card, and the whole suite stayed green. As a
+    /// function the rule is an ordinary value to assert on, and both headers asking it is a single
+    /// positive call-site check away from being pinned as well.
+    static func showsCapsule(for count: Int?) -> Bool { count != nil }
 }
 
 /// A task group's heading: what the group is, in the group's own colour, and how many rows are
@@ -57,7 +72,11 @@ struct CadenceTaskGroupHeading: View {
                 Spacer(minLength: CadenceTaskGroupHeadingMetrics.spacing)
             }
 
-            if let count {
+            // The rule is `showsCapsule`, asked of the optional; the `let` after it is only the
+            // unwrap `countBadge` needs. Do not collapse the two into `if let count` — that is the
+            // spelling macOS's header and this one drifted apart under, and it puts the T-264
+            // decision somewhere no test can reach except by reading this file as text.
+            if CadenceTaskGroupHeadingMetrics.showsCapsule(for: count), let count {
                 countBadge(count)
             }
         }

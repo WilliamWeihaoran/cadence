@@ -352,7 +352,7 @@ struct ContainerWindDownReconcileTests {
 
     /// The whole reason the fix could be a one-liner and still was not. If `default` is ever
     /// "simplified" back to an unconditional `.live`, the eighteen wind-down tests in
-    /// `CadenceListArchiveSurfaceTests` and `CadenceCancelledTaskReachabilityTests` quietly start
+    /// `CadenceListWindDownSurfaceTests` and `CadenceCancelledTaskReachabilityTests` quietly start
     /// spawning store fetches into the notification layer, and nothing else goes red.
     @Test func theDefaultReconcilerIsInertInsideATestHost() {
         #expect(NotificationManager.isTestEnvironment)
