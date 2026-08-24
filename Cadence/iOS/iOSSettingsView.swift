@@ -225,6 +225,9 @@ struct iOSSettingsView: View {
             )
             #endif
 
+            // Keep-a-copy before delete-everything: the export is the only route on this device
+            // to data that outlives the app, and it belongs above the control that ends it.
+            iOSDataExportSettingsSection()
             iOSDataResetSettingsSection()
         }
     }

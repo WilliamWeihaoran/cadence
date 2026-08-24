@@ -2,6 +2,7 @@
 import SwiftUI
 import AppKit
 import SwiftData
+import UniformTypeIdentifiers
 
 struct SettingsDataSafetySection: View {
     @Environment(\.modelContext) private var modelContext
@@ -11,10 +12,16 @@ struct SettingsDataSafetySection: View {
     @State private var statusMessage: String?
     @State private var pendingRestore: StoreBackupSnapshot?
     @State private var isConfirmingDataDelete = false
+    @State private var exportDocument: CadenceArchiveDocument?
+    @State private var isExportingArchive = false
+    @State private var exportedRecordCount = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SettingsPrivacyStatementSection()
+            // Keeping a copy comes before destroying one, on the screen as well as in the reading
+            // order: this card is the only route to data that outlives the app.
+            SettingsDataExportCard(onExport: prepareArchiveExport)
             SettingsDataResetCard(
                 statusMessage: statusMessage,
                 onDeleteData: { isConfirmingDataDelete = true }
@@ -36,7 +43,17 @@ struct SettingsDataSafetySection: View {
                             Text("Backups")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
-                            Text("Cadence backs up the local store, CloudKit assets, and external files before migration work. Automatic backups are thinned over time.")
+                            // What this said before: "Cadence backs up the local store, CloudKit
+                            // assets, and external files before migration work." Two things wrong
+                            // with it, both the kind T-19 exists to catch — backups are taken at
+                            // every launch, not only around a migration, and it never said the
+                            // copies sit inside the app, which is the fact that decides whether a
+                            // user needs an archive as well.
+                            Text("Cadence copies the local store — including CloudKit assets and external files — at every launch, before a restore, and whenever you ask. Automatic copies are thinned over time.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(CadenceDataExportPresentation.localBackupLocationNote)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -93,6 +110,23 @@ struct SettingsDataSafetySection: View {
             }
         }
         .onAppear(perform: refreshBackups)
+        .fileExporter(
+            isPresented: $isExportingArchive,
+            document: exportDocument,
+            contentType: .json,
+            defaultFilename: CadenceDataExportService.suggestedFilename()
+        ) { result in
+            switch result {
+            case .success(let url):
+                statusMessage = CadenceDataExportPresentation.successMessage(
+                    recordCount: exportedRecordCount,
+                    filename: url.lastPathComponent
+                )
+            case .failure(let error):
+                statusMessage = CadenceDataExportPresentation.failureMessage(error.localizedDescription)
+            }
+            exportDocument = nil
+        }
         .confirmationDialog(
             "Restore Backup?",
             isPresented: Binding(
@@ -129,6 +163,20 @@ struct SettingsDataSafetySection: View {
 
     private func refreshBackups() {
         backups = StoreBackupManager.listBackups()
+    }
+
+    /// Builds the archive, then hands it to the system save panel. Encoding happens *before* the
+    /// panel opens so a failure is reported in this pane rather than as an empty file the user has
+    /// already chosen a home for.
+    private func prepareArchiveExport() {
+        do {
+            let outcome = try CadenceDataExportService.exportArchive(in: modelContext)
+            exportedRecordCount = outcome.recordCount
+            exportDocument = CadenceArchiveDocument(data: outcome.data)
+            isExportingArchive = true
+        } catch {
+            statusMessage = CadenceDataExportPresentation.failureMessage(error.localizedDescription)
+        }
     }
 
     private func createBackup() {
@@ -224,6 +272,47 @@ private struct SettingsPrivacyStatementSection: View {
                 }
 
                 Spacer(minLength: 0)
+            }
+        }
+    }
+}
+
+/// The route to a copy of the data that Cadence cannot delete.
+///
+/// Every word it shows is `CadenceDataExportPresentation`'s, so iOS's card cannot come to describe
+/// a different file. It has no status line of its own: the outcome sentence goes to the pane's
+/// shared `statusMessage`, next to the reset's, because both are answers to "what just happened to
+/// my data".
+private struct SettingsDataExportCard: View {
+    let onExport: () -> Void
+
+    var body: some View {
+        SettingsCard {
+            HStack(alignment: .top, spacing: 14) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Theme.green.opacity(0.14))
+                    .frame(width: 42, height: 42)
+                    .overlay {
+                        Image(systemName: "square.and.arrow.up.on.square.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Theme.green)
+                    }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(CadenceDataExportPresentation.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text(CadenceDataExportPresentation.description)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                SettingsActionButton(tone: .tinted(Theme.green), action: onExport) {
+                    Label(CadenceDataExportPresentation.buttonTitle, systemImage: "square.and.arrow.up")
+                }
             }
         }
     }

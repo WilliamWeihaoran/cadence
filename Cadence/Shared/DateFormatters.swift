@@ -33,6 +33,26 @@ nonisolated enum DateFormatters {
         return f
     }()
 
+    /// `yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX` in UTC — the ISO-8601 timestamp `CadenceDataExportService`
+    /// writes into a data archive. Storage, not display: it is here rather than in the exporter
+    /// because this file's opening rule is categorical ("never create `DateFormatter()` inline
+    /// elsewhere"), and because a document format is the one kind of date text that must never
+    /// follow the host — an archive written on a German Mac has to be readable by an English one.
+    ///
+    /// Milliseconds, deliberately, and it is the archive's stated precision rather than an
+    /// incidental one: `JSONEncoder`'s stock `.iso8601` writes whole seconds, which silently
+    /// truncated every timestamp the first cut of the exporter wrote. `TaskOrdering` breaks ties on
+    /// `createdAt`, and rows written together share a second routinely, so second precision turns a
+    /// total order into ties. `ISO8601DateFormatter` would spell the same text and is not
+    /// `Sendable`, so a static of one warns here where a `DateFormatter` does not.
+    static let archiveTimestamp: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX"
+        return f
+    }()
+
     /// The six formatters below are locale-pinned for the reason `monthYear` and `shortMonthYear`
     /// state: **this repo pins every fixed-format formatter**, because the app is English-only and
     /// an unpinned one follows the host's locale. They were the only fixed-format formatters that

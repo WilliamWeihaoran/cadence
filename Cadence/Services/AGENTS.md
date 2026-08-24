@@ -20,7 +20,15 @@ files at the time of writing — `ls Cadence/Services/*.swift | wc -l` — plus 
   same standing rule as the reset above and enforced the same way:
   `CadenceDataExportSurfaceTests` compares `CadenceArchive.recordCountsByEntityName` to the schema
   as a set and then checks a seeded row of every entity comes back, so an omission is a red test
-  rather than a backup that quietly restores less than it claims. `exportArchive(in:)` is the one
+  rather than a backup that quietly restores less than it claims.
+  **A new `Date` field on a record goes through `CadenceArchiveTimestamp.normalized(_:)`**, not
+  straight from the model. The archive's stated precision is the **millisecond**
+  (`DateFormatters.archiveTimestamp`), because `JSONEncoder`'s stock `.iso8601` writes whole
+  seconds — which is what the first cut of this exporter shipped, silently truncating every
+  timestamp and breaking `TaskOrdering`'s `createdAt` tie-break for anything restored from it.
+  Normalizing at record construction is what makes the value in memory and the text in the file the
+  same instant; `everyTimestampInTheArchiveIsAtTheArchivesPrecision` reflects over a seeded archive
+  and names the field that skipped it. `exportArchive(in:)` is the one
   call both Settings > Data Safety screens make; the copy they show is
   `Shared/CadenceDataExportPresentation.swift`, which also holds the `FileDocument`. **Export only** —
   the archive decodes as a value and that round trip is pinned, but nothing applies one to a live

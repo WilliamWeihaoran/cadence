@@ -47,11 +47,32 @@ struct CadenceRecurrenceEndSurfaceTests {
     /// Nowhere else, and in particular nowhere that writes the three stored properties by hand.
     /// They are plain SwiftData properties: assigning `task.recurrenceEndMode` compiles, bypasses
     /// the series propagation and the off-mode normalization, and looks right in review.
+    ///
+    /// **One file is allowed to read them and may not write them: the data exporter.** T-19's
+    /// archive is a complete copy of `CadenceSchema`, so it necessarily touches every stored
+    /// property on `AppTask`, these three included — and an export that skipped them would produce
+    /// a backup in which every recurring task repeats forever, which is the same defect this
+    /// invariant was written against, arriving by the other door. The user's call was to grant the
+    /// exception explicitly rather than let the guard be worked around, so it is spelled here as a
+    /// **named file with a stated capability**, not as a general escape hatch:
+    ///
+    /// - Exactly one path is added, and it is a service with no UI, not a directory or a pattern.
+    /// - It buys **read** only. The exporter is appended to the assignment scan below, so the day
+    ///   it starts writing `task.recurrenceEndCount = …` this fails exactly as it would for the
+    ///   inspector. An exception that also permitted writes would be the hole the guard exists to
+    ///   prevent.
+    /// - Nothing else is loosened. The list stays exact and the three-field assignment ban stays
+    ///   total, so a *second* reader — a widget, a DTO, a new sheet — is still a red test.
+    ///
+    /// Reverting the two lines that add the exporter turns this red again, and the guard keeps its
+    /// teeth for every other file — both were checked by mutation rather than assumed.
     @Test func nothingOutsideTheWorkflowAndTheModelWritesTheEndFieldsDirectly() throws {
         let endCountReaders = try filesMentioning("recurrenceEndCount")
         #expect(
             endCountReaders == [
                 "Cadence/Models/AppTask.swift",
+                // Reads the field to copy it into the archive, and only that — see above.
+                "Cadence/Services/CadenceDataExportService.swift",
                 "Cadence/Shared/CadenceTaskMutationSupport.swift",
                 "Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift",
                 "Cadence/iOS/iOSTaskDetailSheet.swift",
@@ -62,10 +83,13 @@ struct CadenceRecurrenceEndSurfaceTests {
         )
 
         // The two view files may *read* the stored count to seed a control; neither may assign it.
+        // The exporter is held to the same line, which is what makes its exception read-only: it
+        // may copy `model.recurrenceEndCount` out, and may not put anything back.
         for path in [
             "Cadence/iOS/iOSTaskDetailSheetSections.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
             "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+            "Cadence/Services/CadenceDataExportService.swift",
         ] {
             let source = try strippingComments(sourceFile(path))
             for field in ["recurrenceEndMode", "recurrenceEndDate", "recurrenceEndCount"] {
