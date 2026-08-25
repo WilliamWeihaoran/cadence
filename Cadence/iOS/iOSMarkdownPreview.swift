@@ -58,7 +58,12 @@ private struct iOSMarkdownPreviewBlockView: View {
         switch block {
         case .heading(let level, let text):
             iOSMarkdownPreviewInlineText(text: text, onOpenReference: onOpenReference)
-                .font(.system(size: MarkdownHeadingRamp.size(level: level, surface: .mobile), weight: .bold))
+                // The **canvas's** body, not this view's. The paragraph text below is a fixed 15pt,
+                // but a heading here has to be the size the same heading is in the editor: "one H1,
+                // two sizes on one platform" is the T-180 defect, and a preview whose headings
+                // stopped scaling with Dynamic Type would be it again at every non-default text
+                // size. See `MarkdownHeadingRamp`.
+                .font(.system(size: MarkdownHeadingRamp.size(level: level, surface: .mobile, bodyPointSize: iOSMarkdownStyler.baseFont.pointSize), weight: .bold))
                 .foregroundStyle(Theme.text)
                 .padding(.top, level <= 2 ? 4 : 1)
 

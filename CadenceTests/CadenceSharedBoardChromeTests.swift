@@ -245,17 +245,18 @@ struct CadenceSharedBoardChromeTests {
 @MainActor
 struct CadenceSectionEyebrowConvergenceTests {
 
-    /// The one file allowed to draw the shape, with the reason it is not an eyebrow.
+    /// **The allowlist is empty, and that is the T-277 outcome rather than a retirement.**
     ///
-    /// A calendar month column's `MON` sits above the day number as its *date* label, in
-    /// `isToday ? Theme.blue : Theme.dim` and kerned 0.5 to sit under a 32pt circle. iOS draws the
-    /// same header in `iOSCalendarTimelineViews` at `iOSCalendarTimelineMetrics.weekdaySize`. The
-    /// two weekday headers have to agree with **each other**, which is a different question from
-    /// whether either agrees with a section eyebrow, and answering it by pointing both at
-    /// `SectionEyebrowLabel` would decide the first question by accident.
-    private static let notAnEyebrow: Set<String> = [
-        "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift"
-    ]
+    /// It held one entry: `CalendarPageMonthSupportViews`, whose `MON` sits above a day number as
+    /// that column's *date* label — not a section eyebrow, so pointing it at `SectionEyebrowLabel`
+    /// would have settled "do the two weekday headers agree with each other" by accident. T-277
+    /// settled that question directly: both headers read `CadenceCalendarWeekdayHeaderMetrics` now,
+    /// so the file no longer spells a literal font size and the entry's own escape clause fired —
+    /// "if the weekday header ever stops drawing the shape, the entry goes". It went, along with the
+    /// test that guarded it. The sweep below now reads every file under `Cadence/` with no
+    /// exemptions at all. `CadenceCalendarWeekdayHeaderConvergenceTests` is where that header is
+    /// pinned instead.
+    private static let notAnEyebrow: Set<String> = []
 
     /// **The T-161 test.** Re-fork any one of the twenty converted sites and this fails, because
     /// the shape reappears — no matter how many other files still name the shared label.
@@ -280,14 +281,12 @@ struct CadenceSectionEyebrowConvergenceTests {
         )
     }
 
-    /// The allowlist is not a place to retire the check to. If the weekday header ever stops
-    /// drawing the shape, this fails and the entry goes — an allowlist nobody can prove is still
-    /// needed is an allowlist that grows.
-    @Test func theAllowlistedFileStillDrawsTheShapeItIsExcusedFor() throws {
-        for path in Self.notAnEyebrow {
-            let hits = handRolledEyebrowLines(in: strippingLineCommentsFast(try sourceFile(path)))
-            #expect(hits > 0, "\(path) no longer draws the shape it is allowlisted for — delete the entry")
-        }
+    /// The allowlist was never a place to retire the check to, so the check that it stayed earned
+    /// outlived it: an entry had to keep drawing the shape it was excused for. Now that the set is
+    /// empty, what has to stay true is that it *stays* empty — an exemption is how a sweep like this
+    /// quietly stops covering the surface it was written for.
+    @Test func theEyebrowSweepHasNoExemptionsLeft() {
+        #expect(Self.notAnEyebrow.isEmpty)
     }
 
     /// The detector itself, against text that is not the repository. Without this the sweep above
@@ -416,6 +415,137 @@ private func strippingLineCommentsFast(_ source: String) -> String {
             return line[line.startIndex..<marker.lowerBound]
         }
         .joined(separator: "\n")
+}
+
+/// **T-277: the two calendar weekday headers.**
+///
+/// `MON` over a day column was a literal `10` semibold kerned `0.5` on macOS and a named
+/// `iOSCalendarTimelineMetrics.weekdaySize` of `11` with no kerning on iOS — one literal against one
+/// constant, which is a fork that no grep for a shared token can find, and it is why this one
+/// survived the T-275 sweep as that sweep's single allowlist entry.
+///
+/// The figures are asserted as **values** first and scanned for as source second. The value half is
+/// what catches the iOS side re-forking `iOSCalendarTimelineMetrics`, which is a `Cadence/iOS/`
+/// file this macOS-built target cannot otherwise see the inside of: those members are computed
+/// forwards, so reading them here reads what the phone draws.
+@MainActor
+struct CadenceCalendarWeekdayHeaderConvergenceTests {
+
+    /// 10, and it is not a number of the calendar's own: it is the size of every uppercased
+    /// semibold label in the app. `CadenceBoardColumnHeaderMetrics` settled this exact 10-against-11
+    /// argument against an iOS 11 already, which is the second time the phone's calendar chrome has
+    /// been the outlier.
+    @Test func theWeekdayLabelIsTheAppsOneLabelSize() {
+        #expect(CadenceCalendarWeekdayHeaderMetrics.labelSize == 10)
+        #expect(CadenceCalendarWeekdayHeaderMetrics.labelSize == SectionEyebrowLabel.fontSize)
+        #expect(CadenceCalendarWeekdayHeaderMetrics.labelSize == CadenceBoardColumnHeaderMetrics.labelSize)
+    }
+
+    /// The kerning iOS was missing. Asserted as a positive number *and* as the exact figure: a
+    /// mutation putting the iOS side back to no kerning at all is the regression this exists for,
+    /// and `> 0` is the half that names it.
+    @Test func theUppercasedWeekdayIsKerned() {
+        #expect(CadenceCalendarWeekdayHeaderMetrics.labelKerning == 0.5)
+        #expect(CadenceCalendarWeekdayHeaderMetrics.labelKerning > 0)
+    }
+
+    /// The day number and its today-circle were the half the two platforms *already* agreed on,
+    /// 18-in-32 both. Stating them once is what keeps that true; this is the assertion that fails
+    /// if either side goes back to a literal.
+    @Test func theDayNumberAndCircleAreStatedOnce() {
+        #expect(CadenceCalendarWeekdayHeaderMetrics.dayNumberSize == 18)
+        #expect(CadenceCalendarWeekdayHeaderMetrics.dayCircleSize == 32)
+        #expect(CadenceCalendarWeekdayHeaderMetrics.labelSpacing == 2)
+    }
+
+    /// The iOS band reads the shared figures rather than keeping its own copy of them.
+    ///
+    /// `iOSCalendarTimelineMetrics` is inside `#if os(iOS)`-adjacent source this target cannot
+    /// render, but the enum itself is `nonisolated` and unguarded, so its members are readable here
+    /// — and they are computed forwards now, so an inequality below means the phone's day header has
+    /// re-forked.
+    @Test func theIOSDayHeaderReadsTheSharedBand() {
+        #expect(iOSCalendarTimelineMetrics.weekdaySize == CadenceCalendarWeekdayHeaderMetrics.labelSize)
+        #expect(iOSCalendarTimelineMetrics.dayLabelSpacing == CadenceCalendarWeekdayHeaderMetrics.labelSpacing)
+        #expect(iOSCalendarTimelineMetrics.dayNumberSize == CadenceCalendarWeekdayHeaderMetrics.dayNumberSize)
+        #expect(iOSCalendarTimelineMetrics.dayCircleSize == CadenceCalendarWeekdayHeaderMetrics.dayCircleSize)
+    }
+
+    /// The derived band still clears what sits in it after the label shrank — the arithmetic
+    /// `iOSCalendarMetricsTests` pins, restated against the shared numbers because they are what
+    /// feeds it now. Taking the label to 10 and the gap to 2 hands the chip strip 2.2pt back.
+    @Test func theSharedBandStillFitsTheIOSDayHeader() {
+        #expect(
+            iOSCalendarTimelineMetrics.dateBlockHeight
+                >= CadenceCalendarWeekdayHeaderMetrics.labelSize * 1.2
+                    + CadenceCalendarWeekdayHeaderMetrics.labelSpacing
+                    + CadenceCalendarWeekdayHeaderMetrics.dayCircleSize
+        )
+    }
+
+    /// The whole app draws exactly **two** uppercased weekday labels, and neither may set its own
+    /// size beside one.
+    ///
+    /// The count is the load-bearing half. A third hand-rolled day header would satisfy any
+    /// "the two existing ones are fine" assertion, which is the failure mode the eyebrow sweep in
+    /// this file was written for; a new one has to be a line in the table below.
+    @Test func theOnlyTwoWeekdayLabelsInTheAppReadTheSharedMetric() throws {
+        var found: [String] = []
+        var offenders: [String] = []
+        var scanned = 0
+
+        for path in try swiftFiles(under: "Cadence") {
+            scanned += 1
+            let lines = strippingLineCommentsFast(try sourceFile(path)).components(separatedBy: "\n")
+            for (index, line) in lines.enumerated() {
+                guard line.contains("DateFormatters.dayOfWeek"), line.contains(".uppercased()") else { continue }
+                found.append(path)
+                let window = lines[max(0, index - 6)...min(lines.count - 1, index + 6)].joined(separator: "\n")
+                if window.range(of: "\\.font\\(\\.system\\(size: [0-9]", options: .regularExpression) != nil {
+                    offenders.append(path)
+                }
+            }
+        }
+
+        #expect(scanned > 250, "scanned only \(scanned) files under Cadence/")
+        #expect(found.sorted() == [
+            "Cadence/iOS/iOSCalendarTimelineViews.swift",
+            "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift"
+        ])
+        #expect(
+            offenders.isEmpty,
+            "weekday header(s) setting their own font size: \(offenders.sorted().joined(separator: ", "))"
+        )
+    }
+
+    /// The positive half, with exact reference counts, so a site that drops *one* of the five
+    /// figures back to a literal fails rather than riding on the four it kept.
+    @Test func theWeekdayHeaderSitesNameTheSharedMetric() throws {
+        let expected = [
+            "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift": 6,
+            "Cadence/iOS/iOSCalendarTimelineViews.swift": 1,
+            "Cadence/iOS/iOSCalendarMetrics.swift": 4,
+            "Cadence/iOS/iOSCalendarMonthViews.swift": 1
+        ]
+
+        for (path, count) in expected {
+            let code = try strippingComments(sourceFile(path))
+            let actual = code.components(separatedBy: "CadenceCalendarWeekdayHeaderMetrics.").count - 1
+            #expect(actual == count, "\(path) names the shared metric \(actual) times, expected \(count)")
+        }
+    }
+
+    /// The month grids' weekday row took a `weekdaySymbolSize` parameter that this grid's two
+    /// callers disagreed about — 10 for the agenda, 11 for the full month — so one view drew the
+    /// same row at two sizes, and the timed grid's day header named "the month grid" as the reason
+    /// for *its* 11. The parameter is gone rather than merely unified: a knob with one caller is how
+    /// the disagreement gets rebuilt.
+    @Test func theMonthGridsWeekdayRowHasNoSizeKnobLeft() throws {
+        for path in try swiftFiles(under: "Cadence") {
+            let code = try strippingComments(sourceFile(path))
+            #expect(!code.contains("weekdaySymbolSize"), "\(path) still carries a weekday size knob")
+        }
+    }
 }
 
 // MARK: - Source-reading helpers

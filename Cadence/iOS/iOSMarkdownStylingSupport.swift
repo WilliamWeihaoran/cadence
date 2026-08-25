@@ -174,7 +174,7 @@ enum iOSMarkdownStyler {
         }
 
         if let heading = headingMatch(in: line) {
-            let size = MarkdownHeadingRamp.size(level: heading.level, surface: .mobile)
+            let size = MarkdownHeadingRamp.size(level: heading.level, surface: .mobile, bodyPointSize: baseFont.pointSize)
             storage.addAttributes([
                 .font: UIFont.systemFont(ofSize: size, weight: .bold),
                 .foregroundColor: UIColor(Theme.text)

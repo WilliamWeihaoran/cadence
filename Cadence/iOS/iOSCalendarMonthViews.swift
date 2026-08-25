@@ -31,8 +31,7 @@ struct iOSCalendarMonthGrid: View {
             iOSCalendarMonthScrollingGrid(
                 topRowDate: $topRowDate,
                 rowHeight: rowHeight,
-                weekdayHeaderHeight: weekdayHeaderHeight,
-                weekdaySymbolSize: 11
+                weekdayHeaderHeight: weekdayHeaderHeight
             ) { date, displayMonth in
                 let key = DateFormatters.dateKey(from: date)
                 iOSCalendarMonthDayCell(
@@ -81,7 +80,6 @@ struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
     @Binding var topRowDate: Date
     let rowHeight: CGFloat
     let weekdayHeaderHeight: CGFloat
-    var weekdaySymbolSize: CGFloat = 10
     /// The cell for one day, given the month the grid is currently *reading as* — which is what
     /// decides whether the cell is dimmed as a neighbouring month's.
     @ViewBuilder let cell: (Date, Date) -> Cell
@@ -148,11 +146,18 @@ struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
         }
     }
 
+    /// `Sun Mon Tue` over the columns.
+    ///
+    /// The size was a `weekdaySymbolSize` parameter this grid's two callers disagreed about — the
+    /// agenda took the default 10, the full month passed 11 — so one view drew the same row at two
+    /// sizes, and the timed grid's day header cited "the month grid" as the reason for *its* 11.
+    /// One figure now, in `CadenceCalendarWeekdayHeaderMetrics`. Title-case here, so it takes the
+    /// size and not the kerning; see that type. `docs/TODO.md` T-277.
     private var weekdayHeader: some View {
         HStack(spacing: 0) {
             ForEach(CadenceScheduleSupport.weekdaySymbols(calendar: calendar), id: \.self) { symbol in
                 Text(symbol)
-                    .font(.system(size: weekdaySymbolSize, weight: .semibold))
+                    .font(.system(size: CadenceCalendarWeekdayHeaderMetrics.labelSize, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .frame(maxWidth: .infinity)
                     .frame(height: weekdayHeaderHeight)

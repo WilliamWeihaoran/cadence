@@ -193,25 +193,6 @@ _Nothing in flight._
     window width (and therefore correct across a resize with no restyle). A wrapping cell would
     need the reservation recomputed on resize, the way the image block's already is.
 
-- [T-211] **On iOS, H5 (16pt) and H6 (15pt) render *below* the editor's body text.** Found by
-  `d513e72` and recorded rather than fixed. The iOS body is
-  `UIFont.preferredFont(forTextStyle: .body)` — 17pt by default and larger at accessibility sizes —
-  so no fixed point size can stay above it. Fixing it means making the iOS ramp relative to
-  `preferredFont(.body).pointSize` rather than absolute, which is a different change from unifying
-  the ramps.
-
-- [T-194] **Note export on iOS: markdown *and* PDF.** User's call — the fuller option, chosen
-  knowing the cost. Unlike [[T-187]]–[[T-193]] this is the one gap that is genuinely AppKit-bound
-  rather than guarded by accident: `NoteExportService` uses `NSSavePanel` and renders PDF through
-  `NSTextStorage`/`NSTextView`, so the mechanism must be rebuilt, not un-guarded.
-  Markdown is cheap: a `ShareLink` over the export string, and `ShareLink` appears nowhere under
-  `Cadence/iOS` today. PDF is the real work and needs a UIKit renderer, which means **a second
-  renderer that has to keep matching the macOS one** — so factor the shared decisions (page size,
-  margins, how a task embed and an image asset render) out of `NoteExportService` first, or the two
-  will drift the way the heading ramps did. Note `D-124` found the markdown *preview* and *editor*
-  already disagreed about heading sizes on the same platform; a third renderer is a third chance at
-  that.
-
 - [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
   *(a)* A widget showing the running timer plus what is being worked on, and a second showing the
   task list — exact split is a design call, make a good one rather than shipping two widgets that
@@ -384,16 +365,6 @@ _Nothing in flight._
     productive unit of audit is one hand-rolled UI pattern (a header, a label style, a literal
     list) at a time, grepped across both platform folders before calling it shared or
     platform-only — the method that found [T-275] and the two stale counts above.
-
-- [T-277] **The two weekday column headers are a fork nobody has compared.**
-  Found while closing [[T-275]] and left alone deliberately. `CalendarPageMonthSupportViews`
-  (macOS) draws `MON` at 10pt semibold, `isToday ? Theme.blue : Theme.dim`, `.kerning(0.5)`;
-  `iOSCalendarTimelineViews` draws the same header at `iOSCalendarTimelineMetrics.weekdaySize`
-  semibold in the same conditional tint with **no** kerning. One is a literal and one is a named
-  metric, so a grep for a shared constant finds nothing wrong. This is not a section eyebrow — it
-  is the date label above a day number — so `SectionEyebrowLabel` is the wrong answer; the right
-  one is a shared weekday-header metric the way `CadenceBoardColumnHeaderMetrics` is shared, or a
-  decision that the two differ on purpose.
 
 - [T-122] **Flip `SWIFT_VERSION` to 6.0 — now an open question rather than a blocked one.** `D-95`
   cleared the last macOS error, so nothing in the app's source blocks it. What remains: 10
@@ -591,6 +562,91 @@ _Nothing in flight._
 
 ## Done
 
+> The three entries below were finished from the recovery branch `recovered-2026-08-25` (`922a8f0`)
+> and are **verified in the working tree, not yet committed** — a later commit should add its sha to
+> each, per the format rule at the top of this file.
+
+- [T-277] **The two weekday column headers were a fork — DONE, one shared band.**
+  `Cadence/Shared/CadenceCalendarWeekdayHeaderMetrics.swift` states the whole band once —
+  `labelSize` 10, `labelKerning` 0.5, `labelSpacing` 2, `dayNumberSize` 18, `dayCircleSize` 32 — and
+  macOS's `CalDayHeaderView`, `iOSCalendarTimelineMetrics` and **both** iOS month grids read it.
+
+  **Which side won on each figure, and why the third one was not a tie-break.** macOS's 10 wins
+  because 10 is this app's size for the entire uppercased-semibold label tier
+  (`SectionEyebrowLabel.fontSize`, `CadenceBoardColumnHeaderMetrics.labelSize`, which settled this
+  exact 10-against-11 argument against an iOS 11 already). iOS's stated reason for 11 — "the same
+  label the month grid sets over its own columns, at the same 11pt" — did not hold:
+  `iOSCalendarMonthScrollingGrid` took a `weekdaySymbolSize` parameter its two callers disagreed
+  about, 10 for the agenda and 11 for the full month, so **one view drew the same row at two sizes**
+  and there was never a figure to agree with. That parameter is deleted rather than unified; a knob
+  with one caller is how the disagreement gets rebuilt. The kerning is a *missing modifier* on the
+  iOS side, not a `0` anybody typed — `iOSCalendarTimelineMetrics` never named kerning at all — and
+  every uppercased short label in Cadence is kerned. The month grids deliberately do **not** take
+  the kerning: they spell their weekdays title-case (`Sun`), and kerning belongs to the uppercased
+  run.
+
+  Deliberately **not** `SectionEyebrowLabel`, which is why [[T-275]] left this alone: an eyebrow
+  names the section you are looking at, this names a date above the number it belongs to, and it is
+  tinted `Theme.blue` on today. `CadenceSectionEyebrowConvergenceTests`' allowlist is now **empty**
+  as a consequence, and the test that the one entry stayed earned is replaced by one asserting the
+  set stays empty. Pinned by `CadenceCalendarWeekdayHeaderConvergenceTests`
+  (`CadenceSharedBoardChromeTests.swift`): the figures as values, `iOSCalendarTimelineMetrics`'
+  forwards as values, a sweep proving the app draws exactly **two** uppercased weekday labels and
+  neither sets its own size, and exact per-file reference counts so a site that drops one of the
+  five figures back to a literal fails rather than riding on the four it kept.
+
+- [T-194] **Note export on iOS: markdown *and* PDF — DONE, one page box and two renderers.**
+  iOS gets `iOSNoteExportService` (bytes for both formats) and `iOSNoteExportMenu` (the control,
+  one view rendered by three headers: the Notes tab's regular-width header, `iOSListNotesView`'s,
+  and the compact editor cover's navigation bar). `.fileExporter`, not `ShareLink` — this repo
+  already made that call once in `CadenceDataExportPresentation`, and a share sheet for the markdown
+  beside a file picker for the PDF would be two answers to "where does this go" inside one menu.
+
+  **The premise this entry was filed on was half right, and the half that was wrong is the whole
+  design.** `NoteExportService` *is* genuinely AppKit-bound — `NSSavePanel`, and a PDF drawn by
+  running `MarkdownStylist.apply` over an offscreen `NSTextView` and asking for `dataWithPDF` — so
+  unlike [[T-187]]–[[T-193]] there was no guard to lift and iOS necessarily gets a second renderer.
+  But the *decisions* around it were never AppKit: `NoteExportFormat`, `NotePDFRenderOptions`, the
+  filename rule and the live task-title resolution were only sitting inside that file's
+  `#if os(macOS)`, which is why iOS could not have named a format even if it had had a renderer.
+  They are `Cadence/Services/CadenceNoteExportSupport.swift` now, and **neither renderer may
+  re-spell one** — that is what `NoteExportSurfaceTests.neitherRendererSpellsThePageGeometryItself`
+  scans for. One tall US-Letter-width page, not paginated, on both: two renderers agreeing not to
+  paginate is a far easier promise to keep than two agreeing to paginate identically.
+  The iOS renderer lays out through `iOSMarkdownBlockCanvasLayoutManager`, not a plain
+  `NSLayoutManager`: tables, fenced code, dividers, images and task embeds are not glyphs on iOS but
+  images hung on `cadenceMarkdownBlockCanvas` over a hidden run, and a plain layout manager exports
+  a PDF with a tall empty gap where each of them should be — invisible to any test that only checks
+  the bytes are a PDF.
+
+  **One assertion in that suite could not fail correctly and had to be re-spelled.**
+  `#expect(options.contentWidth == 612 - 84)` is **red on the right answer**: `#expect` captures each
+  operand of a binary expression separately, and an unannotated arithmetic expression beside a
+  `CGFloat` is inferred as `Double` in that capture, so the macro compares a `CGFloat` box with a
+  `Double` box and reports `(options.contentWidth → 528.0) == (612 - 84 → 528)`. Plain Swift says
+  `true`. Reproduced against the toolchain in an isolated package: `== 528`, `== someCGFloat` and
+  `== CGFloat(612 - 84)` all pass; `== 612 - 84` and `== 612.0 - 84.0` both fail; the same
+  arithmetic against a `Double` passes. **The rule to carry: never put arithmetic on the far side of
+  `==` from a `CGFloat` inside `#expect`** — bind it to a typed `let` first. The line as written had
+  zero discriminating power, which is the same class of defect as a source scan that passes over a
+  restored bug.
+
+- [T-211] **iOS H5/H6 rendered below the editor's body — DONE, the ramp is a ratio now.**
+  `MarkdownHeadingRamp` quotes each surface's ramp against a reference body
+  (`referenceBodyPointSize(for:)` — 17 mobile, 14 desktop) and
+  `size(level:surface:bodyPointSize:)` scales that quotation to the body the caller actually draws
+  on, rounded to a half point. Desktop is unchanged **by construction**: its body is a fixed 14pt
+  `NSFont`, so it always asks at its own reference and always gets `30/26/22/19/17/15` back. The
+  mobile quotation moved to `28/25.5/23.5/21.5/20/18.5` — it had to, because six levels that all
+  outrank a 17pt body cannot start at 18, so a floor above body forces every level above it up. H1
+  stays at 28: the top of the ramp had no defect.
+  Both iOS surfaces pass the canvas's body (`iOSMarkdownStyler.baseFont.pointSize`), including the
+  *preview*, whose own paragraph text is a fixed 15pt — quoting its own paragraph size there would
+  reproduce `D-124`'s "one H1, two sizes on one platform" at every non-default text size.
+  `MarkdownHeadingRampTests` asserts every level outranks its body across the eleven Dynamic Type
+  body sizes xSmall–AX5, that the ramp stays monotone after scaling *and* rounding at each of them,
+  that asking at the reference body returns the quoted figure exactly, and that both call sites
+  state a `bodyPointSize` rather than falling through to the default.
 
 - [T-276] **iOS offered "Focus" on a settled task; macOS hid it — DONE, one predicate in `Shared/`.**
   `CadenceFocusSupport.canFocus(_ task:)` (`Shared/CadenceFocusPlanningSupport.swift`) and

@@ -137,6 +137,7 @@ struct iOSListNotesView: View {
                     apply(template, to: note)
                 }
                 iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
+                iOSNoteExportMenu(note: note)
             }
 
             newNoteMenu

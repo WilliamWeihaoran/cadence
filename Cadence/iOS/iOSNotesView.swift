@@ -252,6 +252,12 @@ struct iOSNotesView: View {
             if showsHeaderTemplateMenu, let note = selectedNote {
                 iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
             }
+            // Export, gated on the same rule and riding the same fallback: at compact width it is
+            // in the editor cover's navigation bar. Unlike the AI menu this is never absent — a
+            // note can always be written out, there is nothing to opt into.
+            if showsHeaderTemplateMenu, let note = selectedNote {
+                iOSNoteExportMenu(note: note)
+            }
         }
         .frame(height: useStandardHeaderHeight ? iOSNotesHeaderStandardHeight : nil, alignment: .top)
         .background(Theme.surface)
@@ -658,6 +664,13 @@ struct iOSNoteEditorCover: View {
                 // an API key.
                 ToolbarItem(placement: .primaryAction) {
                     iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
+                }
+
+                // The one-column form's export control, for the same reason the AI menu is here:
+                // the navigation bar is this width's header row. Both note headers behind this
+                // cover carry the same control at regular width.
+                ToolbarItem(placement: .primaryAction) {
+                    iOSNoteExportMenu(note: note)
                 }
             }
         }

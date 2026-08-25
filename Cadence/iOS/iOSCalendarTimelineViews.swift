@@ -481,9 +481,15 @@ private struct iOSCalendarTimelineDayHeader: View {
         Button(action: action) {
             VStack(spacing: 0) {
                 VStack(spacing: iOSCalendarTimelineMetrics.dayLabelSpacing) {
+                    // `MON`, at the band's shared figures. The size arrives through
+                    // `iOSCalendarTimelineMetrics`, which forwards it; the kerning is named here
+                    // because there was never an iOS metric for it to forward — the modifier was
+                    // simply absent, which is the half of the fork macOS had right and this side
+                    // did not. Every uppercased short label in Cadence is kerned. T-277.
                     Text(DateFormatters.dayOfWeek.string(from: date).uppercased())
                         .font(.system(size: iOSCalendarTimelineMetrics.weekdaySize, weight: .semibold))
                         .foregroundStyle(isToday ? Theme.blue : Theme.dim)
+                        .kerning(CadenceCalendarWeekdayHeaderMetrics.labelKerning)
                     Text(DateFormatters.dayNumber.string(from: date))
                         .font(.system(size: iOSCalendarTimelineMetrics.dayNumberSize, weight: isToday ? .bold : .regular))
                         .foregroundStyle(isToday ? Theme.onColor : Theme.text)

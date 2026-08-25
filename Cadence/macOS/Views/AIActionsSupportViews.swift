@@ -185,21 +185,22 @@ struct NoteActionMenu: View {
         }
     }
 
+    /// One row per `NoteExportFormat`, titled and iconed by the format itself — the same values the
+    /// iOS export menu reads, so neither platform can come to offer a format the other does not or
+    /// call the same file two things.
     @ViewBuilder
     private var exportPage: some View {
         NoteActionSubmenuHeader(title: "Export") { page = .root }
-        NoteActionPickerRow(icon: "doc.text", title: "Export Markdown") {
-            dismissPicker()
-            NoteExportService.export(note, as: .markdown, embeddedTasks: embeddedTasks())
-        }
-        NoteActionPickerRow(icon: "doc.richtext", title: "Export PDF") {
-            dismissPicker()
-            NoteExportService.export(
-                note,
-                as: .pdf,
-                imageAssets: imageAssetsReferencedByNote(),
-                embeddedTasks: embeddedTasks()
-            )
+        ForEach(NoteExportFormat.allCases) { format in
+            NoteActionPickerRow(icon: format.systemImage, title: format.actionTitle) {
+                dismissPicker()
+                NoteExportService.export(
+                    note,
+                    as: format,
+                    imageAssets: imageAssetsReferencedByNote(),
+                    embeddedTasks: embeddedTasks()
+                )
+            }
         }
     }
 
@@ -331,14 +332,11 @@ struct NoteActionMenu: View {
     /// observing every task in the store to service an export nobody has asked for yet is the wrong
     /// trade.
     private func embeddedTasks() -> [AppTask] {
-        MarkdownTaskEmbedTitleCache.embeddedTasks(in: note.content, modelContext: modelContext)
+        NoteExportSupport.embeddedTasks(in: note, modelContext: modelContext)
     }
 
     private func imageAssetsReferencedByNote() -> [MarkdownImageAsset] {
-        let referencedIDs = MarkdownImageAssetService.referencedIDs(in: note.content)
-        guard !referencedIDs.isEmpty else { return [] }
-        let descriptor = FetchDescriptor<MarkdownImageAsset>()
-        return ((try? modelContext.fetch(descriptor)) ?? []).filter { referencedIDs.contains($0.id) }
+        NoteExportSupport.referencedImageAssets(in: note, modelContext: modelContext)
     }
 
     private func runSummary() {

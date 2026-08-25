@@ -79,6 +79,32 @@ swatch or copy.
 - Preserve hover semantics in `CadenceHoverStyles.swift`: task/event/bundle hovers should preserve original color and lift/brighten rather than gray out.
 - Keep shared components small and dependency-light. Avoid pulling macOS-only managers into shared code.
 
+## `#expect`: Never Put Arithmetic Opposite a `CGFloat`
+
+`#expect(someCGFloat == 612 - 84)` **fails when the value is right.** `#expect` captures each
+operand of a binary expression separately, and an unannotated arithmetic expression beside a
+`CGFloat` is inferred as `Double` in that capture, so the macro compares a `CGFloat` box against a
+`Double` box and reports `(options.contentWidth → 528.0) == (612 - 84 → 528)`. Plain Swift
+evaluates the same expression to `true`.
+
+Measured against this toolchain in an isolated package (T-194): `== 528`, `== someCGFloatLet` and
+`== CGFloat(612 - 84)` all pass; `== 612 - 84` and `== 612.0 - 84.0` both fail; the identical
+arithmetic against a `Double` passes. So it is `CGFloat` **beside an arithmetic operand**, nothing
+about the numbers.
+
+Bind the arithmetic to a typed `let` first:
+
+```swift
+let expectedContentWidth: CGFloat = 612 - 84
+#expect(options.contentWidth == expectedContentWidth)
+```
+
+This matters more than a spelling nit, because the failure mode is the *inverse* of the usual one:
+the assertion is red whatever the code does, so it has **zero** discriminating power and cannot be
+mutation-killed. It shipped on the T-194 branch as the one failing test in that ticket's suite and
+read as an unimplemented feature. Cadence's metrics are almost all `CGFloat`, so this is reachable
+from every layout test in the repo. Comparisons with `>`, `>=` and a bare literal are unaffected.
+
 ## Source-Scanning Tests: The Two Ways They Go Wrong
 
 A **source-scanning test** reads a `.swift` file as text and asserts something about the code in
