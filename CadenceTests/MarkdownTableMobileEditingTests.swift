@@ -267,10 +267,17 @@ struct MarkdownTableMobileEditingTests {
             "func applyMarkdownTableEdit(_ edit: MarkdownTableEdit, in textView: UITextView) -> Bool",
             in: source
         )
-        #expect(body.contains("textView.replace(range, withText: edit.replacement)"))
+        #expect(body.contains("replaceProgrammatically(edit.replacementRange, with: edit.replacement, in: textView)"))
         #expect(!body.contains("textView.text ="))
         #expect(!body.contains("storage.replaceCharacters"))
         #expect(!body.contains("setAttributedString"))
+
+        let editor = try strippingComments(sourceFile("Cadence/iOS/iOSMarkdownEditor.swift"))
+        let write = try cadenceFunctionBody(
+            "func replaceProgrammatically(",
+            in: editor
+        )
+        #expect(write.contains("textView.replace(textRange, withText: replacement)"))
     }
 
     /// Both hosted fields ask the same function whether a cell changed. A second hand-written copy
@@ -288,6 +295,128 @@ struct MarkdownTableMobileEditingTests {
                 "\(path) re-spells the trim the shared commit rule owns"
             )
         }
+    }
+
+    // MARK: - The smart-punctuation defect
+
+    /// **The defect this section exists for, stated as the thing that breaks.**
+    ///
+    /// A cell commit rewrote the delimiter row above it from `---` to an em dash, and the table
+    /// stopped being a table: `alignment(ofDelimiterCell:)` wants `-` and `U+2014` is not `U+002D`.
+    /// Pinned so that nobody is ever tempted to "fix" the corruption by teaching the parser to read
+    /// an em dash — that would make a broken document parse rather than stop it being broken, and
+    /// would silently accept every future substitution too.
+    @Test("An em-dash delimiter is not a table, and must never become one")
+    func anEmDashDelimiterIsNotATable() {
+        let corrupted = """
+        Above the table.
+
+        | Name | Qty |
+        | \u{2014} | \u{2014}: |
+        | Apples | 3 |
+
+        Below the table.
+        """
+        #expect(MarkdownTableEditor.grids(in: corrupted).isEmpty)
+        #expect(!MarkdownTableEditor.grids(in: note).isEmpty)
+    }
+
+    /// With nothing in flight every change is the user's own, and the guard must never become a
+    /// veto on typing. An em dash typed as prose is a perfectly good em dash.
+    @Test("With no write in flight the editor's own rules apply")
+    func noWriteInFlightAcceptsEverything() {
+        #expect(MarkdownProgrammaticEditSupport.acceptsDelegateChange(
+            range: NSRange(location: 42, length: 3),
+            replacement: "\u{2014}",
+            whileWriting: nil
+        ))
+        #expect(MarkdownProgrammaticEditSupport.acceptsDelegateChange(
+            range: NSRange(location: 0, length: 0),
+            replacement: "x",
+            whileWriting: nil
+        ))
+    }
+
+    /// **The measurement, replayed as a unit.** Committing `one` to `ZZZ` in this suite's own note
+    /// asked the text view to write `{49, 13}` with `| ZZZ | two |`; UIKit then proposed `{42, 3}`
+    /// and `{36, 3}` — the two `---` runs on the delimiter line above — each with an em dash, from
+    /// inside `checkSmartPunctuationForWordInRange:`. Neither is the write, so neither is accepted.
+    @Test("A substitution proposed around a programmatic write is refused")
+    func aSubstitutionAroundTheWriteIsRefused() {
+        let write = MarkdownProgrammaticEdit(
+            range: NSRange(location: 49, length: 13),
+            replacement: "| ZZZ | two |"
+        )
+        #expect(MarkdownProgrammaticEditSupport.acceptsDelegateChange(
+            range: write.range,
+            replacement: write.replacement,
+            whileWriting: write
+        ))
+        for proposal in [NSRange(location: 42, length: 3), NSRange(location: 36, length: 3)] {
+            #expect(!MarkdownProgrammaticEditSupport.acceptsDelegateChange(
+                range: proposal,
+                replacement: "\u{2014}",
+                whileWriting: write
+            ))
+        }
+    }
+
+    /// Equality, not intersection. A proposal landing **inside** the range being written is still
+    /// not the write — a cell whose value is `---` is the obvious case, and an overlap test would
+    /// wave exactly that one through while catching its neighbours.
+    @Test("A substitution inside the written range is refused too")
+    func aSubstitutionInsideTheWriteIsRefused() {
+        let write = MarkdownProgrammaticEdit(
+            range: NSRange(location: 49, length: 13),
+            replacement: "| --- | two |"
+        )
+        #expect(!MarkdownProgrammaticEditSupport.acceptsDelegateChange(
+            range: NSRange(location: 51, length: 3),
+            replacement: "\u{2014}",
+            whileWriting: write
+        ))
+        #expect(!MarkdownProgrammaticEditSupport.acceptsDelegateChange(
+            range: write.range,
+            replacement: "| \u{2014} | two |",
+            whileWriting: write
+        ))
+    }
+
+    /// The delegate is the lever, so the delegate has to pull it — and pull it **first**, before the
+    /// line-break, deletion and list rules that would otherwise reason about a document mid-write.
+    @Test("The text view delegate answers the write window before its own rules")
+    func theDelegateAnswersTheWriteWindowFirst() throws {
+        let source = try strippingComments(sourceFile("Cadence/iOS/iOSMarkdownEditor.swift"))
+        let body = try cadenceFunctionBody(
+            "shouldChangeTextIn range: NSRange,",
+            in: source
+        )
+        let guardCall = try #require(body.range(of: "MarkdownProgrammaticEditSupport.acceptsDelegateChange"))
+        for laterRule in ["expandRenderedBlockDeletionIfNeeded", "deleteListPrefixIfNeeded", "MarkdownLineBreakSupport"] {
+            let rule = try #require(body.range(of: laterRule), "\(laterRule) is no longer in this delegate")
+            #expect(guardCall.lowerBound < rule.lowerBound, "the write window is consulted after \(laterRule)")
+        }
+    }
+
+    /// **One write, swept for.** Every programmatic write into the editor's text view announces
+    /// itself, and the sweep is what keeps that true: a second raw `replace` added anywhere in the
+    /// iOS markdown surface is a second way to corrupt the line above it, and is a test failure
+    /// rather than something found on a device weeks later.
+    @Test("The iOS editor has exactly one raw text-view write")
+    func theEditorHasOneRawWrite() throws {
+        let folder = repositoryRoot().appendingPathComponent("Cadence/iOS")
+        let names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+            .filter { $0.hasSuffix(".swift") }
+            .sorted()
+        #expect(names.count > 50, "the iOS folder read as \(names.count) files")
+
+        var writers: [String] = []
+        for name in names {
+            let source = try strippingComments(String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8))
+            let count = source.components(separatedBy: "textView.replace(").count - 1
+            writers.append(contentsOf: Array(repeating: name, count: count))
+        }
+        #expect(writers == ["iOSMarkdownEditor.swift"], "raw text-view writes: \(writers)")
     }
 
     // MARK: - The un-render-on-caret path is gone

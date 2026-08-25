@@ -54,28 +54,54 @@ _Nothing in flight._
 
 - [T-221] **Edit tables in place — DONE on macOS, and the iOS half is the whole remainder.**
 
-  **OPEN, measured on a simulator 2026-08-26 and the one defect the iOS half still has.**
-  Committing a cell whose table's delimiter row is spelled `---` / `---:` rewrites that delimiter
-  to an em dash (`—` / `—:`). The row itself is written correctly, but the delimiter no longer
-  parses — `alignment(ofDelimiterCell:)` tests `contains("-")` and U+2014 is not U+002D — so the
-  table stops being a table and drops to raw source in front of the user. That is the complaint the
-  ticket opened with, arriving by a new route.
+  **CLOSED 2026-08-26. The em-dash defect was UIKit's smart punctuation, caught in the act.**
+  Committing a cell whose delimiter row was spelled `---` / `---:` rewrote that delimiter to an em
+  dash and the table stopped parsing. The hypothesis in the four measurements below was right about
+  *what* and wrong about *when*: nothing happens as the keyboard session unwinds. It happens
+  **inside** `UITextView.replace(_:withText:)`, before the call returns, and the stack says so:
 
-  Four measurements that bound it, all on iPhone 17 Pro / iOS 26.5, ground truth read out of the
-  store rather than off the screen:
+      -[UITextView replaceRange:withText:]
+      -[UITextInputController replaceRange:withText:]
+      -[UITextInputController _replaceRange:withAttributedTextFromKeyboard:…]
+      -[UITextInputController checkSmartPunctuationForWordInRange:]
+      -[UITextInputController _delegateShouldChangeTextInRange:replacementText:]
+
+  UIKit treats **any** programmatic `replace` as text the keyboard produced, then runs smart
+  punctuation over the words either side of the range written and asks the delegate for permission.
+  Committing `one` → `ZZZ` asked for `{49, 13}` and UIKit came back proposing `{42, 3}` and
+  `{36, 3}` — the two `---` runs on the line above — each with a U+2014.
+
+  **The traits are not the lever, measured rather than assumed.** Setting `smartDashesType`,
+  `smartQuotesType` and `smartInsertDeleteType` to `.no` on the text view *and* calling
+  `reloadInputViews()` immediately before the call still corrupted the delimiter, byte-checked out
+  of the simulator's store. So the delegate is: `shouldChangeTextIn` now answers the write window
+  first, accepting the write it was told about and refusing everything else, and the five
+  programmatic writes in the iOS editor go through one `replaceProgrammatically` that announces
+  itself. The decision is `Services/MarkdownProgrammaticEditSupport.swift`; a sweep of
+  `Cadence/iOS/` fails if a second raw `textView.replace(` appears.
+
+  This was never table-specific and the fix is not either: the same pass rewrites `"` and `--` in
+  ordinary prose adjacent to any of those five writes. Two things stated for whoever reads this
+  next: **macOS is not exposed** — `NSTextView` is driven through
+  `shouldChangeText`/`replaceCharacters`/`didChangeText` with no `UITextInputController` in the
+  path, which is why the macOS half shipped clean — and the **backspace** paths
+  (`expandRenderedBlockDeletionIfNeeded`, `deleteListPrefixIfNeeded`) were fixed by inspection
+  rather than on a device, because the simulator tooling has no key injection for Delete. The
+  line-break path *was* proven on the device: a list typed after the fix still transformed `- ` to
+  `• ` and continued across Return.
+
+  The four original measurements, kept because they are what made it findable:
   - It needs the **hosted cell field plus typing**. Open a cell and close it without typing: no
     edit, no corruption. Same table, same delimiter.
   - It is **not** `applyMarkdownTableEdit`. The context menu's **Insert Row Below** goes through the
     identical `textView.replace(_:withText:)` write path and left `| --- | ---: |` byte-identical.
+    (With the stack in hand: that path writes with no keyboard session behind it, so UIKit's
+    smart-punctuation pass has no traits to consult and does nothing.)
   - It is **local to the edited table**. Editing a cell in a `-`-delimited table left a `---`
-    delimiter in another table in the same note untouched, so it is not a document-wide pass.
+    delimiter in another table in the same note untouched — because the pass only looks at the
+    words either side of the range being written.
   - It is **not the app's own text**. There is no em-dash literal anywhere in `Cadence/`, and both
     `iOSMarkdownEditor`'s text view and `iOSMarkdownTableCellField` set `smartDashesType = .no`.
-  In both reproductions the corrupted delimiter was the line *immediately above* the replaced row
-  (row 1, the first body row), which is the shape to test first: UIKit applying a smart-dash
-  substitution next to a programmatic `UITextInput.replace` issued while the hosted field's keyboard
-  session is unwinding. A `-` delimiter is unaffected, which is why the rest of the surface tests
-  green.
   **DECIDED 2026-08-26: port it to iOS.** The user's call, asked after the macOS half shipped. The
   design questions are settled and `MarkdownTableEditSupport` / `MarkdownTableLayoutSupport` are
   already platform-free. The one trap is recorded in `0b44973`'s message and must be read first:
@@ -121,15 +147,14 @@ _Nothing in flight._
   table simply ended at it. The two-pipe count that keeps prose out (`Ship it | maybe`) is
   unchanged.
 
-  **Still open, and it is the whole other platform.** `Cadence/iOS/` was deliberately out of scope
-  and is untouched. `iOSMarkdownStylingBlockSupport` still draws a table as a canvas and
-  un-renders it via `MarkdownStyleRanges.isRevealed` the moment the caret lands inside — so on
-  iPhone and iPad, editing a table still means typing pipes, which is the complaint this ticket
-  opened with. The shared halves are already there and platform-free (`MarkdownTableEditSupport`,
-  `MarkdownTableLayoutSupport`); what iOS needs is a `UITextView` equivalent of the hosted cell,
-  its own `.cadenceMarkdownTable` styling pass, and — unlike macOS — a **`MarkdownStyleSignature`
-  entry**, because the gate that does not exist here does exist there and a committed cell that
-  does not change the signature would silently not re-render.
+  **The iOS half shipped in `ea77271`, and this paragraph used to say it had not.** It read "Still
+  open, and it is the whole other platform … `Cadence/iOS/` was deliberately out of scope and is
+  untouched", which was written before that commit and was already false when the commit landed. A
+  table renders as a real grid on iPhone and iPad and is edited cell by cell:
+  `iOS/iOSMarkdownTableEditing.swift` (the hosted field and the menu),
+  `iOS/iOSMarkdownTableGridRendering.swift` (the canvas), over the same two shared files macOS
+  reads. The un-render-on-caret path is deleted for tables rather than left reachable, and the
+  `MarkdownStyleSignature` entry the port was warned about is `tableSourceAnchors`.
 
   Two smaller gaps left on the macOS side, neither blocking:
   - Inline markdown **inside** a cell is not rendered — a cell reading `**Total**` draws its

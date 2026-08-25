@@ -233,6 +233,13 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         /// Set across a table mutation so the delegate callback `replace(_:withText:)` raises does
         /// not also publish and schedule a debounced restyle behind one this path already ran.
         var isApplyingTableEdit = false
+        /// The write currently in flight through `replaceProgrammatically`, and `nil` the rest of
+        /// the time.
+        ///
+        /// Read by `shouldChangeTextIn` to tell Cadence's own write from the substitutions UIKit
+        /// proposes around it — see `MarkdownProgrammaticEditSupport` for the measurement that made
+        /// this necessary and for why the smart-punctuation traits are not the lever.
+        var pendingProgrammaticEdit: MarkdownProgrammaticEdit?
 
         init(parent: iOSMarkdownEditor) {
             self.parent = parent
@@ -241,6 +248,31 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 imageAssets: parent.imageAssets,
                 taskEmbeds: parent.taskEmbeds
             )
+        }
+
+        /// **The one programmatic write into the text view.**
+        ///
+        /// `UITextView.replace(_:withText:)` and not `textView.text = …` or a reach into
+        /// `textStorage`: only the `UITextInput` route registers the change on the view's own undo
+        /// manager, which is what keeps every markdown mutation an ordinary undo away.
+        ///
+        /// It is also the route UIKit runs its smart-punctuation pass through, over the words
+        /// either side of the range written — which rewrote a table's `---` delimiter to an em dash
+        /// on every cell commit until this window existed. Announcing the write is what lets
+        /// `shouldChangeTextIn` refuse everything that is not it; the traits do not, measured.
+        /// Every call site here goes through this function, and
+        /// `MarkdownTableMobileEditingTests` fails if a second raw `replace(_:withText:)` appears.
+        @discardableResult
+        func replaceProgrammatically(
+            _ range: NSRange,
+            with replacement: String,
+            in textView: UITextView
+        ) -> Bool {
+            guard let textRange = textView.textRange(from: range) else { return false }
+            pendingProgrammaticEdit = MarkdownProgrammaticEdit(range: range, replacement: replacement)
+            defer { pendingProgrammaticEdit = nil }
+            textView.replace(textRange, withText: replacement)
+            return true
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
@@ -360,6 +392,19 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             shouldChangeTextIn range: NSRange,
             replacementText replacement: String
         ) -> Bool {
+            // Answered first and returned from directly, before any of the editor's own rules. A
+            // proposal that *is* the write in flight has already been decided on by the caller that
+            // asked for it, and re-entering the line-break and deletion rules underneath it would
+            // ask them to reason about a document mid-edit. Everything else arriving in that window
+            // is UIKit's, and is refused.
+            if let pending = pendingProgrammaticEdit {
+                return MarkdownProgrammaticEditSupport.acceptsDelegateChange(
+                    range: range,
+                    replacement: replacement,
+                    whileWriting: pending
+                )
+            }
+
             if replacement.isEmpty,
                expandRenderedBlockDeletionIfNeeded(range: range, in: textView) {
                 return false
@@ -380,8 +425,11 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 selection: range
             ) else { return true }
 
-            guard let textRange = textView.textRange(from: mutation.replacementRange) else { return true }
-            textView.replace(textRange, withText: mutation.replacement)
+            guard replaceProgrammatically(
+                mutation.replacementRange,
+                with: mutation.replacement,
+                in: textView
+            ) else { return true }
             textView.selectedRange = clamped(mutation.selection, in: textView.textStorage)
             textViewDidChange(textView)
             return false
@@ -422,9 +470,8 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             }
 
             let contentRange = NSRange(location: lineRange.location, length: (line as NSString).length)
-            guard let textRange = textView.textRange(from: contentRange) else { return false }
             let replacement = taskReference + "\n"
-            textView.replace(textRange, withText: replacement)
+            guard replaceProgrammatically(contentRange, with: replacement, in: textView) else { return false }
             textView.selectedRange = clamped(
                 NSRange(location: contentRange.location + (replacement as NSString).length, length: 0),
                 in: textView.textStorage
@@ -443,10 +490,9 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 return false
             }
 
-            guard let textRange = textView.textRange(from: deletionRange) else {
+            guard replaceProgrammatically(deletionRange, with: "", in: textView) else {
                 return false
             }
-            textView.replace(textRange, withText: "")
             textView.selectedRange = NSRange(location: deletionRange.location, length: 0)
             textViewDidChange(textView)
             return true
@@ -460,10 +506,13 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 return false
             }
 
-            guard let textRange = textView.textRange(from: mutation.replacementRange) else {
+            guard replaceProgrammatically(
+                mutation.replacementRange,
+                with: mutation.replacement,
+                in: textView
+            ) else {
                 return false
             }
-            textView.replace(textRange, withText: mutation.replacement)
             textView.selectedRange = clamped(mutation.selection, in: textView.textStorage)
             textViewDidChange(textView)
             return true

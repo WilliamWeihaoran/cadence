@@ -8,8 +8,8 @@ import UIKit
 /// The design is the Mac's, ported whole, because it is the design that makes the hard part
 /// disappear: **the table's markdown never leaves the text storage.** The styler collapses its
 /// glyphs and reserves the grid's height; this field writes cell values back through
-/// `UITextView.replace(_:withText:)`, the view's own editing path. Because the characters are still
-/// in their real range:
+/// `replaceProgrammatically`, the editor's one `UITextInput` write. Because the characters are
+/// still in their real range:
 ///
 /// - **Selection** — a drag from the prose above to the prose below still covers the pipes, and a
 ///   caret arrowed at the table steps over it (`MarkdownHiddenRangeSupport.snappedCaretLocation`)
@@ -196,10 +196,16 @@ extension iOSMarkdownEditor.Coordinator {
 
     /// **The one write path for every table mutation, cell / row / column alike.**
     ///
-    /// `UITextView.replace(_:withText:)` and not `textView.text = …` or a reach into `textStorage`:
-    /// only the `UITextInput` route registers the change on the view's own undo manager, which is
-    /// what keeps a committed cell an ordinary `Cmd+Z` away and keeps the editor's existing
-    /// pass-through undo working with nothing added.
+    /// The write itself is `replaceProgrammatically`, the editor's single `UITextInput` route —
+    /// not `textView.text = …` and not a reach into `textStorage`, because only that route
+    /// registers the change on the view's own undo manager, which is what keeps a committed cell an
+    /// ordinary undo away and keeps the editor's existing pass-through undo working with nothing
+    /// added.
+    ///
+    /// Going through that helper rather than calling `replace` here is what stops a cell commit
+    /// corrupting the line above it: UIKit runs its smart-punctuation pass over the words either
+    /// side of a programmatic write and rewrote `| --- | ---: |` to `| — | —: |` on every commit
+    /// until the write announced itself. `MarkdownProgrammaticEditSupport` carries the measurement.
     ///
     /// The restyle at the end is **not** `refreshStylingIfNeeded`. That gate compares a
     /// `MarkdownStyleSignature`, and the signature carries no digest of the note's text — so after a
@@ -208,12 +214,12 @@ extension iOSMarkdownEditor.Coordinator {
     func applyMarkdownTableEdit(_ edit: MarkdownTableEdit, in textView: UITextView) -> Bool {
         let storage = textView.textStorage
         guard edit.replacementRange.location >= 0,
-              NSMaxRange(edit.replacementRange) <= storage.length,
-              let range = textView.textRange(from: edit.replacementRange) else { return false }
+              NSMaxRange(edit.replacementRange) <= storage.length else { return false }
 
         isApplyingTableEdit = true
-        textView.replace(range, withText: edit.replacement)
+        let wrote = replaceProgrammatically(edit.replacementRange, with: edit.replacement, in: textView)
         isApplyingTableEdit = false
+        guard wrote else { return false }
 
         let updated = textView.text ?? ""
         if parent.text != updated {
