@@ -33,35 +33,52 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
-- [T-273] **A task on the Calendar Board or the day timeline still cannot be focused on iOS.**
-  Fallout scoped out of [[T-266]] rather than missed by it. `iOSBoardTaskCard` and
-  `iOSTimelineTaskBlock` both open `iOSTaskDetailSheet`, and that sheet has no Focus action — so
-  the *task* half of the handoff is reachable only from a row's long-press menu, while the *block*
-  half is reachable from the block's own inspector. The fix is one `iOSActionButton` in
-  `iOSTaskDetailSheet`, calling `CadenceFocusHandoffCenter.shared.request(.task(task.id))` and
-  then `dismiss()`, exactly as `iOSCalendarBundleDetailSheet.focusSection` does. It was left out
-  to keep T-266 to the smallest complete path, not because it is wrong: the inspector is presented
-  by a host (`iOSTaskInspectorHost`), so the button has to dismiss *and* the shell has to route
-  underneath, and that interaction deserves its own simulator pass rather than riding on another
-  ticket's. `FocusHandoffCallSiteTests.bothAffordancesRequestAHandoff` pins the two that exist; a
-  third belongs in the same test.
-  **Built and verified, awaiting commit**, and built as the ticket describes rather than as a
-  second mechanism: one `iOSActionButton` in `iOSTaskDetailSheet.focusSection`, `request(.task(…))`
-  then `dismiss()`, no new type and no change to `CadenceFocusHandoff`. The card and the block gain
-  nothing of their own — both open this sheet, which
-  `CadenceTaskInspectorHostTests.noRowOrCardStillPresentsTheInspector` already pins, so one entry
-  reaches both. A `contextMenu` on the two surfaces was rejected: it duplicates a menu at two call
-  sites, and `iOSCalendarTimelineViews` carries the `simultaneousGesture` pinch a long-press
-  competes with ([[T-243]]). A swipe was rejected for [[T-266]]'s reason, unchanged. The test is
-  `everyAffordanceRequestsAHandoff` now — renamed rather than left saying "both" over three — beside
-  three new ones pinning that the section is rendered, that the request precedes the dismissal, and
-  that both Focus entries read `CadenceFeatureDestination.focus.tint`. That last one is a one-line
-  fix riding along: `iOSCalendarBundleDetailSheet` shipped `tint: Theme.amber`, the token
-  `defaultColorHex` gives Today and Habits, so two buttons named the same screen in two colours.
-  One rough edge left deliberately: the bundle sheet presents this sheet for a member task, and
-  `dismiss()` closes only the inner one, so Focus is routed *underneath* a block sheet that still
-  needs its own Close. Papering over it means a third observer of `CadenceFocusHandoffCenter`,
-  against the "shell routes, Focus screen adopts" division the whole design rests on.
+- [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
+  `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
+  header or picker looks or behaves. This item is the sweep to make the code match that — find the
+  places where a phone view and an iPad view are near-copies and collapse them into one view
+  parameterised by size class. Distinct from [T-32], which is macOS↔iOS *feature* parity; this is
+  iPhone↔iPad *implementation* sharing. The Notes starting point is closed (`D-44`, one view for all
+  three hosts) and so is the page-header family (`D-62`). What is left of the original list —
+  `iPadTodayView` vs the compact Today, and the compact/regular branches inside the task row — is
+  in flight now.
+
+  **2026-08-24 mechanical re-sweep: both named remainder items are already closed, and nothing else
+  in scope needs a code change.** Checked against HEAD (`9582956`), not the working tree, which had
+  five other agents' uncommitted changes in it at the time. `iPadTodayView` does not near-copy the
+  compact layout any more — both widths render through the one `iOSTodayTaskSections` (comment at
+  `iPadTodayView.swift:258` records the second-copy defect `D-54`/`D-66` already fixed: 15pt vs 14pt
+  group spacing, an 18-vs-14-padded empty state, and a `todayTasks`-derived branch duplicating the
+  groups). The task row is one `iOSTaskRow` reading `CadenceTaskRowMetrics.metrics(isRegularWidth:)`
+  for every figure (`iOSTaskViews.swift:5-9` records the deleted `iOSTaskRowDensity` axis this used
+  to hide behind). Grepped every `horizontalSizeClass` site under `Cadence/iOS` and `Cadence/Shared`
+  (38 files) rather than trusting impression: the rest are legitimate layout swaps already reached
+  through shared factories (`CadencePageHeaderMetrics`, `iOSEditorSheetMetrics`,
+  `CadenceRegularPaneLayout`, `iOSCalendarMetrics`) or `iOSFeatureSplitLayout`/`iOSFeatureRowLink`
+  (list-pane-vs-push, one implementation parameterised by `pushes`), each with a code comment
+  recording the drift it already closed. `iOSCalendarToolbar.toolbar` is the model worth naming: it
+  used to be an `if horizontalSizeClass == .compact` beside a `ViewThatFits` fallback described in
+  its own comment as "the phone's own two-row shape" — i.e., the phone's layout was already correct
+  for the iPad and was being withheld from it. It is one `ViewThatFits`, chosen by whether the row
+  fits, now.
+
+  One drift found in passing, adjacent to but not itself iPhone/iPad divergence — a near-copy of two
+  *iOS* note-editor sheets rather than of one sheet across two widths: `iOSEventNoteEditorSheet`'s
+  header (hand-rolled 12pt uppercase caption, title fixed at 24pt on every width, 4pt block spacing)
+  had drifted from `iOSLinkedNoteEditorSheet`'s near-identical header
+  (`Cadence/iOS/iOSMarkdownReferenceSupport.swift`), which already uses the shared
+  `SectionEyebrowLabel` (10pt, kerned) and ramps the title `isRegularWidth ? 24 : 22` with 8pt
+  spacing — that sheet's own comment records converting "a fourth hand-rolled uppercase caption",
+  and the event-note sheet was never swept into it. **Shipped in `af03fb1`**:
+  `iOSEventNoteEditorSheet.swift`'s `header` now matches the linked-note sheet's spelling exactly;
+  no visible change at regular width (title was already 24 there), compact width now reads 22pt to
+  match. Not folded into a single shared header type in this pass — the two sheets' surrounding
+  chrome (toolbar items, AI actions button, calendar sync) differ enough that extracting one would
+  be a larger, unaudited change; a future pass can revisit if a third near-copy appears.
+
+  Nothing else ticketed out of this sweep: no missing-capability divergence (a control present at
+  one width and absent at the other) turned up anywhere the grep reached.
+
 
 - [T-276] **iOS offers "Focus" on a settled task; macOS hides it.** Found while doing [[T-273]] and
   deliberately not fixed there. `MacTaskRow.focusButtonSlot` gates its hover ▶ on
@@ -75,171 +92,6 @@ _Nothing in flight._
   T-273 would have silently re-decided an affordance T-266 shipped hours earlier. Either gate both
   iOS entries on the macOS predicate, or drop the macOS gate — one predicate, in `Shared/` with a
   test, either way.
-
-- [T-272] **Goals' *timeline* mode has never had an Attach List route, at any width.**
-  Found while doing [[T-271]] and separate from it: `GoalTimelineView` was handed only `onEditGoal`
-  (`GoalsView.content(groups:)`), so the roadmap presentation offered Edit at every width and Attach
-  List at none. This is not [[T-250]] fallout — the timeline layout never had an inspector to lose —
-  which is why it was left out of T-271 rather than folded into it.
-  **Fixed in the working tree, uncommitted, and it composes with [[T-271]] rather than adding a
-  second route** — verified, not assumed: `GoalInspectorSheet` and its
-  `.sheet(isPresented: $showGoalDetail)` hang off `GoalsView.body`, which wraps *both* presentations,
-  so the presenter was already installed over the timeline and only the mission branch ever spent it.
-  What was missing was the row action. `onEditGoal` became `onOpenGoal`, wired to the same
-  `select(_:showsInspector:)` the mission cards call with a literal `false`, because the Gantt has no
-  column to select into at any width — one flag, one gate, no second `showGoalDetail = true` for the
-  two answers to disagree over. Edit did not move: it is a button inside `GoalInspectorView`, so the
-  double-click now reaches a superset of what it did, with Attach List and `GoalLinkedListRow`'s
-  per-list detach beside it. `GoalTimelineGroupRow` gained the route too, not just the milestone rail
-  row and the bar: `timelineBody` skips the bar unless the goal has **both** dates, so hanging it on
-  the bar would have left an undated *direction* — the shape a linked list is most likely to hang off
-  — as the one goal on the page with no way to attach one. That is T-271's own argument about its two
-  card kinds. No `GoalListLink` write was added anywhere; the sheet reaches `AttachWorkSheet` and
-  `ModelContext.detachGoalListLink` exactly as the mission inspector does. Pinned by
-  `CadenceGoalTimelineRouteTests` (5 tests, four mutations each failing only their own).
-
-- [T-268] **macOS offers "Mark Section Completed" on the Default kanban column, and the model
-  throws the flag away while the settle still runs.** Found while doing [[T-247]].
-  `Area.normalizedSectionConfigs` / `Project.normalizedSectionConfigs` force
-  `isCompleted = false` and `isArchived = false` on the column named `Default`, on every read *and*
-  every write — so the Default column can never be completed or archived, by design.
-  `KanbanColumnSupportViews.swift:526` already gates the **Archive** item on `!section.isDefault`
-  for exactly that reason; the **completion** button four lines above it is not gated. Tapping it on
-  the Default column runs `KanbanSectionColumnView.saveSection`, which calls
-  `TaskContainerLifecycleService.completeRemainingActiveTasks` — every open task in the column is
-  marked done — and then the flag is normalized away, so the column stays visibly Active with its
-  cards gone. Measured on iOS during T-247: the write is discarded and the status label does not
-  move (that is why `iOSListEditorSheet.lifecycle(for:)` returns `nil` for a default column).
-  Two candidate fixes, and they are not equivalent: gate the completion button the same way Archive
-  is gated (cheapest, matches the invariant), or decide the Default column *should* be completable
-  and relax the normalization — which would need a story for what "archived Default" means to
-  `sectionNames`, since that getter filters archived columns out and every task with an empty
-  `sectionName` resolves into Default.
-  Pinned from the iOS side by `CadenceColumnWindDownSurfaceTests
-  .theModelDiscardsALifecycleFlagWrittenOntoTheDefaultColumn`; nothing pins the macOS button.
-
-  **Done in the working tree, not yet committed** (this line goes when the commit lands and the
-  item moves to Done). The **gate** was the route taken, not the relaxed normalization, and the
-  reason is that Default is *synthesised* rather than created: `normalizedSectionConfigs` inserts
-  it when it is absent, `AppTask.resolvedSectionName` sends every task with no section name into
-  it, and `sectionNames` filters archived columns out — so a completed-or-archived Default would
-  be an invisible bucket that still collects every new task in the list, and every task created
-  into that list would land in a column marked done. There is no story for "archived Default"
-  worth telling; refusing the flag is the story.
-  The invariant is **named** now rather than re-spelled a fourth time:
-  `TaskSectionConfig.supportsLifecycle` in `Models/AppTask.swift`, whose doc comment carries the
-  reasoning above. All **three** macOS routes to a column's completion read it — the header glyph
-  (`KanbanColumnHeader.headerControls`), the editor popover's item (which moved inside Archive's
-  existing gate, taking the divider above it with it), and `Cmd+Return` over the hovered column,
-  which now registers **no** `HoveredSectionManager` target for Default rather than a no-op one,
-  because `triggerToggleComplete()` reports whether it handled the key and a registered no-op
-  would swallow the keystroke. So does `toggleSectionCompletion`, the point all three converge on,
-  which is what makes a *fourth* route refused by default. The popover's Default copy names
-  completion now.
-  Agrees with [[T-247]]'s iOS behaviour: `iOSListEditorSheet.lifecycle(for:)` returns `nil` for
-  the same column for the same reason. Nothing about the wind-down itself changed — every
-  non-default column still settles through `settleWithoutAdvancingSeries`, and
-  `theMacColumnStillWindsDownEveryOtherColumn` fails if those calls are removed.
-  New file: `CadenceTests/CadenceKanbanColumnLifecycleSurfaceTests.swift`.
-  One thing found on the way, recorded because it outlives this ticket: a test that slept
-  `animationDuration + 1.0` for `SectionCompletionAnimationManager`'s 2.5s sweep **failed under the
-  suite's own parallel load** (exit 65, 0 compile errors, three expectations at
-  `…SurfaceTests.swift:151-153`), and passed alone. It was replaced with a wall-clock-free
-  equivalent: the *reopen* branch is synchronous and is asserted as behaviour, the *complete*
-  branch is asserted as "the press enters the pending state" plus a source read of the two flags
-  the sweep lands. Both 2.5s animation managers (`SectionCompletionAnimationManager`,
-  `TaskCompletionAnimationManager`) still have no test that drives their delay, and
-  `HoveredTaskManagerTests` sleeps 160ms against an 80ms debounce — a 2x margin, i.e. the same
-  shape at a smaller scale. Do not add a sleep-and-assert test to this suite.
-
-
-- [T-259] **The MCP smoke test runs 21 of the router's 30 arms, and five of the eight write tools
-  are run by nothing at all.** Found while doing [[T-126]]. `plugins/cadence-mcp/scripts/smoke-test.py`
-  is the only thing that *executes* `CadenceMCPServer/`, and it never dispatches `get_task_bundle`,
-  `list_containers`, `get_container_summary`, `get_goal`, `update_task`, `schedule_task`,
-  `complete_task`, `reopen_task` or `cancel_task`. The five write tools are the ones that matter:
-  each has its own argument wiring — `schedule_task` is the only place `minuteOfDay`,
-  `durationMinutes` and `clearScheduledDate` are read together — and a rename or a reordered
-  `CadenceScheduleTaskOptions` initialiser would compile, advertise, and fail only in the user's
-  editor. `CadenceMCPToolContractTests` (added under T-126) closes the *name* half and explicitly
-  not this half: it is a source scan and executes nothing.
-  Two smaller shapes of the same gap, worth folding in: the four `list_*` arms the smoke test does
-  call run against a **fresh empty fixture store** and return `[]`, so no list DTO's shape is ever
-  observed; and the natural-language parsing in `CadenceMCPArgumentParsing.swift` is sampled at one
-  point per helper — `tomorrow` but never `today`/`yesterday`/`in 3 days`/`+2 days`/`2 days ago`,
-  `1h` and `three hours` but never `30m`/`1.5h`/`two and a half hours`, `4 PM` but never `4:30 pm`
-  and never a rejected `13 pm`.
-  Note the constraint before proposing "just add unit tests": `CadenceMCPArgumentParsing` extends
-  `Dictionary where Value == MCP.Value`, and the `MCP` package product is linked into the
-  `CadenceMCPServer` target only. Reaching it from `CadenceTests` means adding that package
-  dependency to the test target in `project.pbxproj` — a real decision, not a formality — and it
-  would compile those files under the app's Swift 5 / `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
-  settings rather than the server's Swift 6 without it, i.e. under settings that cannot reproduce
-  the failure mode `CadenceMCPServer/AGENTS.md` exists to warn about. Extending the smoke test is
-  the cheaper and more honest route.
-  **Done in the working tree, not yet committed** (this line goes when the commit lands and the
-  item moves to Done). The smoke test was the route taken, and the reasoning held up: it runs the
-  real binary built by the real scheme, so it is the only thing that can catch a Swift-6 argument
-  regression at all. All 30 arms are now dispatched, the five write tools run a full create →
-  update → schedule → complete → reopen → cancel lifecycle, the date/duration/time parsers are
-  exercised on every branch including their rejections, and the error paths assert the message
-  rather than `isError` — a deleted arm answers "Unknown tool", which is also an error. The guard
-  that matters most is not the new coverage but the fact that it is now *checked*: every
-  `tools/call` is recorded and compared against the server's own `tools/list`, so the next arm
-  added is a red run rather than a silent 31st. The list-DTO half is only partly closed — see
-  [[T-269]].
-
-- [T-260] **Two argument-parsing helpers in the MCP server have zero call sites.** Found while doing
-  [[T-126]]. `Dictionary.int(_:)` and `Dictionary.stringArray(_:)` in
-  `CadenceMCPServer/CadenceMCPArgumentParsing.swift` are never called by the router, by
-  `main.swift`, or by the tool definitions — `strictInt` and `flexibleStringArray` replaced them
-  (12 and 8 router call sites respectively) and the originals were left behind. Grep with a leading
-  dot and read the hits: `.int(` also matches `MCP.Value.int(...)`, which the definitions file uses
-  three times to build JSON-schema payloads, so a naive scan reports `int` as live.
-  This is dead code in the one folder with no unit coverage and no execution path, which is the
-  combination that makes it worth removing rather than leaving: the next agent to touch argument
-  parsing sees two plausible entry points whose semantics differ from the two that are actually
-  wired up — `int` returns `nil` on a bad value where `strictInt` throws, and `stringArray`
-  silently drops non-strings where `flexibleStringArray` throws. Picking the wrong one turns a tool
-  error into a silently ignored argument. Delete both, or wire them and say why.
-  **Done in the working tree, not yet committed** (this line goes when the commit lands and the
-  item moves to Done). Both deleted. `parseIntegerString` stays — `strictInt` calls it. The
-  general form is pinned by `everyArgumentParsingHelperIsCalledByTheRouter`, which requires every
-  non-private helper in that extension to have an `arguments.<name>(` call site in the router. The
-  needle carries the receiver deliberately, for exactly the reason this ticket had to warn about:
-  a scan for `.int(` matches `MCP.Value.int(...)` in the tool definitions and reports the dead
-  helper as live.
-
-- [T-269] **Six of the MCP `list_*` tools are dispatched against an empty store, so their DTO
-  shapes are still unobserved.** Split out of [[T-259]], which closed the other half. The smoke
-  test now checks `list_tasks`, `list_tags` and `list_notes` against real rows — key set, and the
-  optionals named separately because Swift's synthesized `Codable` uses `encodeIfPresent`, so a nil
-  optional is an *absent* key rather than a null. The other six — `list_task_bundles`,
-  `list_goals`, `list_habits`, `list_links`, `list_contexts`, `list_containers` — return `[]`
-  every run, so a renamed or dropped field in `CadenceGoalSummary`, `CadenceHabitSummary`,
-  `CadenceContainerRef`, `CadenceContextRef`, `CadenceSavedLinkSummary` or
-  `CadenceTaskBundleSummary` reaches a user's editor with nothing red anywhere.
-  The reason is structural, not an oversight: MCP has **no write tool** that creates a bundle, a
-  goal, a habit, a link, a context or a container — `create_task` and `append_core_note` are the
-  only constructors on the surface — so a fresh fixture store cannot be made to hold one through
-  the protocol. Two routes, and they are not equally good:
-  (a) seed the fixture store out-of-band before the smoke test starts, which means a second
-  process opening the same SwiftData store the server is about to open, and a fixture that has to
-  be kept in step with `CadenceSchema` by hand;
-  (b) assert the DTO shapes as a **source scan** in `CadenceMCPToolContractTests` — read the
-  `nonisolated struct Cadence*Summary: Codable` declarations in `CadenceReadDTOs.swift` and pin
-  their stored-property lists. That executes nothing, which is the standing weakness of everything
-  in that file, but it is honest about what it is and it catches the rename, which is the failure
-  actually worth catching. Prefer (b) unless the fixture is wanted for something else too.
-
-- [T-242] **Bundle focus is macOS-only.** `macOS/Views/FocusBundleTaskSupportViews.swift` lets the
-  focus timer run a `TaskBundle` and step through its members; `Cadence/iOS/iOSFocusView.swift`
-  contains the string `bundle` zero times. This was the one claim in [[T-190]] that was **true**,
-  and it survived the ticket being closed because it is a separate feature rather than a guard to
-  lift: `FocusManager` is macOS-only (`macOS/Services/`), so the picker, the member rows and the
-  "which member am I on" state all have to be reached before iOS can focus a block. Start by
-  checking what of `FocusManager` is actually AppKit-bound — [[T-190]] and the three tombstones in
-  `macOS/Services/` are all cases where the answer was "nothing".
 
 - [T-243] **The drop-a-task-on-a-task gesture landed on iOS's Board, not its timeline — because the
   iOS timeline has no drag-and-drop at all.** macOS's home for the gesture is `TimelineDayCanvas`,
@@ -259,36 +111,6 @@ _Nothing in flight._
   `Shared/` does not compile the timeline. The second pair is pinned equal to the first by
   `theSharedBundleClampsMatchTheTimelineDayRange`; if `TimelineDayRange` ever moves to `Shared/`,
   delete the copy rather than the test.
-
-- [T-241] ~~**Bulk container settle skips the notification reconcile, so a completed list keeps its
-  nudges.**~~ **Fixed.** `TaskContainerLifecycleService.settle` now reconciles after the batch, so
-  completing or archiving an area, a project or a kanban column clears its tasks' pending
-  "starting now" / "due today" notifications immediately instead of waiting for the next
-  `scenePhase` checkpoint. iOS gets it too — the entry points are the shared ones.
-  **The deliverable was the seam, not the call.** `scheduleReconcile` spawns an unstructured `Task`
-  that fetches the whole store twice and calls into the `@MainActor` `NotificationManager`
-  singleton, so an unconditional call would have left eighteen existing wind-down tests doing async
-  store work after their bodies returned. The six entry points now take
-  `reconciler: CadenceWindDownReconciler? = nil`; `nil` resolves to `.default`, which is `.live` in
-  the app and `.inert` inside a test host (`NotificationManager.isTestEnvironment` — the reusable
-  spelling; `PersistenceController.isRunningTests` is `private`). A test that wants to prove the
-  wiring injects its own recorder, which is what makes "remove the reconcile call" a red test rather
-  than a silent regression — `ContainerWindDownReconcileTests` in
-  `CadenceTests/NotificationSchedulingTests.swift`.
-  Rejected: a global `onDidSettle` hook the app wires at launch (correctness would depend on remote
-  wiring, which *is* this bug; and a mutable static is a race under parallel tests), and an
-  explicit closure at every call site (the next surface that forgets it reintroduces the bug).
-  Also rejected: making `scheduleReconcile` itself inert under test — it works and changes nothing
-  today, but with the call inert there is nothing behavioural left to assert, so the wiring would be
-  pinned only by a source-text scan.
-  Note the `in context:` parameters T-212 deliberately left unused are **used now**, on all six
-  entry points: the context is what the reconciler is handed. `settle` also skips the reconcile when
-  the batch settled nothing, because an unchanged store diffs to a no-op.
-  One thing the original ticket got wrong and is worth keeping: it said adding the call would make
-  the tests "touch the real notification centre". It would not have — `NotificationManager` guards
-  every method on `isTestEnvironment` and its `center` is `lazy`, so `UNUserNotificationCenter.current()`
-  is never evaluated under XCTest. The real cost was the stray async work, not a live centre.
-
 
 - [T-240] **A test bounds a `#require`'d source range by searching for another file's declaration
   line.** `AppStoreReviewReadinessTests.accountDeletionIsExplicitInSettingsAndReviewDocs` locates the
@@ -338,61 +160,11 @@ _Nothing in flight._
   one-command isolation step for every future agent.
 
 
-- [T-236] **A private `-derivedDataPath` does not isolate a macOS *test* run from another agent's.**
-  Measured 2026-08-22. `xcodebuild test -scheme Cadence -destination platform=macOS
-  -only-testing:CadenceTests` came back `** TEST FAILED **`, exit 65, **0 compile errors**, with
-  **1438 failures and 757 passes** — on bytes that had passed 2194/2194 minutes earlier, and that
-  passed 2194/2194 again immediately afterwards. Nothing about the sources changed. What changed is
-  that `ps aux | grep "[x]codebuild test"` showed a second agent's run against the live repo, and the
-  log showed the test host relaunching under a second PID (`My Mac - Cadence (13229)` then `(13416)`).
-  The cause is that the test host is `Cadence.app`, whose app-group container lives at
-  `~/Library/Containers/com.haoranwei.Cadence/Data/` — one path, shared by every run on the machine
-  regardless of where DerivedData points. The private `-derivedDataPath` isolates the *build*
-  products and nothing about the host's store.
-  **The tell**, because this is misattributed by default exactly like the shared-DerivedData family
-  already in `AGENTS.md`: 0 compile errors, a four-figure failure count, most failures reporting
-  `0.000 seconds`, and two host PIDs in one run. It exits 65 like a real regression and like a
-  mutation that failed to build, and no line of output says another test host is running.
-  **The rule to write down:** check `ps aux | grep "[x]codebuild test"` before starting a macOS test
-  run and wait the other one out. There is no flag that buys isolation here.
-  A one-line summary of the rule went into `AGENTS.md` beside the private-`-derivedDataPath`
-  non-negotiable; the evidence lives here rather than in both places.
-
-
-
 - [T-235] **`AGENTS.md` should record what a widgets-scheme baseline actually measures.** Now that the
   scheme is shared (`605a793`), the line claiming the baseline covers all three schemes is honest for
   a fresh clone — but the widgets scheme builds the **host app** as well, so a "widgets scheme" run is
   not a widget-only measurement. Worth one sentence, because the difference is invisible from the
   command line and it changes what a green baseline there proves.
-
-
-- [T-229] **iOS's Today → Completed admits what `CLAUDE.md` says it cannot, proven at runtime.**
-  `completedTodayTasks` returns true for `scheduledDate == todayKey || dueDate == todayKey` *before*
-  consulting `completedAt`. So a task **completed in January** with a do date of today appears there,
-  and a pre-`f15db8b` cancelled task with a nil timestamp appears if its due date is today. Two
-  consequences: `CLAUDE.md`'s "only shows tasks whose `completedAt` is **today**" is true of macOS and
-  false of iOS; and `markCancelled`'s promise that legacy nil-stamp rows stay out holds only where the
-  dates do not happen to be today. Overlaps [[T-208]].
-
-  **Confirmed at HEAD, and fixed in the working tree — not yet committed.** Every clause of the
-  ticket held. The two date grounds are **original iOS code that no recorded decision ever chose**:
-  `9d11135` (T-147) rewrote the *status* half of that same `filter` and left them untouched, and
-  they have no macOS counterpart — `TasksPanelDerivedState` in `.todayOverview` has only
-  `completedAt`. The deciding evidence for direction is that `CadenceTodayPresentationSupport`'s own
-  doc comment justified unifying the two headings on the claim that both sat "over the same
-  predicate — `completedAt` inside today, on both". That claim was false when written, so the app
-  already said in three places (the heading, that comment, `CLAUDE.md`) what only one platform did.
-  Fix: `CadenceTaskQuerySupport.completedTodayTasks` is settled-inside-today and nothing else, and
-  **macOS calls it** rather than keeping a second spelling — its precomputed day range moved into
-  the shared function, so the refactor costs nothing per task. Nothing became unreachable: every
-  settled transition stamps `completedAt`, and `completedTasks` / `completedInboxTasks` / the
-  `.byDoDate` logbook test no date. Pinned by six new tests in
-  `CadenceCancelledTaskReachabilityTests` including a two-platform equality over one universe, a
-  midnight-boundary case, the `· N done` summary line, and a verbatim-legacy comparison for macOS's
-  `doneTasks` in **both** modes.
-
-
 
 
 - [T-239] **The note-kind switch is spelled three times, and the three disagree.** Split out of
@@ -450,44 +222,6 @@ _Nothing in flight._
 
 
 
-- [T-214] **iOS list *completion* is still macOS-only, and the obvious shared substitute is wrong.**
-  T-187 shipped deletion and deliberately not completion. `TaskContainerLifecycleService` **no
-  longer lives** in `TaskWorkflowService.swift` behind `#if os(macOS)`: [[T-215]] moved it to
-  `Cadence/Services/CadenceTaskContainerLifecycleService.swift`, so the un-guard half of this ticket
-  is done and what remains is genuinely only the call site — an iOS affordance that offers
-  "Complete" and calls `completeRemainingActiveTasks`. Nothing on iOS offers it today, so this stays
-  open.
-  Do **not** reach for `applyStatusCompletion` instead: it routes through `markDone`, which **spawns
-  the next recurrence occurrence**, which is correct for one task and wrong for bulk container
-  completion that must not mint new work.
-
-  **Built, uncommitted (2026-08-24).** Extended [[T-215]]'s and [[T-247]]'s machinery rather than
-  writing a second one: `iOSListArchiveSupport.swift` became `Cadence/iOS/iOSListWindDownSupport.swift`
-  with an `iOSListWindDownAction` (`.archive` / `.complete`) beside the list — the shape
-  `iOSColumnWindDownTarget` already had — `archiveList` became `windDownList`, and
-  `CadenceContainerWindDownSummary.forArea` / `forProject` gained the required `outcome:` that
-  `forColumn` already carried. Same sheet, same one decision point (`iOSListsView.requestWindDown`),
-  covered by the renamed `CadenceTests/CadenceListWindDownSurfaceTests.swift`.
-
-  Two judgements worth keeping, because both could plausibly have gone the other way:
-  - **The conditional-confirmation rule does not get stricter for completion.**
-    `requiresConfirmation` asks whether anything irreversible happens, not how large a claim the
-    action makes; completing an empty list writes one `status` and settles nothing, and a sheet over
-    a no-op is what teaches people to dismiss the one that matters.
-  - **The copy does differ, in substance and not only in the verb.** A cancellation records that
-    work was abandoned; a completion records that it *happened*, and
-    `GoalContributionSummary.progress` reads `completedTasks / totalTasks` over `filter(\.isDone)`
-    — so bulk completion can move a goal's bar where bulk cancellation cannot (a cancelled task
-    stays in the denominator and out of the numerator). And the destination is asymmetrical on iOS:
-    an archived list stays on the Lists page under "Archived", a completed one leaves it and is
-    reopened from Settings › Lists. Both facts are in the completion sheet's explanation, because a
-    confirmation that did not name the destination would make completion look like a deletion.
-  Completion is a context-menu item on the iPhone list and the iPad pane and a swipe action on
-  neither — the tray already carries Archive, and a two-action tray puts "this work is finished" one
-  mis-flick from "file it away" on a control with no beat in which to read anything. It is also not
-  `role: .destructive`.
-
-
 - [T-208] **Today's Completed section lists cancelled tasks but the header's "N done" does not count
   them.** Introduced deliberately by `9d11135` and documented at `CadenceTaskQuerySharedSupport.swift`
   — a cancellation is not an accomplishment — but it is a *visible* inconsistency: the section can
@@ -537,68 +271,6 @@ _Nothing in flight._
   already disagreed about heading sizes on the same platform; a third renderer is a third chance at
   that.
 
-- [T-267] **CLOSED, NOT A BUG — the iOS month date picker never killed the app. `tccd` did.**
-  The ticket read as the highest-priority open crash and the premise was false, so the correction
-  matters more than the closure. Re-verified against `b1239e0` on the shared `iPhone 17 Pro`
-  (`7B642065-…`, iOS 26.5), clean Debug build, **seven** day-cell taps across all three entry
-  points — `iOSTaskComposerDateTile` (Do and Due), `iOSTaskRowDateChip` on a live Today row, and
-  the task inspector's `CadenceDatePicker` — covering today's cell, a future cell, a **past** cell,
-  and a cell in a **different month** (the one that really moves `viewMonth` and re-derives all 49
-  months). Every tap set the date and left the app running. `MonthCalendarPanel`'s day `Button` is
-  **not** the defect; do not "fix" the `selection` / `syncViewMonthToSelection()` / `isOpen = false`
-  sequence on the strength of this ticket, and do not touch it lightly at all — it is
-  `Shared/Components/`, macOS reads it from six call sites including the `Cmd+Shift+T`/`Cmd+Shift+D`
-  hovered-date overlay.
-  **What actually happened.** Every disappearance-to-Home in this simulator's log — ten of them
-  across 2026-08-22, including the four consecutive ones at 12:50:44 / 12:53:17 / 12:55:02 /
-  12:55:37 that are this ticket's "reproduced four times" — is the same line:
-  `tccd: Terminating com.haoranwei.Cadence[<pid>] because access to the kTCCServiceReminders
-  service changed`, followed by `launchd_sim: … exited with exit reason (namespace: 11 code: 0x0)
-  - OS_REASON_TCC`. Each one is preceded by milliseconds with
-  `tccd REQUEST: sender_pid=81487, function=TCCAccessSetInternal` (or `TCCAccessResetInternal`) —
-  pid 81487 is **CoreSimulatorBridge**, i.e. a host-side `xcrun simctl privacy <udid>
-  grant|revoke|reset reminders com.haoranwei.Cadence`. Changing a TCC grant for a *running* app is
-  specified to kill it; nothing in Cadence can cause it. The msgIDs form one ascending series
-  (`81487.2 … .16`) across the whole day, which is what an unrelated agent's repeated
-  `simctl privacy` calls on a **shared** device look like from inside the app.
-  **Demonstrated, not inferred.** With the picker open and no tap on the grid,
-  `xcrun simctl privacy … grant reminders com.haoranwei.Cadence` from the host reproduced the exact
-  reported symptom — app gone, Home screen, sheet state lost — and logged `msgID=81487.16` with the
-  identical two lines. `auth_value` in the device's `TCC.db` was `2` before and `2` after, so the
-  demonstration changed no state on the shared device.
-  **The two "supporting" observations were both true and both misleading.** Nothing in
-  `~/Library/Logs/DiagnosticReports` and no exception, because `OS_REASON_TCC` is not a crash and
-  writes no report — the same reason the ticket's `SIGKILL`-shaped reading felt right. And the
-  quick pills worked "every time" because they were not tapped during the seconds a `simctl
-  privacy` call happened to land.
-  **The lesson is the shared simulator, not the picker.** The root `AGENTS.md` simulator bullet now
-  carries it: on a device several agents share, an app vanishing to the Home screen is an *external
-  termination* until the log says otherwise, and
-  `log show --predicate 'process == "tccd" OR process == "launchd_sim"'` settles it in one command.
-
-- [T-195] **Sections-due-today is still macOS-only — the rollover banner half is done.** This
-  ticket named two unrelated features and only one of them has shipped.
-  **Closed:** the rollover banner. `TasksPanelRolloverNoticeSectionView` is
-  `Shared/Components/CadenceTodayRolloverBanner.swift` (two container styles, `.panelBand` for the
-  Mac's task column and `.card` for iOS), the decision is `Shared/CadenceTodayRolloverSupport.swift`
-  (the over-do predicate, the visibility test, the withhold-while-showing filter, the batch roll),
-  and the slot-clearing mutation is `CadenceTaskMutationSupport.rollOverTaskToToday` —
-  `SchedulingActions.rollOverTaskToToday` delegates to it and must not grow a second body. macOS was
-  rewired to all three rather than left beside them; `CadenceTodayRolloverSurfaceTests` recomputes
-  `TasksPanelDerivedState`'s two changed values with the old inline expressions and asserts they are
-  identical. **One `UserDefaults` key on purpose** — `todayRolloverNoticeDismissedDate` — because
-  dismissing is a statement about the day, not the device.
-  **Still open:** sections-due-today. `TodayOverdueSectionSummary` and
-  `TodayOverdueListSummary` are still declared in `macOS/Views/TasksPanelSupport.swift` and built
-  in `TasksPanelDerivedState.init`, with **zero** references under `Cadence/iOS/` (grep them).
-  The work is the same shape as the banner's: the two summary values and the
-  `sectionConfigs`-walking derivation are pure and belong in `Shared/`, the two row views
-  (`TasksPanelSupportViews`) are Theme-only and can be shared, and the tap target needs an iOS
-  equivalent of `TasksPanelSupport.openOverdueSectionSummary`'s `ListNavigationManager` hop —
-  that navigation manager is macOS-only and is the one genuinely platform-shaped piece.
-
-
-
 - [T-15] **Several dark palettes — decided, and the colours are not the hard part.** User's call, and
   it narrows what was an open-ended ask: **stay dark-only**, offer alternate near-black palettes
   (cooler/warmer neutrals, or a different accent set). Explicitly **not** light mode — that was the
@@ -620,47 +292,6 @@ _Nothing in flight._
   Also delete the stale **"Theme"** row in Settings → Coverage (`iOSMobileCapability.all`,
   `iOS/iOSSettingsComponents.swift:149`), which advertises a picker to the user that does not exist —
   either before this ships or as part of it.
-
-- [T-147] **A cancelled task is unreachable on iOS — decided: show them in Completed.** Every list
-  query filters cancelled out (`CadenceTaskQuerySupport` ×6, `CadenceCalendarPlanningSupport`,
-  `iOSSearchView` ×2, the note `[[task:` picker) and the inspector auto-dismisses on Cancel, so on iOS
-  cancelling is deleting without saying so. **User's call: cancelled tasks appear in Completed**,
-  visually distinct — strikethrough, not the green done treatment. macOS already renders a cancelled
-  row distinctly, so the row work exists; what is missing is letting them through the queries. Check
-  every one of the filter sites rather than the two obvious ones.
-
-
-- [T-183] **Audit the remaining fixed-width columns for missing floors.** `T-177` and Today's own
-  `twoPaneMinimumWidth` are the same defect twice: a fixed `.frame(width:)` beside a flexing pane,
-  with nothing asserting the flexing side stays usable. Worth one sweep for other fixed column widths
-  — `CadenceRegularSplitLayout.listPaneWidth`, the calendar rails, the settings rail — asking in each
-  case what the other side gets at the narrowest host that reaches it.
-  **Swept 2026-08-22; findings are [[T-248]] through [[T-252]] and nothing was changed here.** Every
-  three-digit `.frame(width:)` and every `frame(minWidth:)` in `Cadence/` was classified as *has a
-  floor*, *no floor but cannot be squeezed* (popovers, sheets, drag previews and overlay panels, which
-  are the large majority), or *no floor and starves its neighbour*. Four of the last kind: the two
-  Settings → Templates cards ([[T-248]], [[T-249]]), three macOS `HSplitView` pages against a 960pt
-  window floor ([[T-250]]), and the Calendar Board's rail pair ([[T-251]]); [[T-252]] is the
-  consistency question the sweep raised about the register itself. Two things worth carrying whatever
-  is done next: **an `HSplitView` propagates none of its children's `minWidth` upward**, so a page's
-  pane minimums never reach the window and the window happily gets narrower than the page
-  (`sizeThatFits(width: 1).width == 1.0`, measured) — and the three registered surfaces that *do*
-  state a floor were all correct at every reachable width, so the rule works where it has been
-  applied and the gap is only where it has not.
-
-
-- [T-179] **CLOSED, EXTERNAL CONSTRAINT — `control action=detach` ignores the `udid` argument and
-  closes every simulator panel.** Re-verified 2026-08-24: this is a bug in the iOS Simulator control
-  tool itself (the `mcp__Claude_Code_iOS_Simulator__control` action), not in anything under this
-  repo, so there is no code here that can fix it. An agent detaching its own device once closed
-  three other agents' panels (iPhone 17e, iPhone 17 Pro Max, iPad Air 11-inch); no device or app
-  state was altered and every closed panel could just re-`attach`, so the blast radius is annoyance,
-  not data loss. The one mitigation available from this side of the boundary is documentation, and
-  it is now in place: `AGENTS.md`'s simulator bullet states `detach` as global regardless of `udid`
-  and tells agents to only call it when they have reason to believe no one else is attached. Closing
-  rather than leaving open because there is nothing left to *build* — reopen only if the tool itself
-  changes or a repo-side workaround (e.g. an attach-tracking convention) is actually designed.
-
 
 - [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
   *(a)* A widget showing the running timer plus what is being worked on, and a second showing the
@@ -916,53 +547,6 @@ _Nothing in flight._
   with those same errors removed a different way crashes identically with zero diagnostics, and
   pristine HEAD under Swift 5 builds clean. Xcode 26.6 / Swift 6.3.3. Recheck on a toolchain bump.
 
-- [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
-  `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
-  header or picker looks or behaves. This item is the sweep to make the code match that — find the
-  places where a phone view and an iPad view are near-copies and collapse them into one view
-  parameterised by size class. Distinct from [T-32], which is macOS↔iOS *feature* parity; this is
-  iPhone↔iPad *implementation* sharing. The Notes starting point is closed (`D-44`, one view for all
-  three hosts) and so is the page-header family (`D-62`). What is left of the original list —
-  `iPadTodayView` vs the compact Today, and the compact/regular branches inside the task row — is
-  in flight now.
-
-  **2026-08-24 mechanical re-sweep: both named remainder items are already closed, and nothing else
-  in scope needs a code change.** Checked against HEAD (`9582956`), not the working tree, which had
-  five other agents' uncommitted changes in it at the time. `iPadTodayView` does not near-copy the
-  compact layout any more — both widths render through the one `iOSTodayTaskSections` (comment at
-  `iPadTodayView.swift:258` records the second-copy defect `D-54`/`D-66` already fixed: 15pt vs 14pt
-  group spacing, an 18-vs-14-padded empty state, and a `todayTasks`-derived branch duplicating the
-  groups). The task row is one `iOSTaskRow` reading `CadenceTaskRowMetrics.metrics(isRegularWidth:)`
-  for every figure (`iOSTaskViews.swift:5-9` records the deleted `iOSTaskRowDensity` axis this used
-  to hide behind). Grepped every `horizontalSizeClass` site under `Cadence/iOS` and `Cadence/Shared`
-  (38 files) rather than trusting impression: the rest are legitimate layout swaps already reached
-  through shared factories (`CadencePageHeaderMetrics`, `iOSEditorSheetMetrics`,
-  `CadenceRegularPaneLayout`, `iOSCalendarMetrics`) or `iOSFeatureSplitLayout`/`iOSFeatureRowLink`
-  (list-pane-vs-push, one implementation parameterised by `pushes`), each with a code comment
-  recording the drift it already closed. `iOSCalendarToolbar.toolbar` is the model worth naming: it
-  used to be an `if horizontalSizeClass == .compact` beside a `ViewThatFits` fallback described in
-  its own comment as "the phone's own two-row shape" — i.e., the phone's layout was already correct
-  for the iPad and was being withheld from it. It is one `ViewThatFits`, chosen by whether the row
-  fits, now.
-
-  One drift found in passing, adjacent to but not itself iPhone/iPad divergence — a near-copy of two
-  *iOS* note-editor sheets rather than of one sheet across two widths: `iOSEventNoteEditorSheet`'s
-  header (hand-rolled 12pt uppercase caption, title fixed at 24pt on every width, 4pt block spacing)
-  had drifted from `iOSLinkedNoteEditorSheet`'s near-identical header
-  (`Cadence/iOS/iOSMarkdownReferenceSupport.swift`), which already uses the shared
-  `SectionEyebrowLabel` (10pt, kerned) and ramps the title `isRegularWidth ? 24 : 22` with 8pt
-  spacing — that sheet's own comment records converting "a fourth hand-rolled uppercase caption",
-  and the event-note sheet was never swept into it. **Fixed in the working tree, uncommitted**:
-  `iOSEventNoteEditorSheet.swift`'s `header` now matches the linked-note sheet's spelling exactly;
-  no visible change at regular width (title was already 24 there), compact width now reads 22pt to
-  match. Not folded into a single shared header type in this pass — the two sheets' surrounding
-  chrome (toolbar items, AI actions button, calendar sync) differ enough that extracting one would
-  be a larger, unaudited change; a future pass can revisit if a third near-copy appears.
-
-  Nothing else ticketed out of this sweep: no missing-capability divergence (a control present at
-  one width and absent at the other) turned up anywhere the grep reached.
-
-
 - [T-86] **Agents building into the shared DerivedData can crash a running Mac app.** On 2026-08-17
   the user hit "Cadence quit unexpectedly" — `EXC_BREAKPOINT` on the main thread, five seconds after
   launch. **Not app code:** the whole backtrace is `dyld` → `libSystem_initializer` →
@@ -1066,31 +650,6 @@ _Nothing in flight._
   off and the fixed patterns must become `setLocalizedDateFormatFromTemplate` or `Date.FormatStyle`,
   because idiomatic zh is `8月24日` rather than a translated `MMMM d`.
 
-- [T-19] **Data safety, backup and controls.** `PrivacyDataResetService` (wipes every model),
-  `StoreBackupManager`, and `DataIntegrityRepairService` exist; Settings → Data Safety is the
-  surface. Worth reviewing as a whole: what a reset actually removes, whether backups are
-  restorable, and whether the controls say plainly what they do. Note the standing rule that every
-  new `@Model` must be added to the reset path or a wipe leaves orphans.
-
-  **Narrowed and part-shipped 2026-08-24 (uncommitted).** The review found the deletion half done
-  and the *keeping* half missing. `StoreBackupManager` does snapshot the store at every launch and
-  does restore — but every copy it writes lives in the app's own container beside the store it is
-  protecting, `deleteCadenceDataAndLocalArtifacts` deletes all of them, and the file is an opaque
-  SwiftData/CoreData store readable only by a build with this exact schema. iOS had **no** control
-  over any of it — no create, no list, no restore, no route off the device — so the only
-  data-safety action a phone offered was the irreversible one. Two copy defects on macOS's Backups
-  card, both of the kind this ticket names: it said backups are taken "before migration work" (they
-  are taken at every launch) and never said where they live.
-  Shipped: `Cadence/Services/CadenceDataExportService.swift` — one JSON archive covering **every**
-  entity in `CadenceSchema`, relationships as id references, image bytes included, pretty-printed
-  with sorted keys and ISO-8601 dates so two exports diff; `Shared/CadenceDataExportPresentation.swift`
-  (the `FileDocument` and the copy both platforms read); a `.fileExporter` card in Settings → Data
-  Safety on **both** platforms, above the delete control; the corrected backup copy. Coverage is
-  `CadenceDataExportSurfaceTests`, driven off `CadenceSchema` in the same two steps as
-  `CadencePrivacyDataResetSurfaceTests` — a model added to the schema and not to the export is a red
-  test, not a quietly incomplete backup.
-  Deferred to [[T-274]]: reading an archive back in. The archive decodes as a *value* and that round
-  trip is pinned, but nothing applies one to a live store, and the card says so in as many words.
 - [T-274] **Importing a Cadence archive.** [[T-19]] shipped the export and deliberately stopped
   there: an unverified restore is worse than none, because it invites the user to trust it.
   `CadenceDataExportService.decode` already returns a `CadenceArchive`, and
@@ -1124,52 +683,182 @@ _Nothing in flight._
   twelve-category shell. Bringing macOS to the same vocabulary would also settle which of the two is
   the reference.
 
-- [T-22] **Audit against Apple's App Review guidelines** before publishing. `docs/app-review-notes.md`
-  and `docs/privacy.html` are the existing submission material and are the place to start. Likely
-  areas: what the privacy manifest declares versus what is actually collected, Sign in with Apple
-  being entitlement-gated and optional, the AI feature requiring a user-supplied key, and EventKit
-  usage strings matching real behaviour.
+- [T-253] **macOS Settings → Reminders never re-derives authorization after it first appears, and
+  it is the surface most likely to be on screen when authorization changes.**
+  `macOS/Views/SettingsRemindersSection.swift` has `.onAppear { refreshAuthorizationState() }` and
+  nothing else, while macOS's Inbox (`TasksListView`) carries **both** `.onAppear` **and**
+  `.onChange(of: scenePhase)`. The asymmetry matters on macOS specifically: revoking in System
+  Settings does **not** terminate the app the way iOS does (measured — iOS kills Cadence on both
+  grant and revoke, so its surfaces always re-read from a fresh process), so a user who follows this
+  card's own **Open Reminders Settings** button, revokes, and comes back lands on a view that never
+  disappeared and is still claiming "Apple Reminders connected" over a stale list. `iOSRemindersSettingsSection`
+  has the same single hook; it is far less exposed for the termination reason above, but the two
+  Settings sections should match the two Inboxes rather than each other. Not fixed here because
+  macOS TCC cannot be driven without touching the host machine's real Reminders permission, so the
+  fix would ship unverified — see the note in [[T-21]].
 
-  **Audited 2026-08-24 (uncommitted).** Went claim by claim against the code rather than against the
-  docs themselves. Two findings, both fixed:
-  1. **The Calendar usage string oversold what it withheld.** `NSCalendarsFullAccessUsageDescription`
-     (both in `Cadence.xcodeproj/project.pbxproj`'s build settings and the literal
-     `Cadence/Info.plist`), `docs/app-review-notes.md`, `docs/privacy.html`, and
-     `docs/apple-release-readiness.md` all said Cadence creates/updates/deletes "**scheduled task**
-     events" — language that reads as the still-unbuilt task-to-event attachment this file already
-     tracks under "What's Not Built Yet" (`AppTask.calendarEventID` has readers, no writer:
-     `SchedulingService.swift` only ever assigns it `""`). What the code actually does is broader and
-     unrelated to tasks: `CalendarManager.createStandaloneEvent` (macOS, its own doc comment reads
-     "direct iCal event, not linked to a task") backs the timeline's and month view's drag-to-create
-     flow, `iOSCalendarManager.createEvent` is its iOS counterpart, and `TimelineEventBlock` can
-     update or delete *any* event shown on the timeline, Cadence-created or not. Reworded all five
-     sites to "create, update, or delete calendar events" plus one sentence stating the writes are
-     independent of Cadence tasks, rather than inventing a task-linking claim that isn't there either.
-  2. **`docs/support.html`** — listed as a reviewer-facing doc by name in `apple-release-readiness.md`
-     — had the same shape of platform gap the push-notification and account-deletion falsehoods did:
-     its Calendar-access check named only "macOS System Settings" (Calendar is EventKit on both
-     platforms) and its account-deletion bullet said "open Settings, Account" unqualified, which does
-     not exist on iOS/iPadOS (`iOSSettingsCategory` has 12 cases, no `.account`). Split both bullets
-     by platform and scoped the backup/restore bullet to macOS, since iOS's Data Safety section has no
-     backup-browsing or restore UI (`StoreBackupManager.listBackups`/`scheduleRestore` have zero iOS
-     call sites outside a doc comment).
+- [T-254] **macOS's Inbox reminders section is the only one of the four reminders surfaces that does
+  not read `RemindersConnectionState`.** `InboxAppleRemindersSectionView`
+  (`macOS/Views/InboxSupportViews.swift`) branches `if isAuthorized { rows } else {
+  AppleRemindersAccessRow(isDenied:) }` and hand-writes its own copy — "Reminders access is off" /
+  "Show Apple Reminders in Inbox", "Connect" / "Open Settings" — while Settings on both platforms and
+  the iOS Inbox all read `state.accessTitle` / `accessMessage` / `accessAction`. Two consequences.
+  The copy can drift, which is the standing no-near-copies rule. And the **branch order differs**:
+  the shared resolver puts `isDenied` ahead of `isAuthorized` precisely so a live denial beats a
+  stale authorized snapshot, and this view puts `isAuthorized` first, so in that window macOS's
+  Inbox draws stale reminder rows with completion buttons that no longer write while macOS's
+  Settings, one category away, says access is denied. Fold it onto `RemindersConnectionState` the
+  way `iOSInboxRemindersSection` already is.
 
-  Everything else checked out against the code as written and needed no change: the single
-  multiplatform target and single entitlements file (`SDKROOT = auto`, one `PBXNativeTarget`, one
-  `CODE_SIGN_ENTITLEMENTS` for both platform configs); the push-notifications section's claim that
-  registration happens "at launch on macOS" (`registerForRemoteNotifications` has exactly one call
-  site, `CadenceAppDelegate`, inside `#if os(macOS)` — iOS never registers, so the doc's own scoping
-  is correct rather than aspirational); local notifications' single `AppStorage` toggle and
-  single request site in Settings on both platforms; `AppleAccountManager` being
-  `#if os(macOS)`-only with no `.account` case on iOS; the AI key living in Keychain
-  (`KeychainCredentialStore`) and `AIProvider` exposing exactly the two actions the docs name;
-  Reminders staying in-memory (`[AppleReminderItem]`, not a `@Model`) with `completeReminder` as the
-  only EventKit write, gated on `allowsContentModifications`; the account/data deletion sweep
-  (`PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts`) running identically on both
-  platforms with macOS's confirmation dialog and iOS's typed-`DELETE` sheet both gating the same
-  function; no StoreKit, ads, or third-party SDKs anywhere in the tree; and the privacy manifest's
-  declared API reasons (`CA92.1`, `C617.1`) matching actual `UserDefaults`/file-timestamp call sites
-  with no undeclared boot-time or disk-space API usage found.
+  **Partly shipped.** `2f018a4` fixed the two concrete symptoms this ticket named —
+  `InboxAppleRemindersSectionView` now checks `isRestricted` ahead of `isDenied` (the
+  branch-order bug) and borrows `RemindersConnectionState.restricted`'s copy (the drift bug) —
+  but the structural ask is still undone: the view still carries three hand-derived booleans
+  (`isAuthorized`/`isDenied`/`isRestricted`) rather than one `RemindersConnectionState` value,
+  the way `iOSInboxRemindersSection` already does. Stays open for that half.
+
+- [T-265] **`RemindersManager.requestAccess()` has a second exit that returns `false` without
+  recording a denial — the same doorway [[T-21]] just closed, one branch over.** The
+  `guard status == .notDetermined else { refreshAuthorizationState(); return false }` arm is taken
+  by every status that is neither `.fullAccess` nor `.notDetermined`. For `.denied` and
+  `.restricted` that is harmless, because `isDenied` already reads them from the cached status. For
+  anything else it is the dead-button bug again: `resolve(status:)` folds unknown statuses through
+  `default` into `.notDetermined`, so the card offers **Allow Access**, the tap takes this arm, and
+  nothing changes. Today the only such value is `.writeOnly`, which EventKit does not return for
+  reminders — so this is a latent hazard, not a live defect, and it is filed rather than fixed for
+  that reason. The cheap version is to set `deniedInThisSession = true` on this arm too, since the
+  arm already means "asking cannot help". Related: [[T-256]], which is the same shape for
+  `.restricted` — an affordance offered in a state where it cannot work.
+
+## Done
+
+- [T-273] **A task on the Calendar Board or the day timeline still cannot be focused on iOS.**
+  Fallout scoped out of [[T-266]] rather than missed by it. `iOSBoardTaskCard` and
+  `iOSTimelineTaskBlock` both open `iOSTaskDetailSheet`, and that sheet has no Focus action — so
+  the *task* half of the handoff is reachable only from a row's long-press menu, while the *block*
+  half is reachable from the block's own inspector. The fix is one `iOSActionButton` in
+  `iOSTaskDetailSheet`, calling `CadenceFocusHandoffCenter.shared.request(.task(task.id))` and
+  then `dismiss()`, exactly as `iOSCalendarBundleDetailSheet.focusSection` does. It was left out
+  to keep T-266 to the smallest complete path, not because it is wrong: the inspector is presented
+  by a host (`iOSTaskInspectorHost`), so the button has to dismiss *and* the shell has to route
+  underneath, and that interaction deserves its own simulator pass rather than riding on another
+  ticket's. `FocusHandoffCallSiteTests.bothAffordancesRequestAHandoff` pins the two that exist; a
+  third belongs in the same test.
+  **Built, verified, and shipped in `9980fe8`**, and built as the ticket describes rather than as a
+  second mechanism: one `iOSActionButton` in `iOSTaskDetailSheet.focusSection`, `request(.task(…))`
+  then `dismiss()`, no new type and no change to `CadenceFocusHandoff`. The card and the block gain
+  nothing of their own — both open this sheet, which
+  `CadenceTaskInspectorHostTests.noRowOrCardStillPresentsTheInspector` already pins, so one entry
+  reaches both. A `contextMenu` on the two surfaces was rejected: it duplicates a menu at two call
+  sites, and `iOSCalendarTimelineViews` carries the `simultaneousGesture` pinch a long-press
+  competes with ([[T-243]]). A swipe was rejected for [[T-266]]'s reason, unchanged. The test is
+  `everyAffordanceRequestsAHandoff` now — renamed rather than left saying "both" over three — beside
+  three new ones pinning that the section is rendered, that the request precedes the dismissal, and
+  that both Focus entries read `CadenceFeatureDestination.focus.tint`. That last one is a one-line
+  fix riding along: `iOSCalendarBundleDetailSheet` shipped `tint: Theme.amber`, the token
+  `defaultColorHex` gives Today and Habits, so two buttons named the same screen in two colours.
+  One rough edge left deliberately: the bundle sheet presents this sheet for a member task, and
+  `dismiss()` closes only the inner one, so Focus is routed *underneath* a block sheet that still
+  needs its own Close. Papering over it means a third observer of `CadenceFocusHandoffCenter`,
+  against the "shell routes, Focus screen adopts" division the whole design rests on.
+
+- [T-266] **On iOS the Focus screen is the only way *into* a focus session — for blocks and for
+  tasks alike.** [[T-242]] made a `TaskBundle` pickable and runnable in `iOSFocusView`, which was
+  the ticket, but macOS reaches a session from three other places: the hover ▶ on `MacTaskRow`
+  (`TasksPanelComponents`), `TimelineBundleBlock`, and the Calendar Board's bundle card
+  (`CalendarBoardItemSupportViews`). All three go through `FocusManager.startFocus(...)`, whose
+  `wantsNavToFocus` flag is what navigates the shell — and `FocusManager` is macOS-only, correctly
+  (it is not AppKit-bound, but iOS's screen holds its clock in the already-shared
+  `CadenceFocusTimerState`, so un-guarding the singleton would add a second timer authority with no
+  reader, not a feature — see the T-242 note in `CLAUDE.md`).
+  So this is **not** "lift a guard": giving iOS a "focus this" affordance on a task row or a block
+  card needs an iOS-shaped way to say *start this session and take me to Focus*, i.e. a deep link
+  or a `CadenceCompactTab` route carrying a `CadenceFocusTarget`, plus a decision about what
+  happens to a session already running when a second one is started from elsewhere. Note the phone
+  has no hover, so the macOS affordance does not transfer literally; the swipe action and the
+  long-press menu on `iOSTaskRow` are the candidates. `iOSCalendarBundleDetailSheet` contains the
+  string `Focus` zero times and is the obvious home for the block half.
+  **Built, verified, and shipped in `a06ce1c`** (groundwork in `b653a6a`; hardened by a
+  regression test in `cfa3b3b`). The route is a value in a one-slot inbox
+  (`Shared/CadenceFocusHandoff.swift`: `CadenceFocusHandoff` + `CadenceFocusHandoffCenter`), the
+  same shape as `CadenceDeepLinkManager` and for the same reason — the surface making the request
+  cannot reach navigation state, and the Focus screen it hands to may not have been built yet.
+  `FocusManager` was **not** un-guarded. Two affordances shipped, one per `CadenceFocusTarget`
+  case: **Focus** in `iOSTaskRowContextMenu` (one entry, every iOS task surface, because
+  `iOSTaskRow` is the row everywhere) and **Focus This Block** in `iOSCalendarBundleDetailSheet`
+  (which is what both the board card and the timeline block open). The swipe tray was rejected —
+  a swipe is for things you do without looking, and this one changes screens.
+  Two session decisions, both in `Shared/` with tests: `timerState(startRequestFor:…)`, which
+  unlike the play control's `afterPlayTapOn` **never pauses** (asking to focus the running subject
+  would otherwise stop its clock), and `endSession(leaving:…)`, now called from `iOSFocusView`'s
+  `.onDisappear`. That last one is a bug fix riding along: the screen's clock is `@State`, so
+  leaving Focus threw the measured minutes away — pre-existing, but a route *into* Focus from a
+  task row makes backing straight out of it routine. Deferred half is [[T-273]].
+
+- [T-242] **Bundle focus is macOS-only.** `macOS/Views/FocusBundleTaskSupportViews.swift` lets the
+  focus timer run a `TaskBundle` and step through its members; `Cadence/iOS/iOSFocusView.swift`
+  contains the string `bundle` zero times. This was the one claim in [[T-190]] that was **true**,
+  and it survived the ticket being closed because it is a separate feature rather than a guard to
+  lift: `FocusManager` is macOS-only (`macOS/Services/`), so the picker, the member rows and the
+  "which member am I on" state all have to be reached before iOS can focus a block. Start by
+  checking what of `FocusManager` is actually AppKit-bound — [[T-190]] and the three tombstones in
+  `macOS/Services/` are all cases where the answer was "nothing".
+
+  **Shipped in `b653a6a`.**
+
+- [T-268] **macOS offers "Mark Section Completed" on the Default kanban column, and the model
+  throws the flag away while the settle still runs.** Found while doing [[T-247]].
+  `Area.normalizedSectionConfigs` / `Project.normalizedSectionConfigs` force
+  `isCompleted = false` and `isArchived = false` on the column named `Default`, on every read *and*
+  every write — so the Default column can never be completed or archived, by design.
+  `KanbanColumnSupportViews.swift:526` already gates the **Archive** item on `!section.isDefault`
+  for exactly that reason; the **completion** button four lines above it is not gated. Tapping it on
+  the Default column runs `KanbanSectionColumnView.saveSection`, which calls
+  `TaskContainerLifecycleService.completeRemainingActiveTasks` — every open task in the column is
+  marked done — and then the flag is normalized away, so the column stays visibly Active with its
+  cards gone. Measured on iOS during T-247: the write is discarded and the status label does not
+  move (that is why `iOSListEditorSheet.lifecycle(for:)` returns `nil` for a default column).
+  Two candidate fixes, and they are not equivalent: gate the completion button the same way Archive
+  is gated (cheapest, matches the invariant), or decide the Default column *should* be completable
+  and relax the normalization — which would need a story for what "archived Default" means to
+  `sectionNames`, since that getter filters archived columns out and every task with an empty
+  `sectionName` resolves into Default.
+  Pinned from the iOS side by `CadenceColumnWindDownSurfaceTests
+  .theModelDiscardsALifecycleFlagWrittenOntoTheDefaultColumn`; nothing pins the macOS button.
+
+  **Done — shipped in `43e269b`.** The **gate** was the route taken, not the relaxed normalization, and the
+  reason is that Default is *synthesised* rather than created: `normalizedSectionConfigs` inserts
+  it when it is absent, `AppTask.resolvedSectionName` sends every task with no section name into
+  it, and `sectionNames` filters archived columns out — so a completed-or-archived Default would
+  be an invisible bucket that still collects every new task in the list, and every task created
+  into that list would land in a column marked done. There is no story for "archived Default"
+  worth telling; refusing the flag is the story.
+  The invariant is **named** now rather than re-spelled a fourth time:
+  `TaskSectionConfig.supportsLifecycle` in `Models/AppTask.swift`, whose doc comment carries the
+  reasoning above. All **three** macOS routes to a column's completion read it — the header glyph
+  (`KanbanColumnHeader.headerControls`), the editor popover's item (which moved inside Archive's
+  existing gate, taking the divider above it with it), and `Cmd+Return` over the hovered column,
+  which now registers **no** `HoveredSectionManager` target for Default rather than a no-op one,
+  because `triggerToggleComplete()` reports whether it handled the key and a registered no-op
+  would swallow the keystroke. So does `toggleSectionCompletion`, the point all three converge on,
+  which is what makes a *fourth* route refused by default. The popover's Default copy names
+  completion now.
+  Agrees with [[T-247]]'s iOS behaviour: `iOSListEditorSheet.lifecycle(for:)` returns `nil` for
+  the same column for the same reason. Nothing about the wind-down itself changed — every
+  non-default column still settles through `settleWithoutAdvancingSeries`, and
+  `theMacColumnStillWindsDownEveryOtherColumn` fails if those calls are removed.
+  New file: `CadenceTests/CadenceKanbanColumnLifecycleSurfaceTests.swift`.
+  One thing found on the way, recorded because it outlives this ticket: a test that slept
+  `animationDuration + 1.0` for `SectionCompletionAnimationManager`'s 2.5s sweep **failed under the
+  suite's own parallel load** (exit 65, 0 compile errors, three expectations at
+  `…SurfaceTests.swift:151-153`), and passed alone. It was replaced with a wall-clock-free
+  equivalent: the *reopen* branch is synchronous and is asserted as behaviour, the *complete*
+  branch is asserted as "the press enters the pending state" plus a source read of the two flags
+  the sweep lands. Both 2.5s animation managers (`SectionCompletionAnimationManager`,
+  `TaskCompletionAnimationManager`) still have no test that drives their delay, and
+  `HoveredTaskManagerTests` sleeps 160ms against an 80ms debounce — a 2x margin, i.e. the same
+  shape at a smaller scale. Do not add a sleep-and-assert test to this suite.
+
 
 - [T-247] **Archiving a kanban column on iOS settles nothing, and it is a draft toggle rather than
   an action.** The sibling of [[T-215]], one level down. macOS's `KanbanSectionColumnView` calls
@@ -1186,7 +875,7 @@ _Nothing in flight._
   Do **not** reach for `markDone` / `markCancelled` / `applyStatusCompletion` here either — see
   [[T-213]] and [[T-214]]: the successor inherits `sectionName`, so a column wind-down routed
   through them refills the column it just archived.
-  **Built, uncommitted (2026-08-22).** Decided the first way: the toggle becomes a confirmed action.
+  **Built, shipped in `bf529c6`.** Decided the first way: the toggle becomes a confirmed action.
   The reason is not taste — a draft flag is committed *after* `reassignTasks` has re-pointed
   `AppTask.sectionName` for every renamed or removed column, so any count stated at flip time is a
   promise about a different array, and the count has to be the settle's own
@@ -1198,6 +887,157 @@ _Nothing in flight._
   `CadenceColumnWindDownSurfaceTests`. Reversal (`reopenColumn`) stays a plain tap and stays in the
   editor, because `Area.sectionNames` filters archived columns out of the board and iOS has no
   "Show Archived" mode.
+
+- [T-214] **iOS list *completion* is still macOS-only, and the obvious shared substitute is wrong.**
+  T-187 shipped deletion and deliberately not completion. `TaskContainerLifecycleService` **no
+  longer lives** in `TaskWorkflowService.swift` behind `#if os(macOS)`: [[T-215]] moved it to
+  `Cadence/Services/CadenceTaskContainerLifecycleService.swift`, so the un-guard half of this ticket
+  is done and what remains is genuinely only the call site — an iOS affordance that offers
+  "Complete" and calls `completeRemainingActiveTasks`. Nothing on iOS offers it today, so this stays
+  open.
+  Do **not** reach for `applyStatusCompletion` instead: it routes through `markDone`, which **spawns
+  the next recurrence occurrence**, which is correct for one task and wrong for bulk container
+  completion that must not mint new work.
+
+  **Built, shipped in `aff8de3`** (built on the archive plumbing in `635720c`). Extended [[T-215]]'s and [[T-247]]'s machinery rather than
+  writing a second one: `iOSListArchiveSupport.swift` became `Cadence/iOS/iOSListWindDownSupport.swift`
+  with an `iOSListWindDownAction` (`.archive` / `.complete`) beside the list — the shape
+  `iOSColumnWindDownTarget` already had — `archiveList` became `windDownList`, and
+  `CadenceContainerWindDownSummary.forArea` / `forProject` gained the required `outcome:` that
+  `forColumn` already carried. Same sheet, same one decision point (`iOSListsView.requestWindDown`),
+  covered by the renamed `CadenceTests/CadenceListWindDownSurfaceTests.swift`.
+
+  Two judgements worth keeping, because both could plausibly have gone the other way:
+  - **The conditional-confirmation rule does not get stricter for completion.**
+    `requiresConfirmation` asks whether anything irreversible happens, not how large a claim the
+    action makes; completing an empty list writes one `status` and settles nothing, and a sheet over
+    a no-op is what teaches people to dismiss the one that matters.
+  - **The copy does differ, in substance and not only in the verb.** A cancellation records that
+    work was abandoned; a completion records that it *happened*, and
+    `GoalContributionSummary.progress` reads `completedTasks / totalTasks` over `filter(\.isDone)`
+    — so bulk completion can move a goal's bar where bulk cancellation cannot (a cancelled task
+    stays in the denominator and out of the numerator). And the destination is asymmetrical on iOS:
+    an archived list stays on the Lists page under "Archived", a completed one leaves it and is
+    reopened from Settings › Lists. Both facts are in the completion sheet's explanation, because a
+    confirmation that did not name the destination would make completion look like a deletion.
+  Completion is a context-menu item on the iPhone list and the iPad pane and a swipe action on
+  neither — the tray already carries Archive, and a two-action tray puts "this work is finished" one
+  mis-flick from "file it away" on a control with no beat in which to read anything. It is also not
+  `role: .destructive`.
+
+
+- [T-241] ~~**Bulk container settle skips the notification reconcile, so a completed list keeps its
+  nudges.**~~ **Fixed — shipped in `bf529c6`.** `TaskContainerLifecycleService.settle` now reconciles after the batch, so
+  completing or archiving an area, a project or a kanban column clears its tasks' pending
+  "starting now" / "due today" notifications immediately instead of waiting for the next
+  `scenePhase` checkpoint. iOS gets it too — the entry points are the shared ones.
+  **The deliverable was the seam, not the call.** `scheduleReconcile` spawns an unstructured `Task`
+  that fetches the whole store twice and calls into the `@MainActor` `NotificationManager`
+  singleton, so an unconditional call would have left eighteen existing wind-down tests doing async
+  store work after their bodies returned. The six entry points now take
+  `reconciler: CadenceWindDownReconciler? = nil`; `nil` resolves to `.default`, which is `.live` in
+  the app and `.inert` inside a test host (`NotificationManager.isTestEnvironment` — the reusable
+  spelling; `PersistenceController.isRunningTests` is `private`). A test that wants to prove the
+  wiring injects its own recorder, which is what makes "remove the reconcile call" a red test rather
+  than a silent regression — `ContainerWindDownReconcileTests` in
+  `CadenceTests/NotificationSchedulingTests.swift`.
+  Rejected: a global `onDidSettle` hook the app wires at launch (correctness would depend on remote
+  wiring, which *is* this bug; and a mutable static is a race under parallel tests), and an
+  explicit closure at every call site (the next surface that forgets it reintroduces the bug).
+  Also rejected: making `scheduleReconcile` itself inert under test — it works and changes nothing
+  today, but with the call inert there is nothing behavioural left to assert, so the wiring would be
+  pinned only by a source-text scan.
+  Note the `in context:` parameters T-212 deliberately left unused are **used now**, on all six
+  entry points: the context is what the reconciler is handed. `settle` also skips the reconcile when
+  the batch settled nothing, because an unchanged store diffs to a no-op.
+  One thing the original ticket got wrong and is worth keeping: it said adding the call would make
+  the tests "touch the real notification centre". It would not have — `NotificationManager` guards
+  every method on `isTestEnvironment` and its `center` is `lazy`, so `UNUserNotificationCenter.current()`
+  is never evaluated under XCTest. The real cost was the stray async work, not a live centre.
+
+
+- [T-259] **The MCP smoke test runs 21 of the router's 30 arms, and five of the eight write tools
+  are run by nothing at all.** Found while doing [[T-126]]. `plugins/cadence-mcp/scripts/smoke-test.py`
+  is the only thing that *executes* `CadenceMCPServer/`, and it never dispatches `get_task_bundle`,
+  `list_containers`, `get_container_summary`, `get_goal`, `update_task`, `schedule_task`,
+  `complete_task`, `reopen_task` or `cancel_task`. The five write tools are the ones that matter:
+  each has its own argument wiring — `schedule_task` is the only place `minuteOfDay`,
+  `durationMinutes` and `clearScheduledDate` are read together — and a rename or a reordered
+  `CadenceScheduleTaskOptions` initialiser would compile, advertise, and fail only in the user's
+  editor. `CadenceMCPToolContractTests` (added under T-126) closes the *name* half and explicitly
+  not this half: it is a source scan and executes nothing.
+  Two smaller shapes of the same gap, worth folding in: the four `list_*` arms the smoke test does
+  call run against a **fresh empty fixture store** and return `[]`, so no list DTO's shape is ever
+  observed; and the natural-language parsing in `CadenceMCPArgumentParsing.swift` is sampled at one
+  point per helper — `tomorrow` but never `today`/`yesterday`/`in 3 days`/`+2 days`/`2 days ago`,
+  `1h` and `three hours` but never `30m`/`1.5h`/`two and a half hours`, `4 PM` but never `4:30 pm`
+  and never a rejected `13 pm`.
+  Note the constraint before proposing "just add unit tests": `CadenceMCPArgumentParsing` extends
+  `Dictionary where Value == MCP.Value`, and the `MCP` package product is linked into the
+  `CadenceMCPServer` target only. Reaching it from `CadenceTests` means adding that package
+  dependency to the test target in `project.pbxproj` — a real decision, not a formality — and it
+  would compile those files under the app's Swift 5 / `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
+  settings rather than the server's Swift 6 without it, i.e. under settings that cannot reproduce
+  the failure mode `CadenceMCPServer/AGENTS.md` exists to warn about. Extending the smoke test is
+  the cheaper and more honest route.
+  **Done — shipped in `88a88d9`.** The smoke test was the route taken, and the reasoning held up: it runs the
+  real binary built by the real scheme, so it is the only thing that can catch a Swift-6 argument
+  regression at all. All 30 arms are now dispatched, the five write tools run a full create →
+  update → schedule → complete → reopen → cancel lifecycle, the date/duration/time parsers are
+  exercised on every branch including their rejections, and the error paths assert the message
+  rather than `isError` — a deleted arm answers "Unknown tool", which is also an error. The guard
+  that matters most is not the new coverage but the fact that it is now *checked*: every
+  `tools/call` is recorded and compared against the server's own `tools/list`, so the next arm
+  added is a red run rather than a silent 31st. The list-DTO half is only partly closed — see
+  [[T-269]].
+
+- [T-260] **Two argument-parsing helpers in the MCP server have zero call sites.** Found while doing
+  [[T-126]]. `Dictionary.int(_:)` and `Dictionary.stringArray(_:)` in
+  `CadenceMCPServer/CadenceMCPArgumentParsing.swift` are never called by the router, by
+  `main.swift`, or by the tool definitions — `strictInt` and `flexibleStringArray` replaced them
+  (12 and 8 router call sites respectively) and the originals were left behind. Grep with a leading
+  dot and read the hits: `.int(` also matches `MCP.Value.int(...)`, which the definitions file uses
+  three times to build JSON-schema payloads, so a naive scan reports `int` as live.
+  This is dead code in the one folder with no unit coverage and no execution path, which is the
+  combination that makes it worth removing rather than leaving: the next agent to touch argument
+  parsing sees two plausible entry points whose semantics differ from the two that are actually
+  wired up — `int` returns `nil` on a bad value where `strictInt` throws, and `stringArray`
+  silently drops non-strings where `flexibleStringArray` throws. Picking the wrong one turns a tool
+  error into a silently ignored argument. Delete both, or wire them and say why.
+  **Done — shipped in `88a88d9`.** Both deleted. `parseIntegerString` stays — `strictInt` calls it. The
+  general form is pinned by `everyArgumentParsingHelperIsCalledByTheRouter`, which requires every
+  non-private helper in that extension to have an `arguments.<name>(` call site in the router. The
+  needle carries the receiver deliberately, for exactly the reason this ticket had to warn about:
+  a scan for `.int(` matches `MCP.Value.int(...)` in the tool definitions and reports the dead
+  helper as live.
+
+- [T-269] **Six of the MCP `list_*` tools are dispatched against an empty store, so their DTO
+  shapes are still unobserved.** Split out of [[T-259]], which closed the other half. The smoke
+  test now checks `list_tasks`, `list_tags` and `list_notes` against real rows — key set, and the
+  optionals named separately because Swift's synthesized `Codable` uses `encodeIfPresent`, so a nil
+  optional is an *absent* key rather than a null. The other six — `list_task_bundles`,
+  `list_goals`, `list_habits`, `list_links`, `list_contexts`, `list_containers` — return `[]`
+  every run, so a renamed or dropped field in `CadenceGoalSummary`, `CadenceHabitSummary`,
+  `CadenceContainerRef`, `CadenceContextRef`, `CadenceSavedLinkSummary` or
+  `CadenceTaskBundleSummary` reaches a user's editor with nothing red anywhere.
+  The reason is structural, not an oversight: MCP has **no write tool** that creates a bundle, a
+  goal, a habit, a link, a context or a container — `create_task` and `append_core_note` are the
+  only constructors on the surface — so a fresh fixture store cannot be made to hold one through
+  the protocol. Two routes, and they are not equally good:
+  (a) seed the fixture store out-of-band before the smoke test starts, which means a second
+  process opening the same SwiftData store the server is about to open, and a fixture that has to
+  be kept in step with `CadenceSchema` by hand;
+  (b) assert the DTO shapes as a **source scan** in `CadenceMCPToolContractTests` — read the
+  `nonisolated struct Cadence*Summary: Codable` declarations in `CadenceReadDTOs.swift` and pin
+  their stored-property lists. That executes nothing, which is the standing weakness of everything
+  in that file, but it is honest about what it is and it catches the rename, which is the failure
+  actually worth catching. Prefer (b) unless the fixture is wanted for something else too.
+
+  **Shipped in `88a88d9`** — route (b) from the ticket: `CadenceMCPToolContractTests
+  .listToolDTOsDeclareTheirEstablishedStoredProperties` pins all six DTOs' stored-property
+  lists by source scan. Route (a) — observing the six `list_*` tools against a seeded store —
+  was not taken; the ticket said to prefer (b) unless the fixture was wanted elsewhere too, so
+  this satisfies it as written.
 
 - [T-248] **Settings → Templates draws a 16pt editor on the target iPad in portrait — [[T-177]]'s
   defect, one level down, in a card rather than a page.** The split is gated on
@@ -1226,6 +1066,8 @@ _Nothing in flight._
   at `260 + 1 + 320 + 32` = 613 of *card* width, i.e. 950 of pane — landscape only on the target
   iPad, which is the right answer rather than a convenient one.
 
+  **Shipped in `b1239e0`.**
+
 - [T-249] **macOS Settings → Templates has the same missing floor, and no compact form to fall back
   to.** `SettingsTemplatesSection.swift:29` is a fixed `.frame(width: 230)` beside a
   `maxWidth: .infinity` editor, inside a `SettingsCard` (`.padding(14)`) inside the detail column
@@ -1237,6 +1079,8 @@ _Nothing in flight._
   Less urgent than [[T-248]]: the MacBook Pro 14" target is 1512 wide, which leaves 1248 of pane and
   a 652pt editor. Recorded because it is the same defect and because the macOS side has **no**
   one-column branch at all, so closing it means writing one rather than gating to one that exists.
+
+  **Shipped in `b1239e0`** (same commit as [[T-248]]).
 
 - [T-250] **Three macOS pages declare more `HSplitView` minimum width than the window's own floor can
   pay, and `HSplitView` does not report that upward, so the window lets you reach it.** Measured, not
@@ -1277,7 +1121,7 @@ _Nothing in flight._
   fits the ordinary 696pt pane, `notes + tasks` is 750 and does not — and the tasks/timeline pair is
   the one with a drag payload between them), Goals drops its **inspector** (its list column holds the
   page header, search, filter and the only New Goal button, so 560 is not the side that can yield),
-  Focus drops its **sidebar** on all three of its splits. Verified but **not committed**.
+  Focus drops its **sidebar** on all three of its splits. Verified and **shipped in `8b73c78`**.
 
 - [T-251] **The macOS Calendar Board's two rails are 496pt of fixed width with nothing underneath the
   day columns.** `CalendarPageBoardSupportViews.swift:60-66` is `HStack(spacing: 0) { rail;
@@ -1316,7 +1160,7 @@ _Nothing in flight._
   because the floor has to be a *sum* of them and that file is behind `#if os(macOS)`.
   **Cost, stated rather than glossed:** below 846 reading either pile takes one click, and while a
   rail is expanded there the day region is squeezed again — a user-chosen, one-click-reversible
-  state, not something the app does unasked. Verified but **not committed**.
+  state, not something the app does unasked. Verified and **shipped in `850af8a`**.
 
 - [T-252] **`CadenceRegularSplitLayout` is the one registered width rule with no "two panes is worse
   than one" fallback, and it shows on the target iPad.** Today gates to `.compact` at 761, Notes to
@@ -1338,37 +1182,54 @@ _Nothing in flight._
   1210 still split, and `listPaneWidth` is unchanged at every width where anything asks it.
   The gate lives in `iOSFeatureSplitLayout`, the one place all four surfaces go through, and the
   fallback is each surface's own one-column form with rows that push — not a dropped chooser, which
-  would strand the detail ([[T-248]]'s reasoning). Verified but **not committed**.
+  would strand the detail ([[T-248]]'s reasoning). Verified and **shipped in `8b73c78`**.
 
-- [T-253] **macOS Settings → Reminders never re-derives authorization after it first appears, and
-  it is the surface most likely to be on screen when authorization changes.**
-  `macOS/Views/SettingsRemindersSection.swift` has `.onAppear { refreshAuthorizationState() }` and
-  nothing else, while macOS's Inbox (`TasksListView`) carries **both** `.onAppear` **and**
-  `.onChange(of: scenePhase)`. The asymmetry matters on macOS specifically: revoking in System
-  Settings does **not** terminate the app the way iOS does (measured — iOS kills Cadence on both
-  grant and revoke, so its surfaces always re-read from a fresh process), so a user who follows this
-  card's own **Open Reminders Settings** button, revokes, and comes back lands on a view that never
-  disappeared and is still claiming "Apple Reminders connected" over a stale list. `iOSRemindersSettingsSection`
-  has the same single hook; it is far less exposed for the termination reason above, but the two
-  Settings sections should match the two Inboxes rather than each other. Not fixed here because
-  macOS TCC cannot be driven without touching the host machine's real Reminders permission, so the
-  fix would ship unverified — see the note in [[T-21]].
+- [T-272] **Goals' *timeline* mode has never had an Attach List route, at any width.**
+  Found while doing [[T-271]] and separate from it: `GoalTimelineView` was handed only `onEditGoal`
+  (`GoalsView.content(groups:)`), so the roadmap presentation offered Edit at every width and Attach
+  List at none. This is not [[T-250]] fallout — the timeline layout never had an inspector to lose —
+  which is why it was left out of T-271 rather than folded into it.
+  **Fixed, shipped in `850af8a`, and it composes with [[T-271]] rather than adding a
+  second route** — verified, not assumed: `GoalInspectorSheet` and its
+  `.sheet(isPresented: $showGoalDetail)` hang off `GoalsView.body`, which wraps *both* presentations,
+  so the presenter was already installed over the timeline and only the mission branch ever spent it.
+  What was missing was the row action. `onEditGoal` became `onOpenGoal`, wired to the same
+  `select(_:showsInspector:)` the mission cards call with a literal `false`, because the Gantt has no
+  column to select into at any width — one flag, one gate, no second `showGoalDetail = true` for the
+  two answers to disagree over. Edit did not move: it is a button inside `GoalInspectorView`, so the
+  double-click now reaches a superset of what it did, with Attach List and `GoalLinkedListRow`'s
+  per-list detach beside it. `GoalTimelineGroupRow` gained the route too, not just the milestone rail
+  row and the bar: `timelineBody` skips the bar unless the goal has **both** dates, so hanging it on
+  the bar would have left an undated *direction* — the shape a linked list is most likely to hang off
+  — as the one goal on the page with no way to attach one. That is T-271's own argument about its two
+  card kinds. No `GoalListLink` write was added anywhere; the sheet reaches `AttachWorkSheet` and
+  `ModelContext.detachGoalListLink` exactly as the mission inspector does. Pinned by
+  `CadenceGoalTimelineRouteTests` (5 tests, four mutations each failing only their own).
 
-- [T-254] **macOS's Inbox reminders section is the only one of the four reminders surfaces that does
-  not read `RemindersConnectionState`.** `InboxAppleRemindersSectionView`
-  (`macOS/Views/InboxSupportViews.swift`) branches `if isAuthorized { rows } else {
-  AppleRemindersAccessRow(isDenied:) }` and hand-writes its own copy — "Reminders access is off" /
-  "Show Apple Reminders in Inbox", "Connect" / "Open Settings" — while Settings on both platforms and
-  the iOS Inbox all read `state.accessTitle` / `accessMessage` / `accessAction`. Two consequences.
-  The copy can drift, which is the standing no-near-copies rule. And the **branch order differs**:
-  the shared resolver puts `isDenied` ahead of `isAuthorized` precisely so a live denial beats a
-  stale authorized snapshot, and this view puts `isAuthorized` first, so in that window macOS's
-  Inbox draws stale reminder rows with completion buttons that no longer write while macOS's
-  Settings, one category away, says access is denied. Fold it onto `RemindersConnectionState` the
-  way `iOSInboxRemindersSection` already is.
+- [T-183] **Audit the remaining fixed-width columns for missing floors.** `T-177` and Today's own
+  `twoPaneMinimumWidth` are the same defect twice: a fixed `.frame(width:)` beside a flexing pane,
+  with nothing asserting the flexing side stays usable. Worth one sweep for other fixed column widths
+  — `CadenceRegularSplitLayout.listPaneWidth`, the calendar rails, the settings rail — asking in each
+  case what the other side gets at the narrowest host that reaches it.
+  **Swept 2026-08-22; findings are [[T-248]] through [[T-252]] and nothing was changed here.** Every
+  three-digit `.frame(width:)` and every `frame(minWidth:)` in `Cadence/` was classified as *has a
+  floor*, *no floor but cannot be squeezed* (popovers, sheets, drag previews and overlay panels, which
+  are the large majority), or *no floor and starves its neighbour*. Four of the last kind: the two
+  Settings → Templates cards ([[T-248]], [[T-249]]), three macOS `HSplitView` pages against a 960pt
+  window floor ([[T-250]]), and the Calendar Board's rail pair ([[T-251]]); [[T-252]] is the
+  consistency question the sweep raised about the register itself. Two things worth carrying whatever
+  is done next: **an `HSplitView` propagates none of its children's `minWidth` upward**, so a page's
+  pane minimums never reach the window and the window happily gets narrower than the page
+  (`sizeThatFits(width: 1).width == 1.0`, measured) — and the three registered surfaces that *do*
+  state a floor were all correct at every reachable width, so the rule works where it has been
+  applied and the gap is only where it has not.
+
+  **All five findings shipped**: [[T-248]] and [[T-249]] in `b1239e0`, [[T-250]] and [[T-252]]
+  in `8b73c78`, [[T-251]] in `850af8a`. This audit's job is done.
+
 
 - [T-255] ~~**A reminder completion that fails leaves the row looking completed, on both
-  platforms.**~~ **Fixed.** Confirmed exactly as written, on both rows and on all four exits.
+  platforms.**~~ **Fixed — shipped in `121e07f`.** Confirmed exactly as written, on both rows and on all four exits.
   `completeReminder(id:)` now returns `AppleReminderCompletionOutcome` — the three refusals come
   from the shared `AppleReminderCompletionOutcome.refusal(isAuthorized:reminderResolves:
   allowsContentModifications:)` rather than a `guard` chain a test cannot reach — and both rows turn
@@ -1403,24 +1264,9 @@ _Nothing in flight._
   Low frequency, but it is the same class of mistake as the dead **Allow Access** button [[T-21]]
   fixed: an affordance offered in a state where it cannot work.
 
-- [T-257] ~~**`HEAD` does not build from a clean clone.**~~ **Withdrawn — the premise is false, and
-  following the instruction breaks the build.** `TaskContainerLifecycleService` *is* declared at
-  `HEAD`, in the committed `Cadence/macOS/Services/TaskWorkflowService.swift:58`; the untracked
-  `Cadence/Services/CadenceTaskContainerLifecycleService.swift` is another agent's uncommitted
-  **move** of that type — which is why `Cadence/macOS/Services/TaskWorkflowService.swift` shows as
-  modified in the same `git status` the ticket was written from. So the committed call sites in
-  `EditListSheet.swift` and `CadenceCancelledTaskReachabilityTests.swift` resolve fine, and a clean
-  clone builds. What does *not* build is `HEAD` plus that one untracked file, which is exactly the
-  isolation [[T-21]] was told to construct: measured on 2026-08-22, three errors — `invalid
-  redeclaration of 'TaskContainerLifecycleService'` and two `has no member 'remainingActiveTasks'`
-  against `HEAD`'s smaller version of the type. Dropping the file instead gave macOS TEST SUCCEEDED
-  and an iOS BUILD SUCCEEDED. Do **not** `git add` it — that would commit half of somebody else's
-  in-flight refactor. The general rule stands and is the one worth keeping: the project uses Xcode
-  **file-system-synchronized groups** (6 `PBXFileSystemSynchronizedRootGroup` entries in
-  `project.pbxproj`), so any `.swift` file under `Cadence/` is compiled by directory membership with
-  no `project.pbxproj` change to show for it. An untracked file therefore silently joins every
-  build, and restoring `HEAD` means **deleting** it, not keeping it.
-
+  **Shipped in `2f018a4`**: `RemindersConnectionState` gained a distinct `.restricted` case
+  with its own title/message, and `accessAction` returns `nil` for it rather than the dead
+  "Allow Access from Settings" button.
 
 - [T-264] **Both Inboxes head the Apple Reminders group with a count of `0` in every state where the
   count is meaningless.** `iOSInboxRemindersSection` passes `count: remindersManager.reminders.count`
@@ -1436,52 +1282,169 @@ _Nothing in flight._
   count only when `state.isConnected`. Do it in the shared `CadenceTaskGroupHeading` /
   `TaskListGroupHeader` vocabulary rather than twice.
 
-- [T-265] **`RemindersManager.requestAccess()` has a second exit that returns `false` without
-  recording a denial — the same doorway [[T-21]] just closed, one branch over.** The
-  `guard status == .notDetermined else { refreshAuthorizationState(); return false }` arm is taken
-  by every status that is neither `.fullAccess` nor `.notDetermined`. For `.denied` and
-  `.restricted` that is harmless, because `isDenied` already reads them from the cached status. For
-  anything else it is the dead-button bug again: `resolve(status:)` folds unknown statuses through
-  `default` into `.notDetermined`, so the card offers **Allow Access**, the tap takes this arm, and
-  nothing changes. Today the only such value is `.writeOnly`, which EventKit does not return for
-  reminders — so this is a latent hazard, not a live defect, and it is filed rather than fixed for
-  that reason. The cheap version is to set `deniedInThisSession = true` on this arm too, since the
-  arm already means "asking cannot help". Related: [[T-256]], which is the same shape for
-  `.restricted` — an affordance offered in a state where it cannot work.
+  **Shipped in `2f018a4`**: both Inboxes now pass `nil` instead of `0` when the state is not
+  `.connected` (`iOSInboxRemindersSection.swift`, `InboxSupportViews.swift`), so the capsule is
+  suppressed rather than asserting a count nobody measured.
 
-- [T-266] **On iOS the Focus screen is the only way *into* a focus session — for blocks and for
-  tasks alike.** [[T-242]] made a `TaskBundle` pickable and runnable in `iOSFocusView`, which was
-  the ticket, but macOS reaches a session from three other places: the hover ▶ on `MacTaskRow`
-  (`TasksPanelComponents`), `TimelineBundleBlock`, and the Calendar Board's bundle card
-  (`CalendarBoardItemSupportViews`). All three go through `FocusManager.startFocus(...)`, whose
-  `wantsNavToFocus` flag is what navigates the shell — and `FocusManager` is macOS-only, correctly
-  (it is not AppKit-bound, but iOS's screen holds its clock in the already-shared
-  `CadenceFocusTimerState`, so un-guarding the singleton would add a second timer authority with no
-  reader, not a feature — see the T-242 note in `CLAUDE.md`).
-  So this is **not** "lift a guard": giving iOS a "focus this" affordance on a task row or a block
-  card needs an iOS-shaped way to say *start this session and take me to Focus*, i.e. a deep link
-  or a `CadenceCompactTab` route carrying a `CadenceFocusTarget`, plus a decision about what
-  happens to a session already running when a second one is started from elsewhere. Note the phone
-  has no hover, so the macOS affordance does not transfer literally; the swipe action and the
-  long-press menu on `iOSTaskRow` are the candidates. `iOSCalendarBundleDetailSheet` contains the
-  string `Focus` zero times and is the obvious home for the block half.
-  **Built and verified, awaiting commit.** The route is a value in a one-slot inbox
-  (`Shared/CadenceFocusHandoff.swift`: `CadenceFocusHandoff` + `CadenceFocusHandoffCenter`), the
-  same shape as `CadenceDeepLinkManager` and for the same reason — the surface making the request
-  cannot reach navigation state, and the Focus screen it hands to may not have been built yet.
-  `FocusManager` was **not** un-guarded. Two affordances shipped, one per `CadenceFocusTarget`
-  case: **Focus** in `iOSTaskRowContextMenu` (one entry, every iOS task surface, because
-  `iOSTaskRow` is the row everywhere) and **Focus This Block** in `iOSCalendarBundleDetailSheet`
-  (which is what both the board card and the timeline block open). The swipe tray was rejected —
-  a swipe is for things you do without looking, and this one changes screens.
-  Two session decisions, both in `Shared/` with tests: `timerState(startRequestFor:…)`, which
-  unlike the play control's `afterPlayTapOn` **never pauses** (asking to focus the running subject
-  would otherwise stop its clock), and `endSession(leaving:…)`, now called from `iOSFocusView`'s
-  `.onDisappear`. That last one is a bug fix riding along: the screen's clock is `@State`, so
-  leaving Focus threw the measured minutes away — pre-existing, but a route *into* Focus from a
-  task row makes backing straight out of it routine. Deferred half is [[T-273]].
+- [T-195] **Sections-due-today is still macOS-only — the rollover banner half is done.** This
+  ticket named two unrelated features and only one of them has shipped.
+  **Closed:** the rollover banner. `TasksPanelRolloverNoticeSectionView` is
+  `Shared/Components/CadenceTodayRolloverBanner.swift` (two container styles, `.panelBand` for the
+  Mac's task column and `.card` for iOS), the decision is `Shared/CadenceTodayRolloverSupport.swift`
+  (the over-do predicate, the visibility test, the withhold-while-showing filter, the batch roll),
+  and the slot-clearing mutation is `CadenceTaskMutationSupport.rollOverTaskToToday` —
+  `SchedulingActions.rollOverTaskToToday` delegates to it and must not grow a second body. macOS was
+  rewired to all three rather than left beside them; `CadenceTodayRolloverSurfaceTests` recomputes
+  `TasksPanelDerivedState`'s two changed values with the old inline expressions and asserts they are
+  identical. **One `UserDefaults` key on purpose** — `todayRolloverNoticeDismissedDate` — because
+  dismissing is a statement about the day, not the device.
+  **Also closed: sections-due-today, shipped in `2dcc948`.** `CadenceTodayOverdueListSummary` /
+  `CadenceTodayOverdueSectionSummary` moved to `Shared/CadenceTodayOverdueSummarySupport.swift`,
+  and iOS renders them through `iOSTodayOverdueSummaries` (`Cadence/iOS/iOSTodayTaskSections.swift`,
+  wired into `iPadTodayView.swift` / `iPadTodayCompactViews.swift`). Note: `Cadence/iOS/AGENTS.md`
+  still has a line claiming this half is untouched — that scoped guide is stale and needs its
+  own fix, out of scope for this pass (this file only, per the brief).
 
-## Done
+
+
+- [T-229] **iOS's Today → Completed admits what `CLAUDE.md` says it cannot, proven at runtime.**
+  `completedTodayTasks` returns true for `scheduledDate == todayKey || dueDate == todayKey` *before*
+  consulting `completedAt`. So a task **completed in January** with a do date of today appears there,
+  and a pre-`f15db8b` cancelled task with a nil timestamp appears if its due date is today. Two
+  consequences: `CLAUDE.md`'s "only shows tasks whose `completedAt` is **today**" is true of macOS and
+  false of iOS; and `markCancelled`'s promise that legacy nil-stamp rows stay out holds only where the
+  dates do not happen to be today. Overlaps [[T-208]].
+
+  **Confirmed at HEAD, and shipped in `cd734a3`.** Every clause of the
+  ticket held. The two date grounds are **original iOS code that no recorded decision ever chose**:
+  `9d11135` (T-147) rewrote the *status* half of that same `filter` and left them untouched, and
+  they have no macOS counterpart — `TasksPanelDerivedState` in `.todayOverview` has only
+  `completedAt`. The deciding evidence for direction is that `CadenceTodayPresentationSupport`'s own
+  doc comment justified unifying the two headings on the claim that both sat "over the same
+  predicate — `completedAt` inside today, on both". That claim was false when written, so the app
+  already said in three places (the heading, that comment, `CLAUDE.md`) what only one platform did.
+  Fix: `CadenceTaskQuerySupport.completedTodayTasks` is settled-inside-today and nothing else, and
+  **macOS calls it** rather than keeping a second spelling — its precomputed day range moved into
+  the shared function, so the refactor costs nothing per task. Nothing became unreachable: every
+  settled transition stamps `completedAt`, and `completedTasks` / `completedInboxTasks` / the
+  `.byDoDate` logbook test no date. Pinned by six new tests in
+  `CadenceCancelledTaskReachabilityTests` including a two-platform equality over one universe, a
+  midnight-boundary case, the `· N done` summary line, and a verbatim-legacy comparison for macOS's
+  `doneTasks` in **both** modes.
+
+
+
+
+- [T-147] **A cancelled task is unreachable on iOS — decided: show them in Completed.** Every list
+  query filters cancelled out (`CadenceTaskQuerySupport` ×6, `CadenceCalendarPlanningSupport`,
+  `iOSSearchView` ×2, the note `[[task:` picker) and the inspector auto-dismisses on Cancel, so on iOS
+  cancelling is deleting without saying so. **User's call: cancelled tasks appear in Completed**,
+  visually distinct — strikethrough, not the green done treatment. macOS already renders a cancelled
+  row distinctly, so the row work exists; what is missing is letting them through the queries. Check
+  every one of the filter sites rather than the two obvious ones.
+
+  **Shipped in `9d11135`.** Unified `isFinishedTask`/`isOpenTask` predicates in
+  `Shared/CadenceTaskQuerySupport.swift` let cancelled tasks reach Completed with strikethrough
+  on iOS, across every filter site the ticket named.
+
+
+- [T-19] **Data safety, backup and controls.** `PrivacyDataResetService` (wipes every model),
+  `StoreBackupManager`, and `DataIntegrityRepairService` exist; Settings → Data Safety is the
+  surface. Worth reviewing as a whole: what a reset actually removes, whether backups are
+  restorable, and whether the controls say plainly what they do. Note the standing rule that every
+  new `@Model` must be added to the reset path or a wipe leaves orphans.
+
+  **Narrowed and part-shipped — the export half shipped in `055ecc4`.** The review found the deletion half done
+  and the *keeping* half missing. `StoreBackupManager` does snapshot the store at every launch and
+  does restore — but every copy it writes lives in the app's own container beside the store it is
+  protecting, `deleteCadenceDataAndLocalArtifacts` deletes all of them, and the file is an opaque
+  SwiftData/CoreData store readable only by a build with this exact schema. iOS had **no** control
+  over any of it — no create, no list, no restore, no route off the device — so the only
+  data-safety action a phone offered was the irreversible one. Two copy defects on macOS's Backups
+  card, both of the kind this ticket names: it said backups are taken "before migration work" (they
+  are taken at every launch) and never said where they live.
+  Shipped: `Cadence/Services/CadenceDataExportService.swift` — one JSON archive covering **every**
+  entity in `CadenceSchema`, relationships as id references, image bytes included, pretty-printed
+  with sorted keys and ISO-8601 dates so two exports diff; `Shared/CadenceDataExportPresentation.swift`
+  (the `FileDocument` and the copy both platforms read); a `.fileExporter` card in Settings → Data
+  Safety on **both** platforms, above the delete control; the corrected backup copy. Coverage is
+  `CadenceDataExportSurfaceTests`, driven off `CadenceSchema` in the same two steps as
+  `CadencePrivacyDataResetSurfaceTests` — a model added to the schema and not to the export is a red
+  test, not a quietly incomplete backup.
+  Deferred to [[T-274]]: reading an archive back in. The archive decodes as a *value* and that round
+  trip is pinned, but nothing applies one to a live store, and the card says so in as many words.
+- [T-22] **Audit against Apple's App Review guidelines** before publishing. `docs/app-review-notes.md`
+  and `docs/privacy.html` are the existing submission material and are the place to start. Likely
+  areas: what the privacy manifest declares versus what is actually collected, Sign in with Apple
+  being entitlement-gated and optional, the AI feature requiring a user-supplied key, and EventKit
+  usage strings matching real behaviour.
+
+  **Audited 2026-08-24, shipped in `2a5c646`.** Went claim by claim against the code rather than against the
+  docs themselves. Two findings, both fixed:
+  1. **The Calendar usage string oversold what it withheld.** `NSCalendarsFullAccessUsageDescription`
+     (both in `Cadence.xcodeproj/project.pbxproj`'s build settings and the literal
+     `Cadence/Info.plist`), `docs/app-review-notes.md`, `docs/privacy.html`, and
+     `docs/apple-release-readiness.md` all said Cadence creates/updates/deletes "**scheduled task**
+     events" — language that reads as the still-unbuilt task-to-event attachment this file already
+     tracks under "What's Not Built Yet" (`AppTask.calendarEventID` has readers, no writer:
+     `SchedulingService.swift` only ever assigns it `""`). What the code actually does is broader and
+     unrelated to tasks: `CalendarManager.createStandaloneEvent` (macOS, its own doc comment reads
+     "direct iCal event, not linked to a task") backs the timeline's and month view's drag-to-create
+     flow, `iOSCalendarManager.createEvent` is its iOS counterpart, and `TimelineEventBlock` can
+     update or delete *any* event shown on the timeline, Cadence-created or not. Reworded all five
+     sites to "create, update, or delete calendar events" plus one sentence stating the writes are
+     independent of Cadence tasks, rather than inventing a task-linking claim that isn't there either.
+  2. **`docs/support.html`** — listed as a reviewer-facing doc by name in `apple-release-readiness.md`
+     — had the same shape of platform gap the push-notification and account-deletion falsehoods did:
+     its Calendar-access check named only "macOS System Settings" (Calendar is EventKit on both
+     platforms) and its account-deletion bullet said "open Settings, Account" unqualified, which does
+     not exist on iOS/iPadOS (`iOSSettingsCategory` has 12 cases, no `.account`). Split both bullets
+     by platform and scoped the backup/restore bullet to macOS, since iOS's Data Safety section has no
+     backup-browsing or restore UI (`StoreBackupManager.listBackups`/`scheduleRestore` have zero iOS
+     call sites outside a doc comment).
+
+  Everything else checked out against the code as written and needed no change: the single
+  multiplatform target and single entitlements file (`SDKROOT = auto`, one `PBXNativeTarget`, one
+  `CODE_SIGN_ENTITLEMENTS` for both platform configs); the push-notifications section's claim that
+  registration happens "at launch on macOS" (`registerForRemoteNotifications` has exactly one call
+  site, `CadenceAppDelegate`, inside `#if os(macOS)` — iOS never registers, so the doc's own scoping
+  is correct rather than aspirational); local notifications' single `AppStorage` toggle and
+  single request site in Settings on both platforms; `AppleAccountManager` being
+  `#if os(macOS)`-only with no `.account` case on iOS; the AI key living in Keychain
+  (`KeychainCredentialStore`) and `AIProvider` exposing exactly the two actions the docs name;
+  Reminders staying in-memory (`[AppleReminderItem]`, not a `@Model`) with `completeReminder` as the
+  only EventKit write, gated on `allowsContentModifications`; the account/data deletion sweep
+  (`PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts`) running identically on both
+  platforms with macOS's confirmation dialog and iOS's typed-`DELETE` sheet both gating the same
+  function; no StoreKit, ads, or third-party SDKs anywhere in the tree; and the privacy manifest's
+  declared API reasons (`CA92.1`, `C617.1`) matching actual `UserDefaults`/file-timestamp call sites
+  with no undeclared boot-time or disk-space API usage found.
+
+- [T-236] **A private `-derivedDataPath` does not isolate a macOS *test* run from another agent's.**
+  Measured 2026-08-22. `xcodebuild test -scheme Cadence -destination platform=macOS
+  -only-testing:CadenceTests` came back `** TEST FAILED **`, exit 65, **0 compile errors**, with
+  **1438 failures and 757 passes** — on bytes that had passed 2194/2194 minutes earlier, and that
+  passed 2194/2194 again immediately afterwards. Nothing about the sources changed. What changed is
+  that `ps aux | grep "[x]codebuild test"` showed a second agent's run against the live repo, and the
+  log showed the test host relaunching under a second PID (`My Mac - Cadence (13229)` then `(13416)`).
+  The cause is that the test host is `Cadence.app`, whose app-group container lives at
+  `~/Library/Containers/com.haoranwei.Cadence/Data/` — one path, shared by every run on the machine
+  regardless of where DerivedData points. The private `-derivedDataPath` isolates the *build*
+  products and nothing about the host's store.
+  **The tell**, because this is misattributed by default exactly like the shared-DerivedData family
+  already in `AGENTS.md`: 0 compile errors, a four-figure failure count, most failures reporting
+  `0.000 seconds`, and two host PIDs in one run. It exits 65 like a real regression and like a
+  mutation that failed to build, and no line of output says another test host is running.
+  **The rule to write down:** check `ps aux | grep "[x]codebuild test"` before starting a macOS test
+  run and wait the other one out. There is no flag that buys isolation here.
+  A one-line summary of the rule went into `AGENTS.md` beside the private-`-derivedDataPath`
+  non-negotiable; the evidence lives here rather than in both places.
+
+  **The rule shipped**: the one-line tell went into `AGENTS.md` beside the private-
+  `-derivedDataPath` non-negotiable, in `e1c098a`. Nothing else was open here — the underlying
+  contention is environmental, not app code, and the deliverable was always the write-up.
+
+
 
 - [T-245] `b613fb1` **The sidebar tint editor offers `Theme`'s six accents, not the list palette.**
   `CadenceColorPalette.destinationTints` is the menu; `ColorGrid` gained a `palette:` parameter
@@ -2491,3 +2454,73 @@ Newest first. The commit message carries the reasoning; this is the index.
   Recorded so the next agent neither "fixes" it nor re-files it — and as a reminder that a
   surviving mutation means *the tests cannot see this change*, which is a hole only when the
   change is one a user could ever observe.
+
+- [X-05] **[T-267] CLOSED, NOT A BUG — the iOS month date picker never killed the app. `tccd` did.**
+  The ticket read as the highest-priority open crash and the premise was false, so the correction
+  matters more than the closure. Re-verified against `b1239e0` on the shared `iPhone 17 Pro`
+  (`7B642065-…`, iOS 26.5), clean Debug build, **seven** day-cell taps across all three entry
+  points — `iOSTaskComposerDateTile` (Do and Due), `iOSTaskRowDateChip` on a live Today row, and
+  the task inspector's `CadenceDatePicker` — covering today's cell, a future cell, a **past** cell,
+  and a cell in a **different month** (the one that really moves `viewMonth` and re-derives all 49
+  months). Every tap set the date and left the app running. `MonthCalendarPanel`'s day `Button` is
+  **not** the defect; do not "fix" the `selection` / `syncViewMonthToSelection()` / `isOpen = false`
+  sequence on the strength of this ticket, and do not touch it lightly at all — it is
+  `Shared/Components/`, macOS reads it from six call sites including the `Cmd+Shift+T`/`Cmd+Shift+D`
+  hovered-date overlay.
+  **What actually happened.** Every disappearance-to-Home in this simulator's log — ten of them
+  across 2026-08-22, including the four consecutive ones at 12:50:44 / 12:53:17 / 12:55:02 /
+  12:55:37 that are this ticket's "reproduced four times" — is the same line:
+  `tccd: Terminating com.haoranwei.Cadence[<pid>] because access to the kTCCServiceReminders
+  service changed`, followed by `launchd_sim: … exited with exit reason (namespace: 11 code: 0x0)
+  - OS_REASON_TCC`. Each one is preceded by milliseconds with
+  `tccd REQUEST: sender_pid=81487, function=TCCAccessSetInternal` (or `TCCAccessResetInternal`) —
+  pid 81487 is **CoreSimulatorBridge**, i.e. a host-side `xcrun simctl privacy <udid>
+  grant|revoke|reset reminders com.haoranwei.Cadence`. Changing a TCC grant for a *running* app is
+  specified to kill it; nothing in Cadence can cause it. The msgIDs form one ascending series
+  (`81487.2 … .16`) across the whole day, which is what an unrelated agent's repeated
+  `simctl privacy` calls on a **shared** device look like from inside the app.
+  **Demonstrated, not inferred.** With the picker open and no tap on the grid,
+  `xcrun simctl privacy … grant reminders com.haoranwei.Cadence` from the host reproduced the exact
+  reported symptom — app gone, Home screen, sheet state lost — and logged `msgID=81487.16` with the
+  identical two lines. `auth_value` in the device's `TCC.db` was `2` before and `2` after, so the
+  demonstration changed no state on the shared device.
+  **The two "supporting" observations were both true and both misleading.** Nothing in
+  `~/Library/Logs/DiagnosticReports` and no exception, because `OS_REASON_TCC` is not a crash and
+  writes no report — the same reason the ticket's `SIGKILL`-shaped reading felt right. And the
+  quick pills worked "every time" because they were not tapped during the seconds a `simctl
+  privacy` call happened to land.
+  **The lesson is the shared simulator, not the picker.** The root `AGENTS.md` simulator bullet now
+  carries it: on a device several agents share, an app vanishing to the Home screen is an *external
+  termination* until the log says otherwise, and
+  `log show --predicate 'process == "tccd" OR process == "launchd_sim"'` settles it in one command.
+
+- [X-06] **[T-179] CLOSED, EXTERNAL CONSTRAINT — `control action=detach` ignores the `udid` argument and
+  closes every simulator panel.** Re-verified 2026-08-24: this is a bug in the iOS Simulator control
+  tool itself (the `mcp__Claude_Code_iOS_Simulator__control` action), not in anything under this
+  repo, so there is no code here that can fix it. An agent detaching its own device once closed
+  three other agents' panels (iPhone 17e, iPhone 17 Pro Max, iPad Air 11-inch); no device or app
+  state was altered and every closed panel could just re-`attach`, so the blast radius is annoyance,
+  not data loss. The one mitigation available from this side of the boundary is documentation, and
+  it is now in place: `AGENTS.md`'s simulator bullet states `detach` as global regardless of `udid`
+  and tells agents to only call it when they have reason to believe no one else is attached. Closing
+  rather than leaving open because there is nothing left to *build* — reopen only if the tool itself
+  changes or a repo-side workaround (e.g. an attach-tracking convention) is actually designed.
+
+
+- [X-07] **[T-257]** ~~**`HEAD` does not build from a clean clone.**~~ **Withdrawn — the premise is false, and
+  following the instruction breaks the build.** `TaskContainerLifecycleService` *is* declared at
+  `HEAD`, in the committed `Cadence/macOS/Services/TaskWorkflowService.swift:58`; the untracked
+  `Cadence/Services/CadenceTaskContainerLifecycleService.swift` is another agent's uncommitted
+  **move** of that type — which is why `Cadence/macOS/Services/TaskWorkflowService.swift` shows as
+  modified in the same `git status` the ticket was written from. So the committed call sites in
+  `EditListSheet.swift` and `CadenceCancelledTaskReachabilityTests.swift` resolve fine, and a clean
+  clone builds. What does *not* build is `HEAD` plus that one untracked file, which is exactly the
+  isolation [[T-21]] was told to construct: measured on 2026-08-22, three errors — `invalid
+  redeclaration of 'TaskContainerLifecycleService'` and two `has no member 'remainingActiveTasks'`
+  against `HEAD`'s smaller version of the type. Dropping the file instead gave macOS TEST SUCCEEDED
+  and an iOS BUILD SUCCEEDED. Do **not** `git add` it — that would commit half of somebody else's
+  in-flight refactor. The general rule stands and is the one worth keeping: the project uses Xcode
+  **file-system-synchronized groups** (6 `PBXFileSystemSynchronizedRootGroup` entries in
+  `project.pbxproj`), so any `.swift` file under `Cadence/` is compiled by directory membership with
+  no `project.pbxproj` change to show for it. An untracked file therefore silently joins every
+  build, and restoring `HEAD` means **deleting** it, not keeping it.
