@@ -802,7 +802,10 @@ _Nothing in flight._
   twelve-category shell. Bringing macOS to the same vocabulary would also settle which of the two is
   the reference.
 
-- [T-253] **macOS Settings → Reminders never re-derives authorization after it first appears, and
+## Done
+
+
+- [T-253] `159af9f` **macOS Settings → Reminders never re-derives authorization after it first appears, and
   it is the surface most likely to be on screen when authorization changes.**
   `macOS/Views/SettingsRemindersSection.swift` has `.onAppear { refreshAuthorizationState() }` and
   nothing else, while macOS's Inbox (`TasksListView`) carries **both** `.onAppear` **and**
@@ -816,7 +819,7 @@ _Nothing in flight._
   macOS TCC cannot be driven without touching the host machine's real Reminders permission, so the
   fix would ship unverified — see the note in [[T-21]].
 
-- [T-254] **macOS's Inbox reminders section is the only one of the four reminders surfaces that does
+- [T-254] `159af9f` **macOS's Inbox reminders section is the only one of the four reminders surfaces that does
   not read `RemindersConnectionState`.** `InboxAppleRemindersSectionView`
   (`macOS/Views/InboxSupportViews.swift`) branches `if isAuthorized { rows } else {
   AppleRemindersAccessRow(isDenied:) }` and hand-writes its own copy — "Reminders access is off" /
@@ -836,7 +839,7 @@ _Nothing in flight._
   (`isAuthorized`/`isDenied`/`isRestricted`) rather than one `RemindersConnectionState` value,
   the way `iOSInboxRemindersSection` already does. Stays open for that half.
 
-- [T-265] **`RemindersManager.requestAccess()` has a second exit that returns `false` without
+- [T-265] `159af9f` **`RemindersManager.requestAccess()` has a second exit that returns `false` without
   recording a denial — the same doorway [[T-21]] just closed, one branch over.** The
   `guard status == .notDetermined else { refreshAuthorizationState(); return false }` arm is taken
   by every status that is neither `.fullAccess` nor `.notDetermined`. For `.denied` and
@@ -848,8 +851,6 @@ _Nothing in flight._
   that reason. The cheap version is to set `deniedInThisSession = true` on this arm too, since the
   arm already means "asking cannot help". Related: [[T-256]], which is the same shape for
   `.restricted` — an affordance offered in a state where it cannot work.
-
-## Done
 
 - [T-239] **The note-kind switch is spelled three times, and the three disagree.** Split out of
   [[T-224]]. Confirmed at `902b386` and **fixed**: `NoteReferencePanelSupport.noteKindDetail(_:)`
