@@ -21,7 +21,9 @@ struct CreateGoalSheet: View {
     @State private var endDate: Date = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()
     @State private var initialListTag = "none"
     @State private var selectedIcon = "flag.fill"
-    @State private var selectedColor = "#4a9eff"
+    /// `Goal.colorHex`'s model default. Read the token, not the hex — see the note on the
+    /// `init` seed below, which is the same value a second time (T-262).
+    @State private var selectedColor = Theme.blueHex
     @State private var selectedKind: GoalKind = .completable
     @State private var selectedStatus: GoalStatus = .active
 
@@ -44,7 +46,7 @@ struct CreateGoalSheet: View {
         _startDate = State(initialValue: initialStart)
         _endDate = State(initialValue: initialEnd)
         _selectedIcon = State(initialValue: goal?.icon ?? "flag.fill")
-        _selectedColor = State(initialValue: goal?.colorHex ?? "#4a9eff")
+        _selectedColor = State(initialValue: goal?.colorHex ?? Theme.blueHex)
         // A goal nested under another one defaults to a milestone; a fresh top-level goal
         // defaults to an ongoing direction.
         _selectedKind = State(initialValue: goal?.kind ?? (resolvedParent == nil ? .ongoing : .completable))

@@ -11,7 +11,8 @@ struct CreateHabitSheet: View {
 
     @State private var title = ""
     @State private var selectedIcon = "star.fill"
-    @State private var selectedColor = "#4a9eff"
+    /// `Habit.colorHex`'s model default, read from the palette rather than re-typed (T-262).
+    @State private var selectedColor = Theme.blueHex
     @State private var frequencyType: HabitFrequency = .daily
     @State private var selectedDays: Set<Int> = []
     @State private var timesPerWeek = 3

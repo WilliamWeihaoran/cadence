@@ -719,33 +719,6 @@ _Nothing in flight._
   (The `doc.text` on the **event-note** result rows in `GlobalSearchIndexSupport` is unrelated —
   those are note rows, not the Notes destination, and should stay.)
 
-- [T-245] **The sidebar tab editor offers the wrong palette, so Focus's teal shows up as a
-  thirteenth swatch.** `SidebarTabEditorSheet` renders `ColorGrid`, which offers
-  `CadenceColorPalette.offeredColors(for:)` — the twelve-hue **list/goal/habit** palette — plus the
-  current value when the palette does not contain it. `Theme.tealHex` (`#45CBC4`) is not in that
-  palette, so opening Focus's editor draws a 13th circle beside the palette's `#14b8a6`: two teals,
-  one decision, which is the exact thing `ColorGrid`'s own comment says the palette must not do.
-  Before T-166 this was true of amber, blue and purple as well. Decide whether a *destination* tint
-  should be picked from `Theme`'s six accents rather than from the list palette — they are different
-  jobs and currently share one grid.
-
-
-- [T-261] **Two swatch menus for one field: a kanban section's colour differs by platform.**
-  `TaskSectionConfig.colorHex` is edited from two places and they offer different sets. macOS's
-  column editor offers `CadenceColorPalette.sectionColors` (eight hues, moved out of
-  `macOS/Views/KanbanBoardSupport.swift` by T-246); iOS's `iOSSectionColorPicker`
-  (`iOS/iOSListEditorViews.swift`) offers `[TaskSectionDefaults.defaultColorHex] +
-  TagSupport.colorOptions` — nine hues, only **one** of which (`#6b7a99`, the default) the Mac's
-  grid also contains. So a column tinted `#e671b8` on the phone opens on the Mac wearing a hue the
-  Mac cannot offer. T-246 stopped that being destructive — `offeredSectionColors(for:)` appends the
-  stored value, and the Mac's comparison is case-insensitive now, so the swatch still reads as
-  selected and the next save does not replace it — but the two menus are still two answers to one
-  question, which is the exact three-way split `CadenceColorPalette` was created to end.
-  Note the iOS side is *also* borrowing `TagSupport.colorOptions`, a palette
-  `CadenceColorPalette`'s own doc comment says is deliberately separate with a separate job.
-  Deciding the section set is a hue decision, not a refactor: say which eight (or nine) win, then
-  point both pickers at `CadenceColorPalette.sectionColors`.
-
 - [T-262] **Five more `@State` colour seeds still hand-type `#4a9eff` / `#6b7a99`.** Out of T-246's
   scope, which named three palettes and not these. Each is a pure substitution — the literal
   already equals the token it should read — which is precisely why they survive:
@@ -761,6 +734,25 @@ _Nothing in flight._
     The first two are the *drifted* sidebar tints T-166 deleted — they now exist nowhere else in
     the app. Harmless as fixture data, but a UI test asserting on a colour would be asserting on a
     hue the product no longer has.
+
+  **Built and verified, awaiting commit.** All five substituted; `Cadence/macOS/` now contains no
+  colour literal at all, which is what the new `CadenceSeedColourSourceTests` pins — a per-file list
+  only guards the sites this ticket happened to find, so the load-bearing assertion walks the whole
+  216-file tree and needs no allowlist (`Theme.swift` and the swatch arrays both live under
+  `Shared/`). Two departures from the ticket's own prescription, both deliberate:
+  - The four `#4a9eff` seeds read **`Theme.blueHex`**, not `CadenceColorPalette.areaDefault`. That
+    constant is documented as "`Area.colorHex`'s model default", and these seed a *Context*, a
+    *Goal* and a *Habit*. Reading it would assert a relationship that does not exist and would drag
+    three unrelated sheets along if the Area default ever moved off blue. `areaDefault` is itself
+    `Theme.blueHex`, so the resolved value is identical either way.
+  - `#6b7a99` gets **no new `Theme` token**. It reads the existing
+    `TaskSectionDefaults.defaultColorHex`, whose home has to be `Models/` because `CadenceMCPServer`
+    compiles `Models/` and not `Theme.swift`. A `Theme.neutralHex` beside it would be a second
+    spelling of a hex the app already publishes — the drift T-166 deleted, not the fix for it. A
+    test asserts `Theme` has not grown one.
+  The models stay literals as the ticket says, and the enforcement a token read would have given
+  them is now a test: `theSeedsMirrorModelDefaultsThatCannotReadTheToken` fails if `Theme.blueHex`
+  moves without `Context`/`Goal`/`Habit`/`Area` following it.
 
 
 
@@ -1490,6 +1482,25 @@ _Nothing in flight._
   task row makes backing straight out of it routine. Deferred half is [[T-273]].
 
 ## Done
+
+- [T-245] `b613fb1` **The sidebar tint editor offers `Theme`'s six accents, not the list palette.**
+  `CadenceColorPalette.destinationTints` is the menu; `ColorGrid` gained a `palette:` parameter
+  rather than being forked. This is the one swatch menu that may be built from `Theme` — a
+  destination tint is app chrome, not user-owned data — and no accent was added to make it fit.
+  Pinned by `CadenceDestinationTintPaletteTests`, including the relation a value list cannot state:
+  every `CadenceFeatureDestination.defaultColorHex` must be offered by the menu that edits it.
+  **This file lagged the code by two days.** The entry sat under "Open — decided, not started"
+  while the fix, its five mutations and its call-site test were all committed, which is the exact
+  failure `CLAUDE.md` records against the iOS reminders section: *trust the test, not the task
+  list*. Grep the tests for a ticket id before picking it up.
+
+- [T-261] `b613fb1` **One swatch menu for a kanban section's colour, on both platforms.** Closed by
+  the same commit as [[T-245]] and stale here for the same two days. macOS's eight won on contents,
+  not seniority: iOS's nine were borrowed from `TagSupport.colorOptions`, whose own doc comment says
+  tags are deliberately separate, and three of the eight it lent are the pre-T-166 drifted
+  near-copies of `Theme`'s amber, blue and purple. Both editors name
+  `CadenceColorPalette.offeredSectionColors(for:)` now, pinned by
+  `CadenceSectionPaletteConvergenceTests`.
 
 - [T-271] **macOS Goals in mission mode has no route to Edit or Attach List below 901pt of pane.**
   Fallout from [[T-250]]. `GoalInspectorView`'s header carries the only Edit and Attach List buttons

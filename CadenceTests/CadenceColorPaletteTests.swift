@@ -498,3 +498,172 @@ struct CadenceSectionPaletteConvergenceTests {
         }
     }
 }
+
+// MARK: - T-262: the last five hand-typed seeds on the macOS surface
+
+/// The `@State` colour seeds that sat beside a model default and re-typed its hex.
+///
+/// Five of them, in four files, and **every one was correct by value** — `#4a9eff` really is
+/// `Theme.blueHex` and `#6b7a99` really is `TaskSectionDefaults.defaultColorHex`. That is the whole
+/// hazard and the reason these outlived both T-166 and T-246: a value assertion passes before and
+/// after, the app looks right, and the copy simply stops tracking the token the next time a hue
+/// moves. T-166 is what that looks like once it has happened — the sidebar drew Today in `#FFB84D`
+/// while the command palette drew the same destination in `Theme`'s `#ffa94d`.
+///
+/// So the assertions below are source-scanning, and the mutation that proves them is re-typing a
+/// literal that equals its own token.
+///
+/// Two adjacent things are deliberately **not** in scope, and both are argued in T-262 itself:
+/// - `Cadence/Models/*.swift`'s `colorHex` defaults cannot read `Theme` at all —
+///   `CadenceMCPServer` compiles `Models/` and not `Theme.swift`. They stay literals, which is
+///   precisely why the seeds that mirror them must not be a second copy;
+///   `theSeedsMirrorModelDefaultsThatCannotReadTheToken` is the guard that replaces the read.
+/// - `Services/CadenceUITestSupport.swift` and `iOS/iOSSampleDataSupport.swift` seed *fixture*
+///   rows. They are data a test or a demo writes, not palette decisions the product renders.
+@MainActor
+struct CadenceSeedColourSourceTests {
+    /// A new context's seed. One literal, and it was the file's only one.
+    @Test func theCreateContextSheetSeedsFromTheAccentRatherThanItsValue() throws {
+        let sheet = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Sheets/CreateContextSheet.swift"))
+        #expect(sheet.contains("struct CreateContextSheet: View"), "non-vacuity: still the sheet")
+
+        #expect(sheet.contains("@State private var selectedColor = Theme.blueHex"))
+        #expect(
+            palettteRegexMatches(paletteHexLiteralPattern, in: sheet).isEmpty,
+            "CreateContextSheet hand-types a colour: \(palettteRegexMatches(paletteHexLiteralPattern, in: sheet))"
+        )
+    }
+
+    /// The goal sheet held the same value **twice** — the property initialiser and the `init` seed
+    /// that overwrites it when editing. Both arms, for the reason `CreateListSheet`'s two switch
+    /// arms are both asserted: one arm still spelling its own hex beside one that does not is how
+    /// `#4ecb71` outlived `projectDefault` being pointed at `Theme.greenHex`.
+    @Test func theCreateGoalSheetSeedsBothOfItsColourStatesFromTheAccent() throws {
+        let sheet = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Sheets/CreateGoalSheet.swift"))
+        #expect(sheet.contains("struct CreateGoalSheet: View"), "non-vacuity: still the sheet")
+
+        #expect(sheet.contains("@State private var selectedColor = Theme.blueHex"))
+        #expect(sheet.contains("_selectedColor = State(initialValue: goal?.colorHex ?? Theme.blueHex)"))
+        #expect(palettteRegexMatches(#"Theme\.blueHex"#, in: sheet).count == 2, "both seeds, not one")
+        #expect(
+            palettteRegexMatches(paletteHexLiteralPattern, in: sheet).isEmpty,
+            "CreateGoalSheet hand-types a colour: \(palettteRegexMatches(paletteHexLiteralPattern, in: sheet))"
+        )
+    }
+
+    /// A new habit's seed.
+    @Test func theCreateHabitSheetSeedsFromTheAccentRatherThanItsValue() throws {
+        let sheet = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Views/HabitsFormSheets.swift"))
+        #expect(sheet.contains("struct CreateHabitSheet: View"), "non-vacuity: still the sheet")
+
+        #expect(sheet.contains("@State private var selectedColor = Theme.blueHex"))
+        #expect(
+            palettteRegexMatches(paletteHexLiteralPattern, in: sheet).isEmpty,
+            "HabitsFormSheets hand-types a colour: \(palettteRegexMatches(paletteHexLiteralPattern, in: sheet))"
+        )
+    }
+
+    /// The odd one out: not an accent but the app's single neutral, on the "Unassigned" habit
+    /// group's icon tile.
+    ///
+    /// It reads `TaskSectionDefaults.defaultColorHex` — a constant named for kanban sections —
+    /// and that is a decision rather than an accident. `#6b7a99` is one value with one home, and
+    /// that home has to be `Models/` because `CadenceMCPServer` compiles `Models/` and not
+    /// `Theme.swift`; `Area`/`Project` container fallbacks, `Tag`'s default, `GoalListLink`'s
+    /// fallback and the last swatch of the list palette are all the same grey. A new
+    /// `Theme.neutralHex` beside it would be a **second spelling of a hex the app already
+    /// publishes**, which is the drift T-166 deleted rather than the fix for it.
+    @Test func theUnassignedHabitGroupReadsTheAppsOneNeutral() throws {
+        let view = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Views/HabitsView.swift"))
+        #expect(view.contains("title: \"Unassigned\""), "non-vacuity: still the group this is about")
+
+        #expect(view.contains("colorHex: TaskSectionDefaults.defaultColorHex,"))
+        #expect(
+            palettteRegexMatches(paletteHexLiteralPattern, in: view).isEmpty,
+            "HabitsView hand-types a colour: \(palettteRegexMatches(paletteHexLiteralPattern, in: view))"
+        )
+
+        // And `Theme` did not grow a second name for that grey to make the read read nicer.
+        let theme = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/Shared/Theme.swift"))
+        #expect(theme.contains("static let blueHex"), "non-vacuity: still Theme")
+        #expect(
+            !theme.localizedCaseInsensitiveContains("\"\(TaskSectionDefaults.defaultColorHex)\""),
+            "Theme now spells the neutral too, so there are two homes for one hex"
+        )
+    }
+
+    /// The invariant behind the four file-scoped tests, over the **whole** macOS surface rather
+    /// than the four files that happened to be wrong.
+    ///
+    /// A per-file list only pins the sites a ticket already found; the next `@State` seed goes into
+    /// a fifth file. After T-262 there is no colour literal anywhere under `Cadence/macOS/`, which
+    /// is an invariant with no allowlist to keep honest — `Theme.swift` and the swatch arrays in
+    /// `CadenceColorPalette.swift` both live under `Cadence/Shared/`, so nothing here needs an
+    /// exception carved for it.
+    @Test func noFileOnTheMacOSSurfaceHandTypesAColourHex() throws {
+        let files = try paletteSwiftFiles(under: "Cadence/macOS")
+        #expect(files.count > 180, "non-vacuity: walked \(files.count) files")
+        #expect(
+            files.contains { $0.hasSuffix("Cadence/macOS/Views/HabitsView.swift") },
+            "non-vacuity: the walk reached a file known to have held a literal"
+        )
+
+        var offenders: [String] = []
+        for path in files {
+            let source = paletteStrippingSwiftComments(try String(contentsOfFile: path, encoding: .utf8))
+            for literal in palettteRegexMatches(paletteHexLiteralPattern, in: source) {
+                offenders.append("\((path as NSString).lastPathComponent): \(literal)")
+            }
+        }
+        #expect(offenders.isEmpty, "colour literals under Cadence/macOS: \(offenders)")
+    }
+
+    /// Value half: a pure substitution, so nothing on screen moved. Stated against the literals the
+    /// four files used to spell, because "the seed equals the token" is trivially true of any token.
+    @Test func theTokensResolveToTheValuesTheLiteralsSpelled() {
+        #expect(Theme.blueHex == "#4a9eff")
+        #expect(TaskSectionDefaults.defaultColorHex == "#6b7a99")
+        #expect(CadenceColorPalette.areaDefault == Theme.blueHex)
+    }
+
+    /// Why the seeds had to move and the models could not: the model defaults are the copies that
+    /// *cannot* read the token, so this test is the enforcement that a token read would have been.
+    ///
+    /// Change `Theme.blueHex` and three `@Model` defaults silently stop matching the colour every
+    /// new context, goal and habit is drawn with in every picker. That is T-166's failure mode with
+    /// the compiler unable to help, which is exactly when a test has to.
+    @Test func theSeedsMirrorModelDefaultsThatCannotReadTheToken() throws {
+        for model in ["Context", "Goal", "Habit", "Area"] {
+            let source = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/Models/\(model).swift"))
+            #expect(source.contains("@Model"), "non-vacuity: \(model).swift is still a model")
+            #expect(
+                source.localizedCaseInsensitiveContains("var colorHex: String = \"\(Theme.blueHex)\""),
+                "\(model).colorHex's default has drifted from Theme.blueHex (\(Theme.blueHex))"
+            )
+        }
+
+        let task = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/Models/AppTask.swift"))
+        #expect(
+            task.contains("static let defaultColorHex = \"\(TaskSectionDefaults.defaultColorHex)\""),
+            "the neutral moved without this test being told"
+        )
+    }
+}
+
+/// Every `.swift` file under a repo-relative directory, as absolute paths.
+private func paletteSwiftFiles(under relativeDirectory: String) throws -> [String] {
+    let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent(relativeDirectory)
+
+    guard let walker = FileManager.default.enumerator(atPath: root.path) else {
+        Issue.record("could not walk \(relativeDirectory)")
+        return []
+    }
+    return walker.compactMap { entry in
+        guard let name = entry as? String, name.hasSuffix(".swift") else { return nil }
+        return root.appendingPathComponent(name).path
+    }
+    .sorted()
+}

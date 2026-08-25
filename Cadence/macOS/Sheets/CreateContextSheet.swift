@@ -8,7 +8,10 @@ struct CreateContextSheet: View {
     @Query(sort: \Context.order) private var contexts: [Context]
 
     @State private var name = ""
-    @State private var selectedColor = "#4a9eff"
+    /// `Context.colorHex`'s model default, read from the palette rather than re-typed. The model
+    /// itself has to spell the hex — `CadenceMCPServer` compiles `Models/` and not `Theme.swift` —
+    /// so this seed is the copy that can drift, and the one that must read the token (T-262).
+    @State private var selectedColor = Theme.blueHex
     @State private var selectedIcon = "square.stack.fill"
 
     var body: some View {

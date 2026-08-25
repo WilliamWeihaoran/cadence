@@ -54,13 +54,20 @@ struct HabitsView: View {
         let unlinked = GoalAssignmentRules.unlinkedHabits(from: visibleHabits)
 
         if !unlinked.isEmpty {
+            // The app's one neutral grey — what an Inbox task's container chip, a list-less goal
+            // link and this group all fall back to when there is no owner to take a colour from.
+            // Its single spelling is `TaskSectionDefaults.defaultColorHex`, which sits in `Models/`
+            // rather than in `Theme` because `CadenceMCPServer` compiles `Models/` and not
+            // `Theme.swift`. Reading it here is deliberately not a claim that this group is a
+            // kanban section; a second token in `Theme` holding the same hex would be the drift
+            // T-166 deleted, one palette over (T-262).
             groups.append(
                 HabitGoalGroup(
                     id: "unlinked",
                     title: "Unassigned",
                     subtitle: "Link these habits to a goal",
                     icon: "circle.dashed",
-                    colorHex: "#6b7a99",
+                    colorHex: TaskSectionDefaults.defaultColorHex,
                     habits: unlinked
                 )
             )
