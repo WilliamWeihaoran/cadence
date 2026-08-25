@@ -56,10 +56,16 @@ nonisolated enum iOSCalendarTimelineMetrics {
 
     // MARK: The day header band
 
-    /// `MON` over a day column — the same label the month grid sets over its own columns, at the
-    /// same 11pt. That agreement is the reason for the number: the two calendar surfaces name a
-    /// weekday for the same purpose, and the month grid has never asked the device.
-    static let weekdaySize: CGFloat = 11
+    /// `MON` over a day column.
+    ///
+    /// **This is now macOS's figure, and the 11 it replaces had a reason that did not hold.** It was
+    /// documented here as "the same label the month grid sets over its own columns, at the same
+    /// 11pt" — but `iOSCalendarMonthScrollingGrid` drew that row at 10 for the agenda and 11 for the
+    /// full month, so the same view answered the question twice and there was nothing stable to
+    /// agree with. The whole weekday-header band is stated once now, in
+    /// `CadenceCalendarWeekdayHeaderMetrics`, which the Mac's `CalDayHeaderView` and both month
+    /// grids read too; the reasoning for each figure is there. `docs/TODO.md` T-277.
+    static var weekdaySize: CGFloat { CadenceCalendarWeekdayHeaderMetrics.labelSize }
 
     /// The day number, and the circle that fills behind it on today.
     ///
@@ -67,12 +73,13 @@ nonisolated enum iOSCalendarTimelineMetrics {
     /// `CadenceCalendarWeekGridLayout.preferredDayColumnWidth`, 104pt, at *both* widths — so the tie
     /// is broken by what the band is for: the number names the day, and the strip of chips under it
     /// previews the day. The larger circle was taking its extra 4pt straight out of that preview,
-    /// which was already overflowing its stated minimum (see `dayHeaderHeight`).
-    static let dayNumberSize: CGFloat = 18
-    static let dayCircleSize: CGFloat = 32
+    /// which was already overflowing its stated minimum (see `dayHeaderHeight`). macOS had reached
+    /// the same pair independently, which is why they are stated once now.
+    static var dayNumberSize: CGFloat { CadenceCalendarWeekdayHeaderMetrics.dayNumberSize }
+    static var dayCircleSize: CGFloat { CadenceCalendarWeekdayHeaderMetrics.dayCircleSize }
 
     /// Between the weekday label and the day number.
-    static let dayLabelSpacing: CGFloat = 3
+    static var dayLabelSpacing: CGFloat { CadenceCalendarWeekdayHeaderMetrics.labelSpacing }
 
     /// Above and below the weekday/number pair, inside the band.
     static let dateBlockVerticalPadding: CGFloat = 5

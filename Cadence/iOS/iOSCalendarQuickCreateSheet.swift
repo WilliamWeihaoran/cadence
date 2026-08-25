@@ -14,7 +14,7 @@ struct iOSCalendarQuickCreateSheet: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    @State private var kind: iOSCalendarQuickCreateKind = .task
+    @State private var kind: iOSCalendarQuickCreateKind
     @State private var title = ""
     @State private var priority: TaskPriority = .none
     @State private var estimatedMinutes = 30
@@ -33,9 +33,14 @@ struct iOSCalendarQuickCreateSheet: View {
     @State private var showSectionPicker = false
     @State private var showStartTimePicker = false
 
-    init(dateKey: String, initialStartMinute: Int? = nil) {
+    /// `initialKind` is what the capture palette's **Event** segment needs: the segmented control
+    /// is still there and still switches, but a palette that says "Event" and opens on Task would
+    /// be the choice being taken twice. Defaults to `.task`, which is what every existing caller —
+    /// a tapped empty slot on the calendar — means.
+    init(dateKey: String, initialStartMinute: Int? = nil, initialKind: iOSCalendarQuickCreateKind = .task) {
         self.dateKey = dateKey
         self.initialStartMinute = initialStartMinute
+        _kind = State(initialValue: initialKind)
         _hasTime = State(initialValue: initialStartMinute != nil)
         _startTime = State(initialValue: iOSCalendarQuickCreateSheet.defaultStartTime(dateKey: dateKey, startMinute: initialStartMinute))
     }
@@ -615,7 +620,7 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 }
 
-private enum iOSCalendarQuickCreateKind: String, CaseIterable, Identifiable {
+enum iOSCalendarQuickCreateKind: String, CaseIterable, Identifiable {
     case task
     case bundle
     case event

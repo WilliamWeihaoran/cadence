@@ -99,8 +99,7 @@ struct SettingsAccountSection: View {
                         }
                     }
 
-                    Divider()
-                        .background(Theme.borderSubtle)
+                    CadenceRowDivider()
 
                     VStack(spacing: 8) {
                         accountDiagnosticRow(
@@ -184,7 +183,7 @@ struct SettingsAISection: View {
                         Spacer()
                     }
 
-                    Divider().background(Theme.borderSubtle)
+                    CadenceRowDivider()
 
                     VStack(alignment: .leading, spacing: 8) {
                         aiDisclosureRow(
@@ -204,13 +203,13 @@ struct SettingsAISection: View {
                         )
                     }
 
-                    Divider().background(Theme.borderSubtle)
+                    CadenceRowDivider()
 
-                    settingsField(title: "API Key") {
+                    CadenceSettingsField(title: "API Key") {
                         SecureField(aiSettingsManager.hasAPIKey ? "Saved in Keychain" : "sk-...", text: $aiAPIKeyDraft)
                     }
 
-                    settingsField(title: "Model ID") {
+                    CadenceSettingsField(title: "Model ID") {
                         TextField("gpt-5.4-mini", text: Binding(
                             get: { aiSettingsManager.model },
                             set: { aiSettingsManager.model = $0 }
@@ -289,71 +288,76 @@ struct SettingsAISection: View {
         }
     }
 
-    private func settingsField<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.muted)
-            content()
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 9))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9)
-                        .stroke(Theme.borderSubtle, lineWidth: 1)
-                }
-        }
-    }
+    // `settingsField` used to sit here: an eyebrow over an inset well, at radius 9, with a
+    // `.stroke` (which straddles the edge) rather than a `.strokeBorder`. It was one of three
+    // spellings of the same well on this platform — `SettingsTagsSection` has the other two — and
+    // iOS had already collapsed its own three into `iOSSettingsField`. That type is the shared
+    // `CadenceSettingsField` now, on the radius scale, and this section reads it (T-20).
 }
 
+/// Settings → Navigation: the one app default the desktop has, as a value row.
+///
+/// **This is `iOSNavigationSettingsSection`'s shape, adopted rather than approximated (T-20).** It
+/// was a bold `Default Page` title over a grey explanatory line over a row of `ListDetailPage`
+/// pills, the selected one filled saturated `Theme.blue` — five different weights of emphasis for
+/// one setting, and a control that exists nowhere else in the app. iOS rebuilt the same screen in
+/// `775833d` on `iOSEditorFieldRow` + `iOSChoiceValueButton` + `iOSChoicePopoverList`, which are
+/// now the shared `CadenceFieldRow` / `CadenceChoiceValueButton` / `CadenceChoicePopoverList`, so
+/// the two platforms present one control.
+///
+/// The explanatory line stayed, unlike the three iOS dropped. Those said nothing their label did
+/// not ("Choose the first calendar range shown on mobile", under a row reading *Calendar view*);
+/// this one says something no label can — that a list normally remembers its own page, and this is
+/// only the fallback. It sits under the row it belongs to rather than above it, indented to the
+/// label column, at the same 11pt `Theme.dim` a choice row's subtitle uses.
 struct SettingsNavigationSection: View {
     @Binding var listDetailDefaultPage: String
+    @State private var showPagePicker = false
 
     /// Never trust the raw persisted string: it can still hold a page this build removed
-    /// (e.g. "Planning"), which would leave every pill unhighlighted.
+    /// (e.g. "Planning"), which would leave the value reading as something unselectable.
     private var selectedPage: ListDetailPage {
         ListDetailPage.resolved(listDetailDefaultPage)
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionLabel(text: "List Opening")
-            SettingsCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Default Page")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                    Text("Used when a list does not have a saved page.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
+    private var pageSelection: Binding<ListDetailPage> {
+        Binding(
+            get: { selectedPage },
+            set: { listDetailDefaultPage = $0.rawValue }
+        )
+    }
 
-                    HStack(spacing: 10) {
-                        ForEach(ListDetailPage.allCases) { page in
-                            Button {
-                                listDetailDefaultPage = page.rawValue
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: page.icon)
-                                        .font(.system(size: 11, weight: .semibold))
-                                    Text(page.rawValue)
-                                        .font(.system(size: 12, weight: .semibold))
-                                }
-                                .foregroundStyle(selectedPage == page ? Theme.onColor : Theme.dim)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .frame(minHeight: 34)
-                                .contentShape(Rectangle())
-                                .background(selectedPage == page ? Theme.blue : Theme.surfaceElevated)
-                                .clipShape(RoundedRectangle(cornerRadius: 9))
-                            }
-                            .buttonStyle(.cadencePlain)
-                        }
-                    }
+    var body: some View {
+        CadenceFieldSection(title: "List Opening") {
+            CadenceFieldRow(label: "Default page", systemImage: "rectangle.stack") {
+                CadenceChoiceValueButton(
+                    title: selectedPage.rawValue,
+                    minHeight: CadenceSettingsRowMetrics.rowHeight
+                ) {
+                    showPagePicker = true
+                }
+                .popover(isPresented: $showPagePicker) {
+                    CadenceChoicePopoverList(
+                        rows: ListDetailPage.allCases.map { page in
+                            CadenceChoiceRow(
+                                value: page,
+                                title: page.rawValue,
+                                systemImage: page.icon,
+                                color: Theme.blue
+                            )
+                        },
+                        selection: pageSelection,
+                        isPresented: $showPagePicker
+                    )
                 }
             }
+
+            Text("Used when a list does not have a saved page.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.dim)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+                .padding(.leading, CadenceSettingsRowMetrics.glyphSlot + CadenceSettingsRowMetrics.glyphLabelSpacing)
         }
         .onAppear {
             // One-time normalization: rewrite a stale/unrecognized persisted value so the
@@ -386,7 +390,7 @@ struct SettingsSidebarSection: View {
                             onDropBefore: { onDropBefore($0, destination) }
                         )
                         if index < orderedSidebarTabs.count - 1 {
-                            Divider().background(Theme.borderSubtle).padding(.leading, 42)
+                            CadenceRowDivider(leadingInset: 42)
                         }
                     }
                 }

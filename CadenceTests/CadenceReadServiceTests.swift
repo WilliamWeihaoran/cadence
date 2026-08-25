@@ -292,6 +292,79 @@ struct CadenceReadServiceTests {
         }
     }
 
+    /// **T-278: the MCP search subtitle must speak the app's vocabulary, and its keys must not
+    /// move.**
+    ///
+    /// `noteSubtitle` was the fifth spelling of the note-kind switch and the last one still in the
+    /// retired vocabulary — "Permanent note" and "Meeting note" for the surfaces the app calls
+    /// **Notepad** and **Event Notes** — with a sixth literal `"Meeting note"` hardcoded at the
+    /// `event_notes` scope beside it. T-239 consolidated the other four and left this one alone on
+    /// purpose, because it is MCP *response* content.
+    ///
+    /// Both halves are asserted together, and that pairing is the test:
+    /// - the **prose** now reads `NoteReferencePanelSupport.noteKindLabel`, so a rename cannot leave
+    ///   this surface behind again;
+    /// - the **keys** — `entityType` — are byte-for-byte what they were, because those are what an
+    ///   MCP client actually matches on and `CadenceMCPServer/AGENTS.md` says response DTOs change
+    ///   on purpose or not at all.
+    ///
+    /// Asserting the subtitle alone would pass a change that also renamed `permanent_note`;
+    /// asserting the type alone would pass the stale prose that was there before.
+    @Test func noteSearchSubtitlesSpeakTheAppsVocabularyWhileTheKeysStayPut() throws {
+        let fixture = try Fixture()
+
+        let notepad = Note(kind: .permanent, title: "Zettel inbox")
+        let daily = Note(kind: .daily, title: "Zettel Monday")
+        daily.dateKey = "2026-04-28"
+        let weekly = Note(kind: .weekly, title: "Zettel week")
+        weekly.weekKey = "2026-W18"
+        let eventNote = Note(kind: .meeting, title: "Zettel standup", calendarEventID: "event-1")
+        eventNote.eventDateKey = "2026-04-28"
+        let listNote = Note(kind: .list, title: "Zettel spec")
+        listNote.project = fixture.project
+        for note in [notepad, daily, weekly, eventNote, listNote] {
+            fixture.modelContext.insert(note)
+        }
+        try fixture.modelContext.save()
+
+        let hits = try fixture.service.search(query: "Zettel", scopes: ["notes"])
+        let byType = Dictionary(uniqueKeysWithValues: hits.map { ($0.entityType, $0.subtitle) })
+
+        // The prose, in the vocabulary the app's own tabs use.
+        #expect(byType["permanent_note"] == "Notepad")
+        #expect(byType["event_note"] == "Event note")
+        #expect(byType["daily_note"] == "Daily note")
+        #expect(byType["weekly_note"] == "Weekly note")
+        // A list note keeps naming its container rather than its kind — the useful half here, and
+        // the reason this field cannot have been a matched enumeration for any client.
+        #expect(byType["document"] == "Cadence MCP")
+
+        // The retired vocabulary is gone from every subtitle in the response, not just from the two
+        // asserted above.
+        #expect(!hits.contains { $0.subtitle == "Permanent note" || $0.subtitle == "Meeting note" })
+
+        // The stable keys: unchanged, and asserted as the whole set so a rename cannot hide in one.
+        #expect(Set(byType.keys) == ["daily_note", "weekly_note", "permanent_note", "document", "event_note"])
+    }
+
+    /// The sixth literal: the `event_notes` scope hardcoded `subtitle: "Meeting note"` rather than
+    /// calling the switch three lines away, so consolidating the switch alone would have left the
+    /// retired word on the one scope named for that kind of note.
+    @Test func theEventNotesScopeReadsTheSameLabelAsEverythingElse() throws {
+        let fixture = try Fixture()
+        let eventNote = Note(kind: .meeting, title: "Zettel standup", calendarEventID: "event-1")
+        fixture.modelContext.insert(eventNote)
+        try fixture.modelContext.save()
+
+        let scoped = try #require(fixture.service.search(query: "Zettel", scopes: ["event_notes"]).first)
+        let unscoped = try #require(fixture.service.search(query: "Zettel", scopes: ["notes"]).first)
+
+        #expect(scoped.entityType == "event_note")
+        #expect(scoped.subtitle == "Event note")
+        #expect(scoped.subtitle == unscoped.subtitle)
+        #expect(scoped.subtitle == NoteReferencePanelSupport.noteKindLabel(.meeting))
+    }
+
     @MainActor
     private final class Fixture {
         let container: ModelContainer

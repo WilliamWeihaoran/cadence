@@ -399,15 +399,18 @@ struct CalDayHeaderView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 2) {
+            VStack(spacing: CadenceCalendarWeekdayHeaderMetrics.labelSpacing) {
                 Text(DateFormatters.dayOfWeek.string(from: date).uppercased())
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: CadenceCalendarWeekdayHeaderMetrics.labelSize, weight: .semibold))
                     .foregroundStyle(isToday ? Theme.blue : Theme.dim)
-                    .kerning(0.5)
+                    .kerning(CadenceCalendarWeekdayHeaderMetrics.labelKerning)
                 Text(DateFormatters.dayNumber.string(from: date))
-                    .font(.system(size: 18, weight: isToday ? .bold : .regular))
+                    .font(.system(size: CadenceCalendarWeekdayHeaderMetrics.dayNumberSize, weight: isToday ? .bold : .regular))
                     .foregroundStyle(isToday ? Theme.onColor : Theme.text)
-                    .frame(width: 32, height: 32)
+                    .frame(
+                        width: CadenceCalendarWeekdayHeaderMetrics.dayCircleSize,
+                        height: CadenceCalendarWeekdayHeaderMetrics.dayCircleSize
+                    )
                     .background(isToday ? Theme.blue : Color.clear)
                     .clipShape(Circle())
             }

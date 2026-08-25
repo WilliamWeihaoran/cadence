@@ -159,14 +159,13 @@ struct SettingsSectionLabel: View {
     }
 }
 
-struct SettingsStatusBadge: View {
-    let title: String
-    let isActive: Bool
-
-    var body: some View {
-        CadenceSettingsStatusBadge(title: title, isActive: isActive)
-    }
-}
+// `SettingsStatusBadge` used to sit here, wrapping a shared `CadenceSettingsStatusBadge`. Both are
+// deleted (T-20). Its nine callers were all the same call site — `SettingsView.detailHeader` — and
+// every one of them put a pill in the category header repeating the value of the first row on the
+// screen below it: "Connected" over a Calendar card whose first line says Connected, "Key saved"
+// over an AI card whose first line says Key saved. iOS deleted the equivalent slot in `775833d`
+// with the argument that survives the deletion: a header that answers the question the next row
+// answers is a second place for one fact to go stale.
 
 struct SettingsRail: View {
     @Binding var selectedCategory: SettingsCategory
@@ -276,22 +275,19 @@ private struct SettingsRailButton: View {
     }
 }
 
-struct SettingsDetailHeader<TrailingContent: View>: View {
+/// The detail column's header: the selected category's name, tinted count-capsule-style by its own
+/// colour, and nothing else.
+///
+/// The generic `TrailingContent` parameter is gone rather than left unused — see the tombstone
+/// above `SettingsRail` for what it carried and why.
+struct SettingsDetailHeader: View {
     let category: SettingsCategory
-    @ViewBuilder let trailingContent: TrailingContent
-
-    init(category: SettingsCategory, @ViewBuilder trailingContent: () -> TrailingContent) {
-        self.category = category
-        self.trailingContent = trailingContent()
-    }
 
     var body: some View {
         CadenceSettingsHeader(
             title: category.title,
             tint: category.tint
-        ) {
-            trailingContent
-        }
+        )
     }
 }
 #endif

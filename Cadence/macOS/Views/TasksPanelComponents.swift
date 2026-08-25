@@ -186,7 +186,10 @@ struct MacTaskRow: View {
 
     private var focusButtonSlot: some View {
         Group {
-            if !task.isDone && !task.isCancelled {
+            // The shared predicate, not a second hand-written `!isDone && !isCancelled`. This row
+            // was the *only* surface in the app asking the question, and the three iOS entry points
+            // added since did not ask it at all (T-276).
+            if CadenceFocusSupport.canFocus(task) {
                 Button { focusManager.startFocus(task: task) } label: {
                     Image(systemName: "play.fill")
                         .font(.system(size: 8, weight: .semibold))

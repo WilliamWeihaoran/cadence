@@ -125,42 +125,16 @@ struct SettingsView: View {
         }
     }
 
+    /// The category's name and nothing else.
+    ///
+    /// This was a nine-case `switch` feeding a `SettingsStatusBadge` into the header's trailing
+    /// slot, and every case restated the first line of the card directly underneath — `Connected`
+    /// over a Calendar card reading Connected, `Key saved` over an AI card reading Key saved,
+    /// `3 backups` over a Data Safety card listing three backups. iOS deleted the same slot in
+    /// `775833d`; T-20 removed it here. The switch went with the slot rather than being left
+    /// computing values nothing drew.
     private var detailHeader: some View {
-        SettingsDetailHeader(category: selectedCategory) {
-            switch selectedCategory {
-            case .calendar:
-                SettingsStatusBadge(title: calendarManager.isAuthorized ? "Connected" : "Not connected", isActive: calendarManager.isAuthorized)
-            case .reminders:
-                // **T-254.** The manager folds the flags; the badge reads the one answer the
-                // section beside it reads, so header and card cannot disagree.
-                let remindersState = remindersManager.connectionState
-                SettingsStatusBadge(title: remindersState.badgeTitle, isActive: remindersState.isConnected)
-            case .notifications:
-                SettingsStatusBadge(
-                    title: notificationManager.isAuthorized && notificationsEnabled ? "Enabled" : "Off",
-                    isActive: notificationManager.isAuthorized && notificationsEnabled
-                )
-            case .account:
-                SettingsStatusBadge(title: appleAccountManager.isSignedIn ? "Signed in" : "Signed out", isActive: appleAccountManager.isSignedIn)
-            case .sync:
-                // Two or three words from the shared level, not prose written here. The last
-                // macOS-side summary of whether sync worked was invented at its call site.
-                let syncLevel = SettingsSyncSection.health(for: cloudAccount.state).level
-                SettingsStatusBadge(title: syncLevel.badgeTitle, isActive: syncLevel.isHealthy)
-            case .dataSafety:
-                SettingsStatusBadge(title: "\(StoreBackupManager.listBackups().count) backups", isActive: !StoreBackupManager.listBackups().isEmpty)
-            case .ai:
-                SettingsStatusBadge(title: aiSettingsManager.hasAPIKey ? "Key saved" : "No key", isActive: aiSettingsManager.hasAPIKey)
-            case .tags:
-                let activeTagCount = TagSupport.uniqueBySlug(tags.filter { !$0.isArchived }).count
-                SettingsStatusBadge(title: "\(activeTagCount) active", isActive: activeTagCount > 0)
-            case .templates:
-                let customCount = NoteTemplateLibrary.overrides(from: noteTemplateOverridesRaw).count
-                SettingsStatusBadge(title: "\(customCount) customized", isActive: customCount > 0)
-            default:
-                EmptyView()
-            }
-        }
+        SettingsDetailHeader(category: selectedCategory)
     }
 
     @ViewBuilder

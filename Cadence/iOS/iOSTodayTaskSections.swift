@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Today's rollover notice, as a surface opts into it: the tasks the banner lists and the action
 /// its button runs, together, because the two are useless apart — the same shape as
-/// `iOSBoardTaskCardBundleDrop`.
+/// `iOSBundleFormingDrop`.
 struct iOSTodayRolloverNotice {
     let tasks: [AppTask]
     let onRollOver: () -> Void

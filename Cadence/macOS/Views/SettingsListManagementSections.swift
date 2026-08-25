@@ -306,7 +306,7 @@ struct SettingsContextsSection: View {
                         }
                         .padding(.vertical, 10)
                         .padding(.horizontal, 2)
-                        Divider().background(Theme.borderSubtle)
+                        CadenceRowDivider()
                     } else {
                         ForEach(Array(activeContexts.enumerated()), id: \.element.id) { _, context in
                             ContextSettingsRow(
@@ -318,7 +318,7 @@ struct SettingsContextsSection: View {
                                 onArchive: { onArchiveContext(context) },
                                 onDelete: { onDeleteContext(context) }
                             )
-                            Divider().background(Theme.borderSubtle).padding(.leading, 42)
+                            CadenceRowDivider(leadingInset: 42)
                         }
                     }
 
@@ -350,7 +350,7 @@ struct SettingsContextsSection: View {
                                 onDelete: { onDeleteContext(context) }
                             )
                             if index < archivedContexts.count - 1 {
-                                Divider().background(Theme.borderSubtle).padding(.leading, 42)
+                                CadenceRowDivider(leadingInset: 42)
                             }
                         }
                     }
@@ -420,7 +420,7 @@ struct SettingsListsSection: View {
                         onDelete: { onDeleteArea(area) }
                     )
                     if index < areas.count - 1 || !projects.isEmpty {
-                        Divider().background(Theme.borderSubtle).padding(.leading, 42)
+                        CadenceRowDivider(leadingInset: 42)
                     }
                 }
 
@@ -436,7 +436,7 @@ struct SettingsListsSection: View {
                         onDelete: { onDeleteProject(project) }
                     )
                     if index < projects.count - 1 {
-                        Divider().background(Theme.borderSubtle).padding(.leading, 42)
+                        CadenceRowDivider(leadingInset: 42)
                     }
                 }
             }

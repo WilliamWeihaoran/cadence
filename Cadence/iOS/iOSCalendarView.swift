@@ -305,6 +305,7 @@ struct iOSCalendarView: View {
                 unscheduledTasksByDate: unscheduledTasksByDate,
                 bundlesByDate: bundlesByDate,
                 eventsByDate: visibleEventsByDate,
+                allTasks: allTasks,
                 zoom: $zoomLevel,
                 onCreateAt: openQuickCreate
             )

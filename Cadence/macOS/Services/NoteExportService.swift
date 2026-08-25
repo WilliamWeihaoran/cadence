@@ -2,44 +2,15 @@
 import AppKit
 import UniformTypeIdentifiers
 
-enum NoteExportFormat {
-    case markdown
-    case pdf
-
-    var pathExtension: String {
-        switch self {
-        case .markdown: return "md"
-        case .pdf: return "pdf"
-        }
-    }
-
-    var contentType: UTType {
-        switch self {
-        case .markdown: return .plainText
-        case .pdf: return .pdf
-        }
-    }
-}
-
-struct NotePDFRenderOptions {
-    var pageWidth: CGFloat = 612
-    var horizontalInset: CGFloat = 42
-    var verticalInset: CGFloat = 42
-    var minimumHeight: CGFloat = 240
-
-    nonisolated init(
-        pageWidth: CGFloat = 612,
-        horizontalInset: CGFloat = 42,
-        verticalInset: CGFloat = 42,
-        minimumHeight: CGFloat = 240
-    ) {
-        self.pageWidth = pageWidth
-        self.horizontalInset = horizontalInset
-        self.verticalInset = verticalInset
-        self.minimumHeight = minimumHeight
-    }
-}
-
+/// The macOS half of note export: an `NSSavePanel` and a PDF drawn by the live editor.
+///
+/// **`NoteExportFormat` and `NotePDFRenderOptions` used to be declared here**, inside this file's
+/// `#if os(macOS)`, along with the filename rule and the live-title resolution. They are
+/// `Cadence/Services/CadenceNoteExportSupport.swift` now, because iOS necessarily gets a second PDF
+/// renderer (T-194) and two renderers deciding their own page width and their own margins are two
+/// documents. This file keeps only what genuinely needs AppKit — and it does need it: the PDF is
+/// produced by running `MarkdownStylist.apply` over an offscreen `NSTextView` and asking it for
+/// `dataWithPDF`. That is not a guard to lift; it is a mechanism iOS has to rebuild.
 enum NoteExportService {
     /// Writes the note out, with every `[[task:UUID|Title]]` embed named by its **live** task.
     ///
@@ -57,13 +28,10 @@ enum NoteExportService {
         embeddedTasks: [AppTask] = []
     ) {
         let title = note.displayTitle
-        let content = MarkdownTaskEmbedTitleCache.resolving(note.content, tasks: embeddedTasks)
-        let taskEmbeds = Dictionary(
-            embeddedTasks.map { ($0.id, MarkdownTaskEmbedRenderInfo.task($0)) },
-            uniquingKeysWith: { first, _ in first }
-        )
+        let content = NoteExportSupport.resolvedContent(note.content, embeddedTasks: embeddedTasks)
+        let taskEmbeds = NoteExportSupport.taskEmbedRenderInfos(for: embeddedTasks)
         presentSavePanelOnMainQueue(
-            suggestedName: suggestedName(title: title, pathExtension: format.pathExtension),
+            suggestedName: NoteExportSupport.suggestedFilename(title: title, format: format),
             contentType: format.contentType
         ) { url in
             switch format {
@@ -91,11 +59,6 @@ enum NoteExportService {
                 onSave(url)
             }
         }
-    }
-
-    private static func suggestedName(title: String, pathExtension: String) -> String {
-        let baseName = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (baseName.isEmpty ? "Untitled Note" : baseName) + ".\(pathExtension)"
     }
 
     @MainActor
@@ -130,7 +93,7 @@ enum NoteExportService {
         taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:],
         options: NotePDFRenderOptions = NotePDFRenderOptions()
     ) -> Data? {
-        let contentWidth = options.pageWidth - (options.horizontalInset * 2)
+        let contentWidth = options.contentWidth
         let renderedContent = MarkdownListSupport.normalizedMarkdownListPrefixes(in: content)
 
         let textStorage = NSTextStorage(string: renderedContent)
@@ -162,7 +125,7 @@ enum NoteExportService {
 
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
-        let documentHeight = max(ceil(usedRect.height + (options.verticalInset * 2)), options.minimumHeight)
+        let documentHeight = options.documentHeight(forContentHeight: usedRect.height)
         textView.frame = NSRect(x: 0, y: 0, width: options.pageWidth, height: documentHeight)
 
         return textView.dataWithPDF(inside: textView.bounds)

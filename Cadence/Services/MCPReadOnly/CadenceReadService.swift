@@ -727,7 +727,7 @@ final class CadenceReadService {
                     entityType: "event_note",
                     entityId: note.id.uuidString,
                     title: title,
-                    subtitle: "Meeting note",
+                    subtitle: noteSubtitle(note),
                     excerpt: excerpt(note.content),
                     score: score
                 )
@@ -1211,13 +1211,33 @@ final class CadenceReadService {
         }
     }
 
+    /// The human line under a search hit's title — prose, not a key.
+    ///
+    /// **This was the fifth spelling of the note-kind switch, and the last two in the retired
+    /// vocabulary** (`docs/TODO.md` T-278, the tail of T-239). It said "Permanent note" and "Meeting
+    /// note" for the surfaces the app calls **Notepad** and **Event Notes**; it now reads
+    /// `NoteReferencePanelSupport.noteKindLabel`, the app's one answer, so a rename can no longer
+    /// leave this behind.
+    ///
+    /// **Why changing MCP response prose is safe here, given `CadenceMCPServer/AGENTS.md`'s "change
+    /// response DTOs on purpose or not at all".** The DTO is untouched: `CadenceSearchHit`'s key set
+    /// is the same and `noteEntityType` still returns `daily_note` / `weekly_note` /
+    /// `permanent_note` / `document` / `event_note`, which is the discriminator a client matches on.
+    /// This field is already free-form for `.list`, where it returns a user-typed container name, so
+    /// no caller can have been matching an enumerated set against it. And the old prose was not a
+    /// deliberately-kept raw-value vocabulary either: `.meeting`'s stable key had *already* moved to
+    /// `event_note` while this line still said "Meeting note", so the two halves of the same hit
+    /// disagreed. Nothing persisted is involved, and no test or smoke-test expectation named these
+    /// strings.
+    ///
+    /// `.list` keeps the container name rather than taking `noteKindDetail`: on this surface the
+    /// list a document is filed under is the useful half, and `noteKindDetail` would append dates to
+    /// the other four kinds — a larger response change than the ticket asked for.
     private func noteSubtitle(_ note: Note) -> String {
         switch note.kind {
-        case .daily: return "Daily note"
-        case .weekly: return "Weekly note"
-        case .permanent: return "Permanent note"
         case .list: return documentContainer(note)?.name ?? "No container"
-        case .meeting: return "Meeting note"
+        case .daily, .weekly, .permanent, .meeting:
+            return NoteReferencePanelSupport.noteKindLabel(note.kind)
         }
     }
 
