@@ -241,6 +241,65 @@ struct CadenceBundleInspectorHostTests {
         )
     }
 
+    // MARK: - Where in the file, not just how many (T-161)
+
+    /// **The per-file half of the two counts above.** The repo-wide dictionaries are the right
+    /// shape for "exactly N places in the whole app"; neither can say *where* in a file its one
+    /// occurrence sits, and `cfa3b3b` is the standing proof that a call moving between two
+    /// functions in one file is invisible to a count.
+    ///
+    /// The move that matters here is the panel leaving the `.stay` branch. `iOSBundleInspectorSheet`
+    /// exists to ask `CadenceDetailPanelPresentation.resolveHeldSubject` whether the held bundle is
+    /// still a thing to draw; swapping its two branches leaves `iOSCalendarBundleDetailSheet(` at
+    /// exactly one occurrence in exactly this file, with every card in the app opening nothing.
+    @Test func theBundleHostDrawsThePanelOnlyInTheStayBranchOfTheSharedRule() throws {
+        let host = try strippingComments(sourceFile("Cadence/iOS/iOSBundleInspectorHost.swift"))
+
+        #expect(
+            matches(#"case \.stay:\s*iOSCalendarBundleDetailSheet\(bundle: bundle\)"#, in: host) == 1,
+            "the bundle panel is not drawn directly in the .stay branch of resolveHeldSubject"
+        )
+        #expect(
+            matches(#"case \.close:\s*Color\.clear\.onAppear\(perform: close\)"#, in: host) == 1,
+            "the .close branch no longer clears the selection instead of drawing the panel"
+        )
+
+        // The modifier hands the sheet's content to the rule-checking view, never to the panel:
+        // presenting `iOSCalendarBundleDetailSheet` straight from `.sheet(item:)` would also read
+        // as one occurrence in one file, and would bind a deleted model.
+        let modifier = try cadenceFunctionBody("func body(content: Content) -> some View", in: host)
+        #expect(modifier.contains(".sheet(item: $selection)"))
+        #expect(modifier.contains("iOSBundleInspectorSheet(bundle: bundle)"))
+        #expect(!modifier.contains("iOSCalendarBundleDetailSheet("))
+    }
+
+    /// **"Above both shells" was a count of one in `iOSRootView.swift`.** Moving
+    /// `.iOSBundleInspectorHost()` inside the `horizontalSizeClass == .regular` branch — iPad gets
+    /// the bundle panel, the iPhone's board and timeline get dead taps — keeps that count at one.
+    /// So the claim is stated as placement: the two shells are the `Group`'s two branches, and the
+    /// host is applied to the `Group` rather than inside it.
+    @Test func theRootAppliesTheBundleHostAboveBothShellsRatherThanInsideOne() throws {
+        let root = try strippingComments(sourceFile("Cadence/iOS/iOSRootView.swift"))
+        let body = try cadenceFunctionBody("var body: some View", in: root)
+        let shells = try cadenceFunctionBody("Group", in: body)
+
+        #expect(shells.contains("iPadMacStyleRootShell("))
+        #expect(shells.contains("iOSCompactRootShell("))
+        #expect(body.contains(".iOSBundleInspectorHost()"))
+        #expect(
+            !shells.contains(".iOSBundleInspectorHost()"),
+            "the bundle host is applied inside one shell branch rather than above both"
+        )
+    }
+
+    /// **Self-check on the pattern helper.** A typo matches nothing, and every `== 1` above becomes
+    /// a silent zero-that-should-have-been-one.
+    @Test func thePatternHelperMatchesWhatItLooksLike() {
+        #expect(matches(#"case \.stay:\s*iOSCalendarBundleDetailSheet\(bundle: bundle\)"#, in: "case .stay:\n    iOSCalendarBundleDetailSheet(bundle: bundle)") == 1)
+        #expect(matches(#"case \.stay:\s*iOSCalendarBundleDetailSheet\(bundle: bundle\)"#, in: "case .close:\n    iOSCalendarBundleDetailSheet(bundle: bundle)") == 0)
+        #expect(matches("case (", in: "case (") == -1)
+    }
+
     /// The host reads the shared decision rather than re-deciding, about the two facts it can observe
     /// for itself — and it is the *shared* one, not a bundle-shaped copy of a measured rule. A host
     /// that started consulting a `@Query` here would be the page's filter creeping back into the
@@ -317,6 +376,14 @@ struct CadenceBundleInspectorHostTests {
 }
 
 // MARK: - Source-reading helpers
+
+/// Occurrence count for a regular expression. Returns `-1` on a malformed pattern so a typo reads
+/// as a failure rather than as zero matches; `thePatternHelperMatchesWhatItLooksLike` is the
+/// self-check.
+private func matches(_ pattern: String, in text: String) -> Int {
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return -1 }
+    return regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
+}
 
 /// Fails unless `text` occurs exactly `count` times as live code in each listed file.
 private func expectOccurrences(

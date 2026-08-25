@@ -287,6 +287,87 @@ struct CadenceTaskInspectorHostTests {
         )
     }
 
+    // MARK: - Where in the file, not just how many (T-161)
+
+    /// **The per-file half of the two counts above.** A repo-wide dictionary is the right shape for
+    /// "exactly N places in the whole app"; what it cannot say is *where* in each file the one
+    /// occurrence sits, and `cfa3b3b` is the standing proof that a call moving between two
+    /// functions in one file is invisible to a count.
+    ///
+    /// Here the move that matters is the panel leaving the `.stay` branch. `iOSTaskInspectorSheet`
+    /// exists to ask `CadenceDetailPanelPresentation.resolveHeldSubject` whether the held task is
+    /// still a thing to draw; swapping its two branches — panel on `.close`, `Color.clear` on
+    /// `.stay` — leaves `iOSTaskDetailSheet(` at exactly one occurrence in exactly this file, and
+    /// every assertion in this suite green while tapping a row opens nothing.
+    @Test func theHostDrawsThePanelOnlyInTheStayBranchOfTheSharedRule() throws {
+        let host = try strippingComments(sourceFile("Cadence/iOS/iOSTaskInspectorHost.swift"))
+
+        #expect(
+            matches(#"case \.stay:\s*iOSTaskDetailSheet\(task: task\)"#, in: host) == 1,
+            "the inspector is not drawn directly in the .stay branch of resolveHeldSubject"
+        )
+        #expect(
+            matches(#"case \.close:\s*Color\.clear\.onAppear\(perform: close\)"#, in: host) == 1,
+            "the .close branch no longer clears the selection instead of drawing the panel"
+        )
+
+        // The modifier hands the sheet's content to the rule-checking view, never to the panel:
+        // presenting `iOSTaskDetailSheet` straight from `.sheet(item:)` would also read as one
+        // occurrence in one file, and would bind a deleted model.
+        let modifier = try cadenceFunctionBody("func body(content: Content) -> some View", in: host)
+        #expect(modifier.contains(".sheet(item: $selection)"))
+        #expect(modifier.contains("iOSTaskInspectorSheet(task: task)"))
+        #expect(!modifier.contains("iOSTaskDetailSheet("))
+    }
+
+    /// **"Above both shells" was a count of one in `iOSRootView.swift`.** Moving
+    /// `.iOSTaskInspectorHost()` inside the `horizontalSizeClass == .regular` branch — iPad gets the
+    /// inspector, iPhone's four tabs get dead taps — keeps that count at one. So the claim is
+    /// stated as placement: the two shells are the `Group`'s two branches, and the host, the bundle
+    /// host and the startup banner are all applied to the `Group` rather than inside it.
+    @Test func theRootAppliesTheHostAboveBothShellsRatherThanInsideOne() throws {
+        let root = try strippingComments(sourceFile("Cadence/iOS/iOSRootView.swift"))
+        let body = try cadenceFunctionBody("var body: some View", in: root)
+        let shells = try cadenceFunctionBody("Group", in: body)
+
+        #expect(shells.contains("iPadMacStyleRootShell("))
+        #expect(shells.contains("iOSCompactRootShell("))
+
+        for modifier in [
+            ".iOSTaskInspectorHost()",
+            ".iOSBundleInspectorHost()",
+            ".cadenceStartupIssueBanner(PersistenceController.startupIssue)"
+        ] {
+            #expect(
+                body.contains(modifier),
+                "iOSRootView's body no longer applies \(modifier)"
+            )
+            #expect(
+                !shells.contains(modifier),
+                "\(modifier) is applied inside one shell branch rather than above both"
+            )
+        }
+    }
+
+    /// The nested host, likewise placed rather than counted. `iOSTodayTaskSections.swift` declares
+    /// several views; the one that must carry it is the sheet presenting a whole page of task rows,
+    /// and it must carry it on the view it actually renders. A `.iOSTaskInspectorHost()` that
+    /// drifted onto a neighbouring view — or onto another member of this very struct — leaves the
+    /// file count at one and every row inside the sheet a dead tap again.
+    ///
+    /// Scoping to the struct alone was measurably not enough: the first draft of this test sliced
+    /// `struct iOSTodayOverdueListSheet: View` and survived a mutation that moved the modifier onto
+    /// a second computed property in the same struct. `var body` is the scope that means what the
+    /// sentence above says.
+    @Test func theNestedHostSitsOnTheSheetThatCarriesAWholePageOfRows() throws {
+        let sections = try strippingComments(sourceFile("Cadence/iOS/iOSTodayTaskSections.swift"))
+        let sheet = try cadenceFunctionBody("struct iOSTodayOverdueListSheet: View", in: sections)
+        let body = try cadenceFunctionBody("var body: some View", in: sheet)
+
+        #expect(body.contains(".iOSTaskInspectorHost()"))
+        #expect(sheet.contains("iOSListDetailView("))
+    }
+
     /// The host reads the shared decision rather than re-deciding, and it reads it about the two
     /// facts it can observe for itself. A host that started consulting a `@Query` here would be the page's
     /// filter creeping back into the panel's lifetime by another route.
@@ -337,6 +418,34 @@ struct CadenceTaskInspectorHostTests {
         #expect(row.contains("private func openDetail()"))
         #expect(row.contains("iOSTaskRowContextMenu("))
     }
+
+    /// **Self-check on the two new tools.** A typo in a pattern matches nothing and every
+    /// `== 1` above becomes a silent zero-that-should-have-been-one; a slicer that quietly returned
+    /// the whole file would make every scoped assertion as unscoped as the counts they replace. So
+    /// run both against literals that must and must not be accepted.
+    @Test func thePatternHelperAndTheSlicerBothDoWhatTheyLookLike() throws {
+        #expect(matches(#"case \.stay:\s*iOSTaskDetailSheet\(task: task\)"#, in: "case .stay:\n    iOSTaskDetailSheet(task: task)") == 1)
+        #expect(matches(#"case \.stay:\s*iOSTaskDetailSheet\(task: task\)"#, in: "case .close:\n    iOSTaskDetailSheet(task: task)") == 0)
+        // A malformed pattern must read as a failure, never as "no matches".
+        #expect(matches("case (", in: "case (") == -1)
+
+        // Both bodies are padded past `cadenceFunctionBody`'s minimum length, which exists so a
+        // slice that collapsed to nothing throws rather than passing every `!contains`.
+        let sample = """
+        var body: some View {
+            Group {
+                iPadMacStyleRootShell(selection: $selection)
+                iOSCompactRootShell(selectedTab: $tab)
+            }
+            .modifierAboveBothShellsAndNotInsideEitherOfThem()
+        }
+        """
+        let body = try cadenceFunctionBody("var body: some View", in: sample)
+        let group = try cadenceFunctionBody("Group", in: body)
+        #expect(body.contains(".modifierAboveBothShellsAndNotInsideEitherOfThem()"))
+        #expect(group.contains("iOSCompactRootShell("))
+        #expect(!group.contains(".modifierAboveBothShellsAndNotInsideEitherOfThem()"))
+    }
 }
 
 // MARK: - Source-reading helpers
@@ -356,6 +465,14 @@ private func expectOccurrences(
             sourceLocation: sourceLocation
         )
     }
+}
+
+/// Occurrence count for a regular expression. Returns `-1` on a malformed pattern so a typo reads
+/// as a failure rather than as zero matches — `thePatternHelperMatchesWhatItLooksLike` is the
+/// self-check the guide asks for.
+private func matches(_ pattern: String, in text: String) -> Int {
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return -1 }
+    return regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
 }
 
 private func repositoryRoot() -> URL {

@@ -462,11 +462,78 @@ struct CadenceTodayOverdueSummarySurfaceTests {
 
     // MARK: - Call-site wiring
 
+    /// **Behavioural, because the value was there all along (T-161).** This read the two call sites
+    /// as text — `openRequest(for: summary)` and `listNavigationManager.open(` present *somewhere*
+    /// in `TasksPanelSupport.swift` — which is the `cfa3b3b` shape exactly: the private
+    /// `open(_:listNavigationManager:)` could swap its `.area` and `.project` branches, or drop
+    /// `sectionName:`, and every scanned string would still be sitting in the file. macOS's half is
+    /// compiled by this target, so the hop is run instead: two summaries in, and the request the
+    /// manager is actually left holding is compared against the shared decision.
+    @MainActor
     @Test func theMacCardsHopTheNavigationManagerThroughTheSharedRequest() throws {
-        let source = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelSupport.swift"))
-        #expect(source.contains("CadenceTodayOverdueSummarySupport.openRequest(for: summary)"))
-        #expect(source.contains("listNavigationManager.open("))
+        let manager = ListNavigationManager.shared
+        manager.request = nil
+
+        let projectID = UUID()
+        let listSummary = CadenceTodayOverdueListSummary(
+            id: "project-1",
+            areaID: nil,
+            projectID: projectID,
+            title: "Q3 Launch",
+            icon: "folder.fill",
+            colorHex: Theme.blueHex,
+            dueDateKey: "2026-08-18",
+            activeTaskCount: 3
+        )
+        TasksPanelSupport.openOverdueListSummary(listSummary, listNavigationManager: manager)
+        // A *project* card must not land the router on an area of the same id, and a list card
+        // carries no column to scroll to.
+        #expect(manager.request?.projectID == projectID)
+        #expect(manager.request?.areaID == nil)
+        #expect(manager.request?.page == .tasks)
+        #expect(manager.request?.sectionName == nil)
+
+        let areaID = UUID()
+        let sectionSummary = CadenceTodayOverdueSectionSummary(
+            id: "area-1-section-1",
+            areaID: areaID,
+            projectID: nil,
+            sectionName: "Repairs",
+            parentName: "Home",
+            parentIcon: "house.fill",
+            parentColorHex: Theme.blueHex,
+            dueDateKey: "2026-08-18",
+            openTaskCount: 2,
+            completedTaskCount: 1
+        )
+        TasksPanelSupport.openOverdueSectionSummary(sectionSummary, listNavigationManager: manager)
+        #expect(manager.request?.areaID == areaID)
+        #expect(manager.request?.projectID == nil)
+        #expect(manager.request?.page == .kanban)
+        // The column the card names, carried through the hop. Dropping it lands the board on
+        // whatever column it last showed, which is the tap doing something other than what it said.
+        #expect(manager.request?.sectionName == "Repairs")
+
+        // A summary naming no list spends nothing rather than routing somewhere invented.
+        manager.request = nil
+        let orphan = CadenceTodayOverdueListSummary(
+            id: "orphan",
+            areaID: nil,
+            projectID: nil,
+            title: "Nowhere",
+            icon: "folder.fill",
+            colorHex: Theme.blueHex,
+            dueDateKey: "2026-08-18",
+            activeTaskCount: 0
+        )
+        TasksPanelSupport.openOverdueListSummary(orphan, listNavigationManager: manager)
+        #expect(manager.request == nil)
+
+        manager.request = nil
+
         // The two branches that used to be spelled out per card, gone: one translation, not two.
+        // An absence over the whole file is the one claim a scan states better than a call.
+        let source = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelSupport.swift"))
         #expect(!source.contains("if let projectID = summary.projectID"))
     }
 

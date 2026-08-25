@@ -240,10 +240,27 @@ struct CadenceTodayRolloverSurfaceTests {
 
     /// The Mac spelling delegates. T-190's lesson: a `Shared/`-shaped mutation with a second body
     /// behind a platform guard is the whole defect this ticket was about.
+    ///
+    /// **Scoped to the function, and stated as its whole body (T-161).** `contains(…)` over the
+    /// whole file said only that the delegation is spelled *somewhere* in `SchedulingService` — a
+    /// second body added underneath the delegating call, or the call moved into a neighbouring
+    /// function while this one grows its own clearing, leaves that string exactly where it was.
+    /// The claim is that this function is the one call and nothing else, so an added statement of
+    /// any kind fails here. `TaskBundleTests` calls it for real; this is the half that behaviour
+    /// cannot see, because a second body that behaves identically today is invisible by definition.
     @Test func theMacSpellingDelegatesToTheSharedMutation() throws {
         let source = try strippingComments(sourceFile("Cadence/macOS/Services/SchedulingService.swift"))
-        #expect(source.contains("CadenceTaskMutationSupport.rollOverTaskToToday("))
-        // The body that used to be here, gone: no re-spelling of the block/slot clearing.
+        let body = try cadenceFunctionBody(
+            "static func rollOverTaskToToday(_ task: AppTask, todayKey: String, in context: ModelContext)",
+            in: source
+        )
+        #expect(
+            body.trimmingCharacters(in: .whitespacesAndNewlines)
+                == "CadenceTaskMutationSupport.rollOverTaskToToday(task, todayKey: todayKey, modelContext: context)",
+            "SchedulingActions.rollOverTaskToToday has grown a body of its own: \(body)"
+        )
+        // The body that used to be here, gone from the whole file: no re-spelling of the
+        // block/slot clearing anywhere in this service.
         #expect(!source.contains("cleanupInactiveBundleIfNeeded"))
     }
 

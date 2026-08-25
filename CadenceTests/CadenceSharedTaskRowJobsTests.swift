@@ -647,6 +647,30 @@ struct CadenceSharedTaskRowJobsTests {
 
         #expect(code.contains("private struct TaskCompletionButton: View"))
         #expect(code.contains("private struct TaskRowBackground: View"))
+
+        // **Per-declaration, not per-file (T-161).** The whole-file count of two was the whole
+        // assertion, and two observations in one sub-view with none in the other satisfies it — the
+        // background would then repaint from a plain `isCompleting` flag it no longer holds, or the
+        // glyph would, and the file would still read `2`. So each extracted sub-view is asked for
+        // its own, and the two views that must never hold one are asked for zero here as well as in
+        // `CadenceTodayUnificationTests`.
+        let observers = [
+            "struct TaskCompletionButton: View": 1,
+            "struct TaskRowBackground: View": 1,
+            "struct MacTaskRow: View": 0,
+            "struct MacTaskRowEstimateChip: View": 0
+        ]
+        for (declaration, expected) in observers {
+            let body = try cadenceFunctionBody(declaration, in: code)
+            let actual = body.components(separatedBy: "@Environment(TaskCompletionAnimationManager.self)").count - 1
+            #expect(
+                actual == expected,
+                "\(declaration) observes the completion animation manager \(actual) times, expected \(expected)"
+            )
+        }
+
+        // And nowhere else in the file: a fifth reader would be a third view re-rendering on every
+        // display-link tick, and every count above would still hold.
         #expect(code.components(separatedBy: "@Environment(TaskCompletionAnimationManager.self)").count - 1 == 2)
     }
 
