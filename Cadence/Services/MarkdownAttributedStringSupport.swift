@@ -9,6 +9,15 @@ nonisolated extension NSAttributedString.Key {
     static let cadenceMarkdownCodeBlock = NSAttributedString.Key("CadenceMarkdownCodeBlock")
     static let cadenceMarkdownReference = NSAttributedString.Key("CadenceMarkdownReference")
     static let cadenceMarkdownTableRow = NSAttributedString.Key("CadenceMarkdownTableRow")
+    /// Marks the **first source line** of a table the editor renders as a real grid, carrying the
+    /// `MarkdownTableGrid` the grid is drawn and hit-tested from.
+    ///
+    /// Deliberately not per-row, unlike `cadenceMarkdownTableRow` beside it. A rendered table is
+    /// one canvas occupying one line fragment — every other line of it is collapsed to 0.1pt — so
+    /// there is exactly one place for a draw pass to find it and exactly one rect to measure. The
+    /// two attributes are mutually exclusive on any given table: `cadenceMarkdownTableRow` is what
+    /// the *revealed* (source-visible) spelling still uses.
+    static let cadenceMarkdownTable = NSAttributedString.Key("CadenceMarkdownTable")
     static let cadenceMarkdownHighlight = NSAttributedString.Key("CadenceMarkdownHighlight")
     static let cadenceMarkdownTaskEmbed = NSAttributedString.Key("CadenceMarkdownTaskEmbed")
     /// Marks the hidden `- [x] ` prefix of a GitHub-syntax checklist line, carrying its done state.

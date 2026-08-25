@@ -36,6 +36,23 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     private var isEndingInlineTaskTitleEdit = false
     private let taskEmbedDragThreshold: CGFloat = 4
 
+    // MARK: - Rendered tables (T-221)
+
+    /// What the last table draw pass measured, one entry per rendered table.
+    var markdownTableHits: [MarkdownTableHitInfo] = []
+    /// The one table whose markdown source is deliberately on screen, by its first character.
+    ///
+    /// The raw-source escape is a **command** — "Show Table Source" in the table's context menu —
+    /// and not an accident of caret position. Anchoring it to a storage location rather than a line
+    /// index means an edit *inside* the revealed table keeps it revealed, which is the whole point
+    /// of the mode; an edit above it drops back to the rendered grid, which is a cheap and visible
+    /// way to leave.
+    var revealedTableAnchor: Int?
+    var tableCellEditor: NSTextField?
+    var tableCellEditAddress: MarkdownTableCellAddress?
+    var tableCellEditAnchor: Int?
+    var isEndingTableCellEdit = false
+
     var hasPendingInlineTaskTitleEdit: Bool {
         pendingInlineTaskTitleEditID != nil
     }
@@ -113,6 +130,10 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
            !inlineTaskTitleEditor.frame.insetBy(dx: -4, dy: -4).contains(viewPoint) {
             endInlineTaskTitleEdit(commit: true)
         }
+        if let tableCellEditor,
+           !tableCellEditor.frame.insetBy(dx: -4, dy: -4).contains(viewPoint) {
+            endTableCellEdit(commit: true)
+        }
 
         if let hit = imageResizeHit(at: viewPoint) {
             resizingImageID = hit.id
@@ -146,6 +167,11 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
 
         if let reference = markdownReferenceHit(at: viewPoint) {
             onOpenMarkdownReference?(reference)
+            return
+        }
+
+        if let hit = markdownTableCellHit(at: viewPoint) {
+            beginTableCellEdit(anchor: hit.anchor, address: hit.address)
             return
         }
 
@@ -514,14 +540,21 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
-        guard let field = obj.object as? NSTextField,
-              field === inlineTaskTitleEditor else { return }
+        guard let field = obj.object as? NSTextField else { return }
+        if field === tableCellEditor {
+            endTableCellEdit(commit: true)
+            return
+        }
+        guard field === inlineTaskTitleEditor else { return }
         endInlineTaskTitleEdit(commit: true)
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        guard let field = control as? NSTextField,
-              field === inlineTaskTitleEditor else { return false }
+        guard let field = control as? NSTextField else { return false }
+        if field === tableCellEditor {
+            return handleTableCellCommand(commandSelector)
+        }
+        guard field === inlineTaskTitleEditor else { return false }
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
             endInlineTaskTitleEdit(commit: true)
             window?.makeFirstResponder(self)

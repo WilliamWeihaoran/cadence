@@ -321,6 +321,10 @@ enum MarkdownStylist {
         applyLinks(storage, text: nsText)
         applyWikiLinks(storage, text: nsText)
         applyCodeFences(storage, text: nsText)
+        // After every inline pass, for the reason `applyFrontmatter` is last: a rendered table's
+        // source is *hidden*, and `applyInline` would happily put a 20pt bold font back on the
+        // `**Total**` inside a cell and stand the collapsed line back up.
+        applyRenderedTables(storage, text: text, textView: textView)
         // Last, so no earlier pass can style the block back into view.
         applyFrontmatter(storage, text: text)
 
@@ -335,6 +339,73 @@ enum MarkdownStylist {
     /// `cadenceMarkdownHidden` machinery as inline syntax markers rather than adding a second
     /// hiding mechanism, and additionally tags the run with `cadenceMarkdownFrontmatter` so
     /// `MarkdownHiddenRangeSupport` can apply the stricter block caret rule to it.
+    // MARK: - Rendered Tables
+
+    static let tableCellFont = NSFont.systemFont(ofSize: 13)
+    static let tableHeaderCellFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
+
+    /// One row's height, for every table in the app.
+    ///
+    /// Derived from the cell font rather than typed as a literal, because the styler reserves the
+    /// line height from it and the draw pass measures cell rects from it — two numbers that must
+    /// agree or the grid overflows the fragment it was given and a partial redraw clips it.
+    static let tableRowHeight = MarkdownTableMetrics.rowHeight(
+        forTextHeight: (tableHeaderCellFont.ascender - tableHeaderCellFont.descender).rounded(.up)
+    )
+
+    /// Renders every table as one grid canvas, and hides the pipes it was spelled with.
+    ///
+    /// **The source stays in the storage, untouched.** Only its glyphs are collapsed. That is the
+    /// whole reason a hosted cell editor can exist here at all: copying a range that spans the
+    /// table still yields the markdown, `Cmd+Z` still replays character edits the text view itself
+    /// registered, and the render gate is the ordinary `textDidChange` restyle rather than a second
+    /// invalidation path that could go stale.
+    ///
+    /// Skips whichever table `revealedTableAnchor` points at — the deliberate raw-source escape,
+    /// which falls back to the banded per-row styling `applyTableRow` has always drawn.
+    private static func applyRenderedTables(_ storage: NSTextStorage, text: String, textView: NSTextView) {
+        let cadenceTextView = textView as? CadenceTextView
+        cadenceTextView?.markdownTableHits.removeAll()
+        let revealedAnchor = cadenceTextView?.revealedTableAnchor
+        let documentRange = NSRange(location: 0, length: storage.length)
+
+        for grid in MarkdownTableEditor.grids(in: text) {
+            guard grid.columnCount > 0, grid.rowCount > 0 else { continue }
+            let range = NSIntersectionRange(grid.storageRange, documentRange)
+            guard range.length > 0 else { continue }
+            if let revealedAnchor, revealedAnchor == grid.storageRange.location { continue }
+
+            // The banded per-row decoration and the grid are two spellings of the same table, so
+            // the row attribute has to come off or `drawTableRows` paints stripes through the
+            // canvas.
+            storage.removeAttribute(.cadenceMarkdownTableRow, range: range)
+            hide(storage, range)
+
+            let collapsed = NSMutableParagraphStyle()
+            collapsed.lineSpacing = 0
+            collapsed.paragraphSpacing = 0
+            collapsed.paragraphSpacingBefore = 0
+            collapsed.minimumLineHeight = 0.1
+            collapsed.maximumLineHeight = 0.1
+            storage.addAttribute(.paragraphStyle, value: collapsed, range: range)
+
+            let headerLine = NSIntersectionRange(grid.rowLineRanges[0], documentRange)
+            guard headerLine.length > 0 else { continue }
+            let reserved = MarkdownTableMetrics.reservedLineHeight(
+                rowCount: grid.rowCount,
+                rowHeight: tableRowHeight
+            )
+            let canvas = NSMutableParagraphStyle()
+            canvas.minimumLineHeight = reserved
+            canvas.maximumLineHeight = reserved
+            canvas.lineBreakMode = .byClipping
+            canvas.paragraphSpacingBefore = 6
+            canvas.paragraphSpacing = 6
+            storage.addAttribute(.paragraphStyle, value: canvas, range: headerLine)
+            storage.addAttribute(.cadenceMarkdownTable, value: grid, range: headerLine)
+        }
+    }
+
     private static func applyFrontmatter(_ storage: NSTextStorage, text: String) {
         guard let parsed = MarkdownMetadataParser.hiddenFrontmatterRange(in: text) else { return }
         let range = NSIntersectionRange(parsed, NSRange(location: 0, length: storage.length))

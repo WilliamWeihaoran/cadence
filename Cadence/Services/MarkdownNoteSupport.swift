@@ -394,7 +394,7 @@ nonisolated enum MarkdownTableParser {
             )
 
             var rowIndex = index + 2
-            while rowIndex < lines.count, isTableContentLine(lines[rowIndex]) {
+            while rowIndex < lines.count, isTableRowLine(lines[rowIndex]) {
                 result[rowIndex] = MarkdownTableRowStyle(
                     lineIndex: rowIndex,
                     columnCount: columnCount,
@@ -464,6 +464,24 @@ nonisolated enum MarkdownTableParser {
         let trimmed = MarkdownSourceLines.classificationText(of: line)
         let cells = MarkdownBlockSupport.splitTableRow(trimmed)
         return cells.count >= 3 && cells.contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+
+    /// A row **continues** a table when it holds two unescaped `|`, whether or not there is
+    /// anything between them.
+    ///
+    /// Opening a table and continuing one are different questions, and they used to share this one
+    /// predicate. The shared answer demanded a non-blank cell, which is right for the header — a
+    /// line reading `|  |  |` is not a table declaring itself — and wrong for a body row, because
+    /// **an empty row is a legitimate row**. T-221 made that reachable: Return inside a rendered
+    /// table adds `|  |  |  |` below the caret, and under the shared predicate the table simply
+    /// ended there and the new row rendered as prose.
+    ///
+    /// The protection the strict rule was actually written for is the two-pipe count, and that is
+    /// unchanged: `Ship it | maybe` splits to two cells, so ordinary prose after a table is still
+    /// not swallowed as a row.
+    nonisolated private static func isTableRowLine(_ line: String) -> Bool {
+        let trimmed = MarkdownSourceLines.classificationText(of: line)
+        return MarkdownBlockSupport.splitTableRow(trimmed).count >= 3
     }
 
     nonisolated private static func delimiterInfo(_ line: String) -> (columnCount: Int, alignments: [MarkdownTableAlignment])? {

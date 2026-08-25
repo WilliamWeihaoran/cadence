@@ -15,8 +15,9 @@ usually belong in `Services/`; only NSTextView lifecycle, drawing, and event han
 - `MarkdownEditorSupport.swift` - markdown styling, parsing, list rules, hidden marker attributes.
 - `MarkdownEditorInteractionSupport.swift` - the `CadenceTextView` subclass: caret behavior, hit
   testing, keyboard/mouse interaction, inline task-title editing, image insert/resize.
-- `MarkdownEditorTextViewDecorations.swift` - the two decoration passes that need `CadenceTextView`
-  state (task-embed card, standalone image), run from `drawBackground(in:)`.
+- `MarkdownEditorTextViewDecorations.swift` - the **three** decoration passes that need
+  `CadenceTextView` state (task-embed card, standalone image, rendered table), run from
+  `drawBackground(in:)`.
 - `MarkdownEditorLayoutManager.swift` - `CadenceLayoutManager`: the six decoration passes that need
   only colours and geometry, plus the hidden-glyph range arithmetic.
 - `MarkdownEditorDecorationGeometry.swift` - the rect math those passes draw with. Pure, macOS-only,
@@ -28,8 +29,12 @@ usually belong in `Services/`; only NSTextView lifecycle, drawing, and event han
 - `MarkdownSlashCommandSupport.swift` - slash command model, filtering, positioning, and actions.
 - `MarkdownTaskEmbedDrawingSupport.swift` - embedded task rendering/drawing support.
 - `MarkdownKeyboardShortcutSupport.swift` - editor-specific shortcuts.
+- `MarkdownTableCanvasDrawing.swift` - draws the rendered table grid, and declares
+  `MarkdownTableHitInfo`, the cache the draw pass writes and a click reads.
+- `MarkdownTableInteractionSupport.swift` - the hosted cell editor: click / Tab / Shift-Tab /
+  Return, the row and column context menu, and the "Show Table Source" escape.
 
-These eleven Swift files were six until T-105; `MarkdownEditorInteractionSupport.swift` was 1,996
+These thirteen Swift files were six until T-105 and eleven until T-221; `MarkdownEditorInteractionSupport.swift` was 1,996
 lines and the largest file in the repo, and is now 843. Split by responsibility (layout manager /
 text view / decorations / coordinator / geometry / diff), not by line count. (This paragraph said
 "seven ... were four" while the list directly above it named eleven — the count is the list.)
@@ -76,6 +81,39 @@ AppKit goes back to drawing selection inside `draw(_:)`; the other one is not.
 selection spanning an embed still washes out the card, that the same selection does not reach a
 drawn image, and that a band redrawn on its own matches the same band of a full redraw. Run it
 after touching any draw path.
+
+## Rendered tables are edited in place (T-221, macOS only)
+
+A table is drawn as a real grid and edited cell by cell. The rule that makes that safe is one
+sentence: **the markdown source never leaves the text storage.** `MarkdownStylist.applyRenderedTables`
+only collapses the table's glyphs — `hide` plus a 0.1pt line height on every line but the first,
+and the whole grid's height reserved on that first one — and a hosted `NSTextField` writes cell
+values back through `shouldChangeText` / `replaceCharacters` / `didChangeText`.
+
+Three of the four things a hosted view usually breaks therefore need no mechanism at all, and
+`MarkdownTableHostedEditingTests` measures each on a real offscreen `CadenceTextView`:
+
+- **Selection and copy/paste** work because the characters are still there, in their real range.
+- **Undo** works because a committed cell is an ordinary text-view edit on the view's own stack —
+  which is why `applyMarkdownTableEdit` is the single write path and must never be replaced by a
+  bare `replaceCharacters` or by assigning `string`.
+- **Invalidation** is the ordinary `textDidChange` restyle. There is no signature gate on this
+  platform: `MarkdownStyleSignature` is read only by `Cadence/iOS/iOSMarkdownEditor.swift`.
+
+Two consequences worth knowing before you touch this:
+
+- The raw source is reachable **by command** — "Show Table Source" in the table's context menu,
+  held in `CadenceTextView.revealedTableAnchor` — and never by caret position. A revealed table
+  falls back to `applyTableRow`, the banded per-row styling that predates all of this, so that
+  path has to keep working.
+- `MarkdownTableParser` distinguishes opening a table from continuing one. An all-blank row like
+  `|  |  |` continues a table and cannot start one, because Return inserts exactly that.
+
+The markdown decisions are `Services/MarkdownTableEditSupport.swift`; the rects are
+`Services/MarkdownTableLayoutSupport.swift`. Nothing here re-derives either.
+
+**iOS has none of this.** `iOSMarkdownStylingBlockSupport` still draws a table as a canvas and
+un-renders it when the caret lands inside, which is the behaviour T-221 exists to remove.
 
 ## Working Rules
 

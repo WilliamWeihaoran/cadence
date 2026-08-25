@@ -112,25 +112,6 @@ _Nothing in flight._
   `theSharedBundleClampsMatchTheTimelineDayRange`; if `TimelineDayRange` ever moves to `Shared/`,
   delete the copy rather than the test.
 
-- [T-240] **CLOSED 2026-08-25 (uncommitted, in the T-161 pass).** `accountDeletionIsExplicitInSettingsAndReviewDocs`
-  now brace-matches `deleteCadenceData()`'s body with `cadenceFunctionBody(_:in:)` instead of ending
-  the range at the next `private struct SettingsPrivacyStatementSection`. Proved both ways: renaming
-  that struct failed the test before the change and does not after it, and moving the
-  `PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts` call out of the function into a
-  sibling in the same file — which the old range would have swallowed — fails it now. Original
-  entry follows.
-
-  **A test bounds a `#require`'d source range by searching for another file's declaration
-  line.** `AppStoreReviewReadinessTests.accountDeletionIsExplicitInSettingsAndReviewDocs` locates the
-  region it wants to assert over by finding a literal landmark in a *different* file. T-220 made the
-  landmark less brittle (the struct name rather than a `"\n}\n\nprivate struct …"` sequence), but the
-  shape remains: rename `SettingsPrivacyStatementSection` and the test fails as a `#require`
-  precondition rather than as a readable assertion, so the message tells you nothing about what broke.
-  That is the same "fails for a reason unrelated to its subject" family as T-233 and T-227. Worth
-  replacing the source-range search with something that cannot silently stop matching — assert over
-  the whole file, or have the view expose the fact under test as a value the test can read directly.
-
-
 - [T-238] **A third signature of "red tests that are not a regression": the test host exits early.**
   Found 2026-08-22 while fixing T-213. A macOS run exited **65** with **8 failures across 7 unrelated
   suites, every one at 0.000 seconds**, and `pgrep -f "xcodebuild test"` had been clear before it
@@ -198,56 +179,63 @@ _Nothing in flight._
   state mid-run. Same family as [[T-179]] and [[T-204]]: the simulator fleet is shared and nothing in
   the brief tells an agent to check whether a device is already in use before installing to it.
 
-- [T-221] **Edit tables and code blocks in place, instead of falling back to raw markdown.**
-  Requested 2026-08-21. Today the editor renders a table, a fenced code block, a divider, an image and
-  a task embed as **canvases**, and `MarkdownStyleRanges.isRevealed` swaps a block back to its raw
-  markdown source when the caret lands inside it. So typing in a table means typing pipes. The user
-  wants the rendered form to *stay* rendered and be edited directly — cell by cell for a table, and
-  the equivalent for the other elements where it makes sense.
-  **DECIDED 2026-08-25, by the user, after being asked.** Shape **2, scoped to tables only**:
-  host real editable views for a table inside the text view; leave fenced code, images, dividers and
-  task embeds exactly as they are. That is the only one of the three shapes that delivers the thing
-  actually asked for — the rendered form *stays* rendered while you edit it — and confining it to
-  tables means one block type carries the text-view boundary risk instead of five. Shape 1 was
-  rejected on the merits: it is the cheapest and it still shows you pipes, which is the thing being
-  complained about.
-  **Keys, decided at the same time:** Tab moves to the next cell and wraps to the next row,
-  Shift-Tab goes back, **Return adds a row below**. Spreadsheet behaviour, so there is nothing to
-  learn.
-  Still to settle *during* the work, not before it: how a column is added or removed, and whether
-  the raw markdown stays reachable on purpose (a command, not an accident of caret position).
+- [T-221] **Edit tables in place — DONE on macOS, and the iOS half is the whole remainder.**
+  Requested 2026-08-21, decided 2026-08-25 (shape 2, tables only; Tab / Shift-Tab / Return as
+  spreadsheet keys), built the same day. macOS renders a table as a real grid and edits it cell by
+  cell: `Services/MarkdownTableEditSupport.swift` (the markdown decisions),
+  `Services/MarkdownTableLayoutSupport.swift` (the rects), `macOS/Editor/MarkdownTableCanvasDrawing.swift`
+  and `macOS/Editor/MarkdownTableInteractionSupport.swift` (the AppKit half). Fenced code, images,
+  dividers and task embeds are untouched, as decided.
 
-  **The user explicitly asked to be consulted while this is worked on**, so ask before choosing the
-  interaction: at minimum, which elements are in scope (table certainly; fenced code with a language
-  pill probably; image and task embed unclear), what Tab and Return do inside a table, how a row or
-  column is added or removed, and whether the raw source should still be reachable on purpose.
+  **The two questions left open at decision time are settled.** A row or column is added and
+  removed from the **table's own context menu** — a right-click on the cell you want to change,
+  rather than hover chrome, which would be a second hit-testing surface over a canvas that already
+  has one and would have to be discovered. The raw source is reachable **by command**, "Show Table
+  Source" in that same menu, which un-renders that one table back to the banded per-row styling the
+  editor has always drawn; it is never reached by caret position, since that is the behaviour the
+  ticket exists to remove.
 
-  **Why this is bigger than it sounds, and the thing to establish first.** Both editors are a single
-  `NSTextView` / `UITextView` over one attributed string, and a canvas is **drawn** — there is no
-  view hosting a cell, confirmed by the absence of any `NSTextAttachment` / `UIView` / `NSView` in
-  `iOSMarkdownStylingBlockSupport.swift`. Nothing is editable because nothing is a control. So the
-  first question is not "how should cells behave" but **which of these three shapes the app takes**:
-  1. Keep one text view and make the *source* edit feel structured — caret navigation that skips
-     delimiters, Tab jumping cell to cell, alignment maintained as you type. Cheapest, and it is an
-     extension of work already done (hidden markers already are skipped by caret traversal).
-  2. Host real views for these blocks — text attachments or subviews with their own editing — inside
-     the text view. Genuinely WYSIWYG, and the hard one: selection, undo, copy/paste, and the
-     `MarkdownStyleSignature` render gate all have to cross the boundary.
-  3. A separate structured editor for a block, opened from the canvas. Least ambitious, most
-     predictable, and it sidesteps the text-view boundary entirely.
+  **What the boundary spike measured**, on a real offscreen `CadenceTextView`
+  (`CadenceTests/MarkdownTableHostedEditingTests.swift`), because three of the four worries turned
+  out to rest on one design choice: **the markdown source never leaves the text storage.** Only its
+  glyphs are collapsed and a grid is drawn over the space they were given.
+  - *Selection* — a range from the prose above to the prose below still covers the table's own
+    characters, and a caret arrowed at the table steps over it rather than into it.
+  - *Copy/paste* — copying that range yields the pipes; pasting it into another note renders a
+    table again. One measured surprise: on macOS 26 `NSTextView.writablePasteboardTypes` still
+    advertises the **legacy** names (`NSStringPboardType`), so writing
+    `NSPasteboard.PasteboardType.string` returns false without writing anything.
+  - *Undo* — a committed cell is an ordinary text-view edit through
+    `shouldChangeText` / `replaceCharacters` / `didChangeText`, so `Cmd+Z` restores the note byte
+    for byte with nothing added to the existing pass-through route. A commit whose value did not
+    change registers no edit at all, so tabbing across five cells does not cost five `Cmd+Z`.
+  - *`MarkdownStyleSignature`* — **the fourth concern does not exist on macOS.** The signature has
+    exactly one reader in the repo, `Cadence/iOS/iOSMarkdownEditor.swift`; macOS re-runs the whole
+    styler from `textDidChange`, which `didChangeText()` posts.
 
-  Constraints that will shape the answer: markdown *decisions* belong in
-  `Cadence/Services/Markdown*Support.swift` and the parsing already exists
-  (`MarkdownTableParser.tableBlock` is shared by the editor and the preview since `7c964a6`);
-  `MarkdownStyleSignature` is the gate in front of the whole render pass, so a block that becomes
-  editable must still invalidate correctly or it silently stops updating; and undo must keep working —
-  `Cmd+Z` currently passes through to `NSTextView`'s own stack when a text view is first responder,
-  which a hosted sub-editor would break. `MarkdownRenderedBlockDeletionSupport` already exists for
-  deleting a rendered block, so read it: it is evidence of how much special-casing a canvas already
-  needs.
+  **One shared parser rule changed, and it is worth knowing.** `MarkdownTableParser` now
+  distinguishes opening a table from continuing one: an all-blank row (`|  |  |`) continues a table
+  and cannot start one. Return inserts exactly that row, and under the old shared predicate the
+  table simply ended at it. The two-pipe count that keeps prose out (`Ship it | maybe`) is
+  unchanged.
 
+  **Still open, and it is the whole other platform.** `Cadence/iOS/` was deliberately out of scope
+  and is untouched. `iOSMarkdownStylingBlockSupport` still draws a table as a canvas and
+  un-renders it via `MarkdownStyleRanges.isRevealed` the moment the caret lands inside — so on
+  iPhone and iPad, editing a table still means typing pipes, which is the complaint this ticket
+  opened with. The shared halves are already there and platform-free (`MarkdownTableEditSupport`,
+  `MarkdownTableLayoutSupport`); what iOS needs is a `UITextView` equivalent of the hosted cell,
+  its own `.cadenceMarkdownTable` styling pass, and — unlike macOS — a **`MarkdownStyleSignature`
+  entry**, because the gate that does not exist here does exist there and a committed cell that
+  does not change the signature would silently not re-render.
 
-
+  Two smaller gaps left on the macOS side, neither blocking:
+  - Inline markdown **inside** a cell is not rendered — a cell reading `**Total**` draws its
+    asterisks. The stylist computes the cell's attributes before hiding the run; carrying the
+    attributed substring through to the draw pass would fix it.
+  - Cells clip rather than wrap, which is what makes the reserved line height independent of the
+    window width (and therefore correct across a resize with no restyle). A wrapping cell would
+    need the reservation recomputed on resize, the way the image block's already is.
 
 - [T-209] **Parallel `xcodebuild` runs in *separate* private DerivedData paths still contend, and it
   looks exactly like a real failure.** The verifier's first test run exited **65** with hundreds of
@@ -322,71 +310,6 @@ _Nothing in flight._
 
 
 
-- [T-258] **Cmd+K draws the Notes row in a different glyph than the sidebar does.** The last
-  hand-typed per-destination fact in `GlobalSearchPageDefinition`. T-244 made the definition carry
-  a `CadenceFeatureDestination` and derived the tint, the selection it opens and its Settings →
-  Sidebar toggle from it; `icon` was left stored, and eight of the nine happen to equal
-  `CadenceFeatureDestination.systemImage` already. The ninth does not: the palette says `doc.text`
-  for Notes, the sidebar says `note.text`. Same defect class as T-244 one layer up — two lists
-  answering one question about a destination, agreeing until one moved. The fix is one line
-  (`icon: feature.systemImage`, deleting the stored field), deliberately not taken with T-244
-  because it changes a glyph nobody asked about. Decide whether the palette should show the
-  sidebar's glyph; if yes, the field goes and the drift cannot come back.
-  (The `doc.text` on the **event-note** result rows in `GlobalSearchIndexSupport` is unrelated —
-  those are note rows, not the Notes destination, and should stay.)
-  **Built and verified, awaiting commit.** The stored field is gone and `icon` is
-  `feature.systemImage`, so the palette and the sidebar cannot disagree again; the nine `.init`
-  entries lost their `icon:` argument. Notes was checked to be the **only** disagreement rather
-  than assumed: the other eight stored glyphs were compared against `systemImage` one by one before
-  the field was deleted, and all eight matched — which is exactly why deleting the field mattered
-  more than editing one string, since eight silently-correct copies is the state this one was in
-  before somebody moved the sidebar's glyph.
-  `GlobalSearchCommandDefinition.icon` is deliberately **left stored**: five of its six do equal a
-  destination glyph, but `.newTask` is `plus.circle.fill` against Tasks' `checklist`, because a
-  command's glyph names a verb and not a page. Its `tintSource` exists for the tint alone and must
-  not be reused as an identity. Pinned by
-  `GlobalSearchDestinationTintTests.everyPageRowDrawsTheSidebarsGlyphForItsDestination`, which
-  asserts on the row `pageResults` actually produces — not on the catalog and not by reading the
-  source, so a stored `icon` reintroduced anywhere in that file still fails it. Mutation-checked:
-  reverting the file turns that test red, exit 65 with 0 compile errors.
-
-- [T-262] **Five more `@State` colour seeds still hand-type `#4a9eff` / `#6b7a99`.** Out of T-246's
-  scope, which named three palettes and not these. Each is a pure substitution — the literal
-  already equals the token it should read — which is precisely why they survive:
-  `macOS/Sheets/CreateContextSheet.swift:11`, `macOS/Sheets/CreateGoalSheet.swift:24` and `:47`,
-  `macOS/Views/HabitsFormSheets.swift:14` (all `#4a9eff` → `CadenceColorPalette.areaDefault`), and
-  `macOS/Views/HabitsView.swift:63` (`#6b7a99` → `TaskSectionDefaults.defaultColorHex`, which is
-  what that neutral is). Two adjacent things that are **not** the same finding and must not be
-  swept in with them:
-  - `Cadence/Models/*.swift`'s `colorHex` defaults (`Area`, `Context`, `Goal`, `Habit`, `Project`,
-    `Tag`, `AppTask`) genuinely cannot read `Theme`: `CadenceMCPServer` compiles `Models/` and not
-    `Theme.swift`. Same reason T-166 left `TaskSectionDefaults.defaultColorHex` alone. Leave them.
-  - `Services/CadenceUITestSupport.swift` seeds fixtures with `#5AA2FF`, `#FFB84D` and `#4ECB71`.
-    The first two are the *drifted* sidebar tints T-166 deleted — they now exist nowhere else in
-    the app. Harmless as fixture data, but a UI test asserting on a colour would be asserting on a
-    hue the product no longer has.
-
-  **Built and verified, awaiting commit.** All five substituted; `Cadence/macOS/` now contains no
-  colour literal at all, which is what the new `CadenceSeedColourSourceTests` pins — a per-file list
-  only guards the sites this ticket happened to find, so the load-bearing assertion walks the whole
-  216-file tree and needs no allowlist (`Theme.swift` and the swatch arrays both live under
-  `Shared/`). Two departures from the ticket's own prescription, both deliberate:
-  - The four `#4a9eff` seeds read **`Theme.blueHex`**, not `CadenceColorPalette.areaDefault`. That
-    constant is documented as "`Area.colorHex`'s model default", and these seed a *Context*, a
-    *Goal* and a *Habit*. Reading it would assert a relationship that does not exist and would drag
-    three unrelated sheets along if the Area default ever moved off blue. `areaDefault` is itself
-    `Theme.blueHex`, so the resolved value is identical either way.
-  - `#6b7a99` gets **no new `Theme` token**. It reads the existing
-    `TaskSectionDefaults.defaultColorHex`, whose home has to be `Models/` because `CadenceMCPServer`
-    compiles `Models/` and not `Theme.swift`. A `Theme.neutralHex` beside it would be a second
-    spelling of a hex the app already publishes — the drift T-166 deleted, not the fix for it. A
-    test asserts `Theme` has not grown one.
-  The models stay literals as the ticket says, and the enforcement a token read would have given
-  them is now a test: `theSeedsMirrorModelDefaultsThatCannotReadTheToken` fails if `Theme.blueHex`
-  moves without `Context`/`Goal`/`Habit`/`Area` following it.
-
-
-
 - [T-161] **Tests pin helpers, not wiring.** The T-149 verifier proved by mutation that reverting the
   `macOSRootCommandActionSupport` fix leaves all 1692 tests green, and the same holds for T-150 —
   nothing observes that `MarkdownEditorView` calls the shared functions. `D-113` closed this for the
@@ -404,8 +327,10 @@ _Nothing in flight._
   reproducible from the classification described here; it strips comments and masks string literals
   before matching, because `func select(` inside a needle literal otherwise reads as a declaration.
 
-  **Three fixed in this pass, each with the blindness proved first** (pre-fix mutation → all green,
-  post-fix same mutation → red, both at 0 compile errors):
+  **Partly shipped in `902b386`: three fixed, each with the blindness proved first** (pre-fix
+  mutation → all green, post-fix same mutation → red, both at 0 compile errors). Six more
+  whole-file needle counts, listed below, were recorded as remaining rather than fixed — this
+  ticket stays open for those:
   - *macOS's settings rail was pinned one case at a time.* `SettingsCategoryGroup` was `private`, so
     `theSyncCategoryIsFiledInTheMacOSRail` and `theAboutCategoryIsFiledInTheRailAndRoutedToItsSection`
     each found `static let all: [SettingsCategoryGroup]` in the source text, sliced to the next
@@ -419,7 +344,7 @@ _Nothing in flight._
     (`ListEditorLifecycleChoice.windDownOutcome`) over a new
     `TaskContainerLifecycleService.settleRemainingActiveTasks(…outcome:)`, and the surviving scan is
     scoped to `apply(_:)`'s brace-matched body instead of the file.
-  - *T-240, closed.* See its entry below.
+  - *T-240, closed in `902b386` — see Done.*
 
   **`cadenceFunctionBody(_:in:)` is now the one brace matcher in `CadenceTests`** — `cfa3b3b`'s
   `focusFunctionBody`, promoted to `internal` and renamed, read by `FocusPickerPlayControlTests`,
@@ -513,81 +438,6 @@ _Nothing in flight._
     productive unit of audit is one hand-rolled UI pattern (a header, a label style, a literal
     list) at a time, grepped across both platform folders before calling it shared or
     platform-only — the method that found [T-275] and the two stale counts above.
-
-- [T-275] **`SectionEyebrowLabel` exists to stop exactly this, and nine call sites don't use it.**
-  Found by a [[T-123]] grep sweep for the shape the component's own doc comment says it
-  consolidates — `.font(.system(size: 10, weight: .semibold))` plus a dim tint plus
-  `textCase(.uppercase)` — hand-rolled instead of the shared component. All nine are plain
-  section/row eyebrows with nothing about them that would justify a bespoke spelling:
-  - iOS: `iOSFeatureDetailViews.swift:340` ("Next", `.kerning(0.6)`), `iPadTodayScheduleViews.swift:463`
-    ("Ready to Schedule", `.kerning(0.7)`).
-  - macOS: `SchedulePanelShellViews.swift:32` ("Today", no kerning), `TaskBundlePickerSupportViews.swift:196`
-    (`resultSectionLabel`, no kerning), `FocusPickerSupportViews.swift:24` ("Ready to focus", no
-    kerning), `FocusSidebarSupportViews.swift:39` (`sidebarLabel`, no kerning),
-    `FocusChromeSupportViews.swift:13` (`eyebrow` parameter, no kerning), `TasksPanel.swift:542`
-    (`overdueSectionHeading`, size **11** not 10, `.kerning(0.8)` applied to the whole `HStack` —
-    title and count both — not just the label), `ListNotesViewSupportViews.swift:73` (section
-    title, tint `Theme.muted` — the only one of the nine that also disagrees on **colour**, not
-    just kerning).
-  `SectionEyebrowLabel` itself is `.kerning(0.8)`. Six of the nine specify no kerning at all (system
-  default 0); the other three specify 0.6, 0.7, and 0.8 — one matches by coincidence, two don't.
-  Same shape `e181dea` fixed for destination tints — independent hand-typed copies of one value
-  drifting apart — for a label style instead of a colour. **Gratuitous, not deliberate**: nothing
-  about any of the nine sites needs a size, weight, tint or kerning different from the shared
-  label; several sit in files that use `SectionEyebrowLabel` correctly elsewhere for the identical
-  visual role.
-  **Not fixed in this pass**: converting all nine is a visible macOS change (six of the nine sites),
-  and item 2 of [[T-123]] requires every macOS visual change to be screenshotted rather than argued
-  — a read-only audit isn't positioned to do that verification, and this tree had 14 other agents
-  live in it at audit time, several editing adjacent Focus files. `TasksPanel.swift:542` also needs
-  a decision, not just a swap: its label shares a size-11 `HStack` with a count `Text`, so adopting
-  `SectionEyebrowLabel` means either accepting its fixed 10pt (shrinking the row a point) or the
-  count keeping its own explicit size while the label switches — a one-line call, but a real one,
-  not proven safe by grep alone.
-  **Built and verified, awaiting commit — and it was twenty, not nine.** Re-grepping with no path
-  filter found the ticket's nine (three of which had moved: `TasksPanel.swift:542`'s heading is
-  `CadenceTodayOverdueSummaryHeading` in `Shared/Components/CadenceTodayOverdueSummaryCards.swift`
-  now) plus eleven more the original sweep's uppercase-only pattern missed — seven byte-identical to
-  the shared spelling (`CreateGoalSheet.fieldLabel`, `ListEditorSupportViews`,
-  `GlobalSearchOverlayShellViews`, `HabitsFormSupportViews.HabitFormLabel`,
-  `NoteReferenceSupportViews.ReferenceSection`, `CadenceSettingsSharedViews`,
-  `HabitProgressViews.HabitInfoCard`), one already-uppercase string
-  (`ListDetailSupportViews`'s `"\(count) COMPLETED"`, found by kerning rather than by case), one
-  with no kerning at all (`GoalsSupportViews.GoalSectionHeading`), and two at `.bold`
-  (`SettingsTemplatesSection`, `Shared/Components/CommitmentSharedViews.CommitmentGroupHeader`).
-  All twenty read `SectionEyebrowLabel` now.
-  **No new parameter was needed.** `tint` already existed and took the one site that legitimately
-  differs on colour (`ListNotesViewSupportViews`, `Theme.muted` — its header is a control, not an
-  inert label). Three sites changed a measurement on purpose: the overdue summary heading drops
-  from the app's only 11pt eyebrow to 10 and its count now reads `SectionEyebrowLabel.fontSize`
-  (the rule `CadenceBoardColumnHeaderMetrics` and `CadenceTaskGroupHeadingMetrics.countSize`
-  already state), and the two `.bold` labels become `.semibold` while their counts keep `.bold` —
-  the split `CadenceTaskGroupHeading` already draws, since weight is what demotes a number from
-  its label.
-  **Two shapes deliberately not shared.** The 9pt sub-label tier (`TaskInspectorGroupLabel`,
-  `SidebarComponents`' context header, `SettingsViewSupport`'s rail group,
-  `TaskInspectorWorkflowSupportViews.sectionLabel`, `EstimatePickerControl`,
-  `AIActionsSupportViews`, `CadenceCalendarPicker`, `ContainerPickerSupportViews`) is a second,
-  internally consistent tier — most of it already routed through named metrics — and folding it
-  into a 10pt component would be a size decision dressed as a refactor. And the calendar **weekday
-  column header** (`CalendarPageMonthSupportViews`, mirrored by `iOSCalendarTimelineViews`) is a
-  date label under a day number, tinted `isToday ? Theme.blue : Theme.dim` and kerned 0.5; the two
-  weekday headers have to agree with **each other**, which is a different question, and pointing
-  both at `SectionEyebrowLabel` would answer it by accident. Filed as [T-277].
-  Pinned by `CadenceSectionEyebrowConvergenceTests` in `CadenceSharedBoardChromeTests.swift`. The
-  load-bearing assertion is the **negative** one: a sweep of all 509 files under `Cadence/` for the
-  hand-rolled *shape*, which cannot be satisfied by the shared spelling surviving somewhere
-  unreachable — the failure mode that has twice let a source scan pass over a restored bug here.
-  Measured 26 hits before, 1 (the allowlisted weekday header) after, and the allowlist entry has
-  its own test so it cannot quietly go stale. Mutation-checked: re-forking one call site turns
-  `noSurfaceHandRollsTheSharedEyebrow` and `theConvertedSitesCallTheSharedLabel` red, exit 65 with
-  0 compile errors.
-  **Not screenshotted.** [[T-123]] item 2 asks for macOS visual changes to be looked at rather than
-  argued, and this touches sixteen macOS surfaces. Fifteen of the twenty conversions are provably
-  pixel-identical (the modifier chain they replaced is the component's own), and the five that are
-  not are listed above by name and figure. The three that shift a measurement — the overdue summary
-  heading, `SettingsTemplatesSection`'s field label, `CommitmentGroupHeader` — are the ones worth a
-  look before this is called finished.
 
 - [T-277] **The two weekday column headers are a fork nobody has compared.**
   Found while closing [[T-275]] and left alone deliberately. `CalendarPageMonthSupportViews`
@@ -796,7 +646,7 @@ _Nothing in flight._
 ## Done
 
 
-- [T-15] _(sha pending — verified, not yet committed)_ **Several dark palettes.** Shipped as decided: **accents only**, dark-only,
+- [T-15] `4f8546f` **Several dark palettes.** Shipped as decided: **accents only**, dark-only,
   three sets — **Cadence** (the values the app shipped with, and the standard one), **Ember**
   (warm) and **Glacier** (cool) — chosen in Settings → **Appearance** on both platforms through one
   shared `CadenceAccentPalettePicker`. The near-black neutrals, the marker pen, the `onColor*`
@@ -850,6 +700,153 @@ _Nothing in flight._
   instant repaint there is ever wanted, that is a notification the `NSViewRepresentable` observes,
   not a change to the palette mechanism.
 
+- [T-258] `aa85e1b` **Cmd+K draws the Notes row in a different glyph than the sidebar does.** The last
+  hand-typed per-destination fact in `GlobalSearchPageDefinition`. T-244 made the definition carry
+  a `CadenceFeatureDestination` and derived the tint, the selection it opens and its Settings →
+  Sidebar toggle from it; `icon` was left stored, and eight of the nine happen to equal
+  `CadenceFeatureDestination.systemImage` already. The ninth does not: the palette says `doc.text`
+  for Notes, the sidebar says `note.text`. Same defect class as T-244 one layer up — two lists
+  answering one question about a destination, agreeing until one moved. The fix is one line
+  (`icon: feature.systemImage`, deleting the stored field), deliberately not taken with T-244
+  because it changes a glyph nobody asked about.
+  (The `doc.text` on the **event-note** result rows in `GlobalSearchIndexSupport` is unrelated —
+  those are note rows, not the Notes destination, and stays.)
+  **Shipped.** The stored field is gone and `icon` is
+  `feature.systemImage`, so the palette and the sidebar cannot disagree again; the nine `.init`
+  entries lost their `icon:` argument. Notes was checked to be the **only** disagreement rather
+  than assumed: the other eight stored glyphs were compared against `systemImage` one by one before
+  the field was deleted, and all eight matched — which is exactly why deleting the field mattered
+  more than editing one string, since eight silently-correct copies is the state this one was in
+  before somebody moved the sidebar's glyph.
+  `GlobalSearchCommandDefinition.icon` is deliberately **left stored**: five of its six do equal a
+  destination glyph, but `.newTask` is `plus.circle.fill` against Tasks' `checklist`, because a
+  command's glyph names a verb and not a page. Its `tintSource` exists for the tint alone and must
+  not be reused as an identity. Pinned by
+  `GlobalSearchDestinationTintTests.everyPageRowDrawsTheSidebarsGlyphForItsDestination`, which
+  asserts on the row `pageResults` actually produces — not on the catalog and not by reading the
+  source, so a stored `icon` reintroduced anywhere in that file still fails it. Mutation-checked:
+  reverting the file turns that test red, exit 65 with 0 compile errors.
+
+- [T-275] `aa85e1b` **`SectionEyebrowLabel` exists to stop exactly this, and nine call sites don't use it.**
+  Found by a [[T-123]] grep sweep for the shape the component's own doc comment says it
+  consolidates — `.font(.system(size: 10, weight: .semibold))` plus a dim tint plus
+  `textCase(.uppercase)` — hand-rolled instead of the shared component. All nine are plain
+  section/row eyebrows with nothing about them that would justify a bespoke spelling:
+  - iOS: `iOSFeatureDetailViews.swift:340` ("Next", `.kerning(0.6)`), `iPadTodayScheduleViews.swift:463`
+    ("Ready to Schedule", `.kerning(0.7)`).
+  - macOS: `SchedulePanelShellViews.swift:32` ("Today", no kerning), `TaskBundlePickerSupportViews.swift:196`
+    (`resultSectionLabel`, no kerning), `FocusPickerSupportViews.swift:24` ("Ready to focus", no
+    kerning), `FocusSidebarSupportViews.swift:39` (`sidebarLabel`, no kerning),
+    `FocusChromeSupportViews.swift:13` (`eyebrow` parameter, no kerning), `TasksPanel.swift:542`
+    (`overdueSectionHeading`, size **11** not 10, `.kerning(0.8)` applied to the whole `HStack` —
+    title and count both — not just the label), `ListNotesViewSupportViews.swift:73` (section
+    title, tint `Theme.muted` — the only one of the nine that also disagrees on **colour**, not
+    just kerning).
+  `SectionEyebrowLabel` itself is `.kerning(0.8)`. Six of the nine specify no kerning at all (system
+  default 0); the other three specify 0.6, 0.7, and 0.8 — one matches by coincidence, two don't.
+  Same shape `e181dea` fixed for destination tints — independent hand-typed copies of one value
+  drifting apart — for a label style instead of a colour. **Gratuitous, not deliberate**: nothing
+  about any of the nine sites needs a size, weight, tint or kerning different from the shared
+  label; several sit in files that use `SectionEyebrowLabel` correctly elsewhere for the identical
+  visual role.
+  **Shipped, and it was twenty, not nine.** Re-grepping with no path
+  filter found the ticket's nine (three of which had moved: `TasksPanel.swift:542`'s heading is
+  `CadenceTodayOverdueSummaryHeading` in `Shared/Components/CadenceTodayOverdueSummaryCards.swift`
+  now) plus eleven more the original sweep's uppercase-only pattern missed — seven byte-identical to
+  the shared spelling (`CreateGoalSheet.fieldLabel`, `ListEditorSupportViews`,
+  `GlobalSearchOverlayShellViews`, `HabitsFormSupportViews.HabitFormLabel`,
+  `NoteReferenceSupportViews.ReferenceSection`, `CadenceSettingsSharedViews`,
+  `HabitProgressViews.HabitInfoCard`), one already-uppercase string
+  (`ListDetailSupportViews`'s `"\(count) COMPLETED"`, found by kerning rather than by case), one
+  with no kerning at all (`GoalsSupportViews.GoalSectionHeading`), and two at `.bold`
+  (`SettingsTemplatesSection`, `Shared/Components/CommitmentSharedViews.CommitmentGroupHeader`).
+  All twenty read `SectionEyebrowLabel` now.
+  **No new parameter was needed.** `tint` already existed and took the one site that legitimately
+  differs on colour (`ListNotesViewSupportViews`, `Theme.muted` — its header is a control, not an
+  inert label). Three sites changed a measurement on purpose: the overdue summary heading drops
+  from the app's only 11pt eyebrow to 10 and its count now reads `SectionEyebrowLabel.fontSize`
+  (the rule `CadenceBoardColumnHeaderMetrics` and `CadenceTaskGroupHeadingMetrics.countSize`
+  already state), and the two `.bold` labels become `.semibold` while their counts keep `.bold` —
+  the split `CadenceTaskGroupHeading` already draws, since weight is what demotes a number from
+  its label.
+  **Two shapes deliberately not shared.** The 9pt sub-label tier (`TaskInspectorGroupLabel`,
+  `SidebarComponents`' context header, `SettingsViewSupport`'s rail group,
+  `TaskInspectorWorkflowSupportViews.sectionLabel`, `EstimatePickerControl`,
+  `AIActionsSupportViews`, `CadenceCalendarPicker`, `ContainerPickerSupportViews`) is a second,
+  internally consistent tier — most of it already routed through named metrics — and folding it
+  into a 10pt component would be a size decision dressed as a refactor. And the calendar **weekday
+  column header** (`CalendarPageMonthSupportViews`, mirrored by `iOSCalendarTimelineViews`) is a
+  date label under a day number, tinted `isToday ? Theme.blue : Theme.dim` and kerned 0.5; the two
+  weekday headers have to agree with **each other**, which is a different question, and pointing
+  both at `SectionEyebrowLabel` would answer it by accident. Filed as [T-277].
+  Pinned by `CadenceSectionEyebrowConvergenceTests` in `CadenceSharedBoardChromeTests.swift`. The
+  load-bearing assertion is the **negative** one: a sweep of all 509 files under `Cadence/` for the
+  hand-rolled *shape*, which cannot be satisfied by the shared spelling surviving somewhere
+  unreachable — the failure mode that has twice let a source scan pass over a restored bug here.
+  Measured 26 hits before, 1 (the allowlisted weekday header) after, and the allowlist entry has
+  its own test so it cannot quietly go stale. Mutation-checked: re-forking one call site turns
+  `noSurfaceHandRollsTheSharedEyebrow` and `theConvertedSitesCallTheSharedLabel` red, exit 65 with
+  0 compile errors.
+  **Not screenshotted.** [[T-123]] item 2 asks for macOS visual changes to be looked at rather than
+  argued, and this touches sixteen macOS surfaces. Fifteen of the twenty conversions are provably
+  pixel-identical (the modifier chain they replaced is the component's own), and the five that are
+  not are listed above by name and figure. The three that shift a measurement — the overdue summary
+  heading, `SettingsTemplatesSection`'s field label, `CommitmentGroupHeader` — are the ones worth a
+  look before this is called finished, per [[T-123]] item 2's screenshot rule.
+
+- [T-240] `902b386` **CLOSED.** `accountDeletionIsExplicitInSettingsAndReviewDocs`
+  now brace-matches `deleteCadenceData()`'s body with `cadenceFunctionBody(_:in:)` instead of ending
+  the range at the next `private struct SettingsPrivacyStatementSection`. Proved both ways: renaming
+  that struct failed the test before the change and does not after it, and moving the
+  `PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts` call out of the function into a
+  sibling in the same file — which the old range would have swallowed — fails it now. Original
+  entry follows.
+
+  **A test bounds a `#require`'d source range by searching for another file's declaration
+  line.** `AppStoreReviewReadinessTests.accountDeletionIsExplicitInSettingsAndReviewDocs` locates the
+  region it wants to assert over by finding a literal landmark in a *different* file. T-220 made the
+  landmark less brittle (the struct name rather than a `"\n}\n\nprivate struct …"` sequence), but the
+  shape remains: rename `SettingsPrivacyStatementSection` and the test fails as a `#require`
+  precondition rather than as a readable assertion, so the message tells you nothing about what broke.
+  That is the same "fails for a reason unrelated to its subject" family as T-233 and T-227. Worth
+  replacing the source-range search with something that cannot silently stop matching — assert over
+  the whole file, or have the view expose the fact under test as a value the test can read directly.
+
+- [T-262] `45ad9f0` **Five more `@State` colour seeds still hand-type `#4a9eff` / `#6b7a99`.** Out of T-246's
+  scope, which named three palettes and not these. Each is a pure substitution — the literal
+  already equals the token it should read — which is precisely why they survive:
+  `macOS/Sheets/CreateContextSheet.swift:11`, `macOS/Sheets/CreateGoalSheet.swift:24` and `:47`,
+  `macOS/Views/HabitsFormSheets.swift:14` (all `#4a9eff` → `CadenceColorPalette.areaDefault`), and
+  `macOS/Views/HabitsView.swift:63` (`#6b7a99` → `TaskSectionDefaults.defaultColorHex`, which is
+  what that neutral is). Two adjacent things that are **not** the same finding and must not be
+  swept in with them:
+  - `Cadence/Models/*.swift`'s `colorHex` defaults (`Area`, `Context`, `Goal`, `Habit`, `Project`,
+    `Tag`, `AppTask`) genuinely cannot read `Theme`: `CadenceMCPServer` compiles `Models/` and not
+    `Theme.swift`. Same reason T-166 left `TaskSectionDefaults.defaultColorHex` alone. Leave them.
+  - `Services/CadenceUITestSupport.swift` seeds fixtures with `#5AA2FF`, `#FFB84D` and `#4ECB71`.
+    The first two are the *drifted* sidebar tints T-166 deleted — they now exist nowhere else in
+    the app. Harmless as fixture data, but a UI test asserting on a colour would be asserting on a
+    hue the product no longer has.
+
+  **Shipped.** All five substituted; `Cadence/macOS/` now contains no
+  colour literal at all, which is what the new `CadenceSeedColourSourceTests` pins — a per-file list
+  only guards the sites this ticket happened to find, so the load-bearing assertion walks the whole
+  216-file tree and needs no allowlist (`Theme.swift` and the swatch arrays both live under
+  `Shared/`). Two departures from the ticket's own prescription, both deliberate:
+  - The four `#4a9eff` seeds read **`Theme.blueHex`**, not `CadenceColorPalette.areaDefault`. That
+    constant is documented as "`Area.colorHex`'s model default", and these seed a *Context*, a
+    *Goal* and a *Habit*. Reading it would assert a relationship that does not exist and would drag
+    three unrelated sheets along if the Area default ever moved off blue. `areaDefault` is itself
+    `Theme.blueHex`, so the resolved value is identical either way.
+  - `#6b7a99` gets **no new `Theme` token**. It reads the existing
+    `TaskSectionDefaults.defaultColorHex`, whose home has to be `Models/` because `CadenceMCPServer`
+    compiles `Models/` and not `Theme.swift`. A `Theme.neutralHex` beside it would be a second
+    spelling of a hex the app already publishes — the drift T-166 deleted, not the fix for it. A
+    test asserts `Theme` has not grown one.
+  The models stay literals as the ticket says, and the enforcement a token read would have given
+  them is now a test: `theSeedsMirrorModelDefaultsThatCannotReadTheToken` fails if `Theme.blueHex`
+  moves without `Context`/`Goal`/`Habit`/`Area` following it.
+
 - [T-253] `159af9f` **macOS Settings → Reminders never re-derives authorization after it first appears, and
   it is the surface most likely to be on screen when authorization changes.**
   `macOS/Views/SettingsRemindersSection.swift` has `.onAppear { refreshAuthorizationState() }` and
@@ -897,8 +894,9 @@ _Nothing in flight._
   arm already means "asking cannot help". Related: [[T-256]], which is the same shape for
   `.restricted` — an affordance offered in a state where it cannot work.
 
-- [T-239] **The note-kind switch is spelled three times, and the three disagree.** Split out of
-  [[T-224]]. Confirmed at `902b386` and **fixed**: `NoteReferencePanelSupport.noteKindDetail(_:)`
+- [T-239] `b22a02a` **The note-kind switch is spelled three times, and the three disagree.** Split out of
+  [[T-224]]. **Fixed** — corrected from a prior mis-citation of `902b386`, which never touched this
+  file; the actual fix is `b22a02a`. `NoteReferencePanelSupport.noteKindDetail(_:)`
   in `Cadence/Services/NoteReferenceSupport.swift` is now the one detail spelling, built on top of
   the existing `noteKindLabel` so the two cannot disagree about the vocabulary, and the two
   full-width rows call it.
@@ -1506,9 +1504,8 @@ _Nothing in flight._
   **Also closed: sections-due-today, shipped in `2dcc948`.** `CadenceTodayOverdueListSummary` /
   `CadenceTodayOverdueSectionSummary` moved to `Shared/CadenceTodayOverdueSummarySupport.swift`,
   and iOS renders them through `iOSTodayOverdueSummaries` (`Cadence/iOS/iOSTodayTaskSections.swift`,
-  wired into `iPadTodayView.swift` / `iPadTodayCompactViews.swift`). Note: `Cadence/iOS/AGENTS.md`
-  still has a line claiming this half is untouched — that scoped guide is stale and needs its
-  own fix, out of scope for this pass (this file only, per the brief).
+  wired into `iPadTodayView.swift` / `iPadTodayCompactViews.swift`). The stale `Cadence/iOS/AGENTS.md`
+  line this note flagged (claiming this half was untouched) is fixed too, in `91a7053`.
 
 
 

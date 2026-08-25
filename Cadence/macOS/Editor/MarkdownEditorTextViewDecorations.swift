@@ -68,6 +68,65 @@ extension CadenceTextView {
             layoutManager: layoutManager,
             textContainer: textContainer
         )
+        drawMarkdownTables(
+            forGlyphRange: glyphRange,
+            at: origin,
+            layoutManager: layoutManager,
+            textContainer: textContainer
+        )
+    }
+
+    /// The rendered-table pass, and the third one that has to live on the view rather than on
+    /// `CadenceLayoutManager`: it writes `markdownTableHits` so a click on a cell measures the
+    /// rect that cell was drawn in.
+    ///
+    /// The whole table is one canvas in one line fragment — `MarkdownStylist.applyRenderedTables`
+    /// reserves the height on the table's first source line and collapses every other line of it to
+    /// 0.1pt — so, exactly like the embed card and the standalone image, a dirty rect that touches
+    /// any part of a grid contains part of the fragment that grid belongs to and a partial redraw
+    /// cannot clip one in half.
+    private func drawMarkdownTables(
+        forGlyphRange glyphRange: NSRange,
+        at origin: NSPoint,
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer
+    ) {
+        guard let textStorage else { return }
+        let characterRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        guard characterRange.length > 0 else { return }
+
+        textStorage.enumerateAttribute(.cadenceMarkdownTable, in: characterRange) { value, range, _ in
+            guard let grid = value as? MarkdownTableGrid, range.location < textStorage.length else { return }
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: range.location)
+            guard glyphIndex < layoutManager.numberOfGlyphs else { return }
+
+            let lineRect = layoutManager
+                .lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+                .offsetBy(dx: origin.x, dy: origin.y)
+            let gridRect = MarkdownTableMetrics.gridRect(
+                lineRect: lineRect,
+                containerWidth: textContainer.containerSize.width,
+                rowCount: grid.rowCount,
+                rowHeight: MarkdownStylist.tableRowHeight
+            )
+            let layout = MarkdownTableLayout.compute(
+                intrinsicCellWidths: MarkdownTableCanvasDrawing.intrinsicCellWidths(for: grid),
+                columnCount: grid.columnCount,
+                availableWidth: gridRect.width,
+                rowHeight: MarkdownStylist.tableRowHeight
+            )
+            let anchor = grid.storageRange.location
+            self.markdownTableHits.removeAll { $0.anchor == anchor }
+            self.markdownTableHits.append(
+                MarkdownTableHitInfo(anchor: anchor, grid: grid, layout: layout, gridRect: gridRect)
+            )
+            MarkdownTableCanvasDrawing.draw(
+                grid: grid,
+                layout: layout,
+                gridRect: gridRect,
+                editingAddress: self.editingMarkdownTableAddress(anchor: anchor)
+            )
+        }
     }
 
     private func drawMarkdownTaskEmbeds(

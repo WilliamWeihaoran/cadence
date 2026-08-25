@@ -35,7 +35,7 @@ Cadence.xcodeproj       # single project; targets: Cadence, CadenceWidgets, Cade
 CadenceWidgets/         # widget extension — compiles Models/, Theme.swift, and Cadence*WidgetSupport.swift straight in
 CadenceMCPServer/       # native MCP server target (tool definitions, router, argument parsing)
 plugins/cadence-mcp/    # Codex MCP plugin wrapper + smoke-test scripts
-CadenceTests/           # unit tests (191 flat files at time of writing; re-count with
+CadenceTests/           # unit tests (194 flat files at time of writing; re-count with
                         #   `ls CadenceTests/*.swift | wc -l`). Always -only-testing:CadenceTests
 CadenceUITests/         # UI tests; cannot launch headless — never let an unscoped test run pull these in
 docs/                   # privacy/support site + App Review + release-readiness notes
@@ -48,7 +48,7 @@ Use the scoped `AGENTS.md` in each folder as the working map.
 Cadence/
 ├── CadenceApp.swift    # App entry, ModelContainer + CloudKit setup + error recovery
 ├── Models/             # 100% shared. See "Data Models" below and Models/AGENTS.md
-├── Services/           # 50 shared, cross-platform services
+├── Services/           # 53 shared, cross-platform services
 │   │                   #   (`ls Cadence/Services/*.swift | wc -l` — 48 before T-187, 49 before T-215):
 │   │                   #   CadenceSchema / CadenceStoreSupport / PersistenceController (legacy shim)
 │   │                   #   NoteMigrationService, PursuitToGoalMigration, DataIntegrityRepairService
@@ -59,7 +59,7 @@ Cadence/
 │   │                   #     delete cascades, cross-platform since c84732e, ONE #if os(macOS) seam
 │   │                   #   Cadence*WidgetSupport, CadenceWidgetIntents, CadenceWidgetRefreshCenter, CadenceDeepLink
 │   │                   #   TagSupport, TaskCreationService, NoteReferenceSupport
-│   ├── Markdown*.swift          # 27 files (25 of them `*Support.swift`; re-count): ALL markdown
+│   ├── Markdown*.swift          # 29 files (27 of them `*Support.swift`; re-count): ALL markdown
 │   │                            #   parsing/mutation logic lives HERE, not in macOS/Editor/
 │   ├── AI/             # AIActionService, AIProvider, AISettingsManager (optional, user OpenAI key)
 │   └── MCPReadOnly/    # CadenceRead/WriteService, DTOs, search matcher, audit log, container factory
@@ -170,7 +170,9 @@ Cadence/
     │                   # CreateTaskSheet(+SupportViews — holds TildeContainerPickerRow),
     │                   # EditListSheet (declares BOTH EditAreaSheet and EditProjectSheet;
     │                   # there is no file of either name), ListEditorSupportViews
-    ├── Editor/         # AppKit bridge ONLY (11 files since the T-105 split): MarkdownEditorView /
+    ├── Editor/         # AppKit bridge ONLY (13 files: 11 after the T-105 split, +2 for T-221's
+    │                   # rendered table — MarkdownTableCanvasDrawing / MarkdownTableInteractionSupport):
+    │                   # MarkdownEditorView /
     │                   # Support / InteractionSupport / Coordinator / LayoutManager /
     │                   # TextViewDecorations / DecorationGeometry / TextEditDiff, plus
     │                   # MarkdownSlashCommandSupport, MarkdownTaskEmbedDrawingSupport,
@@ -755,7 +757,7 @@ Shared behavior for the popovers:
 - One live model: `Note`, with `NoteKind` = daily / weekly / permanent / list / meeting. The macOS Notes page has four tabs: **Daily**, **Weekly**, **Notepad** (permanent), **Event Notes** (`.meeting` — the case name is persisted in `Note.kindRaw`, so only the *label* was renamed).
 - `NoteMigrationService` folds the legacy `DailyNote` / `WeeklyNote` / `PermNote` / `Document` / `EventNote` rows into `Note`, recording provenance in `legacySourceKindRaw` / `legacySourceID`.
 - Notes carry `tags`, an `area`/`project`, and a `folderPath`.
-- **All markdown logic lives in `Cadence/Services/Markdown*Support.swift`** (27 files, well covered by `CadenceTests/`). `macOS/Editor/` is only the AppKit bridge — and since T-121 the *iOS* styler is only the UIKit one. `iOSMarkdownStyler` was one 1,067-line file that made its own decisions about heading-marker visibility, block extents, inline exclusions, hidden marker runs and table grouping; it is now four files of pure attribute-setting over `MarkdownStyleRanges`, `MarkdownInlineMarkerRanges`, `MarkdownTableParser.tableBlock` and `MarkdownStyleSignature`. See `Cadence/iOS/AGENTS.md` for the per-file split.
+- **All markdown logic lives in `Cadence/Services/Markdown*Support.swift`** (29 files, well covered by `CadenceTests/`). `macOS/Editor/` is only the AppKit bridge — and since T-121 the *iOS* styler is only the UIKit one. `iOSMarkdownStyler` was one 1,067-line file that made its own decisions about heading-marker visibility, block extents, inline exclusions, hidden marker runs and table grouping; it is now four files of pure attribute-setting over `MarkdownStyleRanges`, `MarkdownInlineMarkerRanges`, `MarkdownTableParser.tableBlock` and `MarkdownStyleSignature`. See `Cadence/iOS/AGENTS.md` for the per-file split.
 - Notes support both Markdown export and rendered PDF export (`NoteExportService`)
 - The notes export flow avoids direct blocking `NSSavePanel.runModal()` usage
 - Notes can surface linked notes, backlinks, and embedded task references above the editor
@@ -1075,6 +1077,14 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Note templates, managed in Settings and applied from the note editor
 - [x] Shared markdown editor supports headings, block quotes (`>`), dividers (`---`, `***`, `___`), hidden markdown markers, ordered/unordered lists, slash commands, wiki-links, task references, and 5 nesting levels
 - [x] Markdown caret movement skips hidden formatting markers rather than traversing invisible syntax
+- [x] **Tables are rendered as a real grid and edited cell by cell** (T-221, macOS only). Click a
+      cell to edit it in place; Tab / Shift-Tab move between cells and wrap rows, Return adds a row
+      below, and rows and columns are added or removed from the table's context menu — which also
+      carries **Show Table Source**, the deliberate raw-markdown escape. Fenced code, images,
+      dividers and task embeds are unchanged. The source never leaves the text storage, only its
+      glyphs are collapsed, which is why selection, copy/paste and undo all still work; see
+      `Cadence/macOS/Editor/AGENTS.md`. **iOS still un-renders a table when the caret lands inside
+      it** — see `docs/TODO.md` T-221
 - [x] Markdown list indentation is reduced/tighter than the original editor implementation
 - [x] New notes start with the note title as the first markdown heading; editing the H1 in the body syncs back to `note.title`
 - [x] Notes: each selected note gets its own `NSTextView` instance (`.id(note.id)`) so undo history is isolated per note
