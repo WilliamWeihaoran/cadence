@@ -196,30 +196,68 @@ _Nothing in flight._
   `AppStoreReviewReadinessTests` and `CadenceListWindDownSurfaceTests`. Anything else scoping a scan
   to one function calls it rather than writing a second.
 
-  **Deliberately left, and worth doing next** — all still whole-file needle counts, listed worst
-  first. Each is the `cfa3b3b` shape: a call moving between two functions in the same file is
-  invisible to them.
-  - `CadenceTaskInspectorHostTests.theInspectorIsPresentedFromExactlyFivePlacesInTheWholeApp` and
-    `theHostIsInstalledAboveBothShellsAndInsideTheOneSheetThatCarriesAPage`; the same pair in
-    `CadenceBundleInspectorHostTests`. These are repo-wide counts, which is the *right* shape for
-    "exactly N places in the whole app" — but the per-file half is unscoped.
-  - `CadenceKanbanColumnLifecycleSurfaceTests.bothVisibleCompletionControlsSitInsideTheLifecycleGate`
-    and `theKeyboardRouteAndTheConvergencePointBothRefuseDefault`.
-  - `CadenceListDetailTabStripMarginTests.theResetIsTheStripsAloneAndTheHostCompensatesForNothing`.
-  - `CadenceSharedBoardChromeTests.bothBoardsDrawTheSharedMetadataChip` (a `cardCornerRadius:` count
-    over two whole view files).
-  - `CadenceSharedTaskRowJobsTests.theRowsAnimatedPartsAreStillExtractedIntoTheirOwnSubViews` — an
-    `@Environment(TaskCompletionAnimationManager.self)` count of 2 over `TasksPanelComponents.swift`,
-    which cannot tell the two extracted sub-views from `MacTaskRow` growing one of its own.
-  - `CadenceTodayRolloverSurfaceTests.theMacSpellingDelegatesToTheSharedMutation` and
-    `CadenceTodayOverdueSummarySurfaceTests.theMacCardsHopTheNavigationManagerThroughTheSharedRequest`
-    — both scan macOS files, and the first has a behavioural neighbour already
-    (`TaskBundleTests` calls `SchedulingActions.rollOverTaskToToday` for real), so only the
-    "no second body" half is at risk.
+  **Second pass, 2026-08-26 against `36be8ba`: four of the six done, each proved by mutation**
+  (apply → red on exactly the intended test, restore → green; 0 compile errors on every run, and
+  for each one the *old* whole-file needle was grepped in the mutated file and found still present,
+  which is the blindness proof stated mechanically rather than by re-running a deleted assertion).
+  - *The two inspector-host suites.* The repo-wide dictionaries are kept — they are the right shape
+    for "exactly N places in the whole app" — and the per-file half is now placement.
+    `theHostDrawsThePanelOnlyInTheStayBranchOfTheSharedRule` (and its bundle twin) pin the panel to
+    the `.stay` arm of `CadenceDetailPanelPresentation.resolveHeldSubject`; **swapping the `.stay`
+    and `.close` arms** leaves `iOSTaskDetailSheet(` at one occurrence in one file, every old
+    assertion green, and every row in the app opening nothing.
+    `theRootAppliesTheHostAboveBothShellsRatherThanInsideOne` (and its bundle twin) slice
+    `iOSRootView`'s `Group` and require the host, the bundle host and the startup banner to be
+    applied *to* it, not inside it; **moving `.iOSTaskInspectorHost()` into the
+    `horizontalSizeClass == .regular` branch** — iPad keeps the inspector, the iPhone's four tabs
+    get dead taps — keeps the file count at exactly 1.
+    `theNestedHostSitsOnTheSheetThatCarriesAWholePageOfRows` scopes the nested host to
+    `iOSTodayOverdueListSheet`'s **`var body`**, and the reason is a measured one: the first draft
+    scoped it to the *struct* and survived a mutation that moved the modifier onto a second computed
+    property in the same struct. Struct-level was not enough; `var body` is.
+  - *`CadenceTodayOverdueSummarySurfaceTests.theMacCardsHopTheNavigationManagerThroughTheSharedRequest`
+    is behavioural now.* macOS's half is compiled by this target and nobody had reached for it: the
+    test drives `TasksPanelSupport.openOverdueListSummary` / `openOverdueSectionSummary` against
+    `ListNavigationManager.shared` and reads the request it is left holding. Two mutations that the
+    old scan could not see: **swapping the `.area` and `.project` arms** of the private
+    `open(_:listNavigationManager:)`, and **dropping `sectionName:`** from both hops so the board
+    lands on whatever column it last showed. The one whole-file assertion kept is the *absence*
+    (`if let projectID = summary.projectID`), which is the claim a scan states better than a call.
+  - *`CadenceTodayRolloverSurfaceTests.theMacSpellingDelegatesToTheSharedMutation` is scoped and
+    stated as an equality.* `cadenceFunctionBody` slices `SchedulingActions.rollOverTaskToToday` and
+    the whole trimmed body must equal the one delegating call, so **any** added statement fails —
+    proved with `task.scheduledStartMin = -1` appended under the delegation, which the old
+    `contains(…)` cannot see.
+  - *`55d696b`'s owed evidence is paid.* Forcing `CadenceTaskGroupHeadingMetrics.showsCapsule` to
+    `true` fails `CadenceInboxRemindersSurfaceTests.onlyAnUnknownCountSuppressesTheCapsule`, exit 65
+    at 0 compile errors. The behavioural test was load-bearing all along.
 
-  **One piece of mutation evidence is still owed from `55d696b`:** forcing
-  `CadenceTaskGroupHeadingMetrics.showsCapsule` to `true` was never watched to fail, because two
-  test hosts deadlocked (T-117). The behavioural test exists; the proof does not.
+  **Still open, and the list is shorter than it was for one reason worth reading.**
+  - `CadenceKanbanColumnLifecycleSurfaceTests.bothVisibleCompletionControlsSitInsideTheLifecycleGate`
+    and `theKeyboardRouteAndTheConvergencePointBothRefuseDefault`. Both already assert *structure*
+    with brace-adjacent regexes; what is unscoped is the pair of
+    `section.supportsLifecycle` == 2 counts beside them. Not attempted here.
+  - `CadenceListDetailTabStripMarginTests.theResetIsTheStripsAloneAndTheHostCompensatesForNothing`.
+    Not attempted. Note while you are in the file: it declares a **second** declaration slicer
+    (`declaration(named:in:)`, which slices to the next `\nstruct` rather than brace-matching), and
+    `CadencePageHeaderMetricsTests` / `CadenceTodayUnificationTests` declare a **third** between
+    them (`declarationBody(of:in:)`, twice, byte-identical). Three private near-copies of the thing
+    `cadenceFunctionBody(_:in:)` was promoted to be.
+  - `CadenceSharedBoardChromeTests.bothBoardsDrawTheSharedMetadataChip`. Not attempted.
+  - `CadenceSharedTaskRowJobsTests.theRowsAnimatedPartsAreStillExtractedIntoTheirOwnSubViews` was
+    **rewritten but is the one place a mutation did not survive on its own merits**, and that is the
+    finding rather than the fix. It now asks each declaration for its own count —
+    `TaskCompletionButton` 1, `TaskRowBackground` 1, `MacTaskRow` 0, `MacTaskRowEstimateChip` 0 —
+    over `cadenceFunctionBody`, with the whole-file 2 kept as a no-fifth-reader guard. The mutation
+    (the row observes the manager and hands it down to `TaskRowBackground` as a `let`) does turn it
+    red, but it turns `CadenceTodayUnificationTests.theTaskRowStillDoesNotObserveTheCompletionAnimationManager`
+    red too — that test has scoped `MacTaskRow` and `MacTaskRowEstimateChip` to their declaration
+    bodies all along, so the bullet's stated gap ("cannot tell the two extracted sub-views from
+    `MacTaskRow` growing one of its own") was already closed by a neighbour nobody had checked.
+    The residue the new assertion adds — *both* observations in one sub-view and none in the other —
+    could not be mutated into existence in code that compiles, because a view that uses `manager`
+    has to obtain it and the only non-observing route needs a holder that is itself forbidden from
+    observing. Recorded as unprovable rather than claimed as proved.
 
 
 
@@ -235,6 +273,72 @@ _Nothing in flight._
   editor files), and on iOS the toolchain bug in [T-115] — swift-frontend crashes in IRGen once the
   diagnostics are gone, which is not app code. So macOS could plausibly flip first; iOS cannot until
   the toolchain moves. `CadenceMCPServer` has been on 6.0 all along.
+
+  **MEASURED 2026-08-26 against `36be8ba` and re-confirmed on `ea77271`, Xcode 26.6 / Swift 6.3.3.
+  Recommendation: do not flip anything yet — flip nothing before the two items in "what a flip
+  needs" below are done, and never flip iOS while [T-115] stands.** Every number below is one
+  `xcodebuild` run into a private `-derivedDataPath` over an `rsync`-isolated tree, exit status read
+  on the xcodebuild line, diagnostics counted from the log with **no path filter** and attributed to
+  a target by the `(in target 'X' from project 'Cadence')` line above them.
+
+  | Target | Swift 5 today | Swift 6 (`SWIFT_VERSION=6.0` override) |
+  |---|---|---|
+  | `Cadence` (macOS) | 0 errors, 0 warnings | **0 errors, 10 warnings** |
+  | `Cadence` (iOS Simulator) | 0 errors, 0 warnings | 0 errors, 1 warning — **but swift-frontend crashes, no build** ([T-115]) |
+  | `CadenceWidgets` | 0 errors, 0 warnings | **0 errors, 0 warnings** |
+  | `CadenceMCPServer` | already 6.0: 0 errors, 0 warnings | already 6.0 |
+  | `CadenceTests` | 0 errors, 0 warnings | **611 errors** |
+  | `CadenceUITests` | 0 errors, 0 warnings | 0 errors, 5 warnings |
+
+  Notes on how those were obtained, because two of them are not what a single run reports.
+  - A Swift 6 build of the app **stops at `EmitSwiftModule` on two errors in one file** —
+    `Cadence/Services/CadenceDataExportService.swift:228`, `nonisolated static let
+    recordCountsByEntityName: [String: KeyPath<CadenceArchive, Int>]`, because `KeyPath` is not
+    `Sendable`. That file postdates `D-95`, so **the app's Swift-6 error count is not a fixed
+    quantity that T-105 drove to zero — it regressed to 2 the moment ordinary new code was written
+    under Swift 5.** Nothing else in the app module errors: with that one declaration changed to
+    `nonisolated(unsafe)` **in the scratch copy only**, the whole macOS app module compiles.
+  - The per-target error counts were then taken with `SWIFT_COMPILATION_MODE=wholemodule`, because
+    the default batch mode surfaces **one failing batch at a time** — the first Swift 6 run of
+    `CadenceTests` reported 18 errors in one file and stopped, and the module actually holds 611.
+    Any future count of this debt must be taken whole-module or it is a lower bound.
+  - The 10 macOS app warnings are the same 10 this ticket has always claimed, and they are in five
+    files: `Services/CadenceRemindersManager.swift` (1 — the only cross-platform one, and the iOS
+    build's single warning), `macOS/Views/TimelineDropInteractionSupport.swift` (3),
+    `macOS/Services/QuickTaskPanelController.swift` (3), `macOS/Services/CalendarManager.swift` (1),
+    `macOS/Services/CadenceMCPRefreshCoordinator.swift` (1),
+    `macOS/Views/CalendarBoardDayColumnSupportViews.swift` (1). All are ordinary main-actor
+    isolation, none is in `macOS/Editor/`.
+
+  **`CadenceTests`' 611 errors are one build setting, not 611 problems.** The app target sets
+  `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`; `CadenceTests` and `CadenceUITests` do not. So under
+  Swift 6 every `@Test` function is nonisolated by default and every call into the app's
+  main-actor-by-default API is an error — 365 of the 611 are literally "call to main actor-isolated
+  static method 'X' in a synchronous nonisolated context". Adding
+  `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` to the test target takes `CadenceTests` from **611
+  errors to 0**, measured. It also takes `CadenceUITests` from 0 to **11**, all of the form
+  "main actor-isolated instance method 'setUpWithError()' has different actor isolation from
+  nonisolated overridden declaration" — `XCTestCase` overrides, a handful of `nonisolated` keywords.
+  That asymmetry is the whole shape of the problem: the two test targets want opposite defaults.
+
+  **What a flip needs, in order.** (1) Fix `CadenceDataExportService`'s key-path table — and note
+  `nonisolated(unsafe)` was only a probe, not a proposal. (2) Clear the 10 app warnings; they are
+  real isolation questions in scheduling, panel and EventKit callbacks, not cosmetics, and the
+  zero-warning baseline is worth more than the language mode. (3) Set the test targets' actor
+  isolation deliberately and re-measure — and consider that making every `@Test` main-actor is a
+  behavioural change to the suite, not just a compile fix. (4) iOS stays on 5.0 until [T-115]'s
+  compiler crash clears, whatever macOS does.
+
+  **A partial flip is available and is the recommendation *when* the above is done, not now.**
+  `SWIFT_VERSION` is per-target, `CadenceMCPServer` has been 6.0 beside 5.0 targets all along
+  without splitting anything, and `CadenceWidgets` compiles under Swift 6 today with 0 errors and 0
+  warnings. So "two dialects" is already the status quo and costs nothing new. What a macOS-only
+  flip *would* split is the app target itself — one module built two ways per platform — which is
+  the one combination worth refusing: `Cadence/Shared/` and `Cadence/Services/` compile into both,
+  so an isolation fix accepted by the macOS flip would still have to satisfy the iOS Swift 5 build,
+  and a regression introduced on the iOS side would be invisible until [T-115] cleared. Flip
+  `CadenceWidgets` and (after step 3) `CadenceTests` if a partial flip is wanted early; leave the
+  app target alone until both platforms can move together.
 
 
 - [T-119] **Not reproduced — and the obvious fix breaks scrolling.** Reported by the drag sweep as a
@@ -291,6 +395,40 @@ _Nothing in flight._
   reabstraction thunk carrying an `(any Actor)?` parameter. Attributed, not assumed: pristine HEAD
   with those same errors removed a different way crashes identically with zero diagnostics, and
   pristine HEAD under Swift 5 builds clean. Xcode 26.6 / Swift 6.3.3. Recheck on a toolchain bump.
+
+  **STILL REAL — reproduced 2026-08-26 on the installed toolchain (Xcode 26.6, Apple Swift version
+  6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)), twice, in two compilation modes.** This was worth
+  re-testing rather than inheriting: the toolchain had not moved, and it has not. Recipe:
+  `-scheme Cadence -destination 'generic/platform=iOS Simulator' SWIFT_VERSION=6.0 build` over an
+  isolated tree, with `CadenceDataExportService`'s key-path table made `nonisolated(unsafe)` in the
+  scratch copy so the module gets past `EmitSwiftModule` (see [T-122]). The iOS module is then
+  **diagnostically clean — 0 errors, 1 warning** — and swift-frontend aborts anyway:
+
+  ```
+  4.	While evaluating request IRGenRequest(IR Generation for file ".../Cadence/iOS/iOSCalendarView.swift")
+  5.	While emitting IR SIL function "@$s7Cadence0A19CalendarMonthDetailOScA_pSgIeAghyg_ACIeAghn_TR".
+  ```
+
+  which `swift-demangle` reads as `reabstraction thunk helper from @escaping @isolated(any)
+  @callee_guaranteed @Sendable (@unowned Cadence.CadenceCalendarMonthDetail, @guaranteed
+  Swift.Actor?) -> () to @escaping @isolated(any) @callee_guaranteed @Sendable (@in_guaranteed
+  Cadence.CadenceCalendarMonthDetail) -> ()` — the `(any Actor)?` reabstraction thunk this ticket
+  named. Two details the earlier write-up did not have:
+
+  - **It is not one unlucky type.** Under `SWIFT_COMPILATION_MODE=wholemodule` the same abort fires
+    on a *different* thunk, `@$sSSScA_pSgIeAghgg_SSIeAghn_TR` (the `String` one). Whatever is wrong
+    is general to `@isolated(any)` thunk emission for this module, not to `CadenceCalendarMonthDetail`,
+    so "find the one call site and rephrase it" is unlikely to be a workaround.
+  - **The stack names the failure**, and it is an assertion, not a segfault:
+    `IRGenSILFunction::visitFullApplySite` → `SyncCallEmission::setArgs` →
+    `llvm::SmallVectorBase<unsigned int>::grow_pod` → `report_at_maximum_capacity` →
+    `llvm::report_fatal_error` → `abort`. An LLVM `SmallVector` exceeding its maximum capacity while
+    setting call arguments. Worth quoting verbatim in any bug report filed against the toolchain.
+
+  Control confirmed in the same session: the identical tree on Swift 5 builds the iOS target to
+  `** BUILD SUCCEEDED **`, exit 0, 0 errors, 0 warnings — so this is the language mode, not the
+  sources. macOS emits IR for the same shared modules with no trouble, so it is iOS-only.
+  Recheck on the next toolchain bump; there is nothing to fix in Cadence.
 
 - [T-86] **Agents building into the shared DerivedData can crash a running Mac app.** On 2026-08-17
   the user hit "Cadence quit unexpectedly" — `EXC_BREAKPOINT` on the main thread, five seconds after
