@@ -29,26 +29,7 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## In progress
 
-- [T-271] **macOS Goals in mission mode has no route to Edit or Attach List below 901pt of pane.**
-  Fallout from [[T-250]]. `GoalInspectorView`'s header carries the only Edit and Attach List buttons
-  the mission layout has — and `GoalLinkedListRow`'s per-list detach the only one anywhere — and
-  below `CadenceDesktopSplitLayout.goalsSplitMinimumWidth` the inspector is not drawn. It was
-  already unusable rather than usable there: measured, the column was handed 340 and showed
-  179 / 135 / **9** points of it at the 960pt window floor with the sidebar at 220 / 264 / 390.
-  **Fixed in the working tree, uncommitted.** The pane decision stands — it is a real drop — but the
-  inspector stopped being *only* a pane: below the gate a card **opens** `GoalInspectorSheet`
-  instead of selecting into a column that is not there, which is `iOSFeatureRowLink`'s own rule
-  ("at regular width the row selects … on the phone the row pushes") spelled for a page with no
-  navigation stack. Same `GoalInspectorView`, same closures, no second inspector; Edit and Attach
-  List are presented from inside the sheet so nothing has to dismiss-and-re-raise in one update.
-  Width borrowed as `goalInspectorPaneMinWidth`, so it is the column restored rather than a second
-  opinion. Rejected: a `contextMenu` on the cards (hidden-only route, leaves detach out, and needs
-  duplicating onto `GoalDirectionHeaderCard`), a header menu acting on the selection (a page header
-  growing per-item commands), an in-place disclosure (scroll inside scroll, relayout on every
-  selection), and raising the window floor (measured impossible in [[T-250]] — 1484pt against a 13"
-  Air's 1470pt screen). Pinned by
-  `CadenceDesktopSplitLayoutTests.goalsKeepsARouteToItsInspectorAtTheWidthsThatDropTheColumn`.
-
+_Nothing in flight._
 
 ## Open — decided, not started
 
@@ -1510,6 +1491,26 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 ## Done
 
+- [T-271] **macOS Goals in mission mode has no route to Edit or Attach List below 901pt of pane.**
+  Fallout from [[T-250]]. `GoalInspectorView`'s header carries the only Edit and Attach List buttons
+  the mission layout has — and `GoalLinkedListRow`'s per-list detach the only one anywhere — and
+  below `CadenceDesktopSplitLayout.goalsSplitMinimumWidth` the inspector is not drawn. It was
+  already unusable rather than usable there: measured, the column was handed 340 and showed
+  179 / 135 / **9** points of it at the 960pt window floor with the sidebar at 220 / 264 / 390.
+  **Shipped in `850af8a`.** The pane decision stands — it is a real drop — but the
+  inspector stopped being *only* a pane: below the gate a card **opens** `GoalInspectorSheet`
+  instead of selecting into a column that is not there, which is `iOSFeatureRowLink`'s own rule
+  ("at regular width the row selects … on the phone the row pushes") spelled for a page with no
+  navigation stack. Same `GoalInspectorView`, same closures, no second inspector; Edit and Attach
+  List are presented from inside the sheet so nothing has to dismiss-and-re-raise in one update.
+  Width borrowed as `goalInspectorPaneMinWidth`, so it is the column restored rather than a second
+  opinion. Rejected: a `contextMenu` on the cards (hidden-only route, leaves detach out, and needs
+  duplicating onto `GoalDirectionHeaderCard`), a header menu acting on the selection (a page header
+  growing per-item commands), an in-place disclosure (scroll inside scroll, relayout on every
+  selection), and raising the window floor (measured impossible in [[T-250]] — 1484pt against a 13"
+  Air's 1470pt screen). Pinned by
+  `CadenceDesktopSplitLayoutTests.goalsKeepsARouteToItsInspectorAtTheWidthsThatDropTheColumn`.
+
 - [D-171] `353bf16` `50429a6` `b6f9ea8` `e6e05a4` `62df126` `263833d` `9714f18` Agents leak
   simulators and MCP servers, and it was measurably starving the machine (T-204). Re-verified
   2026-08-24 rather than re-diagnosed: both halves of the original finding are addressed, by a
@@ -2467,3 +2468,15 @@ Newest first. The commit message carries the reasoning; this is the index.
   confirmed to render and work, but `ConnectHardwareKeyboard` is a Simulator.app preference and the
   simulators run headless, so the raised-keyboard geometry cannot be checked without opening
   Simulator.app. Not worth the intrusion.
+
+- [X-04] **The kanban header's `overdueCount > 0` guard is not a coverage gap** — a mutation batch
+  reported it as "genuinely unpinned": deleting the `> 0` from `ListDetailSupportViews.swift:176`
+  passes the whole suite, and no test names the view's own display rule. Both halves are true and
+  the conclusion does not follow. `TasksPanelSupport.overdueCount(in:)` returns
+  `count > 0 ? count : nil`, so **zero never reaches the view** — every call site into the header
+  either goes through that producer or passes `nil` outright. The mutation is behaviourally inert,
+  which is why it survived. The invariant it leans on *is* tested, at
+  `TaskOverdueSupportTests.swift:120` (`overdueCount(in: [doneLate]) == nil`). Leave the guard.
+  Recorded so the next agent neither "fixes" it nor re-files it — and as a reminder that a
+  surviving mutation means *the tests cannot see this change*, which is a hole only when the
+  change is one a user could ever observe.
