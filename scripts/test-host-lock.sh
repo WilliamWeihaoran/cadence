@@ -67,7 +67,22 @@ case "$CMD" in
       if [[ -f "$LOCK/since" ]]; then
         age=$(( $(date +%s) - $(cat "$LOCK/since" 2>/dev/null || print 0) ))
         if (( age > LEASE )); then
-          print -r -- "lease expired after ${age}s (limit ${LEASE}s); reclaiming from $(cat "$LOCK/id" 2>/dev/null)"
+          # A lease alone is not enough to reclaim. Measured 2026-08-25: an agent's
+          # batch overran the 45-minute lease by 9 seconds and a sibling took the
+          # lock while the first was still mid-run -- which starts a SECOND test
+          # host against the same app-group container, i.e. exactly the T-236
+          # contention this lock exists to prevent. So the lease is necessary and
+          # a live test host is disqualifying: if a real `xcodebuild test` is
+          # running, someone is legitimately using the host no matter how old the
+          # lock is. Anchored to the absolute path because a bare `pgrep -f
+          # xcodebuild` also matches the waiting agents' own shells -- that
+          # unanchored form once inverted this mutex into a deadlock.
+          live=$(pgrep -f '^/Applications/.*/xcodebuild test' 2>/dev/null | wc -l | tr -d ' ')
+          if (( live > 0 )); then
+            print -r -- "  lease expired (${age}s) but ${live} test host(s) still running; NOT reclaiming"
+            sleep 10; (( waited += 10 )); continue
+          fi
+          print -r -- "lease expired after ${age}s (limit ${LEASE}s), no live test host; reclaiming from $(cat "$LOCK/id" 2>/dev/null)"
           rm -rf "$LOCK"; continue
         fi
       fi
