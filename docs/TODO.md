@@ -181,7 +181,7 @@ _Nothing in flight._
 
 - [T-221] **Edit tables in place — DONE on macOS, and the iOS half is the whole remainder.**
   Requested 2026-08-21, decided 2026-08-25 (shape 2, tables only; Tab / Shift-Tab / Return as
-  spreadsheet keys), built the same day. macOS renders a table as a real grid and edits it cell by
+  spreadsheet keys), and the macOS half shipped the same day in `0b44973`. macOS renders a table as a real grid and edits it cell by
   cell: `Services/MarkdownTableEditSupport.swift` (the markdown decisions),
   `Services/MarkdownTableLayoutSupport.swift` (the rects), `macOS/Editor/MarkdownTableCanvasDrawing.swift`
   and `macOS/Editor/MarkdownTableInteractionSupport.swift` (the AppKit half). Fenced code, images,
