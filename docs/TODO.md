@@ -204,6 +204,19 @@ _Nothing in flight._
   markdown source when the caret lands inside it. So typing in a table means typing pipes. The user
   wants the rendered form to *stay* rendered and be edited directly — cell by cell for a table, and
   the equivalent for the other elements where it makes sense.
+  **DECIDED 2026-08-25, by the user, after being asked.** Shape **2, scoped to tables only**:
+  host real editable views for a table inside the text view; leave fenced code, images, dividers and
+  task embeds exactly as they are. That is the only one of the three shapes that delivers the thing
+  actually asked for — the rendered form *stays* rendered while you edit it — and confining it to
+  tables means one block type carries the text-view boundary risk instead of five. Shape 1 was
+  rejected on the merits: it is the cheapest and it still shows you pipes, which is the thing being
+  complained about.
+  **Keys, decided at the same time:** Tab moves to the next cell and wraps to the next row,
+  Shift-Tab goes back, **Return adds a row below**. Spreadsheet behaviour, so there is nothing to
+  learn.
+  Still to settle *during* the work, not before it: how a column is added or removed, and whether
+  the raw markdown stays reachable on purpose (a command, not an accident of caret position).
+
   **The user explicitly asked to be consulted while this is worked on**, so ask before choosing the
   interaction: at minimum, which elements are in scope (table certainly; fenced code with a language
   pill probably; image and task embed unclear), what Tab and Return do inside a table, how a row or
@@ -273,8 +286,15 @@ _Nothing in flight._
   What this reverses, and does not: the seven-theme `ThemeManager` is already gone and the user did
   **not** ask for it back. There is currently exactly one palette and no picker; `Theme.swift`'s own
   comment records the removal, and `preferredColorScheme` is a hardcoded `.dark`.
-  **The mechanism is the work.** `Theme` is a `nonisolated struct` exposing **67 `static let`**
-  constants, which cannot vary at runtime, and 243 files read them directly as `Theme.bg` and friends.
+  **DECIDED 2026-08-25, by the user, after being asked.** **Accents only.** The near-black
+  neutrals do not vary — only the six accents become selectable. This is a deliberate narrowing of
+  the ticket below: the chrome that appears on every screen keeps its fixed values and therefore
+  cannot regress, while the accents are what carry the personality. Widgets: **only if it is cheap.**
+  Do the app-group plumbing if it falls out easily once the palette is a value; if it turns into its
+  own project, ship without it and report back rather than deciding unilaterally.
+
+  **The mechanism is the work.** `Theme` is a `nonisolated struct` exposing **71 `static let`**
+  constants, which cannot vary at runtime, and 256 files read them directly as `Theme.bg` and friends.
   Making the palette selectable means those become computed properties over an active palette value —
   a mechanical but wide change, and the one place a mistake shows up as the wrong colour somewhere
   nobody looked. Two consequences to plan for rather than discover:
@@ -283,9 +303,9 @@ _Nothing in flight._
   - **`Theme.swift` is compiled into `CadenceWidgets`** (4 references in `project.pbxproj`). A widget
     is a separate process, so the selected palette has to reach it through the app group, the way
     `CadenceWidgetRefreshCenter` already does — otherwise widgets stay on the default palette.
-  Also delete the stale **"Theme"** row in Settings → Coverage (`iOSMobileCapability.all`,
-  `iOS/iOSSettingsComponents.swift:149`), which advertises a picker to the user that does not exist —
-  either before this ships or as part of it.
+  ~~Also delete the stale **"Theme"** row in Settings → Coverage~~ — **already moot.** The whole
+  Coverage section, `iOSMobileCapability` and the shared `.coverage` kind were deleted in `940c4da`;
+  `iOSMobileCapability` now has zero references. Nothing advertises a picker that does not exist.
 
 - [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
   *(a)* A widget showing the running timer plus what is being worked on, and a second showing the
