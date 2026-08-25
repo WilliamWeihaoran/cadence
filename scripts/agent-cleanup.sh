@@ -68,6 +68,32 @@ pgrep -x CadenceMCPServer 2>/dev/null | while read -r pid; do
   run "kill $pid"
 done
 
+say "== simulator claims (scripts/simulator-claim.sh) =="
+# A claim is a directory, not a process, so an agent killed mid-run leaves one and
+# the device it names is unavailable to siblings until its lease runs out.
+# --apply reclaims ONLY claims naming a device that is no longer booted: those are
+# unambiguously dead. An expired lease on a *booted* device is merely reported --
+# a sibling may be legitimately mid-run and simply slower than its lease, and
+# `simulator-claim.sh claim` already reclaims that case itself, after checking for
+# a live simctl op. Deleting it from here would be the T-225 install one step
+# earlier: taking a device out from under an agent that is still using it.
+_booted=$(xcrun simctl list devices booted 2>/dev/null | sed -n 's/.*(\([0-9A-Fa-f-]\{8\}-[0-9A-Fa-f-]*\)) (Booted).*/\1/p')
+for c in ${TMPDIR:-/tmp}/CadenceSimClaims/*.claim(N/); do
+  udid=${${c:t}%.claim}
+  age=$(( $(date +%s) - $(cat "$c/since" 2>/dev/null || print 0) ))
+  owner=$(cat "$c/id" 2>/dev/null)
+  if print -r -- "$_booted" | grep -q "$udid"; then
+    if (( age > 2700 )); then
+      say "  '$owner' on $udid, ${age}s (LEASE EXPIRED) -- device still booted; left alone, claim reclaims it"
+    else
+      say "  '$owner' on $udid, ${age}s (held) -- left alone"
+    fi
+  else
+    say "  '$owner' on $udid, ${age}s -- device is NOT booted, so nobody can be using it"
+    run "rm -rf ${(q)c}"
+  fi
+done
+
 say "== stranded builds =="
 # Match the binary path: `pgrep -f "xcodebuild test"` also matches the shell running
 # this script, so a wait loop written that way never exits.
