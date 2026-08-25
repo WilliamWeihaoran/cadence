@@ -98,9 +98,32 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         renderedBlockTap.cancelsTouchesInView = true
         renderedBlockTap.delaysTouchesBegan = false
         renderedBlockTap.delegate = context.coordinator
+        // A single tap on a rendered table cell opens that cell, the way a single click does on the
+        // Mac. Gated in `gestureRecognizerShouldBegin` exactly like the recognizer above, and
+        // `cancelsTouchesInView` is true here for a reason the reference tap does not have: every
+        // character of a rendered table is hidden, so letting the text view also see the touch would
+        // drop a caret into invisible markdown and raise the keyboard behind the cell field.
+        let tableCellTap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTableCellTap(_:))
+        )
+        tableCellTap.name = Coordinator.tableCellTapName
+        tableCellTap.cancelsTouchesInView = true
+        tableCellTap.delaysTouchesBegan = false
+        tableCellTap.delegate = context.coordinator
+
         referenceTap.require(toFail: renderedBlockTap)
+        referenceTap.require(toFail: tableCellTap)
         textView.addGestureRecognizer(renderedBlockTap)
+        textView.addGestureRecognizer(tableCellTap)
         textView.addGestureRecognizer(referenceTap)
+
+        // Rows and columns change from the table's own long-press menu, and so does the raw-source
+        // escape. Same decision as the Mac's right-click menu and for the same reasons: hover-style
+        // chrome would be a second hit-testing surface over a canvas that already has one, it has
+        // to be discovered, and on a touch screen there is no hover to reveal it with. The delegate
+        // returns nil anywhere off a grid, so ordinary prose keeps the text view's own menu.
+        textView.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
 
         let imageResize = iOSMarkdownImageResizeGestureRecognizer(
             target: context.coordinator,
@@ -187,13 +210,29 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         Coordinator(parent: self)
     }
 
-    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate, UIContextMenuInteractionDelegate, UITextFieldDelegate {
         private static let markdownStyleRefreshDelay: TimeInterval = 0.08
 
         var parent: iOSMarkdownEditor
         private var isApplyingStyle = false
         private var styleSignature = MarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: [], taskEmbeds: [:])
         private var pendingStyleWorkItem: DispatchWorkItem?
+
+        // MARK: - Rendered tables (T-221)
+
+        /// The tables whose markdown is deliberately on screen, by each one's first character.
+        ///
+        /// A **command**, never an accident of caret position — that is the whole ticket. Anchored
+        /// to a storage location rather than a line index so an edit *inside* a revealed table keeps
+        /// it revealed, while an edit above it drops back to the grid.
+        var tableSourceAnchors: Set<Int> = []
+        var tableCellEditor: iOSMarkdownTableCellField?
+        var tableCellEditAddress: MarkdownTableCellAddress?
+        var tableCellEditAnchor: Int?
+        var isEndingTableCellEdit = false
+        /// Set across a table mutation so the delegate callback `replace(_:withText:)` raises does
+        /// not also publish and schedule a debounced restyle behind one this path already ran.
+        var isApplyingTableEdit = false
 
         init(parent: iOSMarkdownEditor) {
             self.parent = parent
@@ -216,7 +255,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         }
 
         func textViewDidChange(_ textView: UITextView) {
-            guard !isApplyingStyle else { return }
+            guard !isApplyingStyle, !isApplyingTableEdit else { return }
             let updatedText = textView.text ?? ""
             if applyTypingTransformIfNeeded(to: textView, text: updatedText) {
                 return
@@ -236,14 +275,16 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             refreshStylingIfNeeded(on: textView)
         }
 
-        /// The fenced code block or table the caret is inside, which the styler leaves as source
-        /// instead of drawing its canvas.
+        /// The fenced code block the caret is inside, which the styler leaves as source instead of
+        /// drawing its canvas.
         ///
-        /// This replaces the editor's old escape hatch. Both block kinds are drawn as a single
-        /// `NSTextAttachment` with every character of the block hidden behind it, so before this
-        /// they could only be edited by leaving live mode entirely — a double tap flipped the whole
-        /// app to the raw `Edit` mode, which no longer exists. Nil while the editor is unfocused, so
-        /// a note at rest always shows finished blocks.
+        /// **`.table` used to be in here beside `.code`, and removing it is T-221.** A table that
+        /// un-renders the moment you touch it is a table you edit by typing pipes, which is the
+        /// complaint the ticket opened with; its source is reachable by the **Show Table Source**
+        /// command instead (`tableSourceAnchors`), never by caret position. A code fence keeps the
+        /// caret rule because its content *is* text you type — there is no cell to host.
+        ///
+        /// Nil while the editor is unfocused, so a note at rest always shows finished blocks.
         private func revealedBlockRange(in textView: UITextView) -> NSRange? {
             guard textView.isFirstResponder else { return nil }
             guard let block = MarkdownRenderedBlockDeletionSupport.renderedBlock(
@@ -251,13 +292,33 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 in: textView.text ?? ""
             ) else { return nil }
             switch block.kind {
-            case .code, .table:
+            case .code:
                 return block.storageRange
-            case .image, .task, .divider:
+            case .image, .task, .divider, .table:
                 // These are reachable without their source: images come from the picker, task
-                // embeds open their own sheet, and a divider is one keystroke to retype.
+                // embeds open their own sheet, a divider is one keystroke to retype, and a table is
+                // edited cell by cell where it is drawn.
                 return nil
             }
+        }
+
+        /// Every block currently showing its own markdown, by whichever route.
+        ///
+        /// The two routes are deliberately different shapes — a code fence reveals by caret, a table
+        /// only by command — and every rule that protects a reader from editing text they cannot see
+        /// has to stand down for both. Passed to `MarkdownRenderedBlockDeletionSupport`, which is
+        /// where those rules live.
+        func sourceRevealedRanges(in textView: UITextView) -> [NSRange] {
+            var ranges: [NSRange] = []
+            if let revealed = revealedBlockRange(in: textView) {
+                ranges.append(revealed)
+            }
+            guard !tableSourceAnchors.isEmpty else { return ranges }
+            let markdown = textView.text ?? ""
+            ranges.append(contentsOf: MarkdownTableEditor.grids(in: markdown)
+                .filter { tableSourceAnchors.contains($0.storageRange.location) }
+                .map(\.storageRange))
+            return ranges
         }
 
         func textView(
@@ -376,7 +437,8 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             let markdown = textView.text ?? ""
             guard let deletionRange = MarkdownRenderedBlockDeletionSupport.expandedDeletionRange(
                 in: markdown,
-                selection: range
+                selection: range,
+                sourceRevealedRanges: sourceRevealedRanges(in: textView)
             ), deletionRange != range else {
                 return false
             }
@@ -413,7 +475,8 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 revealedBlockRange: revealedBlockRange(in: textView),
                 imageAssets: parent.imageAssets,
                 taskEmbeds: parent.taskEmbeds,
-                contentWidth: textView.markdownContentWidth
+                contentWidth: textView.markdownContentWidth,
+                tableSourceAnchors: tableSourceAnchors
             )
             guard current != styleSignature else { return }
             styleSignature = current
@@ -501,7 +564,8 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 revealedBlockRange: revealed,
                 imageAssets: parent.imageAssets,
                 taskEmbeds: parent.taskEmbeds,
-                contentWidth: textView.markdownContentWidth
+                contentWidth: textView.markdownContentWidth,
+                tableSourceAnchors: tableSourceAnchors
             )
             storage.setAttributedString(styled)
             textView.typingAttributes = iOSMarkdownStyler.baseTypingAttributes
@@ -509,8 +573,13 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 revealedBlockRange: revealed,
                 imageAssets: parent.imageAssets,
                 taskEmbeds: parent.taskEmbeds,
-                contentWidth: textView.markdownContentWidth
+                contentWidth: textView.markdownContentWidth,
+                tableSourceAnchors: tableSourceAnchors
             )
+            // Every restyle rebuilds the grids, so an open cell field is now framed against rects
+            // that no longer exist. Reposition rather than tear down: a keyboard appearing resizes
+            // the view, and closing the field there would close it the instant it opened.
+            repositionTableCellEditor(in: textView)
         }
 
         private func scheduleMarkdownStyleRefresh(on textView: UITextView, text: String) {
@@ -541,7 +610,8 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             // it collapses to the far edge of the block rather than showing handles over the canvas.
             if let collapsed = MarkdownRenderedBlockDeletionSupport.collapsedSelection(
                 for: selection,
-                in: textView.text ?? ""
+                in: textView.text ?? "",
+                sourceRevealedRanges: sourceRevealedRanges(in: textView)
             ) {
                 selection = clamped(collapsed, in: textView.textStorage)
                 textView.selectedRange = selection
@@ -597,7 +667,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             }
         }
 
-        /// Double-tapping a rendered code fence or table puts the caret in it.
+        /// Double-tapping a rendered code fence puts the caret in it.
         ///
         /// `revealedBlockRange(in:)` then keeps that block as editable source for as long as the
         /// caret stays inside it. This used to flip the whole app into the raw `Edit` mode instead,
@@ -660,6 +730,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         }
 
         static let renderedBlockTapName = "cadence.markdown.renderedBlockTap"
+        static let tableCellTapName = "cadence.markdown.tableCellTap"
         static let imageResizeName = "cadence.markdown.imageResize"
 
         // MARK: - Image resize
@@ -758,14 +829,21 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         /// the handler was too late: by then the recognizer had begun and taken the touch, so the
         /// text view never saw the double tap that was meant for it.
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            guard gestureRecognizer.name == Self.renderedBlockTapName,
-                  let textView = gestureRecognizer.view as? UITextView else { return true }
+            guard let textView = gestureRecognizer.view as? UITextView else { return true }
+            if gestureRecognizer.name == Self.tableCellTapName {
+                return markdownTableCellHit(at: gestureRecognizer.location(in: textView), in: textView) != nil
+            }
+            guard gestureRecognizer.name == Self.renderedBlockTapName else { return true }
             return revealableBlock(at: gestureRecognizer.location(in: textView), in: textView) != nil
         }
 
-        /// The one definition of "a double tap here reveals source": a rendered code fence or
-        /// table. Read by the gate above and by the handler, so the two cannot disagree about
-        /// which taps this recognizer owns.
+        /// The one definition of "a double tap here reveals source": a rendered **code fence**.
+        /// Read by the gate above and by the handler, so the two cannot disagree about which taps
+        /// this recognizer owns.
+        ///
+        /// A table is deliberately not here any more (T-221). A double tap on a grid used to put the
+        /// caret in it and un-render it; a single tap now opens the cell under the finger, and the
+        /// source is a menu command.
         private func revealableBlock(
             at point: CGPoint,
             in textView: UITextView
@@ -775,7 +853,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                     atUTF16Location: hit.characterIndex,
                     in: textView.text ?? ""
                   ),
-                  block.kind == .code || block.kind == .table else {
+                  block.kind == .code else {
                 return nil
             }
             return block

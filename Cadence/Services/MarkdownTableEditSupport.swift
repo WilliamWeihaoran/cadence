@@ -218,6 +218,26 @@ nonisolated enum MarkdownTableEditor {
         return MarkdownTableEdit(replacementRange: range, replacement: replacement, focus: address)
     }
 
+    /// The edit a **committed** cell needs, or `nil` when there is nothing to write.
+    ///
+    /// The no-op answer is the load-bearing one, and it is here rather than in either platform's
+    /// hosted-field code because both need it and neither can be trusted to keep re-deriving it.
+    /// Tab across five cells without typing and every one of them commits; if each registered a
+    /// text-view edit, `Cmd+Z` five times would walk back through edits the user never made. The
+    /// trim is part of the same decision — `rowSource` writes `| a | b |` with a space either side
+    /// of every cell, so a field handing back `" a "` is handing back the value that is already
+    /// there.
+    static func commit(
+        _ text: String,
+        at address: MarkdownTableCellAddress,
+        in grid: MarkdownTableGrid
+    ) -> MarkdownTableEdit? {
+        guard grid.isValid(address) else { return nil }
+        let normalized = text.trimmingCharacters(in: .whitespaces)
+        guard grid.cell(at: address) != normalized else { return nil }
+        return settingCell(address, to: normalized, in: grid)
+    }
+
     /// Adds an empty row directly below `row` — what Return does.
     ///
     /// A header row's "below" is the first body row, which is the line *after* the delimiter, so

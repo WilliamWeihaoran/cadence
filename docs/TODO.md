@@ -53,6 +53,29 @@ _Nothing in flight._
 
 
 - [T-221] **Edit tables in place — DONE on macOS, and the iOS half is the whole remainder.**
+
+  **OPEN, measured on a simulator 2026-08-26 and the one defect the iOS half still has.**
+  Committing a cell whose table's delimiter row is spelled `---` / `---:` rewrites that delimiter
+  to an em dash (`—` / `—:`). The row itself is written correctly, but the delimiter no longer
+  parses — `alignment(ofDelimiterCell:)` tests `contains("-")` and U+2014 is not U+002D — so the
+  table stops being a table and drops to raw source in front of the user. That is the complaint the
+  ticket opened with, arriving by a new route.
+
+  Four measurements that bound it, all on iPhone 17 Pro / iOS 26.5, ground truth read out of the
+  store rather than off the screen:
+  - It needs the **hosted cell field plus typing**. Open a cell and close it without typing: no
+    edit, no corruption. Same table, same delimiter.
+  - It is **not** `applyMarkdownTableEdit`. The context menu's **Insert Row Below** goes through the
+    identical `textView.replace(_:withText:)` write path and left `| --- | ---: |` byte-identical.
+  - It is **local to the edited table**. Editing a cell in a `-`-delimited table left a `---`
+    delimiter in another table in the same note untouched, so it is not a document-wide pass.
+  - It is **not the app's own text**. There is no em-dash literal anywhere in `Cadence/`, and both
+    `iOSMarkdownEditor`'s text view and `iOSMarkdownTableCellField` set `smartDashesType = .no`.
+  In both reproductions the corrupted delimiter was the line *immediately above* the replaced row
+  (row 1, the first body row), which is the shape to test first: UIKit applying a smart-dash
+  substitution next to a programmatic `UITextInput.replace` issued while the hosted field's keyboard
+  session is unwinding. A `-` delimiter is unaffected, which is why the rest of the surface tests
+  green.
   **DECIDED 2026-08-26: port it to iOS.** The user's call, asked after the macOS half shipped. The
   design questions are settled and `MarkdownTableEditSupport` / `MarkdownTableLayoutSupport` are
   already platform-free. The one trap is recorded in `0b44973`'s message and must be read first:

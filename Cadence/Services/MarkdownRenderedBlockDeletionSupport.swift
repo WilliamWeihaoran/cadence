@@ -17,12 +17,14 @@ nonisolated struct MarkdownRenderedBlock: Equatable {
 nonisolated enum MarkdownRenderedBlockDeletionSupport {
     static func expandedDeletionRange(
         in markdown: String,
-        selection: NSRange
+        selection: NSRange,
+        sourceRevealedRanges: [NSRange] = []
     ) -> NSRange? {
         let nsMarkdown = markdown as NSString
         guard nsMarkdown.length > 0 else { return nil }
         let safeSelection = clamped(selection, length: nsMarkdown.length)
         let candidates = renderedBlockRanges(in: markdown)
+            .filter { !isSourceRevealed($0, sourceRevealedRanges) }
 
         if safeSelection.length > 0 {
             return candidates.first { NSIntersectionRange($0.storageRange, safeSelection).length > 0 }?.deletionRange
@@ -36,12 +38,41 @@ nonisolated enum MarkdownRenderedBlockDeletionSupport {
         }?.deletionRange
     }
 
-    /// Block kinds whose source stays hidden no matter where the caret is.
+    /// Block kinds whose source stays hidden no matter where the caret is *and* no matter what the
+    /// reader asks for.
     ///
-    /// Code fences and tables are deliberately absent: the editor un-renders whichever of those the
-    /// caret is inside (`revealedBlockRange`), so a selection there is a selection over visible
-    /// source and must be left alone.
+    /// Code fences and tables are absent because both have an escape hatch, and they are not the
+    /// same hatch — see `hidesSourceFromSelection` below, which is what callers should be asking.
     private static let alwaysRenderedKinds: Set<MarkdownRenderedBlockKind> = [.image, .task, .divider]
+
+    /// Whether a block is currently showing its own markdown because the reader asked for it.
+    ///
+    /// The editor's two escape hatches are different shapes and this is the one thing they share.
+    /// A fenced code block un-renders while the caret is inside it, so its revealed range is the
+    /// caret's block; a table un-renders only on the explicit **Show Table Source** command, so its
+    /// revealed range is whichever table the command names. Either way the characters under it are
+    /// on screen, and every rule below that exists to protect a reader from editing text they
+    /// cannot see has to stand down.
+    private static func isSourceRevealed(_ block: MarkdownRenderedBlock, _ sourceRevealedRanges: [NSRange]) -> Bool {
+        sourceRevealedRanges.contains { NSIntersectionRange($0, block.storageRange).length > 0 }
+    }
+
+    /// Whether a selection lying wholly inside this block is a selection of nothing.
+    ///
+    /// **`.table` is in this set since T-221's iOS half, and the change is the ticket.** A table
+    /// used to un-render whenever the caret landed in it, so a selection there was a selection over
+    /// visible pipes and had to be left alone — which is why the stored set above lists only the
+    /// three kinds that never show their source. Now that a table is a grid you edit cell by cell,
+    /// its characters are hidden like a task embed's, and a drag inside one produces the same
+    /// handles-over-a-card nothing this function exists to collapse. `.code` is deliberately still
+    /// absent: it is the one block that reveals itself by caret position.
+    private static func hidesSourceFromSelection(
+        _ block: MarkdownRenderedBlock,
+        _ sourceRevealedRanges: [NSRange]
+    ) -> Bool {
+        guard !isSourceRevealed(block, sourceRevealedRanges) else { return false }
+        return alwaysRenderedKinds.contains(block.kind) || block.kind == .table
+    }
 
     /// Collapses a selection that lies entirely inside a block whose characters are never visible.
     ///
@@ -54,7 +85,11 @@ nonisolated enum MarkdownRenderedBlockDeletionSupport {
     /// Returns nil for an empty selection (that is `MarkdownHiddenRangeSupport.snappedCaretLocation`'s
     /// job) and for a selection that also covers text outside the block, which is a legitimate
     /// "select this paragraph and the card under it" gesture.
-    static func collapsedSelection(for selection: NSRange, in markdown: String) -> NSRange? {
+    static func collapsedSelection(
+        for selection: NSRange,
+        in markdown: String,
+        sourceRevealedRanges: [NSRange] = []
+    ) -> NSRange? {
         guard selection.length > 0 else { return nil }
         let nsMarkdown = markdown as NSString
         guard nsMarkdown.length > 0 else { return nil }
@@ -62,7 +97,7 @@ nonisolated enum MarkdownRenderedBlockDeletionSupport {
         guard safeSelection.length > 0 else { return nil }
 
         guard let block = renderedBlockRanges(in: markdown).first(where: { block in
-            alwaysRenderedKinds.contains(block.kind) &&
+            hidesSourceFromSelection(block, sourceRevealedRanges) &&
                 NSIntersectionRange(block.storageRange, safeSelection) == safeSelection
         }) else { return nil }
 

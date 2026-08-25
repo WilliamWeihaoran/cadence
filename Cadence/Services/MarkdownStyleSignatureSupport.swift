@@ -18,6 +18,19 @@ struct MarkdownStyleSignature: Equatable {
     /// so its source can be edited. Part of the signature because moving the caret in or out of one
     /// changes the styling with no text edit to trigger a refresh.
     let revealedBlockRange: NSRange?
+    /// The tables the reader has asked to see the markdown of, by the storage location of each
+    /// one's first character. **The one entry T-221's iOS half could not do without.**
+    ///
+    /// "Show Table Source" is a render decision with no text edit behind it, exactly like
+    /// `revealedBlockRange` above — and unlike that one it is a *command*, so nothing else in the
+    /// editor moves when it is issued. Left out of this value, `refreshStylingIfNeeded` would
+    /// compare an unchanged signature, skip, and the menu item would do nothing at all.
+    ///
+    /// Anchors rather than ranges because an anchor survives an edit made *inside* the table it
+    /// names: a cell rewrite, a row insert and a whole-table column rewrite all start at or after
+    /// the table's first character, so the table stays revealed across its own edits and drops back
+    /// to the grid when something above it moves.
+    let tableSourceAnchors: [Int]
     let contentWidthBucket: Int
     let imageAssetRevision: String
     let taskEmbedRevision: String
@@ -26,11 +39,15 @@ struct MarkdownStyleSignature: Equatable {
         revealedBlockRange: NSRange?,
         imageAssets: [MarkdownImageAsset],
         taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:],
-        contentWidth: CGFloat = 0
+        contentWidth: CGFloat = 0,
+        tableSourceAnchors: Set<Int> = []
     ) -> MarkdownStyleSignature {
         MarkdownStyleSignature(
             theme: "fixed",
             revealedBlockRange: revealedBlockRange,
+            // Sorted, so the same set of revealed tables is the same signature however the caller
+            // happened to accumulate it — the rule `imageAssetRevision` below already follows.
+            tableSourceAnchors: tableSourceAnchors.sorted(),
             contentWidthBucket: Int(max(0, contentWidth).rounded()),
             imageAssetRevision: imageAssets
                 .sorted { $0.id.uuidString < $1.id.uuidString }

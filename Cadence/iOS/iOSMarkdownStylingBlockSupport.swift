@@ -5,9 +5,11 @@ import UIKit
 /// **Block-level styling: fenced code, tables, dividers, images and task-embed cards.**
 ///
 /// Each pass swaps a run of source for one pre-rendered canvas (`drawCanvas`) and collapses the
-/// lines the canvas replaced (`collapseLine`), with two exceptions that stay as source: a block the
-/// caret is currently inside (`MarkdownStyleRanges.isRevealed`), and a table whose header row parses
-/// to nothing.
+/// lines the canvas replaced (`collapseLine`), with two exceptions that stay as source: a **fenced
+/// code block** the caret is currently inside (`MarkdownStyleRanges.isRevealed`), and a table whose
+/// source the reader has explicitly asked for. A table is the one block that does **not** reveal by
+/// caret position — see `applyLiveTableBlocks` — and it is the one block that does not go through
+/// `drawCanvas` either, because it draws itself in vectors.
 ///
 /// Where a block *starts and ends* is not decided here — `MarkdownTableParser.tableBlock` groups a
 /// table's lines and `MarkdownBlockSupport.fencedCodeBlocks` groups a fence's, both in `Services/`
@@ -74,78 +76,73 @@ extension iOSMarkdownStyler {
         drawCanvas(storage, canvas, over: lineRange, isBlock: true, yOffset: 0)
     }
 
+    /// Renders every table as one editable grid, and hides the pipes it was spelled with.
+    ///
+    /// **The source stays in the storage, untouched — only its glyphs are collapsed.** That single
+    /// choice is what lets a hosted cell field exist at all: a selection spanning the table still
+    /// covers the markdown, copying it still yields pipes, and a committed cell is an ordinary
+    /// text-view edit on the view's own undo stack rather than a rewrite of the whole note.
+    ///
+    /// **There is no caret-reveal here any more, and its absence is T-221.** A table used to
+    /// un-render the moment the caret landed inside it, which meant editing a table on this
+    /// platform meant typing pipes — the complaint the ticket opened with. The raw source is now
+    /// reachable only by the explicit **Show Table Source** command, whose anchors arrive in
+    /// `tableSourceAnchors`; a table named there falls back to the banded per-row styling
+    /// `styleLine` has always drawn. Fenced code blocks are unchanged and still reveal by caret.
     static func applyLiveTableBlocks(
         _ storage: NSMutableAttributedString,
-        lines: [String],
-        lineRecords: [MarkdownSourceLine],
-        tableRows: [Int: MarkdownTableRowStyle],
+        markdown: String,
         contentWidth: CGFloat,
-        revealedBlockRange: NSRange?
+        tableSourceAnchors: Set<Int>
     ) {
-        guard !tableRows.isEmpty else { return }
-        var cursor = 0
-        while cursor < lines.count {
-            // Grouping the table's lines is `MarkdownTableParser.tableBlock`'s job — the same walk
-            // `MarkdownPreviewParser` uses, so the canvas and the preview cannot drift apart on
-            // where a table ends.
-            guard let block = MarkdownTableParser.tableBlock(startingAt: cursor, lines: lines, tableRows: tableRows) else {
-                cursor += 1
-                continue
-            }
-            let nextIndex = block.nextIndex
+        let documentRange = NSRange(location: 0, length: storage.length)
+        guard documentRange.length > 0 else { return }
 
-            guard let firstRecord = lineRecords.first(where: { $0.index == cursor }),
-                  firstRecord.range.length > 0,
-                  !block.headers.isEmpty else {
-                cursor = max(nextIndex, cursor + 1)
-                continue
-            }
+        // `MarkdownTableEditor.grids` walks `MarkdownTableParser`, which is the same walk
+        // `MarkdownPreviewParser` and the macOS grid use — so where a table starts and stops is
+        // still decided in exactly one place.
+        for grid in MarkdownTableEditor.grids(in: markdown) {
+            guard grid.columnCount > 0, grid.rowCount > 0 else { continue }
+            guard !tableSourceAnchors.contains(grid.storageRange.location) else { continue }
+            let range = NSIntersectionRange(grid.storageRange, documentRange)
+            guard range.length > 0 else { continue }
 
-            // Same reveal rule as a fenced code block: caret inside the table, show its pipes.
-            let lastRecord = lineRecords.first { $0.index == block.lineIndexes.last }
-            let tableRange = NSRange(
-                location: firstRecord.range.location,
-                length: NSMaxRange(lastRecord?.range ?? firstRecord.range) - firstRecord.range.location
+            // `styleLine` has already given every row of this table the banded source treatment,
+            // which is the *other* spelling of the same table. The background band would otherwise
+            // paint a stripe through the grid drawn over it.
+            storage.removeAttribute(.backgroundColor, range: range)
+            hide(storage, range)
+
+            let collapsed = NSMutableParagraphStyle()
+            collapsed.lineSpacing = 0
+            collapsed.paragraphSpacing = 0
+            collapsed.paragraphSpacingBefore = 0
+            collapsed.minimumLineHeight = 0.1
+            collapsed.maximumLineHeight = 0.1
+            storage.addAttribute(.paragraphStyle, value: collapsed, range: range)
+
+            let headerLine = NSIntersectionRange(grid.rowLineRanges[0], documentRange)
+            guard headerLine.length > 0 else { continue }
+
+            let info = iOSMarkdownTableRenderInfo.make(grid: grid, containerWidth: contentWidth)
+            let reserved = MarkdownTableMetrics.reservedLineHeight(
+                rowCount: grid.rowCount,
+                rowHeight: iOSMarkdownTableGridMetrics.rowHeight
             )
-            if MarkdownStyleRanges.isRevealed(tableRange, by: revealedBlockRange) {
-                cursor = max(nextIndex, cursor + 1)
-                continue
-            }
-
-            let table = iOSMarkdownLiveTableLayoutInfo(
-                headers: block.headers,
-                rows: block.rows,
-                alignments: block.alignments
+            let canvas = NSMutableParagraphStyle()
+            canvas.lineSpacing = 0
+            canvas.minimumLineHeight = reserved
+            canvas.maximumLineHeight = reserved
+            canvas.lineBreakMode = .byClipping
+            canvas.paragraphSpacingBefore = 8
+            canvas.paragraphSpacing = 6
+            storage.addAttribute(.paragraphStyle, value: canvas, range: headerLine)
+            storage.addAttribute(
+                .cadenceMarkdownTable,
+                value: info,
+                range: NSRange(location: headerLine.location, length: 1)
             )
-            applyTableBlock(storage, lineRange: firstRecord.range, table: table, contentWidth: contentWidth)
-
-            for lineIndex in block.lineIndexes.dropFirst() {
-                guard let record = lineRecords.first(where: { $0.index == lineIndex }) else { continue }
-                collapseLine(storage, lineRange: record.range)
-            }
-
-            cursor = max(nextIndex, cursor + 1)
         }
-    }
-
-    private static func applyTableBlock(
-        _ storage: NSMutableAttributedString,
-        lineRange: NSRange,
-        table: iOSMarkdownLiveTableLayoutInfo,
-        contentWidth: CGFloat
-    ) {
-        guard lineRange.length > 0 else { return }
-
-        let canvas = table.renderedBlock(maxWidth: contentWidth)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = canvas.size.height + 14
-        paragraph.maximumLineHeight = canvas.size.height + 14
-        paragraph.lineBreakMode = .byClipping
-        paragraph.paragraphSpacingBefore = 8
-        paragraph.paragraphSpacing = 6
-
-        storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
-        drawCanvas(storage, canvas, over: lineRange, isBlock: true, yOffset: 0)
     }
 
     static func applyDividerBlock(

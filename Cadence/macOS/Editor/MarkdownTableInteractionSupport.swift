@@ -121,17 +121,15 @@ extension CadenceTextView {
 
     /// Writes one cell back into the note, and does nothing at all when the value did not change.
     ///
-    /// The no-op guard is load-bearing rather than an optimisation: Tab through five cells without
-    /// typing and every one of them would otherwise register an undoable edit, so `Cmd+Z` five
-    /// times would walk back through edits the user never made.
+    /// The trim and the no-op guard are `MarkdownTableEditor.commit`'s, not this method's — T-221's
+    /// iOS half needed the identical rule and a second hand-written copy of "did this cell actually
+    /// change" is exactly the shape that drifts. What stays here is the part that is about *this*
+    /// text view: the anchor still has to name the table it named when the field was opened.
     @discardableResult
     func applyTableCellText(_ text: String, at address: MarkdownTableCellAddress, anchor: Int) -> Bool {
         guard let grid = MarkdownTableEditor.grid(containingUTF16Location: anchor, in: string),
               grid.storageRange.location == anchor,
-              grid.isValid(address) else { return false }
-        let normalized = text.trimmingCharacters(in: .whitespaces)
-        guard grid.cell(at: address) != normalized else { return false }
-        guard let edit = MarkdownTableEditor.settingCell(address, to: normalized, in: grid) else { return false }
+              let edit = MarkdownTableEditor.commit(text, at: address, in: grid) else { return false }
         return applyMarkdownTableEdit(edit)
     }
 

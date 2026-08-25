@@ -107,6 +107,7 @@ final class iOSMarkdownBlockCanvasLayoutManager: NSLayoutManager {
         guard let storage = textStorage else { return }
 
         let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        drawTables(in: charRange, storage: storage, origin: origin)
         storage.enumerateAttribute(.cadenceMarkdownBlockCanvas, in: charRange, options: []) { value, range, _ in
             guard let canvas = value as? iOSMarkdownBlockCanvas, range.length > 0 else { return }
             let glyphRange = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
@@ -147,6 +148,30 @@ final class iOSMarkdownBlockCanvasLayoutManager: NSLayoutManager {
             }
 
             canvas.image.draw(in: rect)
+        }
+    }
+
+    /// The rendered-table pass — **vectors, not a raster**, which is why it is a second enumeration
+    /// rather than one more `cadenceMarkdownBlockCanvas` producer.
+    ///
+    /// See `iOSMarkdownTableGridRendering` for the reason: a table you can edit cannot be capped at
+    /// `MarkdownRenderedBlockLimits.tableRowLimit` rows, and an uncapped raster rebuilt on every
+    /// keystroke is what that cap exists to prevent.
+    ///
+    /// The whole table is one canvas in one line fragment — the styler reserves the height on the
+    /// table's first source line and collapses every other line of it to 0.1pt — so, exactly like
+    /// the embed card, a dirty rect touching any part of a grid contains part of the fragment that
+    /// grid belongs to and a partial redraw cannot clip one in half.
+    nonisolated private func drawTables(in charRange: NSRange, storage: NSTextStorage, origin: CGPoint) {
+        storage.enumerateAttribute(.cadenceMarkdownTable, in: charRange, options: []) { value, range, _ in
+            guard let info = value as? iOSMarkdownTableRenderInfo, range.length > 0 else { return }
+            let glyphRange = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            guard glyphRange.length > 0 else { return }
+            let fragment = self.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
+            iOSMarkdownTableGridDrawing.draw(
+                info,
+                in: info.gridRect(inLineFragment: fragment).offsetBy(dx: origin.x, dy: origin.y)
+            )
         }
     }
 }

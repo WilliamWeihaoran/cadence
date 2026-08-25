@@ -26,7 +26,8 @@ enum iOSMarkdownStyler {
         revealedBlockRange: NSRange? = nil,
         imageAssets: [MarkdownImageAsset] = [],
         taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:],
-        contentWidth: CGFloat = 560
+        contentWidth: CGFloat = 560,
+        tableSourceAnchors: Set<Int> = []
     ) -> NSAttributedString {
         let storage = NSMutableAttributedString(string: markdown)
         let fullRange = NSRange(location: 0, length: storage.length)
@@ -39,7 +40,6 @@ enum iOSMarkdownStyler {
             MarkdownImageAssetService.renderAsset(for: asset.id, in: imageAssets).map { (asset.id, $0) }
         })
 
-        let lines = MarkdownSourceLines.texts(in: markdown)
         let lineRecords = MarkdownSourceLines.lines(in: markdown)
         let tableRows = MarkdownTableParser.rowStyles(in: markdown)
         let codeBlocks = MarkdownBlockSupport.fencedCodeBlocks(in: markdown)
@@ -72,11 +72,9 @@ enum iOSMarkdownStyler {
         )
         applyLiveTableBlocks(
             storage,
-            lines: lines,
-            lineRecords: lineRecords,
-            tableRows: tableRows,
+            markdown: markdown,
             contentWidth: contentWidth,
-            revealedBlockRange: revealedBlockRange
+            tableSourceAnchors: tableSourceAnchors
         )
 
         styleInline(
