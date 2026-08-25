@@ -78,16 +78,29 @@ struct GlobalSearchCommandDefinition {
 
 /// A row in Cmd+K's **Pages** section.
 ///
-/// The destination is the one stored fact, and the three things that used to be typed beside it
-/// all follow from it: the selection the row opens (`item`), the tint it is drawn in, and the
-/// sidebar toggle its subtitle reports on (`toggleable`). See `GlobalSearchCommandDefinition` for
-/// why the tint is not spelled here.
+/// The destination is the one stored fact, and the four things that used to be typed beside it
+/// all follow from it: the selection the row opens (`item`), the tint it is drawn in, the sidebar
+/// toggle its subtitle reports on (`toggleable`), and — since T-258 — the glyph (`icon`). See
+/// `GlobalSearchCommandDefinition` for why the tint is not spelled here.
 struct GlobalSearchPageDefinition {
     let label: String
     let feature: CadenceFeatureDestination
-    let icon: String
     let baseSubtitle: String
     let aliases: String
+
+    /// The glyph the sidebar draws this destination with (T-258).
+    ///
+    /// It was a stored `let icon: String` typed beside each entry, and eight of the nine happened
+    /// to equal `systemImage` while the ninth did not: the palette said `doc.text` for Notes and
+    /// the sidebar said `note.text`, so one destination wore two glyphs depending on how you
+    /// reached it. Same defect class as the tint one line down — two lists answering one question
+    /// about a destination, agreeing until one of them moved. The field is **deleted** rather than
+    /// left stored-and-equal, because a second copy that currently matches is exactly the state
+    /// this one was in before somebody changed the sidebar's glyph.
+    ///
+    /// The `doc.text` on `GlobalSearchIndexSupport`'s event-note rows is unrelated and stays:
+    /// those rows are notes, not the Notes destination.
+    var icon: String { feature.systemImage }
 
     /// `nil` for a destination the sidebar does not route to as a page — `.lists` is the
     /// scrolling region and `.search` is the header button, so neither can be a palette row.
@@ -169,15 +182,15 @@ extension GlobalSearchCommandDefinition {
 extension GlobalSearchPageDefinition {
     static var all: [GlobalSearchPageDefinition] {
         [
-            .init(label: "Today", feature: .today, icon: "sun.max.fill", baseSubtitle: "Daily dashboard and timeline", aliases: "today dashboard daily"),
-            .init(label: "All Tasks", feature: .allTasks, icon: "checklist", baseSubtitle: "Everything across your workspace", aliases: "tasks all"),
-            .init(label: "Inbox", feature: .inbox, icon: "tray.fill", baseSubtitle: "Unsorted capture tasks", aliases: "inbox capture"),
-            .init(label: "Focus", feature: .focus, icon: "timer", baseSubtitle: "Focus timer and active task", aliases: "focus timer pomodoro"),
-            .init(label: "Calendar", feature: .calendar, icon: "calendar", baseSubtitle: "Full calendar and time blocks", aliases: "calendar schedule events"),
-            .init(label: "Goals", feature: .goals, icon: "flag.fill", baseSubtitle: "Directions, milestones, and progress", aliases: "goals milestones targets stages directions"),
-            .init(label: "Habits", feature: .habits, icon: "flame.fill", baseSubtitle: "Habits and streaks", aliases: "habits streaks"),
-            .init(label: "Notes", feature: .notes, icon: "doc.text", baseSubtitle: "Workspace notes", aliases: "notes docs"),
-            .init(label: "Settings", feature: .settings, icon: "gearshape.fill", baseSubtitle: "Appearance, calendar, and sidebar preferences", aliases: "settings preferences")
+            .init(label: "Today", feature: .today, baseSubtitle: "Daily dashboard and timeline", aliases: "today dashboard daily"),
+            .init(label: "All Tasks", feature: .allTasks, baseSubtitle: "Everything across your workspace", aliases: "tasks all"),
+            .init(label: "Inbox", feature: .inbox, baseSubtitle: "Unsorted capture tasks", aliases: "inbox capture"),
+            .init(label: "Focus", feature: .focus, baseSubtitle: "Focus timer and active task", aliases: "focus timer pomodoro"),
+            .init(label: "Calendar", feature: .calendar, baseSubtitle: "Full calendar and time blocks", aliases: "calendar schedule events"),
+            .init(label: "Goals", feature: .goals, baseSubtitle: "Directions, milestones, and progress", aliases: "goals milestones targets stages directions"),
+            .init(label: "Habits", feature: .habits, baseSubtitle: "Habits and streaks", aliases: "habits streaks"),
+            .init(label: "Notes", feature: .notes, baseSubtitle: "Workspace notes", aliases: "notes docs"),
+            .init(label: "Settings", feature: .settings, baseSubtitle: "Appearance, calendar, and sidebar preferences", aliases: "settings preferences")
         ]
     }
 }

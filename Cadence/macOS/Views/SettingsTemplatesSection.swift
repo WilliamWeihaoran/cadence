@@ -308,10 +308,7 @@ private struct TemplateEditorField<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Theme.dim)
-                .kerning(0.8)
+            SectionEyebrowLabel(text: title)
             content
                 .padding(10)
                 .background(Theme.bg.opacity(0.55))

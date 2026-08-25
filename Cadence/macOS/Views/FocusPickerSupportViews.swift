@@ -21,10 +21,7 @@ struct FocusPickSessionCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Ready to focus")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .textCase(.uppercase)
+                    SectionEyebrowLabel(text: "Ready to focus")
 
                     Text(title)
                         .font(.system(size: 23, weight: .semibold))

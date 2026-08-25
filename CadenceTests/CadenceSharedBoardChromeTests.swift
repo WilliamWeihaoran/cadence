@@ -229,6 +229,195 @@ struct CadenceSharedBoardChromeTests {
     }
 }
 
+// MARK: - T-275: the eyebrow is spelled once
+
+/// `SectionEyebrowLabel` exists to stop section eyebrows being re-typed, and twenty call sites on
+/// both platforms were re-typing one anyway — six of them in files that used the shared label
+/// correctly a few lines away. They had drifted exactly the way independently-typed values do:
+/// six specified no kerning at all, three specified 0.6, 0.7 and 0.8, one drew the whole heading at
+/// 11pt, one tinted `Theme.muted`, and two were `.bold` where the rest were `.semibold`.
+///
+/// **The load-bearing test here is the negative one, and that is deliberate.** A positive scan —
+/// "this file mentions `SectionEyebrowLabel`" — has twice passed in this repo while the bug was
+/// fully restored, because the string it looked for was still present somewhere unreachable. A
+/// sweep of the whole `Cadence/` tree for the hand-rolled *shape* cannot be satisfied that way: the
+/// fork has to be absent everywhere, not the shared spelling present somewhere.
+@MainActor
+struct CadenceSectionEyebrowConvergenceTests {
+
+    /// The one file allowed to draw the shape, with the reason it is not an eyebrow.
+    ///
+    /// A calendar month column's `MON` sits above the day number as its *date* label, in
+    /// `isToday ? Theme.blue : Theme.dim` and kerned 0.5 to sit under a 32pt circle. iOS draws the
+    /// same header in `iOSCalendarTimelineViews` at `iOSCalendarTimelineMetrics.weekdaySize`. The
+    /// two weekday headers have to agree with **each other**, which is a different question from
+    /// whether either agrees with a section eyebrow, and answering it by pointing both at
+    /// `SectionEyebrowLabel` would decide the first question by accident.
+    private static let notAnEyebrow: Set<String> = [
+        "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift"
+    ]
+
+    /// **The T-161 test.** Re-fork any one of the twenty converted sites and this fails, because
+    /// the shape reappears — no matter how many other files still name the shared label.
+    @Test func noSurfaceHandRollsTheSharedEyebrow() throws {
+        var scanned = 0
+        var offenders: [String] = []
+
+        for path in try swiftFiles(under: "Cadence") {
+            scanned += 1
+            guard !Self.notAnEyebrow.contains(path) else { continue }
+            if handRolledEyebrowLines(in: strippingLineCommentsFast(try sourceFile(path))) > 0 {
+                offenders.append(path)
+            }
+        }
+
+        // Non-vacuity: a loop over nothing passes, and `swiftFiles` returning `[]` on a path
+        // mistake is exactly how that happens.
+        #expect(scanned > 250, "scanned only \(scanned) files under Cadence/")
+        #expect(
+            offenders.isEmpty,
+            "hand-rolled section eyebrow(s) in: \(offenders.sorted().joined(separator: ", "))"
+        )
+    }
+
+    /// The allowlist is not a place to retire the check to. If the weekday header ever stops
+    /// drawing the shape, this fails and the entry goes — an allowlist nobody can prove is still
+    /// needed is an allowlist that grows.
+    @Test func theAllowlistedFileStillDrawsTheShapeItIsExcusedFor() throws {
+        for path in Self.notAnEyebrow {
+            let hits = handRolledEyebrowLines(in: strippingLineCommentsFast(try sourceFile(path)))
+            #expect(hits > 0, "\(path) no longer draws the shape it is allowlisted for — delete the entry")
+        }
+    }
+
+    /// The detector itself, against text that is not the repository. Without this the sweep above
+    /// is one typo away from scanning for a pattern nothing can match and passing forever.
+    @Test func theDetectorFindsTheShapeAndIgnoresItsNeighbours() {
+        let handRolled = """
+        Text(title.uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Theme.dim)
+            .kerning(0.8)
+        """
+        #expect(handRolledEyebrowLines(in: handRolled) == 1)
+
+        // The shared spelling, which is what the twenty sites read now.
+        #expect(handRolledEyebrowLines(in: "SectionEyebrowLabel(text: title)") == 0)
+
+        // A 10pt semibold glyph that is neither uppercased nor an eyebrow tint — the commonest
+        // shape in the app, and the one a looser detector would drown in.
+        #expect(handRolledEyebrowLines(in: """
+        Image(systemName: "checkmark")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Theme.blue)
+        """) == 0)
+
+        // Uppercase and dim, but at the 9pt sub-label tier, which is a separate self-consistent
+        // tier and out of scope.
+        #expect(handRolledEyebrowLines(in: """
+        Text(title.uppercased())
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(Theme.dim)
+            .kerning(0.45)
+        """) == 0)
+    }
+
+    /// The positive half, with exact counts, so a site that leaves the shared label for a *new*
+    /// bespoke spelling the detector does not model still fails something.
+    @Test func theConvertedSitesCallTheSharedLabel() throws {
+        try expectCallSites(of: "SectionEyebrowLabel", at: [
+            "Cadence/macOS/Sheets/CreateGoalSheet.swift": 1,
+            "Cadence/macOS/Sheets/ListEditorSupportViews.swift": 1,
+            "Cadence/macOS/Views/FocusChromeSupportViews.swift": 1,
+            "Cadence/macOS/Views/FocusPickerSupportViews.swift": 1,
+            "Cadence/macOS/Views/FocusSidebarSupportViews.swift": 1,
+            "Cadence/macOS/Views/GlobalSearchOverlayShellViews.swift": 1,
+            "Cadence/macOS/Views/GoalsSupportViews.swift": 1,
+            "Cadence/macOS/Views/HabitsFormSupportViews.swift": 1,
+            "Cadence/macOS/Views/ListDetailSupportViews.swift": 1,
+            "Cadence/macOS/Views/ListNotesViewSupportViews.swift": 1,
+            "Cadence/macOS/Views/NoteReferenceSupportViews.swift": 1,
+            "Cadence/macOS/Views/SchedulePanelShellViews.swift": 1,
+            "Cadence/macOS/Views/SettingsTemplatesSection.swift": 1,
+            "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift": 1,
+            "Cadence/Shared/CadenceSettingsSharedViews.swift": 1,
+            "Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift": 1,
+            "Cadence/Shared/Components/CommitmentSharedViews.swift": 1,
+            "Cadence/Shared/Components/HabitProgressViews.swift": 1,
+            "Cadence/iOS/iOSFeatureDetailViews.swift": 1,
+            "Cadence/iOS/iPadTodayScheduleViews.swift": 1
+        ])
+    }
+
+    /// The one measurement the conversion changed rather than preserved: the overdue summary
+    /// heading drew label *and* count at 11pt, the app's only eyebrow at that size. Both are 10
+    /// now, and the count reads the shared constant rather than a second literal — the rule the
+    /// board column header and the task group heading already state.
+    @Test func theCountBesideAnEyebrowIsTheEyebrowsOwnSize() throws {
+        #expect(SectionEyebrowLabel.fontSize == 10)
+        #expect(CadenceTaskGroupHeadingMetrics.countSize == SectionEyebrowLabel.fontSize)
+        #expect(CadenceBoardColumnHeaderMetrics.countSize == SectionEyebrowLabel.fontSize)
+
+        let card = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift"))
+        #expect(card.contains("struct CadenceTodayOverdueSummaryHeading"), "non-vacuity: still the heading's file")
+        #expect(card.contains("size: SectionEyebrowLabel.fontSize"))
+        // The file keeps a plain 11pt body line; what may not come back is an 11pt *eyebrow*.
+        #expect(!card.contains("size: 11, weight: .semibold"), "the 11pt eyebrow tier is back")
+    }
+}
+
+/// Counts the hand-rolled eyebrow: a 10 or 11pt semibold/bold `Text` that is uppercased or kerned
+/// 0.8, in one of the two eyebrow tints, within six lines of the font it is drawn in.
+///
+/// Six lines is the whole modifier run at every one of the twenty sites this replaced and is far
+/// short of a view body, which is what keeps it from reporting an unrelated uppercase `Text` that
+/// happens to sit near a semibold glyph. Measured against the tree at the time of writing: 26 hits
+/// before the conversion, 1 after, no false positives in either direction.
+///
+/// **Literal `contains`, not a regular expression.** Four exact strings cover the whole eyebrow
+/// tier, and a sweep of all 509 files under `Cadence/` runs one substring check per line instead
+/// of compiling and running a pattern. Same reason `strippingLineCommentsFast` exists below: the
+/// other tests in this file read a handful of named paths, and a helper that is fine at that size
+/// is the wrong shape for a whole-tree sweep.
+private func handRolledEyebrowLines(in source: String) -> Int {
+    let fonts = [
+        ".font(.system(size: 10, weight: .semibold))",
+        ".font(.system(size: 10, weight: .bold))",
+        ".font(.system(size: 11, weight: .semibold))",
+        ".font(.system(size: 11, weight: .bold))"
+    ]
+    let lines = source.components(separatedBy: "\n")
+    var count = 0
+
+    for (index, line) in lines.enumerated() {
+        guard fonts.contains(where: line.contains) else { continue }
+        let window = lines[max(0, index - 6)...min(lines.count - 1, index + 6)].joined(separator: "\n")
+        let uppercased = window.contains(".textCase(.uppercase)") || window.contains(".uppercased()")
+        let kerned = window.contains(".kerning(0.8)")
+        let eyebrowTint = window.contains("Theme.dim") || window.contains("Theme.muted")
+        if (uppercased || kerned) && eyebrowTint { count += 1 }
+    }
+    return count
+}
+
+/// `strippingComments` for a whole-tree sweep: it blanks comments by repeatedly rewriting the
+/// string, which is fine for the handful of files the other tests read and quadratic across 509.
+///
+/// Truncating each line at its first `//` is the same guarantee in the direction that matters —
+/// every `///` doc comment quoting the shape it replaced disappears — and a `//` inside a string
+/// literal only ever makes the sweep blind to *more* text, never to less. Block comments are left
+/// alone: this repo writes doc comments with `///`, and a `/* */` would have to contain a literal
+/// SwiftUI font modifier to matter.
+private func strippingLineCommentsFast(_ source: String) -> String {
+    source
+        .components(separatedBy: "\n")
+        .map { line -> Substring in
+            guard let marker = line.range(of: "//") else { return line[...] }
+            return line[line.startIndex..<marker.lowerBound]
+        }
+        .joined(separator: "\n")
+}
+
 // MARK: - Source-reading helpers
 
 /// Fails unless `name` is called exactly `count` times in each listed file.

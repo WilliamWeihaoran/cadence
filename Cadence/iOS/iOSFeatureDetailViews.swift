@@ -337,11 +337,7 @@ struct iOSGoalDetail: View {
             } ?? false
 
             HStack(spacing: 7) {
-                Text("Next")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .textCase(.uppercase)
-                    .kerning(0.6)
+                SectionEyebrowLabel(text: "Next")
 
                 Text(title)
                     .font(.system(size: 12, weight: .medium))

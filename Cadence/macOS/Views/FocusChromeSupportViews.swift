@@ -10,10 +10,7 @@ private struct FocusSurfaceHeader<Metadata: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 7) {
-                Text(eyebrow)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .textCase(.uppercase)
+                SectionEyebrowLabel(text: eyebrow)
 
                 Text(title)
                     .font(.system(size: 22, weight: .semibold))

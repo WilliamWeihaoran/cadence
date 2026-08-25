@@ -202,12 +202,18 @@ struct CadenceTodayOverdueSummaryHeading: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(title)
-                .kerning(0.8)
-                .textCase(.uppercase)
+            SectionEyebrowLabel(text: title)
+
+            // The count is the eyebrow's own size, not a point larger. It used to inherit an 11pt
+            // font applied to the whole `HStack` — the one place in the app where the eyebrow tier
+            // was 11 — so adopting the shared label dropped both to 10 together. That is the rule
+            // `CadenceBoardColumnHeaderMetrics` and `CadenceTaskGroupHeadingMetrics.countSize`
+            // already state: a count is demoted by weight and by its capsule, and must never be
+            // bigger than the label it counts. No capsule here on purpose — this heading sits over
+            // cards that already carry their own chrome.
             Text("\(count)")
+                .font(.system(size: SectionEyebrowLabel.fontSize, weight: .semibold))
+                .foregroundStyle(Theme.dim)
         }
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(Theme.dim)
     }
 }

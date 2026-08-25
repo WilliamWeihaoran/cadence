@@ -193,10 +193,7 @@ struct TaskBundleTaskPickerPanel: View {
     }
 
     private func resultSectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .textCase(.uppercase)
+        SectionEyebrowLabel(text: title)
             .padding(.horizontal, 3)
             .padding(.top, 2)
     }

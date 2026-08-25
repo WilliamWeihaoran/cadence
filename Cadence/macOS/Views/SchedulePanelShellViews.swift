@@ -29,10 +29,7 @@ struct SchedulePanelHeader: View {
     private var compactHeader: some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("Today")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .textCase(.uppercase)
+                SectionEyebrowLabel(text: "Today")
                 Text("Timeline")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.text)

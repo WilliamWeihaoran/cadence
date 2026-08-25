@@ -77,10 +77,7 @@ private struct FocusSidebarShell<SessionSummary: View>: View {
     }
 
     private func sidebarLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .textCase(.uppercase)
+        SectionEyebrowLabel(text: title)
     }
 }
 

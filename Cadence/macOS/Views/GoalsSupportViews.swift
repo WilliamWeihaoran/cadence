@@ -336,9 +336,7 @@ struct GoalSectionHeading: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
+            SectionEyebrowLabel(text: title)
             Text("\(count)")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(Theme.text.opacity(0.75))

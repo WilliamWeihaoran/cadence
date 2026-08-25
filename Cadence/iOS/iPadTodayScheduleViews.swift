@@ -460,11 +460,7 @@ private struct iOSScheduleReadyStack: View {
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(Theme.amber)
 
-                Text("Ready to Schedule")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .textCase(.uppercase)
-                    .kerning(0.7)
+                SectionEyebrowLabel(text: "Ready to Schedule")
 
                 Spacer(minLength: 0)
 

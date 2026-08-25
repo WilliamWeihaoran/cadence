@@ -113,10 +113,7 @@ private struct HabitFormLabel: View {
     }
 
     var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .kerning(0.8)
+        SectionEyebrowLabel(text: text)
     }
 }
 

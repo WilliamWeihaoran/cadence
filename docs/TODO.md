@@ -357,6 +357,21 @@ _Nothing in flight._
   sidebar's glyph; if yes, the field goes and the drift cannot come back.
   (The `doc.text` on the **event-note** result rows in `GlobalSearchIndexSupport` is unrelated —
   those are note rows, not the Notes destination, and should stay.)
+  **Built and verified, awaiting commit.** The stored field is gone and `icon` is
+  `feature.systemImage`, so the palette and the sidebar cannot disagree again; the nine `.init`
+  entries lost their `icon:` argument. Notes was checked to be the **only** disagreement rather
+  than assumed: the other eight stored glyphs were compared against `systemImage` one by one before
+  the field was deleted, and all eight matched — which is exactly why deleting the field mattered
+  more than editing one string, since eight silently-correct copies is the state this one was in
+  before somebody moved the sidebar's glyph.
+  `GlobalSearchCommandDefinition.icon` is deliberately **left stored**: five of its six do equal a
+  destination glyph, but `.newTask` is `plus.circle.fill` against Tasks' `checklist`, because a
+  command's glyph names a verb and not a page. Its `tintSource` exists for the tint alone and must
+  not be reused as an identity. Pinned by
+  `GlobalSearchDestinationTintTests.everyPageRowDrawsTheSidebarsGlyphForItsDestination`, which
+  asserts on the row `pageResults` actually produces — not on the catalog and not by reading the
+  source, so a stored `icon` reintroduced anywhere in that file still fails it. Mutation-checked:
+  reverting the file turns that test red, exit 65 with 0 compile errors.
 
 - [T-262] **Five more `@State` colour seeds still hand-type `#4a9eff` / `#6b7a99`.** Out of T-246's
   scope, which named three palettes and not these. Each is a pure substitution — the literal
@@ -552,6 +567,60 @@ _Nothing in flight._
   `SectionEyebrowLabel` means either accepting its fixed 10pt (shrinking the row a point) or the
   count keeping its own explicit size while the label switches — a one-line call, but a real one,
   not proven safe by grep alone.
+  **Built and verified, awaiting commit — and it was twenty, not nine.** Re-grepping with no path
+  filter found the ticket's nine (three of which had moved: `TasksPanel.swift:542`'s heading is
+  `CadenceTodayOverdueSummaryHeading` in `Shared/Components/CadenceTodayOverdueSummaryCards.swift`
+  now) plus eleven more the original sweep's uppercase-only pattern missed — seven byte-identical to
+  the shared spelling (`CreateGoalSheet.fieldLabel`, `ListEditorSupportViews`,
+  `GlobalSearchOverlayShellViews`, `HabitsFormSupportViews.HabitFormLabel`,
+  `NoteReferenceSupportViews.ReferenceSection`, `CadenceSettingsSharedViews`,
+  `HabitProgressViews.HabitInfoCard`), one already-uppercase string
+  (`ListDetailSupportViews`'s `"\(count) COMPLETED"`, found by kerning rather than by case), one
+  with no kerning at all (`GoalsSupportViews.GoalSectionHeading`), and two at `.bold`
+  (`SettingsTemplatesSection`, `Shared/Components/CommitmentSharedViews.CommitmentGroupHeader`).
+  All twenty read `SectionEyebrowLabel` now.
+  **No new parameter was needed.** `tint` already existed and took the one site that legitimately
+  differs on colour (`ListNotesViewSupportViews`, `Theme.muted` — its header is a control, not an
+  inert label). Three sites changed a measurement on purpose: the overdue summary heading drops
+  from the app's only 11pt eyebrow to 10 and its count now reads `SectionEyebrowLabel.fontSize`
+  (the rule `CadenceBoardColumnHeaderMetrics` and `CadenceTaskGroupHeadingMetrics.countSize`
+  already state), and the two `.bold` labels become `.semibold` while their counts keep `.bold` —
+  the split `CadenceTaskGroupHeading` already draws, since weight is what demotes a number from
+  its label.
+  **Two shapes deliberately not shared.** The 9pt sub-label tier (`TaskInspectorGroupLabel`,
+  `SidebarComponents`' context header, `SettingsViewSupport`'s rail group,
+  `TaskInspectorWorkflowSupportViews.sectionLabel`, `EstimatePickerControl`,
+  `AIActionsSupportViews`, `CadenceCalendarPicker`, `ContainerPickerSupportViews`) is a second,
+  internally consistent tier — most of it already routed through named metrics — and folding it
+  into a 10pt component would be a size decision dressed as a refactor. And the calendar **weekday
+  column header** (`CalendarPageMonthSupportViews`, mirrored by `iOSCalendarTimelineViews`) is a
+  date label under a day number, tinted `isToday ? Theme.blue : Theme.dim` and kerned 0.5; the two
+  weekday headers have to agree with **each other**, which is a different question, and pointing
+  both at `SectionEyebrowLabel` would answer it by accident. Filed as [T-277].
+  Pinned by `CadenceSectionEyebrowConvergenceTests` in `CadenceSharedBoardChromeTests.swift`. The
+  load-bearing assertion is the **negative** one: a sweep of all 509 files under `Cadence/` for the
+  hand-rolled *shape*, which cannot be satisfied by the shared spelling surviving somewhere
+  unreachable — the failure mode that has twice let a source scan pass over a restored bug here.
+  Measured 26 hits before, 1 (the allowlisted weekday header) after, and the allowlist entry has
+  its own test so it cannot quietly go stale. Mutation-checked: re-forking one call site turns
+  `noSurfaceHandRollsTheSharedEyebrow` and `theConvertedSitesCallTheSharedLabel` red, exit 65 with
+  0 compile errors.
+  **Not screenshotted.** [[T-123]] item 2 asks for macOS visual changes to be looked at rather than
+  argued, and this touches sixteen macOS surfaces. Fifteen of the twenty conversions are provably
+  pixel-identical (the modifier chain they replaced is the component's own), and the five that are
+  not are listed above by name and figure. The three that shift a measurement — the overdue summary
+  heading, `SettingsTemplatesSection`'s field label, `CommitmentGroupHeader` — are the ones worth a
+  look before this is called finished.
+
+- [T-277] **The two weekday column headers are a fork nobody has compared.**
+  Found while closing [[T-275]] and left alone deliberately. `CalendarPageMonthSupportViews`
+  (macOS) draws `MON` at 10pt semibold, `isToday ? Theme.blue : Theme.dim`, `.kerning(0.5)`;
+  `iOSCalendarTimelineViews` draws the same header at `iOSCalendarTimelineMetrics.weekdaySize`
+  semibold in the same conditional tint with **no** kerning. One is a literal and one is a named
+  metric, so a grep for a shared constant finds nothing wrong. This is not a section eyebrow — it
+  is the date label above a day number — so `SectionEyebrowLabel` is the wrong answer; the right
+  one is a shared weekday-header metric the way `CadenceBoardColumnHeaderMetrics` is shared, or a
+  decision that the two differ on purpose.
 
 - [T-122] **Flip `SWIFT_VERSION` to 6.0 — now an open question rather than a blocked one.** `D-95`
   cleared the last macOS error, so nothing in the app's source blocks it. What remains: 10

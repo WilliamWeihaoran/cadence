@@ -370,6 +370,35 @@ struct GlobalSearchDestinationTintTests {
         }
     }
 
+    /// **T-258 — glyph half.** The tint was made to follow the destination and the glyph was left
+    /// stored beside it, which is how eight of nine rows kept agreeing while Notes quietly did not:
+    /// the palette drew `doc.text`, the sidebar drew `note.text`.
+    ///
+    /// Asserted on the **row the palette actually produces**, not on the catalog entry and not by
+    /// reading the source: `pageResults` is the whole pipeline, so a future definition that
+    /// reintroduces a stored `icon` fails here even if the shared spelling survives somewhere
+    /// unreachable in the same file.
+    @Test func everyPageRowDrawsTheSidebarsGlyphForItsDestination() {
+        let pages = pageRows(overridesRaw: "")
+        #expect(pages.count >= 9, "non-vacuity: read \(pages.count) page rows")
+
+        for (destination, result) in pages {
+            #expect(
+                result.icon == destination.systemImage,
+                "\(destination.rawValue) page row draws \(result.icon), the sidebar draws \(destination.systemImage)"
+            )
+        }
+
+        // The row this ticket was filed about, stated as the value a user sees rather than as a
+        // relation that would also hold if both sides drifted together.
+        #expect(pages[.notes]?.icon == "note.text")
+        #expect(pages[.notes]?.icon != "doc.text")
+
+        // Non-vacuity for the loop: the rows are not all one glyph, so "they all match" is not
+        // nine copies of one assertion.
+        #expect(Set(pages.values.map(\.icon)).count >= 5)
+    }
+
     @Test func everyCommandRowUsesTheSidebarsDefaultTintForItsDestination() {
         for (command, result) in commandRows(overridesRaw: "") {
             #expect(

@@ -44,10 +44,7 @@ struct HabitInfoCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .kerning(0.8)
+            SectionEyebrowLabel(text: title)
             content
         }
         .padding(padding)

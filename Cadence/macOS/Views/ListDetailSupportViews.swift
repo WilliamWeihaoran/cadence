@@ -358,10 +358,7 @@ struct ListLogView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("\(doneTasks.count) COMPLETED")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-                            .kerning(0.8)
+                        SectionEyebrowLabel(text: "\(doneTasks.count) completed")
                             .padding(.horizontal, 20)
                             .padding(.top, 16)
                             .padding(.bottom, 8)

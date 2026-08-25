@@ -28,10 +28,7 @@ struct ListEditorSheetShell<Content: View, FooterLeading: View>: View {
             // The sheet's own name is an eyebrow, not a heading: the thing you actually read at the
             // top is the list you are editing, typed into the header below.
             HStack(spacing: 8) {
-                Text(title.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .kerning(0.8)
+                SectionEyebrowLabel(text: title)
                 Spacer(minLength: 0)
                 if let titleTrailing {
                     Text(titleTrailing)

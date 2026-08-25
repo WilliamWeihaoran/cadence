@@ -245,10 +245,7 @@ struct CreateGoalSheet: View {
 
     @ViewBuilder
     private func fieldLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .kerning(0.8)
+        SectionEyebrowLabel(text: text)
     }
 
     /// Dismisses first, then raises the app's confirmation overlay — the sheet is its own window,

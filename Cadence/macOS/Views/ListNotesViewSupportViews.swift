@@ -70,10 +70,10 @@ struct CollapsibleNoteSection<Content: View>: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.dim)
                         .frame(width: 12)
-                    Text(title)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.muted)
-                        .textCase(.uppercase)
+                    // `Theme.muted` rather than the eyebrow's default `Theme.dim`: this header is
+                    // a *control* — the whole row toggles the section — so it sits a step brighter
+                    // than the inert eyebrows around it.
+                    SectionEyebrowLabel(text: title, tint: Theme.muted)
                     Spacer()
                     Text("\(count)")
                         .font(.system(size: 10, weight: .semibold))

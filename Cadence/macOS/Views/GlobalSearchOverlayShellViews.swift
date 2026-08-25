@@ -16,10 +16,7 @@ struct GlobalSearchSectionsList: View {
                 VStack(alignment: .leading, spacing: 15) {
                     ForEach(sections) { section in
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(section.category.rawValue.uppercased())
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(Theme.dim)
-                                .kerning(0.8)
+                            SectionEyebrowLabel(text: section.category.rawValue)
                                 .padding(.horizontal, 16)
 
                             VStack(spacing: 4) {

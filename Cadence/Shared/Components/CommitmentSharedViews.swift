@@ -141,9 +141,11 @@ struct CommitmentGroupHeader: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(color)
 
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Theme.dim)
+            // Semibold, from the shared eyebrow — this was the app's only `.bold` at the eyebrow
+            // size and tint, and nothing chose it. The count beside it keeps `.bold`, which is the
+            // same split `CadenceTaskGroupHeading` draws: weight is what demotes the number from
+            // the label, so the label may not borrow it.
+            SectionEyebrowLabel(text: title)
                 .lineLimit(1)
 
             Spacer()
