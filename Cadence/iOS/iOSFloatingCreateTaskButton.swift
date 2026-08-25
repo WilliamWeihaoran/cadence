@@ -38,17 +38,35 @@ struct iOSCircularAddButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "plus")
-                .font(.system(size: diameter * 0.39, weight: .semibold))
-                .foregroundStyle(Theme.onColor)
-                .frame(width: diameter, height: diameter)
-                .background(Theme.blue)
-                .clipShape(Circle())
-                .shadow(color: Theme.blue.opacity(0.3), radius: diameter * 0.29, x: 0, y: diameter * 0.125)
-                .contentShape(Circle())
+            iOSCircularAddButtonFace(diameter: diameter)
         }
         .buttonStyle(.iosPressable)
         .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+/// The circle itself, with no `Button` around it.
+///
+/// Split out for the iPhone tab bar's centre `+`, which under T-171 carries a `DragGesture` instead
+/// of a tap: a palette that opens on stillness and a drag that starts on movement both need the raw
+/// touch, and a `Button` would compete for it. The gesture synthesises the tap. This is the same
+/// look either way — the split is exactly so it *stays* the same look, which is the drift the
+/// `diameter`-derived glyph and shadow above exist to prevent.
+///
+/// The drag preview the custom gesture carries is this face too, so the thing under the finger is
+/// the thing that was pressed.
+struct iOSCircularAddButtonFace: View {
+    let diameter: CGFloat
+
+    var body: some View {
+        Image(systemName: "plus")
+            .font(.system(size: diameter * 0.39, weight: .semibold))
+            .foregroundStyle(Theme.onColor)
+            .frame(width: diameter, height: diameter)
+            .background(Theme.blue)
+            .clipShape(Circle())
+            .shadow(color: Theme.blue.opacity(0.3), radius: diameter * 0.29, x: 0, y: diameter * 0.125)
+            .contentShape(Circle())
     }
 }
 
@@ -242,9 +260,23 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
     /// Separate from `isTargeted` so the open/close is driven by an explicit
     /// `withAnimation(.spring(…))`, the same way reorder moves are animated everywhere else.
     @State private var showsGhost = false
+    /// This target's name in `iOSNewTaskDropFrameRegistry`, stable for the view's lifetime.
+    @State private var registrationID = UUID()
+    /// See `iOSNewTaskDropTargetsAreLive`. A tab the compact shell is keeping alive at zero opacity
+    /// still lays its rows out, so without this every hidden task surface would publish frames that
+    /// overlap the visible one and a drag could land on a row nobody can see.
+    @Environment(\.iOSNewTaskDropTargetsAreLive) private var isLive
 
     func body(content: Content) -> some View {
-        VStack(spacing: 0) {
+        // Read once per render rather than per event: the `.onDrop` path can afford to resolve at
+        // drop time because it is handed the closure, but the custom drag hit-tests against a
+        // registry and has to have been *told*. SwiftUI re-runs this body when the row's model
+        // changes, so the published answer is the same one the row is drawing.
+        let placementKey = dropKey()
+        let placementListName = listName()
+        let isCustomDragTarget = iOSCaptureDragTargeting.shared.currentTargetID == registrationID
+
+        return VStack(spacing: 0) {
             content
             if showsGhost {
                 iOSNewTaskGhostRow(
@@ -271,7 +303,31 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
         .onDrop(of: [.cadenceNewTaskDrag], isTargeted: $isTargeted) { providers in
             handleDrop(providers, dropKey: dropKey())
         }
-        .onChange(of: isTargeted) { _, targeted in
+        // **Two mechanisms reach this one target, on purpose.** The iPad's corner `+` still uses
+        // `.onDrag`, whose `UIDragInteraction` resolves its own hit-testing; the iPhone tab bar's
+        // centre `+` carries T-171's custom gesture, which cannot, and so hit-tests against
+        // published frames. Rather than fork the target, both feed the same ghost and the same
+        // `CadenceTaskDropSupport.seed(forDropKey:)`.
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+            iOSNewTaskDropFrameRegistry.shared.setFrame(frame, for: registrationID)
+        }
+        .onChange(of: [placementKey, placementListName], initial: true) { _, _ in
+            iOSNewTaskDropFrameRegistry.shared.setPlacement(
+                dropKey: placementKey,
+                listName: placementListName,
+                for: registrationID
+            )
+        }
+        // Liveness is a flag on the entry rather than a gate on registration, because a tab
+        // becoming visible again produces no geometry change — the row never moved — so a target
+        // that had skipped publishing its frame would stay unreachable for the rest of the session.
+        .onChange(of: isLive, initial: true) { _, live in
+            iOSNewTaskDropFrameRegistry.shared.setLive(live, for: registrationID)
+        }
+        .onDisappear {
+            iOSNewTaskDropFrameRegistry.shared.unregister(registrationID)
+        }
+        .onChange(of: isTargeted || isCustomDragTarget) { _, targeted in
             withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
                 showsGhost = targeted
             }

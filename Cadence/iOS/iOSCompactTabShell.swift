@@ -52,13 +52,27 @@ struct iOSCompactRootShell: View {
     @Binding var tasksSection: CadenceTasksSection
     @Binding var paths: iOSCompactTabPaths
 
-    // No `@Query` and no `modelContext` here on purpose. The shell used to hold
+    // No `@Query` here on purpose. The shell used to hold
     // `@Query(sort: \AppTask.order) private var allTasks` for the placeholder capture sheet, which
     // meant the root of the app kept a live fetch of every task and an observation registration
-    // that re-rendered the whole shell — all four stacks — on any task write. The creation sheet
-    // owns its own data now, so the shell reads nothing.
+    // that re-rendered the whole shell — all four stacks — on any task write. The creation sheets
+    // own their own data.
+    //
+    // The `modelContext` is back, and it fetches nothing: the palette's **Note** segment has to
+    // *make* the note before there is anything for `iOSNoteEditorCover` to be presented over, and
+    // `@Environment(\.modelContext)` is a handle, not a query — no observation, no re-render on a
+    // write. This is the same thing `iOSNotesView.createNotepadNote` does at the other end of the
+    // app, through the same `NoteMigrationService` call.
+    @Environment(\.modelContext) private var modelContext
     @State private var visitedTabs: Set<CadenceCompactTab> = []
-    @State private var showQuickCapture = false
+    /// One live touch on the centre `+`. See `iOSCaptureRadialMenuButton` for why the gesture is
+    /// ours rather than a `Button` plus `.onDrag`.
+    @State private var captureInteraction = iOSCaptureInteraction()
+    /// The task and event composers, which are sheets.
+    @State private var captureRequest: iOSCaptureRequest?
+    /// The note composer, which is a full-screen cover over a note that already exists — the same
+    /// presentation the Notes page uses for the same editor.
+    @State private var noteBeingCaptured: Note?
 
     /// The bar is a **sibling** of the tab content, not an overlay or a `safeAreaInset` on it.
     ///
@@ -87,19 +101,38 @@ struct iOSCompactRootShell: View {
             iOSCompactTabBar(
                 selection: selectedTab,
                 onSelect: { selectedTab = $0 },
-                onCapture: presentQuickCapture
+                captureInteraction: captureInteraction,
+                onCaptureRequest: handle
             )
         }
+        // The palette and the drag puck both have to leave the 46pt bar row the button sits in, so
+        // they are drawn here, once, above every tab. Same reasoning as `iOSTaskInspectorHost()`:
+        // a control that must draw outside its container cannot be hosted by that container.
+        .iOSCaptureRadialMenuLayer(captureInteraction)
         // Carries the bar's colour down through the home-indicator strip, so the bar does not float
         // on a band of page background. Bottom edge only — the status bar keeps the page's own.
         .background(Theme.surface.ignoresSafeArea(edges: .bottom))
         .tint(Theme.blue)
         .task(id: selectedTab) { visitedTabs.insert(selectedTab) }
-        // The `+`'s one presentation site. It owns its own `NavigationStack`, toolbar, focus and
-        // dismissal, so the bar hands it nothing — no seed here, because capture from the bar is
-        // deliberately unscoped: you press it from any tab and file the task afterwards.
-        .sheet(isPresented: $showQuickCapture) {
-            iOSCreateTaskSheet()
+        // The `+`'s presentation site. Each composer owns its own `NavigationStack`, toolbar, focus
+        // and dismissal, so the bar hands them nothing but a seed. A plain tap is still deliberately
+        // unscoped — you press it from any tab and file the task afterwards; a *dropped* press
+        // carries the placement it landed on, and a palette segment carries which composer.
+        .sheet(item: $captureRequest) { request in
+            switch request.kind {
+            case .task(let seed):
+                iOSCreateTaskSheet(seed: seed)
+            case .event:
+                iOSCalendarQuickCreateSheet(dateKey: DateFormatters.todayKey(), initialKind: .event)
+            case .note:
+                // Unreachable: `handle(_:)` routes `.note` to the cover below, because that editor
+                // needs a note to exist first. Spelled out rather than defaulted so adding a fourth
+                // segment is a compile error here instead of a silently blank sheet.
+                EmptyView()
+            }
+        }
+        .fullScreenCover(item: $noteBeingCaptured) { note in
+            iOSNoteEditorCover(note: note, templateKind: .permanent, title: note.displayTitle)
         }
     }
 
@@ -111,6 +144,12 @@ struct iOSCompactRootShell: View {
                     iOSCompactFeatureDestinationView(destination: destination)
                 }
         }
+        // A tab kept alive at zero opacity is still laying its rows out, and the custom capture
+        // drag hit-tests published frames rather than the real view hierarchy — so without this
+        // every hidden task surface would be a drop target sitting on top of the visible one.
+        // `allowsHitTesting(false)` above is what makes the *system* drag immune; this is its
+        // counterpart. See `iOSNewTaskDropTargetsAreLive`.
+        .environment(\.iOSNewTaskDropTargetsAreLive, tab == selectedTab)
     }
 
     @ViewBuilder
@@ -134,8 +173,20 @@ struct iOSCompactRootShell: View {
         )
     }
 
-    private func presentQuickCapture() {
-        showQuickCapture = true
+    /// What a finished press commits to. The gesture decides *which* composer; opening it is the
+    /// shell's job, because a palette segment can want a sheet, a cover, or a seeded composer and
+    /// the button has no business knowing which.
+    private func handle(_ request: iOSCaptureRequest) {
+        switch request.kind {
+        case .task, .event:
+            captureRequest = request
+        case .note:
+            // The editor is presented *over a note*, so the note is made first. An abandoned blank
+            // one is invisible in every list — the lists filter to notes with content — which is
+            // exactly what tapping "New note" on the Notes page already does.
+            guard let note = try? NoteMigrationService.createPermanentNote(in: modelContext) else { return }
+            noteBeingCaptured = note
+        }
     }
 }
 
@@ -177,13 +228,14 @@ struct iOSCompactFeatureDestinationView: View {
 private struct iOSCompactTabBar: View {
     let selection: CadenceCompactTab
     let onSelect: (CadenceCompactTab) -> Void
-    let onCapture: () -> Void
+    let captureInteraction: iOSCaptureInteraction
+    let onCaptureRequest: (iOSCaptureRequest) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
             item(.tasks)
             item(.calendar)
-            iOSCompactCaptureButton(action: onCapture)
+            iOSCompactCaptureButton(interaction: captureInteraction, onRequest: onCaptureRequest)
                 .frame(maxWidth: .infinity)
             item(.notes)
             item(.more)
@@ -244,23 +296,27 @@ private struct iOSCompactTabBarItem: View {
 /// `+` used before the bar absorbed it. Capture used to exist on Home alone, so from every other
 /// screen you had to navigate away to write a task down.
 ///
-/// It **is** `iOSCircularAddButton`, the same affordance the iPad pins to a page corner, at the one
+/// It draws `iOSCircularAddButtonFace`, the same circle the iPad pins to a page corner, at the one
 /// diameter this placement can hold: 56pt does not fit in a 46pt bar row beside four tab items. It
 /// was a hand-rolled copy that had drifted to a bolder glyph and a tighter shadow — see that type
-/// for why the glyph and shadow are derived from the diameter now.
+/// for why the glyph and shadow are derived from the diameter now. The *face* rather than
+/// `iOSCircularAddButton` itself because this one is not a `Button`: T-171's gesture needs the raw
+/// touch and synthesises the tap. The look is shared precisely so that split cannot become a drift.
 private struct iOSCompactCaptureButton: View {
-    let action: () -> Void
+    let interaction: iOSCaptureInteraction
+    let onRequest: (iOSCaptureRequest) -> Void
 
     var body: some View {
-        iOSCircularAddButton(action: action, diameter: 44)
+        // **One gesture, three outcomes, and it is not `.onDrag` any more.** T-171: a quick press
+        // then a move is a drag immediately; ~350ms of stillness opens a palette of composers
+        // around the button; movement inside the palette's radius slides between its segments and
+        // movement past that radius hands the touch back to the drag. `UIDragInteraction` cannot
+        // host that — its lift *is* a 326–349ms long press, so it wants the same window the palette
+        // does, and it refuses to lift at all when the finger moves first. See
+        // `iOSCaptureRadialMenuButton` and `CadenceCapturePressResolver`.
+        iOSCaptureRadialMenuButton(diameter: 44, interaction: interaction, onRequest: onRequest)
             // Matches the tab items' row height so the bar's baseline is set by one number.
             .frame(minHeight: 46)
-            // Draggable as well as tappable, and the two do not compete: `.onDrag` is a
-            // `UIDragInteraction` whose long-press recognizer fails as soon as the finger lifts, so
-            // a tap still presents unscoped capture instantly. Dropped on a task row it opens the
-            // same sheet seeded with that row's placement instead. See
-            // `iOSNewTaskDragSourceModifier`.
-            .iOSNewTaskDragSource()
     }
 }
 #endif
