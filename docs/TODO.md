@@ -34,6 +34,10 @@ _Nothing in flight._
 ## Open — decided, not started
 
 - [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
+  **DECIDED 2026-08-26: split, then close this parent.** The user's call. One audit pass files each
+  real divergence as its own ticket with a definite end, and this sweep is closed rather than left
+  permanently open. The precedent is the layout sweep, which produced nine concrete fixes and no
+  ending of its own. A sweep never finishes; the specific bugs inside it do.
   `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
   header or picker looks or behaves. This item is the sweep to make the code match that — find the
   places where a phone view and an iPad view are near-copies and collapse them into one view
@@ -136,6 +140,12 @@ _Nothing in flight._
   raw-value vocabulary deliberately. Nothing persisted is involved either way.
 
 - [T-221] **Edit tables in place — DONE on macOS, and the iOS half is the whole remainder.**
+  **DECIDED 2026-08-26: port it to iOS.** The user's call, asked after the macOS half shipped. The
+  design questions are settled and `MarkdownTableEditSupport` / `MarkdownTableLayoutSupport` are
+  already platform-free. The one trap is recorded in `0b44973`'s message and must be read first:
+  `MarkdownStyleSignature` has exactly one reader and it is in `Cadence/iOS/`, so a committed cell
+  will silently not re-render without a signature entry. macOS never needed one because it re-runs
+  the styler from `textDidChange`.
   Requested 2026-08-21, decided 2026-08-25 (shape 2, tables only; Tab / Shift-Tab / Return as
   spreadsheet keys), and the macOS half shipped the same day in `0b44973`. macOS renders a table as a real grid and edits it cell by
   cell: `Services/MarkdownTableEditSupport.swift` (the markdown decisions),
@@ -209,6 +219,10 @@ _Nothing in flight._
   and the chrome gone, which is a different shape rather than the same one rotated.
 
 - [T-170] **Decide how far iPadOS and iPhone layout should converge.** Standing rule is that they
+  **DECIDED 2026-08-26: split, then close this parent.** The user's call. One audit pass files each
+  real divergence as its own ticket with a definite end, and this sweep is closed rather than left
+  permanently open. The precedent is the layout sweep, which produced nine concrete fixes and no
+  ending of its own. A sweep never finishes; the specific bugs inside it do.
   are one *style* and differ only in *layout* — sidebar vs tab bar, two panes vs one. The open
   question is where that line actually falls now that Today, Tasks, Calendar and Notes have all
   been unified internally. Wants a decision recorded, not a sweep: which surfaces are genuinely
@@ -306,6 +320,10 @@ _Nothing in flight._
 
 
 - [T-123] **Tighten the repo, and converge the three platforms' UI.** Requested 2026-08-18. Scope
+  **DECIDED 2026-08-26: split, then close this parent.** The user's call. One audit pass files each
+  real divergence as its own ticket with a definite end, and this sweep is closed rather than left
+  permanently open. The precedent is the layout sweep, which produced nine concrete fixes and no
+  ending of its own. A sweep never finishes; the specific bugs inside it do.
   decided with the user up front, because two readings of "unify the UI" are different projects:
 
   1. **Share the implementation now; decide feature parity after.** One set of tokens, components
@@ -367,6 +385,11 @@ _Nothing in flight._
     platform-only — the method that found [T-275] and the two stale counts above.
 
 - [T-122] **Flip `SWIFT_VERSION` to 6.0 — now an open question rather than a blocked one.** `D-95`
+  **DECIDED 2026-08-26: investigate and report, do not flip.** The user's call. Measure each target's
+  error and warning count under Swift 6 and re-test whether the blocker is still real against the
+  current toolchain, then bring a recommendation. A flip that adds concurrency warnings destroys the
+  zero-warning baseline, which has caught real regressions repeatedly — that baseline is worth more
+  than the language mode.
   cleared the last macOS error, so nothing in the app's source blocks it. What remains: 10
   Swift-6-mode *warnings* elsewhere in the app (byte-identical before and after T-105, none in
   editor files), and on iOS the toolchain bug in [T-115] — swift-frontend crashes in IRGen once the
@@ -419,6 +442,11 @@ _Nothing in flight._
   `AGENTS.md`'s new bullet (after the T-236 test-host mutex entry) for the exact tell command.
 
 - [T-115] **The iOS Swift 6 flip is blocked by a toolchain bug, not app code.** With `D-86`'s three
+  **DECIDED 2026-08-26: investigate and report, do not flip.** The user's call. Measure each target's
+  error and warning count under Swift 6 and re-test whether the blocker is still real against the
+  current toolchain, then bring a recommendation. A flip that adds concurrency warnings destroys the
+  zero-warning baseline, which has caught real regressions repeatedly — that baseline is worth more
+  than the language mode.
   errors fixed the iOS module is diagnostically clean, and swift-frontend then crashes in IRGen on a
   reabstraction thunk carrying an `(any Actor)?` parameter. Attributed, not assumed: pristine HEAD
   with those same errors removed a different way crashes identically with zero diagnostics, and
