@@ -79,7 +79,7 @@ enum CadenceFocusPickItem: Identifiable {
         limit: Int? = defaultUnfilteredLimit
     ) -> [CadenceFocusPickItem] {
         let activeBundles = bundles
-            .filter { !$0.sortedTasks.isEmpty && !$0.isCompleted }
+            .filter { CadenceFocusSupport.canFocus($0) }
             // Rank first, *then* the day inside a rank. Comparing "keys differ" before "ranks
             // differ" meant two bundles in the same rank but on different days — every pair of
             // future bundles, and every pair of past ones — compared as equal, so the day was
@@ -187,6 +187,29 @@ enum CadenceFocusBundlePresentation {
 }
 
 extension CadenceFocusSupport {
+
+    /// Whether a block can be the **subject** of a focus session — the bundle half of
+    /// `canFocus(_ task:)`, and deliberately *not* the same question one level down.
+    ///
+    /// A block whose members are all settled is not "a settled task, ×N". It is a container with
+    /// nothing left in it to work on, which is why `TaskBundle.isCompleted` exists and why this
+    /// picker has excluded such blocks since before there was an entry point to gate — the two
+    /// clauses below are the ones `filtered` used to spell inline, moved here so the Board's and the
+    /// timeline's block inspectors can ask what the picker asks (T-276).
+    ///
+    /// The empty clause is not redundant with `isCompleted`, which is `false` for a block with no
+    /// members at all. An empty block is the worse case of the two: `distributeMinutes` returns
+    /// early on an empty array, so a session run against one measures real wall-clock time and then
+    /// silently discards every minute of it. Nothing else in the app can lose logged time that way.
+    ///
+    /// The two clauses are not redundant in the other direction either, and it is `sortedTasks` that
+    /// makes them independent: it already filters cancelled members out, so `activeTasks` never sees
+    /// one. A block of one done member and one cancelled member is therefore `isCompleted`; a block
+    /// whose members were *all* cancelled has no `sortedTasks` at all and is not `isCompleted`,
+    /// which is precisely the empty case above. Neither clause covers the other.
+    static func canFocus(_ bundle: TaskBundle) -> Bool {
+        !bundle.sortedTasks.isEmpty && !bundle.isCompleted
+    }
 
     /// Every member, because a block you sat down to work through is presumed to be the work.
     /// Unticking is the exception, so it is the thing that takes a tap.

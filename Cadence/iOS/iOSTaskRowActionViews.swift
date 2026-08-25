@@ -514,21 +514,7 @@ struct iOSTaskRowContextMenu: View {
             Label("Edit", systemImage: "square.and.pencil")
         }
 
-        // T-266: the phone's answer to macOS's hover ▶ on `MacTaskRow`. It goes in the long-press
-        // menu rather than the swipe tray because a swipe is for the two or three things you do to
-        // a task without looking, and this one takes you to another screen — and because the menu
-        // is attached to `iOSTaskRow`, which is *the* task row on every iOS surface, so one entry
-        // reaches Today, All Tasks, Inbox, list detail, the calendar inspector and the month agenda
-        // at once.
-        //
-        // `.shared` rather than `@Environment`: this view only ever writes to the inbox. The two
-        // views that observe it — the shell, which navigates, and `iOSFocusView`, which adopts —
-        // take it from the environment. Same division `CadenceDeepLinkManager` already uses.
-        Button {
-            CadenceFocusHandoffCenter.shared.request(.task(task.id))
-        } label: {
-            Label("Focus", systemImage: CadenceFeatureDestination.focus.systemImage)
-        }
+        focusMenuItem
 
         priorityMenu
         recurrenceMenu
@@ -553,6 +539,37 @@ struct iOSTaskRowContextMenu: View {
     // The status submenu is gone with the status chip (T-74) — it was the same four-option picker
     // in a second shape, on the same row, and every value in it is either what the completion
     // circle does or what the swipe tray's own action does.
+
+    /// T-266: the phone's answer to macOS's hover ▶ on `MacTaskRow`. It goes in the long-press
+    /// menu rather than the swipe tray because a swipe is for the two or three things you do to a
+    /// task without looking, and this one takes you to another screen — and because the menu is
+    /// attached to `iOSTaskRow`, which is *the* task row on every iOS surface, so one entry reaches
+    /// Today, All Tasks, Inbox, list detail, the calendar inspector and the month agenda at once.
+    ///
+    /// `.shared` rather than `@Environment`: this view only ever writes to the inbox. The two views
+    /// that observe it — the shell, which navigates, and `iOSFocusView`, which adopts — take it from
+    /// the environment. Same division `CadenceDeepLinkManager` already uses.
+    ///
+    /// **T-276: absent on a settled task, not disabled.** macOS's ▶ has always been gated on this
+    /// predicate and draws a `Color.clear` spacer instead; this entry asked nothing, and the handoff
+    /// resolves, so the session really ran and really banked minutes against work already finished
+    /// or cancelled. A menu is a list of things you can do, so the item simply is not in it — the
+    /// same shape the completion circle's own state already gives the row.
+    ///
+    /// It is its own property rather than an `if` inside `body` so a test can brace-match *this*
+    /// declaration: `iOSTaskRowActionViews.swift` holds several views, so `var body: some View` is
+    /// not a unique landmark in it and a needle counted over the whole file would survive the guard
+    /// being deleted.
+    @ViewBuilder
+    private var focusMenuItem: some View {
+        if CadenceFocusSupport.canFocus(task) {
+            Button {
+                CadenceFocusHandoffCenter.shared.request(.task(task.id))
+            } label: {
+                Label("Focus", systemImage: CadenceFeatureDestination.focus.systemImage)
+            }
+        }
+    }
 
     private var priorityMenu: some View {
         Menu {

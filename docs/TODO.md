@@ -80,19 +80,6 @@ _Nothing in flight._
   one width and absent at the other) turned up anywhere the grep reached.
 
 
-- [T-276] **iOS offers "Focus" on a settled task; macOS hides it.** Found while doing [[T-273]] and
-  deliberately not fixed there. `MacTaskRow.focusButtonSlot` gates its hover ▶ on
-  `!task.isDone && !task.isCancelled` and draws a `Color.clear` spacer instead. Neither iOS entry
-  gates: `iOSTaskRowContextMenu`'s **Focus** item ([[T-266]]) and
-  `iOSTaskDetailSheet.focusSection` ([[T-273]]) are offered on a task that is done or cancelled, and
-  the handoff resolves — `iOSFocusView.pickItem(for:)` falls back to the whole store on purpose, so
-  the session really starts and its minutes really land in `actualMinutes`. So this is a
-  divergence, not a dead button, which is why it is filed rather than patched: whether logging time
-  against work you have already settled is meaningful is a product call, and picking a side inside
-  T-273 would have silently re-decided an affordance T-266 shipped hours earlier. Either gate both
-  iOS entries on the macOS predicate, or drop the macOS gate — one predicate, in `Shared/` with a
-  test, either way.
-
 - [T-243] **The drop-a-task-on-a-task gesture landed on iOS's Board, not its timeline — because the
   iOS timeline has no drag-and-drop at all.** macOS's home for the gesture is `TimelineDayCanvas`,
   where every block by definition owns a slot, so the target is always eligible.
@@ -604,6 +591,45 @@ _Nothing in flight._
 
 ## Done
 
+
+- [T-276] **iOS offered "Focus" on a settled task; macOS hid it — DONE, one predicate in `Shared/`.**
+  `CadenceFocusSupport.canFocus(_ task:)` (`Shared/CadenceFocusPlanningSupport.swift`) and
+  `canFocus(_ bundle:)` (`Shared/CadenceFocusBundleSupport.swift`) are now the app's only spelling of
+  "can this be the subject of a focus session", and all five entry points read them:
+  `MacTaskRow.focusButtonSlot`, `iOSTaskRowContextMenu.focusMenuItem`,
+  `iOSTaskDetailSheet.focusSection`, `iOSCalendarBundleDetailSheet.focusSection`, and
+  `TaskBundleDetailPopover.actionDeck`'s **Start Focus**.
+
+  **Which side won, and why it is not "match macOS reflexively".** The predicate was already the
+  app's stated position, in `Shared/`, on both platforms: `readyTasks` — the only thing either Focus
+  picker lists tasks from — has always filtered by exactly `!isDone && !isCancelled`. iOS was
+  diverging from *itself*, not merely from the Mac: the Focus screen refused to list a settled task
+  while a menu two taps away handed one to it, and the handoff resolves, so the minutes really
+  landed in `actualMinutes` and from there in `area.loggedMinutes` / `project.loggedMinutes`, which
+  an hours-based `Goal` reads.
+
+  **The bundle half was decided separately and did not fall out of the task half by analogy.** A
+  block whose members are all settled is not "a settled task, ×N" — it is a container with nothing
+  left in it, which is what `TaskBundle.isCompleted` already means and what
+  `CadenceFocusPickItem.filtered` had excluded since before there was an entry point to gate. Both
+  clauses are load-bearing and neither implies the other: `sortedTasks` filters cancelled members
+  out, so an **empty** block and an all-cancelled block are both `isCompleted == false`, and running
+  the clock against one distributes its minutes across nothing (`distributeMinutes` returns early on
+  an empty array) — the only place in the app where measured time is silently discarded.
+  `canFocus(_ bundle:)` is therefore `!sortedTasks.isEmpty && !isCompleted`, which is exactly
+  `!activeTasks.isEmpty`, which is what the Mac's block inspector had hand-spelled as its
+  `isDisabled` all along; that call site now reads the shared predicate instead of being a correct
+  fifth copy.
+
+  **Shape of the gate differs by surface, deliberately.** The three iOS entries and the Mac's hover ▶
+  are *absent* on an ineligible subject — a menu is a list of things you can do, and the Mac already
+  drew a `Color.clear` spacer. The Mac's block inspector stays *disabled* rather than absent: it is
+  one of a pair of equal-width buttons and removing it would stretch "Complete" across the deck.
+
+  Pinned by `FocusSubjectEligibilityTests` (the predicate, both halves, plus an assertion that both
+  pickers offer exactly what it allows) and `FocusEntryGateCallSiteTests` (five brace-matched
+  call-site scans) in `CadenceTests/FocusPickerPlayControlTests.swift`. Every one was mutation-tested
+  and every mutation failed the test named for it.
 
 - [T-225] **An agent overwrote another agent's simulator app-group data — DONE, `scripts/simulator-claim.sh`.**
   During `0332255` a build was installed on an iPad another agent had booted between the device

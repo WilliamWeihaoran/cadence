@@ -209,20 +209,34 @@ struct iOSCalendarBundleDetailSheet: View {
     /// The session is started before the sheet is dismissed, not after: the request is a value in
     /// an inbox, so the shell can route underneath while this is still on screen, and there is no
     /// dismissal callback to hang the second half on.
+    ///
+    /// **T-276 decided the block case separately, and it did not come out the same way as the task
+    /// case by analogy — it came out the same way because the picker already said so.** A block
+    /// whose members are all settled is not "a settled task, ×N"; it is a container with nothing
+    /// left in it, which is exactly what `TaskBundle.isCompleted` means, and
+    /// `CadenceFocusPickItem.filtered` has refused to list such a block since before there was an
+    /// entry point to gate. Offering it here contradicted the app's own stated position two taps
+    /// away. The second clause of `canFocus(_ bundle:)` is the sharper one: an *empty* block is not
+    /// `isCompleted`, and running the clock against it distributes its minutes across nothing at all
+    /// — the only place in the app where measured time is silently discarded.
+    @ViewBuilder
     private var focusSection: some View {
-        iOSActionButton(
-            title: "Focus This Block",
-            systemImage: CadenceFeatureDestination.focus.systemImage,
-            // The destination's own tint, beside the destination's own glyph. This was a literal
-            // `Theme.amber` — a token `CadenceFeatureDestination.defaultColorHex` assigns to Today
-            // and Habits, and the exact drift that property's doc comment was written about. T-273
-            // added the second Focus entry (`iOSTaskDetailSheet.focusSection`); two buttons naming
-            // one screen in two colours is what made it worth one line to settle.
-            tint: CadenceFeatureDestination.focus.tint,
-            fullWidth: true
-        ) {
-            CadenceFocusHandoffCenter.shared.request(.bundle(bundle.id))
-            dismiss()
+        if CadenceFocusSupport.canFocus(bundle) {
+            iOSActionButton(
+                title: "Focus This Block",
+                systemImage: CadenceFeatureDestination.focus.systemImage,
+                // The destination's own tint, beside the destination's own glyph. This was a literal
+                // `Theme.amber` — a token `CadenceFeatureDestination.defaultColorHex` assigns to
+                // Today and Habits, and the exact drift that property's doc comment was written
+                // about. T-273 added the second Focus entry (`iOSTaskDetailSheet.focusSection`);
+                // two buttons naming one screen in two colours is what made it worth one line to
+                // settle.
+                tint: CadenceFeatureDestination.focus.tint,
+                fullWidth: true
+            ) {
+                CadenceFocusHandoffCenter.shared.request(.bundle(bundle.id))
+                dismiss()
+            }
         }
     }
 

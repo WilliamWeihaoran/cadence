@@ -253,16 +253,26 @@ struct iOSTaskDetailSheet: View {
     /// so the block sheet is still standing over the routed Focus screen and needs its own Close.
     /// Fixing it would mean a third observer of `CadenceFocusHandoffCenter`, and "the shell routes,
     /// the Focus screen adopts" is the division T-266 is built on.
+    ///
+    /// **T-276: absent on a settled task, not disabled.** The panel sits directly under
+    /// `statusActionsSection`, so the button offering to spend time on a task and the control that
+    /// just declared it finished were one scroll apart — and the minutes were really banked, since
+    /// `iOSFocusView.pickItem(for:)` resolves a handed-over target out of the whole store rather
+    /// than out of the ready list. Same predicate the Focus picker filters by and the same one
+    /// macOS's hover ▶ has always read.
+    @ViewBuilder
     private var focusSection: some View {
-        iOSEditorSection(title: nil, style: .ruled, contentSpacing: 10) {
-            iOSActionButton(
-                title: "Focus This Task",
-                systemImage: CadenceFeatureDestination.focus.systemImage,
-                tint: CadenceFeatureDestination.focus.tint,
-                fullWidth: true
-            ) {
-                CadenceFocusHandoffCenter.shared.request(.task(task.id))
-                dismiss()
+        if CadenceFocusSupport.canFocus(task) {
+            iOSEditorSection(title: nil, style: .ruled, contentSpacing: 10) {
+                iOSActionButton(
+                    title: "Focus This Task",
+                    systemImage: CadenceFeatureDestination.focus.systemImage,
+                    tint: CadenceFeatureDestination.focus.tint,
+                    fullWidth: true
+                ) {
+                    CadenceFocusHandoffCenter.shared.request(.task(task.id))
+                    dismiss()
+                }
             }
         }
     }

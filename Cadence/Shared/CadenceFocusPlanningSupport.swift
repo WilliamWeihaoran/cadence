@@ -42,9 +42,29 @@ struct CadenceTaskDetailLine: Hashable {
 }
 
 enum CadenceFocusSupport {
+
+    /// Whether a task can be the **subject** of a focus session at all.
+    ///
+    /// This predicate is not new — it is the first line of `readyTasks` below, which both Focus
+    /// pickers have always filtered through, and the condition macOS's `MacTaskRow.focusButtonSlot`
+    /// spells to decide whether to draw its hover ▶ at all. What is new is that it has a name, so
+    /// the *entry points* can ask the same question the picker asks. Every iOS entry added by T-266
+    /// and T-273 asked nothing: `iOSFocusView.pickItem(for:)` deliberately falls back to the whole
+    /// store when the picker does not list a handed-over target, so "Focus" on a settled task really
+    /// started a session and really banked its minutes into `actualMinutes` — and from there into
+    /// `area.loggedMinutes` / `project.loggedMinutes`, which an hours-based `Goal` reads. Logging
+    /// work against something you cancelled is not a cosmetic divergence (T-276).
+    ///
+    /// Stated positively as "can focus" rather than negatively as "is settled": the surfaces reading
+    /// it are deciding whether to *offer* something, and `CadenceTaskQuerySupport.isFinishedTask`
+    /// already owns the other phrasing for the surfaces that are deciding where to file a row.
+    static func canFocus(_ task: AppTask) -> Bool {
+        !task.isDone && !task.isCancelled
+    }
+
     static func readyTasks(from tasks: [AppTask], todayKey: String) -> [AppTask] {
         tasks
-            .filter { !$0.isDone && !$0.isCancelled }
+            .filter { canFocus($0) }
             .sorted { lhs, rhs in
                 let lhsScore = focusScore(for: lhs, todayKey: todayKey)
                 let rhsScore = focusScore(for: rhs, todayKey: todayKey)
