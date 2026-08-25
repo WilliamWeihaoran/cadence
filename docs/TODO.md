@@ -84,54 +84,6 @@ _Nothing in flight._
   one width and absent at the other) turned up anywhere the grep reached.
 
 
-- [T-243] **The drop-a-task-on-a-task gesture landed on iOS's Board, not its timeline — because the
-  iOS timeline has no drag-and-drop at all.** macOS's home for the gesture is `TimelineDayCanvas`,
-  where every block by definition owns a slot, so the target is always eligible.
-  `Cadence/iOS/iOSCalendarTimelineViews.swift` has **no** `.draggable` and **no** `.dropDestination`
-  anywhere — `iOSTimelineTaskBlock` cannot be dragged — so [[T-190]]'s gesture went to the Calendar
-  Board, whose drag mesh already works. Consequence: on the Board only *timed* cards offer it, and a
-  do-dated-only card correctly declines, so the affordance is less discoverable than on the Mac.
-  Adding DnD to the iOS timeline is the fix and it is **not** small: that view carries a
-  `simultaneousGesture` pinch, and the file's own comment records that `.draggable` "delays the
-  touches of everything under it" — the sidebar bug it was written about. Treat gesture-conflict
-  testing on a real device as part of the work, not a follow-up.
-  Two small things found in the same pass, neither worth its own ticket: `SchedulingActions.dayStartMin`
-  has been dead since before [[T-190]] (declared, read by nothing), and the day bounds are now
-  spelled twice on purpose — `TimelineDayRange` in `macOS/Views/TimelineMetrics.swift` and
-  `CadenceTaskMutationSupport.bundleDayEndMin` / `bundleMinimumDuration` in `Shared/`, because
-  `Shared/` does not compile the timeline. The second pair is pinned equal to the first by
-  `theSharedBundleClampsMatchTheTimelineDayRange`; if `TimelineDayRange` ever moves to `Shared/`,
-  delete the copy rather than the test.
-
-  **Built and shipped.** Confirmed against `HEAD` first — `iOSCalendarTimelineViews.swift` still had
-  zero `.draggable` and zero `.dropDestination` — then built as one gesture on one shared value
-  rather than as a second mechanism. `iOSTimelineTaskBlock` gains an optional
-  `iOSBundleFormingDrop` (the Board's `iOSBoardTaskCardBundleDrop`, **renamed** now that it has a
-  second user — a helper named for one subject is why the second one never gets checked against it,
-  the same lesson `nestedDropTargetID` recorded), and `iOSCalendarTimelineDayColumn` passes it only
-  where `scheduledStartMin >= 0`, exactly as the Board's card does and against the same
-  `CadenceTaskMutationSupport.insertBundle(from:adding:)`. No second body, no second `TaskBundle(`.
-  The grid takes a flat `allTasks` for payload resolution because a drag can cross day columns.
-
-  **The gesture conflict the ticket warned about does not arise, and that is measured rather than
-  argued.** Driven on the simulator: two timed blocks on one day, `touch_path` with the 600ms
-  stationary dwell, and the two became one amber `×2` block at the target's slot that survived a
-  relaunch. A two-finger `touch2_path` pinch still zooms the grid afterwards, and one-finger scroll
-  still scrolls. The reason they coexist: a magnification needs two fingers, a `UIDragInteraction`
-  lift needs one finger held still ~350ms, and a one-finger pan that moves immediately breaks the
-  lift recognizer's slop and stays a scroll. The file's old comment was about `.draggable` delaying
-  *taps* — the block's tap is a `Button`, and the drag interaction defers a touch only until its
-  long-press threshold fails.
-
-  Today's schedule pane draws the same block and passes **no** opt-in, so it installs no recognizer
-  at all; that is why the modifiers hang off an `if let` rather than an always-attached closure
-  returning `false` (`isTargeted` fires either way and would light up blocks on a pane with nothing
-  to bundle them with). Pinned by four tests in `CadenceBundleCreationParityTests`, including the
-  call-site wiring a declaration scan is blind to — `bundleFormingDrop` defaults to `nil`, so a
-  column that stopped passing it would leave every declaration assertion intact and the gesture
-  dead. The two side notes in this ticket (`SchedulingActions.dayStartMin` dead; the day bounds
-  spelled twice on purpose) were **not** acted on and remain accurate.
-
 - [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
   Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes
   `rsync` + `git show HEAD:<path>` restore instead. The workaround has a real ongoing cost: the
@@ -150,47 +102,6 @@ _Nothing in flight._
   test whether the slowness follows the global config into a scratch repo. Fixing it restores a
   one-command isolation step for every future agent.
 
-
-- [T-278] **There is a fourth note-kind switch, and it is on the MCP boundary.** Found while
-  closing [[T-239]], which named three and consolidated those three.
-  `CadenceReadService.noteSubtitle` (`Cadence/Services/MCPReadOnly/CadenceReadService.swift:1213`)
-  is a fourth switch over `NoteKind` reading "Daily note" / "Weekly note" / **"Permanent
-  note"** / the container name / **"Meeting note"**. Both bolded strings are the retired vocabulary
-  that `NoteReferencePanelSupport.noteKindLabel`'s own doc comment exists to warn about: the app
-  calls those surfaces Notepad and Event Notes. A sixth literal `subtitle: "Meeting note"` sits at
-  line 730 of the same file.
-
-  **Not folded into T-239 on purpose.** These strings are MCP *response* content, and
-  `CadenceMCPServer/AGENTS.md` says response DTOs change on purpose or not at all — an agent
-  reading this surface may be matching on them. The stable keys are elsewhere and unaffected
-  (`noteEntityType` returns `permanent_note` / `document` / `event_note`), so this is prose in a
-  payload rather than schema, but it is still a decision rather than a cleanup. Either route both
-  through `noteKindLabel` and note the response change, or record that the MCP surface keeps the
-  raw-value vocabulary deliberately. Nothing persisted is involved either way.
-
-  **Decided: route both through `noteKindLabel`. Done.** Confirmed against `HEAD` first — the switch
-  and the sixth literal were both still there. The decision turns on what is actually contractual
-  here, and three facts settle it:
-  - **The DTO does not move.** `CadenceSearchHit`'s key set is unchanged and `noteEntityType` still
-    returns `daily_note` / `weekly_note` / `permanent_note` / `document` / `event_note`. That is the
-    discriminator a client matches on, and a test now asserts the whole set so a rename cannot hide
-    in one case.
-  - **`subtitle` was never a matchable enumeration.** It is free-form across this entire function —
-    a container name, a tag slug, a status — and free-form *inside this very switch*, where `.list`
-    returns a user-typed name. It is also not a scored field: `CadenceSearchMatcher.matchScore` is
-    handed the title, content, key and tag text, never the subtitle, so no ranking moves. Nothing in
-    `CadenceMCPServer/`, `plugins/cadence-mcp/` or the tests named either string.
-  - **The old prose was not a deliberately-preserved raw-value vocabulary.** `.meeting`'s stable key
-    had *already* moved to `event_note` while this line still read "Meeting note", so the two halves
-    of one hit disagreed. Keeping it would have been preserving an inconsistency, not a contract.
-
-  So it is prose in a payload, changed on purpose. `.list` deliberately keeps the container name
-  rather than taking `noteKindDetail`, which would have appended dates to the other four kinds — a
-  larger response change than the ticket asked for. Two **value** tests in `CadenceReadServiceTests`
-  pin the prose and the keys *together*: asserting the subtitle alone would pass a change that also
-  renamed `permanent_note`, and asserting the type alone would pass the stale prose. The
-  `CadenceMCPServer` scheme was built on its own into a private `-derivedDataPath`: 0 errors, 0
-  warnings.
 
 - [T-221] **Edit tables in place — DONE on macOS, and the iOS half is the whole remainder.**
   **DECIDED 2026-08-26: port it to iOS.** The user's call, asked after the macOS half shipped. The
@@ -280,29 +191,6 @@ _Nothing in flight._
   question is where that line actually falls now that Today, Tasks, Calendar and Notes have all
   been unified internally. Wants a decision recorded, not a sweep: which surfaces are genuinely
   shape-bound and which are iPad-only by accident.
-
-- [T-171] **The blue `+` button: palette on stillness, drag on escape.** User's resolution of the
-  gesture conflict, and it is better than the alternatives offered — **the palette *is* the
-  local-drag target**:
-  - Quick press then move → a drag immediately. The palette never appears.
-  - Press and hold still (~350ms, with haptic) → the palette opens, a semicircle of segments around
-    the button: task, calendar, note, and possibly a fourth.
-  - Palette open, finger moving **within** its radius → slides between segments, the way a radial
-    menu works. This is the "local dragging" case and it belongs to the palette.
-  - Finger travelling **beyond** that radius → the palette gives up and it becomes a drag, so
-    dropping onto a task list still works.
-  **The technical caveat, recorded before anyone starts.** "Drag wins on escape" is probably not
-  implementable with `.onDrag` / `UIDragInteraction`: you cannot hand a live touch to UIKit's drag
-  machinery partway through a gesture you are already tracking, and the lift has to be recognised at
-  the start. So this likely needs a custom drag — a `UIPanGestureRecognizer` plus a rendered preview
-  — rather than the system drag the button uses today. `iOSMarkdownImageResizeGestureRecognizer` is
-  the in-repo precedent for a recognizer that decides by direction inside the first few points of
-  travel and fails cleanly so a sibling can take over.
-  Two figures to settle by feel, not by argument: the hold duration (UIKit's own lift is 326–349ms
-  measured here) and the escape radius, which must be larger than the palette's own reach or
-  segment selection will convert to a drag mid-choice. macOS stays deliberately unspecified.
-
-
 
 - [T-161] **Tests pin helpers, not wiring.** The T-149 verifier proved by mutation that reverting the
   `macOSRootCommandActionSupport` fix leaves all 1692 tests green, and the same holds for T-150 —
@@ -647,6 +535,117 @@ _Nothing in flight._
   `paste(_:)` override that was never dispatched is exactly how the macOS bug survived.
 
 ## Done
+
+
+- [T-243] `e0a30f8` **The drop-a-task-on-a-task gesture landed on iOS's Board, not its timeline — because the
+  iOS timeline has no drag-and-drop at all.** macOS's home for the gesture is `TimelineDayCanvas`,
+  where every block by definition owns a slot, so the target is always eligible.
+  `Cadence/iOS/iOSCalendarTimelineViews.swift` has **no** `.draggable` and **no** `.dropDestination`
+  anywhere — `iOSTimelineTaskBlock` cannot be dragged — so [[T-190]]'s gesture went to the Calendar
+  Board, whose drag mesh already works. Consequence: on the Board only *timed* cards offer it, and a
+  do-dated-only card correctly declines, so the affordance is less discoverable than on the Mac.
+  Adding DnD to the iOS timeline is the fix and it is **not** small: that view carries a
+  `simultaneousGesture` pinch, and the file's own comment records that `.draggable` "delays the
+  touches of everything under it" — the sidebar bug it was written about. Treat gesture-conflict
+  testing on a real device as part of the work, not a follow-up.
+  Two small things found in the same pass, neither worth its own ticket: `SchedulingActions.dayStartMin`
+  has been dead since before [[T-190]] (declared, read by nothing), and the day bounds are now
+  spelled twice on purpose — `TimelineDayRange` in `macOS/Views/TimelineMetrics.swift` and
+  `CadenceTaskMutationSupport.bundleDayEndMin` / `bundleMinimumDuration` in `Shared/`, because
+  `Shared/` does not compile the timeline. The second pair is pinned equal to the first by
+  `theSharedBundleClampsMatchTheTimelineDayRange`; if `TimelineDayRange` ever moves to `Shared/`,
+  delete the copy rather than the test.
+
+  **Built and shipped.** Confirmed against `HEAD` first — `iOSCalendarTimelineViews.swift` still had
+  zero `.draggable` and zero `.dropDestination` — then built as one gesture on one shared value
+  rather than as a second mechanism. `iOSTimelineTaskBlock` gains an optional
+  `iOSBundleFormingDrop` (the Board's `iOSBoardTaskCardBundleDrop`, **renamed** now that it has a
+  second user — a helper named for one subject is why the second one never gets checked against it,
+  the same lesson `nestedDropTargetID` recorded), and `iOSCalendarTimelineDayColumn` passes it only
+  where `scheduledStartMin >= 0`, exactly as the Board's card does and against the same
+  `CadenceTaskMutationSupport.insertBundle(from:adding:)`. No second body, no second `TaskBundle(`.
+  The grid takes a flat `allTasks` for payload resolution because a drag can cross day columns.
+
+  **The gesture conflict the ticket warned about does not arise, and that is measured rather than
+  argued.** Driven on the simulator: two timed blocks on one day, `touch_path` with the 600ms
+  stationary dwell, and the two became one amber `×2` block at the target's slot that survived a
+  relaunch. A two-finger `touch2_path` pinch still zooms the grid afterwards, and one-finger scroll
+  still scrolls. The reason they coexist: a magnification needs two fingers, a `UIDragInteraction`
+  lift needs one finger held still ~350ms, and a one-finger pan that moves immediately breaks the
+  lift recognizer's slop and stays a scroll. The file's old comment was about `.draggable` delaying
+  *taps* — the block's tap is a `Button`, and the drag interaction defers a touch only until its
+  long-press threshold fails.
+
+  Today's schedule pane draws the same block and passes **no** opt-in, so it installs no recognizer
+  at all; that is why the modifiers hang off an `if let` rather than an always-attached closure
+  returning `false` (`isTargeted` fires either way and would light up blocks on a pane with nothing
+  to bundle them with). Pinned by four tests in `CadenceBundleCreationParityTests`, including the
+  call-site wiring a declaration scan is blind to — `bundleFormingDrop` defaults to `nil`, so a
+  column that stopped passing it would leave every declaration assertion intact and the gesture
+  dead. The two side notes in this ticket (`SchedulingActions.dayStartMin` dead; the day bounds
+  spelled twice on purpose) were **not** acted on and remain accurate.
+
+- [T-278] `e0a30f8` **There is a fourth note-kind switch, and it is on the MCP boundary.** Found while
+  closing [[T-239]], which named three and consolidated those three.
+  `CadenceReadService.noteSubtitle` (`Cadence/Services/MCPReadOnly/CadenceReadService.swift:1213`)
+  is a fourth switch over `NoteKind` reading "Daily note" / "Weekly note" / **"Permanent
+  note"** / the container name / **"Meeting note"**. Both bolded strings are the retired vocabulary
+  that `NoteReferencePanelSupport.noteKindLabel`'s own doc comment exists to warn about: the app
+  calls those surfaces Notepad and Event Notes. A sixth literal `subtitle: "Meeting note"` sits at
+  line 730 of the same file.
+
+  **Not folded into T-239 on purpose.** These strings are MCP *response* content, and
+  `CadenceMCPServer/AGENTS.md` says response DTOs change on purpose or not at all — an agent
+  reading this surface may be matching on them. The stable keys are elsewhere and unaffected
+  (`noteEntityType` returns `permanent_note` / `document` / `event_note`), so this is prose in a
+  payload rather than schema, but it is still a decision rather than a cleanup. Either route both
+  through `noteKindLabel` and note the response change, or record that the MCP surface keeps the
+  raw-value vocabulary deliberately. Nothing persisted is involved either way.
+
+  **Decided: route both through `noteKindLabel`. Done.** Confirmed against `HEAD` first — the switch
+  and the sixth literal were both still there. The decision turns on what is actually contractual
+  here, and three facts settle it:
+  - **The DTO does not move.** `CadenceSearchHit`'s key set is unchanged and `noteEntityType` still
+    returns `daily_note` / `weekly_note` / `permanent_note` / `document` / `event_note`. That is the
+    discriminator a client matches on, and a test now asserts the whole set so a rename cannot hide
+    in one case.
+  - **`subtitle` was never a matchable enumeration.** It is free-form across this entire function —
+    a container name, a tag slug, a status — and free-form *inside this very switch*, where `.list`
+    returns a user-typed name. It is also not a scored field: `CadenceSearchMatcher.matchScore` is
+    handed the title, content, key and tag text, never the subtitle, so no ranking moves. Nothing in
+    `CadenceMCPServer/`, `plugins/cadence-mcp/` or the tests named either string.
+  - **The old prose was not a deliberately-preserved raw-value vocabulary.** `.meeting`'s stable key
+    had *already* moved to `event_note` while this line still read "Meeting note", so the two halves
+    of one hit disagreed. Keeping it would have been preserving an inconsistency, not a contract.
+
+  So it is prose in a payload, changed on purpose. `.list` deliberately keeps the container name
+  rather than taking `noteKindDetail`, which would have appended dates to the other four kinds — a
+  larger response change than the ticket asked for. Two **value** tests in `CadenceReadServiceTests`
+  pin the prose and the keys *together*: asserting the subtitle alone would pass a change that also
+  renamed `permanent_note`, and asserting the type alone would pass the stale prose. The
+  `CadenceMCPServer` scheme was built on its own into a private `-derivedDataPath`: 0 errors, 0
+  warnings.
+
+- [T-171] `0cddcf0` **The blue `+` button: palette on stillness, drag on escape.** User's resolution of the
+  gesture conflict, and it is better than the alternatives offered — **the palette *is* the
+  local-drag target**:
+  - Quick press then move → a drag immediately. The palette never appears.
+  - Press and hold still (~350ms, with haptic) → the palette opens, a semicircle of segments around
+    the button: task, calendar, note, and possibly a fourth.
+  - Palette open, finger moving **within** its radius → slides between segments, the way a radial
+    menu works. This is the "local dragging" case and it belongs to the palette.
+  - Finger travelling **beyond** that radius → the palette gives up and it becomes a drag, so
+    dropping onto a task list still works.
+  **The technical caveat, recorded before anyone starts.** "Drag wins on escape" is probably not
+  implementable with `.onDrag` / `UIDragInteraction`: you cannot hand a live touch to UIKit's drag
+  machinery partway through a gesture you are already tracking, and the lift has to be recognised at
+  the start. So this likely needs a custom drag — a `UIPanGestureRecognizer` plus a rendered preview
+  — rather than the system drag the button uses today. `iOSMarkdownImageResizeGestureRecognizer` is
+  the in-repo precedent for a recognizer that decides by direction inside the first few points of
+  travel and fails cleanly so a sibling can take over.
+  Two figures to settle by feel, not by argument: the hold duration (UIKit's own lift is 326–349ms
+  measured here) and the escape radius, which must be larger than the palette's own reach or
+  segment selection will convert to a drag mid-choice. macOS stays deliberately unspecified.
 
 > The entries below marked as coming from the recovery branch `recovered-2026-08-25` (`922a8f0`)
 > are **verified in the working tree, not yet committed** — a later commit should add its sha to
