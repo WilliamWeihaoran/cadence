@@ -126,6 +126,53 @@ enum TaskContainerLifecycleService {
         )
     }
 
+    // MARK: Winding down by outcome
+
+    // The pair above says *which* settle by which function is called, so a call site that picks the
+    // wrong one is a decision made in a view body and pinned by nothing. These two take the
+    // decision as a value instead, so "archiving cancels, completing marks done" is an assertion a
+    // test can make about `CadenceWindDownOutcome` rather than a branch a source scan has to go
+    // looking for. `docs/TODO.md` T-161.
+
+    static func settleRemainingActiveTasks(
+        in area: Area,
+        includingChildProjects: Bool,
+        outcome: CadenceWindDownOutcome,
+        in context: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil
+    ) {
+        switch outcome {
+        case .done:
+            completeRemainingActiveTasks(
+                in: area,
+                includingChildProjects: includingChildProjects,
+                in: context,
+                reconciler: reconciler
+            )
+        case .cancelled:
+            cancelRemainingActiveTasks(
+                in: area,
+                includingChildProjects: includingChildProjects,
+                in: context,
+                reconciler: reconciler
+            )
+        }
+    }
+
+    static func settleRemainingActiveTasks(
+        in project: Project,
+        outcome: CadenceWindDownOutcome,
+        in context: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil
+    ) {
+        switch outcome {
+        case .done:
+            completeRemainingActiveTasks(in: project, in: context, reconciler: reconciler)
+        case .cancelled:
+            cancelRemainingActiveTasks(in: project, in: context, reconciler: reconciler)
+        }
+    }
+
     /// Settling a whole container is **not** the single-task transition, and must not become it.
     /// `markDone` / `markCancelled` spawn the next recurrence occurrence into the same area,
     /// project and section, so routing this through either would refill the list or column that

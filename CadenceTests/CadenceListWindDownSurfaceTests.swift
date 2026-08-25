@@ -524,13 +524,93 @@ struct CadenceListWindDownSurfaceTests {
         }
     }
 
-    /// The other direction of the same divergence. macOS's four branches are what iOS was measured
+    /// The other direction of the same divergence. macOS's branches are what iOS was measured
     /// against, so they are pinned too: closing either ticket by *removing* the Mac's wind-down
     /// would satisfy every assertion above and be the wrong fix.
+    ///
+    /// **This used to be two whole-file counts and it could not see the mutation that matters.**
+    /// It asserted `cancelRemainingActiveTasks(` twice and `completeRemainingActiveTasks(` twice in
+    /// `EditListSheet.swift`. *Swapping* them — so archiving a list marks its leftovers done and
+    /// completing one cancels them — leaves both counts at two and every test green
+    /// (`docs/TODO.md` T-161). The branch is a value now: `ListEditorLifecycleChoice.windDownOutcome`,
+    /// asserted just below, and each sheet makes one call parameterised by it.
     @Test func macOSStillWindsDownOnArchiveAndOnCompletion() throws {
         let sheet = try strippingComments(sourceFile("Cadence/macOS/Sheets/EditListSheet.swift"))
-        #expect(sheet.components(separatedBy: "TaskContainerLifecycleService.cancelRemainingActiveTasks(").count - 1 == 2)
-        #expect(sheet.components(separatedBy: "TaskContainerLifecycleService.completeRemainingActiveTasks(").count - 1 == 2)
+
+        for declaration in [
+            "private func apply(_ choice: ListEditorLifecycleChoice)"
+        ] {
+            var searched = Substring(sheet)
+            var bodies: [String] = []
+            while let range = searched.range(of: declaration) {
+                let body = try cadenceFunctionBody(declaration, in: String(searched[range.lowerBound...]))
+                bodies.append(body)
+                searched = searched[range.upperBound...]
+            }
+            // One `apply` per sheet: `EditAreaSheet` and `EditProjectSheet`.
+            #expect(bodies.count == 2)
+            for body in bodies {
+                #expect(body.components(separatedBy: "choice.windDownOutcome").count - 1 == 1)
+                #expect(body.components(separatedBy: "settleRemainingActiveTasks(").count - 1 == 1)
+                // Scoped to this body, so re-spelling the branch here rather than reading the value
+                // fails even though the file as a whole would still contain both names.
+                #expect(!body.contains("completeRemainingActiveTasks("))
+                #expect(!body.contains("cancelRemainingActiveTasks("))
+                // Non-vacuity: this really is `apply`'s body and not an empty string.
+                #expect(body.contains("applyEdits()"))
+            }
+        }
+    }
+
+    /// The decision the two sheets now read, as a value.
+    ///
+    /// Archiving cancels what is left; completing marks it done. Nothing in a view body gets to
+    /// have a second opinion about that, and a mutation that swaps the two arms fails here rather
+    /// than shipping a list whose archive silently credits unfinished work as finished.
+    @Test func theLifecycleChoiceCarriesTheOutcomeRatherThanTheSheet() {
+        #expect(ListEditorLifecycleChoice.archived.windDownOutcome == .cancelled)
+        #expect(ListEditorLifecycleChoice.completed.windDownOutcome == .done)
+        // Reopening a list settles nothing — not "settles an empty set".
+        #expect(ListEditorLifecycleChoice.active.windDownOutcome == nil)
+        #expect(ListEditorLifecycleChoice.allCases.count == 3)
+    }
+
+    /// And the outcome-shaped entry point really dispatches, on both container kinds. Without this
+    /// the value above could be right and the service could still ignore it.
+    @Test func theOutcomeShapedSettleReallySettlesThatWay() throws {
+        for (outcome, expected) in [
+            (CadenceWindDownOutcome.cancelled, TaskStatus.cancelled),
+            (CadenceWindDownOutcome.done, TaskStatus.done)
+        ] {
+            let modelContext = ModelContext(try container())
+            let area = Area(name: "Home")
+            let project = Project(name: "Kitchen")
+            let inArea = task("area work")
+            inArea.area = area
+            let inProject = task("project work")
+            inProject.project = project
+            modelContext.insert(area)
+            modelContext.insert(project)
+            modelContext.insert(inArea)
+            modelContext.insert(inProject)
+
+            TaskContainerLifecycleService.settleRemainingActiveTasks(
+                in: area,
+                includingChildProjects: true,
+                outcome: outcome,
+                in: modelContext,
+                reconciler: .inert
+            )
+            TaskContainerLifecycleService.settleRemainingActiveTasks(
+                in: project,
+                outcome: outcome,
+                in: modelContext,
+                reconciler: .inert
+            )
+
+            #expect(inArea.status == expected)
+            #expect(inProject.status == expected)
+        }
     }
 
     /// Without this, every zero and every absence assertion above could be passing because the

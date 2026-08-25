@@ -112,7 +112,15 @@ _Nothing in flight._
   `theSharedBundleClampsMatchTheTimelineDayRange`; if `TimelineDayRange` ever moves to `Shared/`,
   delete the copy rather than the test.
 
-- [T-240] **A test bounds a `#require`'d source range by searching for another file's declaration
+- [T-240] **CLOSED 2026-08-25 (uncommitted, in the T-161 pass).** `accountDeletionIsExplicitInSettingsAndReviewDocs`
+  now brace-matches `deleteCadenceData()`'s body with `cadenceFunctionBody(_:in:)` instead of ending
+  the range at the next `private struct SettingsPrivacyStatementSection`. Proved both ways: renaming
+  that struct failed the test before the change and does not after it, and moving the
+  `PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts` call out of the function into a
+  sibling in the same file — which the old range would have swallowed — fails it now. Original
+  entry follows.
+
+  **A test bounds a `#require`'d source range by searching for another file's declaration
   line.** `AppStoreReviewReadinessTests.accountDeletionIsExplicitInSettingsAndReviewDocs` locates the
   region it wants to assert over by finding a literal landmark in a *different* file. T-220 made the
   landmark less brittle (the struct name rather than a `"\n}\n\nprivate struct …"` sequence), but the
@@ -394,6 +402,62 @@ _Nothing in flight._
   numbers are right. Worth applying that pattern to the two search fixes, and treating it as the
   default shape for consolidation work: a test that passes when the call site is reverted has not
   pinned the consolidation.
+
+  **Survey, 2026-08-25, against `6e1f1e0`.** Measured rather than estimated, because nobody had:
+  **2,514 `@Test` functions, of which 154 read a `.swift` file as text**, spread over **32 of 189**
+  test files. Of those 154, **73 assert nothing but that some text exists** and 81 also assert at
+  least one value produced by a real call. So the source-scan population is ~6% of the suite — small
+  — and it is concentrated where the risk is: iOS surfaces the macOS target cannot compile, plus a
+  tail of macOS files where a value *was* available and nobody reached for it. The script is
+  reproducible from the classification described here; it strips comments and masks string literals
+  before matching, because `func select(` inside a needle literal otherwise reads as a declaration.
+
+  **Three fixed in this pass, each with the blindness proved first** (pre-fix mutation → all green,
+  post-fix same mutation → red, both at 0 compile errors):
+  - *macOS's settings rail was pinned one case at a time.* `SettingsCategoryGroup` was `private`, so
+    `theSyncCategoryIsFiledInTheMacOSRail` and `theAboutCategoryIsFiledInTheRailAndRoutedToItsSection`
+    each found `static let all: [SettingsCategoryGroup]` in the source text, sliced to the next
+    `\n}`, and asked whether the slice contained `".sync"` / `".about"`. Deleting `.notifications`
+    from the Connections group — Settings → Notifications unreachable on macOS — passed. The struct
+    is `internal` now and `theRailFilesEverySharedCategoryExactlyOnce` states the general rule.
+  - *Both edit sheets' wind-down was two whole-file counts.* `macOSStillWindsDownOnArchiveAndOnCompletion`
+    asserted `cancelRemainingActiveTasks(` == 2 and `completeRemainingActiveTasks(` == 2 in
+    `EditListSheet.swift`. **Swapping them** — archiving a list marks its leftovers *done*, completing
+    one cancels them — leaves both counts at 2 and passed. The branch is a value now
+    (`ListEditorLifecycleChoice.windDownOutcome`) over a new
+    `TaskContainerLifecycleService.settleRemainingActiveTasks(…outcome:)`, and the surviving scan is
+    scoped to `apply(_:)`'s brace-matched body instead of the file.
+  - *T-240, closed.* See its entry below.
+
+  **`cadenceFunctionBody(_:in:)` is now the one brace matcher in `CadenceTests`** — `cfa3b3b`'s
+  `focusFunctionBody`, promoted to `internal` and renamed, read by `FocusPickerPlayControlTests`,
+  `AppStoreReviewReadinessTests` and `CadenceListWindDownSurfaceTests`. Anything else scoping a scan
+  to one function calls it rather than writing a second.
+
+  **Deliberately left, and worth doing next** — all still whole-file needle counts, listed worst
+  first. Each is the `cfa3b3b` shape: a call moving between two functions in the same file is
+  invisible to them.
+  - `CadenceTaskInspectorHostTests.theInspectorIsPresentedFromExactlyFivePlacesInTheWholeApp` and
+    `theHostIsInstalledAboveBothShellsAndInsideTheOneSheetThatCarriesAPage`; the same pair in
+    `CadenceBundleInspectorHostTests`. These are repo-wide counts, which is the *right* shape for
+    "exactly N places in the whole app" — but the per-file half is unscoped.
+  - `CadenceKanbanColumnLifecycleSurfaceTests.bothVisibleCompletionControlsSitInsideTheLifecycleGate`
+    and `theKeyboardRouteAndTheConvergencePointBothRefuseDefault`.
+  - `CadenceListDetailTabStripMarginTests.theResetIsTheStripsAloneAndTheHostCompensatesForNothing`.
+  - `CadenceSharedBoardChromeTests.bothBoardsDrawTheSharedMetadataChip` (a `cardCornerRadius:` count
+    over two whole view files).
+  - `CadenceSharedTaskRowJobsTests.theRowsAnimatedPartsAreStillExtractedIntoTheirOwnSubViews` — an
+    `@Environment(TaskCompletionAnimationManager.self)` count of 2 over `TasksPanelComponents.swift`,
+    which cannot tell the two extracted sub-views from `MacTaskRow` growing one of its own.
+  - `CadenceTodayRolloverSurfaceTests.theMacSpellingDelegatesToTheSharedMutation` and
+    `CadenceTodayOverdueSummarySurfaceTests.theMacCardsHopTheNavigationManagerThroughTheSharedRequest`
+    — both scan macOS files, and the first has a behavioural neighbour already
+    (`TaskBundleTests` calls `SchedulingActions.rollOverTaskToToday` for real), so only the
+    "no second body" half is at risk.
+
+  **One piece of mutation evidence is still owed from `55d696b`:** forcing
+  `CadenceTaskGroupHeadingMetrics.showsCapsule` to `true` was never watched to fail, because two
+  test hosts deadlocked (T-117). The behavioural test exists; the proof does not.
 
 
 

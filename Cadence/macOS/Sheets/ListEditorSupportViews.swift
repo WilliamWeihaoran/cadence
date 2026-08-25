@@ -350,6 +350,27 @@ struct ListEditorCalendarRow: View {
 
 enum ListEditorLifecycleChoice: CaseIterable {
     case active, completed, archived
+
+    /// What this choice does to the work still open in the list, as a value rather than as a branch
+    /// inside a sheet's `apply(_:)`.
+    ///
+    /// Both edit sheets used to switch on the choice and call
+    /// `completeRemainingActiveTasks` / `cancelRemainingActiveTasks` by hand. Swapping those two
+    /// calls — so that archiving a list marked its leftovers *done* and completing one cancelled
+    /// them — kept every test green, because the only assertion counted both names over the whole
+    /// file and both counts were unchanged (`docs/TODO.md` T-161). The mapping is here, and
+    /// `CadenceListWindDownSurfaceTests` states it as an equality.
+    ///
+    /// `nil` for `.active`: reopening a list settles nothing. That is deliberately not
+    /// `.done`-with-an-empty-set, because "there is no wind-down" and "wind down zero tasks" are
+    /// different sentences and only the first one is true here.
+    var windDownOutcome: CadenceWindDownOutcome? {
+        switch self {
+        case .active: return nil
+        case .completed: return .done
+        case .archived: return .cancelled
+        }
+    }
 }
 
 /// Status as one field row plus a picker.

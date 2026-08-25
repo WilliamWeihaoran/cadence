@@ -99,15 +99,15 @@ struct AppStoreReviewReadinessTests {
             contentsOf: repositoryRoot().appendingPathComponent("docs/privacy.html"),
             encoding: .utf8
         )
-        let deletionBody = try #require(
-            dataSafetySettings.range(of: "    private func deleteCadenceData() {").flatMap { start in
-                dataSafetySettings
-                    .range(
-                        of: "private struct SettingsPrivacyStatementSection",
-                        range: start.upperBound..<dataSafetySettings.endIndex
-                    )
-                    .map { end in String(dataSafetySettings[start.lowerBound..<end.lowerBound]) }
-            }
+        // Brace-matched, not bounded by a landmark in unrelated code. This used to end the range at
+        // the next `private struct SettingsPrivacyStatementSection` — so renaming a neighbouring
+        // view failed this test as a `#require` precondition, with a message that named neither the
+        // rename nor account deletion (`docs/TODO.md` T-240). `cadenceFunctionBody` is the one
+        // brace matcher in this target; it throws rather than returning "" so a miss cannot satisfy
+        // the two absence assertions below by accident.
+        let deletionBody = try cadenceFunctionBody(
+            "private func deleteCadenceData()",
+            in: dataSafetySettings
         )
 
         // The steps that outlive the store — the local backups and the widget snapshot — used to

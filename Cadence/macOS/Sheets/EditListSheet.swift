@@ -111,14 +111,19 @@ struct EditAreaSheet: View {
     private func apply(_ choice: ListEditorLifecycleChoice) {
         applyEdits()
         switch choice {
-        case .active:
-            area.status = .active
-        case .completed:
-            area.status = .done
-            TaskContainerLifecycleService.completeRemainingActiveTasks(in: area, includingChildProjects: true, in: modelContext)
-        case .archived:
-            area.status = .archived
-            TaskContainerLifecycleService.cancelRemainingActiveTasks(in: area, includingChildProjects: true, in: modelContext)
+        case .active: area.status = .active
+        case .completed: area.status = .done
+        case .archived: area.status = .archived
+        }
+        // One call, and which way it settles is `choice.windDownOutcome` — a tested value, not a
+        // branch spelled out here. See that property for what the two hand-written branches cost.
+        if let outcome = choice.windDownOutcome {
+            TaskContainerLifecycleService.settleRemainingActiveTasks(
+                in: area,
+                includingChildProjects: true,
+                outcome: outcome,
+                in: modelContext
+            )
         }
         try? modelContext.save()
         dismiss()
@@ -262,14 +267,17 @@ struct EditProjectSheet: View {
     private func apply(_ choice: ListEditorLifecycleChoice) {
         applyEdits()
         switch choice {
-        case .active:
-            project.status = .active
-        case .completed:
-            project.status = .done
-            TaskContainerLifecycleService.completeRemainingActiveTasks(in: project, in: modelContext)
-        case .archived:
-            project.status = .archived
-            TaskContainerLifecycleService.cancelRemainingActiveTasks(in: project, in: modelContext)
+        case .active: project.status = .active
+        case .completed: project.status = .done
+        case .archived: project.status = .archived
+        }
+        // Same one call as `EditAreaSheet`, same reason.
+        if let outcome = choice.windDownOutcome {
+            TaskContainerLifecycleService.settleRemainingActiveTasks(
+                in: project,
+                outcome: outcome,
+                in: modelContext
+            )
         }
         try? modelContext.save()
         dismiss()

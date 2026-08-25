@@ -380,16 +380,25 @@ struct CadenceSyncSurfaceTests {
     /// Defined is not offered. `.sync` has to be filed in one of the rail's groups or the category
     /// exists and is unreachable — the state `.reminders` was in on mobile for months, where
     /// absence looked exactly like a deliberate omission.
+    ///
+    /// Read off the value rather than out of the source text. This searched
+    /// `SettingsViewSupport.swift` for `static let all: [SettingsCategoryGroup]`, sliced to the next
+    /// `\n}`, and asked whether that slice contained `".sync"` — which pins the spelling of one case
+    /// and is blind to every other category's filing (`docs/TODO.md` T-161). The rule for all of
+    /// them is `SettingsCategoryReachTests.theRailFilesEverySharedCategoryExactlyOnce`; what is
+    /// specific to this ticket is *where* `.sync` sits, so that is what is asserted here.
     @Test func theSyncCategoryIsFiledInTheMacOSRail() throws {
-        let source = try strippingComments(sourceFile("Cadence/macOS/Views/SettingsViewSupport.swift"))
-        let groupsStart = try #require(source.range(of: "static let all: [SettingsCategoryGroup]"))
-        let groups = source[groupsStart.upperBound...]
-        let groupsEnd = groups.range(of: "\n}")?.lowerBound ?? groups.endIndex
-
-        #expect(
-            groups[..<groupsEnd].contains(".sync"),
+        let group = try #require(
+            SettingsCategoryGroup.all.first { $0.categories.contains(.sync) },
             "Settings > Account & Sync is defined but filed in no rail group, so nothing can open it"
         )
+
+        // Filed with the system services the app talks to, not beside `.account`: the two adjacent
+        // would read as one setting listed twice. Mobile files it the same way.
+        #expect(group.title == "Connections")
+        #expect(group.categories.contains(.calendar))
+        #expect(group.categories.contains(.reminders))
+        #expect(!group.categories.contains(.account))
     }
 
     /// And the selected category actually draws the section. A rail row that routes nowhere lands

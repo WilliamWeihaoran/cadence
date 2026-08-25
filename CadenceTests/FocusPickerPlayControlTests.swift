@@ -673,7 +673,7 @@ struct FocusHandoffCallSiteTests {
     /// and the fix is to stop counting over the file — the body is brace-matched out of `accept`
     /// first, so a needle counted here is a needle *in* `accept`.
     @Test func acceptingAHandoffGoesThroughTheCommittingSelectionPath() throws {
-        let body = try focusFunctionBody(
+        let body = try cadenceFunctionBody(
             "private func accept(_ handoff: CadenceFocusHandoff)",
             in: focusStrippingComments(focusSourceFile("Cadence/iOS/iOSFocusView.swift"))
         )
@@ -769,18 +769,23 @@ struct FocusHandoffCallSiteTests {
 }
 
 /// The brace-matched body of one function, so a count can be scoped to it instead of to the whole
-/// file. Every needle in this file is a `components(separatedBy:)` count over an entire source
-/// file, which is blind to a call moving *between* two functions in it — the exact hole a mutation
-/// of `accept(_:)` walked through.
+/// file. A whole-file needle count is blind to a call moving *between* two functions in it — the
+/// exact hole a mutation of `accept(_:)` walked through, and the shape `docs/TODO.md` T-161 is
+/// about.
+///
+/// **Internal, and there must not be a second one.** It is declared here because this is where the
+/// need was first proved; `AppStoreReviewReadinessTests` and `CadenceListWindDownSurfaceTests` call
+/// it too. Anything else that wants to scope a scan to one function calls this rather than writing
+/// its own brace matcher.
 ///
 /// It throws rather than returning an empty string on a miss. A "" body passes every zero-count
 /// assertion written against it, which is the vacuity trap `Cadence/Shared/AGENTS.md` names.
-private func focusFunctionBody(_ declaration: String, in code: String) throws -> String {
+func cadenceFunctionBody(_ declaration: String, in code: String) throws -> String {
     guard let declRange = code.range(of: declaration) else {
-        throw FocusBodyScanError.notFound(declaration)
+        throw SourceBodyScanError.notFound(declaration)
     }
     guard let open = code.range(of: "{", options: [], range: declRange.upperBound..<code.endIndex) else {
-        throw FocusBodyScanError.notFound(declaration)
+        throw SourceBodyScanError.notFound(declaration)
     }
     var depth = 0
     var index = open.lowerBound
@@ -791,16 +796,16 @@ private func focusFunctionBody(_ declaration: String, in code: String) throws ->
             depth -= 1
             if depth == 0 {
                 let body = String(code[code.index(after: open.lowerBound)..<index])
-                guard body.count > 40 else { throw FocusBodyScanError.tooShort(declaration) }
+                guard body.count > 40 else { throw SourceBodyScanError.tooShort(declaration) }
                 return body
             }
         }
         index = code.index(after: index)
     }
-    throw FocusBodyScanError.unbalanced(declaration)
+    throw SourceBodyScanError.unbalanced(declaration)
 }
 
-private enum FocusBodyScanError: Error {
+enum SourceBodyScanError: Error {
     case notFound(String)
     case tooShort(String)
     case unbalanced(String)

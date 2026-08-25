@@ -51,7 +51,15 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     }
 }
 
-private struct SettingsCategoryGroup: Identifiable {
+/// The rail's grouping, and the reason it is `internal` rather than `private`.
+///
+/// It was `private`, so the only way a test could state "every category is filed in a group" was to
+/// read this file as text and search inside the `static let all` literal for a case name — which
+/// pins the *spelling* of one case and cannot see a category that is simply missing. Dropping a
+/// case from a group here made a whole settings pane unreachable on macOS with every test green
+/// (`docs/TODO.md` T-161). `SettingsCategoryReachTests` asserts over the value now; do not make
+/// this `private` again without giving the rail some other way to be read.
+struct SettingsCategoryGroup: Identifiable {
     let title: String
     let categories: [SettingsCategory]
 

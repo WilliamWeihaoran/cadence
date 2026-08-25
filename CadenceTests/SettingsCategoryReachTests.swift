@@ -146,20 +146,47 @@ struct MacSettingsAboutAndHabitMetricsTests {
 
     /// Filed in a rail group and routed to a section. Either half alone gives you a category that
     /// exists and cannot be opened, or a rail row that opens nothing.
+    ///
+    /// The filing half used to be a source scan: find `static let all: [SettingsCategoryGroup]` in
+    /// `SettingsViewSupport.swift`, take the text up to the next `\n}`, and check it contains
+    /// `".about"`. That pins one case name's *spelling* inside a literal and can see nothing else —
+    /// deleting `.notifications` from a group left the Notifications pane unreachable on macOS with
+    /// all 2514 tests green (`docs/TODO.md` T-161). `SettingsCategoryGroup` is `internal` now, so
+    /// the rail is a value; `theRailFilesEverySharedCategoryExactlyOnce` below states the general
+    /// rule and this one keeps the specific claim T-196 made.
     @Test func theAboutCategoryIsFiledInTheRailAndRoutedToItsSection() throws {
-        let support = try strippingComments(sourceFile("Cadence/macOS/Views/SettingsViewSupport.swift"))
-        let groupsStart = try #require(support.range(of: "static let all: [SettingsCategoryGroup]"))
-        let groups = support[groupsStart.upperBound...]
-        let groupsEnd = groups.range(of: "\n}")?.lowerBound ?? groups.endIndex
-        #expect(
-            groups[..<groupsEnd].contains(".about"),
+        let app = try #require(
+            SettingsCategoryGroup.all.first { $0.categories.contains(.about) },
             "SettingsCategory.about is defined but not filed in any rail group"
         )
+        // Its own group of one — the placement the category exists to have. Filed under
+        // "Account & Safety" it reads as one more thing that might delete something.
+        #expect(app.title == "App")
+        #expect(app.categories == [.about])
 
         try expectCallSites(
             of: "SettingsAboutSection",
             at: ["Cadence/macOS/Views/SettingsView.swift": 1]
         )
+    }
+
+    /// The rule the two per-category assertions cannot state: every category macOS defines is
+    /// reachable from the rail, exactly once, and the rail invents nothing.
+    ///
+    /// This is the assertion that was missing. `macOSNowOffersEverySharedCategory` checks the
+    /// *enum* against the shared kinds, which stays true of a category that no group lists — and a
+    /// category no group lists has no row, so the pane behind it cannot be opened at all.
+    @Test func theRailFilesEverySharedCategoryExactlyOnce() {
+        let filed = SettingsCategoryGroup.all.flatMap(\.categories)
+
+        #expect(Set(filed) == Set(SettingsCategory.allCases), "the rail and the category list disagree")
+        #expect(filed.count == SettingsCategory.allCases.count, "a category is filed in two rail groups")
+        #expect(!SettingsCategoryGroup.all.contains { $0.categories.isEmpty }, "an empty rail group draws a heading over nothing")
+        #expect(Set(SettingsCategoryGroup.all.map(\.title)).count == SettingsCategoryGroup.all.count)
+        // Non-vacuity: an empty rail satisfies neither of the first two, but say so anyway, because
+        // `flatMap` over an empty array is the one input that makes every `Set` equality above read
+        // as a comparison against `SettingsCategory.allCases` being empty too.
+        #expect(filed.count >= CadenceSettingsCategoryKind.allCases.count)
     }
 
     /// One About screen, not two. The three strings and the label/value row both come from
