@@ -901,9 +901,12 @@ inspector.
 - `CadenceTaskMutationSupport.insertBundle(from:adding:)` — **drop a task on a task and the two
   become a block.** One implementation since T-190; `SchedulingActions.createBundle(from:adding:)`
   is a delegation and must not grow a second body. macOS calls it from `TimelineDayCanvas`, iOS from
-  the Calendar Board's task cards (`iOSBoardTaskCardBundleDrop`). It returns `nil` for a target with
-  no day or no start minute — a bundle *is* a block, so there is nothing to sit on — which is why
-  the iOS card only offers the drop when `scheduledStartMin >= 0`.
+  the Calendar Board's task cards **and, since T-243, its day timeline's blocks** — both through the
+  one opt-in value `iOSBundleFormingDrop` (declared in `iOSBoardCards.swift`; it was
+  `iOSBoardTaskCardBundleDrop`, named for its only user, until the second user arrived). It returns
+  `nil` for a target with no day or no start minute — a bundle *is* a block, so there is nothing to
+  sit on — which is why both surfaces only offer the drop when `scheduledStartMin >= 0`. Today's
+  schedule pane draws the same block and passes no opt-in, so it installs no drag recognizer at all.
 - `CadenceTaskMutationSupport.addTask(_:to:)` — growing an existing block.
 
 **T-190 was filed saying iOS "never creates" bundles and that `TaskBundle(` is constructed only in

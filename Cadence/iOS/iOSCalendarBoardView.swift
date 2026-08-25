@@ -467,9 +467,9 @@ private struct iOSCalendarBoardDayColumn: View {
     /// `CadenceTaskMutationSupport.insertBundle(from:adding:)` refuses it — so rather than lighting
     /// up and then silently doing nothing, such a card declines the drop and lets the day column
     /// handle it as the reschedule it already is.
-    private func bundleFormingDrop(onto task: AppTask) -> iOSBoardTaskCardBundleDrop? {
+    private func bundleFormingDrop(onto task: AppTask) -> iOSBundleFormingDrop? {
         guard task.scheduledStartMin >= 0 else { return nil }
-        return iOSBoardTaskCardBundleDrop(
+        return iOSBundleFormingDrop(
             allTasks: allTasks,
             onDropTask: { dragged in
                 rememberNestedTaskDrop(dragged)

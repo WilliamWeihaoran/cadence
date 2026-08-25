@@ -207,7 +207,85 @@ struct CadenceBundleCreationParityTests {
         let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarBoardView.swift"))
 
         #expect(source.contains("guard task.scheduledStartMin >= 0 else { return nil }"))
-        #expect(occurrences(of: "iOSBoardTaskCardBundleDrop(", in: source) == 1)
+        #expect(occurrences(of: "iOSBundleFormingDrop(", in: source) == 1)
+    }
+
+    /// T-243. The gesture reached the Calendar Board in T-190 and stopped there, because
+    /// `iOSCalendarTimelineViews.swift` had no `.draggable` and no `.dropDestination` anywhere —
+    /// `iOSTimelineTaskBlock` could not be dragged at all. macOS's home for the gesture is
+    /// `TimelineDayCanvas`, so the Mac's timeline had it and the phone's did not.
+    ///
+    /// This pins the wiring, not the mutation: the mutation is the same one the Board calls, and the
+    /// count below is what says so. A second `TaskBundle(` or a second `insertBundle(from:` body in
+    /// this file would be the fourth spelling of the thing T-190 existed to unify.
+    @Test func theDayTimelineWiresTheSameSharedBundleFormingMutation() throws {
+        let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
+
+        #expect(occurrences(of: "CadenceTaskMutationSupport.insertBundle(from:", in: source) == 1)
+        #expect(occurrences(of: "TaskBundle(", in: source) == 0)
+        // The gesture itself, which is the half that did not exist: a block that can be lifted and a
+        // block that can be dropped on.
+        #expect(occurrences(of: ".draggable(TaskDragPayload.string(for: task.id))", in: source) == 1)
+        #expect(occurrences(of: ".dropDestination(for: String.self)", in: source) == 1)
+        // **And the wiring that reaches them, which is the half a declaration scan is blind to.**
+        // `bundleFormingDrop` defaults to `nil`, so a day column that stopped passing it would leave
+        // every assertion above intact and the gesture dead — the exact "green suite over unreachable
+        // code" shape `Cadence/Shared/AGENTS.md` warns about. The grid's two arguments are pinned by
+        // the compiler instead (both are `let`s with no default), so only this one needs saying.
+        #expect(occurrences(of: "bundleFormingDrop: bundleFormingDrop(onto: task)", in: source) == 1)
+        #expect(occurrences(of: "onFormBundleFromTasks: formBundle(from:adding:)", in: source) == 1)
+    }
+
+    /// The timeline's block offers the drop only where a block can sit, exactly as the Board's card
+    /// does, and through the *same* opt-in value rather than a near-copy of it.
+    ///
+    /// The rename that made that possible is the point of the last assertion: the value was
+    /// `iOSBoardTaskCardBundleDrop`, named for its only user, which is the same trap
+    /// `nestedDropTargetID` was renamed out of one file over — a helper named for one subject is why
+    /// the second one never gets checked against it.
+    @Test func theTimelineOffersTheGestureOnlyOnBlocksThatOccupyASlot() throws {
+        let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
+
+        #expect(source.contains("guard task.scheduledStartMin >= 0 else { return nil }"))
+        #expect(occurrences(of: "iOSBundleFormingDrop(", in: source) == 1)
+        #expect(occurrences(of: "iOSBoardTaskCardBundleDrop", in: source) == 0)
+    }
+
+    /// **The opt-in is one type with two users, and this is what keeps it that way.** Both surfaces
+    /// construct the same value and both blocks/cards declare the same optional property; a second
+    /// struct of the same shape under another name would satisfy every assertion above and none of
+    /// these.
+    @Test func bothSurfacesReachTheGestureThroughOneOptInValue() throws {
+        let cards = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSBoardCards.swift"))
+        let board = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarBoardView.swift"))
+        let timeline = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
+
+        #expect(occurrences(of: "struct iOSBundleFormingDrop {", in: cards) == 1)
+        #expect(occurrences(of: "var bundleFormingDrop: iOSBundleFormingDrop? = nil", in: cards) == 1)
+        #expect(occurrences(of: "var bundleFormingDrop: iOSBundleFormingDrop? = nil", in: timeline) == 1)
+        #expect(occurrences(of: "-> iOSBundleFormingDrop?", in: board) == 1)
+        #expect(occurrences(of: "-> iOSBundleFormingDrop?", in: timeline) == 1)
+        // Exactly one declaration in the whole app: a second `struct iOSBundleFormingDrop` anywhere
+        // else would not even compile, but a `struct iOSTimelineBundleFormingDrop` would.
+        #expect(occurrences(of: "struct iOSBundleFormingDrop", in: board) == 0)
+        #expect(occurrences(of: "struct iOSBundleFormingDrop", in: timeline) == 0)
+    }
+
+    /// **Today's schedule pane is not given the gesture, and that is a decision.** It draws the same
+    /// `iOSTimelineTaskBlock` — so a change to the block reaches it — but it stacks blocks inside
+    /// hour rows rather than positioning them on a canvas, and it already spends the block's trailing
+    /// corner on `onClearTime`. Passing no opt-in means it installs no drag recognizer at all, which
+    /// is the whole reason the modifiers are in an `if let` branch rather than always-on returning
+    /// `false`: `isTargeted` fires whether or not the closure accepts a drop, so an always-attached
+    /// version would light up blocks on a pane with nothing to bundle them with.
+    @Test func todaysSchedulePaneInstallsNoDragMeshOfItsOwn() throws {
+        let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iPadTodayScheduleViews.swift"))
+
+        #expect(occurrences(of: "bundleFormingDrop", in: source) == 0)
+        #expect(occurrences(of: ".draggable(", in: source) == 0)
+        #expect(occurrences(of: ".dropDestination(", in: source) == 0)
+        // Non-vacuity: it really does draw the block this ticket changed.
+        #expect(occurrences(of: "iOSTimelineTaskBlock(", in: source) == 1)
     }
 
     /// A nested card that claimed the drag has to tell the column, or the column's own
@@ -230,7 +308,9 @@ struct CadenceBundleCreationParityTests {
         for path in [
             "Cadence/macOS/Services/SchedulingService.swift",
             "Cadence/iOS/iOSCalendarBoardView.swift",
-            "Cadence/iOS/iOSBoardCards.swift"
+            "Cadence/iOS/iOSBoardCards.swift",
+            "Cadence/iOS/iOSCalendarTimelineViews.swift",
+            "Cadence/iOS/iPadTodayScheduleViews.swift"
         ] {
             let source = try strippingBundleTestComments(sourceFile(path))
             #expect(source.count > 2_000)

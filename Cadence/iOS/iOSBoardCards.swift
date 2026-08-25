@@ -201,11 +201,23 @@ let iOSBoardColumnWidth: CGFloat = 300
 /// This replaced a second card in `iOSListSupportViews` — a flat `Theme.surface` rectangle with a
 /// 13.5pt title and plain icon-and-text metadata — that made the same task read as a different
 /// kind of object depending on which board you opened.
-/// What a surface has to supply before its task cards will accept "drop a task on a task to make a
-/// block". The three things only make sense together — the dragged task has to be resolvable from a
-/// payload, the drop has to go somewhere, and the column has to hear about targeting so it can stop
-/// treating the same drop as a reschedule — so they arrive as one value and a surface opts in whole.
-struct iOSBoardTaskCardBundleDrop {
+/// What a surface has to supply before its task cards **or its timeline blocks** will accept "drop
+/// a task on a task to make a block". The three things only make sense together — the dragged task
+/// has to be resolvable from a payload, the drop has to go somewhere, and the enclosing column has
+/// to hear about targeting so it can stop treating the same drop as a reschedule — so they arrive as
+/// one value and a surface opts in whole.
+///
+/// It was `iOSBoardTaskCardBundleDrop` until T-243 gave the day timeline the same gesture, and the
+/// rename is the lesson `nestedDropTargetID` already recorded one file over: **a helper named for
+/// one subject is why the second one never got checked against it.** `iOSTimelineTaskBlock` takes
+/// this exact value rather than a near-copy of it, which is what keeps the two surfaces' answer to
+/// "may this task be dropped on" a single decision.
+///
+/// `onTargetedChanged` defaults to a no-op because only one of the two surfaces needs it: the
+/// Calendar Board's day column carries its own `dropDestination` that fires on the same release, and
+/// the timeline's day column carries none — its only gesture is the `SpatialTapGesture` that creates
+/// a task at a minute, and a drag is not a tap.
+struct iOSBundleFormingDrop {
     let allTasks: [AppTask]
     let onDropTask: (AppTask) -> Void
     var onTargetedChanged: (Bool) -> Void = { _ in }
@@ -221,7 +233,7 @@ struct iOSBoardTaskCard: View {
     /// *and* a time-of-day slot, because that is what a `TaskBundle` is. A list's task list has
     /// neither, and a completed card is not something you plan around, so both leave this `nil` and
     /// the drop falls through to whatever is underneath.
-    var bundleFormingDrop: iOSBoardTaskCardBundleDrop? = nil
+    var bundleFormingDrop: iOSBundleFormingDrop? = nil
 
     @State private var isBundleFormingTargeted = false
 

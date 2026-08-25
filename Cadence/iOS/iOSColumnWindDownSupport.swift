@@ -185,7 +185,7 @@ private struct iOSColumnWindDownModifier: ViewModifier {
 
 /// The lifecycle half of a column row in the list editor, opted into whole.
 ///
-/// The same shape as `iOSBoardTaskCardBundleDrop`: the current state and the three transitions are
+/// The same shape as `iOSBundleFormingDrop`: the current state and the three transitions are
 /// useless apart, and a row that cannot act on a column — one added during this edit, which has no
 /// `TaskSectionConfig` on the model and therefore no tasks — is handed `nil` rather than a set of
 /// closures that would have nothing to write to.

@@ -103,6 +103,35 @@ _Nothing in flight._
   `theSharedBundleClampsMatchTheTimelineDayRange`; if `TimelineDayRange` ever moves to `Shared/`,
   delete the copy rather than the test.
 
+  **Built and shipped.** Confirmed against `HEAD` first — `iOSCalendarTimelineViews.swift` still had
+  zero `.draggable` and zero `.dropDestination` — then built as one gesture on one shared value
+  rather than as a second mechanism. `iOSTimelineTaskBlock` gains an optional
+  `iOSBundleFormingDrop` (the Board's `iOSBoardTaskCardBundleDrop`, **renamed** now that it has a
+  second user — a helper named for one subject is why the second one never gets checked against it,
+  the same lesson `nestedDropTargetID` recorded), and `iOSCalendarTimelineDayColumn` passes it only
+  where `scheduledStartMin >= 0`, exactly as the Board's card does and against the same
+  `CadenceTaskMutationSupport.insertBundle(from:adding:)`. No second body, no second `TaskBundle(`.
+  The grid takes a flat `allTasks` for payload resolution because a drag can cross day columns.
+
+  **The gesture conflict the ticket warned about does not arise, and that is measured rather than
+  argued.** Driven on the simulator: two timed blocks on one day, `touch_path` with the 600ms
+  stationary dwell, and the two became one amber `×2` block at the target's slot that survived a
+  relaunch. A two-finger `touch2_path` pinch still zooms the grid afterwards, and one-finger scroll
+  still scrolls. The reason they coexist: a magnification needs two fingers, a `UIDragInteraction`
+  lift needs one finger held still ~350ms, and a one-finger pan that moves immediately breaks the
+  lift recognizer's slop and stays a scroll. The file's old comment was about `.draggable` delaying
+  *taps* — the block's tap is a `Button`, and the drag interaction defers a touch only until its
+  long-press threshold fails.
+
+  Today's schedule pane draws the same block and passes **no** opt-in, so it installs no recognizer
+  at all; that is why the modifiers hang off an `if let` rather than an always-attached closure
+  returning `false` (`isTargeted` fires either way and would light up blocks on a pane with nothing
+  to bundle them with). Pinned by four tests in `CadenceBundleCreationParityTests`, including the
+  call-site wiring a declaration scan is blind to — `bundleFormingDrop` defaults to `nil`, so a
+  column that stopped passing it would leave every declaration assertion intact and the gesture
+  dead. The two side notes in this ticket (`SchedulingActions.dayStartMin` dead; the day bounds
+  spelled twice on purpose) were **not** acted on and remain accurate.
+
 - [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
   Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes
   `rsync` + `git show HEAD:<path>` restore instead. The workaround has a real ongoing cost: the
@@ -138,6 +167,30 @@ _Nothing in flight._
   payload rather than schema, but it is still a decision rather than a cleanup. Either route both
   through `noteKindLabel` and note the response change, or record that the MCP surface keeps the
   raw-value vocabulary deliberately. Nothing persisted is involved either way.
+
+  **Decided: route both through `noteKindLabel`. Done.** Confirmed against `HEAD` first — the switch
+  and the sixth literal were both still there. The decision turns on what is actually contractual
+  here, and three facts settle it:
+  - **The DTO does not move.** `CadenceSearchHit`'s key set is unchanged and `noteEntityType` still
+    returns `daily_note` / `weekly_note` / `permanent_note` / `document` / `event_note`. That is the
+    discriminator a client matches on, and a test now asserts the whole set so a rename cannot hide
+    in one case.
+  - **`subtitle` was never a matchable enumeration.** It is free-form across this entire function —
+    a container name, a tag slug, a status — and free-form *inside this very switch*, where `.list`
+    returns a user-typed name. It is also not a scored field: `CadenceSearchMatcher.matchScore` is
+    handed the title, content, key and tag text, never the subtitle, so no ranking moves. Nothing in
+    `CadenceMCPServer/`, `plugins/cadence-mcp/` or the tests named either string.
+  - **The old prose was not a deliberately-preserved raw-value vocabulary.** `.meeting`'s stable key
+    had *already* moved to `event_note` while this line still read "Meeting note", so the two halves
+    of one hit disagreed. Keeping it would have been preserving an inconsistency, not a contract.
+
+  So it is prose in a payload, changed on purpose. `.list` deliberately keeps the container name
+  rather than taking `noteKindDetail`, which would have appended dates to the other four kinds — a
+  larger response change than the ticket asked for. Two **value** tests in `CadenceReadServiceTests`
+  pin the prose and the keys *together*: asserting the subtitle alone would pass a change that also
+  renamed `permanent_note`, and asserting the type alone would pass the stale prose. The
+  `CadenceMCPServer` scheme was built on its own into a private `-derivedDataPath`: 0 errors, 0
+  warnings.
 
 - [T-221] **Edit tables in place — DONE on macOS, and the iOS half is the whole remainder.**
   **DECIDED 2026-08-26: port it to iOS.** The user's call, asked after the macOS half shipped. The

@@ -100,23 +100,43 @@ circle leaves the card in place, the second removes it.
 one implementation. **Do not add a second** — the whole ticket was about a `Shared/`-shaped mutation
 hiding behind a platform guard.
 
-iOS wires it on the **Calendar Board** (`iOSCalendarBoardView`), not on the timeline, and the reason
-is not preference: `iOSCalendarTimelineViews.swift` has no `.draggable` and no `.dropDestination`
-anywhere, so `iOSTimelineTaskBlock` cannot be dragged at all. That file's own comment records why
-nobody has added one — it carries a `simultaneousGesture` pinch, and `.draggable` "delays the
-touches of everything under it". See T-243 before attempting it.
+iOS wires it on the **Calendar Board** (`iOSCalendarBoardView`) **and on the Calendar screen's day
+timeline** (`iOSCalendarTimelineViews`). The timeline half is T-243, and it was the harder one:
+that file had no `.draggable` and no `.dropDestination` anywhere, so `iOSTimelineTaskBlock` could
+not be dragged at all, and its own comment warned that `.draggable` "delays the touches of
+everything under it" beneath the `simultaneousGesture` pinch it carries.
 
-Three things about the board wiring that are easy to get wrong:
+**The pinch and the lift coexist, and the reason is a measurement rather than a hope.** A
+`MagnifyGesture` needs two fingers; a `UIDragInteraction` lift needs one finger held still for
+~350ms. Neither can begin in the other's territory, and a one-finger pan that moves immediately is
+still a scroll because the first movement breaks the lift recognizer's slop. The sidebar bug the old
+comment was written about was `.draggable` delaying *taps*, which does not arise here either: the
+block's tap is a `Button`, and the drag interaction defers a touch only until its long-press
+threshold fails. Verified on the simulator, not inferred.
 
-- **The card opts in, whole.** `iOSBoardTaskCard` takes an optional `iOSBoardTaskCardBundleDrop`
-  bundling the task list, the drop handler and the targeting callback, because the three are
-  useless apart. `iOSListSupportViews` draws the same card and passes `nil`, and so does the
-  column's *completed* footer — a finished card is not something you plan around.
-- **Only a card with a slot offers it.** `bundleFormingDrop(onto:)` returns `nil` unless
+Four things about the wiring that are easy to get wrong:
+
+- **The surface opts in, whole.** `iOSBoardTaskCard` **and `iOSTimelineTaskBlock`** each take an
+  optional `iOSBundleFormingDrop` bundling the task list, the drop handler and the targeting
+  callback, because the three are useless apart. `iOSListSupportViews` draws the same card and
+  passes `nil`, and so does the column's *completed* footer — a finished card is not something you
+  plan around — and so does `iPadTodayScheduleViews`, which draws the same block. The value was
+  `iOSBoardTaskCardBundleDrop` until the timeline became its second user; renaming it is what keeps
+  "may this task be dropped on" one decision rather than two that drift.
+- **The modifiers hang off an `if let`, not an always-on closure returning `false`.** `isTargeted`
+  fires whether or not the drop is accepted, so an always-attached version would light up blocks on
+  Today's pane, which has nothing to bundle them with; `.dropDestination` has no erased form, so the
+  choice cannot be a ternary at the call site; and the honest response to "installing a recognizer
+  delays what is under it" is to install none where the gesture is not offered. The optional is
+  fixed per call site, so the branch never flips at runtime.
+- **Only a card or block with a slot offers it.** `bundleFormingDrop(onto:)` returns `nil` unless
   `task.scheduledStartMin >= 0`. A bundle is `dateKey` **plus** `startMin`; the shared mutation
   refuses a do-dated-only target, so without this guard the card would light up amber and then
   silently do nothing. Declining instead lets the day column read the release as the reschedule it
-  already is.
+  already is. The timeline's day column spells the same guard even though every block it draws comes
+  from `CadenceScheduleSupport.tasksByScheduledDate` and therefore has a slot by construction: the
+  guard states the requirement locally rather than resting on a query two files away that could
+  reasonably be widened.
 - **A nested card that claims a drag must say so.** The column has its own `dropDestination`, and it
   fires on the same release. `nestedDropTargetID` plus the short-lived `recentlyBundledTaskID`
   window is what stops the task being rescheduled straight back out of the block it was just put
@@ -291,7 +311,7 @@ Four things about the iOS wiring that are easy to get wrong:
 
 - **The host decides, the list draws.** `iPadTodayView` holds the `@AppStorage` day key and builds
   an `iOSTodayRolloverNotice` (tasks + action, opted into whole — the same shape as
-  `iOSBoardTaskCardBundleDrop`); `iOSTodayTaskSections` is the only thing that renders the banner,
+  `iOSBundleFormingDrop`); `iOSTodayTaskSections` is the only thing that renders the banner,
   which is what makes "both widths show it" true by construction instead of by remembering. The
   iPad's compact pane forwards the value and decides nothing. A second
   `CadenceTodayRolloverBanner(` anywhere under this folder is a test failure.
