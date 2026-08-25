@@ -112,24 +112,6 @@ _Nothing in flight._
   `theSharedBundleClampsMatchTheTimelineDayRange`; if `TimelineDayRange` ever moves to `Shared/`,
   delete the copy rather than the test.
 
-- [T-238] **A third signature of "red tests that are not a regression": the test host exits early.**
-  Found 2026-08-22 while fixing T-213. A macOS run exited **65** with **8 failures across 7 unrelated
-  suites, every one at 0.000 seconds**, and `pgrep -f "xcodebuild test"` had been clear before it
-  started — so it was *not* T-236's container contention. `xcresulttool` on the `.xcresult` gave the
-  real reason: *"The test runner exited with code 0 before finishing running tests."* The host went
-  away and the harness marked the in-flight parallel tests failed. A serial re-run on the same bytes
-  was exit 0, 2184 passed.
-  **Why this needs writing down:** the diagnosis exists only inside the `.xcresult` and never appears
-  in the xcodebuild log, so from the log alone this is indistinguishable from 8 real regressions. That
-  now makes three separate causes that all present as exit 65 with 0 compile errors — T-236
-  (concurrent test host: four-figure failures), T-209 (macro-plugin errors), and this one (small burst
-  of zero-duration failures in unrelated suites, plus a host-PID change).
-  What to do: fold the discriminator into `AGENTS.md` beside the T-236 rule — a handful of 0.000s
-  failures scattered across suites you did not touch means read the `.xcresult` before believing the
-  log, and re-run serially to confirm. Worth also deciding whether agent runs should default to
-  serial, and measuring what that costs; a false regression costs more than the wall-clock does.
-
-
 - [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
   Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes
   `rsync` + `git show HEAD:<path>` restore instead. The workaround has a real ongoing cost: the
@@ -149,13 +131,6 @@ _Nothing in flight._
   one-command isolation step for every future agent.
 
 
-- [T-235] **`AGENTS.md` should record what a widgets-scheme baseline actually measures.** Now that the
-  scheme is shared (`605a793`), the line claiming the baseline covers all three schemes is honest for
-  a fresh clone — but the widgets scheme builds the **host app** as well, so a "widgets scheme" run is
-  not a widget-only measurement. Worth one sentence, because the difference is invisible from the
-  command line and it changes what a green baseline there proves.
-
-
 - [T-278] **There is a fourth note-kind switch, and it is on the MCP boundary.** Found while
   closing [[T-239]], which named three and consolidated those three.
   `CadenceReadService.noteSubtitle` (`Cadence/Services/MCPReadOnly/CadenceReadService.swift:1213`)
@@ -172,12 +147,6 @@ _Nothing in flight._
   payload rather than schema, but it is still a decision rather than a cleanup. Either route both
   through `noteKindLabel` and note the response change, or record that the MCP surface keeps the
   raw-value vocabulary deliberately. Nothing persisted is involved either way.
-
-- [T-225] **An agent overwrote another agent's simulator app-group data.** During `0332255` a build was
-  installed on an iPad another agent had booted between the device listing and the boot attempt,
-  replacing its `Application Support/Cadence`. No repo damage, but it invalidated that agent's seeded
-  state mid-run. Same family as [[T-179]] and [[T-204]]: the simulator fleet is shared and nothing in
-  the brief tells an agent to check whether a device is already in use before installing to it.
 
 - [T-221] **Edit tables in place — DONE on macOS, and the iOS half is the whole remainder.**
   Requested 2026-08-21, decided 2026-08-25 (shape 2, tables only; Tab / Shift-Tab / Return as
@@ -236,16 +205,6 @@ _Nothing in flight._
   - Cells clip rather than wrap, which is what makes the reserved line height independent of the
     window width (and therefore correct across a resize with no restyle). A wrapping cell would
     need the reservation recomputed on resize, the way the image block's already is.
-
-- [T-209] **Parallel `xcodebuild` runs in *separate* private DerivedData paths still contend, and it
-  looks exactly like a real failure.** The verifier's first test run exited **65** with hundreds of
-  `external macro implementation type 'SwiftDataMacros.PersistentModelMacro' could not be found …
-  swift-plugin-server could not be loaded: Resource temporarily unavailable`. Serial re-run: exit 0.
-  Two other agents hit the same thing today (one saw 650 `error:` lines, clean on retry).
-  `AGENTS.md` warns about *shared* DerivedData; it says nothing about concurrent invocations in
-  private paths. Add it, because the failure mode is a plausible-looking compile error that a careless
-  agent would report as a regression.
-
 
 - [T-211] **On iOS, H5 (16pt) and H6 (15pt) render *below* the editor's body text.** Found by
   `d513e72` and recorded rather than fixed. The iOS body is
@@ -645,6 +604,134 @@ _Nothing in flight._
 
 ## Done
 
+
+- [T-225] **An agent overwrote another agent's simulator app-group data — DONE, `scripts/simulator-claim.sh`.**
+  During `0332255` a build was installed on an iPad another agent had booted between the device
+  listing and the boot attempt, replacing its `Application Support/Cadence`. No repo damage, but it
+  invalidated that agent's seeded state mid-run. Same family as [[T-179]] and [[T-204]].
+
+  **Two independent mechanisms make the collision possible, and the fix needed both.** Measured on
+  the live fleet before writing anything: Cadence's store is *not* in the app's own data container.
+  `CadenceStoreSupport.sharedStoreDirectoryURL` prefers the **app group**, which on a simulator is
+  one device-wide directory —
+  `.../Devices/<udid>/data/Containers/Shared/AppGroup/AF3C0EF3-…/Library/Application Support/Cadence/`,
+  found holding a 491 KB `default.store` with a 3.1 MB `-wal` written two minutes earlier by a
+  sibling. It survives reinstall and is shared by every install of the bundle id. So (1) `install`
+  replaces the other agent's build, and (2) `launch` puts two writers on one SQLite file. A per-agent
+  store id alone cannot fix (1); a lock alone leaves (2) live the moment the lock is wrong.
+
+  **What was built.** `scripts/simulator-claim.sh`, the simulator's `test-host-lock.sh`:
+  - `claim <id> [timeout]` — atomic `mkdir` per **device** under `$TMPDIR/CadenceSimClaims/<udid>.claim`,
+    45-minute lease, `$PPID` + id + `since` recorded. Several booted devices means several agents
+    proceed in parallel, each on its own; one device means the second agent **waits**. It never
+    creates or clones a device: `boot` exists, boots a *stock* device only when the fleet is empty,
+    under its own serialising lock, and requires `--apply`.
+  - `install` / `launch` **refuse** without a claim (exit 3, message on stderr — the first draft
+    printed it on stdout, where the caller's `u=$(require_claim …)` swallowed it whole).
+  - `launch` passes `SIMCTL_CHILD_CADENCE_UI_TEST_STORE_ID=<id>` and
+    `SIMCTL_CHILD_CADENCE_LOCAL_STORE_ONLY=1`, so `PersistenceController.resolvedStoreURL` redirects
+    to `<data container>/tmp/CadenceUITestStores/<id>/default.store` and the shared app-group store is
+    never opened. Same lever `run-macos-app.sh` pulls on the Mac; `simctl launch`'s own help documents
+    the `SIMCTL_CHILD_` prefix.
+  - Device-touching commands report and act only with `--apply`, as `agent-cleanup.sh` does.
+    `claim`/`env`/`renew`/`release` touch nothing but `$TMPDIR`.
+  - By construction there is **no** `create`, `erase`, `shutdown`, `delete` or `privacy` subcommand,
+    and nothing anywhere kills a process by the name Cadence. `release` frees only a claim recording
+    your own id, and leaves the device booted.
+  - Reclaim is on the **lease**, not pid liveness — the `test-host-lock.sh` lesson, since an agent's
+    acquiring shell is dead by the next command — and an expired lease is still refused while a live
+    `simctl` names that udid.
+
+  **Concurrency evidence** (fake `simctl` via `CADENCE_SIMCTL`, so the shared fleet was never
+  touched; the fake resolves the store by the same rule `PersistenceController` does):
+  - *Baseline, the failure itself.* Two agents, one device, no claim: the installed bundle ends as
+    `buildB.app` and the single shared app-group `default.store` reads "written by build: …buildB.app".
+    A's build and A's data are simply gone. Private stores created: 0.
+  - *One device, two agents starting together.* Exactly one `UDID=…`; the other prints
+    `TIMED OUT … Do not install anyway`. Its `install --apply` then exits **3** with the refusal, and
+    its `release` does **not** free the winner's claim.
+  - *Handoff.* Winner releases at t+3 s; the waiter acquires `after 5s`.
+  - *Two devices, two agents.* Different udids, both installs succeed, and the two stores land at
+    `…/000001/Data/tmp/CadenceUITestStores/agentB/` and `…/000002/…/agentA/`. App-group
+    `default.store` files created: **0**.
+  - *Defence in depth.* Two agents forced onto **one** device with the claim bypassed but the env
+    kept: two private stores, app-group `default.store` count still **0**.
+  - *Hammer.* 8 agents, 2 devices, launched together: exactly 2 winners, exactly 2 claim directories,
+    distinct owners, no device claimed twice.
+  - *Lease.* A short `CADENCE_SIM_LEASE` is floored at 2700 s unless `CADENCE_SIM_CLAIM_TESTING=1`
+    (the guard `test-host-lock.sh` had to grow). With the flag: an expired claim is refused twice
+    while a process whose command line names `simctl … <udid>` is alive, then reclaimed once it exits.
+  - *Real fleet, real `simctl`.* `status` → `free  iPhone 17 Pro (7B642065-…)`; claim, `env`,
+    `install` and `launch` **without** `--apply` (both printed `would run:`), release. The sibling's
+    `default.store` / `-shm` / `-wal` kept byte-identical sizes and timestamps, and the booted count
+    stayed 1.
+
+  `agent-cleanup.sh` gained a claims section: it reclaims only claims naming a device that is **no
+  longer booted** (verified: a live sibling's claim on the real booted device survived `--apply`,
+  the dead one did not). An expired lease on a *booted* device is reported and left alone — deleting
+  it from a `SubagentStop` hook would be this same ticket one step earlier.
+
+  Rule recorded in `AGENTS.md` under the simulator bullet. **Deliberately not done:** no per-agent
+  device clones (that is how the pool went 3.8 GB → 7.7 GB), no change to the app's Swift sources, and
+  no wrapper around `mcp__Claude_Code_iOS_Simulator__build` / `control` — those are outside the repo,
+  and an agent driving a device through them still holds the claim that keeps the *install* exclusive.
+
+
+- [T-235] **What a widgets-scheme baseline measures: the same two targets the app scheme already
+  builds.** Measured 2026-08-25 against `4f8546f` bytes (rsync'd tree, siblings' in-flight files
+  restored to HEAD), two cold builds into separate private DerivedData paths.
+  `-scheme CadenceWidgets` → **615** tasks `in target 'Cadence'` (534 `SwiftCompile`) and **115** in
+  `CadenceWidgets` (56 `SwiftCompile`), producing `Cadence.app` with
+  `Contents/PlugIns/CadenceWidgets.appex` embedded, 52 s. `-scheme Cadence` → the **same** per-target
+  totals and a task-type histogram that `diff`s clean against it, 56 s. Both 0 warnings, 0 errors
+  (`grep -c "warning:"`, `grep -c "error:"`, no path filter).
+  Cause, from `project.pbxproj`: the `Cadence` target carries a `PBXTargetDependency` on
+  `CadenceWidgets` plus an **Embed App Extensions** phase, so the extension is built either way; the
+  widgets scheme merely also names `Cadence.app` in its `BuildActionEntries`. So the ticket's premise
+  was right and understated — the widgets scheme is not a widget-only measurement, *and* the app
+  scheme was never missing the widget target. For contrast, measured the same way:
+  `-scheme CadenceMCPServer` builds `CadenceMCPServer` + 20 SPM targets (`MCP`, `NIOCore`, `Atomics`,
+  `DequeModule`, …) and **neither** app target, 25 s — that one is a genuinely separate measurement.
+  Sentence written into `AGENTS.md` beside the warning baseline: the baseline is three targets and
+  **two** builds. Documentation only; no `.swift` touched, so no test run.
+
+- [T-238] **Recognition procedure for an early test-host exit — written as a family, not a fourth
+  note.** `AGENTS.md` gained one section, "Red Runs That Are Not Regressions", a four-row table
+  discriminating T-117 (frozen log, 0.0% CPU), T-209 (macro-plugin `error:` storm), T-236
+  (four-figure failure count, two host PIDs) and this one (a handful of `0.000 seconds` failures in
+  suites the change cannot reach, one host PID). Each row is tell → cause → the command that
+  confirms it. Detail stays in the existing `AGENTS.md` bullets and the evidence stays here; the
+  table points at both rather than restating them.
+  Two things measured 2026-08-25 so the row is applicable rather than plausible. **The
+  `xcresulttool` invocation**: on Xcode 26.6 (build 17F113) `get object` and `formatDescription` are
+  deprecated, and the working form is
+  `xcrun xcresulttool get test-results summary --path <dd>/Logs/Test/Test-Cadence-*.xcresult`, whose
+  JSON carries `result`, `statistics`, `topInsights` and `testFailures` — run against a live sibling
+  run's bundle, which reported `"result" : "Passed"`, `"passedTests" : 2578`. **The host-PID tell**:
+  `grep -oE "My Mac - Cadence \([0-9]+\)" <log> | sort -u` returns exactly one line on a healthy run
+  (verified on a sibling's `mac-test.log`), so ≥2 is the T-236/T-238 signature and needs no counting
+  of failures.
+  Left undecided deliberately: whether agent runs should default to `-parallel-testing-enabled NO`.
+  Measuring that costs the shared test host for two full suite runs, which is the resource three
+  agents were queued on at the time; it is a scheduling decision, not a blocker for the rule.
+
+- [T-209] **Closed as documented, and *not* closed by `scripts/test-host-lock.sh`.** The ticket's
+  deliverable was always the `AGENTS.md` line, and it is now row two of "Red Runs That Are Not
+  Regressions". The tempting close — "`1e6e7da` hardened the lock, so parallel runs are handled" —
+  is wrong and worth recording as wrong: the lock serialises the macOS **test host**, whereas the
+  macro-plugin failure (`external macro implementation type … could not be found`,
+  `swift-plugin-server could not be loaded: Resource temporarily unavailable`) happens in the
+  **compile** phase, which every plain `xcodebuild build` also runs and which nothing serialises.
+  Three builds were run for T-235 above while a sibling held the test-host lock, entirely legitimately
+  — that is the gap in one sentence.
+  What the lock did remove is the *test-run-versus-test-run* instance of it (`e1c098a`, `1e6e7da`),
+  which is why the signature is now most likely to appear during a build. `AGENTS.md` already carried
+  half of this rule — `build.db is locked` / `unable to spawn swift-frontend` — filed under "check the
+  log says which tree it built", where nobody looks when staring at 650 `error:` lines; that sentence
+  now points at the table instead of duplicating it. The discriminator is
+  `grep "error:" log | grep -Evc "macro\|plugin"` → `0` (verified on this machine's BSD grep against a
+  synthetic log holding two plugin errors and one real one: it returns 1, i.e. it does find a real
+  error when there is one).
 
 - [T-15] `4f8546f` **Several dark palettes.** Shipped as decided: **accents only**, dark-only,
   three sets — **Cadence** (the values the app shipped with, and the standard one), **Ember**

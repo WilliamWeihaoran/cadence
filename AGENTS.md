@@ -50,12 +50,40 @@ assignments moved into `TaskCreationDraft`, the second an `await MainActor.run` 
 already on the main actor and discarded `NSWorkspace.open`'s `Bool`. The baseline is now zero, so
 **any** warning is a regression introduced by the change in hand.
 
-**The baseline covers all three schemes** — `Cadence`, `CadenceWidgets` and `CadenceMCPServer`.
-It used to be measured only on `Cadence`, and `CadenceMCPServer` sat at two warnings underneath it
-unnoticed, because the run that checked that scheme read its *exit status* and never grepped its
-output. Exit 0 says nothing about warnings. Grep the log, and grep it with **no path filter**: a
-main-actor isolation regression this session surfaced under synthesized macro paths and slipped
-past a `grep "/Cadence/"` entirely.
+**The baseline covers all three targets, and that takes two builds, not three.** It used to be
+measured only on `Cadence`, and `CadenceMCPServer` sat at two warnings underneath it unnoticed,
+because the run that checked that scheme read its *exit status* and never grepped its output. Exit 0
+says nothing about warnings. Grep the log, and grep it with **no path filter**: a main-actor
+isolation regression this session surfaced under synthesized macro paths and slipped past a
+`grep "/Cadence/"` entirely.
+
+**A `CadenceWidgets`-scheme run is not a widget-only measurement, and it is not an extra one
+either.** The app target *depends on* the extension (`PBXTargetDependency` + an Embed App Extensions
+phase), so `-scheme Cadence` builds `CadenceWidgets` first and embeds the `.appex`; the widgets
+scheme in turn lists both `Cadence.app` and the appex in its build action. Measured cold, in
+separate private DerivedData paths, the two schemes ran the **identical** task histogram — 615 tasks
+in target `Cadence` (534 `SwiftCompile`) and 115 in `CadenceWidgets` (56 `SwiftCompile`), 0 warnings,
+0 errors either way. So a green `Cadence` scheme already proves the widget target, and a widgets-scheme
+run costs a second full app build to prove nothing new. `CadenceMCPServer` is the genuinely separate
+one: it builds its own target plus 20 SPM dependency targets and **neither** app target.
+
+## Red Runs That Are Not Regressions
+
+Four causes make `xcodebuild` fail on sources that are fine, and **every one is misattributed by
+default** — no line of output ever says "another agent is running". Read the tell before you debug a
+line of Swift; the whole discriminator is two greps and, once, `xcresulttool`.
+
+| Tell | Cause | Confirm, then |
+|---|---|---|
+| Log stuck at `Command line invocation`, `xcodebuild` pinned at 0.0% CPU | project-file lock (T-117) | `sample <pid> 5` shows `_blockOnAccessClaim`. Wait; quit Xcode. |
+| Hundreds of `error:` lines, all `external macro implementation type … could not be found` / `swift-plugin-server could not be loaded: Resource temporarily unavailable` — also `build.db is locked`, `unable to spawn swift-frontend` | concurrent `xcodebuild` invocations. A private `-derivedDataPath` does **not** prevent this, and neither does `test-host-lock.sh`: the lock serialises the *test host*, and this is a compile-phase failure that plain `build` runs hit too (T-209) | `grep "error:" log \| grep -Evc "macro\|plugin"` → `0`, i.e. not one error names your code. Re-run. |
+| Four-figure failure count, 0 compile errors, most failures at `0.000 seconds` | a second macOS test host on the one app-group container (T-236) | `grep -oE "My Mac - Cadence \([0-9]+\)" log \| sort -u` → more than one PID; a healthy run prints exactly one. Take `scripts/test-host-lock.sh`, re-run. |
+| A handful of `0.000 seconds` failures scattered over suites your change cannot reach, 0 compile errors, one host PID | the test runner exited early; the harness failed whatever was in flight (T-238) | `xcrun xcresulttool get test-results summary --path <derivedDataPath>/Logs/Test/Test-Cadence-*.xcresult`, then read `result`, `statistics`, `topInsights`, `testFailures`. The reason — "The test runner exited with code 0 before finishing running tests" — exists **only** in the `.xcresult`; the xcodebuild log cannot show it. Re-run, `-parallel-testing-enabled NO` to confirm. |
+
+Two things the table does not cover: failures inside `CadenceUITests` mean the run was not scoped
+(above), and a mutation that failed to compile also exits 65 — but that one names your file. The
+evidence for each row is in `docs/TODO.md` under its id; the detail on T-236 and T-117 is in the
+bullets below. Do not re-derive either here.
 
 ## Where Things Live
 
@@ -141,7 +169,8 @@ code, and every one of them has been violated by a shipped change at least once.
   **It isolates the build, not the test host's container.** A macOS `xcodebuild test` run launches
   `Cadence.app`, which uses the one app-group container at `~/Library/Containers/com.haoranwei.Cadence/Data/`
   no matter where DerivedData points — so two simultaneous macOS test runs corrupt each other. Check
-  for another run first and wait it out; see `docs/TODO.md` T-236 for the measurement and the tell.
+  for another run first and wait it out; the tell is in the table above, the measurement in
+  `docs/TODO.md` T-236.
   **Match the pattern carefully.** `pgrep -f "xcodebuild test"` matches *any* process whose command
   line contains that string — including the shell running your own wait loop, so
   `until ! pgrep -f "xcodebuild test"; do sleep 10; done` never exits, and a plain
@@ -183,6 +212,19 @@ code, and every one of them has been violated by a shipped change at least once.
   on a 600 s watchdog. Share one existing **stock** device, boot it only if
   `xcrun simctl list devices booted` is empty, and never `erase`, `shutdown` or `delete` it: another
   agent is probably mid-run on it.
+  **Claim that shared device before you install to it** — `./scripts/simulator-claim.sh` is the
+  simulator's `test-host-lock.sh`. A bundle id is unique per device, and Cadence's store lives in the
+  **app-group** container, which on a simulator is one *device-wide* directory
+  (`.../Devices/<udid>/data/Containers/Shared/AppGroup/<uuid>/Library/Application Support/Cadence/`)
+  that survives reinstall — so two agents on one device are one `install` replacing the other's build
+  and two writers on one SQLite file. That is T-225. `claim <id>` is an atomic per-device `mkdir` on a
+  45-minute lease and blocks rather than creating a device; `install` / `launch` refuse without one;
+  `launch` redirects the store to a per-agent id via `SIMCTL_CHILD_CADENCE_UI_TEST_STORE_ID`, exactly
+  as `run-macos-app.sh` does on the Mac, so the shared app-group store is never opened at all.
+  Device-touching commands report unless given `--apply`, and there is no `create`, `erase`,
+  `shutdown`, `delete` or `privacy` subcommand by construction. Pair `claim <id>` with a trapped
+  `release <id>` in the same turn — `release` frees only a claim recording your own id and leaves the
+  device booted and untouched.
   **On a shared device, an app vanishing to the Home screen is an *external* termination until the
   log says otherwise.** `xcrun simctl privacy <udid> grant|revoke|reset <service> <bundle-id>` kills
   a *running* app by design — tccd logs
@@ -287,7 +329,8 @@ code, and every one of them has been violated by a shipped change at least once.
   **exit 0 against the wrong sources**. This happened on 2026-08-18 and was caught only by grepping
   the log for the path xcodebuild echoes. Confirm your isolated path appears in the log before
   trusting the result. `build.db is locked` and `unable to spawn swift-frontend` on a fresh private
-  path are the same contention and clear on re-run.
+  path are a *different* failure — concurrent invocations rather than the wrong tree, row two of
+  "Red Runs That Are Not Regressions" above, and they clear on re-run.
 - **Drag-and-drop CAN be driven on the iOS simulator.** This was recorded as impossible for a long
   time and the record was wrong; every "drag is verified by inference" caveat in this repo's history
   predates the recipe below. `UIDragInteraction`'s lift recognizer needs the touch **stationary for
