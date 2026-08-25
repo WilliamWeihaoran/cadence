@@ -32,6 +32,11 @@ Feature views in this folder are actively refactored into thin roots plus suppor
   `selectTildeContainer`, `selectTildeContainerItem`), sharing only `TildeContainerPickerRow`. A
   fix to one has to be made twice until they are unified.
 - `Settings*` - settings shell and category sections.
+- `SettingsAppearanceSection.swift` - the Appearance category (T-15), and it is deliberately thin:
+  every row, swatch and word inside the card comes from `Shared/Components/`'s
+  `CadenceAccentPalettePicker`, which iOS's `iOSAppearanceSettingsSection` renders too. Only the
+  card chrome is per-platform. Filed under **Interface** in `SettingsCategoryGroup.all`, not in the
+  "App" group of one that holds About.
 - `GlobalSearch*` - command palette state, indexing, interaction, and shell views.
 - `Habit*`, `Goal*` - long-running progress surfaces. Pursuits were merged into `Goal`; top-level goals are directions and their sub-goals are milestones. Neither owns its own chrome any more:
   the habit detail's tile, card, heatmap and 7-day strip are all

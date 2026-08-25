@@ -175,6 +175,8 @@ struct SettingsView: View {
             SettingsDataSafetySection()
         case .sync:
             SettingsSyncSection(probe: cloudAccount)
+        case .appearance:
+            SettingsAppearanceSection()
         case .navigation:
             SettingsNavigationSection(listDetailDefaultPage: $listDetailDefaultPage)
         case .sidebar:

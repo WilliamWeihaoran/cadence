@@ -2,6 +2,7 @@
 import SwiftUI
 
 enum iOSSettingsCategory: String, CaseIterable, Identifiable {
+    case appearance
     case navigation
     case sync
     case data
@@ -50,6 +51,7 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
     /// `CadenceMobileSettingsLayout.desktopOnly`.
     init?(kind: CadenceSettingsCategoryKind) {
         switch kind {
+        case .appearance: self = .appearance
         case .navigation: self = .navigation
         case .sync: self = .sync
         case .dataSafety: self = .data
@@ -68,6 +70,7 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
 
     var sharedKind: CadenceSettingsCategoryKind {
         switch self {
+        case .appearance: return .appearance
         case .navigation: return .navigation
         case .sync: return .sync
         case .data: return .dataSafety

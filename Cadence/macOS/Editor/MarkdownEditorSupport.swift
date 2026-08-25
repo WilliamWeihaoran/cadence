@@ -188,9 +188,13 @@ enum MarkdownStylist {
     nonisolated static let mutedColor     = Theme.nsMuted
     nonisolated static let dimColor       = Theme.nsDim
     nonisolated static let codeBackground = Theme.nsSurfaceElevated
-    nonisolated static let blueColor      = Theme.nsBlue
-    nonisolated static let greenColor     = Theme.nsGreen
-    nonisolated static let redColor       = Theme.nsRed
+    // The three accents are computed and the five neutrals above are not (T-15): the accent set
+    // is selectable, and a `static let` here would keep the editor drawing the palette that was
+    // active the first time a note was styled. A restyle is what repaints them — this file is
+    // AppKit, so it is outside SwiftUI's observation of the selection.
+    nonisolated static var blueColor: NSColor  { Theme.nsBlue }
+    nonisolated static var greenColor: NSColor { Theme.nsGreen }
+    nonisolated static var redColor: NSColor   { Theme.nsRed }
 
     // Extended neutral ramp — see `Theme`'s "Extended neutral ramp" section. These stops sit
     // *between* the four core Theme surfaces (or below `bg`) for jobs the four-stop ramp cannot

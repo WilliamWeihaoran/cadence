@@ -129,7 +129,7 @@ struct CadenceColorPaletteSourceTests {
         let palette = try paletteSourceFile("Cadence/Shared/CadenceColorPalette.swift")
         #expect(palette.count > 2000, "read \(palette.count) characters")
         #expect(palette.contains("enum CadenceColorPalette {"))
-        #expect(palette.contains("static let sectionColors"))
+        #expect(palette.contains("static var sectionColors"))
 
         let stripped = paletteStrippingSwiftComments(palette)
         #expect(stripped.count == palette.count, "the stripper blanks rather than deletes")
@@ -137,7 +137,7 @@ struct CadenceColorPaletteSourceTests {
         // running is load-bearing rather than tidy.
         #expect(palette.contains("`#6b7a99`"))
         #expect(!stripped.contains("`#6b7a99`"))
-        #expect(stripped.contains("static let sectionColors"))
+        #expect(stripped.contains("static var sectionColors"))
     }
 
     /// Self-check on the needle: it must match the literal these tests ban and must not match the
@@ -158,10 +158,19 @@ struct CadenceColorPaletteSourceTests {
     ///
     /// Positive polarity beside it: the four that *are* accents read their tokens by name, so the
     /// test says what the file should do and not only what it should not.
+    /// Stated against `CadenceAccentPalette.standard` rather than the *active* `Theme` accents,
+    /// and that is a sharpening rather than a loosening. The accents are selectable (T-15), so
+    /// `Theme.amberHex` is whatever set happens to be in force when the test runs — needles that
+    /// move are needles that can wander off the literals the source actually contains, in either
+    /// direction. The source was written against the standard set; that is the set it must not
+    /// re-type. A palette *other* than the standard one sharing a hue with one of the twelve
+    /// swatch literals is a coincidence, not a token being respelled, which is why this does not
+    /// sweep `CadenceAccentPalette.all`.
     @Test func noSwatchArrayRespellsAThemeAccent() throws {
+        let standard = CadenceAccentPalette.standard
         let accents = [
-            ("blue", Theme.blueHex), ("red", Theme.redHex), ("green", Theme.greenHex),
-            ("amber", Theme.amberHex), ("purple", Theme.purpleHex), ("teal", Theme.tealHex),
+            ("blue", standard.blueHex), ("red", standard.redHex), ("green", standard.greenHex),
+            ("amber", standard.amberHex), ("purple", standard.purpleHex), ("teal", standard.tealHex),
         ]
         let palette = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/Shared/CadenceColorPalette.swift"))
 
@@ -285,9 +294,14 @@ private func paletteStrippingSwiftComments(_ source: String) -> String {
     return result
 }
 
-/// The `[...]` initialiser of `static let <name>`, brackets excluded.
+/// The `[...]` literal of `<name>`, brackets excluded — stored or computed.
+///
+/// The computed spelling is not cosmetic and the helper had to learn it: the swatch arrays read
+/// `Theme` accents, the accents became selectable (T-15), and a `static let` would have frozen
+/// each array on whichever palette was active the first time a colour grid was drawn.
 private func paletteArrayBody(named name: String, in source: String) throws -> String {
-    guard let start = source.range(of: "static let \(name) = [") else {
+    let openings = ["static let \(name) = [", "static var \(name): [String] { ["]
+    guard let start = openings.lazy.compactMap({ source.range(of: $0) }).first else {
         Issue.record("CadenceColorPalette no longer declares \(name) as an array literal")
         return ""
     }
@@ -585,7 +599,9 @@ struct CadenceSeedColourSourceTests {
 
         // And `Theme` did not grow a second name for that grey to make the read read nicer.
         let theme = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/Shared/Theme.swift"))
-        #expect(theme.contains("static let blueHex"), "non-vacuity: still Theme")
+        // `static var blueHex` since T-15 made the accents selectable; the neutral ramp is what
+        // this test is about and it is still `static let`, so anchor on that half.
+        #expect(theme.contains("static let bg = Color(hex:"), "non-vacuity: still Theme")
         #expect(
             !theme.localizedCaseInsensitiveContains("\"\(TaskSectionDefaults.defaultColorHex)\""),
             "Theme now spells the neutral too, so there are two homes for one hex"
@@ -621,8 +637,11 @@ struct CadenceSeedColourSourceTests {
     /// Value half: a pure substitution, so nothing on screen moved. Stated against the literals the
     /// four files used to spell, because "the seed equals the token" is trivially true of any token.
     @Test func theTokensResolveToTheValuesTheLiteralsSpelled() {
-        #expect(Theme.blueHex == "#4a9eff")
+        // The blue is stated against the *standard* palette, because that is the only set a
+        // compile-time literal in `Models/` can mirror once the accents are selectable (T-15).
+        #expect(CadenceAccentPalette.standard.blueHex == "#4a9eff")
         #expect(TaskSectionDefaults.defaultColorHex == "#6b7a99")
+        // And the swatch default still reads whatever is *active*, not a frozen copy of it.
         #expect(CadenceColorPalette.areaDefault == Theme.blueHex)
     }
 
@@ -633,12 +652,17 @@ struct CadenceSeedColourSourceTests {
     /// new context, goal and habit is drawn with in every picker. That is T-166's failure mode with
     /// the compiler unable to help, which is exactly when a test has to.
     @Test func theSeedsMirrorModelDefaultsThatCannotReadTheToken() throws {
+        // Against `CadenceAccentPalette.standard`, not the active accent set: a literal in a
+        // `@Model` cannot follow a runtime selection, so the standard palette is the only thing it
+        // can be required to mirror. Change the standard blue and these four still fail, which is
+        // the whole job this test was written to do.
+        let standardBlue = CadenceAccentPalette.standard.blueHex
         for model in ["Context", "Goal", "Habit", "Area"] {
             let source = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/Models/\(model).swift"))
             #expect(source.contains("@Model"), "non-vacuity: \(model).swift is still a model")
             #expect(
-                source.localizedCaseInsensitiveContains("var colorHex: String = \"\(Theme.blueHex)\""),
-                "\(model).colorHex's default has drifted from Theme.blueHex (\(Theme.blueHex))"
+                source.localizedCaseInsensitiveContains("var colorHex: String = \"\(standardBlue)\""),
+                "\(model).colorHex's default has drifted from the standard palette's blue (\(standardBlue))"
             )
         }
 

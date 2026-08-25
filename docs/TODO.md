@@ -278,35 +278,6 @@ _Nothing in flight._
   already disagreed about heading sizes on the same platform; a third renderer is a third chance at
   that.
 
-- [T-15] **Several dark palettes — decided, and the colours are not the hard part.** User's call, and
-  it narrows what was an open-ended ask: **stay dark-only**, offer alternate near-black palettes
-  (cooler/warmer neutrals, or a different accent set). Explicitly **not** light mode — that was the
-  option costed as largest and it was declined, so nothing needs a light value and no call site has to
-  change its reasoning.
-  What this reverses, and does not: the seven-theme `ThemeManager` is already gone and the user did
-  **not** ask for it back. There is currently exactly one palette and no picker; `Theme.swift`'s own
-  comment records the removal, and `preferredColorScheme` is a hardcoded `.dark`.
-  **DECIDED 2026-08-25, by the user, after being asked.** **Accents only.** The near-black
-  neutrals do not vary — only the six accents become selectable. This is a deliberate narrowing of
-  the ticket below: the chrome that appears on every screen keeps its fixed values and therefore
-  cannot regress, while the accents are what carry the personality. Widgets: **only if it is cheap.**
-  Do the app-group plumbing if it falls out easily once the palette is a value; if it turns into its
-  own project, ship without it and report back rather than deciding unilaterally.
-
-  **The mechanism is the work.** `Theme` is a `nonisolated struct` exposing **71 `static let`**
-  constants, which cannot vary at runtime, and 256 files read them directly as `Theme.bg` and friends.
-  Making the palette selectable means those become computed properties over an active palette value —
-  a mechanical but wide change, and the one place a mistake shows up as the wrong colour somewhere
-  nobody looked. Two consequences to plan for rather than discover:
-  - **19 `Theme.ns*` AppKit mirrors** exist so the markdown editor can draw in sRGB `NSColor`. They
-    must resolve from the same active palette or the editor keeps drawing the old one.
-  - **`Theme.swift` is compiled into `CadenceWidgets`** (4 references in `project.pbxproj`). A widget
-    is a separate process, so the selected palette has to reach it through the app group, the way
-    `CadenceWidgetRefreshCenter` already does — otherwise widgets stay on the default palette.
-  ~~Also delete the stale **"Theme"** row in Settings → Coverage~~ — **already moot.** The whole
-  Coverage section, `iOSMobileCapability` and the shared `.coverage` kind were deleted in `940c4da`;
-  `iOSMobileCapability` now has zero references. Nothing advertises a picker that does not exist.
-
 - [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
   *(a)* A widget showing the running timer plus what is being worked on, and a second showing the
   task list — exact split is a design call, make a good one rather than shipping two widgets that
@@ -824,6 +795,60 @@ _Nothing in flight._
 
 ## Done
 
+
+- [T-15] _(sha pending — verified, not yet committed)_ **Several dark palettes.** Shipped as decided: **accents only**, dark-only,
+  three sets — **Cadence** (the values the app shipped with, and the standard one), **Ember**
+  (warm) and **Glacier** (cool) — chosen in Settings → **Appearance** on both platforms through one
+  shared `CadenceAccentPalettePicker`. The near-black neutrals, the marker pen, the `onColor*`
+  family, the overlays, the shadows and the radius scale did not move and cannot: they are still
+  `static let`. `preferredColorScheme` is still a hardcoded `.dark`; no light value was added
+  anywhere.
+
+  **The mechanism**, all of it in `Theme.swift` because `CadenceWidgets` takes its sources by
+  explicit reference and a new file under `Shared/` would not compile for that target:
+  `CadenceAccentPalette` (six hex strings, name, one-line description; `.standard` is the set every
+  compile-time literal mirrors), `CadenceAccentResolution` (one palette resolved once into `Color`s
+  **and** the three accent `NSColor` mirrors, so `Theme.blue` stays one property load), and the
+  `@Observable` `CadenceAccentPaletteSelection`. The observation is the live-repaint mechanism, not
+  decoration: every accent accessor funnels through `resolution`, so a view reading `Theme.blue`
+  anywhere in its body registers a dependency and repaints on a switch. `.id(paletteID)` on the
+  root was rejected — it repaints by discarding every `@State` in the app, including the Settings
+  screen the user is standing on.
+
+  **What made this wider than `Theme.swift`, and the thing to remember:** an accent read into a
+  `static let` freezes on first access and then draws whichever palette happened to be active the
+  first time that surface appeared — silently, no diagnostic, wrong colour only where nobody looked.
+  Three declarations were in that shape and were converted to computed: `CadenceColorPalette`'s
+  `areaDefault` / `projectDefault` / `colors` / `sectionColors` / `destinationTints`,
+  `CadenceTodayPresentationSupport.completedSectionAccent`, and `MarkdownStylist`'s `blueColor` /
+  `greenColor` / `redColor`. `destinationTints` mattered most: frozen, a destination's own
+  `defaultColorHex` falls out of the menu that edits it, which is T-245 arriving by a different
+  road. `CadenceAccentStorageSweepTests.noStoredDeclarationAnywhereInTheAppFreezesAnAccent` now
+  sweeps all 512 files under `Cadence/` for both shapes — a direct read and an array literal — with
+  no allowlist, and a self-check pins both needles.
+
+  **Widgets: shipped, and it was cheap.** The selection goes to the app-group suite
+  (`cadence.appearance.accentPaletteID`), which `CadenceWidgetRefreshCenter` already crosses, and
+  selecting a palette forces a timeline reload. Proved by value rather than asserted in a comment:
+  a probe written through the store's own suite is read back through a freshly constructed
+  app-group `UserDefaults`.
+
+  **User-owned `colorHex` is untouched.** A switch changes what a *new* list/tag/habit/section is
+  seeded with and what the swatch menus offer; it rewrites nothing stored, and
+  `CadenceColorPalette.offered(_:from:)` keeps a stored hue selectable after its palette stops
+  offering it. Pinned by `aStoredColourSurvivesAPaletteSwitchAndStaysSelectable`.
+
+  Two existing tests were restated rather than relaxed, and the reason is worth carrying: a `@Model`
+  `colorHex` default is a compile-time literal in `Models/` (which `CadenceMCPServer` compiles and
+  `Theme.swift` is not part of), so it can only ever mirror **one** palette. Those assertions now
+  name `CadenceAccentPalette.standard` explicitly instead of reading whatever is active. Change the
+  standard blue and they still fail.
+
+  Left undone, deliberately: the AppKit markdown editor repaints on its next restyle rather than
+  instantly, because it draws through `MarkdownStylist` and not through a SwiftUI body — its three
+  accent colours are computed so that restyle is *correct*, which is the part that matters. If an
+  instant repaint there is ever wanted, that is a notification the `NSViewRepresentable` observes,
+  not a change to the palette mechanism.
 
 - [T-253] `159af9f` **macOS Settings → Reminders never re-derives authorization after it first appears, and
   it is the surface most likely to be on screen when authorization changes.**

@@ -6,14 +6,15 @@ build their feature views on top of.
 
 ## Theme Is The Only Source Of Colour
 
-`Theme.swift` holds one fixed near-black dark palette — there is no theme picker and no light
-variant (`ThemeManager` and its seven themes were removed). Read the file before adding a colour;
-it already has named tokens for the jobs call sites keep re-inventing:
+`Theme.swift` holds one fixed near-black **neutral ramp** and six **selectable accents**. There is
+still no light variant and `preferredColorScheme` is still a hardcoded `.dark`; `ThemeManager` and
+its seven light-and-dark themes are still gone and were not asked for back. Read the file before
+adding a colour; it already has named tokens for the jobs call sites keep re-inventing:
 
 - Neutral ramp: `bg`, `surfaceRecessed`, `surface`, `surfaceHover`, `surfaceElevated`, `surfaceHighlight`.
 - Borders: `borderSubtle`, `border`, `borderStrong`, `rule`.
 - Text: `text`, `muted`, `subdued`, `dim`.
-- Accents: `blue`/`blueLight`, `red`, `green`/`greenLight`, `amber`/`amberLight`, `purple`, `doneFill`, `blueHex` (the string form, for model `colorHex` fallbacks).
+- Accents: `blue`/`blueLight`, `red`, `green`/`greenLight`, `amber`/`amberLight`, `purple`, `teal`, `doneFill`, and the `*Hex` string forms (for model `colorHex` fallbacks and app-defined defaults).
 - Content drawn **on** a saturated fill: the `onColor*` family — use these instead of `.white.opacity(...)`.
 - Overlays and shadows: `scrim`, `selectionWash`, `subtleWash`, `chipShadow`, `sidePanelShadow`, `overlayCardShadow`, `cardElevationShadow`.
 - Radii: `radiusControl` (10), `radiusCard` (18), `radiusPanel` (22).
@@ -24,6 +25,51 @@ it already has named tokens for the jobs call sites keep re-inventing:
 `priorityColor(_:)` and `statusColor(_:)` take **enums** (`TaskPriority`, `TaskStatus`), not
 strings. `Theme.swift` is also in the `CadenceWidgets` target's Sources phase — widgets have no
 hardcoded colours either.
+
+### The Neutrals Are Stored And The Accents Are Computed (T-15)
+
+Everything above from `bg` through the text ramp, the marker pen, the `onColor*` family, the
+overlays, the shadows and the radii is a `static let` with a fixed value, and no selection can move
+one. The six accents, their `*Light` variants and their `*Hex` strings are `static var`s that
+resolve from `CadenceAccentPaletteSelection.shared`. That split *is* the decision: the chrome that
+appears on every screen cannot regress, and the accents carry the personality.
+
+Three types, all declared in `Theme.swift` rather than in a file of their own — the widget target
+takes its sources by explicit reference, so a new file under `Shared/` would compile for the app
+and not for `CadenceWidgets`:
+
+- `CadenceAccentPalette` — six hex strings plus a name and a one-line description. Three sets:
+  `cadence` (the standard one, the values the app shipped with), `ember` (warm) and `glacier`
+  (cool). `CadenceAccentPalette.standard` is the set every compile-time literal mirrors, which is
+  what a test pinning a `@Model` `colorHex` default has to state itself against.
+- `CadenceAccentResolution` — one palette resolved once into `Color`s and the three accent
+  `NSColor` mirrors. A reference type, so `Theme.blue` stays one property load rather than a
+  `Scanner` run per read.
+- `CadenceAccentPaletteSelection` — `@Observable`, and the observation is load-bearing rather than
+  decorative. Every accent accessor funnels through its `resolution`, so a view that reads
+  `Theme.blue` anywhere in its body registers a dependency and repaints when the selection changes.
+  The alternative considered and rejected was `.id(paletteID)` on the root view, which repaints by
+  throwing away every piece of `@State` in the app, including the Settings screen the user is
+  standing on.
+
+**Never read an accent into a `static let`.** It initialises once and then draws the palette that
+happened to be active the first time that surface appeared — silently, with no diagnostic. Three
+declarations were in that shape and were converted: `CadenceColorPalette`'s swatch arrays,
+`CadenceTodayPresentationSupport.completedSectionAccent`, and `MarkdownStylist`'s three accent
+`NSColor`s. `CadenceAccentStorageSweepTests.noStoredDeclarationAnywhereInTheAppFreezesAnAccent`
+sweeps all 512 files under `Cadence/` for both shapes (a direct read and an array literal), with no
+allowlist. Reading a *neutral* into a `static let` is fine and 20-odd declarations do it.
+
+The AppKit markdown editor is the one surface SwiftUI's observation does not reach — it draws
+through `MarkdownStylist`, not through a `body` — so it repaints on its next restyle rather than
+instantly. Its three accent colours are computed precisely so that restyle is correct.
+
+The selection is persisted in the **app group** suite (`cadence.appearance.accentPaletteID`), not
+`.standard`, because `CadenceWidgets` is a separate process compiling this same file.
+`CadenceWidgetRefreshCenter` already crosses that boundary through the same suite, so selecting a
+palette forces a timeline reload and the widgets come back on the new accents. Both Settings
+screens render one shared `CadenceAccentPalettePicker` (`Components/`); neither writes its own row,
+swatch or copy.
 
 ## Working Rules
 

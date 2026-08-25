@@ -21,7 +21,7 @@ The user does not write code. Claude handles all implementation. When something 
 
 ## Platform Strategy
 - **macOS**: purpose-built sidebar + multi-column layout (`macOS/`). Fully featured, the primary product surface.
-- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 93 files at the time of writing — `ls Cadence/iOS/*.swift | wc -l`), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
+- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 98 files at the time of writing — `ls Cadence/iOS/*.swift | wc -l`), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
 - **watchOS**: not started
 - Use `#if os(macOS)` / `#if os(iOS)` for platform-specific branches
 
@@ -35,13 +35,13 @@ Cadence.xcodeproj       # single project; targets: Cadence, CadenceWidgets, Cade
 CadenceWidgets/         # widget extension — compiles Models/, Theme.swift, and Cadence*WidgetSupport.swift straight in
 CadenceMCPServer/       # native MCP server target (tool definitions, router, argument parsing)
 plugins/cadence-mcp/    # Codex MCP plugin wrapper + smoke-test scripts
-CadenceTests/           # unit tests (177 flat files at time of writing; re-count with
+CadenceTests/           # unit tests (191 flat files at time of writing; re-count with
                         #   `ls CadenceTests/*.swift | wc -l`). Always -only-testing:CadenceTests
 CadenceUITests/         # UI tests; cannot launch headless — never let an unscoped test run pull these in
 docs/                   # privacy/support site + App Review + release-readiness notes
 ```
 
-App source. **This names families, not every file** — `macOS/Views/` alone is 167 `.swift` files at the time of writing (`ls Cadence/macOS/Views/*.swift | wc -l`; do not trust the figure).
+App source. **This names families, not every file** — `macOS/Views/` alone is 168 `.swift` files at the time of writing (`ls Cadence/macOS/Views/*.swift | wc -l`; do not trust the figure).
 Use the scoped `AGENTS.md` in each folder as the working map.
 
 ```
@@ -95,7 +95,10 @@ Cadence/
 │   ├── CalendarVisibilityPreferences (in CadenceCalendarVisibilityPreferences.swift) and
 │   │                   # CalendarWorkHoursPreferences — both shared, NOT macOS-only. The file name
 │   │                   # carries the Cadence prefix; the type does not.
-│   └── Components/     # 21 files: CadenceBoardColumnHeader, CadenceBoardMetadataChip,
+│   └── Components/     # 23 files: CadenceAccentPalettePicker (the T-15 accent picker, plus
+│                       #   CadenceAccentPaletteRow / CadenceAccentSwatchStrip / the shared copy —
+│                       #   four types, one file, another File-Name-Is-Not-The-Type-Name case),
+│                       # CadenceBoardColumnHeader, CadenceBoardMetadataChip,
 │                       # CadenceButtons, CadenceContextPicker, CadenceDatePicker,
 │                       # CadenceInlineEmpty, CadenceScrollElasticity, CadenceSidebarCountLabel,
 │                       # CadenceStartupIssueBanner, CadenceTagChip (also declares
@@ -125,7 +128,7 @@ Cadence/
 │                       # it; a stale number reads as a complete inventory and sends the next agent
 │                       # off to write a near-copy. That is not hypothetical — T-173 had to delete
 │                       # a third hand-written copy of CompactTagStrip for exactly this reason.
-├── iOS/                # Large adaptive iOS/iPadOS surface (93 files at time of writing;
+├── iOS/                # Large adaptive iOS/iPadOS surface (98 files at time of writing;
 │                    #   `ls Cadence/iOS/*.swift | wc -l`) — see "What's Built (iOS)"
 │   ├── iOSRootView.swift        # Adaptive root shell: iPad sidebar / iPhone tab bar; deep links, widget refresh
 │   ├── iOSTaskInspectorHost.swift  # THE task inspector presenter, installed once in iOSRootView.
@@ -144,7 +147,7 @@ Cadence/
 └── macOS/
     ├── macOSRootView.swift + Views/macOSRoot*   # Shell, command routing, overlays, lifecycle, state
     ├── CadenceCalendarPicker.swift
-    ├── Views/          # 167 files at time of writing (re-count), organized as feature root
+    ├── Views/          # 168 files at time of writing (re-count), organized as feature root
     │                   #   + support files. Families:
     │                   #   TodayView / TodaySupportViews / NotePanel
     │                   #   TasksPanel*        — Today + All Tasks list orchestration, rows, grouping, drop
@@ -383,8 +386,25 @@ area.tasks = (area.tasks ?? []) + [newTask]
 jobs call sites keep re-inventing. This includes the `CadenceWidgets` target, which has
 `Theme.swift` in its Sources phase so it can comply.
 
-One fixed near-black dark palette. There is **no theme picker and no light variant** — the old
-seven-theme `ThemeManager` was removed. `Theme.preferredColorScheme` is always `.dark`.
+One fixed near-black **neutral ramp**, and **six selectable accents** (T-15). There is still **no
+light variant** — the old seven-theme `ThemeManager` was removed and was not asked for back, and
+`Theme.preferredColorScheme` is always `.dark`.
+
+**The split is the decision, and it is what the ticket was narrowed to.** Everything from `bg`
+through the text ramp, the marker pen, the `onColor*` family, the overlays, the shadows and the
+radius scale is a `static let` with a fixed value that no selection can move, so the chrome on
+every screen cannot regress. `blue`, `red`, `green`, `amber`, `purple` and `teal` — with their
+`*Light` variants and their `*Hex` strings — are `static var`s resolving from
+`CadenceAccentPaletteSelection.shared`. Three sets ship: **Cadence** (the standard one, the values
+the app shipped with), **Ember** (warm) and **Glacier** (cool). Settings → **Appearance** on both
+platforms, one shared `CadenceAccentPalettePicker`; the selection persists in the app group so the
+widget process reads it too.
+
+**Never read an accent into a `static let`** — it freezes on first access and then draws whichever
+palette was active the first time that surface appeared. A stored *neutral* is fine.
+`CadenceAccentStorageSweepTests` sweeps the whole of `Cadence/` for both shapes with no allowlist.
+Details, including why `CadenceAccentPalette` lives inside `Theme.swift` rather than a file of its
+own, are in `Cadence/Shared/AGENTS.md`.
 
 ```swift
 // Neutral ramp (~4% saturation near-black, so accents carry the colour instead of the chrome)
@@ -1078,14 +1098,14 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Per-calendar visibility preferences and a configurable work-hours window
 - [x] Read-only/read-write MCP surface (`Services/MCPReadOnly/`, `CadenceMCPServer/`, `plugins/cadence-mcp/`)
 - [x] CloudKit sync
-- [x] Category-based Settings shell with **fourteen** categories, in rail order: Navigation, Sidebar │ Contexts, Lists, Tags, Templates │ Calendar, Reminders, Account & Sync, Notifications, AI │ Account, Data Safety │ **About**. `SettingsCategory` in `macOS/Views/SettingsViewSupport.swift` is the list; count its cases rather than trusting this sentence — it said "twelve" until `592b967` added `.sync` (titled **Account & Sync**, filed under Connections beside Calendar and Reminders) and "thirteen" until `940c4da` added `.about`. About sits in a **group of one** ("App"), deliberately not under Account & Safety: which build is running is not a safety control, and a row reading "About" beside "Data Safety" reads as one more thing that might delete something. Its card is the build identity only — `Coverage` is gone (below), and both platforms' About cards render the Privacy Policy and Support links from one shared `CadenceAppReferenceLink.all`, and macOS's Data Safety keeps the privacy *paragraph* without them — neither link is a data-safety control, and a help link one tab-stop from an irreversible delete button is the same misread `.about`'s group-of-one exists to avoid.
+- [x] Category-based Settings shell with **fifteen** categories, in rail order: **Appearance**, Navigation, Sidebar │ Contexts, Lists, Tags, Templates │ Calendar, Reminders, Account & Sync, Notifications, AI │ Account, Data Safety │ **About**. `SettingsCategory` in `macOS/Views/SettingsViewSupport.swift` is the list; count its cases rather than trusting this sentence — it said "twelve" until `592b967` added `.sync` (titled **Account & Sync**, filed under Connections beside Calendar and Reminders), "thirteen" until `940c4da` added `.about`, and "fourteen" until T-15 added `.appearance` (filed under **Interface** beside Navigation and Sidebar — it configures how the app looks, which is what that group is for, and the "App" group of one still holds only `.about`). About sits in a **group of one** ("App"), deliberately not under Account & Safety: which build is running is not a safety control, and a row reading "About" beside "Data Safety" reads as one more thing that might delete something. Its card is the build identity only — `Coverage` is gone (below), and both platforms' About cards render the Privacy Policy and Support links from one shared `CadenceAppReferenceLink.all`, and macOS's Data Safety keeps the privacy *paragraph* without them — neither link is a data-safety control, and a help link one tab-stop from an irreversible delete button is the same misread `.about`'s group-of-one exists to avoid.
 - [x] **The settings parity relation is one-way, and macOS lacks nothing.** With `.sync` landed and `.coverage` deleted, macOS offers **every** `CadenceSettingsCategoryKind`; mobile omits exactly two, `sidebar` and `account`, stated positively as `CadenceMobileSettingsLayout.desktopOnly` so "mobile is missing a category" is a test failure rather than something you find by opening the app. `SettingsCategoryReachTests` asserts the set equality rather than a literal count. The **parity manifest is gone whole** (`940c4da`): the rendered Coverage section, `iOSMobileCapability`, its status type and row view, the iOS category case, *and* the shared `.coverage` kind — the case went too, because removing a section and leaving the routing case somewhere empty is exactly how the page-header `subtitle` parameter survived three deletions. A test pins that `CadenceSettingsCategoryKind(rawValue: "coverage")` resolves to `nil`. It could not have been persisted (both surfaces hold the selection in `@State`; no `AppStorage` key, deep link or palette command names a settings category), so nothing was dropped
-- [x] **One fixed dark palette.** There is no theme picker — `ThemeManager` and its seven light/dark themes were removed. `Theme.swift` is also compiled into the `CadenceWidgets` target so widgets carry no hardcoded colours
+- [x] **One fixed dark neutral ramp, three selectable accent sets** (Cadence / Ember / Glacier), chosen in Settings → Appearance. There is no *theme* picker in the old sense: `ThemeManager` and its seven light/dark themes are still gone, the neutrals do not vary, and there is no light mode. `Theme.swift` is also compiled into the `CadenceWidgets` target so widgets carry no hardcoded colours — and, because the selection is written to the app group, they follow the chosen accents
 - [x] Local notification scheduling (iOS + macOS): task scheduled-start and due-date reminders, plus daily habit reminders (`Habit.reminderMinuteOfDay`). Excludes Apple Calendar/EventKit events (those already have native OS alarms). See "Notifications" below for the reconciliation-based design — this is **not** an imperative schedule-on-every-mutation system, so don't assume every task/habit mutation site needs an explicit notification hook.
 - [x] Widget extensions (`CadenceWidgets` target): calendar/today/habit/milestone widgets with app-intent support and a refresh checkpoint (`CadenceWidgetRefreshCenter`) triggered on scenePhase changes — not documented further here yet; check `Cadence/Services/Cadence*WidgetSupport.swift` and `CadenceWidgets/` directly
 
 ## What's Built (iOS)
-`Cadence/iOS/` is a large, actively-developed surface (93 files at the time of writing — `ls Cadence/iOS/*.swift | wc -l`), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
+`Cadence/iOS/` is a large, actively-developed surface (98 files at the time of writing — `ls Cadence/iOS/*.swift | wc -l`), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
 - [x] **iPhone tab bar**: `[ Tasks ] [ Calendar ] ( + ) [ Notes ] [ More ]`. The centre `+` is **not a tab** — it presents task capture and never renders a selected state. Each tab owns its own type-erased `NavigationPath`, so switching tabs preserves position; the selected tab and Tasks segment persist across launches (`ios.compact.selectedTab`, `ios.compact.tasksSection`). Replaced `iOSCompactHomeView`, a grid of eight tiles that was standing in for navigation the app did not have.
 - [x] Tasks tab (`iOSTasksTabView`): date eyebrow + greeting, a **Today / All / Inbox** segmented switcher (the same control Calendar uses for Week/Month/Board), and a search shortcut
 - [x] Today (`iPadTodayView` + compact/schedule/support variants). The compact Today has **no capture bar of its own** — the tab bar's `+` is the capture affordance
@@ -1109,7 +1129,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Notes with its own markdown editor stack (styling, preview, slash commands, task/wiki references)
 - [x] Lists (Area/Project detail, editors), and since `c84732e` **deleting** an area, a project or a context — the fourth instance of a capability sitting behind an `#if os(macOS)` that imported nothing platform-specific. iOS's confirmation is a modal sheet rather than a bottom action sheet, and is *more* informative than macOS's rather than merely as ceremonious: it enumerates real counts ("1 project", "7 tasks") where macOS's categorical sentence cannot, and the three cascade sentences live in `Shared/CadenceListDeletionSummary.swift` so the copy cannot drift. Deliberately **no** typed phrase — the privacy reset needs one because it is total, unrecoverable and cannot report its scope; a list delete is scoped and now shows the scope, and typed-phrase friction on routine cleanup is friction people learn to satisfy without reading. Since T-214 iOS can also **complete** a list, from the row's context menu on both the iPhone list and the iPad pane — the same `iOSWindDownConfirmationSheet` the archive and the kanban column present, with the outcome flipped to `.done`. It routes through `TaskContainerLifecycleService.completeRemainingActiveTasks`, **never** through `applyStatusCompletion`: that goes to `markDone`, which spawns the next recurrence occurrence into the same area, project and section, so the list would read finished and immediately refill itself. Two things about the completion that differ from the archive and are decisions rather than accidents: the conditional-confirmation rule is the *same* (`requiresConfirmation` asks whether anything irreversible happens, not how big a claim the action makes), and the copy is *not* — a completion asserts the work happened, which `GoalContributionSummary.progress` reads (`completedTasks / totalTasks` over `filter(\.isDone)`), so it can move a goal's bar where a bulk cancellation cannot; and a completed list leaves the Lists page for Settings › Lists rather than sitting under "Archived" one tap from Restore. Completion is a context-menu item and deliberately **not** a swipe action: the tray already carries Archive, and a second flick with no beat to read anything in is not where "this work is finished" belongs
 - [x] Search
-- [x] Settings — **twelve** categories (`iOSSettingsCategory`, count the cases): navigation, Account & Sync, **data safety** (including the account-and-data delete action the shipped privacy policy promises, behind a typed-phrase confirmation sheet), calendar, reminders, notifications, organization (contexts), lists, tags, templates, AI, and About. Two of those, `sync` and `ai`, went unlisted here for a while, which made mobile Settings read as a much thinner surface than it is. Reminders appears in **both** iOS Settings and the iOS Inbox, matching macOS. iOS omits exactly two categories, `sidebar` and `account`; see the parity note under "What's Built (macOS)".
+- [x] Settings — **thirteen** categories (`iOSSettingsCategory`, count the cases): **appearance** (the T-15 accent picker, the same shared control macOS renders), navigation, Account & Sync, **data safety** (including the account-and-data delete action the shipped privacy policy promises, behind a typed-phrase confirmation sheet), calendar, reminders, notifications, organization (contexts), lists, tags, templates, AI, and About. Two of those, `sync` and `ai`, went unlisted here for a while, which made mobile Settings read as a much thinner surface than it is. Reminders appears in **both** iOS Settings and the iOS Inbox, matching macOS. iOS omits exactly two categories, `sidebar` and `account`; see the parity note under "What's Built (macOS)".
 - [x] Notification scheduling wiring (see "What's Built (macOS)" above — shared logic, not iOS-specific)
 - [x] `EstimatePickerPopoverContent` in `Shared/Components` is the estimate picker for **both** platforms; `EstimatePickerControl` is the iOS chip wrapper around it
 

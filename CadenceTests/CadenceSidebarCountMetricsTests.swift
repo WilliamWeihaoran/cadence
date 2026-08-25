@@ -269,19 +269,41 @@ struct CadenceFeatureDestinationTintTests {
     /// from a re-typed literal. This is what makes the token trustworthy as a default: a token that
     /// does not build its own `Color` is a palette with two values for one accent, which is the
     /// shape T-166 was.
+    ///
+    /// **The relation moved one level down in T-15 and did not weaken.** It used to read
+    /// `static let blue = Color(hex: blueHex)` straight off `Theme`; the accents are selectable
+    /// now, so the six hexes are declared by `CadenceAccentPalette`, the `Color`s are built from
+    /// them in `CadenceAccentResolution`, and `Theme` forwards to both. All three links are
+    /// asserted, because breaking any one of them re-creates the two-values-for-one-accent shape:
+    /// a resolution that built `blue` from a literal, or a `Theme.blueHex` that read anything but
+    /// the active palette's blue, would each pass an assertion about only the other two.
     @Test func eachThemeAccentColourIsBuiltFromItsOwnHexToken() throws {
         let theme = strippingSwiftComments(try tintSourceFile("Cadence/Shared/Theme.swift"))
-        let tokens = regexMatches("static let \\w+Hex =", in: theme)
-            .map { $0.replacingOccurrences(of: "static let ", with: "").replacingOccurrences(of: "Hex =", with: "") }
+        let tokens = regexMatches("    let \\w+Hex: String", in: theme)
+            .map { $0.trimmingCharacters(in: .whitespaces)
+                .replacingOccurrences(of: "let ", with: "")
+                .replacingOccurrences(of: "Hex: String", with: "") }
 
         #expect(Set(tokens) == ["blue", "red", "green", "amber", "purple", "teal"])
 
         for token in tokens {
             #expect(
-                theme.contains("static let \(token) = Color(hex: \(token)Hex)"),
-                "Theme.\(token) does not read Theme.\(token)Hex"
+                theme.contains("Color(hex: palette.\(token)Hex)"),
+                "the resolved \(token) is not built from the palette's own \(token)Hex"
+            )
+            #expect(
+                theme.contains("static var \(token)Hex: String { accents.palette.\(token)Hex }"),
+                "Theme.\(token)Hex does not read the active palette"
+            )
+            #expect(
+                theme.contains("static var \(token): Color { accents.\(token) }"),
+                "Theme.\(token) does not read the resolved accent"
             )
         }
+
+        // And nothing re-types a hue: every literal in the file belongs to a palette declaration
+        // or to the fixed neutral ramp, never to a `Color(hex: "…")` beside a token.
+        #expect(!theme.contains("Color(hex: \"#4a9eff\")"), "an accent Color is built from a literal")
     }
 }
 

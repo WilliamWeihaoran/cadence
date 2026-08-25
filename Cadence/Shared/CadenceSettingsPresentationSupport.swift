@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
+    case appearance
     case navigation
     case sidebar
     case sync
@@ -20,6 +21,7 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .appearance: return "Appearance"
         case .navigation: return "Navigation"
         case .sidebar: return "Sidebar"
         case .sync: return "Account & Sync"
@@ -40,6 +42,7 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .appearance: return "paintpalette.fill"
         case .navigation: return "rectangle.stack.fill"
         case .sidebar: return "sidebar.left"
         case .sync: return "icloud.fill"
@@ -61,6 +64,11 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
 
     var tint: Color {
         switch self {
+        case .appearance:
+            // Purple, and not the accent it is *about*: the rail glyph for this category has to
+            // stay legible while the user is looking at every palette in turn, so it reads a
+            // token like every other row rather than previewing the selection.
+            return Theme.purple
         case .navigation:
             return Theme.green
         case .sidebar:
@@ -129,7 +137,7 @@ enum CadenceMobileSettingsLayout {
     static let groups: [CadenceSettingsCategoryGroup] = [
         CadenceSettingsCategoryGroup(
             title: "App",
-            kinds: [.navigation, .notifications, .ai]
+            kinds: [.appearance, .navigation, .notifications, .ai]
         ),
         CadenceSettingsCategoryGroup(
             title: "Content",

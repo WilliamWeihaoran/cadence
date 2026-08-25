@@ -373,7 +373,8 @@ struct CadenceSyncSurfaceTests {
     @Test func everyMacOSCategoryHasItsOwnSharedKind() {
         let kinds = SettingsCategory.allCases.map(\.sharedKind)
         #expect(Set(kinds).count == kinds.count)
-        #expect(SettingsCategory.allCases.count == 14)
+        // 15 since T-15 added `.appearance`; it was 14 with `.about` and 13 before `.sync`.
+        #expect(SettingsCategory.allCases.count == 15)
         #expect(Set(kinds).isSubset(of: Set(CadenceSettingsCategoryKind.allCases)))
     }
 

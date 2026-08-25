@@ -12,12 +12,18 @@ import Foundation
 ///
 /// `TagSupport.colorOptions` is deliberately **not** folded in here. Tags are a different palette
 /// with a different job, and it is already shared.
+/// **Everything here that reads a `Theme` accent is computed, not stored.** The six accents are
+/// selectable (T-15), and a `static let` initialises exactly once — a stored `colors` would freeze
+/// on whichever palette happened to be active the first time a colour grid was drawn, and
+/// `destinationTints` would stop containing `CadenceFeatureDestination.defaultColorHex`, which is
+/// the T-245 bug (a destination's own default falling out of the menu that edits it) arriving by a
+/// different road. The arrays are still literals; only their storage changed.
 enum CadenceColorPalette {
     /// `Area.colorHex`'s model default. Named rather than respelled at each seeding site.
-    static let areaDefault = Theme.blueHex
+    static var areaDefault: String { Theme.blueHex }
 
     /// `Project.colorHex`'s model default.
-    static let projectDefault = Theme.greenHex
+    static var projectDefault: String { Theme.greenHex }
 
     /// One lap of the hue circle, warm through cool, ending on a neutral. Twelve reads as a 6×2 or
     /// 4×3 grid on macOS and wraps cleanly into a strip on iOS.
@@ -37,10 +43,10 @@ enum CadenceColorPalette {
     /// user-owned `colorHex`", and this array is the menu of user-owned `colorHex` values: it is
     /// that second clause, not an exception to the first. Do not "fix" these eight by adding a
     /// second amber or a second purple to `Theme`.
-    static let colors = [
+    static var colors: [String] { [
         areaDefault, "#6366f1", Theme.purpleHex, "#e879f9", "#f472b6", Theme.redHex,
         Theme.amberHex, "#fbbf24", projectDefault, "#14b8a6", "#06b6d4", "#6b7a99",
-    ]
+    ] }
 
     /// The swatches offered for a **kanban section**'s `colorHex` — the column editor's colour row.
     ///
@@ -71,10 +77,10 @@ enum CadenceColorPalette {
     ///
     /// The default is first and comes from `TaskSectionDefaults` so the grid cannot stop offering
     /// the colour every new section starts on.
-    static let sectionColors = [
+    static var sectionColors: [String] { [
         TaskSectionDefaults.defaultColorHex, Theme.blueHex, Theme.greenHex, "#f59e0b",
         "#ef4444", "#a855f7", "#14b8a6", "#f97316",
-    ]
+    ] }
 
     /// The swatches offered for a **sidebar destination's glyph tint** — Settings → Sidebar's
     /// per-tab colour editor, stored in `CadencePreferenceKeys.sidebarTabColors`.
@@ -104,9 +110,9 @@ enum CadenceColorPalette {
     /// Hue order, warm through cool, so the row reads as one lap like `colors` does. Six is the
     /// whole of `Theme`'s accent set — adding a seventh entry here means adding a seventh accent,
     /// which is the decision T-166 says to bring to the user rather than take.
-    static let destinationTints = [
+    static var destinationTints: [String] { [
         Theme.redHex, Theme.amberHex, Theme.greenHex, Theme.tealHex, Theme.blueHex, Theme.purpleHex,
-    ]
+    ] }
 
     /// The palette, plus `selected` when the palette no longer contains it.
     ///

@@ -2,6 +2,7 @@
 import SwiftUI
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
+    case appearance
     case navigation
     case sidebar
     case templates
@@ -21,6 +22,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var sharedKind: CadenceSettingsCategoryKind {
         switch self {
+        case .appearance: return .appearance
         case .navigation: return .navigation
         case .sidebar: return .sidebar
         case .templates: return .templates
@@ -68,7 +70,7 @@ struct SettingsCategoryGroup: Identifiable {
     static let all: [SettingsCategoryGroup] = [
         SettingsCategoryGroup(
             title: "Interface",
-            categories: [.navigation, .sidebar]
+            categories: [.appearance, .navigation, .sidebar]
         ),
         SettingsCategoryGroup(
             title: "Organization",

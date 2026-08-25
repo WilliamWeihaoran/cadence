@@ -143,6 +143,8 @@ struct iOSSettingsView: View {
     @ViewBuilder
     private func sectionContent(for category: iOSSettingsCategory) -> some View {
         switch category {
+        case .appearance:
+            iOSAppearanceSettingsSection()
         case .navigation:
             iOSNavigationSettingsSection(
                 calendarViewMode: Binding(

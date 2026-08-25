@@ -64,7 +64,9 @@ enum CadenceTodayPresentationSupport {
 
     /// And its accent. `Theme.green` is `Theme.doneFill`'s hue and the completion circle's, so the
     /// heading agrees with the glyphs under it.
-    static let completedSectionAccent = Theme.green
+    // Computed, not stored: `Theme.green` is selectable (T-15) and a `static let` would
+    // freeze on the palette active at first access.
+    static var completedSectionAccent: Color { Theme.green }
 
     static func symbol(for groupKind: CadenceTodayTaskGroupKind) -> String {
         switch groupKind {
