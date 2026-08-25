@@ -153,11 +153,12 @@ private struct iOSInboxReminderRow: View {
     let reminder: AppleReminderItem
     let onComplete: (String) -> AppleReminderCompletionOutcome
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var isCompleting = false
-    /// **T-255.** Set from `AppleReminderCompletionResolution.notice` when the write came back
-    /// refused and nothing else on screen is going to explain it. Cleared the moment the row is
-    /// tapped again, so a stale sentence cannot outlive the attempt it describes.
-    @State private var failureNotice: String?
+    /// **T-255, reshaped by T-268.** The optimistic tick and the sentence a refused write leaves
+    /// behind used to be two `@State` properties this row moved by hand. They are one value now,
+    /// and the move is `AppleReminderRowState.applying(_:)` — shared with macOS's
+    /// `AppleReminderTaskRow`, so the two rows cannot come to disagree, and testable, which two
+    /// `withAnimation` blocks inside a `private` view were not.
+    @State private var rowState = AppleReminderRowState.idle
 
     private var metrics: CadenceTaskRowMetrics {
         .metrics(isRegularWidth: horizontalSizeClass == .regular)
@@ -170,8 +171,8 @@ private struct iOSInboxReminderRow: View {
             VStack(alignment: .leading, spacing: metrics.summarySpacing) {
                 Text(reminder.title.isEmpty ? "Untitled Reminder" : reminder.title)
                     .font(.system(size: metrics.titleFontSize, weight: .medium))
-                    .foregroundStyle(isCompleting ? Theme.dim : Theme.text)
-                    .strikethrough(isCompleting, color: Theme.dim)
+                    .foregroundStyle(rowState.isCompleting ? Theme.dim : Theme.text)
+                    .strikethrough(rowState.isCompleting, color: Theme.dim)
                     .lineLimit(CadenceTaskRowMetrics.titleLineLimit)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -180,7 +181,7 @@ private struct iOSInboxReminderRow: View {
                 // **T-255.** Only ever present after a refused write, so the row keeps its usual
                 // shape in the state it is in almost all of the time. Inside the title column, so
                 // it sits under the sentence it is about rather than under the completion circle.
-                if let failureNotice {
+                if let failureNotice = rowState.failureNotice {
                     Text(failureNotice)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.red)
@@ -197,9 +198,8 @@ private struct iOSInboxReminderRow: View {
                 .fill(Theme.borderSubtle.opacity(0.22))
                 .frame(height: 1)
         }
-        .opacity(isCompleting ? 0.65 : 1)
-        .animation(.easeOut(duration: 0.16), value: isCompleting)
-        .animation(.easeOut(duration: 0.16), value: failureNotice)
+        .opacity(rowState.isCompleting ? 0.65 : 1)
+        .animation(.easeOut(duration: 0.16), value: rowState)
     }
 
     /// The circle carries priority and nothing else, exactly as `iOSTaskRow`'s does — and it is the
@@ -210,7 +210,7 @@ private struct iOSInboxReminderRow: View {
         Button(action: complete) {
             iOSTaskCompletionCircle(
                 glyph: .binary(
-                    isDone: isCompleting,
+                    isDone: rowState.isCompleting,
                     tint: AppleReminderRowPresentation.priorityTint(reminder.priority)
                 ),
                 diameter: CadenceTaskRowMetrics.completionCircleDiameter
@@ -219,7 +219,7 @@ private struct iOSInboxReminderRow: View {
             .iOSExpandedHitArea((44 - metrics.completionGlyphSize) / 2)
         }
         .buttonStyle(.iosPressable)
-        .disabled(!reminder.allowsCompletion || isCompleting)
+        .disabled(!reminder.allowsCompletion || rowState.isCompleting)
         .opacity(reminder.allowsCompletion ? 1 : 0.4)
         .accessibilityLabel(
             reminder.allowsCompletion
@@ -268,28 +268,19 @@ private struct iOSInboxReminderRow: View {
     /// The circle settles first and the write follows, which is `AppleReminderTaskRow`'s timing on
     /// macOS: the row is about to be removed from a list it does not own, so the tick has to land
     /// before the fetch that makes it disappear.
+    /// **T-255 built the reconcile and T-268 made it fail when it is gone.** There is no local
+    /// `apply` any more — a private helper is exactly what the mutation left defined and
+    /// unreachable while every string the surface test was scanning for stayed in the file.
     private func complete() {
-        guard reminder.allowsCompletion, !isCompleting else { return }
+        guard reminder.allowsCompletion, !rowState.isCompleting else { return }
         withAnimation(.easeOut(duration: 0.16)) {
-            isCompleting = true
-            failureNotice = nil
+            rowState = .attempting
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            apply(AppleReminderCompletionResolution.resolve(onComplete(reminder.id)))
-        }
-    }
-
-    /// **T-255.** The tick led the write and nothing ever came back, so a refused completion left
-    /// this row struck through over a reminder Apple Reminders still had open. The optimistic
-    /// animation stays — it has to land before the reload removes the row — and this is the
-    /// reconcile it never had. The policy is `AppleReminderCompletionResolution`'s, shared with
-    /// macOS's `AppleReminderTaskRow`, so the two rows cannot come to disagree about what a
-    /// failure means.
-    private func apply(_ resolution: AppleReminderCompletionResolution) {
-        guard resolution.revertsTick else { return }
-        withAnimation(.easeOut(duration: 0.16)) {
-            isCompleting = false
-            failureNotice = resolution.notice
+            let outcome = onComplete(reminder.id)
+            withAnimation(.easeOut(duration: 0.16)) {
+                rowState = rowState.applying(outcome)
+            }
         }
     }
 }

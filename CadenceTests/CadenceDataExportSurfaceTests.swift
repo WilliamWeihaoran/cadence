@@ -14,6 +14,8 @@ import Testing
 /// driven off the schema in the same two steps as `CadencePrivacyDataResetSurfaceTests`:
 ///
 /// 1. `CadenceArchive.recordCountsByEntityName` must cover the schema *exactly*.
+/// 1b. `probesByEntityName` must cover the schema *exactly* too — added by T-268, because without
+///     it step 2 is a hand-written list and a model with a permanently empty table passes.
 /// 2. Every entity's table must hold the row that was seeded for it.
 ///
 /// **Why some of this reads source text.** `Cadence/iOS/` is inside `#if os(iOS)` and this target
@@ -38,6 +40,36 @@ struct CadenceDataExportSurfaceTests {
             archive tables and CadenceSchema disagree — \
             missing tables: \(schemaNames.subtracting(tableNames).sorted()), \
             stale tables: \(tableNames.subtracting(schemaNames).sorted())
+            """
+        )
+        // Not an empty-set-equals-empty-set pass.
+        #expect(schemaNames.count >= 20, "CadenceSchema reports only \(schemaNames.count) entities")
+    }
+
+    /// **Step 1b, and the half that was missing.** The probe table below must cover the schema
+    /// exactly, or step 2 is only as complete as a hand-written list.
+    ///
+    /// **T-268.** Step 1 above is genuinely schema-driven; step 2 iterates `probesByEntityName`
+    /// and nothing compared *that* to the schema. So a future `@Model` added to `CadenceSchema` and
+    /// wired into `makeArchive` as a permanently empty table — `foos: []` plus its keypath — passed
+    /// step 1 (the table exists), was never seeded (no probe), and was never counted (step 2 only
+    /// looks at `probes.keys`). The whole suite stayed green over an archive that silently drops a
+    /// live model, which is the one property an archive exists to have.
+    ///
+    /// `CadencePrivacyDataResetSurfaceTests.everySchemaEntityHasAProbe` has enforced exactly this
+    /// on the wipe half since it was written; the copy half went without it. Stated in both
+    /// directions for the same reasons: a missing probe means the export is unverified for a live
+    /// model, a stale one means this file tests a type the app no longer persists.
+    @Test func everySchemaEntityHasAnExportProbe() {
+        let schemaNames = Set(CadenceSchema.schema.entities.map(\.name))
+        let probeNames = Set(Self.probesByEntityName.keys)
+
+        #expect(
+            probeNames == schemaNames,
+            """
+            export probe table and CadenceSchema disagree — \
+            missing probes: \(schemaNames.subtracting(probeNames).sorted()), \
+            stale probes: \(probeNames.subtracting(schemaNames).sorted())
             """
         )
         // Not an empty-set-equals-empty-set pass.

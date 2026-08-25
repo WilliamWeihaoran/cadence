@@ -52,6 +52,21 @@ final class RemindersManager {
         EKEventStore.authorizationStatus(for: .reminder) == .restricted
     }
 
+    /// **T-268's observable seam.** A running count of the two reconciles this manager performs on
+    /// its own view of the world. EventKit cannot be driven from a unit test, so the reconcile that
+    /// follows a refused completion had no effect any test could watch: on a host without a
+    /// Reminders grant, `refreshAuthorizationState()` re-derives `isAuthorized = false` from
+    /// `isAuthorized == false` and changes nothing observable. Deleting it passed the whole suite.
+    ///
+    /// Counting the call is the smallest honest fix. It records that the work happened rather than
+    /// that it was intended — the increments live inside the two methods themselves, not beside the
+    /// `switch` that chooses between them, so a dispatcher that decides correctly and then does
+    /// nothing still fails.
+    ///
+    /// `@ObservationIgnored` on purpose: no view reads this, and a counter that bumps on every
+    /// reload has no business invalidating anything.
+    @ObservationIgnored private(set) var reconcileLedger = RemindersReconcileLedger()
+
     private let store = EKEventStore()
     private var storeObserver: NSObjectProtocol?
 
@@ -63,6 +78,7 @@ final class RemindersManager {
     /// the same raw value, not a second state — so matching `.fullAccess` alone still accepts
     /// every status that used to pass here. This also matches `CalendarManager`.
     func refreshAuthorizationState() {
+        reconcileLedger.authorizationRefreshes += 1
         let status = EKEventStore.authorizationStatus(for: .reminder)
         isAuthorized = status == .fullAccess
 
@@ -122,6 +138,7 @@ final class RemindersManager {
     }
 
     func reload() {
+        reconcileLedger.reloadRequests += 1
         guard isAuthorized else {
             reminders = []
             isLoading = false
@@ -170,14 +187,7 @@ final class RemindersManager {
             reminderResolves: reminder != nil,
             allowsContentModifications: reminder?.calendar.allowsContentModifications ?? false
         ) {
-            switch refusal {
-            case .notAuthorized:
-                refreshAuthorizationState()
-            case .reminderUnavailable:
-                reload()
-            default:
-                break
-            }
+            reconcile(after: refusal)
             return refusal
         }
 
@@ -191,9 +201,31 @@ final class RemindersManager {
             return .completed
         } catch {
             print("RemindersManager: failed to complete reminder: \(error)")
-            reload()
+            reconcile(after: .saveFailed)
             return .saveFailed
         }
+    }
+
+    /// Bring the manager's own picture back in line with what a completion just discovered, and
+    /// report which reconcile that was.
+    ///
+    /// The choice is `AppleReminderCompletionReconcile.forOutcome(_:)` — a value in `Shared/`, so
+    /// "a lost grant re-derives authorization, an unresolvable identifier refetches" is a thing a
+    /// test can state — and the doing is here, counted in `reconcileLedger`, so a test can also
+    /// watch it happen without an EventKit grant. **T-268:** this was an inline `switch` in
+    /// `completeReminder(id:)` and either arm could be deleted with the suite still green.
+    @discardableResult
+    func reconcile(after outcome: AppleReminderCompletionOutcome) -> AppleReminderCompletionReconcile {
+        let reconcile = AppleReminderCompletionReconcile.forOutcome(outcome)
+        switch reconcile {
+        case .refreshAuthorization:
+            refreshAuthorizationState()
+        case .reload:
+            reload()
+        case .none:
+            break
+        }
+        return reconcile
     }
 
     private func startObserving() {

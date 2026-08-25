@@ -428,38 +428,181 @@ struct CadenceInboxRemindersSurfaceTests {
         )
     }
 
-    /// **The call-site pin.** The policy above is infrastructure until both rows apply it —
-    /// exactly the "cannot fail at all" shape this file's own header warns about. A positive scan,
-    /// which is the polarity `Cadence/Shared/AGENTS.md` recommends: a row that goes back to
-    /// discarding the outcome, or grows its own second policy, fails here. iOS has no other tool
-    /// available — `Cadence/iOS/` is invisible to a macOS-built test target — and macOS's row is
-    /// `private` inside a view file, so neither is referenceable.
-    @Test func bothReminderRowsApplyTheOneCompletionPolicy() throws {
-        try expectCallSites(
-            of: "AppleReminderCompletionResolution.resolve",
-            at: [
-                "Cadence/macOS/Views/InboxSupportViews.swift": 1,
-                "Cadence/iOS/iOSInboxRemindersSection.swift": 1,
-            ]
-        )
+    // MARK: - The row's state transition
 
-        for path in [
+    /// **T-268, and the primary guard for T-255's bug.** The row's reconcile is a value now, so
+    /// this asserts a *state* rather than the presence of a call name.
+    ///
+    /// The mutation this replaces a scan with: both rows called
+    /// `apply(AppleReminderCompletionResolution.resolve(onComplete(id)))`, and rewriting that to
+    /// `_ = AppleReminderCompletionResolution.resolve(onComplete(id))` restored the shipped bug on
+    /// both platforms with 116/116 still passing — because every string the old assertions looked
+    /// for (`revertsTick`, `failureNotice = resolution.notice`, the call name itself) survived
+    /// inside a function nothing called any more. A longer string would have killed that exact
+    /// mutation and nothing weaker. This states the behaviour instead.
+    @Test func aRefusedWriteTakesTheTickBackAndSaysWhy() {
+        let ticked = AppleReminderRowState.attempting
+        #expect(ticked.isCompleting, "the tapped row is not drawn ticked")
+        #expect(ticked.failureNotice == nil, "a new attempt carries the previous attempt's sentence")
+
+        for outcome: AppleReminderCompletionOutcome in [.reminderUnavailable, .listIsReadOnly, .saveFailed] {
+            let next = ticked.applying(outcome)
+            #expect(
+                next.isCompleting == false,
+                "\(outcome) left the row struck through over a reminder Apple Reminders still has open"
+            )
+            #expect(
+                next.failureNotice == AppleReminderCompletionResolution.resolve(outcome).notice,
+                "\(outcome) reverted the tick without the shared policy's sentence"
+            )
+            #expect(next.failureNotice?.isEmpty == false, "\(outcome) reverts with no explanation at all")
+        }
+
+        // The one refusal that reverts silently: the section around the row has already replaced
+        // every row with its access card.
+        let denied = ticked.applying(.notAuthorized)
+        #expect(denied == AppleReminderRowState(isCompleting: false, failureNotice: nil))
+
+        // The only outcome that may leave the tick standing.
+        #expect(ticked.applying(.completed) == ticked, "a saved completion put its own tick back")
+    }
+
+    /// A row that failed once and is tapped again must not show the old sentence under a new
+    /// attempt, and must not keep it after a second attempt succeeds.
+    @Test func aStaleNoticeDoesNotOutliveTheAttemptItDescribes() {
+        let failed = AppleReminderRowState.attempting.applying(.saveFailed)
+        #expect(failed.failureNotice != nil)
+
+        #expect(AppleReminderRowState.attempting.failureNotice == nil, "re-tapping kept the old sentence")
+        #expect(AppleReminderRowState.idle == AppleReminderRowState(isCompleting: false, failureNotice: nil))
+
+        // Two different refusals in a row replace the sentence rather than accumulating one.
+        let thenUnavailable = AppleReminderRowState.attempting.applying(.reminderUnavailable)
+        #expect(thenUnavailable.failureNotice != failed.failureNotice)
+    }
+
+    /// **The cheap backstop, not the guard.** The test above fails when the reducer's policy
+    /// regresses; it can only fail when a *row* stops reconciling if the row's state genuinely
+    /// flows through the reducer. This pins that it does — one assignment through
+    /// `AppleReminderRowState` per row, and neither row reaching past it to the policy underneath.
+    ///
+    /// The assignment form is what is counted, deliberately. `_ = rowState.applying(outcome)` — the
+    /// discarded-result shape of the original mutation — fails here, and there is no longer a
+    /// private `apply` helper for a mutation to leave defined and unreachable.
+    ///
+    /// iOS has no other tool available (`Cadence/iOS/` is invisible to a macOS-built test target)
+    /// and macOS's row is `private` inside a view file, so neither row is referenceable.
+    @Test func bothReminderRowsRunTheirStateThroughTheSharedReducer() throws {
+        let rowFiles = [
             "Cadence/macOS/Views/InboxSupportViews.swift",
             "Cadence/iOS/iOSInboxRemindersSection.swift",
-        ] {
+        ]
+
+        try expectOccurrences(
+            of: "rowState = rowState.applying(",
+            at: Dictionary(uniqueKeysWithValues: rowFiles.map { ($0, 1) })
+        )
+
+        for path in rowFiles {
             let source = try strippingComments(sourceFile(path))
             #expect(
                 source.contains("let onComplete: (String) -> AppleReminderCompletionOutcome"),
                 "\(path) takes a completion handler that cannot report a failure again"
             )
             #expect(
-                source.contains("resolution.revertsTick"),
-                "\(path) stopped asking the shared policy whether to put the tick back"
+                source.contains("@State private var rowState = AppleReminderRowState.idle"),
+                "\(path) stopped holding its tick and notice as the shared state value"
             )
             #expect(
-                source.contains("failureNotice = resolution.notice"),
-                "\(path) stopped showing the shared policy's sentence"
+                source.contains("rowState = .attempting"),
+                "\(path) stopped entering the shared attempting state when the circle is tapped"
             )
+            // The policy is reached through the reducer and nowhere else, so a row cannot grow a
+            // second reading of it that the value test above would not cover.
+            #expect(
+                source.contains("AppleReminderCompletionResolution") == false,
+                "\(path) reaches past AppleReminderRowState to the resolution policy itself"
+            )
+        }
+    }
+
+    // MARK: - The manager reconciles its own view
+
+    /// Which reconcile each outcome asks for, stated as a value. Two of the five mean the row is
+    /// looking at something that is no longer true.
+    @Test func onlyALostGrantOrAStaleFetchAsksTheManagerToReconcile() {
+        #expect(AppleReminderCompletionReconcile.forOutcome(.notAuthorized) == .refreshAuthorization)
+        #expect(AppleReminderCompletionReconcile.forOutcome(.reminderUnavailable) == .reload)
+        #expect(AppleReminderCompletionReconcile.forOutcome(.saveFailed) == .reload)
+        #expect(AppleReminderCompletionReconcile.forOutcome(.listIsReadOnly) == .none)
+        #expect(AppleReminderCompletionReconcile.forOutcome(.completed) == .none)
+    }
+
+    /// **T-268's third gap.** Deleting `refreshAuthorizationState()` from the `.notAuthorized`
+    /// branch — or `reload()` from `.reminderUnavailable` — used to pass everything, because on a
+    /// host with no Reminders grant a re-derive of `isAuthorized` from `false` to `false` changes
+    /// nothing a test can see. `reconcileLedger` counts the two calls *inside the methods
+    /// themselves*, so a dispatcher that chooses correctly and then does nothing fails here.
+    ///
+    /// Host-agnostic: `.refreshAuthorization` on an authorized host also reloads, so that arm
+    /// asserts only its own counter.
+    @MainActor
+    @Test func theManagerPerformsTheReconcileEachOutcomeMapsTo() {
+        let manager = RemindersManager.shared
+
+        for outcome: AppleReminderCompletionOutcome in [.completed, .notAuthorized, .reminderUnavailable, .listIsReadOnly, .saveFailed] {
+            let before = manager.reconcileLedger
+            let performed = manager.reconcile(after: outcome)
+            let after = manager.reconcileLedger
+
+            #expect(performed == AppleReminderCompletionReconcile.forOutcome(outcome))
+
+            switch performed {
+            case .refreshAuthorization:
+                #expect(
+                    after.authorizationRefreshes == before.authorizationRefreshes + 1,
+                    "\(outcome) reported a re-derive of authorization it never performed"
+                )
+            case .reload:
+                #expect(
+                    after.reloadRequests == before.reloadRequests + 1,
+                    "\(outcome) reported a refetch it never performed"
+                )
+                #expect(
+                    after.authorizationRefreshes == before.authorizationRefreshes,
+                    "\(outcome) re-derived authorization as well as refetching"
+                )
+            case .none:
+                #expect(after == before, "\(outcome) reconciled something it said it would not")
+            }
+        }
+    }
+
+    /// And the wiring: the real `completeReminder(id:)` on an identifier no store can hold has to
+    /// run that reconcile, not merely return the outcome. Refused either way — `.notAuthorized`
+    /// without a grant, `.reminderUnavailable` with one — so neither arm is `.none`.
+    @MainActor
+    @Test func aRefusedCompletionReconcilesBeforeItAnswers() {
+        let manager = RemindersManager.shared
+        let before = manager.reconcileLedger
+        let outcome = manager.completeReminder(id: "cadence-t268-no-such-reminder")
+        let after = manager.reconcileLedger
+
+        #expect(outcome != .completed, "a reminder that does not exist reported a successful save")
+
+        switch AppleReminderCompletionReconcile.forOutcome(outcome) {
+        case .refreshAuthorization:
+            #expect(
+                after.authorizationRefreshes > before.authorizationRefreshes,
+                "a completion refused for lost access left the manager showing rows it may not read"
+            )
+        case .reload:
+            #expect(
+                after.reloadRequests > before.reloadRequests,
+                "a completion refused as unresolvable left the stale row on screen"
+            )
+        case .none:
+            Issue.record("\(outcome) is not a refusal a missing identifier can produce")
         }
     }
 
@@ -575,6 +718,24 @@ private func expectCallSites(
 
 /// Every file under `Cadence/` whose **live code** mentions `name`, sorted. Comments are stripped
 /// so the tombstones and design notes this repo keeps do not count as callers.
+/// Fails unless `text` occurs exactly `count` times as live code in each listed file. Unlike
+/// `expectCallSites` this does not append `(`, so it can pin an assignment.
+private func expectOccurrences(
+    of text: String,
+    at files: [String: Int],
+    sourceLocation: SourceLocation = #_sourceLocation
+) throws {
+    for (path, expected) in files {
+        let code = try strippingComments(sourceFile(path))
+        let actual = code.components(separatedBy: text).count - 1
+        #expect(
+            actual == expected,
+            "\(path) contains \(text) \(actual) times, expected \(expected)",
+            sourceLocation: sourceLocation
+        )
+    }
+}
+
 private func filesMentioning(_ name: String) throws -> [String] {
     let pattern = "(?<![A-Za-z0-9_])\(name)(?![A-Za-z0-9_])"
     return try swiftFiles(under: "Cadence")

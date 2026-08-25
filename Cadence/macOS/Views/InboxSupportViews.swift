@@ -84,11 +84,12 @@ private struct AppleReminderTaskRow: View {
     let reminder: AppleReminderItem
     let onComplete: (String) -> AppleReminderCompletionOutcome
     @State private var isHovered = false
-    @State private var isCompleting = false
-    /// **T-255.** Set from `AppleReminderCompletionResolution.notice` when the write came back
-    /// refused and nothing else on screen is going to explain it. Cleared the moment the row is
-    /// tapped again, so a stale sentence cannot outlive the attempt it describes.
-    @State private var failureNotice: String?
+    /// **T-255, reshaped by T-268.** The optimistic tick and the sentence a refused write leaves
+    /// behind used to be two `@State` properties this row moved by hand. They are one value now,
+    /// and the move is `AppleReminderRowState.applying(_:)` — shared with `iOSInboxReminderRow`, so
+    /// the two rows cannot come to disagree, and testable, which two `withAnimation` blocks inside
+    /// a `private` view were not.
+    @State private var rowState = AppleReminderRowState.idle
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -96,7 +97,7 @@ private struct AppleReminderTaskRow: View {
 
             // **T-255.** Only ever present after a refused write, so the row keeps its single-line
             // shape in the state it is in almost all of the time.
-            if let failureNotice {
+            if let failureNotice = rowState.failureNotice {
                 Text(failureNotice)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.red)
@@ -120,10 +121,9 @@ private struct AppleReminderTaskRow: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.borderSubtle.opacity(0.22)).frame(height: 0.5)
         }
-        .opacity(isCompleting ? 0.65 : 1)
+        .opacity(rowState.isCompleting ? 0.65 : 1)
         .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.16), value: isCompleting)
-        .animation(.easeOut(duration: 0.16), value: failureNotice)
+        .animation(.easeOut(duration: 0.16), value: rowState)
     }
 
     private var row: some View {
@@ -137,8 +137,8 @@ private struct AppleReminderTaskRow: View {
             Button(action: complete) {
                 ZStack {
                     Circle()
-                        .strokeBorder(isCompleting ? Theme.green : Theme.muted, lineWidth: 1.8)
-                    if isCompleting {
+                        .strokeBorder(rowState.isCompleting ? Theme.green : Theme.muted, lineWidth: 1.8)
+                    if rowState.isCompleting {
                         Circle().fill(Theme.green)
                         Image(systemName: "checkmark")
                             .font(.system(size: 8, weight: .bold))
@@ -149,7 +149,7 @@ private struct AppleReminderTaskRow: View {
                 .contentShape(Circle())
             }
             .buttonStyle(.cadencePlain)
-            .disabled(!reminder.allowsCompletion || isCompleting)
+            .disabled(!reminder.allowsCompletion || rowState.isCompleting)
             .help(reminder.allowsCompletion ? "Complete in Apple Reminders" : "This reminder list is read-only")
             .padding(.horizontal, 8)
 
@@ -209,27 +209,23 @@ private struct AppleReminderTaskRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 5))
     }
 
+    /// The tick leads the write and the write answers: the circle settles first, because the row is
+    /// about to be removed from a list it does not own, and then whatever EventKit said moves the
+    /// row's state through the shared reducer.
+    ///
+    /// **T-255 built that reconcile and T-268 made it fail when it is gone.** There is no local
+    /// `apply` any more — a private helper is exactly what the mutation left defined and
+    /// unreachable while every string the test was scanning for stayed in the file.
     private func complete() {
-        guard reminder.allowsCompletion, !isCompleting else { return }
+        guard reminder.allowsCompletion, !rowState.isCompleting else { return }
         withAnimation(.easeOut(duration: 0.16)) {
-            isCompleting = true
-            failureNotice = nil
+            rowState = .attempting
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
-            apply(AppleReminderCompletionResolution.resolve(onComplete(reminder.id)))
-        }
-    }
-
-    /// **T-255.** The tick led the write and nothing ever came back, so a refused completion left
-    /// this row struck through over a reminder Apple Reminders still had open. The optimistic
-    /// animation stays — it has to land before the reload removes the row — and this is the
-    /// reconcile it never had. The policy is `AppleReminderCompletionResolution`'s, shared with
-    /// `iOSInboxReminderRow`, so the two rows cannot come to disagree about what a failure means.
-    private func apply(_ resolution: AppleReminderCompletionResolution) {
-        guard resolution.revertsTick else { return }
-        withAnimation(.easeOut(duration: 0.16)) {
-            isCompleting = false
-            failureNotice = resolution.notice
+            let outcome = onComplete(reminder.id)
+            withAnimation(.easeOut(duration: 0.16)) {
+                rowState = rowState.applying(outcome)
+            }
         }
     }
 }

@@ -324,3 +324,108 @@ nonisolated enum AppleReminderCompletionResolution: Equatable, Sendable {
         return text
     }
 }
+
+/// The two pieces of state an Apple Reminder row holds while a completion is in flight, and the
+/// one function that moves them.
+///
+/// **Why this is a value and not two `withAnimation` blocks inside each row.** T-255 put the
+/// reconcile in — the tick goes back when EventKit refuses — and T-268 found that the reconcile
+/// could be deleted from *both* rows without a single test failing. Every assertion the surface
+/// test had was looking for text (`resolution.revertsTick`, `failureNotice = resolution.notice`),
+/// and all of it survived inside a function nothing called any more. A string that appears in dead
+/// code is indistinguishable from a string that runs.
+///
+/// So the row's state transition is a value now. `applying(_:)` is the whole decision — does the
+/// tick stand, and what does the row say — and a test can state it as an equality over a struct
+/// instead of hunting for a call name. `Cadence/iOS/` is invisible to a macOS-built test target and
+/// macOS's row is `private` inside a view file, so neither row is referenceable; what *is*
+/// referenceable is the thing both of them assign through.
+///
+/// `nonisolated` for the same reason its two neighbours are: it is pure over its arguments, and
+/// main-actor isolation would put the synthesized `Equatable` conformance on the main actor and
+/// warn at every `#expect` comparing one from a nonisolated test context.
+nonisolated struct AppleReminderRowState: Equatable, Sendable {
+    /// The optimistic tick: struck-through title, filled circle, 0.65 opacity. Set *before* the
+    /// write, because the row is about to be removed from a list it does not own and the tick has
+    /// to land before the reload takes it away.
+    var isCompleting: Bool
+    /// The inline sentence a refused write leaves behind, or `nil`. Never set while `isCompleting`
+    /// is `true` — a row does not claim success and failure at once.
+    var failureNotice: String?
+
+    /// A row at rest: nothing in flight, nothing to explain.
+    static let idle = AppleReminderRowState(isCompleting: false, failureNotice: nil)
+
+    /// The state the circle's tap enters. Ticked, and with any previous notice cleared — a stale
+    /// sentence must not outlive the attempt it described.
+    static let attempting = AppleReminderRowState(isCompleting: true, failureNotice: nil)
+
+    /// The next state, given what EventKit said.
+    ///
+    /// `.completed` is the only outcome that leaves the tick standing, so it returns `self`
+    /// unchanged. Everything else reverts, carrying whatever sentence
+    /// `AppleReminderCompletionResolution` decided the row should say — which is `nil` for
+    /// `.notAuthorized`, where the section around the row has already replaced every row with its
+    /// access card and says far more than a line under one row could.
+    func applying(_ outcome: AppleReminderCompletionOutcome) -> AppleReminderRowState {
+        let resolution = AppleReminderCompletionResolution.resolve(outcome)
+        guard resolution.revertsTick else { return self }
+        return AppleReminderRowState(isCompleting: false, failureNotice: resolution.notice)
+    }
+}
+
+/// What the *manager* does to its own view of the world when a completion is refused.
+///
+/// Two of the five outcomes mean the row is looking at something that is no longer true, and the
+/// manager reconciles before returning: a lost grant re-derives authorization (which replaces every
+/// row with the access card, and is why `.notAuthorized`'s resolution says nothing itself), and an
+/// identifier that no longer resolves — or a save that threw — refetches.
+///
+/// **T-268.** This was a `switch` inside `completeReminder(id:)` and deleting either arm passed the
+/// whole suite. EventKit cannot be driven from a unit test, so the reconcile was unobservable in
+/// both directions at once: nothing said which reconcile *should* happen for an outcome, and
+/// nothing recorded which one *did*. Splitting it in two fixes both halves — this type is the
+/// mapping, stated as a value, and `RemindersManager` counts the two reconciles it performs so a
+/// test can watch one happen without a grant.
+nonisolated enum AppleReminderCompletionReconcile: Equatable, Sendable {
+    /// Re-derive authorization from EventKit. Safe to run on a denial: `refreshAuthorizationState`
+    /// only clears `deniedInThisSession` when the status is authorized, so a refusal this launch
+    /// already recorded is never clobbered by it.
+    case refreshAuthorization
+    /// Refetch the list. What the row is showing is stale, not wrong about access.
+    case reload
+    /// Nothing to reconcile — the manager's picture is already accurate.
+    case none
+
+    static func forOutcome(_ outcome: AppleReminderCompletionOutcome) -> AppleReminderCompletionReconcile {
+        switch outcome {
+        case .completed:
+            // The manager removed the row itself, on the success path, before returning.
+            return .none
+        case .notAuthorized:
+            return .refreshAuthorization
+        case .reminderUnavailable:
+            return .reload
+        case .listIsReadOnly:
+            // The snapshot the row drew from is out of date about this list's permissions, but a
+            // refetch would not tell it anything new: `AppleReminderItem.allowsCompletion` is
+            // taken from the same calendar flag that just refused. Nothing to do but say so.
+            return .none
+        case .saveFailed:
+            // The write may have half-landed, or a sync conflict may have moved the item. Refetch
+            // rather than trust the local copy.
+            return .reload
+        }
+    }
+}
+
+/// A running count of the reconciles `RemindersManager` has performed on its own view of the
+/// world. See `RemindersManager.reconcileLedger` for why it exists; it lives here rather than
+/// beside the manager only because everything else in this file that a test reads does.
+nonisolated struct RemindersReconcileLedger: Equatable, Sendable {
+    /// Incremented inside `refreshAuthorizationState()`.
+    var authorizationRefreshes = 0
+    /// Incremented inside `reload()`, including the one `refreshAuthorizationState()` makes when
+    /// the status comes back authorized.
+    var reloadRequests = 0
+}
