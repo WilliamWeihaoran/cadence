@@ -116,7 +116,11 @@ struct iOSSettingsCategoryGroup: Identifiable {
 enum iOSSettingsMetrics {
     /// Every control in settings is finger-sized even when its painted chrome is smaller;
     /// the extra height goes into the hit area, not the pill.
-    static let minimumTapTarget: CGFloat = 44
+    ///
+    /// Borrowed from `CadenceSettingsRowMetrics` rather than restated: that type is where the
+    /// "a finger is 44pt, a pointer is not" decision is spelled, and a second 44 here is how the
+    /// two would come to disagree.
+    static var minimumTapTarget: CGFloat { CadenceSettingsRowMetrics.rowHeight }
     static let rowHorizontalPadding: CGFloat = 10
     static let rowVerticalPadding: CGFloat = 9
     static let glyphSlot: CGFloat = 32
@@ -126,55 +130,15 @@ enum iOSSettingsMetrics {
     static let rowTextInset: CGFloat = glyphSlot + glyphLabelSpacing
 }
 
-/// Hairline between rows inside a settings card.
+/// `iOSRowDivider` and `iOSSettingsField` now live in `Shared/Components/CadenceFieldRows.swift`
+/// as `CadenceRowDivider` and `CadenceSettingsField`, read by both platforms (T-20).
 ///
-/// `Divider().background(Theme.borderSubtle)` — the pattern this replaces — leaves the
-/// system separator colour painted on top of the palette colour, so the line is neither
-/// `borderSubtle` nor predictable across sections. This draws the palette colour and
-/// nothing else.
-struct iOSRowDivider: View {
-    var leadingInset: CGFloat = 0
-
-    var body: some View {
-        Rectangle()
-            .fill(Theme.borderSubtle)
-            .frame(height: 1)
-            .padding(.leading, leadingInset)
-    }
-}
-
-/// Eyebrow label above an inset well — the one field treatment for every settings input.
-/// Replaces three near-copies: `.textFieldStyle(.roundedBorder)` in Tags (UIKit chrome,
-/// no palette colour at all), the private `iOSTemplateEditorField`, and the bare `Form`
-/// rows in the context editor.
-struct iOSSettingsField<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    init(title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            SectionEyebrowLabel(text: title)
-
-            content
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Theme.text)
-                .tint(Theme.blue)
-                .padding(.horizontal, 12)
-                .frame(minHeight: iOSSettingsMetrics.minimumTapTarget)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                        .strokeBorder(Theme.borderSubtle, lineWidth: 1)
-                }
-        }
-    }
-}
+/// The divider exists because `Divider().background(Theme.borderSubtle)` leaves the system
+/// separator colour painted on top of the palette colour, so the line is neither `borderSubtle`
+/// nor predictable across sections — and macOS Settings was still spelling it that way in five
+/// places. The field replaced three near-copies of one inset well on iOS; macOS had three more.
+typealias iOSRowDivider = CadenceRowDivider
+typealias iOSSettingsField<Content: View> = CadenceSettingsField<Content>
 
 /// One swatch strip for every user-owned `colorHex` picked in settings (tags, contexts).
 /// The swatch itself is a user colour; everything around it comes from `Theme`.
@@ -445,12 +409,14 @@ struct iOSSettingsMetricTile: View {
 
 // MARK: - Soft-elevation card shell
 
-/// Local stand-in for the shared `CadenceSettingsCard` (`Shared/CadenceSettingsSharedViews.swift`).
-/// The shared component keeps its original hard-border, radius-12 treatment because macOS
-/// settings and `iPadInboxView` still rely on it as-is. **Every** iOS settings section now
-/// uses this instead — `iOSCalendarSettingsSection` and `iOSNotificationsSettingsSection`
-/// were the last two holdouts — so the surface reads as one card family on the shared
-/// radius scale with soft elevation rather than a hairline border.
+/// iOS's inset over the shared `CadenceSettingsCard`.
+///
+/// This used to be a second card struct, and its comment explained the split: "The shared
+/// component keeps its original hard-border, radius-12 treatment because macOS settings and
+/// `iPadInboxView` still rely on it as-is." Half of that had stopped being true — `iPadInboxView`
+/// does not mention the type — and the other half was the bug T-20 was filed about: macOS Settings
+/// was the *only* thing left holding the shared card at the older treatment. The shared card is the
+/// soft-elevation one now, and the 16pt inset is the only thing left here.
 struct iOSSettingsCard<Content: View>: View {
     @ViewBuilder let content: Content
 
@@ -459,20 +425,20 @@ struct iOSSettingsCard<Content: View>: View {
     }
 
     var body: some View {
-        content
-            .padding(16)
-            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 14, shadowY: 6)
+        CadenceSettingsCard(padding: 16) {
+            content
+        }
     }
 }
 
-/// Local stand-in for the shared `CadenceSettingsHeader`, same layout, riding on
-/// `iOSSettingsCard`'s soft-elevation styling instead of the shared hard-border card.
+/// iOS's page header, the same layout as macOS's `CadenceSettingsHeader` over its own
+/// `iOSPageHeader`.
 ///
-/// It used to take arbitrary trailing content, and every caller passed a
-/// `CadenceSettingsStatusBadge` — which, on the category the app opens to, was a green pill
-/// repeating the value of the *first setting on the screen below it*. A header that answers a
-/// question the next row answers is a second place for the same fact to go stale, so the slot is
-/// gone rather than parameterised.
+/// It used to take arbitrary trailing content, and every caller passed a status badge — which,
+/// on the category the app opens to, was a green pill repeating the value of the *first setting on
+/// the screen below it*. A header that answers a question the next row answers is a second place
+/// for the same fact to go stale, so the slot is gone rather than parameterised. macOS carried the
+/// same slot, and the same nine duplicated badges, until T-20 removed it there too.
 struct iOSSettingsPageHeader: View {
     /// Only set where this header is the top of a pushed screen whose navigation bar is hidden, so
     /// the word "Settings" survives the bar it used to live in. Elsewhere the title alone is the

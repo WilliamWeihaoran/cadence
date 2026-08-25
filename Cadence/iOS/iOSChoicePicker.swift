@@ -1,164 +1,23 @@
 #if os(iOS)
 import SwiftUI
 
-/// Shared custom replacements for native SwiftUI `Picker`/`.pickerStyle(.segmented)` controls on
-/// iOS, matching the checkmarked-popover-list language already used by macOS's
-/// `TaskPriorityPickerPopover` / `ContainerPickerBadge`.
-
-struct iOSChoiceRow<T: Hashable>: Identifiable {
-    let id: AnyHashable
-    let value: T
-    let title: String
-    /// What this option *means*, where the option's name does not already say it.
-    ///
-    /// This is where a setting's explanation belongs: on the choice it explains, read at the
-    /// moment you are choosing — not as a permanent two-line paragraph under the setting's own
-    /// label, which is where the iOS settings screen used to keep them and what made two settings
-    /// fill a phone. Leave it `nil` whenever the title is self-explanatory; a subtitle that
-    /// restates the title is the thing being removed.
-    let subtitle: String?
-    let systemImage: String?
-    let color: Color
-
-    init(
-        value: T,
-        title: String,
-        subtitle: String? = nil,
-        systemImage: String? = nil,
-        color: Color,
-        id: AnyHashable? = nil
-    ) {
-        self.value = value
-        self.title = title
-        self.subtitle = subtitle
-        self.systemImage = systemImage
-        self.color = color
-        self.id = id ?? AnyHashable(title)
-    }
-}
-
-/// Popover chrome that takes its height from what is actually in it, capped so a long list still
-/// scrolls instead of running off the screen.
+/// The four types that used to be declared here — `iOSChoiceRow`, `iOSFittedPopover`,
+/// `iOSChoicePopoverList` and `iOSChoiceValueButton` — now live in
+/// `Shared/Components/CadenceChoicePicker.swift` and are read by **both** platforms.
 ///
-/// Every picker popover in this file used to carry a height that assumed a full list — a flat 320
-/// for the container picker, `rows × 46 + 16` for the generic one. Opening the task composer's list
-/// picker on a workspace whose only container is Inbox produced a 320pt panel around a single 44pt
-/// row, three quarters of it empty. `ViewThatFits` takes the unscrolled stack whenever it fits
-/// inside the cap and falls back to the scrolling one when it does not, so neither end of the range
-/// has to be guessed — a one-row picker is one row tall and a 96-row time picker still scrolls.
-struct iOSFittedPopover<Content: View>: View {
-    var width: CGFloat = 230
-    /// A cap, not a height: past this the content scrolls rather than growing.
-    var maxHeight: CGFloat = 380
-    let content: Content
-
-    init(width: CGFloat = 230, maxHeight: CGFloat = 380, @ViewBuilder content: () -> Content) {
-        self.width = width
-        self.maxHeight = maxHeight
-        self.content = content()
-    }
-
-    var body: some View {
-        ViewThatFits(in: .vertical) {
-            content
-            ScrollView { content }
-        }
-        .frame(width: width)
-        .frame(maxHeight: maxHeight)
-        .background(Theme.surfaceElevated)
-        .presentationCompactAdaptation(.popover)
-    }
-}
-
-/// Popover content: a checkmarked, tap-to-select list. Present via `.popover` from a trigger
-/// (typically `iOSChoiceValueButton`), with `.presentationCompactAdaptation(.popover)` so it
-/// stays a small anchored overlay on iPhone instead of expanding into a sheet.
-struct iOSChoicePopoverList<T: Hashable>: View {
-    let rows: [iOSChoiceRow<T>]
-    @Binding var selection: T
-    @Binding var isPresented: Bool
-    var width: CGFloat = 230
-
-    var body: some View {
-        iOSFittedPopover(width: width) {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(rows) { row in
-                    Button {
-                        selection = row.value
-                        isPresented = false
-                    } label: {
-                        HStack(spacing: 8) {
-                            if let systemImage = row.systemImage {
-                                Image(systemName: systemImage)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(row.color)
-                                    .frame(width: 18)
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(row.title)
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundStyle(row.value == selection ? Theme.text : Theme.muted)
-                                    .lineLimit(1)
-                                if let subtitle = row.subtitle {
-                                    Text(subtitle)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Theme.dim)
-                                        .multilineTextAlignment(.leading)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                            Spacer(minLength: 8)
-                            if row.value == selection {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Theme.blue)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .background(row.value == selection ? Theme.blue.opacity(0.12) : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(6)
-        }
-    }
-}
-
-/// Trigger button showing the current value; opens an `iOSChoicePopoverList`.
-struct iOSChoiceValueButton: View {
-    let title: String
-    var color: Color = Theme.text
-    /// Opt-in touch floor. The label alone is about 18pt tall, so where this button is the *only*
-    /// thing tappable in its row — every row on the settings screen — the row's own 44pt has to be
-    /// handed to the button or most of it is dead space. Applied inside the label, because a
-    /// `contentShape` outside a `Button` does not widen the button's own hit region.
-    ///
-    /// Defaults to 0 so the rows that already pair this with a second control keep their layout.
-    var minHeight: CGFloat = 0
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 5) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(color)
-                    .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(color.opacity(0.55))
-            }
-            .frame(minHeight: minHeight)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
+/// They were written as "shared custom replacements for native SwiftUI `Picker`/
+/// `.pickerStyle(.segmented)` controls on iOS, matching the checkmarked-popover-list language
+/// already used by macOS's `TaskPriorityPickerPopover` / `ContainerPickerBadge`" — a control that
+/// named the desktop vocabulary it was matching while being unreachable from it. macOS Settings
+/// went on drawing `Picker(.menu)` for work hours and a row of saturated filled pills for the
+/// default list page (T-20). Nothing about them was iOS-specific except the compact-size popover
+/// adaptation, which is now one `#if` inside `CadenceFittedPopover`.
+///
+/// The iOS names stay as typealiases so no call site moved. Do not re-declare a struct here.
+typealias iOSChoiceRow<T: Hashable> = CadenceChoiceRow<T>
+typealias iOSFittedPopover<Content: View> = CadenceFittedPopover<Content>
+typealias iOSChoicePopoverList<T: Hashable> = CadenceChoicePopoverList<T>
+typealias iOSChoiceValueButton = CadenceChoiceValueButton
 
 // `iOSSegmentedChoice` used to live here as a second segmented control with its own look. It is now
 // a thin layout over `iOSSegmentedPill` in `iOSDesignSystem.swift`, next to the pill group it draws.

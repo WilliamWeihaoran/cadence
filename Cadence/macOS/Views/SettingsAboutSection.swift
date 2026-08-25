@@ -29,9 +29,9 @@ struct SettingsAboutSection: View {
             SettingsCard {
                 VStack(spacing: 0) {
                     CadenceSettingsInfoRow(title: "Version", value: CadenceAppBuildIdentity.version)
-                    Divider().background(Theme.borderSubtle)
+                    CadenceRowDivider()
                     CadenceSettingsInfoRow(title: "Build", value: CadenceAppBuildIdentity.build)
-                    Divider().background(Theme.borderSubtle)
+                    CadenceRowDivider()
                     CadenceSettingsInfoRow(title: "Bundle ID", value: CadenceAppBuildIdentity.bundleID)
                 }
             }

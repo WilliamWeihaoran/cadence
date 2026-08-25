@@ -382,12 +382,25 @@ struct CadenceInboxRemindersSurfaceTests {
 
     /// **Every reminders surface reads that one answer.** The counterpart to the test above: one
     /// producer is worth nothing if a surface stops consuming it.
+    ///
+    /// **`SettingsView.swift` is listed at zero, and that is the assertion, not an exemption
+    /// (T-20).** It read the state for one thing — a pill in the category header saying
+    /// `Connected` / `Not connected` — and that pill restated the first line of the Reminders card
+    /// directly beneath it. iOS deleted the same header slot in `775833d`; T-20 deleted it here,
+    /// along with `SettingsStatusBadge` and the nine-case `switch` that fed it. A surface that no
+    /// longer *displays* reminders state must not *read* it: a live read with nothing drawn from it
+    /// is how the badge would come back one render at a time. Zero keeps the file inside this
+    /// test's reach rather than dropping it out of the dictionary, so re-growing the header pill
+    /// fails here rather than passing unnoticed.
+    ///
+    /// The four surfaces that still show the state are still required to read it, so this test
+    /// fails in both directions.
     @Test func everyRemindersSurfaceReadsTheOneConnectionState() throws {
         try expectOccurrences(
             of: "remindersManager.connectionState",
             at: [
                 "Cadence/macOS/Views/SettingsRemindersSection.swift": 1,
-                "Cadence/macOS/Views/SettingsView.swift": 1,
+                "Cadence/macOS/Views/SettingsView.swift": 0,
                 "Cadence/macOS/Views/TasksListView.swift": 1,
                 "Cadence/iOS/iOSRemindersSettingsSection.swift": 1,
                 "Cadence/iOS/iOSInboxRemindersSection.swift": 1,

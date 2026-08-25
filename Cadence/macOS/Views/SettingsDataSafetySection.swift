@@ -102,7 +102,7 @@ struct SettingsDataSafetySection: View {
                                 onRestore: { pendingRestore = backup }
                             )
                             if index < min(backups.count, 16) - 1 {
-                                Divider().background(Theme.borderSubtle).padding(.leading, 42)
+                                CadenceRowDivider(leadingInset: 42)
                             }
                         }
                     }

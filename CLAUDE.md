@@ -95,11 +95,25 @@ Cadence/
 │   ├── CalendarVisibilityPreferences (in CadenceCalendarVisibilityPreferences.swift) and
 │   │                   # CalendarWorkHoursPreferences — both shared, NOT macOS-only. The file name
 │   │                   # carries the Cadence prefix; the type does not.
-│   └── Components/     # 23 files: CadenceAccentPalettePicker (the T-15 accent picker, plus
+│   └── Components/     # 25 files: CadenceAccentPalettePicker (the T-15 accent picker, plus
 │                       #   CadenceAccentPaletteRow / CadenceAccentSwatchStrip / the shared copy —
 │                       #   four types, one file, another File-Name-Is-Not-The-Type-Name case),
 │                       # CadenceBoardColumnHeader, CadenceBoardMetadataChip,
-│                       # CadenceButtons, CadenceContextPicker, CadenceDatePicker,
+│                       # CadenceButtons, CadenceChoicePicker (T-20's one "pick one of these"
+│                       #   control, BOTH platforms — CadenceChoiceRow / CadenceChoicePopoverList /
+│                       #   CadenceChoiceValueButton / CadenceFittedPopover, four types in one
+│                       #   file; `iOSChoicePicker.swift` is now nothing but typealiases onto
+│                       #   them, and a test fails if it declares a struct again),
+│                       # CadenceContextPicker, CadenceDatePicker,
+│                       # CadenceFieldRows (T-20's labelled-field vocabulary, likewise both
+│                       #   platforms and likewise many types in one file: CadenceSettingsRowMetrics,
+│                       #   CadenceFieldSection(+Style), CadenceFieldRow, CadenceInlineFieldLabel,
+│                       #   CadenceFieldDivider, CadenceRowDivider, CadenceSettingsInfoRow,
+│                       #   CadenceSettingsField. `CadenceSettingsRowMetrics.rowHeight` is the ONLY
+│                       #   place the 44-vs-34 platform difference is spelled — never retype either
+│                       #   number, and `iOSSettingsMetrics.minimumTapTarget` forwards to it.
+│                       #   CadenceSettingsInfoRow moved HERE from CadenceSettingsSharedViews.swift,
+│                       #   which keeps only the card, the section label and the macOS header),
 │                       # CadenceInlineEmpty, CadenceScrollElasticity, CadenceSidebarCountLabel,
 │                       # CadenceStartupIssueBanner, CadenceTagChip (also declares
 │                       #   CompactTagStrip — see below), CadenceTaskDetailLineLabel,

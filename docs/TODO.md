@@ -636,16 +636,100 @@ _Nothing in flight._
   Do **not** ship this behind a confirmation and call it verified. The bar is a test that imports an
   archive into a container and asserts the graph came back — every foreign key resolved, counts
   equal, and a second import of the same file changing nothing.
-- [T-20] **Settings UI for macOS**, and possibly iPad/iOS after. iOS Settings was rebuilt in
-  `775833d` — category list plus value rows — and macOS has not caught up; it is the older
-  twelve-category shell. Bringing macOS to the same vocabulary would also settle which of the two is
-  the reference.
+- [T-280] **The iOS half of T-279 is fixed by construction and unverified on a device.**
+  `iOSMarkdownTextView.canPerformAction` now returns `true` for `paste:` when
+  `UIPasteboard.general.hasImages`, mirroring the macOS `readablePasteboardTypes` widening. The
+  macOS half was measured before *and* after against a real clipboard holding a real PNG; the iOS
+  half has only an iOS **build**. `Cadence/iOS/` is inside `#if os(iOS)` and invisible to the
+  macOS-built `CadenceTests`, so there is no unit-test route to it. The predicate to check on a
+  simulator is one value: with an image on the pasteboard and the caret in a note, **Paste** appears
+  in the edit menu and inserts the picture. Do not close this by reading the diff — a correct
+  `paste(_:)` override that was never dispatched is exactly how the macOS bug survived.
 
 ## Done
 
-> The three entries below were finished from the recovery branch `recovered-2026-08-25` (`922a8f0`)
-> and are **verified in the working tree, not yet committed** — a later commit should add its sha to
-> each, per the format rule at the top of this file.
+> The entries below marked as coming from the recovery branch `recovered-2026-08-25` (`922a8f0`)
+> are **verified in the working tree, not yet committed** — a later commit should add its sha to
+> each, per the format rule at the top of this file. This note used to say "the three entries
+> below" and was wrong within a day of being written, twice; the count is deleted rather than
+> corrected, because a number here is a claim every later agent has to re-check and nobody does.
+
+- [T-279] **Pasting an image into a note did nothing on macOS — DONE (working tree, not committed).**
+  User-reported. The paste path was **built and correct**: `CadenceTextView.paste(_:)` →
+  `insertMarkdownImages(from:)` → `MarkdownImageAssetService.images(from:)` / `imageFileURLs(from:)`
+  → `createAsset` → `insertMarkdownImages(_:)`. Every link was measured working in isolation. The
+  defect was one step *above* it, where nobody was looking: `NSTextView` validates the Paste command
+  against its own `readablePasteboardTypes` before dispatching it, and that list carries no image
+  type unless `importsGraphics` is set. Measured on macOS 26 the stock list is RTF, RTFD, HTML, the
+  URL family, string, `NSFilenamesPboardType`, colour, font, ruler — and nothing else. A screenshot
+  and a browser image are image-*only* pasteboards, so the intersection was empty,
+  `validateUserInterfaceItem` answered `false`, the menu item was disabled and Cmd-V never arrived.
+  The override could not run. Measured against the user's own clipboard holding a real PNG:
+  `validatePaste=false` before, `true` after, with a stock `NSTextView` still `false`.
+  That also explains the two shapes that *did* work and hid the bug: a **drag** registers its own
+  types (`registerForDraggedTypes([.fileURL, .tiff, .png])`), and a file copied in **Finder**
+  carries `NSFilenamesPboardType`, which the stock list already has.
+  Fix: `MarkdownImageAssetService.readableImagePasteboardTypes` (`NSImage.imageTypes` + `.fileURL`,
+  so the offer and the read agree by construction) plus a `readablePasteboardTypes` override that
+  **appends** it — appended, never prepended, so a mixed text+image paste still resolves to the
+  text. Deliberately not `importsGraphics = true`: that would also let `super.paste(_:)` build an
+  `NSTextAttachment`, an invisible U+FFFC in a storage whose whole invariant is that it holds
+  markdown source and nothing else. `MarkdownImagePasteTests` pins the gate for all three payload
+  shapes and the insert end-to-end, against **private** pasteboards — a test that wrote
+  `NSPasteboard.general` would destroy whatever the person running it had copied. Four mutations of
+  the fix each killed it. The iOS half is T-280.
+
+- [T-20] **macOS Settings speaks iOS's vocabulary — DONE, and iOS won on every contested point.**
+  From the recovery branch, finished. iOS Settings was rebuilt in `775833d` on a category list plus
+  value rows; macOS kept ad-hoc `VStack`s of bold titles over grey paragraphs, `Picker(.menu)` for
+  work hours, a row of saturated filled pills for the default list page,
+  `Divider().background(Theme.borderSubtle)` in eight places and three private spellings of one
+  inset well. The vocabulary now lives in `Shared/`: `Components/CadenceFieldRows.swift` (the
+  titled group, the row, the inline label, the two hairlines, the label/value row, the inset well,
+  and `CadenceSettingsRowMetrics`) and `Components/CadenceChoicePicker.swift` (row, fitted popover,
+  checkmarked list, value button). The iOS names survive as **typealiases** — `iOSEditorSection`,
+  `iOSEditorFieldRow`, `iOSChoicePopoverList`, `iOSRowDivider`, `iOSSettingsField` and the rest —
+  so not one iOS call site moved, and `SettingsSharedVocabularyTests` fails if any of those files
+  declares a struct of that name again. `CadenceSettingsCard` took iOS's soft-elevation treatment
+  with the inset as a parameter (macOS 14, iOS 16).
+
+  **`CadenceSettingsRowMetrics.rowHeight` is now the only place the 44-vs-34 difference is
+  spelled**, and the finishing move was the third row-drawing component: `CadenceSettingsInfoRow`
+  (the About screen's `Version 1.0` line) sat in `CadenceSettingsSharedViews.swift` beside the card
+  and the header — chrome, not rows — and stated its height as `.padding(.vertical, 10)`, a fourth
+  answer arrived at from a different direction, which is why it drew 36pt on the platform whose
+  every other settings row is 44. It is in `CadenceFieldRows.swift` now, at the shared height.
+
+  **The header status badge is deleted, and that invalidated a shipped test on purpose.** Nine
+  callers passed a pill into the Settings category header, and every one restated the first line of
+  the card directly beneath it — `Connected` over a Calendar card reading Connected, `Key saved`
+  over an AI card reading Key saved. iOS deleted the same slot in `775833d`. Gone with it:
+  `SettingsStatusBadge`, `CadenceSettingsStatusBadge`, `SettingsDetailHeader`'s generic
+  `TrailingContent` parameter, and the nine-case `switch` that fed it — which is what stopped
+  `SettingsView` calling `StoreBackupManager.listBackups()` on every render to compute a number
+  nobody needed. `CadenceInboxRemindersSurfaceTests.everyRemindersSurfaceReadsTheOneConnectionState`
+  required exactly one `remindersManager.connectionState` read in `SettingsView.swift`; its
+  expectation is **0** now, not a deleted entry, so a regrown pill fails there rather than passing
+  unnoticed, and the four surfaces that still display the state are still required to read it.
+  Both directions were mutation-checked.
+
+  **What is NOT converted, stated so nobody reads this as finished:** `SettingsTagsSection` still
+  carries its own two spellings of the inset well, and `SettingsTemplatesSection`,
+  `SettingsNotificationsSection`, `SettingsRemindersSection`, `SettingsSyncSection`,
+  `SettingsAppearanceSection` and `SettingsSupportViews`' rows were not rebuilt on
+  `CadenceFieldSection` / `CadenceFieldRow`. They are *clean* — no menu picker, no
+  `Divider().background(...)`, both swept over every `macOS/Views/Settings*` file by tests — just
+  not yet in the row vocabulary.
+
+  Converted **completely**, control and chrome: **Navigation** (the pill row is a
+  `CadenceFieldSection` + `CadenceFieldRow` + `CadenceChoiceValueButton` + shared popover list),
+  **Calendar → Work Hours** (both `Picker(.menu)`s are the shared value button and list;
+  `SettingsWorkHoursTimePicker` deleted), **AI** (both inset wells are `CadenceSettingsField`; the
+  private `settingsField` deleted), **About** (three `CadenceSettingsInfoRow`s at the shared row
+  height over `CadenceRowDivider`). Converted **partially and deliberately** — hairline only, rows
+  untouched: Account, Data Safety, Contexts, Lists, Sidebar. A hairline is not half a row, so this
+  is not the half-converted-category hazard; those panes simply stop painting the palette colour
+  under the system separator.
 
 - [T-277] **The two weekday column headers were a fork — DONE, one shared band.**
   `Cadence/Shared/CadenceCalendarWeekdayHeaderMetrics.swift` states the whole band once —

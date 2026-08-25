@@ -448,144 +448,21 @@ struct iOSSegmentedChoice<T: Hashable>: View {
 
 // MARK: - Editor sections
 
-/// How an editor section separates itself from the one above.
-enum iOSEditorSectionStyle {
-    /// Fields sit on a raised card. The default, and what every full-screen editor uses.
-    case card
-    /// Fields sit directly on the sheet, separated by a hairline. For compact sheets where a stack
-    /// of cards would read as a stack of unrelated boxes.
-    case ruled
-}
-
-/// The **one** titled group of fields used by every iOS editor.
+/// The editor field vocabulary now lives in `Shared/Components/CadenceFieldRows.swift` and is read
+/// by **both** platforms (T-20).
 ///
-/// There were five of these — `iOSTrackingPickerSection`, `iOSCalendarBundleEditorSection`,
-/// `iOSCalendarEventEditorSection`, `iOSCalendarQuickCreateSection` and their eyebrows — four of
-/// them byte-identical apart from the name, and the fifth differing only in whether the fields sat
-/// on a card. That difference is now the `style` parameter.
-struct iOSEditorSection<Content: View>: View {
-    /// `nil` draws the group with its rule and spacing but no eyebrow — for groups whose rows
-    /// already name themselves, where a heading would only repeat them. The task inspector's
-    /// properties group and its action row are both this: the heading they used to carry said
-    /// "Overview", which named nothing the rows did not.
-    let title: String?
-    var style: iOSEditorSectionStyle = .card
-    var contentSpacing: CGFloat = 0
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: title == nil ? 0 : 10) {
-            if let title {
-                SectionEyebrowLabel(text: title)
-            }
-
-            VStack(alignment: .leading, spacing: contentSpacing) {
-                content()
-            }
-            .modifier(iOSEditorSectionBody(style: style))
-        }
-        .modifier(iOSEditorSectionChrome(style: style))
-    }
-}
-
-private struct iOSEditorSectionBody: ViewModifier {
-    let style: iOSEditorSectionStyle
-
-    func body(content: Content) -> some View {
-        switch style {
-        case .card:
-            content
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
-        case .ruled:
-            content
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
-
-private struct iOSEditorSectionChrome: ViewModifier {
-    let style: iOSEditorSectionStyle
-
-    func body(content: Content) -> some View {
-        switch style {
-        case .card:
-            content
-        case .ruled:
-            content
-                .padding(.top, 12)
-                .overlay(alignment: .top) {
-                    Rectangle()
-                        .fill(Theme.borderSubtle.opacity(0.35))
-                        .frame(height: 1)
-                }
-        }
-    }
-}
-
-/// Divider between two rows inside an `iOSEditorSection`.
+/// `iOSEditorInlineLabel`'s own doc comment already described itself as adopting "the vocabulary
+/// macOS's `TaskInspectorFieldRow` established", and `iOSNavigationSettingsSection` was rebuilt on
+/// these rows in `775833d` — while macOS Settings kept stacking a bold title over a grey paragraph
+/// over a row of filled pills. Nothing here was ever iOS-specific; the only platform difference is
+/// the row height, which is one computed property on `CadenceSettingsRowMetrics`.
 ///
-/// It owns the whole gap between two rows — call sites must not add `contentSpacing` on top, or
-/// the same space is counted twice. At 9pt each side a 44pt row had a 63pt pitch, which read as a
-/// list of mostly-empty rows; 6pt puts it at 57 without letting the rows touch.
-struct iOSEditorDivider: View {
-    var body: some View {
-        Rectangle()
-            .fill(Theme.borderSubtle.opacity(0.55))
-            .frame(height: 1)
-            .padding(.vertical, 6)
-    }
-}
-
-/// A field's name, in the vocabulary macOS's `TaskInspectorFieldRow` established: a **bare glyph
-/// in a fixed leading slot**, then a quiet label.
-///
-/// It used to be a 28pt filled `iOSIconTile` beside a 14pt semibold `Theme.text` label. Stacked
-/// seven deep in the task inspector that read as a column of grey squares shouting the names of
-/// fields while the values — the only part that differs from task to task — sat dim on the far
-/// right. The fixed slot is what makes every label in a group start on the same x, so the column
-/// scans; the glyph carries which field this is, and the caller's `content` carries the answer.
-struct iOSEditorInlineLabel: View {
-    let label: String
-    let systemImage: String
-    /// Defaults to `Theme.dim`, matching the row-metadata rule: colour is for the exceptional
-    /// (an overdue due date, a past do date), not for every field that happens to have an icon.
-    var color: Color = Theme.dim
-
-    var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(color)
-                .frame(width: 22, alignment: .leading)
-
-            Text(label)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.dim)
-        }
-    }
-}
-
-/// A labelled field row inside an `iOSEditorSection`: glyph, quiet label, trailing control.
-/// 44pt tall, because the control on its trailing edge is the thing being tapped.
-struct iOSEditorFieldRow<Content: View>: View {
-    let label: String
-    let systemImage: String
-    var color: Color = Theme.dim
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        HStack(spacing: 10) {
-            iOSEditorInlineLabel(label: label, systemImage: systemImage, color: color)
-
-            Spacer(minLength: 12)
-
-            content()
-        }
-        .frame(minHeight: 44)
-    }
-}
+/// The iOS names stay as typealiases so no call site moved. Do not re-declare a struct here.
+typealias iOSEditorSectionStyle = CadenceFieldSectionStyle
+typealias iOSEditorSection<Content: View> = CadenceFieldSection<Content>
+typealias iOSEditorDivider = CadenceFieldDivider
+typealias iOSEditorInlineLabel = CadenceInlineFieldLabel
+typealias iOSEditorFieldRow<Content: View> = CadenceFieldRow<Content>
 
 // MARK: - Board column header
 

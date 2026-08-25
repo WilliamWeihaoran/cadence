@@ -1,9 +1,23 @@
 #if os(macOS)
 import SwiftUI
 
+/// Settings → Calendar → Work Hours: the window the weekly views emphasize.
+///
+/// **The two controls were `Picker(.pickerStyle(.menu))` — the one place in Cadence's settings
+/// where a control drew AppKit's own chrome and took no colour from the palette at all.** iOS's
+/// half of this exact preference (`iOSCalendarWorkHoursSection`, same `calendar.workHours.*.v1`
+/// keys) already presented it through the checkmarked popover list; T-20 pointed macOS at the same
+/// shared `CadenceChoiceValueButton` / `CadenceChoicePopoverList`, so a work-hours picker looks the
+/// same on both platforms and looks like every other picker in the app.
+///
+/// The copy is untouched. "Weekly calendar views gently highlight 9:00 AM – 5:00 PM" is the one
+/// place a user learns what the setting *does*, which is exactly the kind of line iOS kept when it
+/// dropped the ones that only restated their label.
 struct SettingsCalendarWorkHoursSection: View {
     @AppStorage(CalendarWorkHoursPreferences.startMinuteKey) private var startMinute = CalendarWorkHoursPreferences.defaultStartMinute
     @AppStorage(CalendarWorkHoursPreferences.endMinuteKey) private var endMinute = CalendarWorkHoursPreferences.defaultEndMinute
+    @State private var showStartPicker = false
+    @State private var showEndPicker = false
 
     private var workHoursLabel: String {
         CalendarWorkHoursPreferences.displayLabel(
@@ -13,15 +27,12 @@ struct SettingsCalendarWorkHoursSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionLabel(text: "Work Hours")
-            SettingsCard {
-                HStack(alignment: .center, spacing: 14) {
-                    icon
-                    description
-                    Spacer(minLength: 12)
-                    controls
-                }
+        CadenceFieldSection(title: "Work Hours") {
+            HStack(alignment: .center, spacing: 14) {
+                icon
+                description
+                Spacer(minLength: 12)
+                controls
             }
         }
         .onAppear(perform: repairStoredRangeIfNeeded)
@@ -51,27 +62,54 @@ struct SettingsCalendarWorkHoursSection: View {
     }
 
     private var controls: some View {
-        HStack(spacing: 8) {
-            SettingsWorkHoursTimePicker(
-                title: "Start",
-                selection: Binding(
-                    get: { startMinute },
-                    set: { setStartMinute($0) }
-                ),
-                options: CalendarWorkHoursPreferences.selectableStartMinutes
+        HStack(spacing: 10) {
+            timePicker(
+                minute: startMinute,
+                options: CalendarWorkHoursPreferences.selectableStartMinutes,
+                isPresented: $showStartPicker,
+                set: setStartMinute
             )
 
             Text("to")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Theme.dim)
 
-            SettingsWorkHoursTimePicker(
-                title: "End",
-                selection: Binding(
-                    get: { endMinute },
-                    set: { setEndMinute($0) }
-                ),
-                options: CalendarWorkHoursPreferences.selectableEndMinutes
+            timePicker(
+                minute: endMinute,
+                options: CalendarWorkHoursPreferences.selectableEndMinutes,
+                isPresented: $showEndPicker,
+                set: setEndMinute
+            )
+        }
+    }
+
+    /// Byte-for-byte the shape `iOSCalendarWorkHoursSection.picker(title:options:isPresented:set:)`
+    /// has: the value with a chevron, and the same checkmarked list behind it. The two differ only
+    /// in the `minHeight` the row hands the button, which is `CadenceSettingsRowMetrics.rowHeight`
+    /// on both and resolves per platform.
+    private func timePicker(
+        minute: Int,
+        options: [Int],
+        isPresented: Binding<Bool>,
+        set: @escaping (Int) -> Void
+    ) -> some View {
+        CadenceChoiceValueButton(
+            title: TimeFormatters.timeString(from: minute),
+            minHeight: CadenceSettingsRowMetrics.rowHeight
+        ) {
+            isPresented.wrappedValue = true
+        }
+        .popover(isPresented: isPresented) {
+            CadenceChoicePopoverList(
+                rows: options.map { option in
+                    CadenceChoiceRow(
+                        value: option,
+                        title: TimeFormatters.timeString(from: option),
+                        color: Theme.amber
+                    )
+                },
+                selection: Binding(get: { minute }, set: { set($0) }),
+                isPresented: isPresented
             )
         }
     }
@@ -108,22 +146,9 @@ struct SettingsCalendarWorkHoursSection: View {
     }
 }
 
-private struct SettingsWorkHoursTimePicker: View {
-    let title: String
-    @Binding var selection: Int
-    let options: [Int]
+// `SettingsWorkHoursTimePicker` used to sit here, wrapping `Picker(.menu)` at a fixed 104pt.
+// It is gone rather than restyled: a menu picker is AppKit's control, drawing AppKit's bezel and
+// AppKit's accent, and no amount of `Theme` around it changes what it paints. See `timePicker`
+// above.
 
-    var body: some View {
-        Picker(title, selection: $selection) {
-            ForEach(options, id: \.self) { minute in
-                Text(TimeFormatters.timeString(from: minute))
-                    .tag(minute)
-            }
-        }
-        .pickerStyle(.menu)
-        .labelsHidden()
-        .frame(width: 104)
-        .help(title)
-    }
-}
 #endif

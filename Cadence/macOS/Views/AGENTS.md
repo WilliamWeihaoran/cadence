@@ -49,7 +49,10 @@ Feature views in this folder are actively refactored into thin roots plus suppor
   insert.
 - `SettingsAboutSection.swift` - the About category's build card (`Version`, `Build`, `Bundle ID`,
   over the shared `CadenceAppBuildIdentity`, declared in `Shared/AppStoreReviewReadiness.swift` —
-  the file name is not the type name — and the shared `CadenceSettingsInfoRow` promoted out of iOS)
+  the file name is not the type name — and the shared `CadenceSettingsInfoRow`, promoted out of
+  iOS and, since T-20, declared in `Shared/Components/CadenceFieldRows.swift` beside the rest of
+  the field vocabulary rather than in `CadenceSettingsSharedViews.swift`, which holds the card and
+  the header — chrome, not rows)
   **plus the Privacy Policy and Support links**, from the shared `CadenceAppReferenceLink.all` in
   that same file. This bullet said the opposite until T-220 closed, and so did the file's own doc
   comment: the links used to sit on Data Safety "beside the paragraph and the delete control they
