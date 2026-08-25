@@ -309,10 +309,13 @@ Four things about the iOS wiring that are easy to get wrong:
   tasks before `.pastDo` sees what is left. A predicate that disagreed would put a task in the
   banner and in a section under it at once.
 
-**The other half of T-195 is untouched.** Sections-due-today — `TodayOverdueSectionSummary` /
-`TodayOverdueListSummary`, built in `TasksPanelDerivedState.init` and rendered by
-`TasksPanelSupportViews` — still has zero references under this folder. Do not read the closed
-banner half as the ticket being finished; see `docs/TODO.md` T-195 for what remains.
+**T-195 is closed, both halves.** Sections-due-today shipped in `2dcc948`: the summaries are
+`CadenceTodayOverdueListSummary` / `CadenceTodayOverdueSectionSummary` in
+`Shared/CadenceTodayOverdueSummarySupport.swift`, the cards are
+`Shared/Components/CadenceTodayOverdueSummaryCards.swift`, and `iOSTodayTaskSections.swift` renders
+both. This paragraph claimed the opposite — "zero references under this folder" — while the folder
+held two. A scoped guide is supposed to be closer to the code than `CLAUDE.md`; when it is stale it
+is worse than silence, because it is trusted more.
 
 ## The markdown styling layer
 
