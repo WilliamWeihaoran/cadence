@@ -266,6 +266,100 @@ struct CadenceNoteReferencePanelSurfaceTests {
         )
     }
 
+    // MARK: - What a full-width row says (T-239)
+
+    /// The detail form: the kind, plus what tells this note apart from the others of its kind.
+    ///
+    /// Every one of these five was spelled three times before T-239 and the three disagreed. The
+    /// values here are the resolution — the *behaviour*, not a scan — so re-forking any of the
+    /// three switches to its old string fails on a value.
+    @Test func theNoteKindDetailNamesTheNoteAndNotJustItsKind() {
+        let daily = Note(kind: .daily, title: "2026-08-21", dateKey: "2026-08-21")
+        #expect(NoteReferencePanelSupport.noteKindDetail(daily) == "Daily / 2026-08-21")
+
+        let weekly = Note(kind: .weekly, title: "2026-W34", weekKey: "2026-W34")
+        #expect(NoteReferencePanelSupport.noteKindDetail(weekly) == "Weekly / 2026-W34")
+
+        // "Notepad", not "Permanent note". `iOSSearchView` said the latter while the tab, the
+        // model's own `displayTitle` and `noteKindLabel` all said the former — and because search
+        // scores this string as a *field*, the notepad was unfindable under the app's word for it.
+        let notepad = Note(kind: .permanent, title: "Notepad")
+        #expect(NoteReferencePanelSupport.noteKindDetail(notepad) == "Notepad")
+
+        // The container, not "Linked note": that names the panel's own section, not this note.
+        let area = Area(name: "Documents", context: Context(name: "Work"))
+        let filed = Note(kind: .list, title: "Spec", area: area)
+        #expect(NoteReferencePanelSupport.noteKindDetail(filed) == "Documents")
+
+        let event = Note(kind: .meeting, title: "Standup", eventDateKey: "2026-08-21")
+        #expect(NoteReferencePanelSupport.noteKindDetail(event) == "Event / 2026-08-21")
+    }
+
+    /// **The live bug of the three, asserted as the property it violated rather than as a string.**
+    /// The markdown note picker's row returned a bare `dateKey` for `.daily` and a bare `weekKey`
+    /// for `.weekly`. `NoteMigrationService.dailyNote` creates every daily note with
+    /// `title: dateKey`, so `displayTitle` returns that same string — and the row draws the title
+    /// directly above the subtitle. Every daily and weekly row in that picker printed one string
+    /// twice.
+    ///
+    /// Stated as `detail != displayTitle` because that is what was wrong; a literal
+    /// `== "Daily / 2026-08-21"` (which the test above already makes) would still pass if somebody
+    /// changed `displayTitle` to match it.
+    @Test func aDatedNoteDetailNeverRepeatsTheTitleTheRowDrawsAboveIt() {
+        let daily = Note(kind: .daily, title: "2026-08-21", dateKey: "2026-08-21")
+        #expect(daily.displayTitle == "2026-08-21")
+        #expect(NoteReferencePanelSupport.noteKindDetail(daily) != daily.displayTitle)
+
+        let weekly = Note(kind: .weekly, title: "2026-W34", weekKey: "2026-W34")
+        #expect(weekly.displayTitle == "2026-W34")
+        #expect(NoteReferencePanelSupport.noteKindDetail(weekly) != weekly.displayTitle)
+    }
+
+    /// Undated and unfiled notes fall back to the kind's own label rather than to a blank line —
+    /// including the whitespace-only container name `iOSSearchView`'s `compactMap { $0 }.first`
+    /// accepted and rendered as an empty subtitle.
+    @Test func theDetailFallsBackToTheKindLabelWhenThereIsNothingToAdd() {
+        #expect(NoteReferencePanelSupport.noteKindDetail(Note(kind: .daily)) == "Daily note")
+        #expect(NoteReferencePanelSupport.noteKindDetail(Note(kind: .weekly)) == "Weekly note")
+        #expect(NoteReferencePanelSupport.noteKindDetail(Note(kind: .meeting)) == "Event note")
+        #expect(NoteReferencePanelSupport.noteKindDetail(Note(kind: .list)) == "List note")
+
+        let blank = Note(kind: .list, title: "Spec", area: Area(name: "   "))
+        #expect(NoteReferencePanelSupport.noteKindDetail(blank) == "List note")
+    }
+
+    /// The two rows read the shared detail and neither spells a kind of its own. Value assertions
+    /// cannot see this — `Cadence/iOS/` is inside `#if os(iOS)` and this target builds for macOS —
+    /// so the switch bodies are checked by their absence, scoped to the two function bodies that
+    /// held them rather than counted over whole files.
+    @Test func theTwoFullWidthRowsReadTheSharedDetail() throws {
+        try expectOccurrences(of: "NoteReferencePanelSupport.noteKindDetail(note)", at: [
+            "Cadence/iOS/iOSSearchView.swift": 1,
+            "Cadence/iOS/iOSMarkdownAccessoryViews.swift": 1
+        ])
+
+        let search = try strippingComments(sourceFile("Cadence/iOS/iOSSearchView.swift"))
+        let searchBody = try cadenceFunctionBody("private func noteSubtitle(_ note: Note) -> String", in: search)
+        #expect(!searchBody.contains("switch"))
+        #expect(!searchBody.contains("Permanent note"))
+
+        // Sliced from the struct first: `iOSMarkdownTaskReferenceRow` declares a `private var
+        // subtitle: String` too, a few lines below, and it is a different job with a legitimate
+        // switch-free body of its own.
+        let accessories = try strippingComments(sourceFile("Cadence/iOS/iOSMarkdownAccessoryViews.swift"))
+        let rowDeclaration = try #require(accessories.range(of: "struct iOSMarkdownNoteReferenceRow"))
+        let rowBody = try cadenceFunctionBody(
+            "private var subtitle: String",
+            in: String(accessories[rowDeclaration.lowerBound...])
+        )
+        #expect(!rowBody.contains("switch"))
+        #expect(!rowBody.contains("Linked note"))
+
+        // Non-vacuity: the two bodies really were read, and really do call the shared helper.
+        #expect(searchBody.contains("noteKindDetail"))
+        #expect(rowBody.contains("noteKindDetail"))
+    }
+
     @Test func aReferencedTaskFallsBackToWhereItActuallyIs() {
         let context = Context(name: "Work")
         let area = Area(name: "Documents", context: context)

@@ -303,6 +303,58 @@ nonisolated enum NoteReferencePanelSupport {
         }
     }
 
+    /// The kind label **plus whatever distinguishes this note from the others of its kind** — the
+    /// day, the week, the event's date, or the list it is filed under. For a full-width row that
+    /// has room to say it. `noteKindLabel` above is what a compact pill takes.
+    ///
+    /// **T-239: this switch was spelled three times and the three disagreed.** What each said:
+    /// - `noteKindLabel` (here): "Daily note" / "Weekly note" / "Notepad" / "List note" /
+    ///   "Event note". Correct vocabulary, no room for the detail.
+    /// - `iOSSearchView.noteSubtitle`: the detail form, but `.permanent` read **"Permanent note"**
+    ///   where the app's own tab, `Note.displayTitle` and this file all say "Notepad" — and that
+    ///   string is one of the fields `CadenceSearchMatcher` scores, so the notepad was not findable
+    ///   under the word the app uses for it.
+    /// - `iOSMarkdownNoteReferenceRow.subtitle`: `.list` read **"Linked note"**, which names the
+    ///   reference panel's *Linked Notes* section rather than the note and drops the container the
+    ///   search spelling shows; and `.daily` / `.weekly` returned a **bare** `dateKey` / `weekKey`.
+    ///   That is exactly what `Note.displayTitle` returns for those kinds, because
+    ///   `NoteMigrationService.dailyNote` creates every one with `title: dateKey` — so every daily
+    ///   and weekly row in that picker printed the same string twice, one line under the other.
+    ///   That is the live bug of the three.
+    ///
+    /// One separator for all three dated kinds. The row spelled the event's `·` and the search's
+    /// `/`; two separators inside one list of results is a difference that means nothing.
+    static func noteKindDetail(_ note: Note) -> String {
+        switch note.kind {
+        case .daily:
+            return datedDetail("Daily", key: note.dateKey, kind: .daily)
+        case .weekly:
+            return datedDetail("Weekly", key: note.weekKey, kind: .weekly)
+        case .permanent:
+            return noteKindLabel(.permanent)
+        case .list:
+            return listContainerName(note) ?? noteKindLabel(.list)
+        case .meeting:
+            return datedDetail("Event", key: note.eventDateKey, kind: .meeting)
+        }
+    }
+
+    /// Falls back to the bare label rather than to an empty string, so a dated kind with no date
+    /// still says which kind it is.
+    private static func datedDetail(_ prefix: String, key: String, kind: NoteKind) -> String {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? noteKindLabel(kind) : "\(prefix) / \(trimmed)"
+    }
+
+    /// The list a `.list` note is filed under, trimmed and non-empty. `iOSSearchView` spelled this
+    /// `compactMap { $0 }.first`, which accepts a whitespace-only list name and renders as a blank
+    /// subtitle instead of falling through to "List note".
+    private static func listContainerName(_ note: Note) -> String? {
+        [note.area?.name, note.project?.name]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+    }
+
     /// What a referenced task's chip says when it has no due date to show. The container it lives in
     /// if it has one, and otherwise where it actually is.
     static func taskFallbackSubtitle(_ task: AppTask) -> String {

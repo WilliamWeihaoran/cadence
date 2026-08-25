@@ -185,19 +185,13 @@ private struct iOSMarkdownNoteReferenceRow: View {
     /// Live task titles for `preview`, built once by the list rather than once per row.
     let taskTitles: [UUID: String]
 
+    /// The shared spelling, not one of three (T-239). This switch was the wrong one twice over:
+    /// `.list` said "Linked note" — the reference panel's *Linked Notes* section, not this note —
+    /// and the dated kinds returned a bare `dateKey` / `weekKey`, which is the same string
+    /// `note.displayTitle` renders one line above, because every daily note is created with
+    /// `title: dateKey`. See `NoteReferencePanelSupport.noteKindDetail`.
     private var subtitle: String {
-        switch note.kind {
-        case .daily:
-            return note.dateKey.isEmpty ? "Daily note" : note.dateKey
-        case .weekly:
-            return note.weekKey.isEmpty ? "Weekly note" : note.weekKey
-        case .permanent:
-            return "Notepad"
-        case .list:
-            return "Linked note"
-        case .meeting:
-            return note.eventDateKey.isEmpty ? "Event note" : "Event · \(note.eventDateKey)"
-        }
+        NoteReferencePanelSupport.noteKindDetail(note)
     }
 
     /// Excerpted from the note's text with embed titles resolved against the live tasks first — the

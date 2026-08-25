@@ -578,8 +578,19 @@ a cancelled row is counted by both. `completedTaskCount`'s `isDone`-only rule is
 deliberate (`CadenceTaskQuerySharedSupport`), but it has exactly **three** call sites — the iOS
 Settings **Completed** tile and the two overdue *section* summary cards macOS builds in
 `TasksPanelDerivedState` — and none of them is this section. (Three MCP DTO fields carry the same
-name over an inline `filter(\.isDone).count`; also not this section.) Re-read T-208 against the
-code before acting on it.
+name over an inline `filter(\.isDone).count`; also not this section.)
+
+**T-208 is now closed as a false premise (`docs/TODO.md` X-08), re-derived rather than inherited
+from this paragraph.** Rows and count at that section are the same number by construction on both
+platforms — the header is `.count` over the very array it `ForEach`es — so three rows show a count
+of three. The two surfaces named above were checked too and are not defective: the overdue column
+card states "N open" and "N done" with no total between them, and the iOS Settings tiles are
+independent metrics, so a cancelled task is absent from both without either label becoming untrue.
+Two corrections to the sentence above while it is being read: the overdue summary cards are **not**
+macOS's — `CadenceTodayOverdueSummaryCards.swift` is `Shared/Components/` and iOS renders
+`CadenceTodayOverdueSectionCard` from `iOSTodayTaskSections` — and only the *section* summary
+carries `completedTaskCount` at all, the list summary carrying `activeTaskCount`. Do not re-file
+this.
 
 When unfinished tasks are rolled from yesterday into today, Cadence clears their old timeline slot:
 - `scheduledDate` is moved to today

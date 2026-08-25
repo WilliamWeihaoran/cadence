@@ -175,16 +175,22 @@ _Nothing in flight._
   command line and it changes what a green baseline there proves.
 
 
-- [T-239] **The note-kind switch is spelled three times, and the three disagree.** Split out of
-  [[T-224]], which called `iOSSearchView.noteSubtitle` and
-  `iOSMarkdownAccessoryViews.iOSMarkdownNoteReferenceRow.subtitle` the "third and fourth spellings of
-  one mapping" beside `NoteReferencePanelSupport.noteKindLabel`. They are not spellings of one
-  mapping, which is why this is a decision and not a refactor: `noteKindLabel(.permanent)` is
-  `"Notepad"` where search says `"Permanent note"`, and `noteKindLabel(.list)` is `"List note"` where
-  the reference row says `"Linked note"`. Both view switches also append context the shared label has
-  no room for — `"Daily / 2026-08-21"`, `"Event · 2026-08-21"`, or a list note's area/project name.
-  So consolidating changes user-visible copy in two places and needs the strings decided first;
-  the shape is probably a shared label plus a shared *detail* helper, not one function.
+- [T-278] **There is a fourth note-kind switch, and it is on the MCP boundary.** Found while
+  closing [[T-239]], which named three and consolidated those three.
+  `CadenceReadService.noteSubtitle` (`Cadence/Services/MCPReadOnly/CadenceReadService.swift:1213`)
+  is a fourth switch over `NoteKind` reading "Daily note" / "Weekly note" / **"Permanent
+  note"** / the container name / **"Meeting note"**. Both bolded strings are the retired vocabulary
+  that `NoteReferencePanelSupport.noteKindLabel`'s own doc comment exists to warn about: the app
+  calls those surfaces Notepad and Event Notes. A sixth literal `subtitle: "Meeting note"` sits at
+  line 730 of the same file.
+
+  **Not folded into T-239 on purpose.** These strings are MCP *response* content, and
+  `CadenceMCPServer/AGENTS.md` says response DTOs change on purpose or not at all — an agent
+  reading this surface may be matching on them. The stable keys are elsewhere and unaffected
+  (`noteEntityType` returns `permanent_note` / `document` / `event_note`), so this is prose in a
+  payload rather than schema, but it is still a decision rather than a cleanup. Either route both
+  through `noteKindLabel` and note the response change, or record that the MCP surface keeps the
+  raw-value vocabulary deliberately. Nothing persisted is involved either way.
 
 - [T-225] **An agent overwrote another agent's simulator app-group data.** During `0332255` a build was
   installed on an iPad another agent had booted between the device listing and the boot attempt,
@@ -229,26 +235,6 @@ _Nothing in flight._
 
 
 
-
-- [T-208] **Today's Completed section lists cancelled tasks but the header's "N done" does not count
-  them.** Introduced deliberately by `9d11135` and documented at `CadenceTaskQuerySharedSupport.swift`
-  — a cancellation is not an accomplishment — but it is a *visible* inconsistency: the section can
-  show three rows above a count of two. Decide whether the count should say something else
-  ("3 settled"), the section should label its cancelled rows, or the mismatch is fine.
-
-  **Stale as stated — checked at HEAD while working [[T-229]], not fixed, because there is nothing
-  there to fix.** Neither count a user reads at Today's Completed section is `completedTaskCount`.
-  The section heading is `tasks.count` over the settled array on both platforms
-  (`TasksPanelIntentSectionHeader(count:)` at `TasksPanelSectionViews.swift`, `iOSTaskGroupSection`'s
-  capsule), and the `· N done` in the column header is `CadenceTodaySummary.completedCount`, which
-  is `completedTasks.count` — also the settled array. So a cancelled row is counted by both, and
-  three rows show a count of three. `completedTaskCount`'s `isDone`-only rule is live and
-  deliberate, but it has exactly three call sites: the iOS Settings **Completed** tile
-  (`iOSSettingsView`) and the two overdue *section* summary cards macOS builds in
-  `TasksPanelDerivedState`, whose "N done" sits beside an `openTaskCount` "N open" — so a cancelled
-  task there is in neither number, which is a real gap and a different one. (Three MCP DTO fields
-  share the name over an inline `filter(\.isDone).count`.) If there is still a decision here it is
-  about **those** surfaces, not this section; re-scope or close.
 
 - [T-209] **Parallel `xcodebuild` runs in *separate* private DerivedData paths still contend, and it
   looks exactly like a real failure.** The verifier's first test run exited **65** with hundreds of
@@ -864,6 +850,46 @@ _Nothing in flight._
   `.restricted` — an affordance offered in a state where it cannot work.
 
 ## Done
+
+- [T-239] **The note-kind switch is spelled three times, and the three disagree.** Split out of
+  [[T-224]]. Confirmed at `902b386` and **fixed**: `NoteReferencePanelSupport.noteKindDetail(_:)`
+  in `Cadence/Services/NoteReferenceSupport.swift` is now the one detail spelling, built on top of
+  the existing `noteKindLabel` so the two cannot disagree about the vocabulary, and the two
+  full-width rows call it.
+
+  **What each of the three said, because the disagreement is the finding.**
+  - `NoteReferencePanelSupport.noteKindLabel` — "Daily note" / "Weekly note" / "Notepad" /
+    "List note" / "Event note". Right vocabulary, no room for the detail. Unchanged, and still what
+    the three *compact* callers take (the reference panel's pills, the `[[` completion choices,
+    `iOSMarkdownReferenceSupport`'s editor sheet).
+  - `iOSSearchView.noteSubtitle` — the detail form, and the better half of it: "Daily / <dateKey>",
+    "Weekly / <weekKey>", "Event / <eventDateKey>", and a `.list` note's area/project name. But
+    `.permanent` read **"Permanent note"** where the tab, `Note.displayTitle` and `noteKindLabel`
+    all say "Notepad" — the same class of error as `.meeting.rawValue.capitalized` saying "Meeting",
+    and with a functional edge the label version does not have: this string is one of the `fields`
+    `CadenceSearchMatcher.matchScore` scores, so the notepad did not match the app's own word for
+    it. Its `.list` branch was also `compactMap { $0 }.first`, which accepts a whitespace-only list
+    name and renders a blank subtitle rather than falling through.
+  - `iOSMarkdownNoteReferenceRow.subtitle` (`iOSMarkdownAccessoryViews.swift`) — **the live bug.**
+    `.list` said "Linked note", which names the reference panel's own *Linked Notes* section rather
+    than the note, and drops the container. And `.daily` / `.weekly` returned a **bare** `dateKey` /
+    `weekKey`. `NoteMigrationService.dailyNote` creates every daily note with `title: dateKey` and
+    every weekly one with `title: weekKey`, so `displayTitle` returns that same string — and the row
+    draws `displayTitle` directly above `subtitle`. Every daily and weekly row in the markdown note
+    picker printed one string twice, one line under the other, for every note of those kinds. Not an
+    edge case: it is how those notes are constructed.
+
+  **Resolution.** Search's spelling wins everywhere it disagreed with the row, except `.permanent`,
+  where the label's "Notepad" wins over search's retired "Permanent note". One separator for all
+  three dated kinds (`/`): the row spelled the event's `·` and search spelled it `/`, and two
+  separators inside one list of results is a difference that means nothing. Persisted state is
+  untouched — `NoteKind.meeting` keeps its raw value and nothing about `Note.kindRaw` changed.
+  Pinned by `CadenceNoteReferencePanelSurfaceTests`: five value assertions on `noteKindDetail`, the
+  duplication regression stated as `noteKindDetail(daily) != daily.displayTitle` rather than as a
+  literal, the four fallbacks, and a call-site check scoped to the two function bodies with
+  `cadenceFunctionBody` rather than counted over whole files.
+
+
 
 - [T-273] **A task on the Calendar Board or the day timeline still cannot be focused on iOS.**
   Fallout scoped out of [[T-266]] rather than missed by it. `iOSBoardTaskCard` and
@@ -2567,6 +2593,48 @@ Newest first. The commit message carries the reasoning; this is the index.
   own message. My summary to the user reported the earlier scoping as the shipped state, so the user
   was asked to decide something already done. Nothing was changed. The lesson is cheap and worth
   keeping: **report the shipped state from the code, not from the decision you remember briefing.**
+
+- [X-08] **[T-208] CLOSED, FALSE PREMISE — Today's Completed section cannot show three rows above a
+  count of two, and neither can the surfaces it was re-scoped onto.** The ticket said the section
+  lists cancelled tasks while the header's "N done" does not count them. Re-derived from the code at
+  `902b386`, independently of the note `CLAUDE.md` already carried.
+
+  **The two numbers a user reads at that section are both `.count` over the array the rows are
+  drawn from, so rows and count are the same number by construction.**
+  - macOS: `TasksPanel.completedSection(derived:)` hands `TasksPanelCompletedSectionView` its
+    `tasks: derived.doneTasks`, and that view heads itself with
+    `TasksPanelIntentSectionHeader(count: tasks.count)` — the same array it `ForEach`es. The
+    column-header `· N done` is `CadenceTodaySummary.completedCount`, built by
+    `CadenceTodayPresentationSupport.summary(completedTasks: derived.doneTasks)` as
+    `completedTasks.count` — the same array again.
+  - iOS: `iOSTodayTaskSections.groupStack` passes
+    `CadenceTaskSurfaceOptions.completedRows(from: completedTasks)` to `iOSTaskGroupSection`, whose
+    capsule is `count: tasks.count` over that same (row-capped) array.
+  - `derived.doneTasks` in `.todayOverview` is `CadenceTaskQuerySupport.completedTodayTasks`, whose
+    predicate is `isFinishedTask` — done **or** cancelled — so a cancelled task is in the rows *and*
+    in both counts. Three rows show a count of three.
+
+  **`completedTaskCount` — the `isDone`-only rule the ticket is really about — is not read by that
+  section at all.** `CadenceTaskQuerySupport.completedTaskCount` has three call sites: the iOS
+  Settings **Completed** metric tile (`iOSSettingsView.completedTaskCount` →
+  `iOSLocalDataSettingsSection`) and the past-due kanban-column summary built in
+  `CadenceTodayOverdueSummarySupport.summaries(...)`. (`TasksListView` declares a private
+  `completedTaskCount` of its own for All Tasks / Inbox; it counts `isDone || isCancelled`, matching
+  its own `completedTasks` array exactly. Three MCP DTO fields share the name over an inline
+  `filter(\.isDone).count`.)
+
+  **Neither of those is defective either, which is why this closes rather than being re-scoped.**
+  The overdue column card (`CadenceTodayOverdueSectionCard`) draws "N open" from `openTaskCount`
+  and "N done" from `completedTaskCount`, and a cancelled task is in neither — but the card states
+  no total, and both labels are literally true of the numbers under them. The Settings tiles are
+  the same shape: independent "Active tasks" and "Completed" tiles, no sum, both accurate. An
+  omission with no claim attached is not the visible inconsistency the ticket was filed on.
+
+  One correction to the note `CLAUDE.md` carried, which said the two overdue summary cards are
+  macOS's: `CadenceTodayOverdueSummaryCards.swift` is in `Shared/Components/` and
+  `CadenceTodayOverdueSectionCard` is rendered by `TasksPanel.overdueSectionsSection` **and** by
+  `iOSTodayTaskSections`. If anyone ever does decide cancelled work should be visible on that card,
+  it is one change for both platforms, not a macOS one.
 
 - [X-01] **Home screen redesign** — three rounds of mocks (quiet grid, today-first, informative
   cards) were all rejected before the real problem surfaced: there was no tab bar, so Home was

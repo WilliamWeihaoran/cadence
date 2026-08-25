@@ -589,19 +589,13 @@ struct iOSSearchView: View {
         )
     }
 
+    /// The shared spelling, not one of three (T-239). This switch was the detail form's better
+    /// half — it is where "Daily / <key>" and the container name for a `.list` note come from —
+    /// but its `.permanent` said "Permanent note", the retired name of the Notepad tab, and this
+    /// string is scored as a search *field*, so the notepad did not match the app's own word for
+    /// it. See `NoteReferencePanelSupport.noteKindDetail`.
     private func noteSubtitle(_ note: Note) -> String {
-        switch note.kind {
-        case .daily:
-            return note.dateKey.isEmpty ? "Daily note" : "Daily / \(note.dateKey)"
-        case .weekly:
-            return note.weekKey.isEmpty ? "Weekly note" : "Weekly / \(note.weekKey)"
-        case .permanent:
-            return "Permanent note"
-        case .list:
-            return [note.area?.name, note.project?.name].compactMap { $0 }.first ?? "List note"
-        case .meeting:
-            return note.eventDateKey.isEmpty ? "Event note" : "Event / \(note.eventDateKey)"
-        }
+        NoteReferencePanelSupport.noteKindDetail(note)
     }
 
     private func noteResult(_ note: Note, score: Int, taskTitles: [UUID: String]) -> iOSSearchResult {
