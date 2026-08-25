@@ -52,6 +52,25 @@ final class RemindersManager {
         EKEventStore.authorizationStatus(for: .reminder) == .restricted
     }
 
+    /// **The one fold, read by every reminders surface.** `RemindersConnectionState` is what the
+    /// four surfaces draw from — the badge in macOS Settings' category rail, both Settings
+    /// sections, and both Inbox sections — and until T-254 four of them resolved it themselves from
+    /// these three flags while macOS's Inbox did not resolve it at all, branching `isAuthorized`
+    /// ahead of `isDenied` on its own booleans. That ordering is the whole reason the shared
+    /// resolver exists: a live denial has to beat a stale authorized snapshot, and `isRestricted`
+    /// has to beat both. Five call sites meant five chances to get it wrong, and one of them did.
+    ///
+    /// So the flags are folded here, once, and the surfaces read the answer. `@Observable` tracks
+    /// this correctly because the computed property reads `isAuthorized` and `deniedInThisSession`,
+    /// both of which are stored.
+    var connectionState: RemindersConnectionState {
+        RemindersConnectionState.resolve(
+            isAuthorized: isAuthorized,
+            isDenied: isDenied,
+            isRestricted: isRestricted
+        )
+    }
+
     /// **T-268's observable seam.** A running count of the two reconciles this manager performs on
     /// its own view of the world. EventKit cannot be driven from a unit test, so the reconcile that
     /// follows a refused completion had no effect any test could watch: on a host without a
@@ -95,16 +114,28 @@ final class RemindersManager {
         }
     }
 
+    /// **T-265.** This had two exits returning `false` and only one of them recorded the refusal.
+    /// The pre-prompt exit was `guard status == .notDetermined else { refreshAuthorizationState();
+    /// return false }` — an arm taken by every status that is neither `.fullAccess` nor
+    /// `.notDetermined`, and one that left `deniedInThisSession` alone. Harmless for `.denied` and
+    /// `.restricted`, which the cached status already reads correctly; the dead-button bug all over
+    /// again for anything else, because `RemindersConnectionState` folds an unrecognised status
+    /// into `.notDetermined` and offers **Allow Access** over an arm that cannot prompt.
+    ///
+    /// Both exits go through `refuse(recordingDenial:)` now, and what to record comes from
+    /// `RemindersAccessRequestPlan` rather than from a second `deniedInThisSession = true` written
+    /// out in a second branch. There is no bare `return false` left in this method, which is the
+    /// point: the bookkeeping cannot be skipped by adding one.
     @discardableResult
     func requestAccess() async -> Bool {
-        let status = EKEventStore.authorizationStatus(for: .reminder)
-        if status == .fullAccess {
+        switch RemindersAccessRequestPlan.forStatus(EKEventStore.authorizationStatus(for: .reminder)) {
+        case .alreadyAuthorized:
             refreshAuthorizationState()
             return true
-        }
-        guard status == .notDetermined else {
-            refreshAuthorizationState()
-            return false
+        case let .cannotAsk(recordsDenial):
+            return refuse(recordingDenial: recordsDenial)
+        case .prompt:
+            break
         }
 
         let granted = (try? await store.requestFullAccessToReminders()) ?? false
@@ -112,11 +143,9 @@ final class RemindersManager {
             // Trust the request's own `false` for exactly the reason the `true` below is trusted:
             // `authorizationStatus` is cached per process and keeps answering `.notDetermined`
             // after the user taps Don't Allow, which left both surfaces offering an "Allow Access"
-            // button that can never prompt again. Record it before re-deriving, so the re-derive
-            // reads the denial rather than the stale cache.
-            deniedInThisSession = true
-            refreshAuthorizationState()
-            return false
+            // button that can never prompt again. This is the user's own refusal, so it is always
+            // recorded.
+            return refuse(recordingDenial: true)
         }
 
         // Trust the request's own answer instead of re-reading `authorizationStatus`.
@@ -135,6 +164,19 @@ final class RemindersManager {
         startObserving()
         reload()
         return true
+    }
+
+    /// The one way `requestAccess()` answers `false`.
+    ///
+    /// Records the refusal for the rest of this launch when the plan says to — see
+    /// `RemindersAccessRequestPlan.cannotAsk(recordsDenial:)` for the one status that says not to —
+    /// and records it **before** re-deriving, so the re-derive reads the denial rather than the
+    /// per-process-cached status that has not caught up with it.
+    @discardableResult
+    private func refuse(recordingDenial recordsDenial: Bool) -> Bool {
+        if recordsDenial { deniedInThisSession = true }
+        refreshAuthorizationState()
+        return false
     }
 
     func reload() {

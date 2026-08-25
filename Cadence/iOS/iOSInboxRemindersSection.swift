@@ -29,12 +29,10 @@ struct iOSInboxRemindersSection: View {
     /// The page's own measurements, so this card is inset exactly as the group card above it is.
     let metrics: iOSTaskCollectionMetrics
 
+    /// **T-254.** One value, resolved once on the manager, rather than a fifth call to the
+    /// shared resolver written out beside four others.
     private var state: RemindersConnectionState {
-        RemindersConnectionState.resolve(
-            isAuthorized: remindersManager.isAuthorized,
-            isDenied: remindersManager.isDenied,
-            isRestricted: remindersManager.isRestricted
-        )
+        remindersManager.connectionState
     }
 
     var body: some View {

@@ -44,7 +44,6 @@ struct iOSTaskCollectionPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(RemindersManager.self) private var remindersManager
-    @Environment(\.scenePhase) private var scenePhase
 
     private var metrics: iOSTaskCollectionMetrics {
         .metrics(isRegularWidth: horizontalSizeClass == .regular)
@@ -104,25 +103,21 @@ struct iOSTaskCollectionPage: View {
         .scrollIndicators(.hidden)
         .background(Theme.bg.ignoresSafeArea())
         // **Access can change while this page is on screen, and on iOS it changes somewhere else.**
-        // `onAppear` alone is macOS's answer and is not enough here: revoking Reminders access
-        // happens in the Settings app, so coming back to a page that never disappeared is a
-        // foreground transition rather than an appearance. Both paths call the same method.
+        // Appearance alone is not enough: revoking Reminders access happens in the Settings app,
+        // so coming back to a page that never disappeared is a foreground transition rather than
+        // an appearance. **T-253** folded both halves into the one shared modifier all four
+        // reminders surfaces now apply, so no surface can carry half of it.
         //
-        // `refreshAuthorizationState()` re-reads `EKEventStore.authorizationStatus`, which is the
-        // right thing *here* and the wrong thing straight after a grant — see the comment on
-        // `iOSInboxRemindersSection.perform(_:)`. It is never called on that path.
-        .onAppear(perform: refreshRemindersAccess)
-        .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            refreshRemindersAccess()
-        }
-    }
-
-    /// Skipped entirely on All Tasks: that page never shows reminders, so touching EventKit from it
-    /// would be work with no surface behind it.
-    private func refreshRemindersAccess() {
-        guard CadenceTasksPageScope(collection: collection) == .inbox else { return }
-        remindersManager.refreshAuthorizationState()
+        // The hook re-reads `EKEventStore.authorizationStatus`, which is the right thing *here*
+        // and the wrong thing straight after a grant — see the comment on
+        // `iOSInboxRemindersSection.perform(_:)`. That path does not go through this.
+        //
+        // `isEnabled` is All Tasks' exemption: that page never shows reminders, so touching
+        // EventKit from it would be work with no surface behind it.
+        .remindersAuthorizationLifecycle(
+            remindersManager,
+            isEnabled: CadenceTasksPageScope(collection: collection) == .inbox
+        )
     }
 
     /// **The header scrolls with the content, at both widths.** The `List` hosts pinned it — header,

@@ -21,16 +21,24 @@ import SwiftUI
 /// list is a `LazyVStack`, where they do nothing at all. The rows draw their own hairline and
 /// hover, as they always did.
 struct InboxAppleRemindersSectionView: View {
+    /// **T-254.** One value, and it is `RemindersManager.connectionState` — the same one both
+    /// Settings sections and the iOS Inbox read.
+    ///
+    /// This view used to take `isAuthorized` / `isDenied` / `isRestricted` as three separate
+    /// booleans and branch them itself, which is how it became the one reminders surface in the app
+    /// that could disagree with the other four about what "connected" means. It put `isAuthorized`
+    /// ahead of `isDenied`, and the shared resolver puts them the other way round on purpose: a
+    /// live denial has to beat a stale authorized snapshot, or in that window this Inbox draws
+    /// reminder rows with completion buttons that no longer write while Settings, one category
+    /// away, says access is denied. It also hand-wrote its own access copy beside four surfaces
+    /// reading `accessTitle` / `accessMessage` / `accessAction`, which is the same near-copy the
+    /// standing rule is about. There is nothing left here to branch: the state arrives resolved.
+    let state: RemindersConnectionState
     let reminders: [AppleReminderItem]
-    let isAuthorized: Bool
-    let isDenied: Bool
-    /// **T-256.** A device restriction (Screen Time, an MDM profile) rather than a user refusal —
-    /// `isDenied` is still `true` here too (see `RemindersManager.isDenied`), so this is checked
-    /// first, exactly as `RemindersConnectionState.resolve` checks it first.
-    let isRestricted: Bool
     let isLoading: Bool
-    let onRequestAccess: () -> Void
-    let onOpenSettings: () -> Void
+    /// One handler for whichever action the state offers, rather than two closures the view has to
+    /// choose between — choosing was the branch that got the order wrong.
+    let onAccessAction: (RemindersAccessAction) -> Void
     let onComplete: (String) -> AppleReminderCompletionOutcome
 
     var body: some View {
@@ -39,8 +47,8 @@ struct InboxAppleRemindersSectionView: View {
                 title: "Apple Reminders",
                 isCollapsed: false,
                 // **T-264.** `nil`, not `0`, whenever Cadence has not been allowed to look —
-                // matching `iOSInboxRemindersSection`'s `state.isConnected` gate.
-                regularCount: isAuthorized ? reminders.count : nil,
+                // the same `state.isConnected` gate `iOSInboxRemindersSection` reads.
+                regularCount: state.isConnected ? reminders.count : nil,
                 accent: Theme.purple,
                 isToggleEnabled: false,
                 onToggle: { }
@@ -49,7 +57,7 @@ struct InboxAppleRemindersSectionView: View {
             .padding(.top, 16)
             .padding(.bottom, 8)
 
-            if isAuthorized {
+            if state.isConnected {
                 if isLoading && reminders.isEmpty {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
@@ -68,11 +76,7 @@ struct InboxAppleRemindersSectionView: View {
                     }
                 }
             } else {
-                AppleRemindersAccessRow(
-                    isDenied: isDenied,
-                    isRestricted: isRestricted,
-                    action: isDenied ? onOpenSettings : onRequestAccess
-                )
+                AppleRemindersAccessRow(state: state, onAction: onAccessAction)
                 .padding(.leading, TaskListDisplayMetrics.taskLeadingInset)
                 .padding(.trailing, TaskListDisplayMetrics.taskTrailingInset)
             }
@@ -230,26 +234,19 @@ private struct AppleReminderTaskRow: View {
     }
 }
 
+/// **T-254.** The copy is `RemindersConnectionState`'s, all of it.
+///
+/// Three of these four sentences used to be written out here — "Reminders access is off" / "Show
+/// Apple Reminders in Inbox", and their two messages — while both Settings sections and the iOS
+/// Inbox read `accessTitle` / `accessMessage` / `accessAction` from the shared value. Only
+/// `.restricted` borrowed the canonical strings, which is what made the drift visible: one state in
+/// this row spoke the app's vocabulary and the rest spoke their own. Whether a button appears at
+/// all is the shared value's decision too, so `.restricted`'s missing button is not a local `if`
+/// any more — [[T-256]]'s dead-button rule is the same `accessAction == nil` every other surface
+/// obeys.
 private struct AppleRemindersAccessRow: View {
-    let isDenied: Bool
-    /// **T-256.** Checked ahead of `isDenied` — see `InboxAppleRemindersSectionView.isRestricted`.
-    /// A restricted device gets its own copy and no button, the same decision every other
-    /// reminders surface now makes, borrowed from the canonical `RemindersConnectionState.restricted`
-    /// strings rather than a fourth hand-written pair that could drift from them.
-    let isRestricted: Bool
-    let action: () -> Void
-
-    private var title: String {
-        if isRestricted { return RemindersConnectionState.restricted.accessTitle }
-        return isDenied ? "Reminders access is off" : "Show Apple Reminders in Inbox"
-    }
-
-    private var message: String {
-        if isRestricted { return RemindersConnectionState.restricted.accessMessage }
-        return isDenied
-            ? "Allow Cadence in Privacy & Security to show your active reminders."
-            : "Cadence can display active reminders and mark them complete here."
-    }
+    let state: RemindersConnectionState
+    let onAction: (RemindersAccessAction) -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -261,25 +258,26 @@ private struct AppleRemindersAccessRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(state.accessTitle)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.text)
-                Text(message)
+                Text(state.accessMessage)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 12)
 
-            // No button at all when restricted: there is no settings pane that can lift a
-            // device restriction, so offering one would be the dead-button bug T-256 exists to
-            // close, not fix it a third time.
-            if !isRestricted {
+            // `nil` for `.connected` — which never reaches this row — and for `.restricted`: there
+            // is no settings pane that can lift a device restriction, so offering a button would be
+            // the dead-button bug T-256 exists to close, not fix it a third time.
+            if let action = state.accessAction {
                 CadenceActionButton(
-                    title: isDenied ? "Open Settings" : "Connect",
+                    title: action.title,
                     role: .primary,
                     size: .compact,
-                    action: action
+                    action: { onAction(action) }
                 )
             }
         }

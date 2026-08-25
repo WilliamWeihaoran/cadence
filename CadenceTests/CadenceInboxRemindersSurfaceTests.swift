@@ -1,4 +1,6 @@
+import EventKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -92,15 +94,85 @@ struct CadenceInboxRemindersSurfaceTests {
 
     // MARK: - Access revoked while the page is open
 
-    /// macOS re-derives on `onAppear` and that is enough there. It is not enough on iOS: Reminders
-    /// access is revoked in the **Settings app**, so returning to a page that never disappeared is
-    /// a foreground transition. Both paths have to be on the page.
-    @Test func theIOSInboxRederivesAccessOnAppearAndOnForeground() throws {
-        let source = try strippingComments(sourceFile("Cadence/iOS/iOSTaskCollectionPage.swift"))
+    /// **T-253, the rule as a value.** Only a return to `.active` re-derives. The other two phases
+    /// are the *leaving* halves of the same transition: re-reading EventKit on the way out costs a
+    /// fetch and tells the user nothing, because the change they are about to make in System
+    /// Settings has not happened yet.
+    @Test func onlyAReturnToTheForegroundRederivesAuthorization() {
+        #expect(RemindersAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo: .active))
+        #expect(!RemindersAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo: .inactive))
+        #expect(!RemindersAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo: .background))
+    }
 
-        #expect(source.contains("refreshAuthorizationState"), "the iOS Inbox stopped re-deriving reminders access")
-        #expect(source.contains("scenePhase"), "the iOS Inbox stopped re-deriving access on foreground")
-        #expect(source.contains(".onAppear"), "the iOS Inbox stopped re-deriving access on appear")
+    /// **T-253, the effect.** The hook's one side effect is a re-derive, and `reconcileLedger`
+    /// counts those inside `refreshAuthorizationState()` itself — so this watches the read happen
+    /// rather than reading the text of a view body, on a host with no Reminders grant. The
+    /// `isEnabled: false` half is the iOS Tasks page on All Tasks, which has no reminders surface
+    /// on it and must not touch EventKit at all.
+    @MainActor
+    @Test func theSharedHookReadsEventKitOnlyWhereItIsEnabled() {
+        let manager = RemindersManager.shared
+
+        let before = manager.reconcileLedger.authorizationRefreshes
+        RemindersAuthorizationLifecycleModifier(manager: manager, isEnabled: false).refreshIfEnabled()
+        #expect(
+            manager.reconcileLedger.authorizationRefreshes == before,
+            "a disabled reminders lifecycle hook read EventKit anyway"
+        )
+
+        RemindersAuthorizationLifecycleModifier(manager: manager, isEnabled: true).refreshIfEnabled()
+        #expect(
+            manager.reconcileLedger.authorizationRefreshes == before + 1,
+            "an enabled reminders lifecycle hook did not re-derive authorization"
+        )
+    }
+
+    /// **T-253, both halves of the hook**, scoped to the modifier's own `body` so a count cannot be
+    /// satisfied by something elsewhere in the file. This is the shape the two Settings sections
+    /// were missing: `.onAppear` fires once, when the surface is first shown, and revoking in
+    /// System Settings does not terminate the app on macOS — so without the foreground half a user
+    /// who follows Settings > Reminders' own **Open Reminders Settings** button, revokes, and comes
+    /// back is looking at a view that never disappeared and still claims access.
+    @Test func theSharedHookCarriesBothHalvesOfTheLifecycle() throws {
+        let source = try strippingComments(sourceFile("Cadence/Shared/CadenceRemindersPresentationSupport.swift"))
+        let body = try cadenceFunctionBody("func body(content: Content) -> some View", in: source)
+
+        #expect(body.contains(".onAppear"), "the shared reminders hook stopped re-deriving on appear")
+        #expect(body.contains(".onChange(of: scenePhase)"), "the shared reminders hook stopped re-deriving on foreground")
+        #expect(
+            body.contains("RemindersAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo:"),
+            "the shared reminders hook re-spells which scene phase counts"
+        )
+        #expect(
+            body.components(separatedBy: "refreshIfEnabled()").count - 1 == 2,
+            "the shared reminders hook no longer refreshes from exactly its two lifecycle events"
+        )
+    }
+
+    /// **T-253, the call sites.** All four reminders surfaces apply the one hook, and none of them
+    /// keeps a hand-written half beside it — which is how two of them came to have only the
+    /// appearance half while both Inboxes had both, each surface's comment claiming it matched the
+    /// others.
+    @Test func allFourRemindersSurfacesRederiveThroughTheOneHook() throws {
+        let surfaces = [
+            "Cadence/macOS/Views/SettingsRemindersSection.swift",
+            "Cadence/macOS/Views/TasksListView.swift",
+            "Cadence/iOS/iOSRemindersSettingsSection.swift",
+            "Cadence/iOS/iOSTaskCollectionPage.swift",
+        ]
+
+        try expectCallSites(
+            of: ".remindersAuthorizationLifecycle",
+            at: Dictionary(uniqueKeysWithValues: surfaces.map { ($0, 1) })
+        )
+
+        for path in surfaces {
+            let source = try strippingComments(sourceFile(path))
+            #expect(
+                !source.contains("refreshAuthorizationState"),
+                "\(path) re-derives reminders authorization outside the one shared hook again"
+            )
+        }
     }
 
     /// **The bug that was already found and fixed once here, guarded so it cannot come back.**
@@ -194,7 +266,10 @@ struct CadenceInboxRemindersSurfaceTests {
             "macOS's Inbox header passes the raw reminder count again, with no gate on authorization"
         )
         #expect(
-            macSource.range(of: "regularCount:\\s*isAuthorized\\s*\\?\\s*reminders\\.count\\s*:\\s*nil", options: .regularExpression) != nil,
+            macSource.range(
+                of: "regularCount:\\s*state\\.isConnected\\s*\\?\\s*reminders\\.count\\s*:\\s*nil",
+                options: .regularExpression
+            ) != nil,
             "macOS's Inbox header stopped hiding the count while unauthorized"
         )
 
@@ -278,47 +353,210 @@ struct CadenceInboxRemindersSurfaceTests {
         )
     }
 
-    /// **The call-site pin.** `isRestricted` is pure infrastructure until something reads it —
-    /// exactly the "cannot fail at all" shape this file's own header warns about for
-    /// `showsRemindersStrip`. Every surface that resolves a `RemindersConnectionState` from the
-    /// manager's flags must pass this one too, or `.restricted`'s presentation is unreachable in
-    /// the running app no matter how well the pure type is tested in `RemindersConnectionStateTests`.
-    @Test func everyLiveResolverIsHandedIsRestricted() throws {
-        for path in [
-            "Cadence/macOS/Views/SettingsRemindersSection.swift",
-            "Cadence/macOS/Views/SettingsView.swift",
-            "Cadence/iOS/iOSRemindersSettingsSection.swift",
-            "Cadence/iOS/iOSInboxRemindersSection.swift",
-        ] {
-            let source = try strippingComments(sourceFile(path))
+    /// **T-254: the fold happens once**, and this is scoped to the one function that performs it,
+    /// so a second `resolve` somewhere else in the manager cannot satisfy it. `isRestricted` is the
+    /// flag that keeps going missing — it is pure infrastructure until a resolver is handed it, and
+    /// `.restricted`'s whole presentation is unreachable in the running app if one is not, no
+    /// matter how well `RemindersConnectionStateTests` pins the type.
+    @Test func theManagerFoldsAllThreeFlagsIntoTheOneConnectionState() throws {
+        let source = try strippingComments(sourceFile("Cadence/Services/CadenceRemindersManager.swift"))
+        let fold = try cadenceFunctionBody("var connectionState: RemindersConnectionState", in: source)
+
+        #expect(fold.contains("RemindersConnectionState.resolve("), "the manager stopped asking the shared resolver")
+        #expect(fold.contains("isAuthorized: isAuthorized"), "the fold stopped reading isAuthorized")
+        #expect(fold.contains("isDenied: isDenied"), "the fold stopped reading isDenied")
+        #expect(fold.contains("isRestricted: isRestricted"), "the fold stopped reading isRestricted")
+    }
+
+    /// **And it happens nowhere else.** Five surfaces used to resolve their own — macOS Settings'
+    /// category badge, both Settings sections, the iOS Inbox — while the fifth, macOS's Inbox,
+    /// resolved nothing at all and branched three raw booleans in the wrong order. Five call sites
+    /// is five chances to get the ordering wrong, and one of them did.
+    @Test func nothingButTheManagerResolvesAConnectionStateFromTheFlags() throws {
+        let callers = try filesContaining("RemindersConnectionState.resolve(")
+        #expect(
+            callers == ["Cadence/Services/CadenceRemindersManager.swift"],
+            "the flags are folded into a connection state in \(callers) rather than only in the manager"
+        )
+    }
+
+    /// **Every reminders surface reads that one answer.** The counterpart to the test above: one
+    /// producer is worth nothing if a surface stops consuming it.
+    @Test func everyRemindersSurfaceReadsTheOneConnectionState() throws {
+        try expectOccurrences(
+            of: "remindersManager.connectionState",
+            at: [
+                "Cadence/macOS/Views/SettingsRemindersSection.swift": 1,
+                "Cadence/macOS/Views/SettingsView.swift": 1,
+                "Cadence/macOS/Views/TasksListView.swift": 1,
+                "Cadence/iOS/iOSRemindersSettingsSection.swift": 1,
+                "Cadence/iOS/iOSInboxRemindersSection.swift": 1,
+            ]
+        )
+    }
+
+    /// **T-254's structural half.** macOS's Inbox strip took `isAuthorized` / `isDenied` /
+    /// `isRestricted` as three separate booleans and branched them itself, `isAuthorized` first —
+    /// the opposite order to the shared resolver, which puts a live denial ahead of a stale
+    /// authorized snapshot on purpose. In that window the Inbox drew reminder rows with completion
+    /// buttons that no longer write while Settings, one category away, said access was denied.
+    /// There is nothing left to get wrong: the view has one input and it arrives resolved.
+    @Test func theMacOSInboxStripTakesOneStateAndNoBooleansOfItsOwn() throws {
+        let section = try strippingComments(sourceFile("Cadence/macOS/Views/InboxSupportViews.swift"))
+
+        #expect(
+            section.contains("let state: RemindersConnectionState"),
+            "InboxAppleRemindersSectionView no longer takes a resolved connection state"
+        )
+        for flag in ["let isAuthorized: Bool", "let isDenied: Bool", "let isRestricted: Bool"] {
             #expect(
-                source.contains("isRestricted: remindersManager.isRestricted"),
-                "\(path) stopped resolving RemindersConnectionState with isRestricted"
+                !section.contains(flag),
+                "InboxAppleRemindersSectionView takes `\(flag)` again and can branch it in its own order"
+            )
+        }
+
+        let body = try cadenceFunctionBody("var body: some View", in: section)
+        #expect(
+            body.contains("if state.isConnected {"),
+            "macOS's Inbox strip decides whether it is connected somewhere other than the shared state"
+        )
+    }
+
+    /// **T-254's copy half.** Four surfaces read `accessTitle` / `accessMessage` / `accessAction`;
+    /// this one hand-wrote three of its four sentences beside them, and only borrowed the shared
+    /// strings for `.restricted`. Which button appears — and that `.restricted` gets none — is the
+    /// shared value's `accessAction` now rather than a local `if`, so [[T-256]]'s dead-button rule
+    /// is obeyed here by construction instead of by a second spelling of it.
+    @Test func theMacOSInboxAccessRowSpeaksTheSharedVocabulary() throws {
+        let section = try strippingComments(sourceFile("Cadence/macOS/Views/InboxSupportViews.swift"))
+
+        for needle in ["state.accessTitle", "state.accessMessage", "state.accessAction"] {
+            #expect(section.contains(needle), "macOS's Inbox access row stopped reading \(needle)")
+        }
+        for retired in [
+            "Reminders access is off",
+            "Show Apple Reminders in Inbox",
+            "Cadence can display active reminders and mark them complete here.",
+            "Allow Cadence in Privacy & Security to show your active reminders.",
+        ] {
+            #expect(
+                !section.contains(retired),
+                "macOS's Inbox hand-writes \"\(retired)\" again, beside four surfaces reading the shared copy"
             )
         }
     }
 
-    /// macOS's Inbox strip does not build a `RemindersConnectionState` at all — it takes
-    /// `isAuthorized` / `isDenied` / `isRestricted` as three separate booleans instead — so it is
-    /// pinned on its own rather than folded into the loop above.
-    @Test func macOSInboxPassesIsRestrictedThroughToItsAccessRow() throws {
-        let callSite = try strippingComments(sourceFile("Cadence/macOS/Views/TasksListView.swift"))
+    // MARK: - T-265: a refusal that cannot prompt records itself
+
+    /// **The plan, as a value.** `.notDetermined` is the only status a prompt can come from;
+    /// everything else either already has access or cannot be asked.
+    @Test func onlyNotDeterminedCanPromptAndEveryOtherRefusalSaysWhat() {
+        #expect(RemindersAccessRequestPlan.forStatus(.fullAccess) == .alreadyAuthorized)
+        #expect(RemindersAccessRequestPlan.forStatus(.notDetermined) == .prompt)
+        #expect(RemindersAccessRequestPlan.forStatus(.denied) == .cannotAsk(recordsDenial: true))
+        #expect(RemindersAccessRequestPlan.forStatus(.restricted) == .cannotAsk(recordsDenial: false))
+
+        // Neither of the two non-refusals records anything.
+        #expect(!RemindersAccessRequestPlan.alreadyAuthorized.recordsDenial)
+        #expect(!RemindersAccessRequestPlan.prompt.recordsDenial)
+    }
+
+    /// **T-265's actual hazard, named.** `RemindersConnectionState.resolve(status:)` folds every
+    /// status it does not recognise through `default` into `.notDetermined`, which offers an
+    /// **Allow Access** button. `requestAccess()`'s pre-prompt exit is what such a tap reaches, and
+    /// it used to return `false` with no bookkeeping at all — so the button stayed, and stayed
+    /// dead, for the rest of the launch. `deniedInThisSession` is the only thing that can take it
+    /// away before a relaunch, so every status that offers the button must either prompt or record.
+    ///
+    /// `.writeOnly` is the one such value today. EventKit does not return it for reminders, which
+    /// is why this was filed as latent rather than live — and is exactly why a test states the rule
+    /// over every status rather than over the one that happens to reach it.
+    /// `@MainActor` because `RemindersConnectionState` and `RemindersAccessAction` carry the
+    /// app's default main-actor isolation, and their synthesized `Equatable` conformances cannot be
+    /// used from a nonisolated context. `RemindersConnectionStateTests` is annotated whole for the
+    /// same reason; only the tests here that compare one need it.
+    @MainActor
+    @Test func noStatusOffersAnAllowButtonThatNeitherPromptsNorRecordsARefusal() {
+        // The fold that creates the hazard, stated so this test cannot quietly stop covering it.
+        #expect(RemindersConnectionState.resolve(status: .writeOnly) == .notDetermined)
+        #expect(RemindersConnectionState.resolve(status: .writeOnly).accessAction == .requestAccess)
         #expect(
-            callSite.contains("isRestricted: remindersManager.isRestricted"),
-            "TasksListView stopped handing the Inbox reminders section a live isRestricted"
+            RemindersAccessRequestPlan.forStatus(.writeOnly).recordsDenial,
+            "a .writeOnly status offers Allow Access and takes an arm that records nothing: the button is dead for the launch"
         )
 
-        let section = try strippingComments(sourceFile("Cadence/macOS/Views/InboxSupportViews.swift"))
-        #expect(section.contains("let isRestricted: Bool"), "InboxAppleRemindersSectionView dropped its isRestricted parameter")
+        var offered = 0
+        for raw in 0...8 {
+            guard let status = EKAuthorizationStatus(rawValue: raw) else { continue }
+            let plan = RemindersAccessRequestPlan.forStatus(status)
+            guard RemindersConnectionState.resolve(status: status).accessAction == .requestAccess else { continue }
+            offered += 1
+            #expect(
+                plan == .prompt || plan.recordsDenial,
+                "status \(raw) offers Allow Access, cannot prompt, and records no denial"
+            )
+        }
+        #expect(offered >= 2, "the sweep found \(offered) statuses offering Allow Access and is not doing its job")
+    }
+
+    /// **And a restriction is still not a denial the user can undo.** [[T-256]] split the two, and
+    /// recording a session denial here would put it back: `deniedInThisSession` is only ever
+    /// cleared by a real grant, so a restriction lifted mid-session would read as a denial pointing
+    /// the user at a System Settings switch they never touched.
+    /// `@MainActor` because `RemindersConnectionState` and `RemindersAccessAction` carry the
+    /// app's default main-actor isolation, and their synthesized `Equatable` conformances cannot be
+    /// used from a nonisolated context. `RemindersConnectionStateTests` is annotated whole for the
+    /// same reason; only the tests here that compare one need it.
+    @MainActor
+    @Test func aRestrictionIsNotARefusalThisLaunchRemembers() {
+        #expect(RemindersAccessRequestPlan.forStatus(.restricted) == .cannotAsk(recordsDenial: false))
         #expect(
-            section.contains("isRestricted: isRestricted"),
-            "InboxAppleRemindersSectionView stopped forwarding isRestricted to AppleRemindersAccessRow"
+            !RemindersAccessRequestPlan.forStatus(.restricted).recordsDenial,
+            "a device restriction was recorded as a denial this launch has to remember"
         )
-        // No button at all when restricted — the dead-`.denied`-button bug closed a second time.
+        // It needs no record: restricted is read live and outranks the denial flag either way.
+        #expect(RemindersConnectionState.resolve(isAuthorized: false, isDenied: true, isRestricted: true) == .restricted)
+        #expect(RemindersConnectionState.resolve(status: .restricted).accessAction == nil)
+    }
+
+    /// **The wiring, scoped to the one method.** `requestAccess()` had two exits returning `false`
+    /// and only the post-prompt one recorded the refusal; the count below is what stops a third
+    /// appearing. There is no bare `return false` left in the method at all — the bookkeeping
+    /// cannot be skipped by adding one.
+    @Test func requestAccessAnswersFalseOnlyThroughItsOneRefusal() throws {
+        let source = try strippingComments(sourceFile("Cadence/Services/CadenceRemindersManager.swift"))
+        let body = try cadenceFunctionBody("func requestAccess() async -> Bool", in: source)
+
         #expect(
-            section.contains("if !isRestricted {"),
-            "AppleRemindersAccessRow no longer withholds its button when restricted"
+            body.contains("RemindersAccessRequestPlan.forStatus("),
+            "requestAccess decides what a status means without the shared plan again"
         )
+        #expect(
+            !body.contains("status == .notDetermined"),
+            "requestAccess re-spells its pre-prompt exit as a hand-written guard again"
+        )
+        #expect(
+            body.components(separatedBy: "return false").count - 1 == 0,
+            "requestAccess has a bare `return false` that skips the denial bookkeeping"
+        )
+        #expect(
+            body.components(separatedBy: "refuse(recordingDenial:").count - 1 == 2,
+            "requestAccess no longer answers false through exactly its two shared refusals"
+        )
+
+        let refusal = try cadenceFunctionBody(
+            "private func refuse(recordingDenial recordsDenial: Bool) -> Bool",
+            in: source
+        )
+        #expect(
+            refusal.contains("if recordsDenial { deniedInThisSession = true }"),
+            "the one refusal stopped recording the denial it was told to record"
+        )
+        #expect(
+            refusal.contains("refreshAuthorizationState()"),
+            "the one refusal stopped re-deriving after recording"
+        )
+        #expect(refusal.contains("return false"), "the one refusal stopped answering false")
     }
 
     // MARK: - T-255: a completion that fails does not stay ticked
@@ -734,6 +972,15 @@ private func expectOccurrences(
             sourceLocation: sourceLocation
         )
     }
+}
+
+/// Every file under `Cadence/` whose **live code** contains `text` literally, sorted. Unlike
+/// `filesMentioning` this takes no word boundary, so it can pin a dotted call like
+/// `RemindersConnectionState.resolve(` without `.` being read as a regex wildcard.
+private func filesContaining(_ text: String) throws -> [String] {
+    try swiftFiles(under: "Cadence")
+        .filter { try strippingComments(sourceFile($0)).contains(text) }
+        .sorted()
 }
 
 private func filesMentioning(_ name: String) throws -> [String] {

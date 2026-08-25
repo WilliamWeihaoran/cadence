@@ -17,12 +17,10 @@ import UIKit
 struct iOSRemindersSettingsSection: View {
     let remindersManager: RemindersManager
 
+    /// **T-254.** One value, resolved once on the manager, rather than a fifth call to the
+    /// shared resolver written out beside four others.
     private var state: RemindersConnectionState {
-        RemindersConnectionState.resolve(
-            isAuthorized: remindersManager.isAuthorized,
-            isDenied: remindersManager.isDenied,
-            isRestricted: remindersManager.isRestricted
-        )
+        remindersManager.connectionState
     }
 
     private var listRows: [RemindersListSummaryRow] {
@@ -40,10 +38,11 @@ struct iOSRemindersSettingsSection: View {
                 listsCard
             }
         }
-        // Access can be granted or revoked in the Settings app while this screen is open — the
-        // app is not even foreground when that happens — so the state is re-derived on every
-        // appearance rather than trusted from launch. macOS does the same thing here.
-        .onAppear { remindersManager.refreshAuthorizationState() }
+        // **T-253.** Access is granted or revoked in the Settings app, so the app is not even
+        // foreground when it changes — an appearance hook alone cannot see it, and this screen
+        // carried only one. Both halves are the shared modifier now, and macOS's Settings section
+        // applies the same one.
+        .remindersAuthorizationLifecycle(remindersManager)
     }
 
     private var accessCard: some View {

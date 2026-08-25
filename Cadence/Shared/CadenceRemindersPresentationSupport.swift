@@ -429,3 +429,127 @@ nonisolated struct RemindersReconcileLedger: Equatable, Sendable {
     /// the status comes back authorized.
     var reloadRequests = 0
 }
+
+/// What `RemindersManager.requestAccess()` can do before it ever prompts, given EventKit's cached
+/// status.
+///
+/// **T-265.** `requestAccess()` had two exits returning `false` and only one of them recorded the
+/// refusal. The post-prompt exit sets `deniedInThisSession` — it has to, because
+/// `EKEventStore.authorizationStatus` is cached per process and keeps answering `.notDetermined`
+/// after **Don't Allow**, which is what left both surfaces offering an **Allow Access** button that
+/// could never prompt again. The *pre*-prompt exit — `guard status == .notDetermined` — returned
+/// `false` with no bookkeeping at all, and that arm is taken by every status that is neither
+/// `.fullAccess` nor `.notDetermined`. For `.denied` and `.restricted` it happened to be harmless,
+/// because the cached status already reads as both. For anything else it is the dead-button bug one
+/// branch over: `RemindersConnectionState.resolve(status:)` folds an unrecognised status through
+/// `default` into `.notDetermined`, so the card offers **Allow Access**, the tap takes this arm, and
+/// nothing on screen changes. Today the only such value is `.writeOnly`, which EventKit does not
+/// return for reminders — a latent hazard rather than a live defect, and one the plan below makes
+/// unspellable rather than leaving to the next status Apple adds.
+///
+/// It is a value rather than a second `deniedInThisSession = true` in a second branch for the
+/// reason every other decision in this file is one: the manager's branches cannot be reached from a
+/// unit test without a real EventKit grant, and two branches that must agree are exactly the shape
+/// that drifts.
+///
+/// `nonisolated` for the same reason its neighbours are: pure over its argument, and main-actor
+/// isolation would put the synthesized `Equatable` conformance on the main actor.
+nonisolated enum RemindersAccessRequestPlan: Equatable, Sendable {
+    /// Access is already granted. Re-derive and answer `true`; there is nothing to prompt for.
+    case alreadyAuthorized
+    /// Prompt EventKit. `.notDetermined` is the only status this is reachable from — asking from
+    /// any other one is a no-op that looks to the user like a broken button.
+    case prompt
+    /// Asking cannot help from here.
+    ///
+    /// `recordsDenial` is what the two exits have to agree about. It is `true` for a refusal the
+    /// user made — or for any status Cadence does not recognise, where offering the button again
+    /// would be the dead-button bug — and `false` for `.restricted` alone. **T-256:** a restriction
+    /// is imposed by whoever manages the device, not chosen at a prompt, so there is no refusal for
+    /// this launch to remember; and `deniedInThisSession` is only ever cleared by a real grant, so
+    /// recording one here would make a restriction that is lifted mid-session read as a denial the
+    /// user has to visit System Settings to undo. `.restricted` keeps its own presentation either
+    /// way, because `RemindersConnectionState.resolve(isAuthorized:isDenied:isRestricted:)` checks
+    /// `isRestricted` first.
+    case cannotAsk(recordsDenial: Bool)
+
+    static func forStatus(_ status: EKAuthorizationStatus) -> RemindersAccessRequestPlan {
+        switch status {
+        case .fullAccess:
+            return .alreadyAuthorized
+        case .notDetermined:
+            return .prompt
+        case .restricted:
+            return .cannotAsk(recordsDenial: false)
+        default:
+            // `.denied`, `.writeOnly`, and anything a future EventKit adds. All three mean the
+            // prompt will not appear; the last is why this is a `default` rather than two cases.
+            return .cannotAsk(recordsDenial: true)
+        }
+    }
+
+    /// Whether taking this path has to leave `deniedInThisSession` set. `false` for the two paths
+    /// that are not refusals at all.
+    var recordsDenial: Bool {
+        guard case let .cannotAsk(recordsDenial) = self else { return false }
+        return recordsDenial
+    }
+}
+
+/// When a reminders surface re-derives authorization from EventKit.
+///
+/// **T-253.** All four reminders surfaces have to answer this the same way, and two of them did
+/// not. Both Inboxes carried `.onAppear` **and** `.onChange(of: scenePhase)`; both Settings
+/// sections carried `.onAppear` alone, with a comment claiming it matched the Inbox. On macOS that
+/// is the surface most exposed to the gap: revoking in System Settings does not terminate the app
+/// the way iOS does, so a user who follows Settings > Reminders' own **Open Reminders Settings**
+/// button, revokes, and comes back lands on a view that never disappeared — `.onAppear` never
+/// fires a second time — still claiming "Apple Reminders connected" over a stale list.
+///
+/// The hook is one modifier now rather than four hand-written pairs, so there is no longer a
+/// surface that can carry half of it.
+nonisolated enum RemindersAuthorizationLifecycle {
+    /// Only a return to `.active` re-derives. `.inactive` and `.background` are the *leaving*
+    /// halves of the same transition — re-reading EventKit on the way out costs a fetch and tells
+    /// the user nothing, because the change they are about to make has not happened yet.
+    static func shouldRefresh(onScenePhaseChangeTo phase: ScenePhase) -> Bool {
+        phase == .active
+    }
+}
+
+/// The modifier itself. Applied by all four reminders surfaces; see
+/// `RemindersAuthorizationLifecycle` for why there is only one of it.
+struct RemindersAuthorizationLifecycleModifier: ViewModifier {
+    let manager: RemindersManager
+    /// `false` where the host view exists on more than one page and only one of them shows
+    /// reminders — the iOS Tasks page is All Tasks as well as Inbox, and touching EventKit from a
+    /// page with no reminders surface on it is work with nothing behind it.
+    let isEnabled: Bool
+
+    @Environment(\.scenePhase) private var scenePhase
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { refreshIfEnabled() }
+            .onChange(of: scenePhase) { _, phase in
+                guard RemindersAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo: phase) else { return }
+                refreshIfEnabled()
+            }
+    }
+
+    /// Internal rather than private so a test can watch it happen: `RemindersManager` counts its
+    /// own re-derives in `reconcileLedger`, so "disabled means no EventKit read" is an assertion
+    /// about an effect rather than about the text of a view body.
+    func refreshIfEnabled() {
+        guard isEnabled else { return }
+        manager.refreshAuthorizationState()
+    }
+}
+
+extension View {
+    /// Re-derive reminders authorization when this surface appears **and** whenever the app comes
+    /// back to the foreground. See `RemindersAuthorizationLifecycle`.
+    func remindersAuthorizationLifecycle(_ manager: RemindersManager, isEnabled: Bool = true) -> some View {
+        modifier(RemindersAuthorizationLifecycleModifier(manager: manager, isEnabled: isEnabled))
+    }
+}

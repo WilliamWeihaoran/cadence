@@ -131,11 +131,9 @@ struct SettingsView: View {
             case .calendar:
                 SettingsStatusBadge(title: calendarManager.isAuthorized ? "Connected" : "Not connected", isActive: calendarManager.isAuthorized)
             case .reminders:
-                let remindersState = RemindersConnectionState.resolve(
-                    isAuthorized: remindersManager.isAuthorized,
-                    isDenied: remindersManager.isDenied,
-                    isRestricted: remindersManager.isRestricted
-                )
+                // **T-254.** The manager folds the flags; the badge reads the one answer the
+                // section beside it reads, so header and card cannot disagree.
+                let remindersState = remindersManager.connectionState
                 SettingsStatusBadge(title: remindersState.badgeTitle, isActive: remindersState.isConnected)
             case .notifications:
                 SettingsStatusBadge(

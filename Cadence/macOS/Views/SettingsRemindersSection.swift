@@ -10,12 +10,10 @@ import AppKit
 struct SettingsRemindersSection: View {
     let remindersManager: RemindersManager
 
+    /// **T-254.** One value, resolved once on the manager, rather than a fourth call to the
+    /// shared resolver written out beside three others.
     private var state: RemindersConnectionState {
-        RemindersConnectionState.resolve(
-            isAuthorized: remindersManager.isAuthorized,
-            isDenied: remindersManager.isDenied,
-            isRestricted: remindersManager.isRestricted
-        )
+        remindersManager.connectionState
     }
 
     var body: some View {
@@ -27,9 +25,11 @@ struct SettingsRemindersSection: View {
                 listsCard
             }
         }
-        // The user can grant or revoke access in System Settings while this page is open,
-        // so re-derive on appear the same way the Inbox does.
-        .onAppear { remindersManager.refreshAuthorizationState() }
+        // **T-253.** This page's own **Open Reminders Settings** button sends the user to
+        // System Settings to revoke, and macOS does not terminate the app on the way back — so
+        // the view never disappears and an appearance hook alone never fires a second time. The
+        // shared modifier carries both halves; all four reminders surfaces apply the same one.
+        .remindersAuthorizationLifecycle(remindersManager)
     }
 
     private var accessCard: some View {

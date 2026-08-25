@@ -50,7 +50,6 @@ struct TasksListView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(RemindersManager.self) private var remindersManager
-    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
@@ -226,13 +225,19 @@ struct TasksListView: View {
 
                 if showsRemindersSection {
                     InboxAppleRemindersSectionView(
+                        // **T-254.** One value, not four booleans the caller could combine
+                        // differently from the way the other three surfaces combine them.
+                        // Also unblocks the type-checker: four independent Bools in a view
+                        // body this size timed the solver out.
+                        state: remindersManager.connectionState,
                         reminders: remindersManager.reminders,
-                        isAuthorized: remindersManager.isAuthorized,
-                        isDenied: remindersManager.isDenied,
-                        isRestricted: remindersManager.isRestricted,
                         isLoading: remindersManager.isLoading,
-                        onRequestAccess: requestRemindersAccess,
-                        onOpenSettings: openRemindersPrivacySettings,
+                        onAccessAction: { action in
+                            switch action {
+                            case .requestAccess: requestRemindersAccess()
+                            case .openSystemSettings: openRemindersPrivacySettings()
+                            }
+                        },
                         onComplete: remindersManager.completeReminder
                     )
                 }
@@ -265,12 +270,14 @@ struct TasksListView: View {
         .animation(.easeOut(duration: 0.26), value: remindersManager.reminders.map(\.id))
         .onAppear {
             isCompletedCollapsed = true
-            remindersManager.refreshAuthorizationState()
         }
-        .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            remindersManager.refreshAuthorizationState()
-        }
+        // **T-253.** Appearance *and* foreground return, through the one shared modifier the
+        // other three reminders surfaces apply — this view carried its own hand-written pair.
+        // `isEnabled` is the scope, not `showsRemindersSection`: that gate reads `isAuthorized`,
+        // so a page that is not yet authorized would never re-derive and could never notice a
+        // grant. All Tasks has no reminders strip, so re-reading EventKit from it is work with
+        // nothing behind it.
+        .remindersAuthorizationLifecycle(remindersManager, isEnabled: scope == .inbox)
         .background {
             // Inbox's hover-freeze, now on both scopes: ticking a task off must not reshuffle the
             // row under the pointer before the click lands. Row order only, never the group tree —
