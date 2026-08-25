@@ -81,8 +81,26 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         _ = MarkdownKeyboardShortcutSupport.apply(command, in: self)
     }
 
+    /// Widened so an image-only pasteboard makes **Paste** applicable at all.
+    ///
+    /// AppKit validates the Paste command against this list before dispatching it, so with the
+    /// stock list a screenshot left the menu item disabled and `paste(_:)` below was never called.
+    /// The reasoning, and why this is the fix rather than `importsGraphics = true`, is on
+    /// `MarkdownImageAssetService.readableImagePasteboardTypes`.
+    ///
+    /// Appended, never prepended: `readSelection(from:)` picks the first of *these* types the
+    /// pasteboard carries, so text keeps resolving to RTF or string exactly as before and only a
+    /// pasteboard with nothing else on it reaches an image type.
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        var types = super.readablePasteboardTypes
+        for type in MarkdownImageAssetService.readableImagePasteboardTypes where !types.contains(type) {
+            types.append(type)
+        }
+        return types
+    }
+
     override func paste(_ sender: Any?) {
-        if insertImages(from: NSPasteboard.general) {
+        if insertMarkdownImages(from: NSPasteboard.general) {
             return
         }
         super.paste(sender)
@@ -118,7 +136,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        if insertImages(from: sender.draggingPasteboard) {
+        if insertMarkdownImages(from: sender.draggingPasteboard) {
             return true
         }
         return super.performDragOperation(sender)
@@ -836,7 +854,13 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         didChangeText()
     }
 
-    private func insertImages(from pasteboard: NSPasteboard) -> Bool {
+    /// The whole paste path — read, create, insert — with its pasteboard as an argument.
+    ///
+    /// Taking the pasteboard rather than reaching for `NSPasteboard.general` is what lets a test
+    /// exercise this against a private pasteboard it owns. A test that wrote the system clipboard
+    /// would destroy whatever the person running it had copied.
+    @discardableResult
+    func insertMarkdownImages(from pasteboard: NSPasteboard) -> Bool {
         let urls = MarkdownImageAssetService.imageFileURLs(from: pasteboard)
         let images = urls.isEmpty ? MarkdownImageAssetService.images(from: pasteboard) : []
         guard !urls.isEmpty || !images.isEmpty,

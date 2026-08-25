@@ -110,6 +110,27 @@ final class iOSMarkdownTextView: UITextView {
     @objc private func indentListCommand() { indentationCommandHandler?(true) }
     @objc private func outdentListCommand() { indentationCommandHandler?(false) }
 
+    /// Offers **Paste** when the pasteboard holds nothing but an image.
+    ///
+    /// The macOS twin of this is `CadenceTextView.readablePasteboardTypes`, and it is the same
+    /// defect on both platforms: the command is validated before it is dispatched, so a `paste(_:)`
+    /// override is unreachable for a payload the stock view does not consider pasteable.
+    /// `UITextView` answers no for an image on an editor whose `allowsEditingTextAttributes` is
+    /// false — which `iOSMarkdownEditor` sets deliberately, because this storage holds markdown
+    /// source and not attributed rich text — so the item never appears in the edit menu and Cmd-V
+    /// on a hardware keyboard does nothing.
+    ///
+    /// `hasImages` and not `.images`: reading the pasteboard's contents raises the system's
+    /// "pasted from" banner, and asking whether a menu item should be enabled must not do that.
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(UIResponderStandardEditActions.paste(_:)),
+           isEditable,
+           UIPasteboard.general.hasImages {
+            return true
+        }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
     override func paste(_ sender: Any?) {
         if let images = UIPasteboard.general.images,
            !images.isEmpty,

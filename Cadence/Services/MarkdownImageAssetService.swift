@@ -312,6 +312,34 @@ nonisolated enum MarkdownImageAssetService {
     static func images(from pasteboard: NSPasteboard) -> [NSImage] {
         pasteboard.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage] ?? []
     }
+
+    /// The pasteboard types an image can arrive on — the type-level statement of what the two
+    /// readers above can actually accept, so that AppKit can be told about it *before* any of this
+    /// runs.
+    ///
+    /// **This is the list whose absence made pasting an image do nothing.** `NSTextView` decides
+    /// whether **Paste** is applicable at all by intersecting the pasteboard's types with its own
+    /// `readablePasteboardTypes`, and that list carries no image type unless `importsGraphics` is
+    /// set. Measured on macOS 26, the default is RTF, RTFD, HTML, the URL family, string,
+    /// filenames, colour, font and ruler — and nothing else. A screenshot and a browser image are
+    /// image-*only* pasteboards, so the intersection is empty, `validateUserInterfaceItem` answers
+    /// **false** for `paste:`, the menu item is disabled and Cmd-V is never dispatched. A
+    /// `paste(_:)` override cannot help: the command never arrives. That is also why the same image
+    /// **dragged** in always worked, and why a file copied in **Finder** pasted fine — a Finder copy
+    /// carries `NSFilenamesPboardType`, which is in the default list, and a drag registers its own
+    /// types.
+    ///
+    /// Widening `readablePasteboardTypes` is deliberately the fix rather than `importsGraphics =
+    /// true`. Turning that on would *also* let `super.paste(_:)` build an `NSTextAttachment` on any
+    /// path where the editor's own handler declines — an invisible U+FFFC in a text storage whose
+    /// whole invariant is that it holds markdown source and nothing else.
+    ///
+    /// `NSImage.imageTypes` is the source rather than a hand-written `[.tiff, .png]`, so the offer
+    /// and the read agree by construction: every format `readObjects(forClasses: [NSImage.self])`
+    /// can decode is a format the menu item is enabled for, HEIC and WebP included.
+    static var readableImagePasteboardTypes: [NSPasteboard.PasteboardType] {
+        NSImage.imageTypes.map { NSPasteboard.PasteboardType($0) } + [.fileURL]
+    }
 #elseif os(iOS)
     @discardableResult
     static func createAsset(
