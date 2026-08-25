@@ -33,57 +33,6 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
-- [T-73] **Audit iPhone/iPad divergence and share what should be shared.** Standing rule added to
-  **DECIDED 2026-08-26: split, then close this parent.** The user's call. One audit pass files each
-  real divergence as its own ticket with a definite end, and this sweep is closed rather than left
-  permanently open. The precedent is the layout sweep, which produced nine concrete fixes and no
-  ending of its own. A sweep never finishes; the specific bugs inside it do.
-  `AGENTS.md` and `CLAUDE.md` 2026-08-17: the two differ in *layout* only, never in how a row, chip,
-  header or picker looks or behaves. This item is the sweep to make the code match that — find the
-  places where a phone view and an iPad view are near-copies and collapse them into one view
-  parameterised by size class. Distinct from [T-32], which is macOS↔iOS *feature* parity; this is
-  iPhone↔iPad *implementation* sharing. The Notes starting point is closed (`D-44`, one view for all
-  three hosts) and so is the page-header family (`D-62`). What is left of the original list —
-  `iPadTodayView` vs the compact Today, and the compact/regular branches inside the task row — is
-  in flight now.
-
-  **2026-08-24 mechanical re-sweep: both named remainder items are already closed, and nothing else
-  in scope needs a code change.** Checked against HEAD (`9582956`), not the working tree, which had
-  five other agents' uncommitted changes in it at the time. `iPadTodayView` does not near-copy the
-  compact layout any more — both widths render through the one `iOSTodayTaskSections` (comment at
-  `iPadTodayView.swift:258` records the second-copy defect `D-54`/`D-66` already fixed: 15pt vs 14pt
-  group spacing, an 18-vs-14-padded empty state, and a `todayTasks`-derived branch duplicating the
-  groups). The task row is one `iOSTaskRow` reading `CadenceTaskRowMetrics.metrics(isRegularWidth:)`
-  for every figure (`iOSTaskViews.swift:5-9` records the deleted `iOSTaskRowDensity` axis this used
-  to hide behind). Grepped every `horizontalSizeClass` site under `Cadence/iOS` and `Cadence/Shared`
-  (38 files) rather than trusting impression: the rest are legitimate layout swaps already reached
-  through shared factories (`CadencePageHeaderMetrics`, `iOSEditorSheetMetrics`,
-  `CadenceRegularPaneLayout`, `iOSCalendarMetrics`) or `iOSFeatureSplitLayout`/`iOSFeatureRowLink`
-  (list-pane-vs-push, one implementation parameterised by `pushes`), each with a code comment
-  recording the drift it already closed. `iOSCalendarToolbar.toolbar` is the model worth naming: it
-  used to be an `if horizontalSizeClass == .compact` beside a `ViewThatFits` fallback described in
-  its own comment as "the phone's own two-row shape" — i.e., the phone's layout was already correct
-  for the iPad and was being withheld from it. It is one `ViewThatFits`, chosen by whether the row
-  fits, now.
-
-  One drift found in passing, adjacent to but not itself iPhone/iPad divergence — a near-copy of two
-  *iOS* note-editor sheets rather than of one sheet across two widths: `iOSEventNoteEditorSheet`'s
-  header (hand-rolled 12pt uppercase caption, title fixed at 24pt on every width, 4pt block spacing)
-  had drifted from `iOSLinkedNoteEditorSheet`'s near-identical header
-  (`Cadence/iOS/iOSMarkdownReferenceSupport.swift`), which already uses the shared
-  `SectionEyebrowLabel` (10pt, kerned) and ramps the title `isRegularWidth ? 24 : 22` with 8pt
-  spacing — that sheet's own comment records converting "a fourth hand-rolled uppercase caption",
-  and the event-note sheet was never swept into it. **Shipped in `af03fb1`**:
-  `iOSEventNoteEditorSheet.swift`'s `header` now matches the linked-note sheet's spelling exactly;
-  no visible change at regular width (title was already 24 there), compact width now reads 22pt to
-  match. Not folded into a single shared header type in this pass — the two sheets' surrounding
-  chrome (toolbar items, AI actions button, calendar sync) differ enough that extracting one would
-  be a larger, unaudited change; a future pass can revisit if a third near-copy appears.
-
-  Nothing else ticketed out of this sweep: no missing-capability divergence (a control present at
-  one width and absent at the other) turned up anywhere the grep reached.
-
-
 - [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
   Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes
   `rsync` + `git show HEAD:<path>` restore instead. The workaround has a real ongoing cost: the
@@ -182,15 +131,6 @@ _Nothing in flight._
   (`iOSCompactTabShell`) is built around a portrait tab bar; landscape focus wants the timer large
   and the chrome gone, which is a different shape rather than the same one rotated.
 
-- [T-170] **Decide how far iPadOS and iPhone layout should converge.** Standing rule is that they
-  **DECIDED 2026-08-26: split, then close this parent.** The user's call. One audit pass files each
-  real divergence as its own ticket with a definite end, and this sweep is closed rather than left
-  permanently open. The precedent is the layout sweep, which produced nine concrete fixes and no
-  ending of its own. A sweep never finishes; the specific bugs inside it do.
-  are one *style* and differ only in *layout* — sidebar vs tab bar, two panes vs one. The open
-  question is where that line actually falls now that Today, Tasks, Calendar and Notes have all
-  been unified internally. Wants a decision recorded, not a sweep: which surfaces are genuinely
-  shape-bound and which are iPad-only by accident.
 
 - [T-161] **Tests pin helpers, not wiring.** The T-149 verifier proved by mutation that reverting the
   `macOSRootCommandActionSupport` fix leaves all 1692 tests green, and the same holds for T-150 —
@@ -260,70 +200,6 @@ _Nothing in flight._
 
 
 
-- [T-123] **Tighten the repo, and converge the three platforms' UI.** Requested 2026-08-18. Scope
-  **DECIDED 2026-08-26: split, then close this parent.** The user's call. One audit pass files each
-  real divergence as its own ticket with a definite end, and this sweep is closed rather than left
-  permanently open. The precedent is the layout sweep, which produced nine concrete fixes and no
-  ending of its own. A sweep never finishes; the specific bugs inside it do.
-  decided with the user up front, because two readings of "unify the UI" are different projects:
-
-  1. **Share the implementation now; decide feature parity after.** One set of tokens, components
-     and presentation logic behind all three surfaces; each keeps its own *layout* (macOS sidebar +
-     columns, iPad split, iPhone tabs). The user's stated goal is that the end product should be
-     **more similar across all three than it is now, especially closing the macOS↔iOS/iPadOS gap** —
-     so parity is a real target, just sequenced after the sharing sweep with numbers in hand.
-     Distinct from [T-32], which stays not-started.
-  2. **Best spelling wins, either way.** macOS may change visually where iOS has the better answer.
-     This reverses the earlier "macOS is the reference" default and is only safe because macOS
-     screenshot verification now works (`D-89`). Every macOS visual change must be seen, not argued.
-  3. **MCP is in scope, refactored extra carefully** — and the first task there is to work out *why*
-     `AGENTS.md` says not to touch it, since a rule with a forgotten reason is either load-bearing
-     or dead. `CadenceReadService.swift` is now the largest file in the repo at 1,336 lines. After
-     the refactor, the docs must say considerably more about that boundary than they do now.
-
-  Proportions worth keeping in view: macOS 218 files / 51.9k lines, iOS 79 / 30.4k, **Shared only
-  74 / 11.5k**, Services 53 / 12.7k, Models 24 / 2.6k. 82k lines of platform code against 11.5k
-  shared is the number this item exists to move.
-
-  Method: read-only audit agents first, findings triaged and recorded here, then implementation
-  agents, each followed by an **independent verifier agent** that checks the work against the code
-  rather than against the implementer's report.
-
-  **Audit pass, 2026-08-24, against `af03fb1`.** Re-derived every count in this entry and in the
-  guides rather than trusting them, per the method above.
-  - **Item 3 (MCP) is done by inspection.** `CadenceMCPServer/AGENTS.md` already states the full
-    boundary — why the old "do not touch" rule was wrong (`670e299`/`62dc384` broke the target
-    silently, `0040f24` shipped a stale schema silently) and the procedure that replaced it. There
-    is nothing left to refactor that the doc doesn't already explain; a future pass should cite a
-    specific file before re-opening this rather than re-asking the general question.
-  - **The proportions line is dated but the trend is real, not a reason to reset it.** At filing:
-    macOS 218/51.9k, iOS 79/30.4k, Shared 74/11.5k. At `af03fb1`: macOS 216/51.2k (flat), iOS
-    96/35.0k (+17 files), **Shared 106/19.0k (+32 files, +7.5k, +65%)**. Item 1's sharing sweep is
-    visibly happening.
-  - **Two file counts elsewhere had drifted**, caught by re-deriving instead of trusting them: iOS's
-    `.swift` count read "93" in four places (root `AGENTS.md`, `CLAUDE.md` ×2, `Cadence/iOS/AGENTS.md`)
-    against an actual `ls Cadence/iOS/*.swift | wc -l` of 96; `CadenceTests/` read "177" in two
-    places (root `AGENTS.md`, `CLAUDE.md`) against an actual 186. Fixed in root `AGENTS.md` (both
-    counts) in this pass. **Not fixed in `CLAUDE.md` or `Cadence/iOS/AGENTS.md`**: both files were
-    mid-edit by other agents for unrelated work (the `CadenceFocusHandoff`/T-266 addition and the
-    T-214/T-215 archive→wind-down rename) while this pass ran, so editing them risked colliding
-    with in-flight work rather than being unsafe on its own terms — still open. Everything else
-    checked out exactly and needed no correction: `Shared/Components/` 21 files (matches the named
-    list), `macOS/Views/` 167, `Services/` 50, `Markdown*.swift` 27 (25 of them `*Support`),
-    `SettingsCategory` 14 cases, `iOSSettingsCategory` 12 cases.
-  - **One concrete near-copy found, filed separately as [T-275]** rather than fixed here: fixing it
-    is a visible macOS change, and item 2 above requires those to be screenshotted rather than
-    argued, which a read-only pass isn't positioned to do.
-  - **Checked and clean, no action needed:** no `Color(hex: "#...")` literals outside `Theme.swift`,
-    no bare `Color.white`/`.black`/`.gray`, priority/status colour fully routed through
-    `Theme.priorityColor`/`statusColor`, `CadenceFeatureDestination` tints read from one source on
-    both platforms (the `e181dea` fix holds), `GoalLinkTarget`'s one write path holds on macOS too
-    (`.area`/`.project` shorthand at both `CreateGoalSheet` and `GoalAttachWorkSheet` call sites,
-    not a bare `GoalListLink(` construction).
-  - **Narrowed scope going forward:** item 3 is closed. Item 1 is the real remaining work, and the
-    productive unit of audit is one hand-rolled UI pattern (a header, a label style, a literal
-    list) at a time, grepped across both platform folders before calling it shared or
-    platform-only — the method that found [T-275] and the two stale counts above.
 
 - [T-122] **Flip `SWIFT_VERSION` to 6.0 — now an open question rather than a blocked one.** `D-95`
   **DECIDED 2026-08-26: investigate and report, do not flip.** The user's call. Measure each target's
@@ -534,8 +410,280 @@ _Nothing in flight._
   in the edit menu and inserts the picture. Do not close this by reading the diff — a correct
   `paste(_:)` override that was never dispatched is exactly how the macOS bug survived.
 
+- [T-281] **Two iOS note-editor sheet headers are one header, written twice.** From the [[T-73]]
+  split. `iOSEventNoteEditorSheet.header` (`Cadence/iOS/iOSEventNoteEditorSheet.swift`) and
+  `iOSLinkedNoteEditorSheet.header` (`Cadence/iOS/iOSMarkdownReferenceSupport.swift`) are now
+  **line-for-line identical**: `SectionEyebrowLabel(text:)`, a title at `isRegularWidth ? 24 : 22`
+  bold with `lineLimit(2)`, `frame(maxWidth: .infinity, alignment: .leading)`,
+  `frame(maxHeight: isRegularWidth ? .infinity : nil, alignment: .topLeading)`,
+  `padding(.horizontal, isRegularWidth ? 20 : 18)`, `padding(.vertical, isRegularWidth ? 20 : 14)`,
+  `background(Theme.surface)`. `af03fb1` made them identical rather than shared and deferred the
+  extraction to "a future pass … if a third near-copy appears" — but the reason it recorded is
+  about the two sheets' *surrounding chrome* (toolbar items, AI actions button, calendar sync),
+  which is not the thing that would be extracted. Two identical bodies is exactly the state the
+  event-note header was already in once, before its 12pt caption / fixed-24pt title / 4pt spacing
+  drifted away from the linked-note sheet's.
+  Done: one `iOSNoteEditorSheetHeader(eyebrow:title:)` view, both sheets calling it, neither file
+  spelling the ramp again, and a source-scanning test that fails if either re-declares the block.
+
+- [T-282] **The iPhone's `+` opens a capture palette; the iPad's `+` cannot.** From the [[T-73]] /
+  [[T-170]] split, and the one genuine "control present at one width and absent at the other" this
+  audit found. [[T-171]] shipped the hold-for-palette gesture on
+  `iOSCaptureRadialMenuButton`, whose **only** caller is `iOSCompactTabShell` — so holding the
+  centre `+` on iPhone offers `CadenceCaptureAction`'s three segments (Task / Event / Note) and a
+  drag onto a drop target, while the iPad's corner `+` (`iOSFloatingCreateTaskButton` →
+  `iOSCircularAddButton` + `.iOSNewTaskDragSource`) taps straight into `iOSCreateTaskSheet` and can
+  capture nothing but a task. T-171's own entry scoped out macOS deliberately ("macOS stays
+  deliberately unspecified") and said nothing about iPad, so this is an omission rather than a
+  decision. **And it is why this parent had to close.** T-73's 2026-08-24 sweep ended "no
+  missing-capability divergence (a control present at one width and absent at the other) turned up
+  anywhere the grep reached" — true when written, against `9582956` on 2026-08-23, and false about
+  30 hours later when `0cddcf0` landed the palette on the phone alone. A sweep's finding of
+  *absence* expires the moment anyone ships anything.
+  `iOSCircularAddButton`'s doc comment still asserts the opposite — "**Both capture
+  buttons in the app are this one.** The iPad's corner `+` and the iPhone tab bar's centre `+` are
+  the same action in deliberately different *places*" — which is the drift hazard this repo keeps
+  paying for.
+  Done: the iPad's corner `+` carries the same palette (the gesture and the geometry are already
+  shared and tested in `Shared/CadenceCapturePaletteSupport.swift`), **or** the user rules that a
+  palette is a thumb affordance and the iPad keeps a tap — and then `iOSCircularAddButton`'s
+  comment says which, instead of claiming they are the same action.
+
+- [T-283] **Three `iPad*` names for views that render on every device.** From the [[T-73]] /
+  [[T-170]] split — a naming defect, not a layout one, and the kind that makes the next agent write
+  the second copy. `iPadInboxView` is the Inbox at every width and **its own doc comment says so**
+  ("the name is now simply wrong: this is the Inbox on every device"); `iPadTodayView` is Today at
+  every width and picks its layout from `CadenceTodayLayoutSupport.layout(...)` inside;
+  `iPadTodayCompactViews.swift` declares `iOSCompactTodayView` / `iOSCompactTodayEmptyState` /
+  `iOSCompactSampleDataCard` and `iPadTodayScheduleViews.swift` declares `iOSSchedulePanel` — two
+  files whose names claim a device none of their types is limited to.
+  **Not in scope, and deliberately so:** `iPadTodayTaskHeader`, `iPadTodayInspectorSwitcher` and
+  `iPadTodaySidePanel` really are two-pane-only, which only regular width reaches.
+  Done: `iOSInboxView` and `iOSTodayView` (with their ~20 call sites and the four test files that
+  name them), `iOSTodayCompactViews.swift` and `iOSTodaySchedulePanel.swift`, and no `iPad`-prefixed
+  symbol left that a compact width can reach.
+
+- [T-284] **Six spellings of one uppercase eyebrow label, at four kernings.** From the [[T-123]]
+  split, and exactly the "one hand-rolled UI pattern (a header, a label style, a literal list) at a
+  time" unit that entry narrowed itself to. `SectionEyebrowLabel` is the app's one eyebrow — 10pt
+  semibold, kerning 0.8, and `fontSize` is published because things drawn beside it have to agree —
+  and macOS reads it in 19 files. Beside it, at 9pt semibold `Theme.dim`, sit:
+  `macOS/CadenceCalendarPicker.swift:84` (0.6), `macOS/Views/ContainerPickerSupportViews.swift:115`
+  (0.6), `macOS/Views/AIActionsSupportViews.swift:443` (`NoteActionSubsectionLabel`, 0.7),
+  `macOS/Views/TaskInspectorWorkflowSupportViews.swift:483` (0.45, with a comment computing
+  "~0.05em at 9pt"), `macOS/Views/GoalAttachWorkSheet.swift:85` (no kerning at all), plus
+  `TaskInspectorFieldRowMetrics.groupLabelKerning` (0.54) and — in a **shared** component —
+  `Shared/Components/EstimatePickerControl.swift:139` (0.54). iOS has one too:
+  `iOSContainerChoicePopover.groupLabel` in `iOS/iOSChoicePicker.swift:66`, 9pt, no kerning.
+  Two constants re-type the shared numbers rather than reading them:
+  `SidebarMetrics.contextHeaderFontSize`/`contextHeaderKerning` are literally `10` and `0.8`.
+  There may be a real second tier here — a popover eyebrow can legitimately be smaller than a page
+  eyebrow — but four kernings is not a tier, it is drift.
+  Done: one named spelling for the 9pt tier (a `SectionEyebrowLabel` size parameter or a
+  `CadenceEyebrowMetrics` pair), every call site above reading it, `SidebarMetrics`' two constants
+  deriving from `SectionEyebrowLabel.fontSize`, and a source scan that fails on a new inline
+  `.font(.system(size: 9, weight: .semibold))` over an `.uppercased()` `Text`.
+
+- [T-285] **macOS re-spells `CadenceEmptyStateCopy`, and hand-rolls `EmptyStateView` for the
+  Inbox.** From the [[T-123]] split. `Shared/CadenceEmptyStateCopy.swift` exists because three pairs
+  of screens said the same thing in different words; it has **eight iOS references and zero macOS
+  ones**. So the Inbox reads "Inbox is clear / Capture tasks here before scheduling or filing them."
+  on iOS and "Inbox is empty / Unsorted tasks and Apple Reminders appear here.\nCreate something to
+  get started." on macOS, and All Tasks reads "No active tasks / Tasks you create on iPhone, iPad,
+  or Mac will collect here." against "No tasks yet / Create a task to get started"
+  (`macOS/Views/TasksListView.swift:299`). Worse, `InboxEmptyStateView`
+  (`macOS/Views/InboxSupportViews.swift:294`) is a hand-rolled second `EmptyStateView`: its own
+  72pt `Theme.blue.opacity(0.08)` circle, its own 30pt light glyph, its own 16/13pt type ramp —
+  while `EmptyStateView` is the shared component macOS already uses in eleven other files.
+  **Not in scope:** `FocusPickerSupportViews.emptyState` is a searching-vs-empty popover state, a
+  different job from a page's empty state.
+  Done: `InboxEmptyStateView` deleted in favour of `EmptyStateView`, macOS's Inbox and All Tasks
+  empty states reading `CadenceEmptyStateCopy`, and the copy decided once per screen rather than
+  once per platform.
+
+- [T-286] **Seven macOS Settings sections are still outside the shared row vocabulary.** From the
+  [[T-123]] split — currently recorded **only inside the Done entry for [[T-20]]**, which is where
+  remaining work goes to be forgotten. T-20 moved the settings vocabulary into
+  `Shared/Components/CadenceFieldRows.swift` + `CadenceChoicePicker.swift` and converted Navigation,
+  Calendar → Work Hours, AI and About completely; Account, Data Safety, Contexts, Lists and Sidebar
+  took the hairline only. Untouched, and confirmed at `36be8ba` — zero references to
+  `CadenceFieldSection` / `CadenceFieldRow` / `CadenceSettingsField` in any of them:
+  `SettingsTagsSection.swift` (493 lines, and still carrying its own two spellings of the inset
+  well), `SettingsTemplatesSection.swift` (323), `SettingsSupportViews.swift` (427),
+  `SettingsRemindersSection.swift` (151), `SettingsSyncSection.swift` (85),
+  `SettingsNotificationsSection.swift` (78), `SettingsAppearanceSection.swift` (24).
+  They are *clean* — no `Picker(.menu)`, no `Divider().background(...)`, both swept by tests — just
+  not in the vocabulary, so a settings row is still two heights and two spellings depending on which
+  category you opened.
+  Done: those seven built on `CadenceFieldSection` / `CadenceFieldRow` / `CadenceSettingsField` at
+  `CadenceSettingsRowMetrics.rowHeight`, `SettingsTagsSection`'s two private inset wells deleted,
+  and `SettingsSharedVocabularyTests` extended to name them so the next one cannot regress.
+
+- [T-287] **The `~` list-search panel is implemented twice on macOS.** From the [[T-123]] split.
+  `CLAUDE.md` already records this as "a standing violation of the 'one shared component over
+  near-copies' rule, recorded here so it is not mistaken for a deliberate split" — and it has never
+  been a ticket, so it has stayed standing. `macOS/Views/QuickCreateChoicePopover.swift` carries
+  `tildeFlatContainers` (288), `selectTildeContainer` (318), `selectTildeContainerItem` (324),
+  `clampTildeHighlight` (416) and its own `TildeContainerItem`; `macOS/Views/TaskTitleEntryField.swift`
+  carries the same five under the same names plus `TaskTitleTildeContainerItem`. They share
+  `TildeContainerPickerRow` and nothing else — including the silent `normalizeSelectedSection()`
+  that both must perform after a container change, which is the half most likely to be fixed in one
+  copy only.
+  Done: one panel — the container list, the highlight arithmetic, the selection and the section
+  normalisation — read by both the title field and the drag-create popover, one item type, and a
+  test that fails if either file re-declares `tildeFlatContainers`.
+
+- [T-288] **Four whole-file `#if os(macOS)` components sit in `Shared/Components/`.** From the
+  [[T-123]] split. That folder is the inventory `CLAUDE.md` tells an agent to read *before* writing
+  a new shared view, so a macOS-only file in it reads as available and is not — the T-173
+  `CompactTagStrip` failure mode with the platform fence supplying the misdirection.
+  `CadenceScrollElasticity.swift` (49 lines) is genuinely AppKit (`NSViewRepresentable`,
+  `NSScrollView.Elasticity`) and simply lives in the wrong folder. The other three import
+  **`SwiftUI` and nothing else** — `CadenceButtons.swift` (237), `CadenceContextPicker.swift` (293),
+  `CommitmentSharedViews.swift` (224) — i.e. 754 lines behind a guard that nothing in them needs,
+  which is the same shape as `PrivacyDataResetService`, `ListDeleteHelpers`, `RemindersManager` and
+  `CadenceFocusBundleSupport` before each was lifted. `CadenceContextPicker` is the one with a live
+  counterpart to converge on: `CadenceContextPickerButton` has two macOS readers (`CreateGoalSheet`,
+  `HabitsFormSupportViews`) while iOS spells the same "pick a context" control twice more, in
+  `iOSListEditorViews.swift:124` and `iOSTrackingEditorSheets.swift:167`/`:385`.
+  Done: no whole-file `#if os(macOS)` under `Shared/Components/` — the AppKit one moved to
+  `Cadence/macOS/`, and each of the other three either unfenced with its iOS counterpart routed
+  onto it, or moved to `macOS/Views/` with the reason recorded. A test asserting the folder holds
+  no whole-file platform fence is what keeps it settled.
+
+- [T-289] **Two iOS buttons wear macOS's hover style.** From the [[T-123]] split. `.iosPressable`
+  (`iOSPressableButtonStyle`, a 0.97 scale and 0.62 opacity dim) is iOS's press feedback and is used
+  83 times across 36 files; `.cadencePlain` is macOS's hover wash and its `CadenceHoverTracking`
+  is `#if os(macOS)`-fenced, so on iOS it degrades to a `Theme.blue.opacity(0.14)` fill and a 0.24
+  stroke at radius 10 on press — a blue rounded rectangle no other iOS control draws.
+  `Cadence/iOS/iOSDateJumpTitle.swift:88` (the Notes and Calendar header date control) and `:193`
+  (its "jump to now" row) are the only two iOS call sites, and `iOSDesignSystem.swift` already
+  documents `.iosPressable` as "the press translation of macOS's `.cadencePlain` hover wash".
+  Small, and it is the "one hover/selection layer at one radius" rule on the platform that has no
+  hover at all.
+  Done: both read `.iosPressable`, and a source scan asserts zero `.cadencePlain` under
+  `Cadence/iOS/`.
+
+- [T-290] **`CadenceTaskSurfaceOptions` has eight iOS readers and no macOS one.** From the [[T-123]]
+  split, and the same shape as T-175: a shared value stating what is true of every task surface,
+  with one platform re-deciding each of its answers inline. `Shared/CadenceTaskSurfaceOptions.swift`
+  owns `showsSort`, `showsCompletedToggle`, `showsContainerChip` and `completedRowLimit`, and says
+  in as many words that there is **deliberately no size class in the file** because the options are
+  a property of the surface. macOS answers all four somewhere else: the chrome per surface is
+  decided at each view, the container chip is `MacTaskRowStyle`-driven
+  (`showsListContextChip = style == .standard && !task.containerName.isEmpty`, an axis about the
+  *row* rather than the surface), and the completed cap does not exist — `TasksListView.completedTasks`
+  has no `prefix`, so the same logbook lists 24 rows on a phone and all of them on a Mac, which is
+  the "one number, because there was never a reason for two" the value's own comment argues for
+  landing at zero and 24.
+  One consequence worth deciding rather than inheriting: because macOS's chip is gated on
+  `!task.containerName.isEmpty`, an Inbox task shows no list chip on the Mac and therefore cannot be
+  filed from the row — the exact defect `showsContainerChip` was written for on iOS, in reverse.
+  Done: macOS's Today, Inbox, All Tasks and list-detail Tasks tab read
+  `CadenceTaskSurfaceOptions.options(for:)` and `completedRows(from:)`, or the enum grows an
+  explicit `.desktop` exception with its reason beside it the way `CadenceTaskRowMetrics` did —
+  pinned either way, so the exception cannot decay into an oversight.
+
 ## Done
 
+
+- [T-73] **Audit iPhone/iPad divergence and share what should be shared — CLOSED BY SPLITTING, not
+  by building.** The user's call, 2026-08-26, and the same move [[T-32]] got in `D-130`: one audit
+  pass files each real divergence as a ticket with a definite end, and the sweep stops being an
+  open item. A sweep never finishes; the specific bugs inside it do.
+  **Filed out of it: [[T-281]], [[T-282]], [[T-283]]** — the two identical iOS note-editor sheet
+  headers, the capture palette the iPad's `+` does not have, and three `iPad*` names on views that
+  render at every width.
+  **The 2026-08-24 re-sweep that closed with "nothing else in scope needs a code change" is the
+  argument for closing this, not against it.** It was honest and it was right about `9582956`; then
+  `0cddcf0` shipped the capture palette on the iPhone alone about thirty hours later, and the
+  sentence "no missing-capability divergence turned up anywhere the grep reached" quietly became
+  false with nobody reading it again. A statement of *absence* has a shelf life measured in commits;
+  a ticket naming a file does not.
+  **What the audit checked and found clean**, at `36be8ba`, from the code rather than from this
+  entry's own list: every `horizontalSizeClass` reader under `Cadence/iOS` and `Cadence/Shared` (39
+  files). All but the three above resolve through a shared factory —
+  `CadencePageHeaderMetrics`, `CadenceTaskRowMetrics`, `CadenceTodayLayoutSupport`,
+  `CadenceNotesListMetrics`, `iOSEditorSheetMetrics`, `iOSCalendarMetrics`,
+  `CadenceCalendarWeekGridLayout`, `iOSTaskCollectionMetrics`, `CadenceRegularPaneLayout` — or are
+  a genuine shape swap (`iOSFeatureSplitLayout` list-vs-push, `iOSCompactNavigationBarHidden`,
+  `iOSFloatingCreateTaskButton`'s regular-width-only placement, `iOSCalendarBoardView`'s column
+  paging). `iPadTodayView` and `iOSCompactTodayView` both render `iOSTodayTaskSections` and both
+  head themselves through `iOSPageHeader`, of which `iOSCompactPageHeader` is a name-only
+  `.page`-role wrapper. `iOSTaskRow` is one row reading `CadenceTaskRowMetrics(isRegularWidth:)`.
+  `CadenceTaskSurfaceOptions` states each surface's chrome with no size class in the file at all,
+  and both Today hosts read it. `CadenceCompactTab`'s destination union is `allCases`, pinned.
+  **Deliberate splits, confirmed and not filed:** `MacTaskRow` / `iOSTaskRow` (the survey and the
+  three figures macOS deliberately does not read are in `Shared/AGENTS.md`, pinned by
+  `CadenceSharedTaskRowJobsTests`); the two note-export renderers; the bundle day-bounds constants
+  spelled twice; `FocusManager` being macOS-only; `iPadTodayTaskHeader` /
+  `iPadTodayInspectorSwitcher` / `iPadTodaySidePanel`, which only a two-pane width reaches.
+  One false trail worth recording so it is not walked again: grepping `Shared/` for types with zero
+  readers on one platform produces a long list that is mostly **not** divergence. Half of it is
+  `View` extensions whose entry point is the modifier and not the struct (`CadenceCardStyle` →
+  `.cadenceCard`, 24 readers; `CadenceStartupIssueBanner` → `.cadenceStartupIssueBanner`, both root
+  views), and most of the rest is iOS-shaped logic that lives in `Shared/` for a stated reason —
+  `Cadence/iOS/` is entirely inside `#if os(iOS)` and therefore invisible to the macOS-built
+  `CadenceTests`, so `CadenceCompactTab`, `CadenceSwipeActionSupport`, `CadenceCapturePaletteSupport`,
+  `CadenceFocusHandoff` and `CadenceTodayLayoutSupport` are there to be testable, not to be shared.
+  Check the modifier and the fence before calling a one-sided reader count a finding.
+
+- [T-170] **How far iPadOS and iPhone layout should converge — DECIDED AND CLOSED, split rather
+  than swept.** The user's call, 2026-08-26. This asked for a decision recorded, not a sweep, and
+  the [[T-73]] audit above is what it took to answer it from the code.
+  **The decision: the line falls at the shell and the pane count, and nowhere else.** iPhone gets a
+  four-tab bottom bar with one column; iPad gets a sidebar and, above
+  `CadenceTodayLayoutSupport.twoPaneMinimumWidth`, two panes. *Everything inside a pane is one
+  implementation* — the row, the chip, the header, the picker, the empty state, the group heading,
+  the options bar — parameterised by size class through a named shared factory, never by an
+  `iPhoneFoo` beside an `iPadFoo`. A size-class branch is legitimate only when it selects a
+  *placement* (a rail against a stack, a push against a detail pane, a corner button against a bar
+  button) or reads a figure from one of the shared metrics types; it is a bug when it decides
+  whether a control exists.
+  **Nothing is iPad-only by accident any more, and one thing is iPhone-only by accident:** the
+  capture palette, now [[T-282]]. The rest of what this entry suspected is closed —
+  Today, Tasks, Calendar and Notes are each one view at both widths, and the two-pane Today column
+  and the compact Today draw the same sections through `iOSTodayTaskSections`.
+  Two surfaces are **genuinely shape-bound** and stay split: `iPadTodayInspectorSwitcher` and its
+  `iPadTodaySidePanel` (there is no second pane on a phone to switch), and
+  `iOSFloatingCreateTaskButton`'s regular-width-only corner placement (the phone's tab bar already
+  carries the same `+`, and two would be one action twice on one screen).
+  The rule this settles on is already written — "iPhone and iPad are one style, not two" in
+  `AGENTS.md` and `CLAUDE.md`. What was missing was the answer to *where the seam is*, and it is the
+  shell, not the screen.
+
+- [T-123] **Tighten the repo, and converge the three platforms' UI — CLOSED BY SPLITTING.** The
+  user's call, 2026-08-26. Item 3 (MCP) was already closed by inspection in the 2026-08-24 pass;
+  item 2 is a standing rule about *how* a macOS visual change lands (best spelling wins, and every
+  macOS visual change is screenshotted rather than argued), not a unit of work, and it carries
+  forward attached to each child ticket below rather than needing a parent to live in. Item 1 — the
+  sharing sweep — is what this split is.
+  **Filed out of it: [[T-284]], [[T-285]], [[T-286]], [[T-287]], [[T-288]], [[T-289]], [[T-290]]** —
+  the six-way eyebrow-label drift, macOS re-spelling `CadenceEmptyStateCopy` and hand-rolling an
+  `EmptyStateView`, the seven Settings sections still outside the shared row vocabulary, the `~`
+  panel implemented twice on macOS, the four whole-file `#if os(macOS)` components sitting in
+  `Shared/Components/`, `.cadencePlain` on two iOS buttons, and `CadenceTaskSurfaceOptions` having
+  no macOS reader.
+  **The proportions this entry exists to move, re-derived at `36be8ba`** rather than carried
+  forward: `Cadence/macOS` 168 view files, `Cadence/iOS` 103, `Cadence/Shared` 90 + 25 components,
+  `Cadence/Services` 54, `CadenceTests` 199. Shared has gone 74 → 106 → 115 files across the two
+  audits this entry has had; the trend it was filed to create is holding, which is the other reason
+  it does not need to stay open to be watched.
+  **Checked and clean, no ticket:** no `Color(hex: "#…")` literal outside `Theme.swift`; no bare
+  `.white` / `.black` / `.gray`; `CadenceSearchMatcher` is the one scorer for macOS's palette, iOS's
+  search and the MCP read service; `EmptyStateView` and `CadenceInlineEmpty` are read from both
+  platform folders; the settings vocabulary landed by [[T-20]] holds where it landed; the habit
+  detail's four components are shared; `CadenceTaskGroupHeading`, `CompactTagStrip`,
+  `CadenceDueUrgency`, `CadenceBoardColumnHeader` and `EstimatePickerPopoverContent` all have
+  readers on both sides.
+  **Judged deliberate and not filed:** `iOSContainerChoicePopover` against macOS's
+  `ContainerPickerBadge` — same job, but macOS's is search-first with arrow-key navigation and
+  groups by context while iOS's is a flat tap list, and which grouping is right is a product
+  question rather than a drift; `FocusPickerSupportViews.emptyState`, which distinguishes searching
+  from empty and is not a page's empty state; and the remaining half of the sort-vocabulary split
+  (`CadenceTaskSortMode` against `TaskSortField` + `TaskSortDirection`), which needs the user to say
+  whether the phone gains a sort *direction* before it has a definite end — the tie-break half is
+  already one function and must not be re-opened.
 
 - [T-243] `e0a30f8` **The drop-a-task-on-a-task gesture landed on iOS's Board, not its timeline — because the
   iOS timeline has no drag-and-drop at all.** macOS's home for the gesture is `TimelineDayCanvas`,
