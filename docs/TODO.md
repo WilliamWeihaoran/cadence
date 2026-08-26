@@ -33,6 +33,39 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-304] **A task whose do date and due date are the same day draws that date twice.** Reported by
+  the user 2026-08-26 with a screenshot of macOS Today; **cause confirmed in the code.**
+  `TasksPanelComponents` draws `doDatePill` (sun) and `dueDateBadgeList` (flag) independently, with
+  nothing comparing them — so a task do-dated and due on the same day renders "17 days ago" beside
+  "17 days ago". In the screenshot's Overdue section, two of three rows carry two date chips and one
+  of those pairs is literally identical.
+  The two fields are genuinely different and both deserve a chip when they differ. The rule wanted
+  is: when they name the **same day**, draw one chip, not two. Decide which glyph survives — the
+  flag reads as the harder commitment — and apply it to both platforms, since iOS draws the same
+  pair.
+
+- [T-305] **Today should group by list, not by date intent — on both platforms.** Reported by the
+  user 2026-08-26. Today currently groups into `CadenceTodayTaskGroupKind`: Overdue, Past Do, Due
+  Today, Planned Today. The user's decision, three parts:
+  1. **Drop "Planned Today" as a heading.** It restates the page — this is the Today view, so
+     everything in it is today. Same objection as the standing rule that a page header does not
+     describe the page you are already on; this is that rule applied one level down.
+  2. **Group the day's work by list instead**, the way the rest of the app groups tasks. The
+     `PAST DUE LISTS` block at the top is list-shaped already, so the page stops mixing two
+     different grouping axes.
+  3. **Keep Overdue at the top, and have a rolled-over task fall into its list's group** rather
+     than into a second date-shaped bucket. That is what makes the roll-over feel like it did
+     something: the task leaves the red section and joins its list.
+  Apply the same change to iOS, whose Today sections were unified onto the shared support in
+  `2dcc948` and `c6f7d61`.
+  Worth reading before designing: `CadenceTodayLayoutSupport` records that the split between
+  Overdue and Planned Today is deliberate and not width-driven, so this reverses a decision rather
+  than filling a gap — say so in the commit. `CadenceTaskPlanningSupport.CadenceTodayTaskGroupKind`
+  is the shared enum both platforms read, so the grouping decision has one home; the risk is the
+  **sort** inside each group and the rollover banner's interaction, not the enum.
+  Not decided, and worth asking the user once there is something to look at: what happens to a task
+  with no list — its own group, or the bottom of the page.
+
 - [T-299] **A date that parses is stored unnormalized, and lexical ordering then lies.** From the
   third external audit (Codex, 2026-08-26); **premise verified, and demonstrated rather than
   argued.** Several paths validate a date by parsing it and then keep the raw string.
