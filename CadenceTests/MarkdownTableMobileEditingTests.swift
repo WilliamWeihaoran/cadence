@@ -278,6 +278,35 @@ struct MarkdownTableMobileEditingTests {
             in: editor
         )
         #expect(write.contains("textView.replace(textRange, withText: replacement)"))
+
+        // **The fix's own wiring, which nothing else in this suite can see.** The three tests
+        // around it pin the reader (`theDelegateAnswersTheWriteWindowFirst`), the decision
+        // (`MarkdownProgrammaticEditSupport`'s units) and where the raw write lives
+        // (`theEditorHasOneRawWrite`) — and all three stay green if these two lines are deleted,
+        // because then the slot is never filled, `acceptsDelegateChange`'s `guard let pending`
+        // waves every proposal through, and the corruption returns exactly as it shipped. A source
+        // scan is the fallback here rather than the preference: `Cadence/iOS/` is entirely inside
+        // `#if os(iOS)` and this target builds for macOS, so there is no `Coordinator` to drive.
+        let announce = try #require(
+            write.range(of: "pendingProgrammaticEdit = MarkdownProgrammaticEdit(range: range, replacement: replacement)"),
+            "the funnel no longer announces the write it is about to make"
+        )
+        let clear = try #require(
+            write.range(of: "defer { pendingProgrammaticEdit = nil }"),
+            "the funnel no longer closes the window it opens"
+        )
+        let rawWrite = try #require(write.range(of: "textView.replace("))
+        // Announcing after the write announces nothing: UIKit runs its substitution pass inside
+        // that call, synchronously, and the delegate is asked while it is still on the stack.
+        #expect(announce.lowerBound < rawWrite.lowerBound, "the write is made before it is announced")
+        // The `defer` has to be registered above the write too, or the window never closes on the
+        // early `return false` path and ordinary typing is vetoed from then on.
+        #expect(clear.lowerBound < rawWrite.lowerBound, "the window is closed after the write rather than by a defer above it")
+
+        // …and there is no second place that opens or closes the window. One more assignment
+        // anywhere in this file is another way for the slot to be stale when the delegate reads it.
+        let assignments = try regexMatchCount(pendingWriteNeedle, in: editor)
+        #expect(assignments == 2, "writes to the pending-edit slot: \(assignments)")
     }
 
     /// Both hosted fields ask the same function whether a cell changed. A second hand-written copy
@@ -290,8 +319,11 @@ struct MarkdownTableMobileEditingTests {
         ] {
             let source = try strippingComments(sourceFile(path))
             #expect(source.contains("MarkdownTableEditor.commit("), "\(path) does not call the shared commit rule")
+            // A **prefix**, deliberately. The literal `…(in: .whitespaces)` is one spelling of a
+            // second trim rule and `.whitespacesAndNewlines` is another; a scan for the first walks
+            // straight past the second, which is a drift this test exists to catch.
             #expect(
-                !source.contains("trimmingCharacters(in: .whitespaces)"),
+                !source.contains("trimmingCharacters(in: .whitespace"),
                 "\(path) re-spells the trim the shared commit rule owns"
             )
         }
@@ -382,6 +414,52 @@ struct MarkdownTableMobileEditingTests {
         ))
     }
 
+    /// **The commit's headline claim, pinned: the guard is general to any substitution UIKit
+    /// proposes, not just dashes.**
+    ///
+    /// Every other refused proposal in this suite carries an em dash, so narrowing the rule to
+    /// `guard replacement.contains("-") || replacement.contains("\u{2014}") else { return true }`
+    /// passed the whole suite while re-opening it for everything else smart punctuation rewrites.
+    /// UIKit's pass also proposes curly quotes, an ellipsis and an en dash — none of which contains
+    /// either dash.
+    ///
+    /// The write these are proposed *around* is deliberately **not** a table: it is the list-prefix
+    /// deletion the editor performs on Backspace, derived from the real rule rather than
+    /// hand-typed, over ordinary prose. Its replacement is the empty string, so a narrowing written
+    /// against the pending write rather than the proposal is refused here too — and the case
+    /// records what the commit message says in as many words, that this was never table-specific.
+    @Test("A substitution around a prose write is refused whatever punctuation it proposes")
+    func aSubstitutionAroundAProseWriteIsRefused() throws {
+        let prose = "- The reader\u{2019}s note said \"it will do\" and so"
+        let mutation = try #require(
+            MarkdownBackspaceSupport.listPrefixMutation(in: prose, selection: NSRange(location: 2, length: 0)),
+            "the list-prefix rule no longer fires on this line"
+        )
+        let write = MarkdownProgrammaticEdit(range: mutation.replacementRange, replacement: mutation.replacement)
+        #expect(write.range == NSRange(location: 0, length: 2))
+        #expect(!write.replacement.contains("-") && !write.replacement.contains("\u{2014}"))
+
+        // The write itself is still its own write, dashes or none.
+        #expect(MarkdownProgrammaticEditSupport.acceptsDelegateChange(
+            range: write.range,
+            replacement: write.replacement,
+            whileWriting: write
+        ))
+
+        // Curly apostrophe, curly open quote, curly close quote, ellipsis, en dash: five things
+        // UIKit substitutes, none of them a dash the narrowed guard would have looked for.
+        for proposal in ["\u{2019}", "\u{201C}", "\u{201D}", "\u{2026}", "\u{2013}"] {
+            #expect(
+                !MarkdownProgrammaticEditSupport.acceptsDelegateChange(
+                    range: NSRange(location: 14, length: 1),
+                    replacement: proposal,
+                    whileWriting: write
+                ),
+                "U+\(String(format: "%04X", proposal.unicodeScalars.first!.value)) proposed around a prose write was accepted"
+            )
+        }
+    }
+
     /// The delegate is the lever, so the delegate has to pull it — and pull it **first**, before the
     /// line-break, deletion and list rules that would otherwise reason about a document mid-write.
     @Test("The text view delegate answers the write window before its own rules")
@@ -402,6 +480,10 @@ struct MarkdownTableMobileEditingTests {
     /// itself, and the sweep is what keeps that true: a second raw `replace` added anywhere in the
     /// iOS markdown surface is a second way to corrupt the line above it, and is a test failure
     /// rather than something found on a device weeks later.
+    ///
+    /// The needle matches the **call**, not the receiver's spelling. Counting the literal
+    /// `textView.replace(` missed a write through an aliased local (`let view = textView`), which
+    /// is the same call with the same consequence.
     @Test("The iOS editor has exactly one raw text-view write")
     func theEditorHasOneRawWrite() throws {
         let folder = repositoryRoot().appendingPathComponent("Cadence/iOS")
@@ -413,7 +495,7 @@ struct MarkdownTableMobileEditingTests {
         var writers: [String] = []
         for name in names {
             let source = try strippingComments(String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8))
-            let count = source.components(separatedBy: "textView.replace(").count - 1
+            let count = try regexMatchCount(rawWriteNeedle, in: source)
             writers.append(contentsOf: Array(repeating: name, count: count))
         }
         #expect(writers == ["iOSMarkdownEditor.swift"], "raw text-view writes: \(writers)")
@@ -462,6 +544,28 @@ struct MarkdownTableMobileEditingTests {
 
     // MARK: - Non-vacuity
 
+    /// A regex needle has a typo budget of zero: a pattern that matches nothing passes every
+    /// count-based assertion built on top of it, silently. Both needles counted above are run here
+    /// against a literal that must match and literals that must not.
+    @Test("The regex needles these tests count with match what they claim to")
+    func theRegexNeedlesAreSelfChecked() throws {
+        #expect(try regexMatchCount(rawWriteNeedle, in: "textView.replace(textRange, withText: replacement)") == 1)
+        #expect(try regexMatchCount(rawWriteNeedle, in: "let view = textView\nview.replace(r, withText: s)") == 1)
+        #expect(try regexMatchCount(rawWriteNeedle, in: "storage.replaceCharacters(in: r, with: s)") == 0)
+        #expect(try regexMatchCount(rawWriteNeedle, in: "replaceProgrammatically(r, with: s, in: textView)") == 0)
+        #expect(try regexMatchCount(rawWriteNeedle, in: "textView.replace(a, b)") == 0)
+
+        #expect(try regexMatchCount(
+            pendingWriteNeedle,
+            in: "pendingProgrammaticEdit = MarkdownProgrammaticEdit(range: range, replacement: replacement)"
+        ) == 1)
+        #expect(try regexMatchCount(pendingWriteNeedle, in: "defer { pendingProgrammaticEdit = nil }") == 1)
+        #expect(try regexMatchCount(pendingWriteNeedle, in: "pendingProgrammaticEdit=nil") == 1)
+        #expect(try regexMatchCount(pendingWriteNeedle, in: "if let pending = pendingProgrammaticEdit {") == 0)
+        #expect(try regexMatchCount(pendingWriteNeedle, in: "guard pendingProgrammaticEdit == nil else { return }") == 0)
+        #expect(try regexMatchCount(pendingWriteNeedle, in: "var pendingProgrammaticEdit: MarkdownProgrammaticEdit?") == 0)
+    }
+
     /// Every zero-count assertion above passes against an empty string, and an isolated build tree
     /// with a symlinked prefix is exactly how a reader silently returns one.
     ///
@@ -499,6 +603,20 @@ private func repositoryRoot() -> URL {
 
 private func sourceFile(_ relativePath: String) throws -> String {
     try String(contentsOf: repositoryRoot().appendingPathComponent(relativePath), encoding: .utf8)
+}
+
+/// A raw `UITextInput` write into a text view, however the receiver is spelled. `\.replace\(`
+/// rather than `textView.replace(` so a write through an aliased local is not invisible; `.*` does
+/// not cross a newline, so the needle stays one call.
+private let rawWriteNeedle = #"\.replace\(.*withText:"#
+
+/// An assignment **to** the pending-edit slot, and not a read of it: the trailing `[^=]` is what
+/// keeps `pendingProgrammaticEdit == nil` out of the count.
+private let pendingWriteNeedle = #"pendingProgrammaticEdit\s*=[^=]"#
+
+private func regexMatchCount(_ pattern: String, in source: String) throws -> Int {
+    let regex = try NSRegularExpression(pattern: pattern)
+    return regex.numberOfMatches(in: source, range: NSRange(source.startIndex..., in: source))
 }
 
 private func strippingComments(_ source: String) throws -> String {
