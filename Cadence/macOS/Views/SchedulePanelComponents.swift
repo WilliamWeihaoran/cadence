@@ -106,7 +106,7 @@ struct TaskDetailPopover: View {
                                 title: "Delete Subtask?",
                                 message: "This will permanently delete \"\(subtask.title.isEmpty ? "Untitled" : subtask.title)\"."
                             ) {
-                                modelContext.delete(subtask)
+                                CadenceTaskMutationSupport.deleteSubtask(subtask, parent: task, modelContext: modelContext)
                             }
                         }
                     )

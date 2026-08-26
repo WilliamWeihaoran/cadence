@@ -33,6 +33,17 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-338] **macOS adds a subtask by writing one side of the relationship; iOS writes both.** Found
+  while closing [[T-296]], which fixed the same asymmetry on the *delete* side.
+  `TaskDetailPopover.addSubtask` (`SchedulePanelComponents.swift:148-157`) sets
+  `subtask.parentTask = task` and never appends to `task.subtasks`; the iOS `addSubtask` writes
+  both. It is why `deleteSubtask` had to take the parent explicitly rather than trusting
+  `subtask.parentTask` — a back-reference that may be the only side written.
+  The rule T-296 established is the fix: **write both sides explicitly, never depend on
+  back-population timing.** T-296 measured why that matters on the delete side — between the delete
+  and the next flush, the parent's array still holds the deleted row, and that window is exactly
+  when a SwiftUI list re-renders. Whether the create side has an equivalent window is unmeasured.
+
 - [T-337] **The `+` inherits context from what you drop it on, and from nothing else.** The user's
   rule, 2026-08-26, and it supersedes [[T-336]] and reverses part of [[T-282]]:
   - **Tap the button** → no context. Just a task.

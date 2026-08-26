@@ -385,6 +385,31 @@ enum CadenceTaskMutationSupport {
         return true
     }
 
+    /// The one place a single subtask is deleted from.
+    ///
+    /// It exists for the same reason the loop in `deleteTasks` above writes `subtask.parentTask = nil`
+    /// before deleting: this codebase does not trust SwiftData to have back-populated — or torn
+    /// down — an inverse by the moment the next resolver reads it, so both sides are severed
+    /// explicitly. Two surfaces used to open-code `modelContext.delete(subtask)` instead, and they
+    /// disagreed with that rule and with each other: the iOS task sheet dropped the subtask from
+    /// `parent.subtasks` but left `parentTask` pointing at a deleted row, and the macOS task detail
+    /// popover left both sides alone.
+    ///
+    /// `parent` is accepted explicitly because a nil `subtask.parentTask` is exactly the
+    /// unpropagated-inverse case this helper exists to survive; callers that already hold the owner
+    /// should pass it rather than trusting the back-reference to answer.
+    ///
+    /// Saving is deliberately the caller's: the two surfaces differ on whether a subtask edit
+    /// commits immediately or rides the enclosing sheet's save.
+    static func deleteSubtask(_ subtask: Subtask, parent: AppTask? = nil, modelContext: ModelContext) {
+        let subtaskID = subtask.id
+        if let owner = parent ?? subtask.parentTask {
+            owner.subtasks = (owner.subtasks ?? []).filter { $0.id != subtaskID }
+        }
+        subtask.parentTask = nil
+        modelContext.delete(subtask)
+    }
+
     static func detachRelationships(for task: AppTask) {
         let taskID = task.id
 

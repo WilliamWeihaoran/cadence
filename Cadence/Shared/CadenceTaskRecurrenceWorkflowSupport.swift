@@ -276,13 +276,24 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         }
 
         if let subtasks = task.subtasks {
-            nextTask.subtasks = subtasks
+            let copies = subtasks
                 .sorted { $0.order < $1.order }
-                .map { source in
+                .map { source -> Subtask in
                     let copy = Subtask(title: source.title)
                     copy.order = source.order
                     return copy
                 }
+            nextTask.subtasks = copies
+            // Both sides, explicitly. Assigning only `nextTask.subtasks` leaves each copy's
+            // `parentTask` to SwiftData's inverse back-population, and the delete and export paths
+            // read `Subtask.parentTask` *directly* — `CadenceTaskMutationSupport.deleteTasks`
+            // selects a task's subtasks by that field, and `CadenceDataExportService` writes
+            // `parentTaskID` from it. A copy whose inverse has not been populated by the time one
+            // of those runs is an orphan the delete sweep cannot see. This is the same distrust
+            // that makes the shared delete path nil the inverse before deleting.
+            for copy in copies {
+                copy.parentTask = nextTask
+            }
         }
 
         return nextTask

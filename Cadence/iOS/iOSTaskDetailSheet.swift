@@ -447,8 +447,7 @@ struct iOSTaskDetailSheet: View {
     }
 
     private func deleteSubtask(_ subtask: Subtask) {
-        task.subtasks = (task.subtasks ?? []).filter { $0.id != subtask.id }
-        modelContext.delete(subtask)
+        CadenceTaskMutationSupport.deleteSubtask(subtask, parent: task, modelContext: modelContext)
         try? modelContext.save()
     }
 
