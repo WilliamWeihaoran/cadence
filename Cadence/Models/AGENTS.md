@@ -78,8 +78,8 @@ look like dead code and are not safe to delete:
   for values an earlier build left on disk and in CloudKit.
   This bullet used to credit the readers with *deleting the linked event* when a task is deleted
   and with *repairing relationships*, and both were wrong — `1d81864` corrected the same two claims
-  in `CLAUDE.md` and did not reach this file. Nothing anywhere deletes an event on task delete, and
-  `DataIntegrityRepairService`'s one `calendarEventID` line is on **`Note`**, inside note merging,
+  in the long Claude reference and did not reach this file. Nothing anywhere deletes an event on
+  task delete, and `DataIntegrityRepairService`'s one `calendarEventID` line is on **`Note`**, inside note merging,
   where the field is live and in use. Re-grep before repeating either claim, and read the hits:
   `grep -rn calendarEventID --include='*.swift' Cadence` also returns `Note`'s uses of the same
   field name — the event-linked-note path, which is live — so the three files above are the

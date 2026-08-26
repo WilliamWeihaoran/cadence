@@ -17,14 +17,14 @@ Beyond the long-standing managers, note:
   (`CadenceCalendarVisibilityPreferences.swift` — the *file* carries the `Cadence` prefix, the
   *type* does not — and `CalendarWorkHoursPreferences.swift`), so iOS and macOS share one
   hidden-calendar store and one work-hours window. This guide listed them as macOS services, and
-  `CLAUDE.md` was corrected while this file was not — which left the doc system's own precedence
-  rule ("the scoped guide is closer to the code") pointing at the wrong doc.
+  the long Claude reference was corrected while this file was not — which left the doc system's own
+  precedence rule ("the scoped guide is closer to the code") pointing at the wrong doc.
   **The 2-line `CalendarVisibilityPreferences.swift` tombstone this bullet used to promise is
   gone**, deleted by `6f71a70`: it declared nothing, and once no file of that base name existed
   anywhere in the project the `.stringsdata` collision that made the `Cadence` prefix necessary
-  could not apply in either direction, so the tombstone had no name left to own. `CLAUDE.md` still
-  said it "could be deleted" after it had been. The three tombstones below and beside it are
-  recent, deliberate, and stay.
+  could not apply in either direction, so the tombstone had no name left to own. The old
+  `CLAUDE.md` still said it "could be deleted" after it had been. The three tombstones below and
+  beside it are recent, deliberate, and stay.
 - `TaskDragPayload` is not here either — same shape, `Cadence/Shared/TaskDragPayload.swift`,
   `nonisolated` because the drop delegates that parse it run in `@Sendable` closures.
 - `NoteExportService.swift` - markdown + rendered-PDF export. Presents the save panel off the blocking `runModal()` path; keep it that way.

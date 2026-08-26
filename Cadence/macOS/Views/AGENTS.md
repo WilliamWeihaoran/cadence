@@ -23,8 +23,8 @@ Feature views in this folder are actively refactored into thin roots plus suppor
 - `TaskTitleEntryField*`, `TaskTitleInlineTagPicker`, `Tag*`, `ContainerPickerSupportViews` - the
   shared title field with inline `~` list search and `#` tag entry, plus the pickers behind it.
   `~` picks a **list only**: selecting one normalizes the section silently and returns focus to the
-  title. This line used to read "`~` list/section search", and `CLAUDE.md` described a second
-  section-picking step in detail; there is no such step and never was. Section is chosen from
+  title. This line used to read "`~` list/section search", and the old long `CLAUDE.md` described a
+  second section-picking step in detail; there is no such step and never was. Section is chosen from
   `TaskSectionPickerBadge` in the chip strip.
 - `Focus*` - focus timer, task/bundle picker, log-session popovers, focus sidebar.
 - `QuickCreateChoice*` - drag-to-create task/event/bundle popover and support views. It carries a

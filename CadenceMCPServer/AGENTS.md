@@ -1,7 +1,7 @@
 # Cadence MCP Server Guide
 
 This is the canonical description of the MCP boundary. The other guides that mention it
-(`../AGENTS.md`, `../CLAUDE.md`, `../Cadence/Services/AGENTS.md`,
+(`../AGENTS.md`, `../CLAUDE.md`, `../docs/CLAUDE_REFERENCE.md`, `../Cadence/Services/AGENTS.md`,
 `../plugins/cadence-mcp/AGENTS.md`) state the procedure in one line and point here.
 
 ## The rule is a procedure, not a prohibition
