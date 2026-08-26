@@ -995,6 +995,17 @@ _Nothing in flight._
   spelling the ramp again, and a source-scanning test that fails if either re-declares the block.
 
 - [T-282] **The iPad's corner `+` carries the same palette, pointing the only way it can.**
+  **VERIFIED 2026-08-26 — keep open. The value half is strongly pinned; the device run still has not
+  happened.** Four mutations caught, including unifying the corner arc and weakening the drag arm,
+  and the old system-drag path is gone with zero live references. Placement is pinned as
+  *deliberately different* in both directions.
+  Still outstanding, and it is the one thing the ticket was left open for: **nobody has driven an
+  iPad.** The verifier was blocked all session — both booted simulators were held by live agents,
+  and the claim script correctly refuses to reclaim a device with live operations on it.
+  One specific risk only a device answers: `iOSCaptureRadialMenuOverlay`'s own comment says it sits
+  at the **shell's** level so a palette is not clipped by a 46pt bar row — but on iPad the host is
+  applied to the page's content, not the shell. The arc opens up-and-left so it probably clears.
+  "Probably clears" is what a simulator run is for.
   From the [[T-73]] / [[T-170]] split, and the one genuine "control present at one width and absent
   at the other" that audit found. [[T-171]] had shipped the hold-for-palette gesture on
   `iOSCaptureRadialMenuButton`, whose **only** caller was `iOSCompactTabShell` — so holding the
@@ -1044,6 +1055,14 @@ _Nothing in flight._
   symbol left that a compact width can reach.
 
 - [T-284] **Six spellings of one uppercase eyebrow label, at four kernings.** From the [[T-123]]
+  **VERIFIED 2026-08-26 — keep open, narrowly. Well pinned; needs one look.** The tier folded in as
+  `SectionEyebrowLabel.Size`, with kerning derived as `fontSize * kerningRatio`. The previous
+  audit's judgement was half-kept on purpose: sizes preserved, kernings converged. The 19
+  standard-tier sites are bit-identical (`10 * 0.08 == 0.8` exactly).
+  **The unlooked-at change is letterspacing at 8 labels, all still 9pt** — six tightened kernings
+  converge on 0.72 (one from 0.45, a 60% increase) and two labels that had *no* tracking now have
+  it. Three mutations caught, including a negative sweep against a re-hand-rolled spelling.
+  This is the cheapest of the four to close: one screenshot pass over those 8 sites.
   split, and exactly the "one hand-rolled UI pattern (a header, a label style, a literal list) at a
   time" unit that entry narrowed itself to. `SectionEyebrowLabel` is the app's one eyebrow — 10pt
   semibold, kerning 0.8, and `fontSize` is published because things drawn beside it have to agree —
@@ -1132,6 +1151,17 @@ _Nothing in flight._
   no whole-file platform fence is what keeps it settled.
 
 - [T-289] **Two iOS buttons wear macOS's hover style.** From the [[T-123]] split. `.iosPressable`
+  **VERIFIED 2026-08-26 — keep open. The sweep is done and clean; the pin has a hole.** The valuable
+  half is answered: it was **not** only two call sites. `.cadencePlain` appears unfenced at 11 sites
+  in `Shared/`, of which `CadenceDatePicker` and `EstimatePickerControl` genuinely reach iOS through
+  about 12 callers — all silently corrected by the shipped fix, which also changed the style's own
+  `#else` branch to delegate to iOS press feedback. Nothing else on iOS reaches a macOS-fenced
+  style: zero `onHover`, `hoverEffect`, `CadenceHoverTracking` or `isHovered` under `Cadence/iOS/`.
+  **But a mutation survived:** re-adding the blue wash to the `#else` branch compiles on iOS and
+  passes all 2783 tests. The guarding test slices from a struct to end-of-file and uses `range(of:)`,
+  so it finds the *first* wash inside the fence and cannot see a second one after `#else` — the
+  struct-scoped shape that has now walked around a test twice. Also unlooked at: those ~12 iOS call
+  sites changed press feedback from a blue rectangle to a scale-and-dim.
   (`iOSPressableButtonStyle`, a 0.97 scale and 0.62 opacity dim) is iOS's press feedback and is used
   83 times across 36 files; `.cadencePlain` is macOS's hover wash and its `CadenceHoverTracking`
   is `#if os(macOS)`-fenced, so on iOS it degrades to a `Theme.blue.opacity(0.14)` fill and a 0.24
@@ -1145,6 +1175,16 @@ _Nothing in flight._
   `Cadence/iOS/`.
 
 - [T-290] **`CadenceTaskSurfaceOptions` has eight iOS readers and no macOS one.** From the [[T-123]]
+  **VERIFIED 2026-08-26 — keep open. The macOS half is entirely unpinned.** Zero tests in the suite
+  reference `CadenceTaskSurfaceTier.desktop`; the options tests exercise `.touch` only. Three
+  reverting mutations all survived clean, with 2783 tests green: macOS's logbook can start capping
+  at 24, `TasksListView` can start passing `.touch`, and the exact defect this ticket names can be
+  reintroduced verbatim.
+  The **decision** it existed to make is answered and defensible: macOS stays uncapped, which is the
+  status quo, so no Mac user sees fewer completed tasks than before. But a different silent change
+  did ship and nobody has looked at it — `showsListContextChip` now comes from the surface, and
+  `containerName` is empty exactly for an Inbox task, so **an Inbox task on macOS Today or All Tasks
+  now draws a chip reading "Inbox" where it drew none.** Intended and argued in the code; unlooked at.
   split, and the same shape as T-175: a shared value stating what is true of every task surface,
   with one platform re-deciding each of its answers inline. `Shared/CadenceTaskSurfaceOptions.swift`
   owns `showsSort`, `showsCompletedToggle`, `showsContainerChip` and `completedRowLimit`, and says
