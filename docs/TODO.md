@@ -33,6 +33,50 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-329] **macOS allocates a new order by counting, so a delete makes duplicates.** From the
+  parity audit (Codex, 2026-08-26); **premise verified and demonstrated.** macOS sets
+  `ctx.order = contexts.count` and `link.order = links.count`; iOS uses `(map(\.order).max() ?? -1) + 1`.
+  Delete the middle of three and the survivors are `[0, 2]` — `count` yields **2**, which already
+  exists; max-plus-one yields **3**. Ran it: `count -> 2, maxPlusOne -> 3`.
+  A duplicate order is not cosmetic here: it makes the sort unstable, so two rows can swap places
+  between launches with nothing edited. Note macOS's *list* creation already uses max-plus-one — so
+  this is contexts and saved links lagging a pattern the same platform already has, not a
+  cross-platform difference.
+
+- [T-330] **An area or project description can be written on iOS and never edited on macOS.** From
+  the same audit, premise verified — and my first count was misleading, which is worth recording:
+  `CreateListSheet` appears to mention `desc` twice, but both are Swift's own `description`
+  protocol. macOS touches the model's description field **zero** times in either sheet, while iOS
+  shows it, loads it and saves it.
+  The field is real and already load-bearing: **both** platforms' search indexes it. So a
+  description typed on iPhone is searchable on macOS and uneditable there.
+
+- [T-331] **iOS lets you set a section due date and then never shows it.** From the same audit,
+  premise verified. The iOS column editor exposes a due-date toggle, but `iOSListKanbanColumn`
+  passes only title, count and colour into the shared header, while macOS passes a `detail` slot
+  that renders the date or "No due date".
+  **The header component is already shared and tested** — the bug is that iOS hands it less
+  metadata, not that the two platforms style it differently. That distinction is what makes this a
+  small fix rather than a design question. Also decide `hideSectionDueDateIfEmpty`, which exists in
+  the model and the macOS editor while iOS exposes only task due-date hiding.
+
+- [T-332] **macOS trims whitespace, iOS trims whitespace and newlines.** From the same audit;
+  measured in source, the user path inferred — it depends on whether paste can introduce a newline,
+  which neither of us drove. Several macOS forms trim `.whitespaces` only or save the raw name;
+  the iOS siblings use `.whitespacesAndNewlines`. Verified the difference is real:
+  `"Name\n"` trims to `"Name\n"` and `"Name"` respectively.
+  Route both through one shared normalizer rather than fixing four call sites, since the next form
+  will otherwise pick whichever it copies from.
+
+- [T-333] **The macOS sidebar keeps a private copy of list ordering that iOS routes through the
+  shared one.** From the same audit, premise verified — including that `iOSRootSidebar`'s own
+  comment claims macOS reads the shared sorter, which it does not. Ordinary data behaves; legacy,
+  imported or CloudKit data with duplicate same-kind order or name can drift, because the shared
+  sorter ends in an id tie-break and the macOS copy does not.
+  Either route macOS through `CadenceSidebarLists`, or **pin the fork deliberately with a test and
+  fix the comment that says otherwise**. A comment asserting a sharing that does not exist is worse
+  than the fork: it is what stops the next reader from checking.
+
 - [T-326] **A failed restore can leave no store at all, and then retry itself forever.** From the
   delete/restore audit (Codex, 2026-08-26); **premise verified line by line, and this is the most
   serious thing any audit has found.**
