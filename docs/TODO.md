@@ -33,6 +33,55 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-299] **A date that parses is stored unnormalized, and lexical ordering then lies.** From the
+  third external audit (Codex, 2026-08-26); **premise verified, and demonstrated rather than
+  argued.** Several paths validate a date by parsing it and then keep the raw string.
+  `DateFormatter` with `yyyy-MM-dd` and `en_US_POSIX` is lenient: measured on this toolchain,
+  `2026-8-20` parses happily and *would* format back as `2026-08-20`. The code never asks it to.
+  Why that is a real defect and not pedantry, also measured: **`"2026-8-20" < "2026-08-25"` is
+  `false`** — the whole app relies on fixed-width keys so that lexical comparison equals
+  chronological comparison, which `AppTask` says in as many words. A task stored as `2026-8-20`
+  can miss "due today", overdue, grouping, sorting and equality at once.
+  Sites: `CadenceMCPArgumentParsing` returns the raw string after a successful parse;
+  `CadenceMCPServiceSupport` returns the trimmed raw value; `CadenceWriteService` stores it on both
+  the update and the due-date path. **The app already has the right pattern** —
+  `AIActionService.swift:157` normalizes back through `DateFormatters.dateKey(from:)` and documents
+  this exact failure mode. Fix by giving `DateFormatters` a `normalizedDateKey(_:)` and routing MCP
+  input through it. Test with `2026-8-20` and assert `2026-08-20` is stored.
+  **The MCP write path is the one place in the app that takes dates from outside**, gated on
+  `CADENCE_MCP_ENABLE_WRITES` and mutating the real store from a second process with no UI — so it
+  is exactly where a malformed key can be introduced without anyone watching.
+
+- [T-300] **The drag-and-drop date seed has the same lenient-parse bug.** From the same audit,
+  premise verified verbatim: `CadenceTaskDropSupport.dateValue` does
+  `guard DateFormatters.date(from: value) != nil` and then `return value`. Same class as [[T-299]],
+  lower risk because drop keys are internally generated and therefore already fixed-width in
+  practice — but the helper accepts arbitrary strings and can seed a composer with a
+  non-canonical key. One-line fix: return `DateFormatters.dateKey(from: parsed)`.
+
+- [T-301] **Widget date labels bypass the app's English-pinned formatters.** From the same audit.
+  `CadenceTodayWidgetSupport` builds its weekday, day-number and due-day labels with
+  `date.formatted(...)`, which is locale-sensitive, while `DateFormatters` deliberately pins the
+  app's display formats to `en_US_POSIX`. On a non-English host a widget can render localized
+  month and weekday text beside English app chrome, on the same home screen.
+  The widget target compiles its own subset, so the fix is nonisolated widget-safe helpers
+  mirroring `shortDate` / `dayOfWeek` / `dayNumber` rather than a cross-target import.
+  Related to the localisation work already done under [[T-18]], which pinned exactly these
+  formatters for exactly this reason and did not reach the widget target.
+
+- [T-302] **`CadenceCalendarDateMemory` accepts a calendar and then ignores it.** From the same
+  audit. `storageKey(for:calendar:)` snaps to `calendar.startOfDay` and then calls
+  `DateFormatters.dateKey(from:)` — the default-timezone spelling — rather than the calendar-aware
+  overload. Every current call site passes `Calendar.current`, so this is not a shipping bug today;
+  it is an API promising something it does not keep, with tests covering only the current-calendar
+  case. Either honour the parameter on both the write and the parse, or remove it.
+
+- [T-303] **The backup timestamp formatter lives outside the formatter layer.** From the same
+  audit. `PersistenceController` declares its own `DateFormatter` while `DateFormatters` states
+  that every one should live there. It is POSIX-pinned and works, so this is rule drift rather
+  than a defect — but the rule exists so an agent can find every date format in one file, and this
+  one is invisible to that search. Move it to `DateFormatters.backupFolderTimestamp`.
+
 - [T-295] **`deleteBundle` leaves `calendarEventID` set; its sibling twelve lines above clears it.**
   From the second external audit (Codex, 2026-08-26); **premise verified, and the evidence is
   stronger than the report's.** The audit said macOS clears the field elsewhere while the shared
