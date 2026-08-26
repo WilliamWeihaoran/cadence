@@ -33,6 +33,46 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-319] **iOS task creation reports success for a task that was not saved.** From the silent-
+  persistence audit (Codex, 2026-08-26); premise verified — `iOSCreateTaskSheet` does
+  `try? modelContext.save()` at :280, then schedules notification reconciliation at :284, calls
+  `onCreated?(task)` at :286 and dismisses at :287. A throwing save produces the entire success
+  experience, including a reconcile pass over a task that does not exist.
+  **The app already has the right pattern twice**: the shared insertion helpers save inside
+  `do/catch`, **delete the newly inserted object on failure**, and throw; AI task creation throws
+  too. So the fix is to route through the existing helper rather than invent handling.
+
+- [T-320] **iOS destructive confirmations close before the deletion is even attempted.** From the
+  same audit; premise verified and **worse than reported**: `iOSNoteDeletionSupport` calls
+  `dismiss()` on :133 and `onConfirm()` on :134 — it does not dismiss before knowing the *result*,
+  it dismisses before the work *starts*. The delete then swallows its own save failure. List and
+  context deletion share the shape.
+  Related to [[T-291]], which is one specific ordering bug inside a list cascade; this is the
+  confirmation contract around it. The correct pattern exists: the privacy reset throws through its
+  service and the iOS settings surface shows failure text instead of claiming success.
+
+- [T-321] **Structural editors close without knowing whether the change persisted.** From the same
+  audit; premise verified. The iOS context editor, the iOS list editor and macOS's `EditListSheet`
+  all mutate, `try? modelContext.save()`, and dismiss. These objects drive task grouping, context
+  scoping and list visibility, and the list editor also reassigns tasks first — so a swallowed
+  failure can leave the reassignment half-applied with the editor closed over it. The audit's
+  lower-priority sibling belongs here: iOS event-note creation opens the note editor after a
+  swallowed save.
+
+- [T-322] **Decide the rule for `try? save()`, then sweep — there are 133 of them.** Measured, not
+  estimated: `try? modelContext.save()` / `try? context.save()` appears **133 times** across
+  `Cadence/`. [[T-319]], [[T-320]] and [[T-321]] are four of them; [[T-291]], [[T-298]], [[T-307]]
+  and [[T-315]] are the same shape found by four earlier audits in unrelated code.
+  **This is a convention, not a set of bugs, and it should not be fixed with a sed.** Many of the
+  133 are probably fine — a save whose failure the user cannot act on, or a transient object. What
+  is missing is a rule saying which is which, so the next one is written correctly instead of
+  found by the ninth audit.
+  Proposed shape, to be decided: a save is allowed to swallow its error only when nothing visible
+  depends on it. Any save whose failure would let the UI **dismiss, navigate, or report success**
+  must throw and be handled. Then triage the 133 against that rule rather than converting them all.
+  Write the rule into `AGENTS.md` when it is decided — a rule an agent reads before writing the
+  134th is worth more than fixing the first 133.
+
 - [T-317] **A task whose chosen list has vanished is created anyway, silently in the Inbox.** From
   the task-creation audit (Codex, 2026-08-26). **Measured in the code, live trigger inferred** —
   the auditor did not reproduce the UI race, and neither have I.
