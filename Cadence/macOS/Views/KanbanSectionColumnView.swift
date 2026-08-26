@@ -182,7 +182,6 @@ struct ListSectionKanbanColumn: View {
             activeTaskCount: activeTasks.count,
             columnColor: columnColor,
             hideColumnDueDateIfEmpty: hideColumnDueDateIfEmpty,
-            sectionDueDateIsOverdue: sectionDueDateIsOverdue,
             isPendingCompletion: isPendingCompletion,
             completionProgress: completionProgress,
             showHeaderDueDatePicker: $showHeaderDueDatePicker,
@@ -505,8 +504,8 @@ struct ListSectionKanbanColumn: View {
         sectionCompletionAnimationManager.isPending(section)
     }
 
-    private var sectionDueDateIsOverdue: Bool {
-        !section.dueDate.isEmpty && !section.isCompleted && section.dueDate < DateFormatters.todayKey()
-    }
+    // `sectionDueDateIsOverdue` used to live here and is now
+    // `CadenceBoardColumnDueDatePlan.isOverdue`, so the iOS board gets the same answer instead of
+    // no answer at all (T-331).
 }
 #endif

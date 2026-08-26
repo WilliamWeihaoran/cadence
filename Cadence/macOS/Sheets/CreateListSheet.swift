@@ -9,6 +9,8 @@ struct CreateListSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name = ""
+    /// The list's `desc`. Written raw, exactly as iOS's list editor writes it — see `create()`.
+    @State private var details = ""
     @State private var listType: ListType = .area
     @State private var selectedColor = ListType.area.defaultColor
     @State private var selectedIcon = "folder.fill"
@@ -70,7 +72,8 @@ struct CreateListSheet: View {
                 name: $name,
                 colorHex: $selectedColor,
                 icon: $selectedIcon,
-                placeholder: listType == .area ? "Area name…" : "Project name…"
+                placeholder: listType == .area ? "Area name…" : "Project name…",
+                details: $details
             )
 
             TaskInspectorRecessedGroup {
@@ -98,18 +101,25 @@ struct CreateListSheet: View {
         }
     }
 
+    /// The name keeps this sheet's existing `.whitespaces` trim — T-332 owns the fact that iOS
+    /// spells the same trim `.whitespacesAndNewlines`, and fixing it here would have made three
+    /// spellings instead of two. `details` is deliberately trimmed by *neither* platform: iOS
+    /// assigns `area.desc = details` raw, so macOS assigns raw too and the two round-trip a
+    /// description identically.
     private func create() {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         switch listType {
         case .area:
             let area = Area(name: trimmed, context: context, colorHex: selectedColor, icon: selectedIcon)
+            area.desc = details
             area.order = nextListOrder
             area.hideDueDateIfEmpty = hideDueDateIfEmpty
             area.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
             modelContext.insert(area)
         case .project:
             let project = Project(name: trimmed, context: context, colorHex: selectedColor)
+            project.desc = details
             project.icon = selectedIcon
             project.order = nextListOrder
             project.hideDueDateIfEmpty = hideDueDateIfEmpty

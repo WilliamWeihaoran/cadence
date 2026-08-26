@@ -53,6 +53,10 @@ Rules:
 - Add non-vacuity checks so an empty or wrong-path read cannot pass.
 - For regex needles, include a self-check that must match and must not match.
 - Mutate the thing you claim to pin and confirm the test fails for the intended assertion.
+- A scoped run only proves something if it ran **your** tests. A file here can hold several
+  suites, and tests appended inside the wrong `struct` are invisible to
+  `-only-testing:.../ThatSuite` while still passing in a full run — so every mutation reads as
+  a survivor. Check the scoped run's test count before trusting a green mutation.
 - Avoid ambiguous substring traps; use word boundaries, negative lookbehind, or a narrower call-site
   assertion.
 - When comparing a `CGFloat` with arithmetic in `#expect`, bind the arithmetic to a typed

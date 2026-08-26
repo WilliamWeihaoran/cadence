@@ -97,21 +97,41 @@ extension ListEditorSheetShell where FooterLeading == EmptyView {
 ///
 /// The name is a title you type into rather than a bordered form field, and appearance is chosen in
 /// place: no rows, no disclosure, no chevron, so the sheet never changes height while you use it.
+///
+/// `details` is the list's `desc`, and it is optional because `CreateContextSheet` uses this header
+/// for a model that has no such field. Where it is passed it sits directly under the name and above
+/// the appearance strips, which is where iOS's list editor puts it (T-330): before that, `Area.desc`
+/// and `Project.desc` could be written on iPhone, were indexed by *both* platforms' search, and
+/// could not be read or edited anywhere on the Mac.
+///
+/// One line, not iOS's `2...5`. That is the shell's own constraint rather than a style choice —
+/// `ListEditorSheetShell` has no `ScrollView` and no fixed height, so a field that grows as you type
+/// would make the sheet grow with it, which is exactly what the strips above exist to avoid.
 struct ListEditorIdentityHeader: View {
     @Binding var name: String
     @Binding var colorHex: String
     @Binding var icon: String
     var placeholder: String = "List name…"
+    var details: Binding<String>? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                ListEditorIdentityTile(colorHex: colorHex, icon: icon)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 12) {
+                    ListEditorIdentityTile(colorHex: colorHex, icon: icon)
 
-                TextField(placeholder, text: $name)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(Theme.text)
+                    TextField(placeholder, text: $name)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                }
+
+                if let details {
+                    TextField("Description", text: details)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+                }
             }
 
             ListEditorColorStrip(selected: $colorHex)

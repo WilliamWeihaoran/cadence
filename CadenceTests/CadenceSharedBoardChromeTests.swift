@@ -227,6 +227,126 @@ struct CadenceSharedBoardChromeTests {
             #expect(!intersection.contains(unified), "\(unified) is forked across platforms again")
         }
     }
+
+    // MARK: - T-331: the column due date both boards now show
+
+    /// The hide flag is the whole reason a column with no date can still draw a line. macOS read it
+    /// from the list; iOS drew no line at all, so the flag had nothing to govern there.
+    @Test func anEmptyColumnDueDateIsDrawnOnlyWhenTheListDidNotAskToHideIt() {
+        let hidden = CadenceBoardColumnDueDatePlan.plan(dueDate: "", hideWhenEmpty: true, isCompleted: false)
+        #expect(hidden.isVisible == false)
+
+        let shown = CadenceBoardColumnDueDatePlan.plan(dueDate: "", hideWhenEmpty: false, isCompleted: false)
+        #expect(shown.isVisible)
+        #expect(shown.hasDueDate == false)
+        #expect(shown.label == "No due date")
+        #expect(shown.isOverdue == false)
+    }
+
+    /// A column that *has* a date shows it whichever way the flag is set — the flag hides empties,
+    /// not dates. This is the case T-331 is actually about: set on iPhone, stored, never drawn.
+    @Test func aColumnWithADueDateShowsItWhicheverWayTheHideFlagIsSet() throws {
+        let reference = try #require(DateFormatters.date(from: "2026-08-26"))
+        let expected = DateFormatters.relativeDate(from: "2026-09-02", relativeTo: reference)
+
+        for hideWhenEmpty in [true, false] {
+            let plan = CadenceBoardColumnDueDatePlan.plan(
+                dueDate: "2026-09-02",
+                hideWhenEmpty: hideWhenEmpty,
+                isCompleted: false,
+                relativeTo: reference
+            )
+            #expect(plan.isVisible, "a dated column vanished at hideWhenEmpty: \(hideWhenEmpty)")
+            #expect(plan.hasDueDate)
+            #expect(plan.label == expected)
+            #expect(plan.label != "No due date")
+        }
+    }
+
+    /// `sectionDueDateIsOverdue` used to be a private var on the macOS column and nothing else.
+    /// Three cases, because the middle one is the one a re-derivation loses: a column that wound
+    /// down is not late, whatever date it holds.
+    @Test func aColumnIsLateOnlyWhenItsDatePassedAndItHasNotWoundDown() throws {
+        let reference = try #require(DateFormatters.date(from: "2026-08-26"))
+
+        func plan(_ dueDate: String, isCompleted: Bool) -> CadenceBoardColumnDueDatePlan {
+            CadenceBoardColumnDueDatePlan.plan(
+                dueDate: dueDate,
+                hideWhenEmpty: false,
+                isCompleted: isCompleted,
+                relativeTo: reference
+            )
+        }
+
+        #expect(plan("2026-08-25", isCompleted: false).isOverdue)
+        #expect(plan("2026-08-25", isCompleted: true).isOverdue == false)
+        // Today is not late, and neither is tomorrow.
+        #expect(plan("2026-08-26", isCompleted: false).isOverdue == false)
+        #expect(plan("2026-08-27", isCompleted: false).isOverdue == false)
+        #expect(plan("", isCompleted: false).isOverdue == false)
+    }
+
+    /// **The T-161 test for T-331.** Both list boards must reach the same rule and the same line.
+    /// Pinning `plan(...)` above proves the rule is right and proves nothing about iOS asking it —
+    /// which is exactly the state the ticket describes, a correct shared component that one
+    /// platform handed less metadata.
+    @Test func bothListBoardsAskTheSharedRuleAndDrawTheSharedLine() throws {
+        try expectCallSites(
+            of: "CadenceBoardColumnDueDatePlan.plan",
+            at: [
+                "Cadence/macOS/Views/KanbanColumnSupportViews.swift": 1,
+                "Cadence/iOS/iOSListSupportViews.swift": 1
+            ]
+        )
+        try expectCallSites(
+            of: "CadenceBoardColumnDueDateLine",
+            at: [
+                "Cadence/macOS/Views/KanbanColumnSupportViews.swift": 1,
+                "Cadence/iOS/iOSListSupportViews.swift": 1
+            ]
+        )
+
+        // Neither board may re-spell the empty label or the overdue comparison it used to own.
+        for path in [
+            "Cadence/macOS/Views/KanbanColumnSupportViews.swift",
+            "Cadence/macOS/Views/KanbanSectionColumnView.swift",
+            "Cadence/iOS/iOSListSupportViews.swift"
+        ] {
+            let raw = try sourceFile(path)
+            let code = try strippingComments(raw)
+            #expect(code != raw, "\(path) has no comments at all, so the stripper read the wrong file")
+            #expect(code.count == raw.count, "the comment stripper changed \(path)'s length")
+            #expect(code.contains("ColumnHeader"), "\(path) is not a board column file")
+            #expect(!code.contains("\"No due date\""), "\(path) spells the empty label itself again")
+            #expect(!code.contains("DateFormatters.todayKey()"), "\(path) re-derives overdue itself")
+        }
+    }
+
+    /// The flag reaches the iOS board, and iOS can now set it. Wiring the board without the toggle
+    /// would have left iPhone users reading a setting only a Mac could change; wiring the toggle
+    /// without the board would have left it governing nothing.
+    @Test func iOSBothSuppliesTheColumnHideFlagToItsBoardAndOffersAToggleForIt() throws {
+        let detail = try strippingComments(sourceFile("Cadence/iOS/iOSListDetailView.swift"))
+        #expect(detail.contains("iOSListKanbanPanel("), "the iOS list detail no longer draws the board")
+        #expect(
+            detail.range(of: "hideSectionDueDateIfEmpty:\\s*hideSectionDueDateIfEmpty", options: .regularExpression) != nil,
+            "the iOS board is not handed the list's hideSectionDueDateIfEmpty"
+        )
+
+        let editor = try strippingComments(sourceFile("Cadence/iOS/iOSListEditorViews.swift"))
+        #expect(editor.contains("Hide empty column due dates"), "the iOS list editor offers no column-due-date toggle")
+        for model in ["area", "project"] {
+            #expect(
+                editor.range(of: "\(model)\\.hideSectionDueDateIfEmpty\\s*=", options: .regularExpression) != nil,
+                "the iOS list editor never writes \(model).hideSectionDueDateIfEmpty"
+            )
+        }
+
+        // Self-check for the regex shape used twice above: it must match a real assignment and must
+        // not match the read that loads the toggle back out of the model.
+        #expect("area.hideSectionDueDateIfEmpty = flag".range(of: "area\\.hideSectionDueDateIfEmpty\\s*=", options: .regularExpression) != nil)
+        #expect("flag = area.hideSectionDueDateIfEmpty".range(of: "area\\.hideSectionDueDateIfEmpty\\s*=", options: .regularExpression) == nil)
+    }
 }
 
 // MARK: - T-275: the eyebrow is spelled once

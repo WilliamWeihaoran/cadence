@@ -34,6 +34,9 @@ struct iOSListEditorSheet: View {
     @State private var sectionDrafts: [CadenceSectionDraft] = [CadenceSectionDraft(name: TaskSectionDefaults.defaultName)]
     @State private var originalSectionConfigs: [TaskSectionConfig] = []
     @State private var hideEmptyDueDates = true
+    /// The list's `hideSectionDueDateIfEmpty`. iOS could set a *column's* due date and had no say
+    /// over whether an empty one showed, because iOS drew no column due dates at all — see T-331.
+    @State private var hideEmptySectionDueDates = true
     @State private var hasProjectDueDate = false
     @State private var projectDueDate = Date()
     @State private var hasLoaded = false
@@ -174,6 +177,10 @@ struct iOSListEditorSheet: View {
                     // `hideDueDateIfEmpty` is about the *task* rows in this list. macOS spells the
                     // two apart as "Hide empty task due date" / "Hide empty column due date".
                     Toggle("Hide empty task due dates", isOn: $hideEmptyDueDates)
+                    // The column half of the same pair macOS spells "Hide empty task due date" /
+                    // "Hide empty column due date". It sits beside its sibling rather than under
+                    // "Columns" so the two read as one choice with two halves.
+                    Toggle("Hide empty column due dates", isOn: $hideEmptySectionDueDates)
                 } header: {
                     iOSListEditorSectionHeader(title: "Organize")
                 }
@@ -335,6 +342,7 @@ struct iOSListEditorSheet: View {
             colorHex = CadenceColorPalette.areaDefault
             hasProjectDueDate = false
             projectDueDate = Date()
+            hideEmptySectionDueDates = true
         case .newProject:
             name = ""
             details = ""
@@ -342,6 +350,7 @@ struct iOSListEditorSheet: View {
             colorHex = CadenceColorPalette.projectDefault
             hasProjectDueDate = false
             projectDueDate = Date()
+            hideEmptySectionDueDates = true
         case .editArea(let area):
             name = area.name
             details = area.desc
@@ -351,6 +360,7 @@ struct iOSListEditorSheet: View {
             originalSectionConfigs = area.sectionConfigs
             sectionDrafts = CadenceSectionEditingSupport.drafts(from: originalSectionConfigs)
             hideEmptyDueDates = area.hideDueDateIfEmpty
+            hideEmptySectionDueDates = area.hideSectionDueDateIfEmpty
         case .editProject(let project):
             name = project.name
             details = project.desc
@@ -361,6 +371,7 @@ struct iOSListEditorSheet: View {
             originalSectionConfigs = project.sectionConfigs
             sectionDrafts = CadenceSectionEditingSupport.drafts(from: originalSectionConfigs)
             hideEmptyDueDates = project.hideDueDateIfEmpty
+            hideEmptySectionDueDates = project.hideSectionDueDateIfEmpty
             if let date = DateFormatters.date(from: project.dueDate) {
                 projectDueDate = date
                 hasProjectDueDate = true
@@ -379,6 +390,7 @@ struct iOSListEditorSheet: View {
             area.order = nextAreaOrder()
             area.sectionConfigs = normalizedSectionConfigs
             area.hideDueDateIfEmpty = hideEmptyDueDates
+            area.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
             modelContext.insert(area)
         case .newProject:
             let project = Project(name: trimmedName, context: selectedContext, area: selectedArea, colorHex: normalizedColor)
@@ -387,6 +399,7 @@ struct iOSListEditorSheet: View {
             project.order = nextProjectOrder()
             project.sectionConfigs = normalizedSectionConfigs
             project.hideDueDateIfEmpty = hideEmptyDueDates
+            project.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
             project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
             modelContext.insert(project)
         case .editArea(let area):
@@ -398,6 +411,7 @@ struct iOSListEditorSheet: View {
             reassignTasks(in: area.tasks ?? [])
             area.sectionConfigs = normalizedSectionConfigs
             area.hideDueDateIfEmpty = hideEmptyDueDates
+            area.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
         case .editProject(let project):
             project.name = trimmedName
             project.desc = details
@@ -408,6 +422,7 @@ struct iOSListEditorSheet: View {
             reassignTasks(in: project.tasks ?? [])
             project.sectionConfigs = normalizedSectionConfigs
             project.hideDueDateIfEmpty = hideEmptyDueDates
+            project.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
             project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
         }
 

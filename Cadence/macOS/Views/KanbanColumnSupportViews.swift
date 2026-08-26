@@ -268,7 +268,6 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     let activeTaskCount: Int
     let columnColor: Color
     let hideColumnDueDateIfEmpty: Bool
-    let sectionDueDateIsOverdue: Bool
     let isPendingCompletion: Bool
     let completionProgress: Double
     @Binding var showHeaderDueDatePicker: Bool
@@ -286,6 +285,17 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
         section.isCompleted || isPendingCompletion ? Theme.green : columnColor
     }
 
+    /// Shown-or-not, what it reads, and whether it is late — one shared value rather than three
+    /// conditions spelled into the view. iOS's board asks the same function (T-331), which is what
+    /// makes "the two boards agree" testable without either board's source being read.
+    private var dueDatePlan: CadenceBoardColumnDueDatePlan {
+        CadenceBoardColumnDueDatePlan.plan(
+            dueDate: section.dueDate,
+            hideWhenEmpty: hideColumnDueDateIfEmpty,
+            isCompleted: section.isCompleted
+        )
+    }
+
     var body: some View {
         CadenceBoardColumnHeader(
             dotColor: dotColor,
@@ -299,16 +309,16 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
 
     @ViewBuilder
     private var headerDetail: some View {
-        if !section.dueDate.isEmpty || !hideColumnDueDateIfEmpty {
+        if dueDatePlan.isVisible {
             dueDateRow
-                .padding(.leading, 14)
+                .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
         }
 
         if section.isCompleted || isPendingCompletion {
             Text(section.isCompleted ? "Completed" : "Completing…")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(Theme.green)
-                .padding(.leading, 14)
+                .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
         }
     }
 
@@ -350,17 +360,8 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
 
     private var dueDateRow: some View {
         Button(action: onOpenDueDatePicker) {
-            HStack(spacing: 5) {
-                Image(systemName: "flag.fill")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(section.dueDate.isEmpty ? Theme.dim : Theme.red)
-                Text(section.dueDate.isEmpty ? "No due date" : DateFormatters.relativeDate(from: section.dueDate))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(sectionDueDateIsOverdue ? Theme.red : Theme.dim)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .contentShape(Rectangle())
+            CadenceBoardColumnDueDateLine(plan: dueDatePlan)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showHeaderDueDatePicker, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {

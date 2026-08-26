@@ -374,6 +374,11 @@ struct iOSListKanbanPanel: View {
     /// Colour/completion for the named columns. Names that only exist on a task (a section a list
     /// no longer configures) have no config and fall back to the list's own colour.
     let sectionConfigs: [TaskSectionConfig]
+    /// The list's `hideSectionDueDateIfEmpty`. Wired for the same reason the due-date line itself
+    /// is (T-331): the flag was already in the model and already editable on macOS, so an iOS board
+    /// that ignored it would have shown "No due date" under every column of a list whose owner had
+    /// asked for exactly the opposite — and there would have been no iOS control to ask with.
+    let hideSectionDueDateIfEmpty: Bool
     let accent: Color
     /// Which list this board belongs to, and what it is called — the two things a column header
     /// needs to seed a dropped `+`, and neither of which a *column* knows. See
@@ -426,6 +431,7 @@ struct iOSListKanbanPanel: View {
                                 iOSListKanbanColumn(
                                     title: column.title,
                                     dotColor: dotColor(for: column.title),
+                                    dueDatePlan: dueDatePlan(for: column.title),
                                     tasks: column.tasks,
                                     isHighlighted: isHighlighted(column.title),
                                     dropIdentity: CadenceTaskDropSupport.groupIdentity(
@@ -494,18 +500,34 @@ struct iOSListKanbanPanel: View {
     }
 
     private func dotColor(for name: String) -> Color {
-        guard let config = sectionConfigs.first(where: {
-            $0.name.caseInsensitiveCompare(name) == .orderedSame
-        }) else {
-            return accent
-        }
+        guard let config = config(for: name) else { return accent }
         return config.isCompleted ? Theme.green : Color(hex: config.colorHex)
+    }
+
+    /// A column the list no longer configures has no due date to show, but it still obeys the
+    /// list's hide flag — otherwise the one column with no config would be the only one drawing
+    /// "No due date" on a board that shows dates.
+    private func dueDatePlan(for name: String) -> CadenceBoardColumnDueDatePlan {
+        let config = config(for: name)
+        return CadenceBoardColumnDueDatePlan.plan(
+            dueDate: config?.dueDate ?? "",
+            hideWhenEmpty: hideSectionDueDateIfEmpty,
+            isCompleted: config?.isCompleted ?? false
+        )
+    }
+
+    private func config(for name: String) -> TaskSectionConfig? {
+        sectionConfigs.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }
 }
 
 private struct iOSListKanbanColumn: View {
     let title: String
     let dotColor: Color
+    /// The metadata this column used to withhold from the shared header (T-331). The board draws
+    /// the line; it does not edit it — a section's due date is set in the list editor on iOS, the
+    /// way macOS sets it from the header popover.
+    let dueDatePlan: CadenceBoardColumnDueDatePlan
     let tasks: [AppTask]
     /// Set for the one column a caller arrived here to look at. It is emphasis, not selection —
     /// nothing about the column behaves differently — so it draws a ring at the card radius and
@@ -517,8 +539,21 @@ private struct iOSListKanbanColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            CadenceBoardColumnHeader(dotColor: dotColor, title: title, count: tasks.count)
-                .iOSNewTaskDropTarget(group: dropIdentity)
+            // Both slots spelled out, and `trailing` empty: see the note beside the header's
+            // convenience inits for why there is no detail-only shorthand to use here.
+            CadenceBoardColumnHeader(
+                dotColor: dotColor,
+                title: title,
+                count: tasks.count,
+                trailing: { EmptyView() },
+                detail: {
+                    if dueDatePlan.isVisible {
+                        CadenceBoardColumnDueDateLine(plan: dueDatePlan)
+                            .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
+                    }
+                }
+            )
+            .iOSNewTaskDropTarget(group: dropIdentity)
 
             // The card stack scrolls inside the column, as `KanbanColumnScroll` does on macOS. The
             // board only scrolled horizontally before, so anything past the bottom of a tall column

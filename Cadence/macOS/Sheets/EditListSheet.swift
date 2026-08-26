@@ -11,6 +11,8 @@ struct EditAreaSheet: View {
     @Environment(CalendarManager.self) private var calendarManager
 
     @State private var name: String
+    /// `Area.desc`. Loaded and saved raw, the way iOS's list editor does it — see `applyEdits()`.
+    @State private var details: String
     @State private var selectedColor: String
     @State private var selectedIcon: String
     @State private var selectedCalendarID: String
@@ -21,6 +23,7 @@ struct EditAreaSheet: View {
     init(area: Area) {
         self.area = area
         _name = State(initialValue: area.name)
+        _details = State(initialValue: area.desc)
         _selectedColor = State(initialValue: area.colorHex)
         _selectedIcon = State(initialValue: area.icon)
         _selectedCalendarID = State(initialValue: area.linkedCalendarID)
@@ -48,7 +51,8 @@ struct EditAreaSheet: View {
                 name: $name,
                 colorHex: $selectedColor,
                 icon: $selectedIcon,
-                placeholder: "Area name…"
+                placeholder: "Area name…",
+                details: $details
             )
 
             TaskInspectorRecessedGroup {
@@ -97,8 +101,12 @@ struct EditAreaSheet: View {
         }
     }
 
+    /// `details` is assigned raw. iOS writes `area.desc = details` with no trim at all, so the two
+    /// platforms round-trip a description byte for byte; T-332's `.whitespaces` /
+    /// `.whitespacesAndNewlines` split is about the *name* fields and is left alone here.
     private func applyEdits() {
         area.name = name
+        area.desc = details
         area.colorHex = selectedColor
         area.icon = selectedIcon
         area.linkedCalendarID = selectedCalendarID
@@ -145,6 +153,8 @@ struct EditProjectSheet: View {
     @Environment(CalendarManager.self) private var calendarManager
 
     @State private var name: String
+    /// `Project.desc`. Loaded and saved raw — same rule as `EditAreaSheet`.
+    @State private var details: String
     @State private var selectedColor: String
     @State private var selectedIcon: String
     @State private var dueDate: Date
@@ -157,6 +167,7 @@ struct EditProjectSheet: View {
     init(project: Project) {
         self.project = project
         _name = State(initialValue: project.name)
+        _details = State(initialValue: project.desc)
         _selectedColor = State(initialValue: project.colorHex)
         _selectedIcon = State(initialValue: project.icon)
         _selectedCalendarID = State(initialValue: project.linkedCalendarID)
@@ -197,7 +208,8 @@ struct EditProjectSheet: View {
                 name: $name,
                 colorHex: $selectedColor,
                 icon: $selectedIcon,
-                placeholder: "Project name…"
+                placeholder: "Project name…",
+                details: $details
             )
 
             TaskInspectorRecessedGroup {
@@ -256,6 +268,7 @@ struct EditProjectSheet: View {
 
     private func applyEdits() {
         project.name = name
+        project.desc = details
         project.colorHex = selectedColor
         project.icon = selectedIcon
         project.dueDate = hasDueDate ? DateFormatters.dateKey(from: dueDate) : ""

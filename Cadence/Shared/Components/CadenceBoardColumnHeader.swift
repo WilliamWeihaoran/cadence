@@ -48,6 +48,10 @@ nonisolated struct CadenceBoardColumnHeaderMetrics: Sendable {
     static let countLeadingGap: CGFloat = 6
     /// Title row → optional detail line (the section board's due-date row).
     static let detailSpacing: CGFloat = 5
+    /// Indent that lines a detail line up under the label rather than under the dot. macOS spelled
+    /// this 14 twice; iOS's board needs the same number now that it draws a detail line too, so it
+    /// is stated once here instead of a third time.
+    static let detailLeadingInset: CGFloat = 14
 
     /// **macOS's padding wins, including the 2pt top the iOS copy dropped.** macOS spells this
     /// once in `kanbanColumnHeaderPadding()`, documented as "padding shared by both boards' column
@@ -65,6 +69,76 @@ nonisolated struct CadenceBoardColumnHeaderMetrics: Sendable {
     /// these three numbers; stating them once is what stops them drifting the way the type sizes
     /// did.
     static let accentRuleOpacities: [Double] = [0.85, 0.45, 0.16]
+}
+
+/// Whether a board column's header draws its due-date line, and what that line reads.
+///
+/// This is the metadata iOS was not handing the shared header (T-331). The header component was
+/// already shared and already had a `detail` slot; only macOS filled it, so a section due date set
+/// in the iOS column editor was stored, was honoured by every date query, and was invisible on the
+/// board that set it. iOS now fills the same slot from the same rule.
+///
+/// The rule is a value type outside every platform conditional for the reason the metrics above
+/// are: `CadenceTests` builds for macOS and cannot see `Cadence/iOS/` at all, so a shared *value*
+/// is the only way an assertion can cover both boards' behaviour rather than one board's source.
+nonisolated struct CadenceBoardColumnDueDatePlan: Equatable, Sendable {
+    /// Whether the header draws the line at all. A column with no due date still draws one — reading
+    /// `emptyLabel` — unless the list asked for empty ones to be hidden.
+    let isVisible: Bool
+    /// Distinguishes "shows a date" from "shows the empty placeholder", which is what the flag glyph
+    /// and its tint key off.
+    let hasDueDate: Bool
+    /// The text of the line: a relative date, or `emptyLabel`.
+    let label: String
+    /// Past due and not settled. A completed column is never overdue — the date it missed stopped
+    /// mattering when the column wound down.
+    let isOverdue: Bool
+
+    /// What a column with no due date says when it is shown anyway. macOS has always drawn this
+    /// string; it is stated once now so iOS cannot drift a second wording into the same slot.
+    static let emptyLabel = "No due date"
+
+    static func plan(
+        dueDate: String,
+        hideWhenEmpty: Bool,
+        isCompleted: Bool,
+        relativeTo referenceDate: Date = Date()
+    ) -> CadenceBoardColumnDueDatePlan {
+        let hasDueDate = !dueDate.isEmpty
+        return CadenceBoardColumnDueDatePlan(
+            isVisible: hasDueDate || !hideWhenEmpty,
+            hasDueDate: hasDueDate,
+            label: hasDueDate
+                ? DateFormatters.relativeDate(from: dueDate, relativeTo: referenceDate)
+                : emptyLabel,
+            isOverdue: hasDueDate
+                && !isCompleted
+                && dueDate < DateFormatters.dateKey(from: referenceDate)
+        )
+    }
+}
+
+/// The one drawing of a column's due date: flag glyph, then the date or "No due date".
+///
+/// Shared rather than mirrored. macOS wraps it in a `Button` that opens the header's date popover
+/// and iOS draws it plain — the board that sets a section's due date on iOS is the column editor,
+/// not the column — but the glyph, the two type sizes and the two tints are one definition, so the
+/// half of T-331 that was "iOS shows nothing" cannot become "iOS shows something slightly else".
+struct CadenceBoardColumnDueDateLine: View {
+    let plan: CadenceBoardColumnDueDatePlan
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "flag.fill")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(plan.hasDueDate ? Theme.red : Theme.dim)
+            Text(plan.label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(plan.isOverdue ? Theme.red : Theme.dim)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+    }
 }
 
 /// The dot + uppercased label + count that opens every board column, on both platforms.
@@ -215,6 +289,11 @@ extension CadenceBoardColumnHeader where Detail == EmptyView {
         )
     }
 }
+
+// A `where Trailing == EmptyView` convenience taking only `detail:` is deliberately **not** here.
+// It compiles, and it makes every existing bare trailing closure on this type ambiguous with the
+// `where Detail == EmptyView` init above it — `CalendarBoardRailSupportViews` fails to build the
+// moment it exists. A board that wants a detail line and no controls spells both slots out.
 
 extension CadenceBoardColumnHeader where Trailing == EmptyView, Detail == EmptyView {
     init(dotColor: Color, title: String, count: Int, accentRule: Color? = nil) {

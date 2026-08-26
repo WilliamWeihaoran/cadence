@@ -105,6 +105,14 @@ struct iOSListDetailView: View {
         area?.sectionConfigs ?? project?.sectionConfigs ?? []
     }
 
+    /// Same fallback as macOS's `KanbanSectionColumnView.hideColumnDueDateIfEmpty`: with neither a
+    /// list nor a project there is no flag to read, and a board with nothing to hide shows.
+    private var hideSectionDueDateIfEmpty: Bool {
+        if let area { return area.hideSectionDueDateIfEmpty }
+        if let project { return project.hideSectionDueDateIfEmpty }
+        return false
+    }
+
     @AppStorage("ios.listDetail.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
     @AppStorage("ios.listDetail.showCompleted") private var showCompleted = false
 
@@ -216,6 +224,7 @@ struct iOSListDetailView: View {
                 tasks: activeTasks,
                 sectionNames: sectionNames,
                 sectionConfigs: sectionConfigs,
+                hideSectionDueDateIfEmpty: hideSectionDueDateIfEmpty,
                 accent: accent,
                 container: containerSelection,
                 listName: title,
