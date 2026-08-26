@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -231,4 +232,118 @@ struct CrossPlatformParityTests {
             }
         }
     }
+
+    // MARK: - T-330: the list description macOS could search but not edit
+
+    /// The macOS list editors' shared identity header now carries the description, and carries it
+    /// as a *binding* — the thing that makes it editable rather than merely displayed. A copy of
+    /// the string would satisfy "macOS shows the description" and still lose every keystroke.
+    ///
+    /// `Binding<String>?` rather than `String?`: `CreateContextSheet` shares this header for a model
+    /// with no description at all, so the field has to be genuinely absent there, not empty.
+    @Test func theMacOSListIdentityHeaderCarriesTheDescriptionAsALiveBinding() {
+        var stored = "typed on iPhone"
+        let withDescription = ListEditorIdentityHeader(
+            name: .constant("Launch"),
+            colorHex: .constant(Theme.blueHex),
+            icon: .constant("checklist"),
+            details: Binding(get: { stored }, set: { stored = $0 })
+        )
+
+        #expect(withDescription.details?.wrappedValue == "typed on iPhone")
+        withDescription.details?.wrappedValue = "edited on macOS"
+        #expect(stored == "edited on macOS")
+
+        let withoutDescription = ListEditorIdentityHeader(
+            name: .constant("Work"),
+            colorHex: .constant(Theme.blueHex),
+            icon: .constant("folder.fill")
+        )
+        #expect(withoutDescription.details == nil)
+    }
+
+    /// **The call-site half.** The binding above proves the header *can* carry a description; only
+    /// the sheets can prove one survives a round trip, and their state and save paths are private
+    /// to a SwiftUI `View`. So the three editors are read as source — the precedent
+    /// `CadenceSharedBoardChromeTests` sets, and the only tool that reaches `Cadence/iOS/` at all
+    /// from a target that builds for macOS.
+    ///
+    /// Both macOS sheets *write* the field; only the edit sheet also reads it back, because the
+    /// create sheet has nothing to read. That asymmetry is why this is a table rather than a loop.
+    @Test func everyListEditorOnBothPlatformsWritesTheDescriptionAndTheEditorsAlsoLoadIt() throws {
+        let writes: [String: [String]] = [
+            // iOS: the surface that could always do this, kept here so a regression that removes
+            // it registers as the parity break it would be rather than as an iOS-only change.
+            "Cadence/iOS/iOSListEditorViews.swift": ["area", "project"],
+            "Cadence/macOS/Sheets/CreateListSheet.swift": ["area", "project"],
+            "Cadence/macOS/Sheets/EditListSheet.swift": ["area", "project"]
+        ]
+
+        for (relativePath, models) in writes {
+            let raw = try paritySourceFile(relativePath)
+            let code = try parityStrippingComments(raw)
+            #expect(code != raw, "\(relativePath) has no comments, so the stripper read the wrong file")
+            #expect(code.count == raw.count, "the comment stripper changed \(relativePath)'s length")
+            #expect(code.contains("ListEditorIdentityHeader") || code.contains("TextField"), "\(relativePath) is not a list editor")
+
+            for model in models {
+                #expect(
+                    code.range(of: "\(model)\\.desc\\s*=", options: .regularExpression) != nil,
+                    "\(relativePath) never writes \(model).desc"
+                )
+            }
+        }
+
+        // The edit sheets must seed their field from the stored value, or an existing description
+        // is silently blanked the first time somebody renames the list.
+        let editSheet = try parityStrippingComments(paritySourceFile("Cadence/macOS/Sheets/EditListSheet.swift"))
+        for model in ["area", "project"] {
+            #expect(
+                editSheet.contains("State(initialValue: \(model).desc)"),
+                "EditListSheet does not load \(model).desc into its field"
+            )
+        }
+
+        // And both macOS sheets must hand it to the shared header rather than declaring a field
+        // nothing draws.
+        for relativePath in [
+            "Cadence/macOS/Sheets/CreateListSheet.swift",
+            "Cadence/macOS/Sheets/EditListSheet.swift"
+        ] {
+            let code = try parityStrippingComments(paritySourceFile(relativePath))
+            let headers = code.components(separatedBy: "ListEditorIdentityHeader(").count - 1
+            let passed = code.components(separatedBy: "details: $details").count - 1
+            #expect(headers > 0, "\(relativePath) draws no identity header")
+            #expect(passed == headers, "\(relativePath) draws \(headers) identity headers but passes a description to \(passed)")
+        }
+
+        // Self-check for the assignment regex: it must match a write and must not match the read
+        // that loads the same property back out.
+        #expect("area.desc = details".range(of: "area\\.desc\\s*=", options: .regularExpression) != nil)
+        #expect("details = area.desc".range(of: "area\\.desc\\s*=", options: .regularExpression) == nil)
+    }
+}
+
+private func parityRepositoryRoot() -> URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+}
+
+private func paritySourceFile(_ relativePath: String) throws -> String {
+    try String(contentsOf: parityRepositoryRoot().appendingPathComponent(relativePath), encoding: .utf8)
+}
+
+/// Blanks comments to spaces of equal length, so the stripped string is never shorter than the
+/// raw one — see `Cadence/Shared/AGENTS.md`, which is why the callers above assert
+/// `code != raw` **and** `code.count == raw.count` rather than a length inequality that can never
+/// fail.
+private func parityStrippingComments(_ source: String) throws -> String {
+    var result = source
+    for pattern in ["//[^\n]*", "/\\*(?s:.)*?\\*/"] {
+        while let range = result.range(of: pattern, options: .regularExpression) {
+            result.replaceSubrange(range, with: String(repeating: " ", count: result.distance(from: range.lowerBound, to: range.upperBound)))
+        }
+    }
+    return result
 }

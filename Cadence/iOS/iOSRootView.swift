@@ -104,10 +104,20 @@ struct iOSRootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active {
                 CadenceWidgetRefreshCenter.reloadAllWidgets()
-                let tasks = allTasksForNotifications
-                let habits = allHabitsForNotifications
-                Task { await NotificationManager.shared.reconcile(tasks: tasks, habits: habits) }
             }
+            // Both directions reconcile, and they reconcile for different reasons. Leaving active
+            // sweeps up what this process just changed. *Becoming* active is the only checkpoint
+            // iOS has for a write another process made while the app was away: a widget button or
+            // a Siri phrase runs `CompleteTaskIntent` / `CaptureTaskIntent` /
+            // `ToggleHabitCompletionIntent` inside the extension, which posts
+            // `CadenceStoreSupport.postExternalWrite` and deliberately does **not** reconcile
+            // there — its `UserDefaults.standard` is not the app's, so it cannot read
+            // `notificationsEnabled` and must not decide. Without this arm a task completed from
+            // the home screen keeps its pending reminder until something unrelated backgrounds the
+            // app. `docs/TODO.md` T-312, and T-306 for the macOS half of the same contract.
+            let tasks = allTasksForNotifications
+            let habits = allHabitsForNotifications
+            Task { await NotificationManager.shared.reconcile(tasks: tasks, habits: habits) }
         }
     }
 

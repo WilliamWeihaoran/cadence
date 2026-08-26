@@ -223,20 +223,25 @@ struct SettingsDataSafetySection: View {
     }
 
     private func deleteCadenceData() {
-        do {
-            // The sequence itself is in `PrivacyDataResetService` rather than here, so iOS's
-            // Data Safety screen runs the same reset instead of a second hand-written copy of it.
-            let outcome = try PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts(
-                in: modelContext,
-                aiSettingsManager: aiSettingsManager
-            )
-            // Sign in with Apple is entitlement-gated and macOS-only (`AppleAccountManager` is
-            // inside `#if os(macOS)`), so this is the one step the shared sweep cannot take.
-            appleAccountManager.signOut()
-            statusMessage = outcome.statusMessage
-            refreshBackups()
-        } catch {
-            statusMessage = "Could not delete Cadence account and data: \(error.localizedDescription)"
+        // `await`, and therefore a `Task`: the reset does not return until the pending OS
+        // notifications for the deleted data are actually cancelled (T-297), so the status
+        // message below is written when the sweep is finished rather than when it was started.
+        Task {
+            do {
+                // The sequence itself is in `PrivacyDataResetService` rather than here, so iOS's
+                // Data Safety screen runs the same reset instead of a second hand-written copy.
+                let outcome = try await PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts(
+                    in: modelContext,
+                    aiSettingsManager: aiSettingsManager
+                )
+                // Sign in with Apple is entitlement-gated and macOS-only (`AppleAccountManager` is
+                // inside `#if os(macOS)`), so this is the one step the shared sweep cannot take.
+                appleAccountManager.signOut()
+                statusMessage = outcome.statusMessage
+                refreshBackups()
+            } catch {
+                statusMessage = "Could not delete Cadence account and data: \(error.localizedDescription)"
+            }
         }
     }
 }

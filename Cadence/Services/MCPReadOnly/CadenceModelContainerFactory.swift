@@ -68,10 +68,12 @@ nonisolated enum CadenceModelContainerFactory {
         return try CadenceStoreSupport.primaryStoreURL()
     }
 
+    /// Where this process's writes announce themselves. The *location* is the marker's own
+    /// business (`CadenceStoreSupport.externalWriteMarkerURL`); what this type knows that the
+    /// store-support layer does not is `CADENCE_MCP_STORE_URL`, so a run pointed at a temp store
+    /// posts beside that store and not beside the user's real one.
     static func refreshMarkerURL() throws -> URL {
-        try resolvedStoreURL()
-            .deletingLastPathComponent()
-            .appendingPathComponent(".cadence-mcp-refresh")
+        CadenceStoreSupport.externalWriteMarkerURL(besideStoreAt: try resolvedStoreURL())
     }
 
     static func auditLogURL() throws -> URL {
@@ -80,18 +82,13 @@ nonisolated enum CadenceModelContainerFactory {
             .appendingPathComponent("mcp-audit.log")
     }
 
+    /// The MCP server's half of the out-of-process write contract: save, then say so. The app
+    /// picks the marker up and reconciles notifications for the write — see
+    /// `CadenceStoreSupport.postExternalWrite`, which is the same call the widget extension's App
+    /// Intents make.
     static func notifyExternalWrite() {
-        guard let markerURL = try? refreshMarkerURL() else { return }
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let data = Data(timestamp.utf8)
-        if FileManager.default.fileExists(atPath: markerURL.path),
-           let handle = try? FileHandle(forWritingTo: markerURL) {
-            try? handle.truncate(atOffset: 0)
-            try? handle.write(contentsOf: data)
-            try? handle.close()
-        } else {
-            FileManager.default.createFile(atPath: markerURL.path, contents: data)
-        }
+        guard let storeURL = try? resolvedStoreURL() else { return }
+        CadenceStoreSupport.postExternalWrite(besideStoreAt: storeURL)
     }
 
     private static var shouldCreateMissingOverrideStore: Bool {

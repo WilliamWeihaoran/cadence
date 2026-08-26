@@ -32,7 +32,7 @@ struct CadencePrivacyDataResetSurfaceTests {
     ///    this fails until `PrivacyDataResetService` actually deletes the new type.
     ///
     /// `docs/CLAUDE_REFERENCE.md` warns that a missed model "leaves orphans"; nothing was checking it.
-    @Test func theResetEmptiesEveryTypeInTheSchema() throws {
+    @Test func theResetEmptiesEveryTypeInTheSchema() async throws {
         let container = try makeContainer()
         let context = ModelContext(container)
         let probes = Self.probesByEntityName
@@ -48,7 +48,7 @@ struct CadencePrivacyDataResetSurfaceTests {
             #expect(try probe.count(context) == 1, "\(probe.name) was never seeded")
         }
 
-        try PrivacyDataResetService.deleteCadenceData(in: context)
+        try await PrivacyDataResetService.deleteCadenceData(in: context)
 
         for probe in probes.values.sorted(by: { $0.name < $1.name }) {
             #expect(
@@ -76,6 +76,79 @@ struct CadencePrivacyDataResetSurfaceTests {
         )
         // Not an empty-set-equals-empty-set pass.
         #expect(schemaNames.count >= 20, "CadenceSchema reports only \(schemaNames.count) entities")
+    }
+
+    // MARK: - The reset finishes what it reports
+
+    /// **T-297.** The reset used to spawn `Task { await NotificationManager.shared.cancelAll() }`
+    /// and return, so "Cadence account and data were deleted." could be shown with the
+    /// cancellation still in flight — quit promptly and a deleted habit's daily reminder outlives
+    /// the data it describes.
+    ///
+    /// The canceller suspends for real before it records, which is what makes the fire-and-forget
+    /// spelling *deterministically* red rather than red-if-the-scheduler-cooperates: an awaited
+    /// call cannot return before `didFinish` is set, and a spawned one cannot have set it.
+    @Test func theResetDoesNotReturnUntilPendingNotificationsAreCancelled() async throws {
+        let recorder = CancellationRecorder()
+        let context = ModelContext(try makeContainer())
+        context.insert(Habit(title: "Stretch"))
+        try context.save()
+
+        let started = Date()
+        try await PrivacyDataResetService.deleteCadenceData(
+            in: context,
+            canceller: recorder.canceller(suspendingFor: .milliseconds(60))
+        )
+
+        #expect(recorder.runs == 1, "the reset no longer cancels pending notifications at all")
+        #expect(
+            recorder.didFinish,
+            "the reset returned with the notification cancellation still in flight (T-297)"
+        )
+        // And the suspension was real, so a recorder that finished instantly could not have
+        // passed the assertion above by accident.
+        #expect(Date().timeIntervalSince(started) >= 0.05)
+        #expect(try context.fetchCount(FetchDescriptor<Habit>()) == 0)
+    }
+
+    /// The reset runs over an in-memory store in this suite and in every other suite that drives
+    /// it; `default` being inert is what keeps those runs away from `UNUserNotificationCenter`.
+    /// Same guard, same reason, as `CadenceWindDownReconciler.default`.
+    @Test func theDefaultCancellerIsInertInsideATestHost() {
+        #expect(NotificationManager.isTestEnvironment)
+        #expect(CadenceNotificationCanceller.default.isLive == false)
+        #expect(CadenceNotificationCanceller.live.isLive)
+        #expect(CadenceNotificationCanceller.inert.isLive == false)
+    }
+
+    /// **T-310.** `clearStoredState` drops the widget snapshot out of the app group and asks
+    /// WidgetKit for nothing, so the last rendered timeline entry — deleted task and habit titles
+    /// included — stays on the home screen until the system next decides to refresh. The reset
+    /// has to force the reload, and force it *after* the clear: the clear removes the reload
+    /// timestamp, so a reload that ran first would leave nothing behind.
+    @Test func theResetForcesAWidgetReloadAfterClearingTheSnapshot() throws {
+        let suiteName = "cadence.tests.privacy-reset.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let taskID = UUID()
+        let stale = Date(timeIntervalSince1970: 1_000)
+        CadenceWidgetRefreshCenter.reloadAllWidgets(force: true, now: stale, userDefaults: defaults)
+        CadenceWidgetRefreshCenter.markTaskCompleted(taskID, now: stale, userDefaults: defaults)
+
+        // Positive controls: the state this is about to check for removal was really there.
+        #expect(CadenceWidgetRefreshCenter.lastReloadDate(userDefaults: defaults) == stale)
+        #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: stale, userDefaults: defaults) == [taskID])
+
+        let before = Date()
+        PrivacyDataResetService.clearWidgetState(userDefaults: defaults)
+
+        #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(userDefaults: defaults).isEmpty)
+        let reload = try #require(
+            CadenceWidgetRefreshCenter.lastReloadDate(userDefaults: defaults),
+            "the reset cleared the widget snapshot and never asked WidgetKit for a new timeline (T-310)"
+        )
+        #expect(reload >= before)
     }
 
     // MARK: - iOS reaches the reset
@@ -306,6 +379,28 @@ struct CadencePrivacyDataResetSurfaceTests {
             probe { HabitCompletion(date: "2026-08-20") },
         ]
         return Dictionary(uniqueKeysWithValues: probes.map { ($0.name, $0) })
+    }
+}
+
+// MARK: - The cancellation recorder
+
+/// Stands in for `NotificationManager.cancelAll()`, which early-returns inside a test host and so
+/// cannot tell an awaited call from an abandoned one on its own.
+///
+/// It records *after* a real suspension deliberately. A recorder that set its flag synchronously
+/// would be satisfied by `Task { await canceller.run() }` whenever the scheduler happened to run
+/// the child task before the caller's continuation — which is precisely the bug this pins.
+@MainActor
+private final class CancellationRecorder {
+    private(set) var runs = 0
+    private(set) var didFinish = false
+
+    func canceller(suspendingFor duration: Duration) -> CadenceNotificationCanceller {
+        CadenceNotificationCanceller {
+            self.runs += 1
+            try? await Task.sleep(for: duration)
+            self.didFinish = true
+        }
     }
 }
 

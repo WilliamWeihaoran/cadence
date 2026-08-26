@@ -1,5 +1,53 @@
 import AppIntents
+import Foundation
 import SwiftData
+
+// Every `perform()` here can run in the widget extension, which never runs the app's startup
+// sequence. Open the store through `CadenceStoreSupport.makeSharedWriteContainer()` and nothing
+// else: a plain write-capable open *creates* a missing store, which is how a widget tap used to be
+// able to skip the legacy migration for good (T-311). The refusal it throws is user-facing copy.
+
+/// What every writing App Intent does *after* it has saved, in one place.
+///
+/// There are three of them, and until T-312 each spelled its own tail: an optimistic widget
+/// override where it had one, then `reloadAllWidgets(force: true)`. That tail was incomplete in
+/// the same way at all three sites — a task completed from a widget button kept its pending
+/// "due today" reminder, and a task captured for today did not get one — because nothing told the
+/// app that its store had changed underneath it.
+///
+/// **The reconcile is deliberately not here.** These intents run in the widget extension.
+/// `NotificationManager.reconcile` reads `notificationsEnabled` from `UserDefaults.standard`,
+/// which the extension does not share with the app, so reconciling in this process would decide
+/// with the wrong setting and cancel every reminder the app had scheduled. Posting the app-group
+/// marker is the whole fix: the app is the only process that can see that setting, and it
+/// reconciles when it adopts the write. That is the same seam MCP writes already used
+/// (`CadenceModelContainerFactory.notifyExternalWrite`), which is why the two out-of-process write
+/// surfaces get one answer rather than two.
+nonisolated enum CadenceWidgetIntentWriteSupport {
+    static func publish(
+        completedTaskID: UUID? = nil,
+        habitCompletion: (id: UUID, isDoneToday: Bool)? = nil,
+        storeURL: URL? = nil,
+        userDefaults: UserDefaults? = nil,
+        now: Date = Date()
+    ) {
+        if let completedTaskID {
+            CadenceWidgetRefreshCenter.markTaskCompleted(completedTaskID, now: now, userDefaults: userDefaults)
+        }
+        if let habitCompletion {
+            CadenceWidgetRefreshCenter.markHabitCompletion(
+                habitCompletion.id,
+                isDoneToday: habitCompletion.isDoneToday,
+                now: now,
+                userDefaults: userDefaults
+            )
+        }
+        CadenceWidgetRefreshCenter.reloadAllWidgets(force: true, now: now, userDefaults: userDefaults)
+        if let storeURL = storeURL ?? (try? CadenceStoreSupport.primaryStoreURL()) {
+            CadenceStoreSupport.postExternalWrite(besideStoreAt: storeURL, now: now)
+        }
+    }
+}
 
 struct CadenceTodayWidgetConfigurationIntent: WidgetConfigurationIntent {
     static var title: LocalizedStringResource { "Today Tasks" }
@@ -23,17 +71,11 @@ struct CompleteTaskIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let container = try CadenceStoreSupport.makePrimaryContainer(
-            allowsSave: true,
-            cloudKitDatabase: .none
-        )
+        let container = try CadenceStoreSupport.makeSharedWriteContainer()
         let modelContext = ModelContext(container)
         let changed = try Self.completeTask(taskID: taskID, in: modelContext)
         if changed {
-            if let uuid = UUID(uuidString: taskID) {
-                CadenceWidgetRefreshCenter.markTaskCompleted(uuid)
-            }
-            CadenceWidgetRefreshCenter.reloadAllWidgets(force: true)
+            CadenceWidgetIntentWriteSupport.publish(completedTaskID: UUID(uuidString: taskID))
         }
         return .result()
     }
@@ -85,17 +127,14 @@ struct CaptureTaskIntent: AppIntent {
             return .result(dialog: "Add a task title.")
         }
 
-        let container = try CadenceStoreSupport.makePrimaryContainer(
-            allowsSave: true,
-            cloudKitDatabase: .none
-        )
+        let container = try CadenceStoreSupport.makeSharedWriteContainer()
         let modelContext = ModelContext(container)
         try Self.captureTask(
             title: trimmed,
             planForToday: planForToday,
             in: modelContext
         )
-        CadenceWidgetRefreshCenter.reloadAllWidgets(force: true)
+        CadenceWidgetIntentWriteSupport.publish()
         return .result(dialog: "Captured \(trimmed).")
     }
 
@@ -135,20 +174,13 @@ struct ToggleHabitCompletionIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let container = try CadenceStoreSupport.makePrimaryContainer(
-            allowsSave: true,
-            cloudKitDatabase: .none
-        )
+        let container = try CadenceStoreSupport.makeSharedWriteContainer()
         let modelContext = ModelContext(container)
         let result = try Self.toggleHabitCompletionResult(habitID: habitID, in: modelContext)
         if result.changed {
-            if let habitID = result.habitID {
-                CadenceWidgetRefreshCenter.markHabitCompletion(
-                    habitID,
-                    isDoneToday: result.isDoneToday
-                )
-            }
-            CadenceWidgetRefreshCenter.reloadAllWidgets(force: true)
+            CadenceWidgetIntentWriteSupport.publish(
+                habitCompletion: result.habitID.map { (id: $0, isDoneToday: result.isDoneToday) }
+            )
         }
         return .result()
     }

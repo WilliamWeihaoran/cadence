@@ -51,7 +51,11 @@ enum PrivacyDataResetConfirmation {
 /// where the file was written. A 2-line tombstone under the old *unprefixed* name records the
 /// move; the prefix on this file is what keeps the two from colliding on `.stringsdata`.
 enum PrivacyDataResetService {
-    static func deleteCadenceData(in modelContext: ModelContext) throws {
+    @MainActor
+    static func deleteCadenceData(
+        in modelContext: ModelContext,
+        canceller: CadenceNotificationCanceller? = nil
+    ) async throws {
         try deleteAll(HabitCompletion.self, in: modelContext)
         try deleteAll(GoalListLink.self, in: modelContext)
         try deleteAll(Subtask.self, in: modelContext)
@@ -80,7 +84,29 @@ enum PrivacyDataResetService {
         // carrying a deleted habit's **title** firing every day until the next reconcile — and
         // reconcile only runs when the scene leaves `.active`. "Delete my data" has to mean the
         // notifications too.
-        Task { await NotificationManager.shared.cancelAll() }
+        //
+        // **Awaited, not spawned.** This was `Task { await … }` and a bare `return`, so the reset
+        // reported success with the cancellation still in flight: quit promptly after confirming
+        // and a deleted habit's daily reminder outlives the data it describes, surfacing later
+        // from an app the user believes they emptied. `docs/privacy.html` and the App Review
+        // notes both describe this reset, which is what makes the difference between "done" and
+        // "started" a promise rather than a nicety. `docs/TODO.md` T-297.
+        await (canceller ?? .default).run()
+    }
+
+    /// The widget half of the reset, as its own function so a test can drive it without the parts
+    /// that touch the real keychain and the real backups directory.
+    ///
+    /// **Clearing the stored state is not a reload.** `clearStoredState` drops the optimistic
+    /// completion overrides and the reload throttle out of the app group; it does not ask WidgetKit
+    /// for anything, so the last rendered timeline entry — deleted task and habit titles included —
+    /// stays on the home screen until the system next decides to refresh, which can be a long time.
+    /// `force` because the reset must not be swallowed by the reload throttle it just cleared the
+    /// other side of. `docs/TODO.md` T-310.
+    @MainActor
+    static func clearWidgetState(userDefaults: UserDefaults? = nil) {
+        CadenceWidgetRefreshCenter.clearStoredState(userDefaults: userDefaults)
+        CadenceWidgetRefreshCenter.reloadAllWidgets(force: true, userDefaults: userDefaults)
     }
 
     /// The whole reset both platforms perform, minus the one piece that is genuinely macOS-only.
@@ -94,10 +120,10 @@ enum PrivacyDataResetService {
     static func deleteCadenceDataAndLocalArtifacts(
         in modelContext: ModelContext,
         aiSettingsManager: AISettingsManager
-    ) throws -> PrivacyDataResetOutcome {
-        try deleteCadenceData(in: modelContext)
+    ) async throws -> PrivacyDataResetOutcome {
+        try await deleteCadenceData(in: modelContext)
         try? aiSettingsManager.removeAPIKey()
-        CadenceWidgetRefreshCenter.clearStoredState()
+        clearWidgetState()
         StoreBackupManager.clearPendingRestore()
         StoreBackupManager.clearFailedRestore()
         let removedBackupCount = try StoreBackupManager.deleteAllBackups()
@@ -109,5 +135,41 @@ enum PrivacyDataResetService {
         for model in models {
             modelContext.delete(model)
         }
+    }
+}
+
+/// The pending-notification cancellation the reset performs, as an injectable value.
+///
+/// It has to be injectable to be *provable*. `NotificationManager.cancelAll()` early-returns
+/// inside a test host, so from the outside a spawned-and-forgotten `Task` and an awaited call
+/// look identical — which is exactly how T-297 survived: the call was there, and the promise it
+/// was supposed to keep was not. A test hands in a canceller that suspends and records, and then
+/// the difference between "the reset waited" and "the reset started something" is a value.
+///
+/// Same shape and same reasons as `CadenceWindDownReconciler`: `default` is inert inside a test
+/// host, so the eighteen suites that drive the reset over an in-memory store do not reach
+/// `UNUserNotificationCenter`.
+@MainActor
+struct CadenceNotificationCanceller {
+    /// `false` for a canceller that deliberately does nothing. Exposed so `default` can be pinned.
+    let isLive: Bool
+
+    private let body: () async -> Void
+
+    init(isLive: Bool = true, _ body: @escaping () async -> Void) {
+        self.isLive = isLive
+        self.body = body
+    }
+
+    func run() async {
+        await body()
+    }
+
+    static let live = Self { await NotificationManager.shared.cancelAll() }
+
+    static let inert = Self(isLive: false) {}
+
+    static var `default`: Self {
+        NotificationManager.isTestEnvironment ? .inert : .live
     }
 }

@@ -92,6 +92,13 @@ files at the time of writing — `ls Cadence/Services/*.swift | wc -l` — plus 
 
 - `CadenceSchema.swift` is the canonical schema list. Update it only with matching model intent.
 - `PersistenceController.swift` is legacy/compatibility support; SwiftData is the primary persistence path.
+- `CadenceStoreSupport.makeSharedWriteContainer` is the **only** write-capable open of the
+  app-group store outside `PersistenceController`'s startup. A write-capable open *creates* a
+  missing store and a read-only one does not, so a widget/App Intent write used to be able to
+  create `default.store` before the app had migrated the legacy one into it, permanently
+  skipping that migration (T-311). The gate refuses instead of migrating: an extension cannot
+  read the app's own container, cannot see `UserDefaults.standard`, and this project has no
+  `SchemaMigrationPlan`.
 - Migration and repair services should be deterministic, idempotent, and conservative.
 - Markdown/note services should avoid blocking UI flows and should prefer structured parsing/helpers over ad hoc string edits when possible.
 - `MCPReadOnly/` is integration-facing **and compiles into two targets** — the app and

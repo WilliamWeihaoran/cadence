@@ -34,6 +34,19 @@ nonisolated enum CadenceWidgetRefreshCenter {
         #endif
     }
 
+    /// When this type last asked WidgetKit to reload, or `nil` if it has not since the stored
+    /// state was cleared.
+    ///
+    /// The throttle above already writes and reads this timestamp; exposing it is what lets a
+    /// caller that *must* have forced a reload — the privacy reset, whose whole promise is that
+    /// deleted titles stop being drawn — be checked for having done so, rather than for containing
+    /// a line of source that says it did.
+    static func lastReloadDate(userDefaults: UserDefaults? = nil) -> Date? {
+        let timestamp = sharedDefaults(userDefaults).double(forKey: reloadTimestampDefaultsKey)
+        guard timestamp > 0 else { return nil }
+        return Date(timeIntervalSince1970: timestamp)
+    }
+
     // There is no `reloadTodayWidgets`. It existed as a pure forwarder to `reloadAllWidgets` with
     // no production caller, which advertised a per-widget-kind reload this type does not have:
     // every reload path goes through `reloadAllWidgets`.

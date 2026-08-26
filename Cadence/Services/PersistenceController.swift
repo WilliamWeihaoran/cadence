@@ -446,7 +446,16 @@ enum StoreBackupManager {
         return snapshots.count
     }
 
-    static func scheduleRestore(from backupURL: URL, defaults: UserDefaults = .standard) throws {
+    /// - Parameter storeDirectoryURL: the store this restore is aimed at, `nil` for the real one.
+    ///   It is needed because the pending restore is also recorded *beside the store* — see
+    ///   `CadenceStoreSupport.restorePendingMarkerName` — so that the widget extension, which does
+    ///   not share `UserDefaults.standard`, can see that a restore is about to replace whatever it
+    ///   would write (T-311).
+    static func scheduleRestore(
+        from backupURL: URL,
+        defaults: UserDefaults = .standard,
+        storeDirectoryURL: URL? = nil
+    ) throws {
         guard isBackupDirectory(backupURL) else {
             throw CocoaError(.fileReadInvalidFileName)
         }
@@ -454,10 +463,20 @@ enum StoreBackupManager {
         // the old failure would outlive the reason anyone would still care about it.
         defaults.removeObject(forKey: failedRestoreDefaultsKey)
         defaults.set(backupURL.path, forKey: pendingRestoreDefaultsKey)
+        setSharedRestorePendingMarker(true, storeDirectoryURL: storeDirectoryURL)
     }
 
-    static func clearPendingRestore(defaults: UserDefaults = .standard) {
+    static func clearPendingRestore(defaults: UserDefaults = .standard, storeDirectoryURL: URL? = nil) {
         defaults.removeObject(forKey: pendingRestoreDefaultsKey)
+        setSharedRestorePendingMarker(false, storeDirectoryURL: storeDirectoryURL)
+    }
+
+    /// Keep the app-group marker in step with the pending-restore key. Resolving the store
+    /// directory here rather than at each call site keeps the two writes in one place, which is
+    /// the only way the marker cannot outlive the thing it stands for.
+    private static func setSharedRestorePendingMarker(_ pending: Bool, storeDirectoryURL: URL?) {
+        guard let directoryURL = storeDirectoryURL ?? (try? defaultStoreDirectoryURL()) else { return }
+        CadenceStoreSupport.setRestorePending(pending, inStoreDirectory: directoryURL)
     }
 
     static func pendingRestoreURL(defaults: UserDefaults = .standard) -> URL? {
@@ -501,12 +520,19 @@ enum StoreBackupManager {
         fileManager: FileManager = .default,
         defaults: UserDefaults = .standard
     ) throws {
-        guard let backupURL = pendingRestoreURL(defaults: defaults) else { return }
+        guard let backupURL = pendingRestoreURL(defaults: defaults) else {
+            // The launch is also where a stale app-group marker gets reconciled against the key it
+            // mirrors. Without this, a marker that outlived its restore would refuse every widget
+            // write from then on, and only a reinstall would clear it.
+            CadenceStoreSupport.setRestorePending(false, inStoreDirectory: storeDirectoryURL)
+            return
+        }
         guard isBackupDirectory(backupURL, fileManager: fileManager) else {
             quarantinePendingRestore(
                 backupURL: backupURL,
                 reason: "The backup folder is missing, or no longer looks like a Cadence backup.",
-                defaults: defaults
+                defaults: defaults,
+                storeDirectoryURL: storeDirectoryURL
             )
             throw CocoaError(.fileReadNoSuchFile)
         }
@@ -517,13 +543,14 @@ enum StoreBackupManager {
             quarantinePendingRestore(
                 backupURL: backupURL,
                 reason: error.localizedDescription,
-                defaults: defaults
+                defaults: defaults,
+                storeDirectoryURL: storeDirectoryURL
             )
             throw error
         }
 
         clearFailedRestore(defaults: defaults)
-        clearPendingRestore(defaults: defaults)
+        clearPendingRestore(defaults: defaults, storeDirectoryURL: storeDirectoryURL)
     }
 
     /// Stage, verify, swap. Every `throw` in here leaves the live store exactly as it was.
@@ -670,7 +697,12 @@ enum StoreBackupManager {
     /// is the one thing they need to see afterwards. Quarantining moves the intent out of the key
     /// the launch reads and into a record the startup banner names, so a second attempt is a
     /// decision the user makes rather than something a launch does to itself.
-    private static func quarantinePendingRestore(backupURL: URL, reason: String, defaults: UserDefaults) {
+    private static func quarantinePendingRestore(
+        backupURL: URL,
+        reason: String,
+        defaults: UserDefaults,
+        storeDirectoryURL: URL? = nil
+    ) {
         let record = FailedRestoreRecord(
             backupPath: backupURL.path,
             backupName: backupURL.lastPathComponent,
@@ -680,7 +712,7 @@ enum StoreBackupManager {
         if let data = try? JSONEncoder.cadenceBackupEncoder.encode(record) {
             defaults.set(data, forKey: failedRestoreDefaultsKey)
         }
-        clearPendingRestore(defaults: defaults)
+        clearPendingRestore(defaults: defaults, storeDirectoryURL: storeDirectoryURL)
     }
 
     /// The size of one backed-up item, whether it is a file or one of the store's sidecar folders.

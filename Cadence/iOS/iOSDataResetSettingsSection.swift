@@ -77,14 +77,19 @@ struct iOSDataResetSettingsSection: View {
     }
 
     private func deleteCadenceData() {
-        do {
-            let outcome = try PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts(
-                in: modelContext,
-                aiSettingsManager: aiSettingsManager
-            )
-            statusMessage = outcome.statusMessage
-        } catch {
-            statusMessage = "Could not delete Cadence data: \(error.localizedDescription)"
+        // `await`, and therefore a `Task`: the reset does not return until the pending OS
+        // notifications for the deleted data are actually cancelled (T-297), so the status
+        // message below is written when the sweep is finished rather than when it was started.
+        Task {
+            do {
+                let outcome = try await PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts(
+                    in: modelContext,
+                    aiSettingsManager: aiSettingsManager
+                )
+                statusMessage = outcome.statusMessage
+            } catch {
+                statusMessage = "Could not delete Cadence data: \(error.localizedDescription)"
+            }
         }
     }
 }

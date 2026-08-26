@@ -246,6 +246,16 @@ struct macOSRootView: View {
         activeModelContext = CadenceModelContextRefresh.replacement(for: currentModelContext)
         dataRefreshID = UUID()
         hasPendingExternalDataRefresh = false
+        // Adopting an out-of-process write means adopting its *schedule*, not only its rows. A
+        // task an MCP agent completed keeps its pending "due today" reminder, and one it just
+        // scheduled has none, until some unrelated scene-phase checkpoint happens to sweep — so a
+        // reminder can fire for work that is already done. This is the app side of the contract
+        // the writers keep with `CadenceStoreSupport.postExternalWrite`: they post, and the one
+        // process that can read `notificationsEnabled` reconciles. `docs/TODO.md` T-306, T-312.
+        //
+        // After the swap, over `currentModelContext`, because the outgoing context predates the
+        // write and would diff against rows the other process never touched.
+        HabitNotificationReconcileSupport.scheduleReconcile(in: currentModelContext)
     }
 
     private func scheduleAppDataRefreshIfPossible() {

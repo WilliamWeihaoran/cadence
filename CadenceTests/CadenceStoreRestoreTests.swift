@@ -100,7 +100,7 @@ struct CadenceStoreRestoreTests {
 
             try removeStoreItems(in: storeDirectory)
             try seedStoreItems(in: storeDirectory, marker: "what-is-live")
-            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults)
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
 
             // Disk full on the second item of the copy: the old code had already deleted the live
             // store by this point in the sequence.
@@ -137,7 +137,7 @@ struct CadenceStoreRestoreTests {
 
             try removeStoreItems(in: storeDirectory)
             try seedStoreItems(in: storeDirectory, marker: "what-is-live")
-            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults)
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
 
             // The one window that cannot be a single rename: several verified items are being moved
             // into the store directory and the second one fails.
@@ -179,7 +179,7 @@ struct CadenceStoreRestoreTests {
 
             try removeStoreItems(in: storeDirectory)
             try seedStoreItems(in: storeDirectory, marker: "what-is-live")
-            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults)
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
 
             #expect(throws: (any Error).self) {
                 try StoreBackupManager.performPendingRestoreIfNeeded(
@@ -208,7 +208,7 @@ struct CadenceStoreRestoreTests {
 
             try removeStoreItems(in: storeDirectory)
             try writeRealStore(at: storeURL, taskTitle: "Row the user has right now")
-            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults)
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
 
             let interrupting = InterruptingFileManager(
                 failCopy: { _, destination in
@@ -245,7 +245,7 @@ struct CadenceStoreRestoreTests {
 
             try removeStoreItems(in: storeDirectory)
             try seedStoreItems(in: storeDirectory, marker: "what-is-live")
-            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults)
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
 
             let interrupting = InterruptingFileManager(
                 failCopy: { _, destination in
@@ -289,7 +289,7 @@ struct CadenceStoreRestoreTests {
                 reason: .manual,
                 storeDirectoryURL: storeDirectory
             ))
-            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults)
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
             try FileManager.default.removeItem(at: backupURL)
 
             #expect(throws: (any Error).self) {
@@ -316,7 +316,7 @@ struct CadenceStoreRestoreTests {
                 reason: .manual,
                 storeDirectoryURL: storeDirectory
             ))
-            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults)
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
 
             let interrupting = InterruptingFileManager(
                 failCopy: { _, destination in destination.path.contains("restore-staging") }
@@ -330,7 +330,7 @@ struct CadenceStoreRestoreTests {
             }
             #expect(StoreBackupManager.lastFailedRestore(defaults: defaults) != nil)
 
-            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults)
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
             #expect(StoreBackupManager.lastFailedRestore(defaults: defaults) == nil)
             #expect(StoreBackupManager.pendingRestoreURL(defaults: defaults)?.path == backupURL.path)
         }
@@ -351,7 +351,7 @@ struct CadenceStoreRestoreTests {
 
             try removeStoreItems(in: storeDirectory)
             try seedStoreItems(in: storeDirectory, marker: "what-is-live")
-            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults)
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
 
             try StoreBackupManager.performPendingRestoreIfNeeded(
                 storeDirectoryURL: storeDirectory,
@@ -386,7 +386,7 @@ struct CadenceStoreRestoreTests {
 
             try removeStoreItems(in: storeDirectory)
             try writeRealStore(at: storeURL, taskTitle: "Row the user has right now")
-            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults)
+            try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
 
             try StoreBackupManager.performPendingRestoreIfNeeded(
                 storeDirectoryURL: storeDirectory,
