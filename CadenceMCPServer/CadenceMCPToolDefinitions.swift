@@ -142,7 +142,7 @@ enum CadenceMCPToolDefinitions {
                 "estimatedMinutes": integerOrStringProperty("Optional estimate, 1...1440 minutes, or duration like 30m, 1h, 1.5h, or three hours.", minimum: 1, maximum: 1440),
                 "containerKind": stringProperty("Optional area or project.", enumValues: ["area", "project"]),
                 "containerId": uuidProperty("Optional area/project UUID."),
-                "sectionName": stringProperty("Optional container section name."),
+                "sectionName": stringProperty("Optional section name. Must match a section that already exists on the target list; an unknown name is rejected rather than redirected."),
                 "subtaskTitles": flexibleStringArrayProperty("Optional array of subtask titles."),
                 "tagNames": flexibleStringArrayProperty("Optional array of tag names/slugs to assign."),
             ], required: ["title"])),
@@ -157,7 +157,7 @@ enum CadenceMCPToolDefinitions {
                 "containerKind": stringProperty("Optional area or project.", enumValues: ["area", "project"]),
                 "containerId": uuidProperty("Optional area/project UUID."),
                 "clearContainer": booleanProperty("Set true to move task to inbox."),
-                "sectionName": stringProperty("Optional container section name."),
+                "sectionName": stringProperty("Optional section name. Must match a section that already exists on the target list; an unknown name is rejected rather than redirected."),
                 "tagNames": flexibleStringArrayProperty("Optional replacement array of tag names/slugs. Pass an empty array to clear tags."),
             ], required: ["taskId"])),
             Tool(name: "schedule_task", description: "Set or clear a Cadence task do-date/time without Calendar side effects.", inputSchema: schema([

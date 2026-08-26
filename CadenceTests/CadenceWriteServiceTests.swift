@@ -462,6 +462,119 @@ struct CadenceWriteServiceTests {
         #expect(auditEntries.allSatisfy { $0.summary.hasPrefix("Bulk cancelled task: MCP TEST cleanup") })
     }
 
+    // MARK: - T-308: a wrong section name is not a missing one
+
+    @Test func createTaskRejectsASectionNameTheListDoesNotHave() throws {
+        let fixture = try Fixture()
+
+        let error = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTask(options: .init(
+                title: "Typo lands somewhere else",
+                containerKind: "project",
+                containerId: fixture.project.id.uuidString,
+                sectionName: "Buildd"
+            ))
+        }
+
+        #expect(error?.errorDescription == "Invalid sectionName: Buildd. Expected one of: Default, Build.")
+        // The whole point: before this, the task existed, in "Default", and the call said success.
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty)
+    }
+
+    @Test func updateTaskRejectsAWrongSectionNameWithoutTouchingTheTask() throws {
+        let fixture = try Fixture()
+        let task = AppTask(title: "Original")
+        task.project = fixture.project
+        task.sectionName = "Build"
+        fixture.modelContext.insert(task)
+        try fixture.modelContext.save()
+
+        let error = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateTask(options: .init(
+                taskId: task.id.uuidString,
+                title: "Renamed",
+                sectionName: "Backlogg"
+            ))
+        }
+
+        #expect(error?.errorDescription == "Invalid sectionName: Backlogg. Expected one of: Default, Build.")
+        let detail = try fixture.readService.getTask(taskID: task.id.uuidString)
+        #expect(detail.summary.sectionName == "Build")
+        #expect(detail.summary.title == "Original")
+    }
+
+    @Test func anAbsentSectionNameStillFallsBackToTheListDefault() throws {
+        let fixture = try Fixture()
+
+        let detail = try fixture.writeService.createTask(options: .init(
+            title: "No section asked for",
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString
+        ))
+
+        #expect(detail.summary.sectionName == TaskSectionDefaults.defaultName)
+        #expect(detail.summary.container?.id == fixture.project.id.uuidString)
+    }
+
+    @Test func aSectionNameMatchesTheListSpellingRegardlessOfCase() throws {
+        let fixture = try Fixture()
+
+        let detail = try fixture.writeService.createTask(options: .init(
+            title: "Case insensitive",
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString,
+            sectionName: "  bUiLd "
+        ))
+
+        #expect(detail.summary.sectionName == "Build")
+    }
+
+    @Test func anInboxTaskAcceptsOnlyTheDefaultSectionName() throws {
+        let fixture = try Fixture()
+
+        let error = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTask(options: .init(title: "Inbox", sectionName: "Build"))
+        }
+        #expect(error?.errorDescription == "Invalid sectionName: Build. An inbox task has no sections.")
+
+        let detail = try fixture.writeService.createTask(options: .init(title: "Inbox", sectionName: "default"))
+        #expect(detail.summary.sectionName == TaskSectionDefaults.defaultName)
+        #expect(detail.summary.container == nil)
+    }
+
+    // MARK: - T-307: an unreadable tag table is a failure, not "no tags"
+
+    @Test func unreadableTagsFailTheWriteInsteadOfSilentlyChangingNothing() throws {
+        let resolvedTag = Cadence.Tag(name: "bug", slug: "bug")
+
+        #expect(try CadenceMCPServiceSupport.requiredTags([resolvedTag]).map(\.slug) == ["bug"])
+        #expect(try CadenceMCPServiceSupport.requiredTags([]).isEmpty)
+
+        let error = #expect(throws: CadenceWriteError.self) {
+            try CadenceMCPServiceSupport.requiredTags(nil)
+        }
+        #expect(error?.errorDescription == "Tags could not be read, so nothing was written.")
+    }
+
+    @Test func aTagOnlyUpdateReplacesTheTagsItReportsBack() throws {
+        let fixture = try Fixture()
+        let task = AppTask(title: "Tag me")
+        fixture.modelContext.insert(task)
+        try fixture.modelContext.save()
+
+        let first = try fixture.writeService.updateTask(options: .init(
+            taskId: task.id.uuidString,
+            tagNames: ["bug", "Feature"]
+        ))
+        #expect(first.summary.tags.map(\.slug) == ["bug", "feature"])
+
+        let cleared = try fixture.writeService.updateTask(options: .init(
+            taskId: task.id.uuidString,
+            tagNames: []
+        ))
+        #expect(cleared.summary.tags.isEmpty)
+    }
+
     private func readAuditEntries(from url: URL) throws -> [TestAuditEntry] {
         let content = try String(contentsOf: url, encoding: .utf8)
         return try content

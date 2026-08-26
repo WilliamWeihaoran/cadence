@@ -11,6 +11,8 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     case invalidCombination(String)
     case noChanges
     case cannotCompleteCancelledTask(String)
+    case sectionNotFound(String, [String])
+    case tagsUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -32,6 +34,13 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
             return "No valid changes were provided."
         case .cannotCompleteCancelledTask(let id):
             return "Cancelled task \(id) cannot be completed."
+        case .sectionNotFound(let name, let available):
+            guard !available.isEmpty else {
+                return "Invalid sectionName: \(name). An inbox task has no sections."
+            }
+            return "Invalid sectionName: \(name). Expected one of: \(available.joined(separator: ", "))."
+        case .tagsUnavailable:
+            return "Tags could not be read, so nothing was written."
         }
     }
 }
@@ -132,12 +141,16 @@ final class CadenceWriteService {
         let scheduledStartMin = try validateOptionalScheduledStart(options.scheduledStartMin)
         let estimatedMinutes = try validateEstimatedMinutes(options.estimatedMinutes ?? 30)
         let container = try resolveContainer(kind: options.containerKind, id: options.containerId)
-        let sectionName = normalizedSectionName(options.sectionName, container: container)
+        let sectionName = try normalizedSectionName(options.sectionName, container: container)
         let subtaskTitles = normalizedSubtaskTitles(options.subtaskTitles ?? [])
 
         if scheduledStartMin != nil && scheduledDate == nil {
             throw CadenceWriteError.invalidCombination("scheduledDate is required when scheduledStartMin is provided.")
         }
+
+        // Resolved before anything is built, so an unreadable tag table fails the call rather than
+        // producing an untagged task the caller is told it tagged (T-307).
+        let tags = try resolvedTags(named: options.tagNames ?? [])
 
         let task = AppTask(title: title)
         task.notes = options.notes ?? ""
@@ -148,7 +161,7 @@ final class CadenceWriteService {
         task.estimatedMinutes = estimatedMinutes
         task.sectionName = sectionName
         apply(container: container, to: task)
-        TagSupport.setTags(named: options.tagNames ?? [], on: task, in: context)
+        task.tags = tags
 
         context.insert(task)
         for (index, subtaskTitle) in subtaskTitles.enumerated() {
@@ -186,11 +199,14 @@ final class CadenceWriteService {
         } else {
             finalContainer = currentContainer(for: task)
         }
-        let sectionName = options.sectionName.map { normalizedSectionName($0, container: finalContainer) }
+        let sectionName = try options.sectionName.map { try normalizedSectionName($0, container: finalContainer) }
 
         guard title != nil || options.notes != nil || priority != nil || dueDate != nil || options.clearDueDate || estimatedMinutes != nil || container != nil || options.clearContainer || sectionName != nil || options.tagNames != nil else {
             throw CadenceWriteError.noChanges
         }
+
+        // Same reason as createTask: the throw has to happen while the task is still untouched.
+        let tags = try options.tagNames.map { try resolvedTags(named: $0) }
 
         if let title { task.title = title }
         if let notes = options.notes { task.notes = notes }
@@ -211,8 +227,8 @@ final class CadenceWriteService {
         } else if options.clearContainer {
             task.sectionName = TaskSectionDefaults.defaultName
         }
-        if let tagNames = options.tagNames {
-            TagSupport.setTags(named: tagNames, on: task, in: context)
+        if let tags {
+            task.tags = tags
         }
 
         try saveNotifyAndAudit(.task(tool: "update_task", id: task.id, summary: "Updated task: \(task.title)"))
@@ -581,8 +597,12 @@ final class CadenceWriteService {
         }
     }
 
-    private func normalizedSectionName(_ value: String?, container: CadenceResolvedContainer?) -> String {
-        CadenceMCPServiceSupport.normalizedSectionName(value, container: container)
+    private func normalizedSectionName(_ value: String?, container: CadenceResolvedContainer?) throws -> String {
+        try CadenceMCPServiceSupport.normalizedSectionName(value, container: container)
+    }
+
+    private func resolvedTags(named names: [String]) throws -> [Tag] {
+        try CadenceMCPServiceSupport.requiredTags(TagSupport.resolveTags(named: names, in: context))
     }
 
     private func normalizedSubtaskTitles(_ values: [String]) -> [String] {

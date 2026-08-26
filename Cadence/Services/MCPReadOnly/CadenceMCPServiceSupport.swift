@@ -94,14 +94,50 @@ nonisolated enum CadenceMCPServiceSupport {
         return trimmed.isEmpty ? fallback : trimmed
     }
 
-    static func normalizedSectionName(_ value: String?, container: CadenceResolvedContainer?) -> String {
+    /// The container's own spelling of a requested section, or `sectionNotFound`.
+    ///
+    /// **An absent section name and a wrong one are two different requests, and the first-section
+    /// fallback is only the right answer to the first.** This used to answer both with
+    /// `available.first`, so `Backlogg` for `Backlog` filed the task into whichever column happened
+    /// to sort first and `create_task` reported success. A UI can get away with that because the
+    /// user watches the row land; MCP is an API whose caller sees only the word "success", so the
+    /// redirect is invisible exactly where nobody can catch it.
+    ///
+    /// Rejecting rather than reporting the redirect back is deliberate: `resolveContainer` already
+    /// throws `containerNotFound` for a list id that matches nothing, and a section that matches
+    /// nothing is the same class of mistake one level down. A `requestedSectionName` field in the
+    /// response would still be a success the caller has to notice, and the caller who mistypes the
+    /// name is the same one who will not read the extra field.
+    ///
+    /// An inbox task has no columns at all, so it accepts no name but `Default` — the name
+    /// `AppTask.resolvedSectionName` gives it anyway.
+    static func normalizedSectionName(_ value: String?, container: CadenceResolvedContainer?) throws -> String {
         let requested = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard let container else { return TaskSectionDefaults.defaultName }
-        let available = container.sectionNames
-        if !requested.isEmpty, let match = available.first(where: { $0.caseInsensitiveCompare(requested) == .orderedSame }) {
-            return match
+        guard let container else {
+            guard !requested.isEmpty,
+                  requested.caseInsensitiveCompare(TaskSectionDefaults.defaultName) != .orderedSame
+            else { return TaskSectionDefaults.defaultName }
+            throw CadenceWriteError.sectionNotFound(requested, [])
         }
-        return available.first ?? TaskSectionDefaults.defaultName
+        let available = container.sectionNames
+        guard !requested.isEmpty else { return available.first ?? TaskSectionDefaults.defaultName }
+        guard let match = available.first(where: { $0.caseInsensitiveCompare(requested) == .orderedSame }) else {
+            throw CadenceWriteError.sectionNotFound(requested, available)
+        }
+        return match
+    }
+
+    /// The tags the caller asked for, or `tagsUnavailable`.
+    ///
+    /// `TagSupport.resolveTags` answers `nil` — not `[]` — when the tag table could not be read,
+    /// and it is `TagSupport.setTags` that turns that `nil` into a bare `return`. In a view the
+    /// unchanged chips are on screen; on this path the only reader is an agent, and `update_task`
+    /// counts a non-nil `tagNames` as a real requested change, so a tag-only update saved nothing
+    /// and audited success. Resolve through here *before* the mutation so a failed read is the
+    /// caller's answer instead of a silent no-op.
+    static func requiredTags(_ resolved: [Tag]?) throws -> [Tag] {
+        guard let resolved else { throw CadenceWriteError.tagsUnavailable }
+        return resolved
     }
 
     static func normalizedSubtaskTitles(_ values: [String]) -> [String] {
