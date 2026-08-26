@@ -57,6 +57,11 @@ extension ModelContext {
 /// so is the informative half: a note is a small enough object that "what goes with it" would
 /// otherwise read as one line.
 struct CadenceNoteDeletionSummary: Equatable, Sendable {
+    /// Shown **inside** the still-open confirmation when the delete could not be committed
+    /// (T-320). Its second sentence is the one the user needs: the rollback put the note back, so
+    /// nothing has been lost while they decide whether to try again.
+    static let deleteFailureNotice = "Couldn't delete this note. Nothing was removed."
+
     /// Whitespace-separated tokens in the note's body — the typed content that is actually
     /// unrecoverable.
     var words = 0

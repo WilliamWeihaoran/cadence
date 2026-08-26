@@ -57,6 +57,10 @@ struct iOSCreateTaskSheet: View {
     @State private var selectedTags: [Tag] = []
     @State private var newTagName = ""
 
+    /// Why the sheet is still open. `nil` on every path that has not failed, including the one
+    /// before the first Add — see `create()`.
+    @State private var actionError: String?
+
     /// A **real** `@FocusState`, attached to the title field with `.focused(_:equals:)`.
     ///
     /// `ToolbarItemGroup(placement: .keyboard)` is driven off SwiftUI's own focus system: seven of
@@ -114,6 +118,7 @@ struct iOSCreateTaskSheet: View {
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: CadenceTaskComposerLayout.fieldSpacing) {
+                actionErrorNotice
                 titleField
                 markerSuggestions
                 notesField
@@ -125,6 +130,21 @@ struct iOSCreateTaskSheet: View {
         }
         .scrollDismissesKeyboard(.never)
         .scrollIndicators(.hidden)
+    }
+
+    /// Said at the top of the composer, in the same shape `iOSCalendarEventEditSheet` uses: the
+    /// sheet has stayed open, and this is the reason. It sits above the title field rather than
+    /// beside the Add button because the fields underneath it are the ones that survived, and the
+    /// user is about to press Add again.
+    @ViewBuilder
+    private var actionErrorNotice: some View {
+        if let actionError {
+            Text(actionError)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.red)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     /// A single-line field on purpose: on a vertical-axis `TextField` the Return key inserts a
@@ -273,11 +293,23 @@ struct iOSCreateTaskSheet: View {
             estimatedMinutes: seed.estimatedMinutes
         )
 
-        guard let task = TaskCreationService(areas: areas, projects: projects)
-            .insertTask(from: draft, into: modelContext)
-        else { return }
+        // T-319: the commit is part of the creation, and it can fail. Everything below this line
+        // is the success experience — a reconcile pass, a task handed to the caller, a closed
+        // sheet — and none of it may run over a task the store did not take. On a throw
+        // `createTask` has already removed the task and its subtasks again, so the sheet is back
+        // to exactly what the user typed, with the reason above the title field.
+        let created: AppTask?
+        do {
+            created = try TaskCreationService(areas: areas, projects: projects)
+                .createTask(from: draft, into: modelContext)
+        } catch {
+            actionError = TaskCreationService.saveFailureNotice
+            return
+        }
 
-        try? modelContext.save()
+        guard let task = created else { return }
+
+        actionError = nil
         // Fast-path reconcile so a newly-created scheduled/due task's notification is picked up
         // immediately rather than waiting for the next scenePhase checkpoint — the same call
         // `CreateTaskSheet` makes on macOS.

@@ -34,16 +34,22 @@ private struct iOSNoteDeletionModifier: ViewModifier {
                 note: note,
                 summary: CadenceNoteDeletionSummary.forNote(note, in: modelContext)
             ) {
-                perform(note)
+                try perform(note)
             }
         }
     }
 
     /// The shared delete, called and not re-implemented. `ModelContext.deleteNote` is what also
     /// reclaims the image assets the note was the last reader of — see `CadenceNoteActionSupport`.
-    private func perform(_ note: Note) {
+    ///
+    /// **T-320: it throws, and the confirmation waits for it.** `deleteNote` only marks the note
+    /// and its orphaned image assets deleted in the context; the commit is what makes the deletion
+    /// real, and swallowing its failure was how a sheet came to close over a note that is still
+    /// there. `commitDelete` rolls the whole marking back on a throw — the note *and* the assets —
+    /// so the caller can say so with nothing half-removed behind it.
+    private func perform(_ note: Note) throws {
         modelContext.deleteNote(note)
-        try? modelContext.save()
+        try CadencePendingChangePersistence.commitDelete(in: modelContext)
     }
 }
 
@@ -96,9 +102,17 @@ struct iOSNoteCopyLinkButton: View {
 struct iOSNoteDeleteConfirmationSheet: View {
     let note: Note
     let summary: CadenceNoteDeletionSummary
-    let onConfirm: () -> Void
+    /// Throwing, and that is the contract (T-320). This sheet used to call `dismiss()` and *then*
+    /// `onConfirm()`: it closed before the delete had been attempted, let alone committed, so
+    /// there was no moment at which a failure could have been reported even if the delete had
+    /// bothered to report one. Now it waits for the result, and closes only on success.
+    let onConfirm: () throws -> Void
 
     @Environment(\.dismiss) private var dismiss
+
+    /// Set when the delete threw. The sheet stays open holding it: this is a confirmation, so the
+    /// only place the answer belongs is the screen that asked the question.
+    @State private var failureNotice: String?
 
     var body: some View {
         NavigationStack {
@@ -120,6 +134,16 @@ struct iOSNoteDeleteConfirmationSheet: View {
                                 iOSRowDivider()
                                 keptLines
                             }
+
+                            if let failureNotice {
+                                iOSRowDivider()
+
+                                Text(failureNotice)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Theme.red)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                         }
                     }
 
@@ -129,10 +153,7 @@ struct iOSNoteDeleteConfirmationSheet: View {
                         role: .destructive,
                         size: .regular,
                         fullWidth: true,
-                        action: {
-                            dismiss()
-                            onConfirm()
-                        }
+                        action: confirm
                     )
                 }
                 .padding(.horizontal, 16)
@@ -153,6 +174,17 @@ struct iOSNoteDeleteConfirmationSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    /// Attempt, then decide. The dismissal is the report of success and nothing else.
+    private func confirm() {
+        do {
+            try onConfirm()
+            failureNotice = nil
+            dismiss()
+        } catch {
+            failureNotice = CadenceNoteDeletionSummary.deleteFailureNotice
+        }
     }
 
     private var warningRow: some View {

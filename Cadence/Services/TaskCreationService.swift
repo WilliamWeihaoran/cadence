@@ -92,8 +92,57 @@ struct TaskCreationService {
         containerResolver = TaskContainerResolver(areas: areas, projects: projects)
     }
 
+    /// Shown when the creation could not be committed. Held here rather than spelled at each
+    /// composer, so the sheets that create a task cannot come to describe the same failure
+    /// differently.
+    static let saveFailureNotice = "Couldn't save this task."
+
+    /// Builds and inserts the task, and leaves the commit to the caller.
+    ///
+    /// Prefer `createTask(from:into:)` on any surface that reports success — dismissing, navigating
+    /// or handing the task on. See its note for why.
     @discardableResult
     func insertTask(from draft: TaskCreationDraft, into modelContext: ModelContext) -> AppTask? {
+        insertion(from: draft, into: modelContext)?.task
+    }
+
+    /// Builds, inserts **and commits** the task, undoing the whole insertion if the commit throws.
+    ///
+    /// **T-319.** `insertTask` only marks the task pending; the surrounding sheet then saved with
+    /// `try?` and dismissed, so a throwing save produced the entire success experience — the sheet
+    /// closed, `onCreated` ran, and notification reconciliation swept a task the store never took.
+    /// A creation is the case where rolling back is right: there is nothing on screen to hand the
+    /// half-made task back to, and the composer still holds every field the user typed, so undoing
+    /// and reporting lets them press Add again.
+    ///
+    /// The undo covers the subtasks too. `AppTask.subtasks` declares no cascade, so deleting only
+    /// the task would leave its subtask rows behind in the context, attached to nothing.
+    ///
+    /// Returns `nil` for a draft with no title — the same "nothing to create" answer `insertTask`
+    /// gives, and not a failure.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`; it is
+    ///   forwarded so the undo path stays reachable from a test.
+    @discardableResult
+    func createTask(
+        from draft: TaskCreationDraft,
+        into modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> AppTask? {
+        guard let insertion = insertion(from: draft, into: modelContext) else { return nil }
+        try CadencePendingChangePersistence.commitInsert(
+            of: insertion.inserted,
+            in: modelContext,
+            commit: commit
+        )
+        return insertion.task
+    }
+
+    /// The task and every object inserted alongside it, which is what an undo needs to know.
+    private func insertion(
+        from draft: TaskCreationDraft,
+        into modelContext: ModelContext
+    ) -> (task: AppTask, inserted: [any PersistentModel])? {
         guard !draft.trimmedTitle.isEmpty else { return nil }
 
         let task = AppTask(title: draft.trimmedTitle)
@@ -108,11 +157,17 @@ struct TaskCreationService {
         containerResolver.applyContainer(draft.container, to: task)
 
         modelContext.insert(task)
-        insertSubtasks(draft.subtaskTitles, parent: task, into: modelContext)
-        return task
+        let subtasks = insertSubtasks(draft.subtaskTitles, parent: task, into: modelContext)
+        return (task, [task] + subtasks)
     }
 
-    private func insertSubtasks(_ titles: [String], parent task: AppTask, into modelContext: ModelContext) {
+    @discardableResult
+    private func insertSubtasks(
+        _ titles: [String],
+        parent task: AppTask,
+        into modelContext: ModelContext
+    ) -> [Subtask] {
+        var inserted: [Subtask] = []
         for (index, title) in titles.enumerated() {
             let trimmed = TaskTitleSupport.normalized(title)
             guard !trimmed.isEmpty else { continue }
@@ -120,6 +175,8 @@ struct TaskCreationService {
             subtask.parentTask = task
             subtask.order = index
             modelContext.insert(subtask)
+            inserted.append(subtask)
         }
+        return inserted
     }
 }

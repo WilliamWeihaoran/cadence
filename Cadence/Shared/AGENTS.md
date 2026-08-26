@@ -53,6 +53,10 @@ Rules:
 - Add non-vacuity checks so an empty or wrong-path read cannot pass.
 - For regex needles, include a self-check that must match and must not match.
 - Mutate the thing you claim to pin and confirm the test fails for the intended assertion.
+- `CadenceSourceScan.functionBody(named:)` cannot read a function whose signature carries a
+  **defaulted closure parameter** — it takes the first `{` after `func name(`, which is the
+  default closure, and returns its body. Check what a body reader returned before trusting a
+  scan over it.
 - A scoped run only proves something if it ran **your** tests. A file here can hold several
   suites, and tests appended inside the wrong `struct` are invisible to
   `-only-testing:.../ThatSuite` while still passing in a full run — so every mutation reads as

@@ -17,6 +17,11 @@ import SwiftData
 ///   `CadenceTaskMutationSupport.insertTask` already uses), and
 /// - a delete that could not be committed is rolled back, which puts the row back in the list
 ///   rather than leaving it hidden and undeleted.
+///
+/// **Neither rule is link-shaped**, which T-319 and T-320 made concrete when two more surfaces
+/// needed the same two sentences. Both now live once in `CadencePendingChangePersistence`, generic
+/// over `PersistentModel`; what stays here is the part that really is about links — the two
+/// notices the macOS list shows.
 enum CadenceSavedLinkPersistence {
     /// Shown when the insert could not be committed. The link is gone again by then, so the
     /// sentence is about the save rather than about the row.
@@ -29,12 +34,7 @@ enum CadenceSavedLinkPersistence {
     /// step so that no caller can do the first and forget the second.
     static func insert(_ link: SavedLink, in modelContext: ModelContext) throws {
         modelContext.insert(link)
-        do {
-            try modelContext.save()
-        } catch {
-            modelContext.delete(link)
-            throw error
-        }
+        try CadencePendingChangePersistence.commitInsert(of: link, in: modelContext)
     }
 
     /// Deletes a link and commits it. A failed commit rolls the delete back, because the
@@ -42,11 +42,6 @@ enum CadenceSavedLinkPersistence {
     /// to remove.
     static func delete(_ link: SavedLink, in modelContext: ModelContext) throws {
         modelContext.delete(link)
-        do {
-            try modelContext.save()
-        } catch {
-            modelContext.rollback()
-            throw error
-        }
+        try CadencePendingChangePersistence.commitDelete(in: modelContext)
     }
 }

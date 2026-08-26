@@ -83,13 +83,26 @@ private struct iOSListDeletionModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.sheet(item: $target) { target in
-            iOSListDeleteConfirmationSheet(target: target) { perform(target) }
+            iOSListDeleteConfirmationSheet(target: target) { try perform(target) }
         }
     }
 
     /// The shared cascades, called and not re-implemented. `ModelContext.deleteArea` recurses into
     /// nested projects; `deleteContext` recurses into everything under the context.
-    private func perform(_ target: iOSListDeletionTarget) {
+    ///
+    /// **T-320: it throws, and the confirmation waits for it.** A cascade is the case where a
+    /// swallowed commit is worst: `deleteContext` marks every area, project, task, goal and habit
+    /// under the context deleted in one pass, and until something commits, all of it is a pending
+    /// change that a relaunch discards.
+    ///
+    /// `commitDelete` rolls back what the cascade *marked*, which is most of it but not all: the
+    /// shared task-deletion core commits with `try? modelContext.save()` part-way through, so the
+    /// list's tasks are already gone from the store before the outer commit is asked for. That is
+    /// why `CadenceListDeletionKind.deleteFailureNotice` says "couldn't finish" where the note
+    /// sheet says "nothing was removed" — see
+    /// `CadenceDeleteConfirmationCommitTests`, which measures the difference, and `docs/TODO.md`
+    /// T-322 for the mid-cascade commit itself.
+    private func perform(_ target: iOSListDeletionTarget) throws {
         switch target {
         case .area(let area):
             modelContext.deleteArea(area)
@@ -98,7 +111,7 @@ private struct iOSListDeletionModifier: ViewModifier {
         case .context(let context):
             modelContext.deleteContext(context)
         }
-        try? modelContext.save()
+        try CadencePendingChangePersistence.commitDelete(in: modelContext)
     }
 }
 
@@ -137,9 +150,17 @@ struct iOSListDeleteMenuButton: View {
 /// reading. So this confirmation is *more* informative than macOS's and no more ceremonious.
 struct iOSListDeleteConfirmationSheet: View {
     let target: iOSListDeletionTarget
-    let onConfirm: () -> Void
+    /// Throwing, and that is the contract (T-320) — the same one
+    /// `iOSNoteDeleteConfirmationSheet` states. This sheet used to `dismiss()` and *then*
+    /// `onConfirm()`, so it closed before the cascade had even started; a confirmation that has
+    /// already left the screen cannot report anything.
+    let onConfirm: () throws -> Void
 
     @Environment(\.dismiss) private var dismiss
+
+    /// Set when the cascade threw. The sheet stays open holding it, because this screen is the
+    /// only one that knows a delete was asked for.
+    @State private var failureNotice: String?
 
     private var summary: CadenceListDeletionSummary {
         target.summary
@@ -229,16 +250,21 @@ struct iOSListDeleteConfirmationSheet: View {
                         }
                     }
 
+                    if let failureNotice {
+                        Text(failureNotice)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     iOSActionButton(
                         title: "Delete \(target.kind.noun)",
                         systemImage: "trash.fill",
                         role: .destructive,
                         size: .regular,
                         fullWidth: true,
-                        action: {
-                            dismiss()
-                            onConfirm()
-                        }
+                        action: confirm
                     )
                 }
                 .padding(.horizontal, 16)
@@ -259,6 +285,17 @@ struct iOSListDeleteConfirmationSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    /// Attempt, then decide. The dismissal is the report of success and nothing else.
+    private func confirm() {
+        do {
+            try onConfirm()
+            failureNotice = nil
+            dismiss()
+        } catch {
+            failureNotice = target.kind.deleteFailureNotice
+        }
     }
 }
 #endif

@@ -20,6 +20,25 @@ enum CadenceListDeletionKind: String, CaseIterable, Sendable {
         }
     }
 
+    /// Shown **inside** the still-open confirmation when the cascade could not be committed
+    /// (T-320). It names the kind for the same reason `cascadeSentence` does: the sheet is one
+    /// view used for three deletes, and "Couldn't delete this list" is not a thing the app calls
+    /// anything.
+    ///
+    /// **Why it says "finish" and not "Nothing was removed", which the note delete does say.**
+    /// A cascade is not one pending change. `CadenceTaskMutationSupport.deleteTasks` commits with
+    /// `try? modelContext.save()` part-way through, so by the time the outer commit is asked for
+    /// and refused, the list's *tasks* are already in the store as deleted and no rollback reaches
+    /// them; everything the cascade merely marked — the list itself, its notes, links and nested
+    /// projects — does come back. Claiming otherwise would be the failure
+    /// `CadenceListDeletionSummary` is written against, one screen further on: a number, or a
+    /// reassurance, that the app cannot actually deliver.
+    /// `CadenceDeleteConfirmationCommitTests` holds both halves of that apart, and goes red if the
+    /// mid-cascade commit ever leaves — at which point this sentence can be strengthened.
+    var deleteFailureNotice: String {
+        "Couldn't finish deleting this \(noun.lowercased()). Some of it may already be gone."
+    }
+
     var cascadeSentence: String {
         switch self {
         case .area:
