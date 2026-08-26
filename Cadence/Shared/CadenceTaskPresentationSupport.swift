@@ -187,6 +187,64 @@ struct CadenceSubtaskProgress: Hashable {
     }
 }
 
+/// What a task row states about a task's **two** dates — asked once, by both rows.
+///
+/// **T-304.** The chips were drawn from two independent `isEmpty` checks with nothing between them,
+/// so a task do-dated *and* due on the same day stated that day twice: the reported Today screenshot
+/// has an Overdue row reading "17 days ago" beside "17 days ago". The fields are genuinely
+/// different and each earns a chip when they differ; when they name one day there is one fact, so
+/// there is one chip.
+///
+/// **The flag survives and the sun folds into it.** A deadline is the harder commitment — a do date
+/// is when you mean to start, a due date is what you answer to — and the flag is the chip that
+/// already goes red on both platforms once the day is past, which is the state the screenshot
+/// caught. What the sun carried and the flag does not is one label tint: macOS drew a do date of
+/// *today* in amber. That is the tint iOS deleted on purpose (a colour that fires on every row of
+/// the Today screen marks nothing), and it only ever applied to the merged case when the deadline
+/// was today as well — a task due today reads loudly enough.
+///
+/// **Nothing is stranded behind no control.** Both pills open pickers for their own field, so
+/// dropping one would stand up a row that could no longer set a do date if that were the row's only
+/// do-date affordance. It is not, on either platform: macOS answers ⌘T (do date to today) and ⌘⇧T
+/// (the do-date picker) on the row under the pointer, iOS's row context menu carries a whole `Do
+/// Date` submenu, and the task inspector on both states the two fields separately — which is also
+/// where a user goes to *un*-merge them. The one affordance that does go with the pill is macOS's
+/// ⌘⇧← / ⌘⇧→ nudge, which reads `HoveredTaskManager.hoveredDateKind` and so needs a chip to hover:
+/// while merged, the nudge moves the deadline. ⌘⇧T still opens the do date's own picker.
+nonisolated enum CadenceTaskRowDatePlan: String, Sendable, CaseIterable {
+    /// Neither field is set. No date chip.
+    case none
+    /// A do date and no deadline. The sun, alone.
+    case doDateOnly
+    /// A deadline and no do date. The flag, alone.
+    case dueDateOnly
+    /// Both, naming **different** days. Two chips: two facts, two dates, two pickers.
+    case separateDays
+    /// Both, naming the **same** day. One chip — the flag — stating that day once.
+    case oneSharedDay
+
+    /// Whether the do date gets a chip of its own.
+    var drawsDoDateChip: Bool {
+        switch self {
+        case .doDateOnly, .separateDays: return true
+        case .none, .dueDateOnly, .oneSharedDay: return false
+        }
+    }
+
+    /// Whether the deadline gets a chip. It survives the merge, so this is true in three cases.
+    var drawsDueDateChip: Bool {
+        switch self {
+        case .dueDateOnly, .separateDays, .oneSharedDay: return true
+        case .none, .doDateOnly: return false
+        }
+    }
+
+    /// Whether the chip that is drawn stands for both fields. Stated separately from
+    /// `drawsDoDateChip == false` because the two are different questions: a task with no do date
+    /// draws no sun either, and nothing about that chip is speaking for a second field.
+    var statesBothFieldsInOneChip: Bool { self == .oneSharedDay }
+}
+
 enum CadenceTaskPresentationSupport {
     static func plainPreviewText(from markdown: String, limit: Int? = nil) -> String {
         CadenceMarkdownPresentationSupport.plainPreviewText(from: markdown, limit: limit)
@@ -302,6 +360,45 @@ enum CadenceTaskPresentationSupport {
 
     static func dueDateLabel(for task: AppTask) -> String {
         DateFormatters.relativeDate(from: task.dueDate)
+    }
+
+    /// Which date chips a row draws for `task`. See `CadenceTaskRowDatePlan` for why the merged
+    /// case keeps the flag.
+    static func rowDatePlan(for task: AppTask) -> CadenceTaskRowDatePlan {
+        rowDatePlan(scheduledDate: task.scheduledDate, dueDate: task.dueDate)
+    }
+
+    /// The same question asked of two keys, so a surface that has already decided to suppress one
+    /// field can pass `""` for it and get an answer that accounts for the suppression — macOS's
+    /// `.todayGrouped` row drops the do-date pill by section, and a row with no sun to draw has
+    /// nothing to merge.
+    ///
+    /// **Compared as days, not as strings.** The keys are `yyyy-MM-dd` and should be identical when
+    /// they name one day, but `DateFormatter` is lenient enough to have stored `2026-8-20`
+    /// somewhere (T-299), and two keys that print the same date through
+    /// `DateFormatters.relativeDate(from:)` are exactly the pair the user sees twice. Anything that
+    /// does not parse falls back to its own text, which keeps two identical unparseable keys merged
+    /// and two different ones apart.
+    static func rowDatePlan(scheduledDate: String, dueDate: String) -> CadenceTaskRowDatePlan {
+        switch (scheduledDate.isEmpty, dueDate.isEmpty) {
+        case (true, true):
+            return .none
+        case (false, true):
+            return .doDateOnly
+        case (true, false):
+            return .dueDateOnly
+        case (false, false):
+            return namesTheSameDay(scheduledDate, dueDate) ? .oneSharedDay : .separateDays
+        }
+    }
+
+    static func namesTheSameDay(_ oneKey: String, _ otherKey: String) -> Bool {
+        normalizedDayKey(oneKey) == normalizedDayKey(otherKey)
+    }
+
+    private static func normalizedDayKey(_ key: String) -> String {
+        guard let date = DateFormatters.date(from: key) else { return key }
+        return DateFormatters.dateKey(from: date)
     }
 
     static func statusColor(_ status: TaskStatus) -> Color {

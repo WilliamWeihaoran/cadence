@@ -720,6 +720,159 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(!intersection.contains("TaskDetailLineLabel"))
         #expect(!intersection.contains("BoardCardMetadata"))
     }
+
+    // MARK: - T-304: two dates, one day, one chip
+
+    /// The reported defect, stated as the value it comes from. A task do-dated *and* due on the
+    /// same day drew "17 days ago" beside "17 days ago", because the sun and the flag were each
+    /// drawn from their own `isEmpty` check with nothing comparing them.
+    ///
+    /// The flag survives: a deadline is the harder commitment, and it is the chip that already goes
+    /// red on both platforms once the day is past.
+    @Test func twoDatesOnOneDayAreOneChipAndItIsTheFlag() {
+        let plan = CadenceTaskPresentationSupport.rowDatePlan(
+            scheduledDate: "2026-08-09",
+            dueDate: "2026-08-09"
+        )
+
+        #expect(plan == .oneSharedDay)
+        #expect(plan.drawsDueDateChip)
+        #expect(plan.drawsDoDateChip == false)
+        #expect(plan.statesBothFieldsInOneChip)
+    }
+
+    /// The other half, and the one a too-eager merge breaks: the fields are genuinely different, so
+    /// two days are two facts and each keeps its own chip and its own picker.
+    @Test func twoDatesOnDifferentDaysStayTwoChips() {
+        let plan = CadenceTaskPresentationSupport.rowDatePlan(
+            scheduledDate: "2026-08-09",
+            dueDate: "2026-08-10"
+        )
+
+        #expect(plan == .separateDays)
+        #expect(plan.drawsDoDateChip)
+        #expect(plan.drawsDueDateChip)
+        #expect(plan.statesBothFieldsInOneChip == false)
+
+        // A day apart is the closest two dates can be without being one, and yesterday/tomorrow
+        // around the same do date must not collapse either.
+        let earlierDeadline = CadenceTaskPresentationSupport.rowDatePlan(
+            scheduledDate: "2026-08-10",
+            dueDate: "2026-08-09"
+        )
+        #expect(earlierDeadline == .separateDays)
+        #expect(earlierDeadline.drawsDoDateChip)
+    }
+
+    /// One field set draws one chip and merges nothing: an absent date is not a date that agrees.
+    @Test func oneFieldSetDrawsThatFieldsChipAlone() {
+        let doOnly = CadenceTaskPresentationSupport.rowDatePlan(scheduledDate: "2026-08-09", dueDate: "")
+        #expect(doOnly == .doDateOnly)
+        #expect(doOnly.drawsDoDateChip)
+        #expect(doOnly.drawsDueDateChip == false)
+        #expect(doOnly.statesBothFieldsInOneChip == false)
+
+        let dueOnly = CadenceTaskPresentationSupport.rowDatePlan(scheduledDate: "", dueDate: "2026-08-09")
+        #expect(dueOnly == .dueDateOnly)
+        #expect(dueOnly.drawsDueDateChip)
+        #expect(dueOnly.drawsDoDateChip == false)
+        #expect(dueOnly.statesBothFieldsInOneChip == false)
+
+        let neither = CadenceTaskPresentationSupport.rowDatePlan(scheduledDate: "", dueDate: "")
+        #expect(neither == .none)
+        #expect(neither.drawsDoDateChip == false)
+        #expect(neither.drawsDueDateChip == false)
+        #expect(neither.statesBothFieldsInOneChip == false)
+    }
+
+    /// `.oneSharedDay` is the only case that speaks for two fields, and every other case draws at
+    /// least one chip for every field it has. Stated over `allCases` so a sixth case cannot be
+    /// added without answering both questions.
+    @Test func exactlyOneCaseSpeaksForBothFields() {
+        #expect(CadenceTaskRowDatePlan.allCases.filter(\.statesBothFieldsInOneChip) == [.oneSharedDay])
+        #expect(CadenceTaskRowDatePlan.allCases.filter(\.drawsDoDateChip) == [.doDateOnly, .separateDays])
+        #expect(CadenceTaskRowDatePlan.allCases.filter(\.drawsDueDateChip) == [.dueDateOnly, .separateDays, .oneSharedDay])
+    }
+
+    /// The task-shaped reader both rows actually call, over the reported row: overdue, do-dated and
+    /// due on one past day. One chip, and it is the flag.
+    @Test func theRowsReadTheirPlanFromTheTasksTwoFields() {
+        let reported = task(doDate: "2026-08-09", dueDate: "2026-08-09")
+        #expect(CadenceTaskPresentationSupport.rowDatePlan(for: reported) == .oneSharedDay)
+
+        let split = task(doDate: "2026-08-09", dueDate: "2026-08-26")
+        #expect(CadenceTaskPresentationSupport.rowDatePlan(for: split) == .separateDays)
+
+        // Finishing the work does not change what the row *states* about its two dates — only how
+        // loudly. The urgency tints are a separate question, asked of `CadenceDueUrgency` and
+        // `KanbanCardComputedSupport`.
+        let done = task(doDate: "2026-08-09", dueDate: "2026-08-09", isDone: true)
+        #expect(CadenceTaskPresentationSupport.rowDatePlan(for: done) == .oneSharedDay)
+    }
+
+    /// Compared as **days**, not as strings. `DateFormatter` is lenient enough to have stored
+    /// `2026-8-20` (T-299), and two keys that print the same date through `relativeDate(from:)` are
+    /// exactly the pair a row would show twice. The first two expectations are the measurement the
+    /// third depends on, so a toolchain that stopped parsing the loose key would say so here rather
+    /// than silently making this test vacuous.
+    @Test func aDaySpelledTwoWaysIsStillOneDay() {
+        #expect(DateFormatters.date(from: "2026-8-20") != nil)
+        #expect(DateFormatters.relativeDate(from: "2026-8-20") == DateFormatters.relativeDate(from: "2026-08-20"))
+
+        #expect(
+            CadenceTaskPresentationSupport.rowDatePlan(scheduledDate: "2026-8-20", dueDate: "2026-08-20")
+                == .oneSharedDay
+        )
+        #expect(CadenceTaskPresentationSupport.namesTheSameDay("2026-8-20", "2026-08-20"))
+        #expect(CadenceTaskPresentationSupport.namesTheSameDay("2026-08-20", "2026-08-21") == false)
+    }
+
+    /// **The call-site half.** The value above is worth nothing if a row goes back to counting its
+    /// own chips — T-161 is the standing example of a fix reverted with the suite green. Exact
+    /// counts, both platforms, one guard per chip per row.
+    @Test func bothRowsDrawTheirDateChipsFromTheSharedPlan() throws {
+        try expectCallSites(
+            of: "CadenceTaskPresentationSupport.rowDatePlan",
+            at: [
+                "Cadence/macOS/Views/TasksPanelComponents.swift": 1,
+                "Cadence/iOS/iOSTaskViews.swift": 1
+            ]
+        )
+
+        for guardText in ["datePlan.drawsDoDateChip", "datePlan.drawsDueDateChip"] {
+            try expectOccurrences(
+                of: guardText,
+                at: [
+                    "Cadence/macOS/Views/TasksPanelComponents.swift": 1,
+                    "Cadence/iOS/iOSTaskViews.swift": 1
+                ]
+            )
+        }
+    }
+
+    /// The two independent checks the chips used to be drawn from, gone from the row bodies — this
+    /// is what fails if either guard is "simplified" back to the field it reads. Both files still
+    /// read the raw fields elsewhere (a popover's starting date, the over-do tint), so these are
+    /// the *guard* spellings rather than the field names.
+    @Test func neitherRowStillCountsItsDateChipsAlone() throws {
+        for guardText in [
+            "if style != .todayGrouped && !task.scheduledDate.isEmpty",
+            "if !task.dueDate.isEmpty {"
+        ] {
+            try expectOccurrences(of: guardText, at: ["Cadence/macOS/Views/TasksPanelComponents.swift": 0])
+        }
+
+        try expectOccurrences(
+            of: "if !task.scheduledDate.isEmpty {",
+            at: ["Cadence/iOS/iOSTaskViews.swift": 0]
+        )
+
+        // Non-vacuity: the guards that *are* there, in the files this test claims to have read.
+        let macRow = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        #expect(macRow.contains("if datePlan.drawsDoDateChip {"))
+        let iOSRow = try strippingComments(sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        #expect(iOSRow.contains("if datePlan.drawsDueDateChip, let dueUrgency {"))
+    }
 }
 
 // MARK: - Source-reading helpers

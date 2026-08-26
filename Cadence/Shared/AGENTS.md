@@ -70,6 +70,9 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
   predicate: done or cancelled. Active lists keep their own `!isDone && !isCancelled`.
 - `completedTaskCount` counts `isDone` only; do not replace it with the finished predicate.
 - Row-level settled state is `CadenceTaskCompletionState.isSettled`.
+- `CadenceTaskPresentationSupport.rowDatePlan(...)` decides how many date chips a task row
+  draws. Two dates naming one day are one fact: the flag survives, the sun folds into it (T-304).
+  Rows read the plan; they do not count their own chips from `isEmpty`.
 - `CalendarVisibilityPreferences`, `CalendarWorkHoursPreferences`, `TaskDragPayload`, and
   `CadenceCompactTab` live here because both platforms need them.
 - `CompactTagStrip` is declared inside `Components/CadenceTagChip.swift`; there is no

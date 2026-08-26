@@ -47,7 +47,7 @@ struct MacTaskRow: View {
                 .padding(.leading, metrics.horizontalPadding)
                 .padding(.trailing, metrics.contentSpacing)
 
-            if style != .todayGrouped && !task.scheduledDate.isEmpty {
+            if datePlan.drawsDoDateChip {
                 doDatePill
                     .padding(.trailing, metrics.contentSpacing)
             }
@@ -84,7 +84,7 @@ struct MacTaskRow: View {
 
             focusButtonSlot
 
-            if !task.dueDate.isEmpty {
+            if datePlan.drawsDueDateChip {
                 dueDateBadgeList
             }
 
@@ -382,6 +382,22 @@ struct MacTaskRow: View {
                     }
                 }
             }
+        )
+    }
+
+    /// Which date chips this row draws — **`CadenceTaskPresentationSupport.rowDatePlan`'s answer,
+    /// not this row's** (T-304). A task do-dated and due on the same day stated that day twice,
+    /// because the sun and the flag were each drawn from their own `isEmpty` check with nothing
+    /// between them; the flag survives the merge and the type says why.
+    ///
+    /// `.todayGrouped` passes an empty do date rather than asking about `task.scheduledDate`: that
+    /// style drops the pill by section (`MacTaskRowStyle`), and a row with no sun to draw has
+    /// nothing to merge. Same answer either way for those rows — one chip — but the plan stays the
+    /// only place that counts chips.
+    private var datePlan: CadenceTaskRowDatePlan {
+        CadenceTaskPresentationSupport.rowDatePlan(
+            scheduledDate: style == .todayGrouped ? "" : task.scheduledDate,
+            dueDate: task.dueDate
         )
     }
 

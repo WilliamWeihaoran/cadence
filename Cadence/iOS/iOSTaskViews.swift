@@ -321,7 +321,7 @@ struct iOSTaskRow: View {
         // `CadenceTaskPresentationSupport.scheduledDayLabel(for:)` — and note the cost, which was
         // accepted deliberately: on a phone there is no timeline beside the list, so the day's plan
         // now reads only on the Today timeline pane and in the task inspector.
-        if !task.scheduledDate.isEmpty {
+        if datePlan.drawsDoDateChip {
             iOSTaskRowDateChip(
                 task: task,
                 field: .doDate,
@@ -330,7 +330,7 @@ struct iOSTaskRow: View {
             )
         }
 
-        if let dueUrgency {
+        if datePlan.drawsDueDateChip, let dueUrgency {
             iOSTaskRowDateChip(
                 task: task,
                 field: .dueDate,
@@ -399,9 +399,25 @@ struct iOSTaskRow: View {
         }
     }
 
+    /// Which date chips this row draws — **`CadenceTaskPresentationSupport.rowDatePlan`'s answer,
+    /// not this row's** (T-304). The sun and the flag were each drawn from their own check on their
+    /// own field, so a task do-dated and due on the same day said that day twice, once per chip.
+    /// When the two name one day the flag survives and the sun folds into it; the do date is still
+    /// set from this row's context menu (`Do Date`) and from the task detail sheet.
+    ///
+    /// macOS reads the same answer from the same function. Which chip wins is a fact about a task,
+    /// not about a platform.
+    private var datePlan: CadenceTaskRowDatePlan {
+        CadenceTaskPresentationSupport.rowDatePlan(for: task)
+    }
+
     /// `CadenceDueUrgency` rather than an inline `dueDate < todayKey`: the inline spelling had no
     /// `isDone` guard, so a task completed after its deadline kept rendering a red flag badge
     /// telling the user a settled deadline was still urgent. macOS reads the same classifier.
+    ///
+    /// It says how loudly the deadline reads, once `datePlan` has said there is a chip at all: the
+    /// plan decides *whether*, this decides *how*. `evaluate` returns `nil` only for an empty key,
+    /// so the two agree on the one case they overlap.
     private var dueUrgency: CadenceDueUrgency? {
         CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)
     }
