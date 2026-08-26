@@ -33,6 +33,42 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-334] **Resizing an iPad window can land you on the wrong screen.** From the iPad/iPhone layout
+  audit (Codex, 2026-08-26); **premise verified — there are zero `onChange(of: horizontalSizeClass)`
+  handlers in `iOSRootView`.** The root keeps the sidebar's `selection` and the compact shell's
+  `selectedTabRaw` / `tasksSectionRaw` as separate stores, picks a shell from the size class, and
+  never bridges between them. A regular sidebar tap writes only `selection`; a compact tab tap
+  writes only `selectedTab`. So Calendar on iPad can narrow into a stale Tasks, and compact Calendar
+  can widen back into a stale Today — reachable through Split View and Stage Manager resizing,
+  which is ordinary iPad use.
+  **The correct pattern is already in the same file**: deep links and the Focus handoff both write
+  *both* shells. So this is not a missing mechanism — it is user navigation not using the one that
+  exists. Fix with a projection between compact route and sidebar item, applied on selection or on
+  the size-class transition, and pin it for plain navigation rather than only for deep links.
+  Measured in source; the live effect is inferred, since neither the auditor nor I drove a resize.
+
+- [T-335] **Settings forgets which category you were in when the window resizes.** From the same
+  audit, premise verified — `iOSSettingsView` holds `selectedCategory` for the rail and
+  `drilledCategory` for the phone layout, ten references between them, and **zero** size-class
+  bridges. Compact taps write one, the regular layout reads the other, so widening from Templates
+  can land on Navigation and narrowing from Calendar can drop back to the category list.
+  **The app already solves exactly this elsewhere**, and the audit named it: Calendar stores the
+  user's Month detail choice separately and lets width decide only *placement*. That is the rule —
+  **the category is user state, compact-versus-regular is presentation** — and it generalises past
+  this ticket, including to [[T-334]].
+
+- [T-336] **DECISION NEEDED: should the iPhone `+` inherit the page you are on?** From the same
+  audit, and filed as a question rather than a defect because **the current behaviour is deliberate
+  and test-pinned**, which the audit established rather than assumed.
+  The iPad's page-corner `+` passes a seed — Today seeds today's date, a list detail seeds that
+  list. The iPhone's centre `+` is deliberately unscoped, and `CadenceCapturePaletteTests` asserts
+  it carries no `baseSeed`.
+  So this is only a ticket if the wanted behaviour is: tapping `+` from iPhone Today or a list
+  should inherit that context. Note it sits beside the rule the user set for [[T-282]] — placement
+  may differ across widths, capability may not — and a seed is arguably capability rather than
+  placement. **Ask the user before touching it**, and if the answer is "leave it", record that here
+  and close, because the test currently pins the opposite of what a reader might assume.
+
 - [T-329] **macOS allocates a new order by counting, so a delete makes duplicates.** From the
   parity audit (Codex, 2026-08-26); **premise verified and demonstrated.** macOS sets
   `ctx.order = contexts.count` and `link.order = links.count`; iOS uses `(map(\.order).max() ?? -1) + 1`.
