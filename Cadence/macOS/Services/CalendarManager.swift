@@ -163,9 +163,14 @@ final class CalendarManager {
     /// here — not just bumping `storeVersion` — prevents `isAuthorized` from staying stale-true
     /// indefinitely after a mid-session revocation (previously only `refreshAuthorizationState()`
     /// at app-foreground caught that, so a revocation could go undetected until relaunch).
+    ///
+    /// The pair itself lives in `CadenceCalendarStoreChangeSupport` since T-323, when iOS was
+    /// found still doing the version half only.
     func handleStoreChangeNotification() {
-        storeVersion += 1
-        refreshAuthorizationState()
+        CadenceCalendarStoreChangeSupport.apply(
+            bumpVersion: { storeVersion += 1 },
+            refreshAuthorization: { refreshAuthorizationState() }
+        )
     }
 
     func stopObserving() {

@@ -2,6 +2,46 @@
 import EventKit
 import Foundation
 
+/// The result of `CadenceEventNoteSupport.commitNote(syncToCalendar:save:syncToNativeEvent:)`.
+///
+/// Four cases rather than a `Bool` because "the note is not saved" and "the note is saved but
+/// Apple Calendar does not have it yet" are different situations for the person typing: the first
+/// costs them their writing, the second costs them a copy. `notice` is `nil` for the two that
+/// worked — there is nothing to say about a write that landed.
+nonisolated enum CadenceEventNoteCommitOutcome: Equatable {
+    /// Saved locally and accepted by Apple Calendar.
+    case saved
+    /// Saved locally; no calendar sync was asked for.
+    case savedWithoutSync
+    /// The local save threw. **Nothing was sent to Apple Calendar.**
+    case notSaved(String)
+    /// Saved locally, but Apple Calendar refused the change.
+    case savedButNotSynced
+
+    var isSaved: Bool {
+        switch self {
+        case .saved, .savedWithoutSync, .savedButNotSynced: return true
+        case .notSaved: return false
+        }
+    }
+
+    /// What to show the user, or `nil` when there is nothing to report.
+    ///
+    /// The first sentence says what happened to *their* text; the local-save failure also says
+    /// that Apple Calendar was left alone, because "it failed" and "it half-succeeded somewhere
+    /// I can't see" are the two readings a bare failure leaves open.
+    var notice: String? {
+        switch self {
+        case .saved, .savedWithoutSync:
+            return nil
+        case .notSaved:
+            return "Couldn't save this note, so this change wasn't sent to Apple Calendar either. Copy your text before closing."
+        case .savedButNotSynced:
+            return "This note is saved, but Apple Calendar didn't take the change."
+        }
+    }
+}
+
 enum CadenceEventNoteSupport {
     private static let occurrenceSeparator = "#occurrence="
 
@@ -247,6 +287,41 @@ enum CadenceEventNoteSupport {
     static func startMinute(for date: Date, calendar: Calendar = .current) -> Int {
         let components = calendar.dateComponents([.hour, .minute], from: date)
         return ((components.hour ?? 0) * 60) + (components.minute ?? 0)
+    }
+
+    /// Commits an event note locally, and only then offers it to Apple Calendar.
+    ///
+    /// **T-325.** `iOSEventNoteEditorSheet` did `try? modelContext.save()` and then pushed the
+    /// same text into the native `EKEvent` regardless. That is the ordinary swallowed-save family
+    /// ([[T-322]]) with an edge the rest of it does not have: the second write leaves Cadence.
+    /// A note that fails to save is a note the user can retype, but a note that reached Apple
+    /// Calendar from a local commit that never landed is text Cadence does not have and cannot
+    /// take back — no retry, undo or relaunch inside the app removes it.
+    ///
+    /// So the order is the fix, and it is stated here rather than at the call site: the sync
+    /// closure is unreachable unless `save` returned. The two failures stay distinguishable
+    /// because they mean opposite things — one lost the user's writing, the other only failed to
+    /// mirror writing that is safely stored.
+    ///
+    /// - Parameters:
+    ///   - syncToCalendar: False for a commit that must not touch the native event at all (the
+    ///     editor's on-appear metadata write, which is Cadence's own bookkeeping).
+    ///   - save: The local commit. A parameter because a throwing `ModelContext.save()` cannot be
+    ///     provoked out of an in-memory container, and an ordering no test can reach is an
+    ///     ordering no test can prove.
+    ///   - syncToNativeEvent: Returns whether Apple Calendar took the change.
+    static func commitNote(
+        syncToCalendar: Bool,
+        save: () throws -> Void,
+        syncToNativeEvent: () -> Bool
+    ) -> CadenceEventNoteCommitOutcome {
+        do {
+            try save()
+        } catch {
+            return .notSaved(error.localizedDescription)
+        }
+        guard syncToCalendar else { return .savedWithoutSync }
+        return syncToNativeEvent() ? .saved : .savedButNotSynced
     }
 
     private static func recurringOccurrenceDate(for event: EKEvent) -> Date? {

@@ -33,6 +33,19 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-339] **iOS has three failure vocabularies for EventKit; macOS has one.** Recommended by the
+  agent that closed [[T-323]] and [[T-325]], which deliberately did **not** do it.
+  macOS models a calendar write failure once, as `CalendarWriteFailure` with a `title` and a
+  `message`, and renders it through one shared alert. iOS has accumulated three answers to the same
+  question: a `Bool` return, the shared notice strings [[T-324]] introduced in
+  `CadenceCalendarEventEditingSupport`, and now an outcome enum for the note commit. Each was the
+  right local call; together they are the divergence.
+  Porting the macOS model means changing every `Bool` write on `iOSCalendarManager` and every call
+  site in both event sheets — well past the two tickets that surfaced it, which is why it was
+  correctly refused there. It is its own ticket.
+  This is the fifth finding where **iOS lags a model macOS already grew** (see [[T-323]], [[T-324]],
+  [[T-325]]). At five, the pattern is the work: port the model once rather than patch the sixth.
+
 - [T-338] **macOS adds a subtask by writing one side of the relationship; iOS writes both.** Found
   while closing [[T-296]], which fixed the same asymmetry on the *delete* side.
   `TaskDetailPopover.addSubtask` (`SchedulePanelComponents.swift:148-157`) sets

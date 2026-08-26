@@ -15,6 +15,7 @@ struct iOSEventNoteEditorSheet: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var isEditorFocused = false
+    @State private var commitNotice: String?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
 
@@ -40,7 +41,12 @@ struct iOSEventNoteEditorSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") {
-                        persistNote()
+                        // T-325: Done used to dismiss over a `try?` save. A sheet that closes on
+                        // a failed commit takes the user's writing with it, so an unsaved note
+                        // keeps the editor open with the notice showing instead. A note that is
+                        // saved but not mirrored into Apple Calendar still closes — the text is
+                        // safe, and a read-only event can never accept it however long we wait.
+                        guard persistNote().isSaved else { return }
                         isEditorFocused = false
                         dismiss()
                     }
@@ -126,12 +132,30 @@ struct iOSEventNoteEditorSheet: View {
                 .font(.system(size: isRegularWidth ? 24 : 22, weight: .bold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(2)
+            commitNoticeBanner
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxHeight: isRegularWidth ? .infinity : nil, alignment: .topLeading)
         .padding(.horizontal, isRegularWidth ? 20 : 18)
         .padding(.vertical, isRegularWidth ? 20 : 14)
         .background(Theme.surface)
+    }
+
+    /// Says which of the note's two writes did not happen, in the one place on this sheet where
+    /// the user is looking. Absent while both are landing, which is nearly always.
+    ///
+    /// Deliberately the plain-surface failure-line spelling (12pt medium, `Theme.red`) rather than
+    /// the 13pt semibold one `iOSCalendarEventEditSheet` uses inside an `iOSEditorSection`, so
+    /// this is one swap away from the shared notice component when it lands.
+    @ViewBuilder
+    private var commitNoticeBanner: some View {
+        if let commitNotice {
+            Text(commitNotice)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.red)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private func refreshEventMetadata() {
@@ -146,16 +170,33 @@ struct iOSEventNoteEditorSheet: View {
         )
     }
 
-    private func persistNote(syncToCalendar: Bool = true) {
+    /// **T-325.** This was `try? modelContext.save()` followed unconditionally by a push into the
+    /// native event. Apple Calendar is outside Cadence and cannot be rolled back from inside it,
+    /// so a local commit that never landed must not be mirrored there: the ordering, and the fact
+    /// that the sync is only reachable through it, belong to
+    /// `CadenceEventNoteSupport.commitNote(syncToCalendar:save:syncToNativeEvent:)`.
+    @discardableResult
+    private func persistNote(syncToCalendar: Bool = true) -> CadenceEventNoteCommitOutcome {
         note.updatedAt = Date()
-        try? modelContext.save()
+        let outcome = CadenceEventNoteSupport.commitNote(
+            syncToCalendar: syncToCalendar,
+            save: { try modelContext.save() },
+            syncToNativeEvent: syncNoteToNativeEvent
+        )
+        commitNotice = outcome.notice
+        return outcome
+    }
 
-        guard syncToCalendar else { return }
+    /// Whether Apple Calendar now holds this note's text. A note with no native event to mirror
+    /// into has nothing that can fail, so it is not a sync failure.
+    private func syncNoteToNativeEvent() -> Bool {
         if let event {
-            calendarManager.updateEventNotes(event, notes: note.content)
-        } else if !note.calendarEventID.isEmpty {
-            calendarManager.updateEventNotes(calendarEventID: note.calendarEventID, notes: note.content)
+            return calendarManager.updateEventNotes(event, notes: note.content)
         }
+        if !note.calendarEventID.isEmpty {
+            return calendarManager.updateEventNotes(calendarEventID: note.calendarEventID, notes: note.content)
+        }
+        return true
     }
 
     private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {

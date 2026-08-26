@@ -189,25 +189,39 @@ final class iOSCalendarManager {
         }
     }
 
-    func updateEventNotes(_ event: EKEvent, notes: String) {
-        guard isAuthorized, canModify(event) else { return }
+    /// Pushes a note's text onto the native event, and says whether it landed.
+    ///
+    /// **T-325.** This returned `Void`, so its only report of a rejected write was a `print` —
+    /// and its one caller, `iOSEventNoteEditorSheet`, called it *after* a `try?` save it had not
+    /// checked either. Apple Calendar is not a surface Cadence can roll back, so the caller has
+    /// to be able to see this answer. `Bool` rather than a failure enum is deliberate: it is the
+    /// vocabulary the other three writes here already speak, and T-324's shared notice strings
+    /// exist precisely because a `Bool` cannot name a cause.
+    @discardableResult
+    func updateEventNotes(_ event: EKEvent, notes: String) -> Bool {
+        guard isAuthorized, canModify(event) else { return false }
         let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let nextNotes = trimmed.isEmpty ? nil : notes
-        guard event.notes != nextNotes else { return }
+        // Already what the store holds: nothing to write, and nothing failed.
+        guard event.notes != nextNotes else { return true }
         event.notes = nextNotes
         do {
             try store.save(event, span: .thisEvent)
             storeVersion += 1
+            return true
         } catch {
             // Same hazard as `updateEvent`: the mutated `notes` would otherwise stick in the UI.
             event.reset()
             print("iOSCalendarManager: failed to update event notes: \(error)")
+            return false
         }
     }
 
-    func updateEventNotes(calendarEventID: String, notes: String) {
-        guard let event = event(withIdentifier: calendarEventID) else { return }
-        updateEventNotes(event, notes: notes)
+    @discardableResult
+    func updateEventNotes(calendarEventID: String, notes: String) -> Bool {
+        // An identifier that resolves to nothing is a sync that did not happen, not a no-op.
+        guard let event = event(withIdentifier: calendarEventID) else { return false }
+        return updateEventNotes(event, notes: notes)
     }
 
     private func applyAuthorizationStatus(_ status: EKAuthorizationStatus) {
@@ -227,8 +241,23 @@ final class iOSCalendarManager {
             object: store,
             queue: .main
         ) { [weak self] _ in
-            self?.storeVersion += 1
+            self?.handleStoreChangeNotification()
         }
+    }
+
+    /// Handles an `EKEventStoreChanged` notification: bump the version *and* re-derive
+    /// authorization.
+    ///
+    /// **T-323.** This used to be `storeVersion += 1` inline in the observer, which is only half
+    /// of what the notification means — see `CadenceCalendarStoreChangeSupport`, which owns the
+    /// pair so macOS and iOS cannot answer it differently again. Revoking Calendar access from
+    /// Settings while Cadence kept running left `isAuthorized` true until the next launch, so
+    /// every read guarded on it went on believing it had access it no longer had.
+    func handleStoreChangeNotification() {
+        CadenceCalendarStoreChangeSupport.apply(
+            bumpVersion: { storeVersion += 1 },
+            refreshAuthorization: { refreshAuthorizationState() }
+        )
     }
 
     private func stopObserving() {
