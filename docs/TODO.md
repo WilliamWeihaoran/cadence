@@ -33,6 +33,38 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-337] **The `+` inherits context from what you drop it on, and from nothing else.** The user's
+  rule, 2026-08-26, and it supersedes [[T-336]] and reverses part of [[T-282]]:
+  - **Tap the button** → no context. Just a task.
+  - **Hold, then choose a palette segment** → no context either. Task / Event / Note, unseeded.
+  - **Drag it onto an existing list, group, section or grouped display** → it inherits *that*
+    target's context.
+  The principle is worth stating because it decides the edge cases: **context comes from where you
+  drop it, not from where you started.** A button standing on the Today page is not a statement
+  about what you are creating; dropping onto a list is.
+
+  **What already exists**, so this is smaller than it sounds: `CadenceCaptureDropHitTest` and
+  `seed(forTarget:)` are built and shipped — dropping onto a row already seeds from that row, on
+  both placements, through one hit-test.
+
+  **What changes:**
+  1. **The iPad's corner `+` must stop passing `baseSeed` on a tap.** It currently seeds the page —
+     Today seeds today's date, a list detail seeds its list. Under this rule that is wrong, and
+     `iOSCaptureRadialMenu.swift:295` documents the *opposite* reasoning ("a page's corner `+` is
+     already standing somewhere"), so that comment has to go with it. This also makes the two
+     placements behave identically, which retires the last real difference between them.
+  2. **Extend drop targets from rows to groups.** The hit test collects candidate frames; a section
+     header, a kanban column and a list group need to register as candidates and resolve to the
+     right seed. Decide what a *group* seeds — a section header should presumably seed its section
+     name and its container, not just the container.
+  3. **Decide what an empty group seeds**, since a group with no rows still has an identity, and it
+     is the case most likely to be missed.
+
+  Pin it by value: the seed a drop produces for a row, a section, a column and an empty group are
+  four assertions, and the two no-context paths are two more. Note the existing test asserting the
+  tab bar's button carries no `baseSeed` becomes the rule for *both* placements rather than the
+  difference between them.
+
 - [T-334] **Resizing an iPad window can land you on the wrong screen.** From the iPad/iPhone layout
   audit (Codex, 2026-08-26); **premise verified — there are zero `onChange(of: horizontalSizeClass)`
   handlers in `iOSRootView`.** The root keeps the sidebar's `selection` and the compact shell's
@@ -58,6 +90,11 @@ _Nothing in flight._
   this ticket, including to [[T-334]].
 
 - [T-336] **DECISION NEEDED: should the iPhone `+` inherit the page you are on?** From the same
+  **ANSWERED 2026-08-26 by the user, and superseded by [[T-337]].** The question was whether the
+  iPhone `+` should inherit the page. The answer is **neither button should** — context comes from
+  the *drop target*, not from the page you happen to be standing on. That resolves this ticket and
+  reverses the iPad's current page-seed at the same time. Keep this entry only as the record of how
+  the question was framed; the work is T-337.
   audit, and filed as a question rather than a defect because **the current behaviour is deliberate
   and test-pinned**, which the audit established rather than assumed.
   The iPad's page-corner `+` passes a seed — Today seeds today's date, a list detail seeds that
