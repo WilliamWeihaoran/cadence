@@ -33,6 +33,44 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-326] **A failed restore can leave no store at all, and then retry itself forever.** From the
+  delete/restore audit (Codex, 2026-08-26); **premise verified line by line, and this is the most
+  serious thing any audit has found.**
+  `performPendingRestoreIfNeeded` takes a pre-restore backup, then **removes the live store items**,
+  then copies the backup's contents into the live directory, and calls `clearPendingRestore()`
+  **only at the very end**. A throw between the removal and the copy — disk full, a damaged sidecar,
+  a permission failure, an interrupted copy — leaves the live store deleted **and** the pending
+  restore still set. Cadence opens a recovery store, and the next launch attempts the same failing
+  restore again. The user's own data is in the pre-restore backup, but they are not told that and
+  the app cannot get out of the loop by itself.
+  **The correct pattern is in the same file, about 120 lines above**: backup *creation* writes into
+  a `.tmp` sibling and moves it into place only once complete. Restore should do the same — stage
+  into a temporary sibling directory, verify the expected store items are present, then swap — and
+  an invalid pending restore should be cleared or quarantined after one failed attempt so a launch
+  cannot loop.
+  Treat this as the first thing fixed out of every open ticket. Everything else on this list costs
+  the user a retry or a wrong number; this one can cost them the store.
+
+- [T-327] **A saved link deleted on macOS can come back.** From the same audit, premise verified by
+  comparison: macOS's `LinksView` calls `modelContext.delete(link)` with no explicit save, and
+  creates a `SavedLink` without one either — while the iOS sibling saves explicitly on both. If
+  autosave has not flushed before a quit or a crash, the delete is undone on next launch.
+  Not a cascade or an orphan: a **delete that restores itself**. Same fix shape as the rest of the
+  [[T-322]] family, one platform behind the other — see also [[T-323]] to [[T-325]], which are the
+  same story in EventKit.
+
+- [T-328] **`DataIntegrityRepairService` cannot see four of the models that can be orphaned.**
+  From the same audit, premise verified by counting fetches: it fetches `Context`, `Area`,
+  `Project` and the rest, and fetches `Subtask`, `TaskBundle`, `HabitCompletion` and
+  `MarkdownImageAsset` **zero** times. The shared delete helpers prevent most of those orphans at
+  source, so this is not a live bug — but if one exists already, from legacy data, a CloudKit
+  oddity, a failed restore ([[T-326]]) or a delete that bypassed the helpers ([[T-296]]), repair
+  will not clean it up.
+  The decision is which thing this service is: either document it as duplicate-container-and-note
+  repair and stop implying more, or give it a real orphan sweep for targetless subtasks, empty
+  bundles, unowned habit completions and unreferenced image assets. **Do not leave it named like a
+  general repair while covering half the schema** — the name is what makes the gap invisible.
+
 - [T-323] **iOS keeps a stale Calendar permission after an EventKit store change.** From the
   EventKit side-effect audit (Codex, 2026-08-26); premise verified by direct comparison — macOS's
   store-change path increments `storeVersion` **and** calls `refreshAuthorizationState()`; iOS's
