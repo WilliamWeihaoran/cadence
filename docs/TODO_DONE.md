@@ -7,9 +7,140 @@ read. Nothing was trimmed: each entry keeps its prose and the SHA that shipped i
 Search here before filing anything that sounds familiar — several tickets were re-reported this
 week by audits that had only seen the open list.
 
-224 entries.
+233 entries.
 
 ## Done
+
+- [T-289] `920c7a0` **Two iOS buttons wear macOS's hover style.** From the [[T-123]] split. `.iosPressable`
+  **VERIFIED 2026-08-26 — keep open. The sweep is done and clean; the pin has a hole.** The valuable
+  half is answered: it was **not** only two call sites. `.cadencePlain` appears unfenced at 11 sites
+  in `Shared/`, of which `CadenceDatePicker` and `EstimatePickerControl` genuinely reach iOS through
+  about 12 callers — all silently corrected by the shipped fix, which also changed the style's own
+  `#else` branch to delegate to iOS press feedback. Nothing else on iOS reaches a macOS-fenced
+  style: zero `onHover`, `hoverEffect`, `CadenceHoverTracking` or `isHovered` under `Cadence/iOS/`.
+  **But a mutation survived:** re-adding the blue wash to the `#else` branch compiles on iOS and
+  passes all 2783 tests. The guarding test slices from a struct to end-of-file and uses `range(of:)`,
+  so it finds the *first* wash inside the fence and cannot see a second one after `#else` — the
+  struct-scoped shape that has now walked around a test twice. Also unlooked at: those ~12 iOS call
+  sites changed press feedback from a blue rectangle to a scale-and-dim.
+  (`iOSPressableButtonStyle`, a 0.97 scale and 0.62 opacity dim) is iOS's press feedback and is used
+  83 times across 36 files; `.cadencePlain` is macOS's hover wash and its `CadenceHoverTracking`
+  is `#if os(macOS)`-fenced, so on iOS it degrades to a `Theme.blue.opacity(0.14)` fill and a 0.24
+  stroke at radius 10 on press — a blue rounded rectangle no other iOS control draws.
+  `Cadence/iOS/iOSDateJumpTitle.swift:88` (the Notes and Calendar header date control) and `:193`
+  (its "jump to now" row) are the only two iOS call sites, and `iOSDesignSystem.swift` already
+  documents `.iosPressable` as "the press translation of macOS's `.cadencePlain` hover wash".
+  Small, and it is the "one hover/selection layer at one radius" rule on the platform that has no
+  hover at all.
+  Done: both read `.iosPressable`, and a source scan asserts zero `.cadencePlain` under
+  `Cadence/iOS/`.
+
+- [T-290] `920c7a0` **`CadenceTaskSurfaceOptions` has eight iOS readers and no macOS one.** From the [[T-123]]
+  **VERIFIED 2026-08-26 — keep open. The macOS half is entirely unpinned.** Zero tests in the suite
+  reference `CadenceTaskSurfaceTier.desktop`; the options tests exercise `.touch` only. Three
+  reverting mutations all survived clean, with 2783 tests green: macOS's logbook can start capping
+  at 24, `TasksListView` can start passing `.touch`, and the exact defect this ticket names can be
+  reintroduced verbatim.
+  The **decision** it existed to make is answered and defensible: macOS stays uncapped, which is the
+  status quo, so no Mac user sees fewer completed tasks than before. But a different silent change
+  did ship and nobody has looked at it — `showsListContextChip` now comes from the surface, and
+  `containerName` is empty exactly for an Inbox task, so **an Inbox task on macOS Today or All Tasks
+  now draws a chip reading "Inbox" where it drew none.** Intended and argued in the code; unlooked at.
+  split, and the same shape as T-175: a shared value stating what is true of every task surface,
+  with one platform re-deciding each of its answers inline. `Shared/CadenceTaskSurfaceOptions.swift`
+  owns `showsSort`, `showsCompletedToggle`, `showsContainerChip` and `completedRowLimit`, and says
+  in as many words that there is **deliberately no size class in the file** because the options are
+  a property of the surface. macOS answers all four somewhere else: the chrome per surface is
+  decided at each view, the container chip is `MacTaskRowStyle`-driven
+  (`showsListContextChip = style == .standard && !task.containerName.isEmpty`, an axis about the
+  *row* rather than the surface), and the completed cap does not exist — `TasksListView.completedTasks`
+  has no `prefix`, so the same logbook lists 24 rows on a phone and all of them on a Mac, which is
+  the "one number, because there was never a reason for two" the value's own comment argues for
+  landing at zero and 24.
+  One consequence worth deciding rather than inheriting: because macOS's chip is gated on
+  `!task.containerName.isEmpty`, an Inbox task shows no list chip on the Mac and therefore cannot be
+  filed from the row — the exact defect `showsContainerChip` was written for on iOS, in reverse.
+  Done: macOS's Today, Inbox, All Tasks and list-detail Tasks tab read
+  `CadenceTaskSurfaceOptions.options(for:)` and `completedRows(from:)`, or the enum grows an
+  explicit `.desktop` exception with its reason beside it the way `CadenceTaskRowMetrics` did —
+  pinned either way, so the exception cannot decay into an oversight.
+
+- [T-297] `75e36c4` **Privacy reset reports success before notifications are cancelled.** From the same audit,
+  premise verified: `CadencePrivacyDataResetService.swift:83` launches
+  `Task { await NotificationManager.shared.cancelAll() }` and returns. So the reset can report
+  completion while pending OS notifications still exist, and if the app exits promptly a deleted
+  habit's reminder can outlive the data it describes — surfacing later, from an app the user
+  believes they emptied. That is a privacy-facing promise, which is what lifts this above a
+  tidiness fix: `docs/privacy.html` and the App Review notes both describe the reset.
+  Decide between making the reset `async` and awaiting the cancellation, or documenting it as
+  best-effort and testing the call contract. Do not silently leave it as neither.
+
+- [T-306] `75e36c4` **MCP writes never reconcile OS notifications.** From the MCP write-boundary audit
+  (Codex, 2026-08-26); premise verified. `CadenceWriteService.saveNotifyAndAudit` saves, posts the
+  external-write marker and records the audit entry — and stops. Notification reconciliation
+  happens on scene-phase changes in the app. So a task created, rescheduled, completed, reopened or
+  cancelled **through MCP** keeps whatever pending notification it had until some unrelated app
+  lifecycle event happens: a reminder can fire for a task an agent already completed, or fail to
+  fire for one it just scheduled.
+  This is the sharpest consequence of MCP being a **second process** writing the same store, which
+  is also why [[T-299]] matters there and nowhere else. Fix by reconciling when the app handles the
+  refresh marker, using the refreshed context — or, if MCP writes are deliberately free of
+  notification side effects, say so in the tool descriptions so an agent using them knows.
+
+- [T-310] `75e36c4` **A data reset can leave deleted titles on the home screen.** From the widget/App Intent
+  audit (Codex, 2026-08-26); premise verified — `CadencePrivacyDataResetService` calls
+  `CadenceWidgetRefreshCenter.clearStoredState()` and never forces a timeline reload, so WidgetKit
+  can keep rendering its last entry, deleted task and habit titles included, until the system
+  decides to refresh.
+  **This is the reset failing a promise, not a cosmetic lag** — the same class as [[T-297]], where
+  the reset returns before notifications are cancelled. Both mean "delete my data" reports success
+  while the deleted data is still visible or still scheduled, and both are described in
+  `docs/privacy.html` and the App Review notes. Worth fixing together: one pass making the reset
+  finish everything it claims. Fix is `reloadAllWidgets(force: true)` after `clearStoredState()`,
+  pinned by a test that requires both calls.
+
+- [T-311] `75e36c4` **A widget write can create the shared store before the app has migrated into it.**
+  From the same audit, and the auditor **measured** this rather than reasoning it: a read-only open
+  does not create a missing store, a write-capable open does. Widget intents open the app-group
+  store with `allowsSave: true` at three sites, skipping the app's startup sequence entirely —
+  legacy migration, pending restore, startup backup, maintenance repair.
+  The failure is specific and bad: run a write intent before the app has migrated a legacy store,
+  and it creates `default.store` in the app group; the migration guard then sees a non-empty
+  directory and **skips copying the legacy data**. A user who taps a widget button before opening
+  the app after an update could lose the migration.
+  There is no `SchemaMigrationPlan` in this project, which makes anything touching store creation
+  order worth extra care. Fix by routing intent container creation through a shared preflight, or
+  at minimum refusing a write intent until the store already exists.
+  The audit also confirms the read side is right: all four widgets open `allowsSave: false`, which
+  is what keeps passive rendering from creating the file.
+
+- [T-312] `75e36c4` **App Intent writes refresh widgets but never reconcile notifications.** From the same
+  audit. Completing a task from a widget can leave its pending notification scheduled; capturing a
+  task planned for today can fail to schedule one until a later app lifecycle checkpoint.
+  **Same shape as [[T-306]]**, which is the MCP write path with the same gap — two different
+  out-of-process write surfaces, neither reconciling. That is an argument for one shared answer
+  rather than two fixes.
+  The audit carries a caution worth keeping: do **not** call the reconcile path from the extension
+  directly, because it reads `UserDefaults.standard` and the extension does not see the app's
+  notification setting. So the fix is an app-group marker the app acts on, or moving that preference
+  into app-group storage — not a direct call.
+
+- [T-330] `0ff15c0` **An area or project description can be written on iOS and never edited on macOS.** From
+  the same audit, premise verified — and my first count was misleading, which is worth recording:
+  `CreateListSheet` appears to mention `desc` twice, but both are Swift's own `description`
+  protocol. macOS touches the model's description field **zero** times in either sheet, while iOS
+  shows it, loads it and saves it.
+  The field is real and already load-bearing: **both** platforms' search indexes it. So a
+  description typed on iPhone is searchable on macOS and uneditable there.
+
+- [T-331] `0ff15c0` **iOS lets you set a section due date and then never shows it.** From the same audit,
+  premise verified. The iOS column editor exposes a due-date toggle, but `iOSListKanbanColumn`
+  passes only title, count and colour into the shared header, while macOS passes a `detail` slot
+  that renders the date or "No due date".
+  **The header component is already shared and tested** — the bug is that iOS hands it less
+  metadata, not that the two platforms style it differently. That distinction is what makes this a
+  small fix rather than a design question. Also decide `hideSectionDueDateIfEmpty`, which exists in
+  the model and the macOS editor while iOS exposes only task due-date hiding.
 
 - [T-329] `b225694` **macOS allocates a new order by counting, so a delete makes duplicates.** From the
   parity audit (Codex, 2026-08-26); **premise verified and demonstrated.** macOS sets
