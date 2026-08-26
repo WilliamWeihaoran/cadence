@@ -52,118 +52,6 @@ _Nothing in flight._
   one-command isolation step for every future agent.
 
 
-- [T-221] **Edit tables in place — DONE on macOS, and the iOS half is the whole remainder.**
-
-  **CLOSED 2026-08-26. The em-dash defect was UIKit's smart punctuation, caught in the act.**
-  Committing a cell whose delimiter row was spelled `---` / `---:` rewrote that delimiter to an em
-  dash and the table stopped parsing. The hypothesis in the four measurements below was right about
-  *what* and wrong about *when*: nothing happens as the keyboard session unwinds. It happens
-  **inside** `UITextView.replace(_:withText:)`, before the call returns, and the stack says so:
-
-      -[UITextView replaceRange:withText:]
-      -[UITextInputController replaceRange:withText:]
-      -[UITextInputController _replaceRange:withAttributedTextFromKeyboard:…]
-      -[UITextInputController checkSmartPunctuationForWordInRange:]
-      -[UITextInputController _delegateShouldChangeTextInRange:replacementText:]
-
-  UIKit treats **any** programmatic `replace` as text the keyboard produced, then runs smart
-  punctuation over the words either side of the range written and asks the delegate for permission.
-  Committing `one` → `ZZZ` asked for `{49, 13}` and UIKit came back proposing `{42, 3}` and
-  `{36, 3}` — the two `---` runs on the line above — each with a U+2014.
-
-  **The traits are not the lever, measured rather than assumed.** Setting `smartDashesType`,
-  `smartQuotesType` and `smartInsertDeleteType` to `.no` on the text view *and* calling
-  `reloadInputViews()` immediately before the call still corrupted the delimiter, byte-checked out
-  of the simulator's store. So the delegate is: `shouldChangeTextIn` now answers the write window
-  first, accepting the write it was told about and refusing everything else, and the five
-  programmatic writes in the iOS editor go through one `replaceProgrammatically` that announces
-  itself. The decision is `Services/MarkdownProgrammaticEditSupport.swift`; a sweep of
-  `Cadence/iOS/` fails if a second raw `textView.replace(` appears.
-
-  This was never table-specific and the fix is not either: the same pass rewrites `"` and `--` in
-  ordinary prose adjacent to any of those five writes. Two things stated for whoever reads this
-  next: **macOS is not exposed** — `NSTextView` is driven through
-  `shouldChangeText`/`replaceCharacters`/`didChangeText` with no `UITextInputController` in the
-  path, which is why the macOS half shipped clean — and the **backspace** paths
-  (`expandRenderedBlockDeletionIfNeeded`, `deleteListPrefixIfNeeded`) were fixed by inspection
-  rather than on a device, because the simulator tooling has no key injection for Delete. The
-  line-break path *was* proven on the device: a list typed after the fix still transformed `- ` to
-  `• ` and continued across Return.
-
-  The four original measurements, kept because they are what made it findable:
-  - It needs the **hosted cell field plus typing**. Open a cell and close it without typing: no
-    edit, no corruption. Same table, same delimiter.
-  - It is **not** `applyMarkdownTableEdit`. The context menu's **Insert Row Below** goes through the
-    identical `textView.replace(_:withText:)` write path and left `| --- | ---: |` byte-identical.
-    (With the stack in hand: that path writes with no keyboard session behind it, so UIKit's
-    smart-punctuation pass has no traits to consult and does nothing.)
-  - It is **local to the edited table**. Editing a cell in a `-`-delimited table left a `---`
-    delimiter in another table in the same note untouched — because the pass only looks at the
-    words either side of the range being written.
-  - It is **not the app's own text**. There is no em-dash literal anywhere in `Cadence/`, and both
-    `iOSMarkdownEditor`'s text view and `iOSMarkdownTableCellField` set `smartDashesType = .no`.
-  **DECIDED 2026-08-26: port it to iOS.** The user's call, asked after the macOS half shipped. The
-  design questions are settled and `MarkdownTableEditSupport` / `MarkdownTableLayoutSupport` are
-  already platform-free. The one trap is recorded in `0b44973`'s message and must be read first:
-  `MarkdownStyleSignature` has exactly one reader and it is in `Cadence/iOS/`, so a committed cell
-  will silently not re-render without a signature entry. macOS never needed one because it re-runs
-  the styler from `textDidChange`.
-  Requested 2026-08-21, decided 2026-08-25 (shape 2, tables only; Tab / Shift-Tab / Return as
-  spreadsheet keys), and the macOS half shipped the same day in `0b44973`. macOS renders a table as a real grid and edits it cell by
-  cell: `Services/MarkdownTableEditSupport.swift` (the markdown decisions),
-  `Services/MarkdownTableLayoutSupport.swift` (the rects), `macOS/Editor/MarkdownTableCanvasDrawing.swift`
-  and `macOS/Editor/MarkdownTableInteractionSupport.swift` (the AppKit half). Fenced code, images,
-  dividers and task embeds are untouched, as decided.
-
-  **The two questions left open at decision time are settled.** A row or column is added and
-  removed from the **table's own context menu** — a right-click on the cell you want to change,
-  rather than hover chrome, which would be a second hit-testing surface over a canvas that already
-  has one and would have to be discovered. The raw source is reachable **by command**, "Show Table
-  Source" in that same menu, which un-renders that one table back to the banded per-row styling the
-  editor has always drawn; it is never reached by caret position, since that is the behaviour the
-  ticket exists to remove.
-
-  **What the boundary spike measured**, on a real offscreen `CadenceTextView`
-  (`CadenceTests/MarkdownTableHostedEditingTests.swift`), because three of the four worries turned
-  out to rest on one design choice: **the markdown source never leaves the text storage.** Only its
-  glyphs are collapsed and a grid is drawn over the space they were given.
-  - *Selection* — a range from the prose above to the prose below still covers the table's own
-    characters, and a caret arrowed at the table steps over it rather than into it.
-  - *Copy/paste* — copying that range yields the pipes; pasting it into another note renders a
-    table again. One measured surprise: on macOS 26 `NSTextView.writablePasteboardTypes` still
-    advertises the **legacy** names (`NSStringPboardType`), so writing
-    `NSPasteboard.PasteboardType.string` returns false without writing anything.
-  - *Undo* — a committed cell is an ordinary text-view edit through
-    `shouldChangeText` / `replaceCharacters` / `didChangeText`, so `Cmd+Z` restores the note byte
-    for byte with nothing added to the existing pass-through route. A commit whose value did not
-    change registers no edit at all, so tabbing across five cells does not cost five `Cmd+Z`.
-  - *`MarkdownStyleSignature`* — **the fourth concern does not exist on macOS.** The signature has
-    exactly one reader in the repo, `Cadence/iOS/iOSMarkdownEditor.swift`; macOS re-runs the whole
-    styler from `textDidChange`, which `didChangeText()` posts.
-
-  **One shared parser rule changed, and it is worth knowing.** `MarkdownTableParser` now
-  distinguishes opening a table from continuing one: an all-blank row (`|  |  |`) continues a table
-  and cannot start one. Return inserts exactly that row, and under the old shared predicate the
-  table simply ended at it. The two-pipe count that keeps prose out (`Ship it | maybe`) is
-  unchanged.
-
-  **The iOS half shipped in `ea77271`, and this paragraph used to say it had not.** It read "Still
-  open, and it is the whole other platform … `Cadence/iOS/` was deliberately out of scope and is
-  untouched", which was written before that commit and was already false when the commit landed. A
-  table renders as a real grid on iPhone and iPad and is edited cell by cell:
-  `iOS/iOSMarkdownTableEditing.swift` (the hosted field and the menu),
-  `iOS/iOSMarkdownTableGridRendering.swift` (the canvas), over the same two shared files macOS
-  reads. The un-render-on-caret path is deleted for tables rather than left reachable, and the
-  `MarkdownStyleSignature` entry the port was warned about is `tableSourceAnchors`.
-
-  Two smaller gaps left on the macOS side, neither blocking:
-  - Inline markdown **inside** a cell is not rendered — a cell reading `**Total**` draws its
-    asterisks. The stylist computes the cell's attributes before hiding the run; carrying the
-    attributed substring through to the draw pass would fix it.
-  - Cells clip rather than wrap, which is what makes the reserved line height independent of the
-    window width (and therefore correct across a resize with no restyle). A wrapping cell would
-    need the reservation recomputed on resize, the way the image block's already is.
-
 - [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
   *(a)* A widget showing the running timer plus what is being worked on, and a second showing the
   task list — exact split is a design call, make a good one rather than shipping two widgets that
@@ -771,6 +659,120 @@ _Nothing in flight._
   pinned either way, so the exception cannot decay into an oversight.
 
 ## Done
+
+- [T-221] `0b44973` `ea77271` `5938a7a` **Edit tables in place — done on both platforms.**
+  macOS shipped in `0b44973`, iOS in `ea77271`, and the em-dash corruption that shipped with the
+  iOS half was cured in `5938a7a`.
+
+  **CLOSED 2026-08-26. The em-dash defect was UIKit's smart punctuation, caught in the act.**
+  Committing a cell whose delimiter row was spelled `---` / `---:` rewrote that delimiter to an em
+  dash and the table stopped parsing. The hypothesis in the four measurements below was right about
+  *what* and wrong about *when*: nothing happens as the keyboard session unwinds. It happens
+  **inside** `UITextView.replace(_:withText:)`, before the call returns, and the stack says so:
+
+      -[UITextView replaceRange:withText:]
+      -[UITextInputController replaceRange:withText:]
+      -[UITextInputController _replaceRange:withAttributedTextFromKeyboard:…]
+      -[UITextInputController checkSmartPunctuationForWordInRange:]
+      -[UITextInputController _delegateShouldChangeTextInRange:replacementText:]
+
+  UIKit treats **any** programmatic `replace` as text the keyboard produced, then runs smart
+  punctuation over the words either side of the range written and asks the delegate for permission.
+  Committing `one` → `ZZZ` asked for `{49, 13}` and UIKit came back proposing `{42, 3}` and
+  `{36, 3}` — the two `---` runs on the line above — each with a U+2014.
+
+  **The traits are not the lever, measured rather than assumed.** Setting `smartDashesType`,
+  `smartQuotesType` and `smartInsertDeleteType` to `.no` on the text view *and* calling
+  `reloadInputViews()` immediately before the call still corrupted the delimiter, byte-checked out
+  of the simulator's store. So the delegate is: `shouldChangeTextIn` now answers the write window
+  first, accepting the write it was told about and refusing everything else, and the five
+  programmatic writes in the iOS editor go through one `replaceProgrammatically` that announces
+  itself. The decision is `Services/MarkdownProgrammaticEditSupport.swift`; a sweep of
+  `Cadence/iOS/` fails if a second raw `textView.replace(` appears.
+
+  This was never table-specific and the fix is not either: the same pass rewrites `"` and `--` in
+  ordinary prose adjacent to any of those five writes. Two things stated for whoever reads this
+  next: **macOS is not exposed** — `NSTextView` is driven through
+  `shouldChangeText`/`replaceCharacters`/`didChangeText` with no `UITextInputController` in the
+  path, which is why the macOS half shipped clean — and the **backspace** paths
+  (`expandRenderedBlockDeletionIfNeeded`, `deleteListPrefixIfNeeded`) were fixed by inspection
+  rather than on a device, because the simulator tooling has no key injection for Delete. The
+  line-break path *was* proven on the device: a list typed after the fix still transformed `- ` to
+  `• ` and continued across Return.
+
+  The four original measurements, kept because they are what made it findable:
+  - It needs the **hosted cell field plus typing**. Open a cell and close it without typing: no
+    edit, no corruption. Same table, same delimiter.
+  - It is **not** `applyMarkdownTableEdit`. The context menu's **Insert Row Below** goes through the
+    identical `textView.replace(_:withText:)` write path and left `| --- | ---: |` byte-identical.
+    (With the stack in hand: that path writes with no keyboard session behind it, so UIKit's
+    smart-punctuation pass has no traits to consult and does nothing.)
+  - It is **local to the edited table**. Editing a cell in a `-`-delimited table left a `---`
+    delimiter in another table in the same note untouched — because the pass only looks at the
+    words either side of the range being written.
+  - It is **not the app's own text**. There is no em-dash literal anywhere in `Cadence/`, and both
+    `iOSMarkdownEditor`'s text view and `iOSMarkdownTableCellField` set `smartDashesType = .no`.
+  **DECIDED 2026-08-26: port it to iOS.** The user's call, asked after the macOS half shipped. The
+  design questions are settled and `MarkdownTableEditSupport` / `MarkdownTableLayoutSupport` are
+  already platform-free. The one trap is recorded in `0b44973`'s message and must be read first:
+  `MarkdownStyleSignature` has exactly one reader and it is in `Cadence/iOS/`, so a committed cell
+  will silently not re-render without a signature entry. macOS never needed one because it re-runs
+  the styler from `textDidChange`.
+  Requested 2026-08-21, decided 2026-08-25 (shape 2, tables only; Tab / Shift-Tab / Return as
+  spreadsheet keys), and the macOS half shipped the same day in `0b44973`. macOS renders a table as a real grid and edits it cell by
+  cell: `Services/MarkdownTableEditSupport.swift` (the markdown decisions),
+  `Services/MarkdownTableLayoutSupport.swift` (the rects), `macOS/Editor/MarkdownTableCanvasDrawing.swift`
+  and `macOS/Editor/MarkdownTableInteractionSupport.swift` (the AppKit half). Fenced code, images,
+  dividers and task embeds are untouched, as decided.
+
+  **The two questions left open at decision time are settled.** A row or column is added and
+  removed from the **table's own context menu** — a right-click on the cell you want to change,
+  rather than hover chrome, which would be a second hit-testing surface over a canvas that already
+  has one and would have to be discovered. The raw source is reachable **by command**, "Show Table
+  Source" in that same menu, which un-renders that one table back to the banded per-row styling the
+  editor has always drawn; it is never reached by caret position, since that is the behaviour the
+  ticket exists to remove.
+
+  **What the boundary spike measured**, on a real offscreen `CadenceTextView`
+  (`CadenceTests/MarkdownTableHostedEditingTests.swift`), because three of the four worries turned
+  out to rest on one design choice: **the markdown source never leaves the text storage.** Only its
+  glyphs are collapsed and a grid is drawn over the space they were given.
+  - *Selection* — a range from the prose above to the prose below still covers the table's own
+    characters, and a caret arrowed at the table steps over it rather than into it.
+  - *Copy/paste* — copying that range yields the pipes; pasting it into another note renders a
+    table again. One measured surprise: on macOS 26 `NSTextView.writablePasteboardTypes` still
+    advertises the **legacy** names (`NSStringPboardType`), so writing
+    `NSPasteboard.PasteboardType.string` returns false without writing anything.
+  - *Undo* — a committed cell is an ordinary text-view edit through
+    `shouldChangeText` / `replaceCharacters` / `didChangeText`, so `Cmd+Z` restores the note byte
+    for byte with nothing added to the existing pass-through route. A commit whose value did not
+    change registers no edit at all, so tabbing across five cells does not cost five `Cmd+Z`.
+  - *`MarkdownStyleSignature`* — **the fourth concern does not exist on macOS.** The signature has
+    exactly one reader in the repo, `Cadence/iOS/iOSMarkdownEditor.swift`; macOS re-runs the whole
+    styler from `textDidChange`, which `didChangeText()` posts.
+
+  **One shared parser rule changed, and it is worth knowing.** `MarkdownTableParser` now
+  distinguishes opening a table from continuing one: an all-blank row (`|  |  |`) continues a table
+  and cannot start one. Return inserts exactly that row, and under the old shared predicate the
+  table simply ended at it. The two-pipe count that keeps prose out (`Ship it | maybe`) is
+  unchanged.
+
+  **The iOS half shipped in `ea77271`, and this paragraph used to say it had not.** It read "Still
+  open, and it is the whole other platform … `Cadence/iOS/` was deliberately out of scope and is
+  untouched", which was written before that commit and was already false when the commit landed. A
+  table renders as a real grid on iPhone and iPad and is edited cell by cell:
+  `iOS/iOSMarkdownTableEditing.swift` (the hosted field and the menu),
+  `iOS/iOSMarkdownTableGridRendering.swift` (the canvas), over the same two shared files macOS
+  reads. The un-render-on-caret path is deleted for tables rather than left reachable, and the
+  `MarkdownStyleSignature` entry the port was warned about is `tableSourceAnchors`.
+
+  Two smaller gaps left on the macOS side, neither blocking:
+  - Inline markdown **inside** a cell is not rendered — a cell reading `**Total**` draws its
+    asterisks. The stylist computes the cell's attributes before hiding the run; carrying the
+    attributed substring through to the draw pass would fix it.
+  - Cells clip rather than wrap, which is what makes the reserved line height independent of the
+    window width (and therefore correct across a resize with no restyle). A wrapping cell would
+    need the reservation recomputed on resize, the way the image block's already is.
 
 
 - [T-73] **Audit iPhone/iPad divergence and share what should be shared — CLOSED BY SPLITTING, not
