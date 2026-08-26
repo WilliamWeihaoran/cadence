@@ -33,6 +33,35 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-315] **An AI summary that fails to save still closes the sheet as a success.** From the AI
+  note-action audit (Codex, 2026-08-26); premise verified at the exact line —
+  `AINoteActionSupport.swift:67` is `try? modelContext?.save()`, so a throwing save is swallowed,
+  and both review sheets dismiss immediately afterwards. The user watches the sheet close and has
+  no summary.
+  **The same file already does this correctly for the other action.** Task extraction throws on
+  save and its review sheets catch and present the error rather than dismissing — on both
+  platforms. So this is one of two sibling paths having drifted, not a missing practice.
+  Fix: make the append throwing, require a non-optional `ModelContext`, and have both summary
+  callbacks catch and show `AIErrorPresenter.message(for:)`. Note what the audit also observed —
+  the summary's *string formatting* is pinned by tests while its *persistence* is not, which is
+  why this survived. Same shape as [[T-291]], [[T-298]] and [[T-307]]: a failure collapsing into
+  an ordinary result, now the fourth instance.
+
+- [T-316] **A note owned by both an area and a project gives its AI-extracted tasks to the area.**
+  From the same audit, premise verified: `AIActionService.swift:51` resolves the container as
+  `area?.name ?? project?.name`, and the draft-application path creates area tasks before it checks
+  project. The iOS review sheet's destination label repeats the same precedence.
+  **The double-owned state is reachable, and a test pins that it is preserved** — the integrity
+  repair service deliberately keeps a merged note carrying both, and the iOS surfaces pass both
+  straight into the AI menu. So this is not a hypothetical.
+  **The sharp framing, which the audit got right:** this is not a cross-platform mismatch. It is
+  one decision — area first, project second — repeated three times inside the AI note-action path.
+  And the app already disagrees with it elsewhere: an explicit note move clears the sibling field
+  to maintain a single owner (`AIActionsSupportViews.swift:36` and `:42`).
+  Fix by resolving the container once and preferring **project**, as the narrower task container,
+  then using that one answer for the prompt context, the destination label and the task insertion.
+  Test with a double-owned note and assert the tasks land in the project.
+
 - [T-310] **A data reset can leave deleted titles on the home screen.** From the widget/App Intent
   audit (Codex, 2026-08-26); premise verified — `CadencePrivacyDataResetService` calls
   `CadenceWidgetRefreshCenter.clearStoredState()` and never forces a timeline reload, so WidgetKit
@@ -124,17 +153,6 @@ _Nothing in flight._
   while every one of those operations stays perfectly idempotent, which nothing currently enforces.
   Centralize the startup work, or let the service initializers skip what the container factory
   already did.
-
-- [T-304] **A task whose do date and due date are the same day draws that date twice.** Reported by
-  the user 2026-08-26 with a screenshot of macOS Today; **cause confirmed in the code.**
-  `TasksPanelComponents` draws `doDatePill` (sun) and `dueDateBadgeList` (flag) independently, with
-  nothing comparing them — so a task do-dated and due on the same day renders "17 days ago" beside
-  "17 days ago". In the screenshot's Overdue section, two of three rows carry two date chips and one
-  of those pairs is literally identical.
-  The two fields are genuinely different and both deserve a chip when they differ. The rule wanted
-  is: when they name the **same day**, draw one chip, not two. Decide which glyph survives — the
-  flag reads as the harder commitment — and apply it to both platforms, since iOS draws the same
-  pair.
 
 - [T-305] **Today should group by list, not by date intent — on both platforms.** Reported by the
   user 2026-08-26. Today currently groups into `CadenceTodayTaskGroupKind`: Overdue, Past Do, Due
@@ -926,6 +944,36 @@ _Nothing in flight._
   pinned either way, so the exception cannot decay into an oversight.
 
 ## Done
+
+- [T-304] _(sha to be added on commit)_ **A do date and a deadline that name one day now draw one
+  chip — the flag — on both platforms.** Reported by the user 2026-08-26 with a screenshot of macOS
+  Today, where an Overdue row read "17 days ago" beside "17 days ago". `MacTaskRow` drew
+  `doDatePill` from `!task.scheduledDate.isEmpty` and `dueDateBadgeList` from `!task.dueDate.isEmpty`
+  with nothing between the two checks; `iOSTaskRow` drew the same pair the same way.
+
+  **The decision is a value, and it lives in `Shared/`.** `CadenceTaskRowDatePlan` +
+  `CadenceTaskPresentationSupport.rowDatePlan(for:)` answer which chips a row draws — `none`,
+  `doDateOnly`, `dueDateOnly`, `separateDays`, `oneSharedDay` — and both rows read that one answer.
+  The keys are compared as **days**, not as strings, because a lenient key like `2026-8-20` ([[T-299]])
+  prints the same date as `2026-08-20` and so is the same duplication.
+
+  **The flag survives.** A deadline is the harder commitment and is already the chip that goes red
+  on both platforms once the day is past — the state the screenshot caught. The one thing the sun
+  carried alone was macOS's amber *do today* label tint, which iOS had already deleted as noise and
+  which only applied to the merged case when the task was due today as well.
+
+  **Nothing is stranded.** The two pills open different pickers, so the merge would have been a
+  defect of its own if the sun had been the row's only do-date affordance. It is not: macOS answers
+  ⌘T and ⌘⇧T against the row under the pointer (`macOSRootCommandEventSupport`), iOS's row context
+  menu carries a whole `Do Date` submenu, and the task inspector on both states the fields
+  separately. What does go with the pill is macOS's ⌘⇧← / ⌘⇧→ nudge, which reads
+  `HoveredTaskManager.hoveredDateKind` and so needs a chip to hover: while merged it moves the
+  deadline, and ⌘⇧T still opens the do date's own picker.
+
+  Not done here, and worth a ticket of its own: the **board cards** ask the same two questions
+  independently in `CadenceBoardCardMetadata.chips(for:showsContainer:...)`, so a card whose two
+  dates agree still states the day twice. Same rule, a different surface, and a different
+  affordance question — a macOS Kanban chip *is* its field's picker.
 
 - [T-221] `0b44973` `ea77271` `5938a7a` **Edit tables in place — done on both platforms.**
   macOS shipped in `0b44973`, iOS in `ea77271`, and the em-dash corruption that shipped with the
