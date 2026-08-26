@@ -33,6 +33,45 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-306] **MCP writes never reconcile OS notifications.** From the MCP write-boundary audit
+  (Codex, 2026-08-26); premise verified. `CadenceWriteService.saveNotifyAndAudit` saves, posts the
+  external-write marker and records the audit entry — and stops. Notification reconciliation
+  happens on scene-phase changes in the app. So a task created, rescheduled, completed, reopened or
+  cancelled **through MCP** keeps whatever pending notification it had until some unrelated app
+  lifecycle event happens: a reminder can fire for a task an agent already completed, or fail to
+  fire for one it just scheduled.
+  This is the sharpest consequence of MCP being a **second process** writing the same store, which
+  is also why [[T-299]] matters there and nowhere else. Fix by reconciling when the app handles the
+  refresh marker, using the refreshed context — or, if MCP writes are deliberately free of
+  notification side effects, say so in the tool descriptions so an agent using them knows.
+
+- [T-307] **A failed tag fetch is reported to the caller as a successful write.** From the same
+  audit, premise verified: `TagSupport.resolveTags` returns `nil` when the fetch throws, and
+  `setTags(named:on:in:)` is `guard let resolved = ... else { return }` — a silent no-op. MCP's
+  update path treats a non-nil `tagNames` as a real requested change and then saves and audits
+  success, so a tag-only update can report done having changed nothing, and a create can produce an
+  untagged task. An AI agent has no way to tell.
+  Same shape as [[T-291]] and [[T-298]]: a failure collapsing into an ordinary result. Fix by
+  resolving tags **before** the mutation and throwing on failure, rather than letting a nil answer
+  mean "nothing to do".
+
+- [T-308] **An unknown section name is silently redirected to the container's first section.**
+  From the same audit, premise verified at `CadenceMCPServiceSupport.normalizedSectionName`: a
+  non-empty requested name that matches nothing falls through to `available.first ?? default`. So
+  an agent's typo — `Backlogg` for `Backlog` — puts the task in whatever section happens to be
+  first, and the write reports success.
+  A fallback is right for an *absent* section name and wrong for a *wrong* one; the current code
+  cannot tell those apart. Either reject a non-empty unmatched name for a specified container, or
+  return the requested-versus-stored section in the response so the caller can see the redirect.
+
+- [T-309] **Read-write MCP startup runs migration and repair more than once.** From the same audit.
+  `main.swift` builds a write container and then constructs read and write services that each do
+  further setup against the same context. Mostly overhead — but it widens the window in which a
+  **second process mutates the store before any tool call has been made**, and it is only safe
+  while every one of those operations stays perfectly idempotent, which nothing currently enforces.
+  Centralize the startup work, or let the service initializers skip what the container factory
+  already did.
+
 - [T-304] **A task whose do date and due date are the same day draws that date twice.** Reported by
   the user 2026-08-26 with a screenshot of macOS Today; **cause confirmed in the code.**
   `TasksPanelComponents` draws `doDatePill` (sun) and `dueDateBadgeList` (flag) independently, with
