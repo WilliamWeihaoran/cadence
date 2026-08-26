@@ -33,6 +33,59 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-310] **A data reset can leave deleted titles on the home screen.** From the widget/App Intent
+  audit (Codex, 2026-08-26); premise verified — `CadencePrivacyDataResetService` calls
+  `CadenceWidgetRefreshCenter.clearStoredState()` and never forces a timeline reload, so WidgetKit
+  can keep rendering its last entry, deleted task and habit titles included, until the system
+  decides to refresh.
+  **This is the reset failing a promise, not a cosmetic lag** — the same class as [[T-297]], where
+  the reset returns before notifications are cancelled. Both mean "delete my data" reports success
+  while the deleted data is still visible or still scheduled, and both are described in
+  `docs/privacy.html` and the App Review notes. Worth fixing together: one pass making the reset
+  finish everything it claims. Fix is `reloadAllWidgets(force: true)` after `clearStoredState()`,
+  pinned by a test that requires both calls.
+
+- [T-311] **A widget write can create the shared store before the app has migrated into it.**
+  From the same audit, and the auditor **measured** this rather than reasoning it: a read-only open
+  does not create a missing store, a write-capable open does. Widget intents open the app-group
+  store with `allowsSave: true` at three sites, skipping the app's startup sequence entirely —
+  legacy migration, pending restore, startup backup, maintenance repair.
+  The failure is specific and bad: run a write intent before the app has migrated a legacy store,
+  and it creates `default.store` in the app group; the migration guard then sees a non-empty
+  directory and **skips copying the legacy data**. A user who taps a widget button before opening
+  the app after an update could lose the migration.
+  There is no `SchemaMigrationPlan` in this project, which makes anything touching store creation
+  order worth extra care. Fix by routing intent container creation through a shared preflight, or
+  at minimum refusing a write intent until the store already exists.
+  The audit also confirms the read side is right: all four widgets open `allowsSave: false`, which
+  is what keeps passive rendering from creating the file.
+
+- [T-312] **App Intent writes refresh widgets but never reconcile notifications.** From the same
+  audit. Completing a task from a widget can leave its pending notification scheduled; capturing a
+  task planned for today can fail to schedule one until a later app lifecycle checkpoint.
+  **Same shape as [[T-306]]**, which is the MCP write path with the same gap — two different
+  out-of-process write surfaces, neither reconciling. That is an argument for one shared answer
+  rather than two fixes.
+  The audit carries a caution worth keeping: do **not** call the reconcile path from the extension
+  directly, because it reads `UserDefaults.standard` and the extension does not see the app's
+  notification setting. So the fix is an app-group marker the app acts on, or moving that preference
+  into app-group storage — not a direct call.
+
+- [T-313] **The milestone widget recomputes every goal summary two or three times per timeline.**
+  From the same audit. The snapshot fetches all goals, computes contribution and habit summaries to
+  prioritize them, then recomputes them for the visible ones and again for the overdue rollup. Goal
+  contribution walks recurse through sub-goals, linked lists, tasks and habits, so on a large store
+  this can approach WidgetKit's execution budget — and a widget that misses that budget renders
+  nothing at all. Carry the decorated summaries from the prioritization pass into rendering.
+
+- [T-314] **Widget intents re-implement task capture and habit toggling.** From the same audit.
+  `CaptureTaskIntent` creates tasks inline and `ToggleHabitCompletionIntent` duplicates the toggle,
+  rather than going through the shared mutation helpers. Small today, and exactly the drift this
+  repo keeps paying for as defaults, recurrence and habit semantics evolve — the same argument as
+  [[T-296]] and [[T-292]], where one strict shared path exists beside looser open-coded copies.
+  An App Intent-safe mutation service owning capture, complete and habit toggle would also give
+  [[T-311]] and [[T-312]] one place to put the preflight and the reconcile marker.
+
 - [T-306] **MCP writes never reconcile OS notifications.** From the MCP write-boundary audit
   (Codex, 2026-08-26); premise verified. `CadenceWriteService.saveNotifyAndAudit` saves, posts the
   external-write marker and records the audit entry — and stops. Notification reconciliation
