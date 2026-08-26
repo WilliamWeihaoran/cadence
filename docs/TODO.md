@@ -33,6 +33,49 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-295] **`deleteBundle` leaves `calendarEventID` set; its sibling twelve lines above clears it.**
+  From the second external audit (Codex, 2026-08-26); **premise verified, and the evidence is
+  stronger than the report's.** The audit said macOS clears the field elsewhere while the shared
+  helper does not. In fact `CadenceTaskMutationSupport.deleteBundleIfFullySettled` and
+  `deleteBundle` sit in the **same file, twelve lines apart**, unbundling members in near-identical
+  loops — and only the first sets `member.calendarEventID = ""`. That is a much easier
+  inconsistency to argue about than a cross-platform one.
+  **Read the "Calendar / Events" note in `CLAUDE.md` before assigning this any urgency.** Nothing in
+  the app writes that field a non-empty value — measured again here, every assignment is `""` and
+  the only non-empty reads are the exporter's. So a stale value can only come from a build that
+  shipped before that changed, or from CloudKit. The fix is one line and makes the two loops agree;
+  the *impact* claim in the audit ("iOS can leave tasks pointing at an old calendar event") is only
+  true of pre-existing data, and a ticket that overstates it will get someone chasing a live bug
+  that is not live.
+
+- [T-296] **Two subtask deletes bypass the shared detach.** From the same audit, premise verified.
+  `CadenceTaskMutationSupport` sets `subtask.parentTask = nil` before deleting, deliberately —
+  this codebase does not trust inverse back-population to have happened by the time a resolver reads
+  it. Two call sites delete directly without it: `iOSTaskDetailSheet.swift:451` and
+  `SchedulePanelComponents.swift:109`. Not a confirmed crash; it is the strict path and the loose
+  path disagreeing about the same operation. Fix with one shared `deleteSubtask` helper that nils
+  the inverse, removes from the parent's array, then deletes. Related to [[T-294]] — both are this
+  codebase's stated distrust of inverse propagation being honoured in one place and not another.
+
+- [T-297] **Privacy reset reports success before notifications are cancelled.** From the same audit,
+  premise verified: `CadencePrivacyDataResetService.swift:83` launches
+  `Task { await NotificationManager.shared.cancelAll() }` and returns. So the reset can report
+  completion while pending OS notifications still exist, and if the app exits promptly a deleted
+  habit's reminder can outlive the data it describes — surfacing later, from an app the user
+  believes they emptied. That is a privacy-facing promise, which is what lifts this above a
+  tidiness fix: `docs/privacy.html` and the App Review notes both describe the reset.
+  Decide between making the reset `async` and awaiting the cancellation, or documenting it as
+  best-effort and testing the call contract. Do not silently leave it as neither.
+
+- [T-298] **A failed fetch makes the note-delete summary understate the damage.** From the same
+  audit, premise verified at `CadenceNoteActionSupport.swift:130-131`: both the note fetch and the
+  image-asset fetch are `(try? …) ?? []`, so a store read failure reads as "nothing will be
+  affected" in the confirmation the user is about to accept. The actual cleanup in
+  `CadenceListDeleteHelpers` is more conservative, so this is a misleading-summary risk rather than
+  data loss — but it is misleading in the one direction that matters, telling the user a delete is
+  smaller than it is. Surface an unknown-impact state instead of collapsing a failure to zero.
+  Same shape as [[T-291]]: a failure treated as an ordinary empty result.
+
 - [T-291] **A failed cascade leaves a list's goal links already deleted.** From an external
   read-only audit (Codex, 2026-08-26); **premise verified against the code before filing.**
   `CadenceListDeleteHelpers.deleteProject` calls `delete(uniqueGoalListLinks(...))` on the line
