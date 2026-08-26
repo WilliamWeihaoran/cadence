@@ -19,6 +19,8 @@ struct EditAreaSheet: View {
     @State private var hideDueDateIfEmpty: Bool
     @State private var hideSectionDueDateIfEmpty: Bool
     @State private var showDeleteConfirmation = false
+    /// Set when the delete failed. The sheet stays open holding it — see `deleteArea()`.
+    @State private var deleteFailureNotice: String?
 
     init(area: Area) {
         self.area = area
@@ -82,6 +84,10 @@ struct EditAreaSheet: View {
                     onSelect: apply
                 )
             }
+
+            if let deleteFailureNotice {
+                CadenceInlineFailureNotice(text: deleteFailureNotice)
+            }
         } footerLeading: {
             ListEditorArchiveButton(isArchived: area.isArchived, noun: "Area") {
                 apply(area.isArchived ? .active : .archived)
@@ -137,9 +143,20 @@ struct EditAreaSheet: View {
         dismiss()
     }
 
+    /// T-291: the cascade's `false` and a refused save were both being saved over and dismissed
+    /// through, so a delete that did not happen closed the sheet and reported nothing. Now the
+    /// dismissal *is* the report of success, and a failure keeps the sheet on screen holding the
+    /// same sentence iOS's confirmation shows.
     private func deleteArea() {
-        modelContext.deleteArea(area)
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitCascade(in: modelContext) {
+                modelContext.deleteArea(area)
+            }
+        } catch {
+            deleteFailureNotice = CadenceListDeletionKind.area.deleteFailureNotice
+            return
+        }
+        deleteFailureNotice = nil
         dismiss()
     }
 }
@@ -163,6 +180,8 @@ struct EditProjectSheet: View {
     @State private var hideDueDateIfEmpty: Bool
     @State private var hideSectionDueDateIfEmpty: Bool
     @State private var showDeleteConfirmation = false
+    /// Same contract as `EditAreaSheet`'s — see `deleteProject()`.
+    @State private var deleteFailureNotice: String?
 
     init(project: Project) {
         self.project = project
@@ -247,6 +266,10 @@ struct EditProjectSheet: View {
                     onSelect: apply
                 )
             }
+
+            if let deleteFailureNotice {
+                CadenceInlineFailureNotice(text: deleteFailureNotice)
+            }
         } footerLeading: {
             ListEditorArchiveButton(isArchived: project.isArchived, noun: "Project") {
                 apply(project.isArchived ? .active : .archived)
@@ -296,9 +319,17 @@ struct EditProjectSheet: View {
         dismiss()
     }
 
+    /// Same as `EditAreaSheet.deleteArea()`, same reason.
     private func deleteProject() {
-        modelContext.deleteProject(project)
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitCascade(in: modelContext) {
+                modelContext.deleteProject(project)
+            }
+        } catch {
+            deleteFailureNotice = CadenceListDeletionKind.project.deleteFailureNotice
+            return
+        }
+        deleteFailureNotice = nil
         dismiss()
     }
 }

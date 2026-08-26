@@ -23,6 +23,10 @@ struct SettingsView: View {
     @State private var pendingDeleteArea: Area?
     @State private var pendingDeleteProject: Project?
     @State private var pendingDeleteContext: Context?
+    /// Set when a list cascade failed (T-291). It sits under the detail header rather than in the
+    /// dialog, because the `confirmationDialog` has already closed by the time the delete runs and
+    /// the section it was about is what the user is still looking at.
+    @State private var deleteFailureNotice: String?
     @State private var showCreateContext = false
     @State private var editingSidebarTab: SidebarStaticDestination?
     @State private var aiAPIKeyDraft = ""
@@ -40,6 +44,9 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     detailHeader
+                    if let deleteFailureNotice {
+                        CadenceInlineFailureNotice(text: deleteFailureNotice)
+                    }
                     selectedSectionContent
                 }
                 .frame(maxWidth: 1040, alignment: .leading)
@@ -270,19 +277,29 @@ struct SettingsView: View {
         try? modelContext.save()
     }
 
+    /// T-291: `try? modelContext.save()` on top of a cascade that had already returned `false` was
+    /// the worst of the three call sites — a settings row that simply stayed put, with no sheet to
+    /// keep open and nothing said. `commitCascade` rolls a partial cascade back and throws;
+    /// `report` puts the sentence where the row is.
     private func deleteContext(_ context: Context) {
-        modelContext.deleteContext(context)
-        try? modelContext.save()
+        report(.context) { modelContext.deleteContext(context) }
     }
 
     private func deleteArea(_ area: Area) {
-        modelContext.deleteArea(area)
-        try? modelContext.save()
+        report(.area) { modelContext.deleteArea(area) }
     }
 
     private func deleteProject(_ project: Project) {
-        modelContext.deleteProject(project)
-        try? modelContext.save()
+        report(.project) { modelContext.deleteProject(project) }
+    }
+
+    private func report(_ kind: CadenceListDeletionKind, cascade: () -> Bool) {
+        do {
+            try CadencePendingChangePersistence.commitCascade(in: modelContext, cascade: cascade)
+            deleteFailureNotice = nil
+        } catch {
+            deleteFailureNotice = kind.deleteFailureNotice
+        }
     }
 }
 #endif

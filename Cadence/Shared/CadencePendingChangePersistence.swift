@@ -78,4 +78,39 @@ enum CadencePendingChangePersistence {
             throw error
         }
     }
+
+    /// A delete that can fail **while it is still being built**, and then commits.
+    ///
+    /// `commitDelete` covers the delete that is fully marked by the time anyone tries to save it.
+    /// The list cascades are the other case (T-291): `ModelContext.deleteArea` walks tasks, nested
+    /// projects, notes, documents and links, and any of those steps can hit a store read it cannot
+    /// perform. It says so by returning `false` — but it says so *mid-tree*, with part of the
+    /// cascade already marked deleted in the context.
+    ///
+    /// So `false` here is not advisory. It means the context is holding a half-built delete, and
+    /// the only correct next move is `rollback()` — never `save()`, which is what all three call
+    /// sites used to do, and never leaving it pending, which the next autosave would commit
+    /// anyway. The caller gets a thrown error and shows the same notice a refused commit shows,
+    /// because from the user's side the two are the same event: the delete did not happen, and
+    /// nothing was removed.
+    ///
+    /// - Parameter cascade: Runs the delete. Returns `false` if it could not finish.
+    static func commitCascade(
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        cascade: () -> Bool
+    ) throws {
+        guard cascade() else {
+            modelContext.rollback()
+            throw CascadeIncomplete()
+        }
+        try commitDelete(in: modelContext, commit: commit)
+    }
+
+    /// Thrown by `commitCascade(in:commit:cascade:)` when the cascade itself could not finish.
+    ///
+    /// It carries nothing because there is nothing the surface can do with a detail: the store
+    /// could not be read, the delete was rolled back, and the sentence the user reads is the same
+    /// one a refused commit produces.
+    struct CascadeIncomplete: Error {}
 }

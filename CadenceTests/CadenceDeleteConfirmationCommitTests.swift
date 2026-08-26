@@ -49,9 +49,9 @@ struct CadenceDeleteConfirmationCommitTests {
     ///
     /// The image asset is the whole reason this can be promised at all: `deleteNote` marks the
     /// note *and* the assets only it referenced, and neither `deleteNote` nor the image sweep
-    /// commits on its own, so one rollback undoes the entire delete. Compare
-    /// `arefusedContextDeleteRestoresEverythingExceptTheTasksItAlreadyCommitted`, where it does
-    /// not.
+    /// commits on its own, so one rollback undoes the entire delete. The list cascade earns the
+    /// same promise the hard way — see
+    /// `arefusedContextDeleteRestoresTheWholeTreeIncludingItsTasks`.
     @Test func arefusedNoteDeleteLeavesTheNoteAndItsImagesWhereTheyWere() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
@@ -111,20 +111,20 @@ struct CadenceDeleteConfirmationCommitTests {
         #expect(try store.fetch(FetchDescriptor<AppTask>()).isEmpty)
     }
 
-    /// Refused, the rows the cascade had only *marked* come back — and the tasks do not.
+    /// Refused, everything the cascade marked comes back — the tasks included.
     ///
-    /// **This is the finding that words the two notices differently.**
-    /// `CadenceTaskMutationSupport.deleteTasks` ends with `try? modelContext.save()`, part-way
-    /// through the cascade, so the list's tasks are committed as deleted before the outer commit
-    /// is ever asked for. A rollback cannot reach them. Everything else the cascade marked — the
-    /// context, its areas, notes, links and nested projects — does come back.
+    /// **This test used to record the opposite, and that is the point.**
+    /// `CadenceTaskMutationSupport.deleteTasks` ended with an ungated
+    /// `try? modelContext.save()` part-way through the cascade, so the list's tasks were committed
+    /// as deleted before the outer commit was ever asked for and no rollback reached them. The two
+    /// notices were worded differently because of it: the note sheet could say "Nothing was
+    /// removed" and the list sheet had to hedge with "some of it may already be gone".
     ///
-    /// So the note confirmation is allowed to say "Nothing was removed" and the list confirmation
-    /// is not, and that asymmetry is a measured fact rather than a wording preference. The last
-    /// assertion pins where the mid-cascade commit lives: when [[T-322]] takes it out, this test
-    /// goes red and tells whoever did it that
-    /// `CadenceListDeletionKind.deleteFailureNotice` can now promise more.
-    @Test func arefusedContextDeleteRestoresEverythingExceptTheTasksItAlreadyCommitted() throws {
+    /// T-291 gave the sweep a `commitsImmediately` flag and the cascades pass `false`, so the
+    /// whole tree is now one pending change and the two sheets make the same promise. The last
+    /// assertions pin the gate: put the commit back and this test goes red *before*
+    /// `CadenceListDeletionKind.deleteFailureNotice` starts overpromising.
+    @Test func arefusedContextDeleteRestoresTheWholeTreeIncludingItsTasks() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
         let context = Context(name: "Work")
@@ -148,11 +148,12 @@ struct CadenceDeleteConfirmationCommitTests {
         #expect(try modelContext.fetch(FetchDescriptor<Area>()).map(\.name) == ["Operations"])
 
         #expect(
-            try store.fetch(FetchDescriptor<AppTask>()).isEmpty,
-            "the task deletion no longer commits mid-cascade — the list notice can promise more"
+            try store.fetch(FetchDescriptor<AppTask>()).map(\.title) == ["Inside the area"],
+            "the task deletion commits mid-cascade again — the list notice is now overpromising"
         )
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).map(\.title) == ["Inside the area"])
 
-        // Where that commit is. Scoped by its neighbour rather than by
+        // Where the gate is. Scoped by its neighbour rather than by
         // `CadenceSourceScan.functionBody(named:)`, which cannot read this particular function:
         // `deleteTasks` declares `willDelete: (Set<UUID>) -> Void = { _ in }`, and the helper takes
         // the first `{` after the signature — so it returns the *default closure* and not the body.
@@ -160,24 +161,34 @@ struct CadenceDeleteConfirmationCommitTests {
             try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift")
         )
         #expect(core.contains("static func deleteTasks("), "the shared task-deletion core moved")
-        let midCascadeCommit = #"processPendingChanges\(\)\s*try\? modelContext\.save\(\)"#
+        #expect(core.contains("commitsImmediately: Bool = true"), "the sweep lost its commit gate")
+        let gatedCommit = #"processPendingChanges\(\)\s*if commitsImmediately \{\s*try\? modelContext\.save\(\)"#
         #expect(
-            CadenceSourceScan.matchCount(midCascadeCommit, in: core) == 1,
-            "the mid-cascade commit moved; re-derive what a refused list delete leaves behind"
+            CadenceSourceScan.matchCount(gatedCommit, in: core) == 1,
+            "the mid-cascade commit is no longer gated; re-derive what a refused list delete leaves"
         )
         #expect(
             CadenceSourceScan.matchCount(
-                midCascadeCommit,
-                in: "modelContext.processPendingChanges()\n        try? modelContext.save()"
+                gatedCommit,
+                in: "processPendingChanges()\n        if commitsImmediately {\n            try? modelContext.save()\n        }"
             ) == 1,
             "the needle does not match the spelling it is hunting"
         )
         #expect(
             CadenceSourceScan.matchCount(
-                midCascadeCommit,
-                in: "modelContext.processPendingChanges()\n        try modelContext.save()"
+                gatedCommit,
+                in: "processPendingChanges()\n        try? modelContext.save()"
             ) == 0,
-            "the needle matches a commit that does not swallow"
+            "the needle matches an ungated mid-cascade commit"
+        )
+
+        // And the cascades are what close the gate.
+        let cascades = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/CadenceListDeleteHelpers.swift")
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"commitsImmediately: false"#, in: cascades) == 2,
+            "a list cascade sweeps tasks with the commit still on"
         )
     }
 
@@ -185,14 +196,14 @@ struct CadenceDeleteConfirmationCommitTests {
 
     /// Three deletes share one sheet, so the notice names the kind rather than saying "list",
     /// which is not a word the app uses for any of them. The second sentence is the one the
-    /// rollback earns.
+    /// rollback earns — and since T-291 the cascade earns it too.
     @Test func eachDeleteFailureNoticeNamesItsOwnKind() {
         #expect(CadenceListDeletionKind.area.deleteFailureNotice
-                == "Couldn't finish deleting this area. Some of it may already be gone.")
+                == "Couldn't delete this area. Nothing was removed.")
         #expect(CadenceListDeletionKind.project.deleteFailureNotice
-                == "Couldn't finish deleting this project. Some of it may already be gone.")
+                == "Couldn't delete this project. Nothing was removed.")
         #expect(CadenceListDeletionKind.context.deleteFailureNotice
-                == "Couldn't finish deleting this context. Some of it may already be gone.")
+                == "Couldn't delete this context. Nothing was removed.")
         #expect(CadenceNoteDeletionSummary.deleteFailureNotice
                 == "Couldn't delete this note. Nothing was removed.")
 
@@ -202,13 +213,18 @@ struct CadenceDeleteConfirmationCommitTests {
             + [CadenceNoteDeletionSummary.deleteFailureNotice]
         #expect(Set(notices).count == notices.count)
 
-        // Only the delete that really does restore everything is allowed to say so. See
-        // `arefusedContextDeleteRestoresEverythingExceptTheTasksItAlreadyCommitted`.
+        // Every one of them promises a full undo, and every one of them can now keep it. See
+        // `arefusedContextDeleteRestoresTheWholeTreeIncludingItsTasks`, which is what makes the
+        // list sentences true, and `CadenceListCascadeRollbackTests` for the aborted cascade.
         #expect(CadenceNoteDeletionSummary.deleteFailureNotice.contains("Nothing was removed"))
         for kind in CadenceListDeletionKind.allCases {
             #expect(
-                !kind.deleteFailureNotice.contains("Nothing was removed"),
-                "the \(kind.noun) cascade promises an undo it cannot perform"
+                kind.deleteFailureNotice.contains("Nothing was removed"),
+                "the \(kind.noun) cascade hedges about an undo it does perform"
+            )
+            #expect(
+                !kind.deleteFailureNotice.contains("already be gone"),
+                "the \(kind.noun) notice still carries the pre-T-291 hedge"
             )
         }
     }
@@ -276,7 +292,13 @@ struct CadenceDeleteConfirmationCommitTests {
                 CadenceSourceScan.functionBody(named: "perform", in: stripped),
                 "\(path) has no perform()"
             )
-            #expect(perform.contains("CadencePendingChangePersistence.commitDelete("))
+            #expect(
+                CadenceSourceScan.matchCount(
+                    #"CadencePendingChangePersistence\.commit(Delete|Cascade)\("#,
+                    in: perform
+                ) == 1,
+                "\(path): perform() does not commit through the shared helper"
+            )
             #expect(
                 CadenceSourceScan.matchCount(#"try\?"#, in: perform) == 0,
                 "\(path): perform() still swallows its save"

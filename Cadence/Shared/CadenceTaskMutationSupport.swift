@@ -331,10 +331,31 @@ enum CadenceTaskMutationSupport {
     ///
     /// Returning a failure and touching nothing is the only safe reading of "I could not read the
     /// store"; the cascade callers abort on it.
+    ///
+    /// - Parameter commitsImmediately: Whether this delete commits itself. `true` for every
+    ///   ordinary surface — a task swiped away has no enclosing unit of work to ride, and a delete
+    ///   left waiting on autosave is lost by a quit.
+    ///
+    ///   The list cascades pass `false` (T-291). Deleting a list is *one* delete of many rows, and
+    ///   it can still fail after this point — a nested project whose store read fails, or the
+    ///   caller's own commit being refused. Committing here would put the tasks in the store as
+    ///   deleted while the list they belonged to came back, which is the exact half-applied state
+    ///   the cascade's `false` return exists to prevent. With this `false`, everything the cascade
+    ///   touches is one pending change, so `ModelContext.rollback()` undoes all of it and the
+    ///   confirmation can honestly say nothing was removed.
+    ///
+    ///   `processPendingChanges()` runs either way: it settles the inverse relationships this
+    ///   function severed by hand, and it does not write to the store.
+    ///
+    ///   The notification cancellation below is *not* gated, deliberately. It is not a store write,
+    ///   it was already unconditional before the flag existed, and a reminder cancelled for a task
+    ///   that comes back is re-scheduled by the next reconcile — whereas a reminder left armed for
+    ///   a task that really is gone fires at the user.
     @discardableResult
     static func deleteTasks(
         withIDs taskIDs: Set<UUID>,
         modelContext: ModelContext,
+        commitsImmediately: Bool = true,
         willDelete: (Set<UUID>) -> Void = { _ in },
         didDeleteBundles: (Set<UUID>) -> Void = { _ in }
     ) -> Bool {
@@ -376,7 +397,9 @@ enum CadenceTaskMutationSupport {
         didDeleteBundles(deletedBundleIDs)
 
         modelContext.processPendingChanges()
-        try? modelContext.save()
+        if commitsImmediately {
+            try? modelContext.save()
+        }
 
         // Cheaper than a full reconcile since we already know exactly which tasks were removed.
         // Without it a scheduled-start reminder fires for a task that no longer exists, because

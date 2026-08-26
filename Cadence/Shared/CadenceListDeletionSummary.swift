@@ -20,23 +20,26 @@ enum CadenceListDeletionKind: String, CaseIterable, Sendable {
         }
     }
 
-    /// Shown **inside** the still-open confirmation when the cascade could not be committed
+    /// Shown **inside** the still-open confirmation when the delete could not be completed
     /// (T-320). It names the kind for the same reason `cascadeSentence` does: the sheet is one
     /// view used for three deletes, and "Couldn't delete this list" is not a thing the app calls
     /// anything.
     ///
-    /// **Why it says "finish" and not "Nothing was removed", which the note delete does say.**
-    /// A cascade is not one pending change. `CadenceTaskMutationSupport.deleteTasks` commits with
-    /// `try? modelContext.save()` part-way through, so by the time the outer commit is asked for
-    /// and refused, the list's *tasks* are already in the store as deleted and no rollback reaches
-    /// them; everything the cascade merely marked — the list itself, its notes, links and nested
-    /// projects — does come back. Claiming otherwise would be the failure
-    /// `CadenceListDeletionSummary` is written against, one screen further on: a number, or a
-    /// reassurance, that the app cannot actually deliver.
-    /// `CadenceDeleteConfirmationCommitTests` holds both halves of that apart, and goes red if the
-    /// mid-cascade commit ever leaves — at which point this sentence can be strengthened.
+    /// **It says "Nothing was removed", and it is the same promise the note delete makes.** It did
+    /// not always: `CadenceTaskMutationSupport.deleteTasks` used to commit with
+    /// `try? modelContext.save()` part-way through the cascade, so a refused delete left the
+    /// list's tasks gone from the store while the list itself came back, and this sentence had to
+    /// hedge — "Couldn't finish… some of it may already be gone." T-291 made the cascade defer
+    /// that commit (`commitsImmediately: false`), so the whole tree is now one pending change and
+    /// one `rollback()` undoes all of it, whether the cascade aborted half-way or the commit was
+    /// refused. `CadenceDeleteConfirmationCommitTests` measures the restored tree; if a commit
+    /// ever creeps back inside the cascade, that test goes red *before* this sentence starts
+    /// lying.
+    ///
+    /// The one thing rollback does not restore is a cancelled local notification, which the next
+    /// reconcile re-schedules. "Nothing was removed" is about the user's data, and none of it is.
     var deleteFailureNotice: String {
-        "Couldn't finish deleting this \(noun.lowercased()). Some of it may already be gone."
+        "Couldn't delete this \(noun.lowercased()). Nothing was removed."
     }
 
     var cascadeSentence: String {

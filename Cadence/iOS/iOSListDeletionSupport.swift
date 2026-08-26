@@ -95,23 +95,23 @@ private struct iOSListDeletionModifier: ViewModifier {
     /// under the context deleted in one pass, and until something commits, all of it is a pending
     /// change that a relaunch discards.
     ///
-    /// `commitDelete` rolls back what the cascade *marked*, which is most of it but not all: the
-    /// shared task-deletion core commits with `try? modelContext.save()` part-way through, so the
-    /// list's tasks are already gone from the store before the outer commit is asked for. That is
-    /// why `CadenceListDeletionKind.deleteFailureNotice` says "couldn't finish" where the note
-    /// sheet says "nothing was removed" — see
-    /// `CadenceDeleteConfirmationCommitTests`, which measures the difference, and `docs/TODO.md`
-    /// T-322 for the mid-cascade commit itself.
+    /// **T-291: the cascade's own `Bool` is honoured too.** It returns `false` when it could not
+    /// read the store, and it returns it part-way down the tree — this used to be dropped on the
+    /// floor and the half-built delete saved on top of. `commitCascade` is the pairing: a `false`
+    /// cascade and a refused commit both roll the context back and both throw, so the sheet has
+    /// one failure to describe and `CadenceListDeletionKind.deleteFailureNotice` can promise the
+    /// same "Nothing was removed" the note sheet does.
     private func perform(_ target: iOSListDeletionTarget) throws {
-        switch target {
-        case .area(let area):
-            modelContext.deleteArea(area)
-        case .project(let project):
-            modelContext.deleteProject(project)
-        case .context(let context):
-            modelContext.deleteContext(context)
+        try CadencePendingChangePersistence.commitCascade(in: modelContext) {
+            switch target {
+            case .area(let area):
+                return modelContext.deleteArea(area)
+            case .project(let project):
+                return modelContext.deleteProject(project)
+            case .context(let context):
+                return modelContext.deleteContext(context)
+            }
         }
-        try CadencePendingChangePersistence.commitDelete(in: modelContext)
     }
 }
 

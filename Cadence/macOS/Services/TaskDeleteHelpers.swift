@@ -17,11 +17,15 @@ extension ModelContext {
     /// two implementations used to be independent, and the iOS one had drifted into losing empty
     /// bundles, pending notifications, and relationship detachment. Add behaviour to the shared
     /// core, not here, unless it is genuinely AppKit-shaped.
+    ///
+    /// `commitsImmediately` is forwarded rather than fixed here so the list cascades can defer the
+    /// commit to the confirmation that owns it — see the shared core for why.
     @discardableResult
-    func deleteTasks(withIDs taskIDs: Set<UUID>) -> Bool {
+    func deleteTasks(withIDs taskIDs: Set<UUID>, commitsImmediately: Bool = true) -> Bool {
         CadenceTaskMutationSupport.deleteTasks(
             withIDs: taskIDs,
             modelContext: self,
+            commitsImmediately: commitsImmediately,
             willDelete: { ids in
                 Self.cancelTaskState(for: ids)
             },
