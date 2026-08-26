@@ -33,6 +33,31 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-317] **A task whose chosen list has vanished is created anyway, silently in the Inbox.** From
+  the task-creation audit (Codex, 2026-08-26). **Measured in the code, live trigger inferred** —
+  the auditor did not reproduce the UI race, and neither have I.
+  `TaskCreationService.applyContainer` guards on finding the area or project by id and simply
+  returns when it cannot, attaching nothing — and `insertTask` inserts the task regardless. So a
+  create sheet holding a container id for a list deleted in another window, or removed by sync,
+  produces an Inbox task while the sheet showed a list. Both create sheets keep the selection in
+  state and only re-normalize when the *selection* changes, not when the available lists change,
+  which is what makes the stale id reachable.
+  **The app already has the right answer on its other write surface**: MCP write resolution throws
+  when the requested container is missing. Fix by giving the resolver a throwing or preflighted
+  form so creation fails visibly, or resets the selection where the user can see it, rather than
+  quietly downgrading to Inbox.
+
+- [T-318] **The iOS create sheet can say Inbox while saving into an inactive list.** From the same
+  audit; **measured in the code, live trigger inferred.** The visible container tile resolves names
+  from `activeAreas` / `activeProjects` and falls back to Inbox text when the selection is not
+  among them — but the save path constructs its service from **all** `areas` / `projects`. So if a
+  list is completed or archived while the sheet is open, the tile reads Inbox and the task lands in
+  the inactive list.
+  The fix is not to patch the label: **resolve the visible container and the saved container from
+  one source.** Two sources that agree today are what produced this. If inactive lists are not
+  valid targets, the selection should reset to Inbox when its list leaves the active set — which is
+  the same shape as [[T-317]], where a selection outlives the thing it names.
+
 - [T-315] **An AI summary that fails to save still closes the sheet as a success.** From the AI
   note-action audit (Codex, 2026-08-26); premise verified at the exact line —
   `AINoteActionSupport.swift:67` is `try? modelContext?.save()`, so a throwing save is swallowed,
@@ -287,6 +312,12 @@ _Nothing in flight._
   A task created or moved inside an **area-owned project whose own context is nil** then carries
   `task.project` with no denormalized `task.context`, so context-scoped queries and counts miss it.
   The fix is one shared spelling, not seven edits — this is the shape T-175 and T-290 already have.
+  **Sharper framing, from the task-creation audit 2026-08-26:** the clearest way to state this is
+  *create versus move*. Creating a task into a project sets `task.context = project.context`;
+  moving one into the **same** project uses the area fallback. So two tasks sitting in one
+  project can carry different context values based only on how they got there — which is a
+  much easier defect to argue about than seven paths against one helper, and points at the
+  same fix.
 
 - [T-293] **Editing a project's context on iOS leaves its tasks pointing at the old one.** From the
   same audit, premise verified. `iOSListEditorViews` assigns `project.context` and `project.area`,
