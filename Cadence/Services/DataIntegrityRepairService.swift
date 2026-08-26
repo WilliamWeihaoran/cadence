@@ -282,7 +282,7 @@ nonisolated enum DataIntegrityRepairService {
 
         for task in store.tasks where task.project === source {
             task.project = target
-            task.context = target.context
+            task.context = target.resolvedContext
             report.movedTasks += 1
         }
         for note in store.notes where note.project === source {

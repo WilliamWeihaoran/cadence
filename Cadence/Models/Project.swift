@@ -31,6 +31,22 @@ import Foundation
     @Relationship(inverse: \SavedLink.project) var links: [SavedLink]? = nil
     @Relationship(inverse: \GoalListLink.project) var goalLinks: [GoalListLink]? = nil
 
+    /// The context a task filed in this project belongs to.
+    ///
+    /// A project either names its own context or inherits the one its area names, so the honest
+    /// answer is `context ?? area?.context`. `AppTask.context` is denormalized for query speed, so
+    /// **every** path that files a task into a project has to write this value rather than
+    /// `project.context`: a project owned by an area, with no context of its own, otherwise hands
+    /// the task a nil context, and every context-scoped list and count then misses a task that is
+    /// plainly sitting in that context's list.
+    ///
+    /// It is spelled once, here, because it used to be spelled twice. `assignContainer` - the
+    /// *move* path - applied the area fallback while seven creation and drag paths wrote
+    /// `project.context` alone, so two tasks sitting in the same project could carry different
+    /// contexts based only on how they got there (T-292). The same rule is what re-points a
+    /// list's existing tasks when the list itself changes owner (T-293).
+    var resolvedContext: Context? { context ?? area?.context }
+
     var isDone: Bool { status == .done }
     var isArchived: Bool { status == .archived }
     var isActive: Bool { status == .active }

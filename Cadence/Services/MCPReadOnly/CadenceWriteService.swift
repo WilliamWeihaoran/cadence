@@ -589,7 +589,7 @@ final class CadenceWriteService {
         case .project(let project):
             task.project = project
             task.area = nil
-            task.context = project.context
+            task.context = project.resolvedContext
         case nil:
             task.area = nil
             task.project = nil

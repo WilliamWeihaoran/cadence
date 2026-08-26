@@ -46,7 +46,7 @@ struct TaskDetailPopover: View {
                     }
                 case .project(let id):
                     if let project = projects.first(where: { $0.id == id }) {
-                        task.project = project; task.area = nil; task.context = project.context; task.sectionName = project.sectionNames.first ?? TaskSectionDefaults.defaultName
+                        task.project = project; task.area = nil; task.context = project.resolvedContext; task.sectionName = project.sectionNames.first ?? TaskSectionDefaults.defaultName
                     }
                 }
             }

@@ -147,7 +147,7 @@ enum KanbanBoardSupport {
                 onAssignTask: { task in
                     task.project = project
                     task.area = nil
-                    task.context = project.context
+                    task.context = project.resolvedContext
                 }
             )
         }

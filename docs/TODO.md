@@ -33,6 +33,19 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-340] **Two more places a task keeps a context its owner no longer has.** Found while closing
+  [[T-292]] and [[T-293]], and deliberately not folded in.
+  1. Editing an **area's** context re-points tasks filed directly in that area, but not tasks in
+     *projects* under it whose own `context` is `nil`. Those projects' `resolvedContext` changes and
+     their tasks are never walked — the same defect one level down.
+  2. `DataIntegrityRepairService.mergeProject` re-points tasks moved *from* the source project, but
+     tasks already in the **target** keep their old `task.context` even though the merge may have
+     changed the target's area.
+  Both are the T-292 rule applied at call shapes nobody walked. The rule itself already exists —
+  `Project.resolvedContext` — so this is finding the remaining walks, not deciding anything new.
+  Note why they cannot simply reuse `assignContainer`: that also rewrites `sectionName` and `order`,
+  and re-ordering every task in a list because its owner changed is the T-175 bug.
+
 - [T-339] **iOS has three failure vocabularies for EventKit; macOS has one.** Recommended by the
   agent that closed [[T-323]] and [[T-325]], which deliberately did **not** do it.
   macOS models a calendar write failure once, as `CalendarWriteFailure` with a `title` and a

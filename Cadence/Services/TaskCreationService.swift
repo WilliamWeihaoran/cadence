@@ -80,7 +80,7 @@ struct TaskContainerResolver {
             }
             task.project = project
             task.area = nil
-            task.context = project.context
+            task.context = project.resolvedContext
         }
     }
 }

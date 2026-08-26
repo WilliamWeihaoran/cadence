@@ -233,20 +233,45 @@ enum CadenceTaskMutationSupport {
         if let area {
             task.area = area
             task.project = nil
-            task.context = area.context
         } else if let project {
             task.project = project
             task.area = nil
-            task.context = project.context ?? project.area?.context
         } else {
             task.area = nil
             task.project = nil
-            task.context = nil
         }
+        task.context = inheritedContext(area: area, project: project)
 
         task.sectionName = normalizedSectionName
         if updateOrder && isContainerChange {
             task.order = nextContainerOrder(excluding: task, in: allTasks, area: area, project: project)
+        }
+    }
+
+    /// The context a task takes from the list it is filed in.
+    ///
+    /// `AppTask.context` is a denormalized copy of the list's context, so this is the only value a
+    /// task filed into `area`/`project` may be given. The project branch reads
+    /// `Project.resolvedContext`, which is where the "own context, else the area's" rule is
+    /// spelled; nothing here re-types it.
+    static func inheritedContext(area: Area?, project: Project?) -> Context? {
+        if let area { return area.context }
+        if let project { return project.resolvedContext }
+        return nil
+    }
+
+    /// Re-points the denormalized `AppTask.context` of every task already in a list, after the
+    /// list itself changed owner.
+    ///
+    /// Editing a project's context - or the area it sits under - changes what context its tasks
+    /// belong to, but `task.context` is a copy and SwiftData does not re-point copies. The tasks
+    /// stayed in the list and vanished from the context they now belong to (T-293). This is the
+    /// same rule `assignContainer` applies to one arriving task, applied to every task already
+    /// there.
+    static func reassignInheritedContext(in tasks: [AppTask], area: Area? = nil, project: Project? = nil) {
+        let context = inheritedContext(area: area, project: project)
+        for task in tasks {
+            task.context = context
         }
     }
 

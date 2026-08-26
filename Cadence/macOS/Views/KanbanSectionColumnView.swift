@@ -302,7 +302,7 @@ struct ListSectionKanbanColumn: View {
         } else if let project {
             task.project = project
             task.area = nil
-            task.context = project.context
+            task.context = project.resolvedContext
         } else {
             task.area = nil
             task.project = nil

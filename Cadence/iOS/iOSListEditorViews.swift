@@ -408,7 +408,7 @@ struct iOSListEditorSheet: View {
             area.icon = normalizedIcon
             area.colorHex = normalizedColor
             area.context = selectedContext
-            reassignTasks(in: area.tasks ?? [])
+            reassignTasks(in: area.tasks ?? [], area: area)
             area.sectionConfigs = normalizedSectionConfigs
             area.hideDueDateIfEmpty = hideEmptyDueDates
             area.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
@@ -419,7 +419,7 @@ struct iOSListEditorSheet: View {
             project.colorHex = normalizedColor
             project.context = selectedContext
             project.area = selectedArea
-            reassignTasks(in: project.tasks ?? [])
+            reassignTasks(in: project.tasks ?? [], project: project)
             project.sectionConfigs = normalizedSectionConfigs
             project.hideDueDateIfEmpty = hideEmptyDueDates
             project.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
@@ -430,10 +430,20 @@ struct iOSListEditorSheet: View {
         dismiss()
     }
 
+    /// Re-points what this editor just invalidated on the tasks already in the list.
+    ///
+    /// Two copies go stale, for the same reason: SwiftData re-points relationships, not the
+    /// denormalized copies beside them.
+    ///
     /// A renamed or removed column leaves `AppTask.sectionName` pointing at a name no column has
-    /// any more — nothing in SwiftData re-points a plain string. macOS's kanban column calls
-    /// `moveTasks`; this is the same rule, applied to every column the editor changed at once.
-    private func reassignTasks(in tasks: [AppTask]) {
+    /// any more — nothing re-points a plain string. macOS's kanban column calls `moveTasks`; this
+    /// is the same rule, applied to every column the editor changed at once.
+    ///
+    /// A changed context — or, for a project, a changed area — leaves `AppTask.context` pointing
+    /// at the context the list *used* to be in. The list moved and its tasks did not, so they
+    /// stayed in the list and dropped out of the context (T-293). Pass the list back in so the
+    /// shared rule can re-derive it; omitting it silently restores that bug.
+    private func reassignTasks(in tasks: [AppTask], area: Area? = nil, project: Project? = nil) {
         CadenceSectionEditingSupport.applySectionNameChanges(
             renames: CadenceSectionEditingSupport.renames(in: sectionDrafts),
             removedNames: CadenceSectionEditingSupport.removedNames(
@@ -442,6 +452,7 @@ struct iOSListEditorSheet: View {
             ),
             to: tasks
         )
+        CadenceTaskMutationSupport.reassignInheritedContext(in: tasks, area: area, project: project)
     }
 
     private var selectedContext: Context? {

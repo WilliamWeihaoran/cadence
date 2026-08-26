@@ -272,7 +272,7 @@ enum TasksPanelSupport {
                 if let target = projects.first(where: { $0.id.uuidString == projectID }) {
                     task.project = target
                     task.area = nil
-                    task.context = target.context
+                    task.context = target.resolvedContext
                 }
             }
         } else if dropKey == "date:today" {
