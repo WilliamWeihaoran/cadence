@@ -16,6 +16,12 @@ enum CadenceStartupIssueKind: String, Equatable, CaseIterable {
     case inMemoryStore
     /// The store opened normally — a startup maintenance save failed afterwards.
     case maintenanceSaveFailed
+    /// The store opened normally — a restore the user scheduled could not be applied to it.
+    ///
+    /// T-326: this is deliberately *not* a store-level issue. The staged restore leaves the
+    /// existing store intact when it fails, so the data behind this banner is the user's own and
+    /// still syncing; what they have lost is the restore, not the database.
+    case restoreFailed
 
     /// Whether the store Cadence actually opened has no CloudKit database behind it.
     ///
@@ -24,7 +30,7 @@ enum CadenceStartupIssueKind: String, Equatable, CaseIterable {
     var disablesCloudSync: Bool {
         switch self {
         case .recoveryStore, .inMemoryStore: return true
-        case .maintenanceSaveFailed: return false
+        case .maintenanceSaveFailed, .restoreFailed: return false
         }
     }
 
@@ -49,6 +55,7 @@ extension CadenceStartupIssue {
         case .recoveryStore: return "iCloud Sync Is Off"
         case .inMemoryStore: return "Temporary Store — Changes Will Be Lost"
         case .maintenanceSaveFailed: return "Startup Maintenance Failed"
+        case .restoreFailed: return "Backup Was Not Restored"
         }
     }
 
@@ -65,6 +72,8 @@ extension CadenceStartupIssue {
             return "\(message) Nothing is saved to disk and nothing syncs — quitting Cadence discards this session."
         case .maintenanceSaveFailed:
             return "\(message) Your data is intact and still syncing; some startup housekeeping did not complete."
+        case .restoreFailed:
+            return "\(message) Your existing data is intact and still syncing, and a copy of it was saved as a Before Restore backup. You can try the restore again from Settings."
         }
     }
 
@@ -73,6 +82,7 @@ extension CadenceStartupIssue {
         case .recoveryStore: return "externaldrive.badge.exclamationmark"
         case .inMemoryStore: return "exclamationmark.triangle.fill"
         case .maintenanceSaveFailed: return "wrench.and.screwdriver.fill"
+        case .restoreFailed: return "clock.arrow.circlepath"
         }
     }
 

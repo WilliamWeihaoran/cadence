@@ -99,6 +99,7 @@ enum PrivacyDataResetService {
         try? aiSettingsManager.removeAPIKey()
         CadenceWidgetRefreshCenter.clearStoredState()
         StoreBackupManager.clearPendingRestore()
+        StoreBackupManager.clearFailedRestore()
         let removedBackupCount = try StoreBackupManager.deleteAllBackups()
         return PrivacyDataResetOutcome(removedBackupCount: removedBackupCount)
     }
