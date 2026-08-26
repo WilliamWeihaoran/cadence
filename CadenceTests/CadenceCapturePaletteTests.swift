@@ -106,6 +106,17 @@ struct CadenceCapturePaletteTests {
     /// The one relationship in `CadenceCapturePaletteMetrics` that is not a taste call. T-171 states
     /// it directly: the escape radius "must be larger than the palette's own reach or segment
     /// selection will convert to a drag mid-choice".
+    /// Every placement, not just the one the tab bar uses. The corner `+` moves `layoutRadius`,
+    /// so this relationship is the thing that has to survive the move.
+    @Test func theEscapeRadiusClearsThePalettesOwnReachAtEveryPlacement() {
+        for placement in CadenceCapturePalettePlacement.allCases {
+            let values = placement.metrics
+            #expect(values.escapeRadius > values.outerRadius, "\(placement) can escape before it is reached")
+            #expect(values.outerRadius > values.layoutRadius, "\(placement) draws its tiles past its own edge")
+            #expect(values.innerRadius < values.layoutRadius)
+        }
+    }
+
     @Test func theEscapeRadiusClearsThePalettesOwnReach() {
         #expect(metrics.escapeRadius > metrics.outerRadius)
         #expect(metrics.outerRadius > metrics.layoutRadius)
@@ -249,6 +260,139 @@ struct CadenceCapturePaletteTests {
         )
     }
 
+    // MARK: - T-282: the corner `+` has the same palette, pointing the only way it can
+
+    /// **The placement decides the arc and nothing else.** iPhone and iPad differ in *layout* — a
+    /// tab bar against a floating corner — and a size-class branch may pick a placement, never
+    /// whether a control exists. So this asserts the whole value: the corner's metrics are the
+    /// standard's with three fields moved, and every field that governs how the gesture *feels* is
+    /// untouched.
+    @Test func theTwoPlacementsDifferInTheArcAndTheRadiusItForces() {
+        let bar = CadenceCapturePalettePlacement.bottomCentre.metrics
+        let corner = CadenceCapturePalettePlacement.bottomTrailing.metrics
+
+        #expect(bar == CadenceCapturePaletteMetricsValues.standard)
+
+        // The feel of the press is identical, or the two `+`s are two controls again.
+        #expect(corner.holdDelay == bar.holdDelay)
+        #expect(corner.dragSlop == bar.dragSlop)
+        #expect(corner.innerRadius == bar.innerRadius)
+
+        // What a corner legitimately changes: the sweep folds into the quadrant that is on screen.
+        #expect(bar.arcStartDegrees == 0)
+        #expect(bar.arcSweepDegrees == 180)
+        #expect(corner.arcStartDegrees == 90)
+        #expect(corner.arcSweepDegrees == 90)
+
+        // And the two rings follow the layout radius by the semicircle's own margins rather than
+        // being re-chosen. Compared as differences so the claim is the relationship, not 118.
+        let barOuterMargin = bar.outerRadius - bar.layoutRadius
+        let cornerOuterMargin = corner.outerRadius - corner.layoutRadius
+        #expect(cornerOuterMargin == barOuterMargin)
+
+        let barEscapeMargin = bar.escapeRadius - bar.layoutRadius
+        let cornerEscapeMargin = corner.escapeRadius - corner.layoutRadius
+        #expect(cornerEscapeMargin == barEscapeMargin)
+    }
+
+    /// The load-bearing round trip again, at the corner. A layout that disagreed with the hit test
+    /// would light one tile and commit another — and the corner is the placement where the two
+    /// could drift apart, because it is the one that moved.
+    @Test func everySegmentsDrawnPositionSelectsItAtTheCorner() {
+        let corner = CadenceCapturePalettePlacement.bottomTrailing.metrics
+        for index in 0..<CadenceCapturePaletteGeometry.segmentCount {
+            let offset = CadenceCapturePaletteGeometry.offset(forSegment: index, metrics: corner)
+            #expect(
+                CadenceCapturePaletteGeometry.segmentIndex(atOffset: offset, metrics: corner) == index,
+                "corner segment \(index) is drawn where a different segment is selected"
+            )
+            #expect(
+                CadenceCapturePaletteGeometry.action(atOffset: offset, metrics: corner)
+                    == CadenceCaptureAction.allCases[index]
+            )
+        }
+    }
+
+    /// **Every tile is up and to the left of the button, because that is where the screen is.** The
+    /// corner `+` sits ~50pt from the trailing edge; the semicircle's rightmost segment would be
+    /// drawn 80pt further right, i.e. off the display. This is the test that fails if anyone
+    /// "unifies" the two placements by giving the corner the bar's sweep.
+    @Test func theCornersSegmentsStayInTheQuadrantThatIsOnScreen() {
+        let corner = CadenceCapturePalettePlacement.bottomTrailing.metrics
+        let offsets = (0..<CadenceCapturePaletteGeometry.segmentCount)
+            .map { CadenceCapturePaletteGeometry.offset(forSegment: $0, metrics: corner) }
+
+        #expect(offsets.allSatisfy { $0.height < 0 }, "a corner segment was drawn below the button")
+        #expect(offsets.allSatisfy { $0.width < 0 }, "a corner segment was drawn past the trailing edge")
+        // Left to right in the same reading order as the semicircle: index 0 is still the leftmost.
+        #expect(offsets[0].width < offsets[1].width)
+        #expect(offsets[1].width < offsets[2].width)
+    }
+
+    /// Nothing to the right of a corner button selects a segment: the arc does not reach there, so
+    /// a finger that drifts that way is in the same "let go and nothing happens" state as the dead
+    /// zone. The bar's palette, which does have segments out there, still selects one.
+    @Test func nothingToTheRightOfACornerButtonSelectsASegment() {
+        let corner = CadenceCapturePalettePlacement.bottomTrailing.metrics
+        let toTheRight = CGSize(width: corner.layoutRadius, height: -10)
+
+        #expect(CadenceCapturePaletteGeometry.segmentIndex(atOffset: toTheRight, metrics: corner) == nil)
+        #expect(CadenceCapturePaletteGeometry.segmentIndex(atOffset: toTheRight, metrics: metrics) != nil)
+    }
+
+    /// The reason the corner's `layoutRadius` is not simply the semicircle's: three tiles in 90°
+    /// instead of 180° sit half as far apart, and at 92pt they would visibly overlap. Asserted
+    /// against the tile's own published width so neither number can move alone.
+    @Test func noTwoSegmentTilesOverlapAtEitherPlacement() {
+        for placement in CadenceCapturePalettePlacement.allCases {
+            let values = placement.metrics
+            let first = CadenceCapturePaletteGeometry.offset(forSegment: 0, metrics: values)
+            let second = CadenceCapturePaletteGeometry.offset(forSegment: 1, metrics: values)
+            let spacing = hypot(first.width - second.width, first.height - second.height)
+            let tile = CadenceCapturePaletteMetrics.segmentTileDiameter
+            #expect(spacing >= tile, "\(placement) draws overlapping tiles")
+        }
+    }
+
+    /// A drag off the corner `+` that fizzles over blank space still opens the composer that
+    /// button's page would have opened — it does not fall back to a bare Inbox one. The tab bar's
+    /// `+` is unscoped, so for it the same rule resolves to the same empty seed it always had.
+    @Test func aCaptureDragThatLandsOnNothingKeepsTheButtonsOwnSeed() {
+        let areaID = UUID()
+        let base = CadenceTaskComposerSeed(doDateKey: "2026-08-20", container: .area(areaID))
+
+        for key in [String?.none, ""] {
+            let seed = CadenceTaskDropSupport.seed(forDropKey: key, todayKey: "2026-08-17", base: base)
+            #expect(seed.container == .area(areaID))
+            #expect(seed.doDateKey == "2026-08-20")
+        }
+
+        let unscoped = CadenceTaskDropSupport.seed(
+            forDropKey: nil,
+            todayKey: "2026-08-17",
+            base: CadenceTaskComposerSeed()
+        )
+        #expect(unscoped.container == .inbox)
+        #expect(unscoped.doDateKey.isEmpty)
+    }
+
+    /// And a drag that *does* land takes the placement it landed on, base or no base. The row is
+    /// the more specific answer; the button's own seed is only the fallback.
+    @Test func aCaptureDragThatLandsSomewhereTakesThePlacementOverTheBase() {
+        let landedOn = UUID()
+        let base = CadenceTaskComposerSeed(container: .area(UUID()))
+
+        let seed = CadenceTaskDropSupport.seed(
+            forDropKey: "list:a_\(landedOn.uuidString)|section:Backlog|date:today",
+            todayKey: "2026-08-17",
+            base: base
+        )
+
+        #expect(seed.container == .area(landedOn))
+        #expect(seed.sectionName == "Backlog")
+        #expect(seed.doDateKey == "2026-08-17")
+    }
+
     // MARK: - The segments borrow their vocabulary
 
     /// Neither the glyph nor the tint is spelled here. `CadenceFeatureDestination.defaultColorHex`
@@ -336,12 +480,105 @@ struct CadenceCapturePaletteTests {
         #expect(CadenceCompactTab.allCases.count == 4)
     }
 
+    // MARK: - T-282: the corner `+` is wired to the same gesture and the same composers
+
+    /// **The capability, at the call site.** Before T-282 this button was
+    /// `iOSCircularAddButton { isPresented = true }` plus `.iOSNewTaskDragSource()` — a tap into
+    /// one sheet and a system drag, with no palette at any width. It now renders the same
+    /// `iOSCaptureRadialMenuButton` the tab bar does. Scoped to the modifier's own `body`, not to
+    /// the file and not to the struct: a matching call anywhere else in either would pass a looser
+    /// scan while the corner button still did nothing.
+    @Test func theCornerButtonCarriesTheGestureAndNotATapIntoASheet() throws {
+        let file = try strippingComments(sourceFile("Cadence/iOS/iOSFloatingCreateTaskButton.swift"))
+        let layer = try cadenceFunctionBody(
+            "private struct iOSFloatingCreateTaskLayer: ViewModifier",
+            in: file
+        )
+        let body = try cadenceFunctionBody("func body(content: Content) -> some View", in: layer)
+
+        #expect(body.contains("iOSCaptureRadialMenuButton("))
+        #expect(body.contains(".iOSCaptureHost("))
+        // The page's own seed still reaches the composer a tap opens.
+        #expect(body.contains("baseSeed: seed"))
+
+        // And the three things it replaced are gone rather than left beside it.
+        #expect(body.contains("iOSNewTaskDragSource") == false)
+        #expect(body.contains(".sheet(") == false)
+        #expect(body.contains("isPresented") == false)
+    }
+
+    /// Each placement says which one it is, and the two say different things — the arc is the only
+    /// thing that may differ, so it has to actually differ.
+    @Test func eachPlacementDeclaresItsOwnArc() throws {
+        let corner = try strippingComments(sourceFile("Cadence/iOS/iOSFloatingCreateTaskButton.swift"))
+        let layer = try cadenceFunctionBody(
+            "private struct iOSFloatingCreateTaskLayer: ViewModifier",
+            in: corner
+        )
+        #expect(layer.contains("iOSCaptureInteraction(placement: .bottomTrailing)"))
+
+        let shell = try strippingComments(sourceFile("Cadence/iOS/iOSCompactTabShell.swift"))
+        let root = try cadenceFunctionBody("struct iOSCompactRootShell: View", in: shell)
+        #expect(root.contains("iOSCaptureInteraction(placement: .bottomCentre)"))
+    }
+
+    /// **The tab bar's tap stays unscoped and the page's does not, and that is a difference in what
+    /// the two buttons *know*, not in what they can do.** You press the bar's `+` from any tab and
+    /// file the task afterwards; a corner `+` is already standing on a list or on today.
+    @Test func onlyThePageButtonSeedsItsTap() throws {
+        let shell = try strippingComments(sourceFile("Cadence/iOS/iOSCompactTabShell.swift"))
+        let button = try cadenceFunctionBody("private struct iOSCompactCaptureButton: View", in: shell)
+
+        #expect(button.contains("iOSCaptureRadialMenuButton("))
+        #expect(button.contains("baseSeed") == false)
+    }
+
+    /// **One routing for the three composers.** The shell used to own `handle(_:)`, a `sheet(item:)`
+    /// over the three request kinds and a `fullScreenCover` for the note it had to create first;
+    /// giving the iPad the same palette by copying that block is exactly the near-copy this repo
+    /// keeps paying for. It moved into `iOSCaptureHostModifier`, so the shell now names none of it.
+    @Test func neitherPlacementSpellsTheComposersItself() throws {
+        let shell = try strippingComments(sourceFile("Cadence/iOS/iOSCompactTabShell.swift"))
+        #expect(shell.contains(".iOSCaptureHost("))
+        for spelling in ["iOSCreateTaskSheet(", "iOSCalendarQuickCreateSheet(", "iOSNoteEditorCover(", "NoteMigrationService"] {
+            #expect(shell.contains(spelling) == false, "the compact shell still spells \(spelling)")
+        }
+
+        let corner = try strippingComments(sourceFile("Cadence/iOS/iOSFloatingCreateTaskButton.swift"))
+        #expect(corner.contains(".iOSCaptureHost("))
+        for spelling in ["iOSCreateTaskSheet(", "iOSCalendarQuickCreateSheet(", "iOSNoteEditorCover(", "NoteMigrationService"] {
+            #expect(corner.contains(spelling) == false, "the corner button still spells \(spelling)")
+        }
+
+        // And there is one implementation of each behind them both.
+        let host = try strippingComments(sourceFile("Cadence/iOS/iOSCaptureRadialMenu.swift"))
+        for spelling in ["iOSCreateTaskSheet(", "iOSCalendarQuickCreateSheet(", "iOSNoteEditorCover(", "NoteMigrationService"] {
+            #expect(host.components(separatedBy: spelling).count - 1 == 1, "\(spelling) is not stated once")
+        }
+    }
+
+    /// The host is applied once per placement and nowhere else — two `+`s, two hosts. A third would
+    /// be a third capture button nobody decided on.
+    @Test func theCaptureHostIsAppliedOncePerPlacement() throws {
+        var perFile: [String: Int] = [:]
+        for file in try iOSSourceFiles() {
+            let code = try strippingComments(String(contentsOf: file, encoding: .utf8))
+            let count = code.components(separatedBy: ".iOSCaptureHost(").count - 1
+            if count > 0 { perFile[file.lastPathComponent] = count }
+        }
+
+        #expect(perFile == [
+            "iOSCompactTabShell.swift": 1,
+            "iOSFloatingCreateTaskButton.swift": 1
+        ])
+    }
+
     /// The palette is installed once, above every tab, for the reason `iOSTaskInspectorHost()` is:
-    /// it has to draw outside the 46pt bar row the button lives in.
+    /// it has to draw outside the 46pt bar row the button lives in. Since T-282 that one install is
+    /// inside `iOSCaptureHostModifier`, which is what both placements apply — so the count is still
+    /// one, and now it is one *implementation* rather than one call site that happened to be alone.
     @Test func thePaletteLayerIsInstalledExactlyOnce() throws {
-        let root = repositoryRoot().appendingPathComponent("Cadence/iOS")
-        let files = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "swift" }
+        let files = try iOSSourceFiles()
         #expect(files.count > 50, "the iOS folder scan found almost nothing")
 
         var installs = 0
@@ -373,8 +610,18 @@ struct CadenceCapturePaletteTests {
         #expect(moved.contains("CadenceCapturePressResolver.phase(afterMovingTo:"))
 
         let armed = try cadenceFunctionBody("private func armHold()", in: source)
-        #expect(armed.contains("CadenceCapturePressResolver.phase(afterHoldFrom:"))
-        #expect(armed.contains("CadenceCapturePaletteMetrics.holdDelay"))
+        // The call wraps over four lines, so the label is checked beside the callee rather than
+        // glued to it — pinning the whole one-line spelling would only pin the formatter.
+        #expect(armed.contains("CadenceCapturePressResolver.phase("))
+        #expect(armed.contains("afterHoldFrom: self.phase"))
+        // The delay is read from the placement's own metrics rather than the static, so a
+        // placement that ever needed a different hold could not get one by accident here.
+        #expect(armed.contains("let delay = metrics.holdDelay"))
+        #expect(armed.contains(".seconds(delay)"))
+        #expect(armed.contains("metrics: self.metrics"))
+
+        let moving = try cadenceFunctionBody("func moved(to location: CGPoint)", in: source)
+        #expect(moving.contains("metrics: metrics"))
 
         let ended = try cadenceFunctionBody("func ended() -> CadenceCapturePressOutcome", in: source)
         #expect(ended.contains("CadenceCapturePressResolver.outcome(atEndOf:"))
@@ -387,6 +634,12 @@ private func repositoryRoot() -> URL {
     URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
+}
+
+private func iOSSourceFiles() throws -> [URL] {
+    let root = repositoryRoot().appendingPathComponent("Cadence/iOS")
+    return try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        .filter { $0.pathExtension == "swift" }
 }
 
 private func sourceFile(_ relativePath: String) throws -> String {

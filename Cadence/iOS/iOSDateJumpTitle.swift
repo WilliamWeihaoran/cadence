@@ -85,7 +85,7 @@ struct iOSDateJumpTitle: View {
             // overflows and clips.
             .contentShape(Rectangle())
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.iosPressable)
         .accessibilityLabel(accessibilityLabel ?? "\(label). Choose a date")
         // `.top`, not the `.bottom` every other `CadenceDatePicker` call site uses. The arrow edge
         // names the popover's *own* edge, so `.bottom` puts the panel above its anchor — fine for a
@@ -190,7 +190,7 @@ private struct iOSDateJumpPopover: View {
                         .frame(maxWidth: .infinity, minHeight: 34)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.cadencePlain)
+                .buttonStyle(.iosPressable)
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
                 .padding(.bottom, 6)

@@ -82,9 +82,11 @@ struct AttachWorkSheet: View {
             } else {
                 ForEach(groupedLists) { group in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(group.title.uppercased())
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(group.context.map { Color(hex: $0.colorHex) } ?? Theme.dim)
+                        SectionEyebrowLabel(
+                            text: group.title,
+                            size: .compact,
+                            tint: group.context.map { Color(hex: $0.colorHex) } ?? Theme.dim
+                        )
                             .padding(.top, 4)
                         ForEach(group.targets) { target in
                             AttachListCandidateRow(

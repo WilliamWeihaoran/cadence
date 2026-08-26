@@ -9,6 +9,22 @@ enum CadenceTaskSurface: String, CaseIterable, Sendable {
     case listDetail
 }
 
+/// Whether a surface is being drawn for a **pointer** or for a **finger**.
+///
+/// **This is not the size class the file below rules out, and the distinction is the whole
+/// argument.** "iPhone Today has no sort control" is a statement about a width, and stays
+/// unspellable — iPhone and iPad are one tier here and always will be, so an exception written for
+/// `.touch` is written for both of them at once. What this axis can express is the one thing a
+/// width genuinely cannot: whether the surface is reached with a scroll wheel, a trackpad and a
+/// window you can make taller, or with a thumb.
+///
+/// Only `completedRowLimit(for:)` reads it. Every other answer in this file is the same on both
+/// tiers, and adding a second one should be argued for rather than assumed.
+enum CadenceTaskSurfaceTier: String, CaseIterable, Sendable {
+    case touch
+    case desktop
+}
+
 /// Which of a task surface's chrome controls it offers.
 struct CadenceTaskViewOptions: Equatable, Sendable {
     /// The sort chip.
@@ -26,6 +42,12 @@ struct CadenceTaskViewOptions: Equatable, Sendable {
     /// container-less tasks it was so the Inbox's tasks — the ones most in need of filing — stopped
     /// being the only ones that could not be filed from the row; that reasoning is about the *row*,
     /// and the Inbox page is where it does not apply.
+    ///
+    /// **macOS re-decided this on the row until T-290**, as
+    /// `style == .standard && !task.containerName.isEmpty` — an axis about the row rather than the
+    /// surface, and one whose second clause reproduced the exact defect this value was written to
+    /// fix, in reverse: an Inbox task in Today or All Tasks has an empty `containerName`, so the
+    /// tasks most in need of filing were the only ones with no chip to file them from.
     var showsContainerChip: Bool
 }
 
@@ -39,13 +61,18 @@ struct CadenceTaskViewOptions: Equatable, Sendable {
 /// property of the surface, not of the width it happens to be drawn at, so "iPhone Today has no
 /// sort control" is not expressible here. A future surface that genuinely needs fewer controls
 /// says so by `CadenceTaskSurface` case, and then says it for both widths at once.
+///
+/// `CadenceTaskSurfaceTier` is not a hole in that rule — see its own doc.
 enum CadenceTaskSurfaceOptions {
-    /// How many completed rows any surface lists before it stops.
+    /// How many completed rows a **touch** surface lists before it stops.
     ///
-    /// One number, because there was never a reason for two: Today and Inbox capped at 12 while
-    /// All Tasks capped at 24, so the same finished task was listed on one screen and dropped on
-    /// another. 24 is the larger of the two — it never hides work the smaller cap would have
-    /// shown, and All Tasks has been rendering that many since it was written.
+    /// One number across the touch surfaces, because there was never a reason for two: Today and
+    /// Inbox capped at 12 while All Tasks capped at 24, so the same finished task was listed on one
+    /// screen and dropped on another. 24 is the larger of the two — it never hides work the smaller
+    /// cap would have shown, and All Tasks has been rendering that many since it was written.
+    ///
+    /// Prefer `completedRowLimit(for:)`. This constant is the touch tier's answer, kept named
+    /// because that is the number the two iOS caps were reconciled to.
     static let completedRowLimit = 24
 
     /// Every surface offers the same two chrome controls; they differ only in whether a row names
@@ -69,8 +96,52 @@ enum CadenceTaskSurfaceOptions {
         }
     }
 
-    /// The completed rows a surface actually lists — the full set, capped at `completedRowLimit`.
-    static func completedRows<Task>(from tasks: [Task]) -> [Task] {
-        Array(tasks.prefix(completedRowLimit))
+    /// How many completed rows a surface lists on a given tier, or `nil` for "all of them".
+    ///
+    /// **`.desktop` is uncapped, and that is a decision rather than an oversight (T-290).** The
+    /// tempting move was to hand macOS the 24 and call it one number; it is the wrong one, for
+    /// three reasons that outrank symmetry.
+    ///
+    /// - **There is no "show more" anywhere in this app.** A cap with no spill-over is not a
+    ///   rendering budget, it is a ceiling on what the logbook can ever show. Outside Today —
+    ///   whose Completed section is scoped to a single day and so is bounded by construction — this
+    ///   list *is* the record of finished work: All Tasks' Completed section and a list's own are
+    ///   the only places Cadence lists it at all. 24 would be the whole of a Mac user's visible
+    ///   history.
+    /// - **It would force a lie into the header.** `TasksListView` hands its completed section the
+    ///   true `completedTaskCount` and renders the rows separately. Cap the rows and the header
+    ///   reads 300 over 24 of them — the "N rows under a count of M" shape this repo has had to
+    ///   correct more than once. Cap the count too and the app understates what has been done.
+    /// - **The 24 has no measured reason behind it.** `git log -S "prefix(24)"` puts its origin in
+    ///   `iOSCompactAllTasksView`, a compact-view detail that never reached macOS; the number this
+    ///   file settled on is the larger of iOS's own two, not a figure anybody profiled. "A list with
+    ///   thousands of completed tasks" is the case a cap would be *for*, and it is not the case it
+    ///   came from.
+    ///
+    /// The touch tier keeps it. A phone builds its completed rows inside `iOSTaskGroupSection`'s
+    /// plain `VStack`, has no scroll bar, and reaches the list with a thumb; a Mac window has a
+    /// scroll bar, a trackpad flick, and a disclosure that starts collapsed and has to be opened on
+    /// purpose. Same rows, different cost to leave uncapped.
+    ///
+    /// **What is genuinely unresolved is the touch tier's silence**, not macOS's absence of a cap:
+    /// iOS's options bar reads the true count while the section header under it reads the capped
+    /// one, so a phone with 40 finished tasks offers "Completed 40" and lists 24. That is
+    /// `docs/TODO.md` T-291 and wants a product decision, not a constant.
+    static func completedRowLimit(for tier: CadenceTaskSurfaceTier) -> Int? {
+        switch tier {
+        case .touch:
+            return completedRowLimit
+        case .desktop:
+            return nil
+        }
+    }
+
+    /// The completed rows a surface actually lists — the full set, capped at the tier's limit.
+    ///
+    /// `tier` has no default on purpose. A default is what lets a call site not know the question
+    /// exists, and "macOS never asked" is the whole of T-290.
+    static func completedRows<Task>(from tasks: [Task], tier: CadenceTaskSurfaceTier) -> [Task] {
+        guard let limit = completedRowLimit(for: tier) else { return tasks }
+        return Array(tasks.prefix(limit))
     }
 }

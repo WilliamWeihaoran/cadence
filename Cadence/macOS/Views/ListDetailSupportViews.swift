@@ -45,7 +45,8 @@ struct ListTasksGroupSectionView: View {
                 ForEach(group.tasks) { task in
                     TaskListInteractiveRow(
                         task: task,
-                        style: .list,
+                        // A list's own Tasks tab: every row would name the page you are on.
+                        showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(on: .listDetail),
                         dragOverTaskID: $dragOverTaskID,
                         taskDragPayload: { TaskDragPayload.string(for: $0.id) },
                         onDropOnTaskPayload: { payload, targetTask in
@@ -85,7 +86,10 @@ struct ListTasksCompletedSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    TaskListDisplayRow(task: task, style: .list)
+                    TaskListDisplayRow(
+                        task: task,
+                        showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(on: .listDetail)
+                    )
                 }
             }
         }
@@ -275,6 +279,9 @@ extension TaskListGroupHeader where LeadingContent == EmptyView {
 struct TaskListDisplayRow: View {
     let task: AppTask
     var style: MacTaskRowStyle = .standard
+    /// Forwarded to `MacTaskRow.showsContainer`. See there: the host asks
+    /// `CadenceTaskSurfaceOptions.showsContainerChip(on:)` and this carries the answer down.
+    var showsContainer: Bool = true
     var contexts: [Context] = []
     var areas: [Area] = []
     var projects: [Project] = []
@@ -282,7 +289,7 @@ struct TaskListDisplayRow: View {
     var trailingInset: CGFloat = TaskListDisplayMetrics.taskTrailingInset
 
     var body: some View {
-        MacTaskRow(task: task, style: style, contexts: contexts, areas: areas, projects: projects)
+        MacTaskRow(task: task, style: style, showsContainer: showsContainer, contexts: contexts, areas: areas, projects: projects)
             .padding(.leading, leadingInset)
             .padding(.trailing, trailingInset)
             .listRowInsets(.init())
@@ -298,6 +305,8 @@ struct TaskListDisplayRow: View {
 struct TaskListInteractiveRow: View {
     let task: AppTask
     var style: MacTaskRowStyle = .standard
+    /// See `TaskListDisplayRow.showsContainer`.
+    var showsContainer: Bool = true
     var contexts: [Context] = []
     var areas: [Area] = []
     var projects: [Project] = []
@@ -311,6 +320,7 @@ struct TaskListInteractiveRow: View {
         TaskListDisplayRow(
             task: task,
             style: style,
+            showsContainer: showsContainer,
             contexts: contexts,
             areas: areas,
             projects: projects,

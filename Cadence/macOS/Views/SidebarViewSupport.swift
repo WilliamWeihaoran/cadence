@@ -216,8 +216,12 @@ enum SidebarMetrics {
 
     // MARK: Context headers
 
-    static let contextHeaderFontSize: CGFloat = 10
-    static let contextHeaderKerning: CGFloat = 0.8
+    /// The sidebar's context header *is* the app's eyebrow, so it reads the eyebrow rather than
+    /// re-typing it. These were a literal `10` and `0.8` (T-284) — the same two numbers
+    /// `SectionEyebrowLabel` has published all along, and `SettingsViewSupport`'s group header
+    /// already chains off this pair.
+    static let contextHeaderFontSize: CGFloat = SectionEyebrowLabel.Size.standard.fontSize
+    static let contextHeaderKerning: CGFloat = SectionEyebrowLabel.Size.standard.kerning
     static let contextHeaderTopPadding: CGFloat = 3
     static let contextHeaderBottomSpacing: CGFloat = 6
     static let contextSectionBottomSpacing: CGFloat = 8

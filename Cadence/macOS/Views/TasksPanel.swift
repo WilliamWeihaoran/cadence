@@ -56,6 +56,19 @@ struct TasksPanel: View {
         _localGroupingMode = State(initialValue: (stored == .byDate && mode == .todayOverview) ? fallback : (stored ?? fallback))
     }
 
+    /// Which `CadenceTaskSurface` this panel is drawing, so the chrome answers come from the
+    /// shared table rather than from four inline decisions (T-290). Today's panel is `.today`; the
+    /// `.byDoDate` mode is the All Tasks shape of the same panel.
+    private var surface: CadenceTaskSurface {
+        mode == .todayOverview ? .today : .allTasks
+    }
+
+    /// See `surface`. Read for the sort chips, the Completed section, and whether a row names its
+    /// list — the three things this panel used to answer for itself.
+    private var options: CadenceTaskViewOptions {
+        CadenceTaskSurfaceOptions.options(for: surface)
+    }
+
     private var activeSortField: TaskSortField { enableControls ? localSortField : sortField }
     private var activeSortDirection: TaskSortDirection { enableControls ? localSortDirection : sortDirection }
     private var activeGroupingMode: TaskGroupingMode { enableControls ? localGroupingMode : groupingMode }
@@ -270,6 +283,7 @@ struct TasksPanel: View {
                 title: group.title,
                 accent: CadenceTodayPresentationSupport.accent(for: group.kind),
                 tasks: group.tasks,
+                showsContainer: options.showsContainerChip,
                 contexts: contexts,
                 areas: areas,
                 projects: projects,
@@ -427,9 +441,15 @@ struct TasksPanel: View {
 
     @ViewBuilder
     private func completedSection(derived: TasksPanelDerivedState) -> some View {
-        if !derived.doneTasks.isEmpty {
+        if options.showsCompletedToggle, !derived.doneTasks.isEmpty {
             TasksPanelCompletedSectionView(
-                tasks: derived.doneTasks,
+                // The **desktop** tier, which `CadenceTaskSurfaceOptions` leaves uncapped — the
+                // reasoning is in that file. Asked rather than assumed: the panel's own
+                // `doneTasks` stays whole because `CadenceTodaySummary.completedCount` and
+                // `isEmptyState` both count it, and a cap applied there would be a wrong number
+                // rather than a shorter list.
+                tasks: CadenceTaskSurfaceOptions.completedRows(from: derived.doneTasks, tier: .desktop),
+                showsContainer: options.showsContainerChip,
                 mode: mode,
                 contexts: contexts,
                 areas: areas,
@@ -497,6 +517,7 @@ struct TasksPanel: View {
         TasksPanelFlatSectionView(
             label: label,
             tasks: tasks,
+            showsContainer: options.showsContainerChip,
             contexts: contexts,
             areas: areas,
             projects: projects,
@@ -520,8 +541,10 @@ struct TasksPanel: View {
 
     private var controlsBar: some View {
         HStack(spacing: 8) {
-            CadenceEnumPickerBadge(title: "Sort", selection: $localSortField)
-            CadenceEnumPickerBadge(title: "Order", selection: $localSortDirection)
+            if options.showsSort {
+                CadenceEnumPickerBadge(title: "Sort", selection: $localSortField)
+                CadenceEnumPickerBadge(title: "Order", selection: $localSortDirection)
+            }
             // No grouping control on Today. Its sections are the day's four intents — see
             // `todayIntentSections` — and a picker offering "by list" beside them would be
             // offering to answer a different question than the page asks. It used to exclude

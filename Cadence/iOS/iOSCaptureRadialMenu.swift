@@ -1,4 +1,5 @@
 #if os(iOS)
+import SwiftData
 import SwiftUI
 
 // MARK: - Live state
@@ -15,6 +16,16 @@ import SwiftUI
 /// space, and the one view that has to draw in its own space converts once, at the edge.
 @Observable
 final class iOSCaptureInteraction {
+    /// Which `+` this touch is on. It decides the arc's direction and nothing else — see
+    /// `CadenceCapturePalettePlacement` for why that is the only thing a placement may decide.
+    let placement: CadenceCapturePalettePlacement
+
+    init(placement: CadenceCapturePalettePlacement = .bottomCentre) {
+        self.placement = placement
+    }
+
+    var metrics: CadenceCapturePaletteMetricsValues { placement.metrics }
+
     private(set) var phase: CadenceCapturePressPhase = .idle
     /// The button's centre, in global coordinates. The palette is anchored here rather than at the
     /// touch point so the arc does not shift under a thumb that landed off-centre.
@@ -23,6 +34,16 @@ final class iOSCaptureInteraction {
     private(set) var selection: CadenceCaptureAction?
     /// Which registered drop target the finger is over, while dragging.
     private(set) var dropTargetID: UUID?
+
+    /// What a finished press asked for, waiting for the host that presents it.
+    ///
+    /// **The mailbox is here because this object is already the one thing the button and the
+    /// palette layer share**, and the presentations are the *host's* business rather than the
+    /// button's: a segment can want a sheet, a full-screen cover, or a composer seeded by whatever
+    /// a drag landed on, and the two placements put the button in different parts of the tree from
+    /// the screen that presents. One channel, one implementation of the three composers — see
+    /// `iOSCaptureHostModifier`.
+    private(set) var pendingRequest: iOSCaptureRequest?
 
     private var origin: CGPoint = .zero
     private var holdTask: Task<Void, Never>?
@@ -54,7 +75,7 @@ final class iOSCaptureInteraction {
     func moved(to location: CGPoint) {
         guard phase != .idle else { return }
         finger = location
-        let next = CadenceCapturePressResolver.phase(afterMovingTo: travel, from: phase)
+        let next = CadenceCapturePressResolver.phase(afterMovingTo: travel, from: phase, metrics: metrics)
         if next != phase {
             phase = next
             // A press that became a drag has nothing left for the timer to do, and leaving it armed
@@ -77,6 +98,18 @@ final class iOSCaptureInteraction {
         reset()
     }
 
+    /// Asks the host for a composer. Called by the gesture when a press commits, and by the
+    /// VoiceOver actions that reach the same three commitments without one.
+    func request(_ kind: iOSCaptureRequest.Kind) {
+        pendingRequest = iOSCaptureRequest(kind: kind)
+    }
+
+    /// Hands the request over exactly once, so a host that re-renders does not present twice.
+    func consumeRequest() -> iOSCaptureRequest? {
+        defer { pendingRequest = nil }
+        return pendingRequest
+    }
+
     // MARK: Internals
 
     private func reset() {
@@ -88,10 +121,17 @@ final class iOSCaptureInteraction {
 
     private func armHold() {
         cancelHold()
+        // Read before the hop: `self` is weak inside the task and the delay is a placement constant,
+        // not live state.
+        let delay = metrics.holdDelay
         holdTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(CadenceCapturePaletteMetrics.holdDelay))
+            try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled, let self else { return }
-            let next = CadenceCapturePressResolver.phase(afterHoldFrom: self.phase, distance: self.travel)
+            let next = CadenceCapturePressResolver.phase(
+                afterHoldFrom: self.phase,
+                distance: self.travel,
+                metrics: self.metrics
+            )
             guard next != self.phase else { return }
             self.phase = next
             self.refreshDerivedState()
@@ -108,7 +148,7 @@ final class iOSCaptureInteraction {
     private func refreshDerivedState() {
         switch phase {
         case .palette:
-            selection = CadenceCapturePaletteGeometry.action(atOffset: paletteOffset)
+            selection = CadenceCapturePaletteGeometry.action(atOffset: paletteOffset, metrics: metrics)
             dropTargetID = nil
             iOSCaptureDragTargeting.shared.currentTargetID = nil
         case .dragging:
@@ -250,10 +290,18 @@ struct iOSCaptureRequest: Identifiable {
 struct iOSCaptureRadialMenuButton: View {
     let diameter: CGFloat
     let interaction: iOSCaptureInteraction
-    let onRequest: (iOSCaptureRequest) -> Void
+    /// What a plain tap — and the palette's **Task** segment — opens the composer with.
+    ///
+    /// The tab bar's `+` seeds nothing on purpose: you press it from any tab and file the task
+    /// afterwards. A page's corner `+` is already standing somewhere, so it seeds that somewhere —
+    /// a list detail hands in its list, Today hands in today's do date. Which is why this is a
+    /// parameter rather than a constant: the two placements differ in what they *know*, not in what
+    /// they can do. A drop that lands on a real target overrides it; a drop that lands on nothing
+    /// falls back to it, the same degrade-to-the-tap rule one level up.
+    var baseSeed: CadenceTaskComposerSeed = CadenceTaskComposerSeed()
 
     var body: some View {
-        iOSCircularAddButtonFace(diameter: diameter)
+        iOSCircularAddButton(diameter: diameter)
             .scaleEffect(interaction.isPressing ? 0.94 : 1)
             .animation(.easeOut(duration: 0.12), value: interaction.isPressing)
             .contentShape(Circle())
@@ -276,10 +324,10 @@ struct iOSCaptureRadialMenuButton: View {
             // VoiceOver cannot slide around a radial menu, so the segments are also plain actions.
             // Same three commitments, reached without the gesture.
             .accessibilityAction(named: Text(CadenceCaptureAction.event.title)) {
-                onRequest(iOSCaptureRequest(kind: .event))
+                interaction.request(.event)
             }
             .accessibilityAction(named: Text(CadenceCaptureAction.note.title)) {
-                onRequest(iOSCaptureRequest(kind: .note))
+                interaction.request(.note)
             }
     }
 
@@ -302,35 +350,35 @@ struct iOSCaptureRadialMenuButton: View {
     private func commit(_ outcome: CadenceCapturePressOutcome, droppedOn target: UUID?) {
         switch outcome {
         case .tap:
-            onRequest(iOSCaptureRequest(kind: .task(CadenceTaskComposerSeed())))
+            interaction.request(.task(baseSeed))
         case .action(let action):
-            onRequest(iOSCaptureRequest(kind: request(for: action)))
+            interaction.request(kind(for: action))
         case .drop:
-            onRequest(iOSCaptureRequest(kind: .task(seed(forTarget: target))))
+            interaction.request(.task(seed(forTarget: target)))
         case .dismissed, .none:
             break
         }
     }
 
-    private func request(for action: CadenceCaptureAction) -> iOSCaptureRequest.Kind {
+    private func kind(for action: CadenceCaptureAction) -> iOSCaptureRequest.Kind {
         switch action {
-        case .task: return .task(CadenceTaskComposerSeed())
+        case .task: return .task(baseSeed)
         case .event: return .event
         case .note: return .note
         }
     }
 
-    /// A drop that landed on nothing seeds nothing, which is the same composer a tap opens. That is
-    /// the degrade-to-the-tap rule `CadenceTaskDropSupport.dropKey(for:)` already applies to a row
-    /// with nothing to inherit, applied one level up.
+    /// A drop that landed on nothing degrades to the composer a tap would have opened — which on a
+    /// page's corner `+` is that page's own seed, not an empty one. That is the same
+    /// degrade-to-the-tap rule `CadenceTaskDropSupport.dropKey(for:)` already applies to a row with
+    /// nothing to inherit, applied one level up, and it is stated in `Shared/` rather than here so
+    /// it can be asserted as a value.
     private func seed(forTarget target: UUID?) -> CadenceTaskComposerSeed {
-        guard
-            let target,
-            let placement = iOSNewTaskDropFrameRegistry.shared.placement(for: target)
-        else { return CadenceTaskComposerSeed() }
+        let placement = target.flatMap { iOSNewTaskDropFrameRegistry.shared.placement(for: $0) }
         return CadenceTaskDropSupport.seed(
-            forDropKey: placement.dropKey,
-            todayKey: DateFormatters.todayKey()
+            forDropKey: placement?.dropKey,
+            todayKey: DateFormatters.todayKey(),
+            base: baseSeed
         )
     }
 }
@@ -389,7 +437,10 @@ struct iOSCaptureRadialMenuOverlay: View {
             Image(systemName: action.systemImage)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(isSelected ? Theme.onColor : action.tint)
-                .frame(width: 52, height: 52)
+                .frame(
+                    width: CadenceCapturePaletteMetrics.segmentTileDiameter,
+                    height: CadenceCapturePaletteMetrics.segmentTileDiameter
+                )
                 .background {
                     Circle()
                         .fill(isSelected ? action.tint : Theme.surfaceElevated)
@@ -408,14 +459,14 @@ struct iOSCaptureRadialMenuOverlay: View {
         }
         .scaleEffect(isSelected ? 1.12 : 1)
         .animation(.spring(response: 0.24, dampingFraction: 0.78), value: isSelected)
-        .offset(CadenceCapturePaletteGeometry.offset(forSegment: index))
+        .offset(CadenceCapturePaletteGeometry.offset(forSegment: index, metrics: interaction.metrics))
     }
 
     /// What a drag carries. The insertion ghost on the row underneath is the other half of the
     /// feedback and is drawn by the target, so this stays a puck rather than restating the
     /// placement the target is already naming.
     private var dragPuck: some View {
-        iOSCircularAddButtonFace(diameter: 44)
+        iOSCircularAddButton(diameter: 44)
             .opacity(0.92)
             .position(local(interaction.finger))
     }
@@ -429,10 +480,90 @@ extension View {
     /// Installs the palette and drag preview above a shell's content. One call, above everything,
     /// for the same reason `iOSTaskInspectorHost()` is one call: a control that has to draw outside
     /// its own container cannot be hosted by that container.
+    ///
+    /// Called from exactly one place — `iOSCaptureHostModifier`, which is what both placements
+    /// apply. Reach for `.iOSCaptureHost(_:)` rather than this.
     func iOSCaptureRadialMenuLayer(_ interaction: iOSCaptureInteraction) -> some View {
         overlay {
             iOSCaptureRadialMenuOverlay(interaction: interaction)
         }
+    }
+}
+
+// MARK: - The composers a finished press asks for
+
+/// The palette's arc, and the three composers behind its segments.
+///
+/// **Both `+`s apply this, which is the point.** T-171 shipped the gesture on the tab bar's centre
+/// button and the routing beside it in `iOSCompactRootShell`; the iPad's corner `+` therefore had a
+/// tap and nothing else (T-282). Moving the routing here is what let the corner button take the same
+/// gesture without a second copy of "a Task is a sheet, an Event is a sheet, a Note is a cover over a
+/// note that has to exist first" — the near-copy this repo keeps paying for.
+///
+/// The **Note** branch is why this needs a `modelContext`. `iOSNoteEditorCover` edits a note, so one
+/// is created before the cover is presented; an abandoned blank note is invisible in every list,
+/// because the lists filter to notes with content. That is what tapping "New note" on the Notes page
+/// already does, through the same call.
+///
+/// It presents from the request mailbox on `iOSCaptureInteraction` rather than from a closure,
+/// because the button's placement is the caller's business and its presentations are not: on iPhone
+/// the button is four levels down inside a tab bar row, on iPad it is an overlay on a page, and both
+/// want the same three composers.
+private struct iOSCaptureHostModifier: ViewModifier {
+    let interaction: iOSCaptureInteraction
+    let onCreated: ((AppTask) -> Void)?
+
+    @Environment(\.modelContext) private var modelContext
+    /// The task and event composers, which are sheets.
+    @State private var composer: iOSCaptureRequest?
+    /// The note composer, which is a full-screen cover over a note that already exists — the same
+    /// presentation the Notes page uses for the same editor.
+    @State private var noteBeingCaptured: Note?
+
+    func body(content: Content) -> some View {
+        content
+            .iOSCaptureRadialMenuLayer(interaction)
+            .sheet(item: $composer) { request in
+                switch request.kind {
+                case .task(let seed):
+                    iOSCreateTaskSheet(seed: seed, onCreated: onCreated)
+                case .event:
+                    iOSCalendarQuickCreateSheet(dateKey: DateFormatters.todayKey(), initialKind: .event)
+                case .note:
+                    // Unreachable: `present(_:)` routes `.note` to the cover below, because that
+                    // editor needs a note to exist first. Spelled out rather than defaulted so
+                    // adding a fourth segment is a compile error here instead of a blank sheet.
+                    EmptyView()
+                }
+            }
+            .fullScreenCover(item: $noteBeingCaptured) { note in
+                iOSNoteEditorCover(note: note, templateKind: .permanent, title: note.displayTitle)
+            }
+            .onChange(of: interaction.pendingRequest?.id) { _, _ in
+                guard let request = interaction.consumeRequest() else { return }
+                present(request)
+            }
+    }
+
+    private func present(_ request: iOSCaptureRequest) {
+        switch request.kind {
+        case .task, .event:
+            composer = request
+        case .note:
+            guard let note = try? NoteMigrationService.createPermanentNote(in: modelContext) else { return }
+            noteBeingCaptured = note
+        }
+    }
+}
+
+extension View {
+    /// Installs the capture palette and the composers its segments open. Apply once per placement,
+    /// above the content the palette draws over. See `iOSCaptureHostModifier`.
+    func iOSCaptureHost(
+        _ interaction: iOSCaptureInteraction,
+        onCreated: ((AppTask) -> Void)? = nil
+    ) -> some View {
+        modifier(iOSCaptureHostModifier(interaction: interaction, onCreated: onCreated))
     }
 }
 #endif

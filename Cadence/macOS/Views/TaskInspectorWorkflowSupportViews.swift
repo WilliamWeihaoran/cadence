@@ -480,11 +480,7 @@ private struct TaskRecurrencePickerPanel: View {
 
     @ViewBuilder
     private func sectionLabel(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            // ~0.05em at 9pt.
-            .kerning(0.45)
+        SectionEyebrowLabel(text: title, size: .compact)
     }
 
     /// Picking "On date" on a series that has no end date yet would otherwise store an empty key,

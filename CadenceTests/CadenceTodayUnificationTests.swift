@@ -160,10 +160,11 @@ struct CadenceTodayUnificationTests {
         )
     }
 
-    /// **The estimate chip crosses to macOS.** `CLAUDE.md` recorded the absence as deliberate —
-    /// "the row has **no** estimate control" — which is what kept the gap open through two row
-    /// passes; the user overturned it. Both rows open the one shared picker, which is the same
-    /// `EstimatePickerPopoverContent` the inspector and the kanban card open.
+    /// **The estimate chip crosses to macOS.** `docs/CLAUDE_REFERENCE.md` records that the old
+    /// always-loaded guide once called the absence deliberate — "the row has **no** estimate
+    /// control" — which is what kept the gap open through two row passes; the user overturned it.
+    /// Both rows open the one shared picker, which is the same `EstimatePickerPopoverContent` the
+    /// inspector and the kanban card open.
     @Test func bothRowsCarryAnEstimateChipOverTheSharedPicker() throws {
         try expectCallSites(
             of: "MacTaskRowEstimateChip",

@@ -23,6 +23,7 @@ private struct CadencePlainButtonBody: View {
     }
 
     var body: some View {
+        #if os(macOS)
         configuration.label
             .contentShape(RoundedRectangle(cornerRadius: 10))
             .background(
@@ -36,6 +37,21 @@ private struct CadencePlainButtonBody: View {
             .animation(.easeOut(duration: 0.12), value: isHovered)
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
             .modifier(CadenceHoverTracking(isHovered: $isHovered))
+        #else
+        // T-289. This is a *hover* wash, and touch has no hover — so on iOS the wash above could
+        // only ever fire on press, painting a blue rounded rectangle no other iOS control draws.
+        // The two `iOSDateJumpTitle` call sites were the visible half; the reach is larger, because
+        // `CadenceDatePicker` and `EstimatePickerControl` are shared components that apply this
+        // style unconditionally and have ~15 iOS call sites between them. Fixing the style rather
+        // than fencing each caller is what stops the next shared component reintroducing it.
+        //
+        // `makeBody` is called directly rather than re-spelling 0.97 / 0.62 / 0.12: iOS's press
+        // feedback is `iOSPressableButtonStyle`, which documents itself as "the press translation
+        // of macOS's `.cadencePlain` hover wash", and this is that sentence made executable.
+        // `contentShape` is kept so the hit area does not change with the paint.
+        iOSPressableButtonStyle().makeBody(configuration: configuration)
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+        #endif
     }
 }
 

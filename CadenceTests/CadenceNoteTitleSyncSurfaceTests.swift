@@ -6,8 +6,9 @@ import Testing
 /// T-223: **editing a list note's `# H1` on iOS did not rename the note**, so every row in the iOS
 /// list-notes column read "Untitled" — the title each note was born with.
 ///
-/// `CLAUDE.md` documents the behaviour as one feature in two halves ("new notes start with the title
-/// as the first H1, and editing that H1 syncs back"), and iOS shipped only the first half:
+/// `docs/CLAUDE_REFERENCE.md` documents the behaviour as one feature in two halves ("new notes
+/// start with the title as the first H1, and editing that H1 syncs back"), and iOS shipped only the
+/// first half:
 /// `CadenceListNoteFiling.createNote` seeded `# Untitled`, and nothing on the platform ever read the
 /// heading again. macOS had the second half as `NoteEditorPane.syncTitleFromH1IfNeeded` — a private
 /// method on one view, containing a `hasPrefix` and a `trimmingCharacters` and nothing AppKit-shaped.

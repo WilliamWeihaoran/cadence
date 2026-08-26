@@ -204,7 +204,7 @@ struct iOSTodayTaskSections: View {
                 iOSTaskGroupSection(
                     title: CadenceTodayPresentationSupport.completedSectionTitle,
                     color: CadenceTodayPresentationSupport.completedSectionAccent,
-                    tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks),
+                    tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
                     showsContainer: showsContainer,
                     opacity: 0.62,
                     dropIdentity: .completion

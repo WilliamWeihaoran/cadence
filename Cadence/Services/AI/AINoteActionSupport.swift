@@ -70,10 +70,10 @@ enum CadenceAINoteSummary {
 
 /// The review gate for AI task drafts.
 ///
-/// `CLAUDE.md` states the rule this type exists to make unbreakable: drafts go through a review
-/// sheet **before anything is written**. Holding the drafts and the selection together, with the
-/// only write path guarded on `canCreate`, is what turns that from a property of one sheet's layout
-/// into a property of the model both sheets drive.
+/// `docs/CLAUDE_REFERENCE.md` states the rule this type exists to make unbreakable: drafts go
+/// through a review sheet **before anything is written**. Holding the drafts and the selection
+/// together, with the only write path guarded on `canCreate`, is what turns that from a property of
+/// one sheet's layout into a property of the model both sheets drive.
 ///
 /// Two things close the gate, and both matter:
 ///

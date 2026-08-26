@@ -9,31 +9,17 @@ import Testing
 /// The drag itself lives under `Cadence/iOS/` and is invisible to this target, which is exactly
 /// why the two questions worth pinning were kept out of it — the key a row offers, and the seed a
 /// key resolves to. Between them they are the whole feature; the view layer only carries them.
+///
+/// **The payload and the routing suites are gone, and their absence is the point.** They pinned
+/// `CadenceTaskDropPayload` and `CadenceTaskDropCoordinator`, which existed to carry a *system*
+/// `.onDrag` across the view tree and back to the button that started it. T-282 gave the iPad's
+/// corner `+` the same held-palette gesture the iPhone's has, and `UIDragInteraction` cannot host
+/// that gesture — its lift is a ~350ms long press of its own — so the system drag lost its last
+/// source and both halves went with it. The custom drag hit-tests published frames instead
+/// (`CadenceCaptureDropHitTest`, pinned in `CadenceCapturePaletteTests`) and needs neither an item
+/// provider nor a return path.
 @MainActor
 struct CadenceTaskDropSupportTests {
-
-    // MARK: - Payload
-
-    @Test func payloadRoundTripsItsSourceButton() {
-        let sourceID = UUID()
-        let payload = CadenceTaskDropPayload.string(for: sourceID)
-
-        #expect(payload.hasPrefix("newTask:"))
-        #expect(CadenceTaskDropPayload.sourceID(from: payload) == sourceID)
-    }
-
-    /// The prefix table in `CLAUDE.md` exists so a drop target cannot be handed another context's
-    /// payload. These are the four spellings already in use plus a bare task UUID.
-    @Test func foreignDragPayloadsAreRejected() {
-        let id = UUID().uuidString
-        for foreign in ["listTask:\(id)", "taskBundle:\(id)", "area:\(id)", "project:\(id)", id] {
-            #expect(CadenceTaskDropPayload.sourceID(from: foreign) == nil)
-        }
-    }
-
-    @Test func aMalformedPayloadOfOurOwnPrefixIsStillRejected() {
-        #expect(CadenceTaskDropPayload.sourceID(from: "newTask:not-a-uuid") == nil)
-    }
 
     // MARK: - What a row offers
 
@@ -270,48 +256,6 @@ struct CadenceTaskDropSupportTests {
         }
     }
 
-    // MARK: - Routing
-
-    @Test func aDropIsHandedToTheButtonItWasDraggedFrom() {
-        let coordinator = CadenceTaskDropCoordinator()
-        let source = UUID()
-        let other = UUID()
-
-        #expect(coordinator.deliver(
-            payload: CadenceTaskDropPayload.string(for: source),
-            dropKey: "list:inbox",
-            todayKey: "2026-08-17"
-        ))
-
-        #expect(coordinator.consume(for: other) == nil)
-        #expect(coordinator.consume(for: source) != nil)
-    }
-
-    /// Two floating buttons can be alive at once on iPad. One drop must not open two composers.
-    @Test func aDropIsHandedOverOnlyOnce() {
-        let coordinator = CadenceTaskDropCoordinator()
-        let source = UUID()
-        coordinator.deliver(
-            payload: CadenceTaskDropPayload.string(for: source),
-            dropKey: "list:inbox",
-            todayKey: "2026-08-17"
-        )
-
-        #expect(coordinator.consume(for: source) != nil)
-        #expect(coordinator.consume(for: source) == nil)
-    }
-
-    @Test func aForeignPayloadDeliversNothing() {
-        let coordinator = CadenceTaskDropCoordinator()
-
-        #expect(coordinator.deliver(
-            payload: "listTask:\(UUID().uuidString)",
-            dropKey: "list:inbox",
-            todayKey: "2026-08-17"
-        ) == false)
-        #expect(coordinator.pending == nil)
-    }
-
     // MARK: - What the insertion ghost says
     //
     // The ghost that opens between rows makes no promise about *where* the task will sit — the
@@ -399,22 +343,5 @@ struct CadenceTaskDropSupportTests {
             todayKey: "2026-08-17",
             listName: "Home"
         ) == "Inbox")
-    }
-
-    @Test func theDeliveredSeedIsTheOneTheDropKeyResolvesTo() {
-        let coordinator = CadenceTaskDropCoordinator()
-        let source = UUID()
-        let areaID = UUID()
-
-        coordinator.deliver(
-            payload: CadenceTaskDropPayload.string(for: source),
-            dropKey: "list:a_\(areaID.uuidString)|section:Backlog|date:today",
-            todayKey: "2026-08-17"
-        )
-
-        let request = coordinator.consume(for: source)
-        #expect(request?.seed.container == .area(areaID))
-        #expect(request?.seed.sectionName == "Backlog")
-        #expect(request?.seed.doDateKey == "2026-08-17")
     }
 }

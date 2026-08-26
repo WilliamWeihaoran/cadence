@@ -68,6 +68,48 @@ nonisolated enum CadenceCapturePaletteMetrics: Sendable {
     static let outerRadius: CGFloat = 128
     /// Past this the palette gives up and the touch becomes a drag.
     static let escapeRadius: CGFloat = 172
+    /// The width of one segment's tile. Published because the *spacing* between segment centres has
+    /// to clear it — `noTwoSegmentTilesOverlapAtEitherPlacement` is the check, and it can only be
+    /// written against a number both the drawing and the test read. The view draws this; it does not
+    /// spell 52 a second time.
+    static let segmentTileDiameter: CGFloat = 52
+
+    /// How far the outer radius and the escape ring sit beyond wherever the tiles are laid out.
+    ///
+    /// The corner placement moves `layoutRadius` (see `CadenceCapturePalettePlacement`), and these
+    /// two follow it rather than being re-chosen — the relationship "the arc is drawn out to here,
+    /// and the touch escapes a comfortable distance past that" is the same relationship at both
+    /// placements, so only one number is a placement decision.
+    static let outerRadiusMargin: CGFloat = outerRadius - layoutRadius
+    static let escapeRadiusMargin: CGFloat = escapeRadius - layoutRadius
+}
+
+// MARK: - Where the button is, and so which way the arc can open
+
+/// Where on the screen the capture button the palette surrounds is pinned.
+///
+/// **This is the one thing that legitimately differs between the two `+`s.** iPhone and iPad share
+/// the control, the gesture, the hold, the slop and the three segments; what they cannot share is
+/// which way the arc opens, because that is a consequence of the placement and nothing else. A
+/// button centred in the tab bar has the whole upper half of the screen above it. A button pinned
+/// to a page's bottom-trailing corner has 50pt of screen to its right, so two thirds of a semicircle
+/// would be drawn off the edge — the arc has to fold into the quadrant that exists.
+///
+/// Everything else is deliberately equal: the hold delay, the drag slop, the dead zone and the
+/// margins the outer and escape rings keep beyond the tiles. A placement may choose *where* the
+/// control's affordances are; it may not choose whether they exist or how they feel.
+nonisolated enum CadenceCapturePalettePlacement: String, CaseIterable, Sendable {
+    /// The iPhone tab bar's centre `+`. A full upward semicircle.
+    case bottomCentre
+    /// A page's floating corner `+`. A quadrant opening up and to the left.
+    case bottomTrailing
+
+    var metrics: CadenceCapturePaletteMetricsValues {
+        switch self {
+        case .bottomCentre: return .standard
+        case .bottomTrailing: return .corner
+        }
+    }
 }
 
 // MARK: - The state machine
@@ -147,6 +189,10 @@ nonisolated struct CadenceCapturePaletteMetricsValues: Equatable, Sendable {
     var layoutRadius: CGFloat
     var outerRadius: CGFloat
     var escapeRadius: CGFloat
+    /// The low end of the sweep, in degrees counter-clockwise from pointing right.
+    var arcStartDegrees: Double
+    /// How far the sweep runs from `arcStartDegrees`.
+    var arcSweepDegrees: Double
 
     static let standard = CadenceCapturePaletteMetricsValues(
         holdDelay: CadenceCapturePaletteMetrics.holdDelay,
@@ -154,8 +200,35 @@ nonisolated struct CadenceCapturePaletteMetricsValues: Equatable, Sendable {
         innerRadius: CadenceCapturePaletteMetrics.innerRadius,
         layoutRadius: CadenceCapturePaletteMetrics.layoutRadius,
         outerRadius: CadenceCapturePaletteMetrics.outerRadius,
-        escapeRadius: CadenceCapturePaletteMetrics.escapeRadius
+        escapeRadius: CadenceCapturePaletteMetrics.escapeRadius,
+        arcStartDegrees: 0,
+        arcSweepDegrees: 180
     )
+
+    /// The corner placement's numbers. **Only two of them are chosen**: the sweep folds to the
+    /// quadrant that is on screen, and `layoutRadius` grows because three tiles packed into 90°
+    /// instead of 180° would otherwise overlap — 118pt puts adjacent centres 61pt apart, clear of
+    /// the 52pt tile. Everything else either is the standard value or is derived from
+    /// `layoutRadius` by the standard's own margins, so the feel of the gesture cannot drift
+    /// between the two placements while nobody is looking.
+    static let corner = CadenceCapturePaletteMetricsValues(
+        holdDelay: CadenceCapturePaletteMetrics.holdDelay,
+        dragSlop: CadenceCapturePaletteMetrics.dragSlop,
+        innerRadius: CadenceCapturePaletteMetrics.innerRadius,
+        layoutRadius: cornerLayoutRadius,
+        outerRadius: cornerLayoutRadius + CadenceCapturePaletteMetrics.outerRadiusMargin,
+        escapeRadius: cornerLayoutRadius + CadenceCapturePaletteMetrics.escapeRadiusMargin,
+        arcStartDegrees: 90,
+        arcSweepDegrees: 90
+    )
+
+    private static let cornerLayoutRadius: CGFloat = 118
+
+    /// The high end of the sweep.
+    var arcEndDegrees: Double { arcStartDegrees + arcSweepDegrees }
+
+    /// One segment's share of the sweep.
+    var segmentDegrees: Double { arcSweepDegrees / Double(CadenceCapturePaletteGeometry.segmentCount) }
 }
 
 // MARK: - What the palette offers
@@ -220,15 +293,19 @@ nonisolated enum CadenceCaptureAction: String, CaseIterable, Identifiable, Senda
 nonisolated enum CadenceCapturePaletteGeometry: Sendable {
     static var segmentCount: Int { CadenceCaptureAction.allCases.count }
 
-    /// The full sweep, in degrees. A semicircle, per T-171.
-    static let arcDegrees: Double = 180
+    /// The full sweep at the tab bar's placement, in degrees. A semicircle, per T-171. The corner
+    /// `+` folds this into a quadrant — see `CadenceCapturePalettePlacement`.
+    static var arcDegrees: Double { CadenceCapturePaletteMetricsValues.standard.arcSweepDegrees }
 
-    static var segmentDegrees: Double { arcDegrees / Double(segmentCount) }
+    static var segmentDegrees: Double { CadenceCapturePaletteMetricsValues.standard.segmentDegrees }
 
     /// The centre angle of segment `index`, in degrees, measured counter-clockwise from pointing
     /// right. Index 0 is the leftmost segment, so it takes the largest angle.
-    static func centreDegrees(forSegment index: Int) -> Double {
-        arcDegrees - (Double(index) + 0.5) * segmentDegrees
+    static func centreDegrees(
+        forSegment index: Int,
+        metrics: CadenceCapturePaletteMetricsValues = .standard
+    ) -> Double {
+        metrics.arcEndDegrees - (Double(index) + 0.5) * metrics.segmentDegrees
     }
 
     /// Where segment `index`'s tile is centred, relative to the button.
@@ -236,7 +313,7 @@ nonisolated enum CadenceCapturePaletteGeometry: Sendable {
         forSegment index: Int,
         metrics: CadenceCapturePaletteMetricsValues = .standard
     ) -> CGSize {
-        let radians = centreDegrees(forSegment: index) * .pi / 180
+        let radians = centreDegrees(forSegment: index, metrics: metrics) * .pi / 180
         return CGSize(
             width: CGFloat(cos(radians)) * metrics.layoutRadius,
             height: -CGFloat(sin(radians)) * metrics.layoutRadius
@@ -257,9 +334,9 @@ nonisolated enum CadenceCapturePaletteGeometry: Sendable {
 
         var degrees = atan2(Double(-offset.height), Double(offset.width)) * 180 / .pi
         if degrees < 0 { degrees += 360 }
-        guard degrees <= arcDegrees else { return nil }
+        guard degrees >= metrics.arcStartDegrees, degrees <= metrics.arcEndDegrees else { return nil }
 
-        let index = Int(((arcDegrees - degrees) / segmentDegrees).rounded(.down))
+        let index = Int(((metrics.arcEndDegrees - degrees) / metrics.segmentDegrees).rounded(.down))
         return min(max(index, 0), segmentCount - 1)
     }
 

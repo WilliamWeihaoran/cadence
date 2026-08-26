@@ -6,6 +6,13 @@ import AppKit
 struct MacTaskRow: View {
     @Bindable var task: AppTask
     var style: MacTaskRowStyle = .standard
+    /// Whether this row names the list its task is in — the surface's answer, not the row's.
+    ///
+    /// Asked of `CadenceTaskSurfaceOptions.showsContainerChip(on:)` by whichever surface is
+    /// hosting the row, exactly as `iOSTaskRow.showsContainer` is. A section whose *header*
+    /// already names the list (All Tasks grouped by list, and Today's by-list sections) passes
+    /// `false` on top of that: the surface mixes lists, this section does not.
+    var showsContainer: Bool = true
     var contexts: [Context] = []
     var areas: [Area] = []
     var projects: [Project] = []
@@ -392,8 +399,15 @@ struct MacTaskRow: View {
         KanbanCardComputedSupport.isDoToday(task: task)
     }
 
+    /// **The surface decides, and the row does not (T-290).** This read
+    /// `style == .standard && !task.containerName.isEmpty`, which got both halves wrong at once:
+    /// the style is an axis about the row, and the second clause meant an Inbox task — no area, no
+    /// project, so an empty `containerName` — was the one kind of task with no chip to file it
+    /// from, on the two surfaces (Today and All Tasks) where filing it is the point. The chip is
+    /// the list *picker*, not a label, and `ContainerPickerBadge` already renders the real name
+    /// `Inbox` for an unset container.
     private var showsListContextChip: Bool {
-        style == .standard && !task.containerName.isEmpty
+        showsContainer
     }
 
     /// Uniform neutral hover wash. Overdue / over-do state is carried by the red date text on the
@@ -413,11 +427,12 @@ struct MacTaskRow: View {
 
 /// The row's estimate, and the picker for it.
 ///
-/// **macOS's task row had no estimate control and iOS's did** — `CLAUDE.md` recorded the absence as
-/// deliberate ("the row has **no** estimate control"), which is what kept the gap open through two
-/// row passes. The user's call is that the iOS row wins, so it comes across: same figure from
-/// `CadenceTaskPresentationSupport.estimateLabel`, same `EstimatePickerPopoverContent` the
-/// inspector chip, the kanban card and every iOS surface open.
+/// **macOS's task row had no estimate control and iOS's did** — `docs/CLAUDE_REFERENCE.md` records
+/// that the old always-loaded guide called the absence deliberate ("the row has **no** estimate
+/// control"), which is what kept the gap open through two row passes. The user's call is that the
+/// iOS row wins, so it comes across: same figure from `CadenceTaskPresentationSupport.estimateLabel`,
+/// same `EstimatePickerPopoverContent` the inspector chip, the kanban card and every iOS surface
+/// open.
 ///
 /// **Its own `View` struct, like `TaskCompletionButton` and `TaskRowBackground` beside it.** Not
 /// for `TaskCompletionAnimationManager` — this reads nothing from it, and must not start — but for

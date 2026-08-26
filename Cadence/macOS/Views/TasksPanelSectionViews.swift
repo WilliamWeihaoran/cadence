@@ -109,7 +109,9 @@ struct TasksPanelGroupSectionView: View {
 
         if !isCollapsed {
             ForEach(group.tasks) { task in
-                MacTaskRow(task: task, style: .todayGrouped, contexts: contexts, areas: areas, projects: projects)
+                // `showsContainer: false` on top of whatever the surface answers: this section's
+                // header already names the list, so the chip would repeat it on every row.
+                MacTaskRow(task: task, style: .todayGrouped, showsContainer: false, contexts: contexts, areas: areas, projects: projects)
                     .draggable(taskDragPayload(task))
                     .dropDestination(for: String.self) { items, _ in
                         guard let payload = items.first else { return false }
@@ -138,6 +140,8 @@ struct TasksPanelGroupSectionView: View {
 struct TasksPanelFlatSectionView: View {
     let label: String
     let tasks: [AppTask]
+    /// The panel's surface answer — see `TasksPanel.options`.
+    let showsContainer: Bool
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
@@ -172,7 +176,7 @@ struct TasksPanelFlatSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
+                    MacTaskRow(task: task, style: .standard, showsContainer: showsContainer, contexts: contexts, areas: areas, projects: projects)
                         .draggable(taskDragPayload(task))
                         .dropDestination(for: String.self) { items, _ in
                             guard let payload = items.first else { return false }
@@ -215,6 +219,8 @@ struct TasksPanelIntentSectionView: View {
     let title: String
     let accent: Color
     let tasks: [AppTask]
+    /// The panel's surface answer — see `TasksPanel.options`.
+    let showsContainer: Bool
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
@@ -249,7 +255,7 @@ struct TasksPanelIntentSectionView: View {
                     // by intent now, so the row is the only thing that can say where a task lives
                     // and when it was meant to be done — which is what iOS's Today row already
                     // said, chip for chip.
-                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
+                    MacTaskRow(task: task, style: .standard, showsContainer: showsContainer, contexts: contexts, areas: areas, projects: projects)
                         .opacity(opacity)
                         .draggable(taskDragPayload(task))
                         .dropDestination(for: String.self) { items, _ in
@@ -323,6 +329,8 @@ struct TasksPanelIntentSectionHeader: View {
 
 struct TasksPanelCompletedSectionView: View {
     let tasks: [AppTask]
+    /// The panel's surface answer — see `TasksPanel.options`.
+    let showsContainer: Bool
     let mode: TasksPanelMode
     let contexts: [Context]
     let areas: [Area]
@@ -361,7 +369,7 @@ struct TasksPanelCompletedSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .standard, contexts: contexts, areas: areas, projects: projects)
+                    MacTaskRow(task: task, style: .standard, showsContainer: showsContainer, contexts: contexts, areas: areas, projects: projects)
                         .draggable(taskDragPayload(task))
                         .padding(.leading, 16)
                         .transition(.asymmetric(

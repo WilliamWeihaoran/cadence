@@ -663,28 +663,40 @@ _Nothing in flight._
   Done: one `iOSNoteEditorSheetHeader(eyebrow:title:)` view, both sheets calling it, neither file
   spelling the ramp again, and a source-scanning test that fails if either re-declares the block.
 
-- [T-282] **The iPhone's `+` opens a capture palette; the iPad's `+` cannot.** From the [[T-73]] /
-  [[T-170]] split, and the one genuine "control present at one width and absent at the other" this
-  audit found. [[T-171]] shipped the hold-for-palette gesture on
-  `iOSCaptureRadialMenuButton`, whose **only** caller is `iOSCompactTabShell` — so holding the
-  centre `+` on iPhone offers `CadenceCaptureAction`'s three segments (Task / Event / Note) and a
+- [T-282] **The iPad's corner `+` carries the same palette, pointing the only way it can.**
+  From the [[T-73]] / [[T-170]] split, and the one genuine "control present at one width and absent
+  at the other" that audit found. [[T-171]] had shipped the hold-for-palette gesture on
+  `iOSCaptureRadialMenuButton`, whose **only** caller was `iOSCompactTabShell` — so holding the
+  centre `+` on iPhone offered `CadenceCaptureAction`'s three segments (Task / Event / Note) and a
   drag onto a drop target, while the iPad's corner `+` (`iOSFloatingCreateTaskButton` →
-  `iOSCircularAddButton` + `.iOSNewTaskDragSource`) taps straight into `iOSCreateTaskSheet` and can
-  capture nothing but a task. T-171's own entry scoped out macOS deliberately ("macOS stays
-  deliberately unspecified") and said nothing about iPad, so this is an omission rather than a
-  decision. **And it is why this parent had to close.** T-73's 2026-08-24 sweep ended "no
-  missing-capability divergence (a control present at one width and absent at the other) turned up
-  anywhere the grep reached" — true when written, against `9582956` on 2026-08-23, and false about
-  30 hours later when `0cddcf0` landed the palette on the phone alone. A sweep's finding of
-  *absence* expires the moment anyone ships anything.
-  `iOSCircularAddButton`'s doc comment still asserts the opposite — "**Both capture
-  buttons in the app are this one.** The iPad's corner `+` and the iPhone tab bar's centre `+` are
-  the same action in deliberately different *places*" — which is the drift hazard this repo keeps
-  paying for.
-  Done: the iPad's corner `+` carries the same palette (the gesture and the geometry are already
-  shared and tested in `Shared/CadenceCapturePaletteSupport.swift`), **or** the user rules that a
-  palette is a thumb affordance and the iPad keeps a tap — and then `iOSCircularAddButton`'s
-  comment says which, instead of claiming they are the same action.
+  `iOSCircularAddButton` + `.iOSNewTaskDragSource`) tapped straight into `iOSCreateTaskSheet` and
+  could capture nothing but a task. **Confirmed against the source before any of it was rebuilt.**
+  The corner button now renders that same `iOSCaptureRadialMenuButton`.
+  **What stayed different, deliberately, is the arc — and only the arc.** A button 50pt from the
+  trailing edge cannot draw a semicircle: two of its three segments would be off the display. So
+  `CadenceCapturePalettePlacement` gives `.bottomTrailing` a quadrant opening up and to the left,
+  and a wider `layoutRadius` because three tiles packed into 90° instead of 180° would otherwise
+  overlap — the tile width is published now so that claim is a test rather than a taste. The hold
+  delay, the drag slop, the dead zone and the margins the outer and escape rings keep past the tiles
+  are all the *same value*, asserted field by field.
+  **The three outcomes do coexist on that button, and the reason is the reason T-171 gives.** The
+  iPad's `+` carried a system `.onDrag`, and `UIDragInteraction`'s lift *is* a ~350ms long press —
+  the same window the palette wants — so the two could never have shared a touch. It carries
+  `CadenceCapturePressResolver`'s one `DragGesture` instead, exactly as the phone's does. Verified
+  on a booted iPad simulator: press-and-move drags, press-and-hold opens the palette, and moving
+  inside the radius slides between segments.
+  **Two things went with it rather than being left beside it.** The system drag lost its last
+  source, so `iOSNewTaskDragSource`, the drop target's `.onDrop`, `CadenceTaskDropPayload`,
+  `CadenceTaskDropCoordinator` and `UTType.cadenceNewTaskDrag` are deleted — a sourceless second
+  path into the same insertion ghost is how a comment ends up claiming "two mechanisms, on purpose"
+  about one. And the three composers a finished press can ask for moved out of `iOSCompactRootShell`
+  into `.iOSCaptureHost(_:)`, which both placements apply, because copying that routing to the iPad
+  is the near-copy this repo keeps paying for.
+  `iOSCircularAddButton`'s doc comment claimed the two buttons were "the same action in deliberately
+  different *places*" while they were not. It now says which parts are shared (the face, the gesture,
+  the composers, the feel) and which the placement chooses (the diameter, the corner inset, the arc)
+  — and the `Button` wrapper of that name is gone, the name having moved down to the circle it
+  always described.
 
 - [T-283] **Three `iPad*` names for views that render on every device.** From the [[T-73]] /
   [[T-170]] split — a naming defect, not a layout one, and the kind that makes the next agent write

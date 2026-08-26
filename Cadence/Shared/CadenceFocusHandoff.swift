@@ -14,10 +14,10 @@ import Observation
 /// It carries a `CadenceFocusTarget` rather than a `UUID` for the reason that type exists: a bundle
 /// and one of its own members are different sessions that equal ids cannot tell apart.
 ///
-/// It lives in `Shared/` while having **zero** readers under `Cadence/macOS` — the pattern
-/// `CLAUDE.md` warns about — and that is deliberate rather than an oversight: the decisions it
-/// names (`timerState(startRequestFor:)`, `endSession(leaving:)`) are already there beside the rest
-/// of `CadenceFocusSupport`, and `CadenceTests` is built for macOS, so a type parked under
+/// It lives in `Shared/` while having **zero** readers under `Cadence/macOS` — a pattern called out
+/// in `docs/CLAUDE_REFERENCE.md` — and that is deliberate rather than an oversight: the decisions
+/// it names (`timerState(startRequestFor:)`, `endSession(leaving:)`) are already there beside the
+/// rest of `CadenceFocusSupport`, and `CadenceTests` is built for macOS, so a type parked under
 /// `Cadence/iOS/` would be invisible to every test that pins it.
 struct CadenceFocusHandoff: Identifiable, Equatable {
     let target: CadenceFocusTarget

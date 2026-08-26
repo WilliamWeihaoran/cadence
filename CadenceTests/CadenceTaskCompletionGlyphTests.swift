@@ -129,8 +129,8 @@ struct CadenceTaskCompletionGlyphTests {
                 CadenceTaskCompletionGlyph.resolve(status: .todo, priority: priority).tint
                     == Theme.priorityColor(priority)
             )
-            // Priority stops being shown once a task is over — CLAUDE.md's rule, and the reason
-            // `Theme.doneFill` exists as its own token.
+            // Priority stops being shown once a task is over — the archived Claude reference's
+            // rule, and the reason `Theme.doneFill` exists as its own token.
             #expect(CadenceTaskCompletionGlyph.resolve(status: .done, priority: priority).tint == Theme.doneFill)
             #expect(CadenceTaskCompletionGlyph.resolve(status: .cancelled, priority: priority).tint == Theme.dim)
         }

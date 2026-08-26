@@ -796,8 +796,13 @@ struct TasksPageView: View {
 
                 Spacer(minLength: 12)
 
-                CadenceEnumPickerBadge(title: "Sort", selection: sortField)
-                CadenceEnumPickerBadge(title: "Order", selection: sortDirection)
+                // Sort and order serve the **kanban** board on this page too, and the board is not
+                // one of `CadenceTaskSurface`'s cases — so the gate asks the shared table only
+                // about the list mode it does name (T-290).
+                if mode == .kanban || CadenceTaskSurfaceOptions.options(for: scope.surface).showsSort {
+                    CadenceEnumPickerBadge(title: "Sort", selection: sortField)
+                    CadenceEnumPickerBadge(title: "Order", selection: sortDirection)
+                }
                 if mode == .list {
                     CadenceEnumPickerBadge(title: "Group", selection: groupingMode)
                 }

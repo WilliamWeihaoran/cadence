@@ -76,18 +76,18 @@ struct CadenceTaskSurfaceOptionsTests {
     @Test func theCompletedListIsCappedAtOneSharedLimit() {
         let tasks = Array(0..<200)
 
-        #expect(CadenceTaskSurfaceOptions.completedRows(from: tasks).count == CadenceTaskSurfaceOptions.completedRowLimit)
-        #expect(CadenceTaskSurfaceOptions.completedRows(from: tasks) == Array(0..<CadenceTaskSurfaceOptions.completedRowLimit))
+        #expect(CadenceTaskSurfaceOptions.completedRows(from: tasks, tier: .touch).count == CadenceTaskSurfaceOptions.completedRowLimit)
+        #expect(CadenceTaskSurfaceOptions.completedRows(from: tasks, tier: .touch) == Array(0..<CadenceTaskSurfaceOptions.completedRowLimit))
     }
 
     /// The cap must never *add* to, reorder, or drop from a list that is already short enough —
     /// the completed section on a quiet day is a handful of rows and has to be all of them.
     @Test func aShorterCompletedListIsPassedThroughUntouched() {
-        #expect(CadenceTaskSurfaceOptions.completedRows(from: [Int]()).isEmpty)
-        #expect(CadenceTaskSurfaceOptions.completedRows(from: [7, 3, 9]) == [7, 3, 9])
+        #expect(CadenceTaskSurfaceOptions.completedRows(from: [Int](), tier: .touch).isEmpty)
+        #expect(CadenceTaskSurfaceOptions.completedRows(from: [7, 3, 9], tier: .touch) == [7, 3, 9])
 
         let exactlyAtTheLimit = Array(0..<CadenceTaskSurfaceOptions.completedRowLimit)
-        #expect(CadenceTaskSurfaceOptions.completedRows(from: exactlyAtTheLimit) == exactlyAtTheLimit)
+        #expect(CadenceTaskSurfaceOptions.completedRows(from: exactlyAtTheLimit, tier: .touch) == exactlyAtTheLimit)
     }
 
     /// The limit is the larger of the two that shipped, so unifying could not hide work a screen

@@ -10,7 +10,8 @@ import Foundation
 /// declaration, no fence.
 ///
 /// The prefixes are load-bearing: each drag context uses its own so a drop target cannot accept a
-/// payload from an unrelated context. See "Drag-to-Reorder Payload Prefixes" in `CLAUDE.md`.
+/// payload from an unrelated context. See "Drag-to-Reorder Payload Prefixes" in
+/// `docs/CLAUDE_REFERENCE.md`.
 ///
 /// `nonisolated` for the same reason `CadenceEmptyStateCopy` is: the project defaults value types
 /// to the main actor, and the drop delegates that read these payloads run in `@Sendable` closures.
@@ -49,9 +50,9 @@ nonisolated enum TaskDragPayload {
     ///
     /// Not `TasksPanel`, which an earlier draft of this comment named: its rows go through
     /// `TasksPanelSupport.taskDragPayload(for:)`, which calls `string(for:)` and is therefore
-    /// prefixed. That error came out of `CLAUDE.md`'s drag-prefix table, which is stale on this
-    /// point — a wrong doc propagating into source, which is the whole argument for checking a
-    /// claim against the code before repeating it.
+    /// prefixed. That error came out of `docs/CLAUDE_REFERENCE.md`'s drag-prefix table when it was
+    /// still the always-loaded `CLAUDE.md` — a wrong doc propagating into source, which is the whole
+    /// argument for checking a claim against the code before repeating it.
     ///
     /// The other caller was `InboxView`, which is gone: All Tasks and Inbox are one page
     /// (`TasksListView`) and it takes the lenient decode, because it then looks the id up in its

@@ -31,7 +31,7 @@ struct CadencePrivacyDataResetSurfaceTests {
     /// 2. Every probe's type must be empty after the reset — this test. So once the probe exists,
     ///    this fails until `PrivacyDataResetService` actually deletes the new type.
     ///
-    /// `CLAUDE.md` warns that a missed model "leaves orphans"; nothing was checking it.
+    /// `docs/CLAUDE_REFERENCE.md` warns that a missed model "leaves orphans"; nothing was checking it.
     @Test func theResetEmptiesEveryTypeInTheSchema() throws {
         let container = try makeContainer()
         let context = ModelContext(container)

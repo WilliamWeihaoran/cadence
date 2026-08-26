@@ -170,10 +170,10 @@ struct CadenceDataExportSurfaceTests {
         #expect(exportedSubtask.parentTaskID == task.id)
     }
 
-    /// The two stored properties with no readers in feature code. `CLAUDE.md` records that both
-    /// must survive because there is no `SchemaMigrationPlan` and removing them drops data; an
-    /// export that skips them is the same loss by another route, so this exporter is deliberately
-    /// their reader.
+    /// The two stored properties with no readers in feature code. `docs/CLAUDE_REFERENCE.md`
+    /// records that both must survive because there is no `SchemaMigrationPlan` and removing them
+    /// drops data; an export that skips them is the same loss by another route, so this exporter is
+    /// deliberately their reader.
     @Test func theTwoLiveFieldsWithNoOtherReadersAreExported() throws {
         let context = ModelContext(try makeContainer())
 

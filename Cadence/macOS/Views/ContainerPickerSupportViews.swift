@@ -112,10 +112,11 @@ struct ContainerPickerPopoverContent: View {
                         Divider().background(Theme.borderSubtle).padding(.vertical, 2)
 
                         ForEach(groups, id: \.context.id) { group in
-                            Text(group.context.name.uppercased())
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(Color(hex: group.context.colorHex))
-                                .kerning(0.6)
+                            SectionEyebrowLabel(
+                                text: group.context.name,
+                                size: .compact,
+                                tint: Color(hex: group.context.colorHex)
+                            )
                                 .padding(.horizontal, 12)
                                 .padding(.top, 6)
                                 .padding(.bottom, 2)

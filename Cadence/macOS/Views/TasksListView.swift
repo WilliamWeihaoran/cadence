@@ -62,6 +62,13 @@ struct TasksListView: View {
 
     private var todayKey: String { DateFormatters.todayKey() }
 
+    /// What this page offers, asked of the surface rather than decided here (T-290). `scope.surface`
+    /// is the desktop twin of `CadenceTaskCollection.surface`, which iOS's one page for both scopes
+    /// already reads.
+    private var options: CadenceTaskViewOptions {
+        CadenceTaskSurfaceOptions.options(for: scope.surface)
+    }
+
     /// The scope, and the only thing it decides about the rows.
     ///
     /// All Tasks hides work inside a completed or archived list, the same scope its sidebar count
@@ -83,10 +90,17 @@ struct TasksListView: View {
         applyFrozenTaskOrder(naturalActiveTasks, frozen: frozenTaskOrder)
     }
 
+    /// The logbook, through `CadenceTaskSurfaceOptions` on the **desktop** tier, which is uncapped.
+    /// The value's own doc carries the argument; the short of it is that this section is the only
+    /// place a Mac lists finished work, `completedTaskCount` beside it states the true total, and
+    /// there is no "show more" to reach the rest behind a cap.
     private var completedTasks: [AppTask] {
-        visibleTaskUniverse
-            .filter { $0.isDone || $0.isCancelled }
-            .taskCompletionSorted()
+        CadenceTaskSurfaceOptions.completedRows(
+            from: visibleTaskUniverse
+                .filter { $0.isDone || $0.isCancelled }
+                .taskCompletionSorted(),
+            tier: .desktop
+        )
     }
 
     private var completedTaskCount: Int {
@@ -194,6 +208,7 @@ struct TasksListView: View {
                 ForEach(sections(from: visibleTasks)) { section in
                     TasksListSectionView(
                         section: section,
+                        showsContainer: options.showsContainerChip,
                         isCollapsed: collapsedSectionIDs.contains(section.id),
                         overdueCount: overdueCount(in: section.tasks),
                         regularCount: regularCount(in: section.tasks),
@@ -242,9 +257,10 @@ struct TasksListView: View {
                     )
                 }
 
-                if completedCount > 0 {
+                if options.showsCompletedToggle, completedCount > 0 {
                     TasksListCompletedSectionView(
                         tasks: visibleCompletedTasks,
+                        showsContainer: options.showsContainerChip,
                         count: completedCount,
                         isCollapsed: isCompletedCollapsed,
                         contexts: contexts,
@@ -374,6 +390,9 @@ struct TasksListView: View {
 /// style the tasks used. Both are now properties of the section.
 private struct TasksListSectionView: View {
     let section: TasksListSection
+    /// The page's answer. Composed with the section's below: this surface mixes lists, but a
+    /// by-list section's *header* already names the one it is.
+    let showsContainer: Bool
     let isCollapsed: Bool
     let overdueCount: Int?
     let regularCount: Int
@@ -426,6 +445,7 @@ private struct TasksListSectionView: View {
                     TaskListInteractiveRow(
                         task: task,
                         style: section.listGroup == nil ? .standard : .todayGrouped,
+                        showsContainer: showsContainer && section.listGroup == nil,
                         contexts: contexts,
                         areas: areas,
                         projects: projects,
@@ -441,6 +461,7 @@ private struct TasksListSectionView: View {
 
 private struct TasksListCompletedSectionView: View {
     let tasks: [AppTask]
+    let showsContainer: Bool
     let count: Int
     let isCollapsed: Bool
     let contexts: [Context]
@@ -467,6 +488,7 @@ private struct TasksListCompletedSectionView: View {
                     TaskListDisplayRow(
                         task: task,
                         style: .standard,
+                        showsContainer: showsContainer,
                         contexts: contexts,
                         areas: areas,
                         projects: projects

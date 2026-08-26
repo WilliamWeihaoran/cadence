@@ -418,7 +418,7 @@ private struct ListDetailTabBarView: View {
 
     @ViewBuilder
     private var trailingControls: some View {
-        if tab == .tasks {
+        if tab == .tasks, CadenceTaskSurfaceOptions.options(for: .listDetail).showsSort {
             HStack(spacing: 6) {
                 CadenceEnumPickerBadge(title: "Sort", selection: $taskSortField)
                 CadenceEnumPickerBadge(title: "Order", selection: $taskSortDirection)

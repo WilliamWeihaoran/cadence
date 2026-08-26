@@ -29,6 +29,16 @@ nonisolated enum CadenceTasksPageScope: String, CaseIterable, Identifiable, Hash
         CadenceTasksPageScope(rawValue: rawValue) ?? defaultScope
     }
 
+    /// Which task surface this scope is, for `CadenceTaskSurfaceOptions` — the desktop twin of
+    /// `CadenceTaskCollection.surface`, which iOS's one page for both scopes already reads. macOS
+    /// re-answered all four of that value's questions inline until T-290.
+    var surface: CadenceTaskSurface {
+        switch self {
+        case .all: return .allTasks
+        case .inbox: return .inbox
+        }
+    }
+
     /// The iPhone segment this scope is the desktop spelling of. The single source for both the
     /// switcher's label and the destination it opens.
     var section: CadenceTasksSection {

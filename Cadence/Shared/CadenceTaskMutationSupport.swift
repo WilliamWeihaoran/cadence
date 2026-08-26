@@ -630,8 +630,8 @@ enum CadenceTaskMutationSupport {
         // The task's own slot is gone — the bundle owns the block now — so any stale calendar link
         // it still carries has to go with it. `SchedulingActions.addTask` has always cleared this;
         // this copy did not, which was the one field on which the two platforms' add-to-bundle
-        // paths disagreed. See "Calendar / Events" in CLAUDE.md: nothing writes this field a
-        // non-empty value any more, and every write site clears it.
+        // paths disagreed. See "Calendar / Events" in `docs/CLAUDE_REFERENCE.md`: nothing writes
+        // this field a non-empty value any more, and every write site clears it.
         task.calendarEventID = ""
         if !(bundle.tasks ?? []).contains(where: { $0.id == task.id }) {
             bundle.tasks = (bundle.tasks ?? []) + [task]
@@ -675,8 +675,9 @@ enum CadenceTaskMutationSupport {
         task.scheduledDate = todayKey
         task.scheduledStartMin = -1
         // Unconditional, not `if scheduledStartMin >= 0`. Nothing writes this field a non-empty
-        // value any more (see "Calendar / Events" in CLAUDE.md) and every write site clears it, so
-        // a stale identifier from an earlier build must not survive onto the new day.
+        // value any more (see "Calendar / Events" in `docs/CLAUDE_REFERENCE.md`) and every write
+        // site clears it, so a stale identifier from an earlier build must not survive onto the
+        // new day.
         task.calendarEventID = ""
     }
 

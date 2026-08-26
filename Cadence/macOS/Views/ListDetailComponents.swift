@@ -22,7 +22,19 @@ struct ListTasksView: View {
         let sorted = CadenceTaskQuerySupport.openTasks(from: tasks).taskSorted(by: sortField, direction: sortDirection)
         return applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder)
     }
-    private var doneTasks: [AppTask] { tasks.filter { $0.isDone || $0.isCancelled }.taskCompletionSorted() }
+    /// See `TasksListView.completedTasks`: the **desktop** tier, which
+    /// `CadenceTaskSurfaceOptions` leaves uncapped, asked rather than assumed (T-290).
+    private var doneTasks: [AppTask] {
+        CadenceTaskSurfaceOptions.completedRows(
+            from: tasks.filter { $0.isDone || $0.isCancelled }.taskCompletionSorted(),
+            tier: .desktop
+        )
+    }
+
+    /// What a list's own Tasks tab offers, from the shared table.
+    private var options: CadenceTaskViewOptions {
+        CadenceTaskSurfaceOptions.options(for: .listDetail)
+    }
     private var sectionNames: [String] { area?.sectionNames ?? project?.sectionNames ?? [TaskSectionDefaults.defaultName] }
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -71,7 +83,7 @@ struct ListTasksView: View {
                 )
             }
 
-            if !doneTasks.isEmpty {
+            if options.showsCompletedToggle, !doneTasks.isEmpty {
                 ListTasksCompletedSectionView(
                     tasks: doneTasks,
                     allTasks: allTasks,

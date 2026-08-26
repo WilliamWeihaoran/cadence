@@ -81,10 +81,7 @@ struct CadenceCalendarPickerList: View {
                     Divider().background(Theme.borderSubtle).padding(.vertical, 2)
                 }
                 ForEach(groups, id: \.source) { group in
-                    Text(group.source.uppercased())
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .kerning(0.6)
+                    SectionEyebrowLabel(text: group.source, size: .compact)
                         .padding(.horizontal, 14)
                         .padding(.top, 8)
                         .padding(.bottom, 2)

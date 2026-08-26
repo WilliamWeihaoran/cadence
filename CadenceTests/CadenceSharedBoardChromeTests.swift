@@ -311,14 +311,25 @@ struct CadenceSectionEyebrowConvergenceTests {
             .foregroundStyle(Theme.blue)
         """) == 0)
 
-        // Uppercase and dim, but at the 9pt sub-label tier, which is a separate self-consistent
-        // tier and out of scope.
+        // Uppercase and dim, but at the 9pt sub-label tier. This detector still does not model it,
+        // and that is the division of labour rather than an omission: T-284 gave the sub-label its
+        // own detector below, because folding 9pt into this one would have made "is there a second
+        // tier" and "is the second tier consistent" the same question. What was NOT true when this
+        // case was written is the comment that used to sit here calling the 9pt tier
+        // "self-consistent" — it had four kernings, and 0.45 was one of them.
         #expect(handRolledEyebrowLines(in: """
         Text(title.uppercased())
             .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(Theme.dim)
             .kerning(0.45)
         """) == 0)
+        // The sub-label detector is the one that sees it.
+        #expect(handRolledCompactEyebrowLines(in: """
+        Text(title.uppercased())
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(Theme.dim)
+            .kerning(0.45)
+        """) == 1)
     }
 
     /// The positive half, with exact counts, so a site that leaves the shared label for a *new*
@@ -549,6 +560,182 @@ struct CadenceCalendarWeekdayHeaderConvergenceTests {
 }
 
 // MARK: - Source-reading helpers
+
+// MARK: - T-284: the sub-label tier is a tier, not four kernings
+
+/// **The 9pt eyebrow.** `SectionEyebrowLabel` is the app's one uppercase eyebrow and macOS reads it
+/// in 19 files. Beside it sat six hand-rolled 9pt spellings of the same idea — a popover group
+/// heading, an inspector well label — at kernings of 0.45, 0.54, 0.6, 0.7 and, at two sites, none
+/// at all, plus a seventh in a *shared* component (`EstimatePickerControl`) and an eighth on iOS.
+///
+/// **The size stayed; the kerning converged.** A previous audit looked at this tier and left it
+/// alone on the grounds that folding 9pt into 10pt would be a size decision dressed as a refactor.
+/// That reading was right about the size and wrong about the kerning: nine points is a legitimate
+/// second tier, four kernings is drift. So the shared label gained a `Size`, every site above reads
+/// it, and letterspacing is derived from the size by one ratio rather than chosen per site.
+/// Nothing changed tier — the 9pt labels are still 9pt and the 10pt ones still 10pt.
+@MainActor
+struct CadenceCompactEyebrowConvergenceTests {
+
+    /// The value half. Both tiers still draw at the size they always drew at, and the compact one
+    /// is genuinely smaller — a "consolidation" that quietly promoted the sub-labels to 10pt would
+    /// satisfy every source scan below and is the outcome this ticket was told not to produce.
+    @Test func theTwoTiersKeepTheirSizesAndDeriveOneKerning() {
+        #expect(SectionEyebrowLabel.Size.standard.fontSize == 10)
+        #expect(SectionEyebrowLabel.Size.compact.fontSize == 9)
+        #expect(SectionEyebrowLabel.fontSize == SectionEyebrowLabel.Size.standard.fontSize)
+        #expect(SectionEyebrowLabel.compactFontSize == SectionEyebrowLabel.Size.compact.fontSize)
+        #expect(SectionEyebrowLabel.Size.compact.fontSize < SectionEyebrowLabel.Size.standard.fontSize)
+
+        // 0.08em. The standard tier's long-standing 0.8 at 10pt, reproduced exactly, so this
+        // conversion did not move the 19 files that were already correct.
+        #expect(SectionEyebrowLabel.kerningRatio == 0.08)
+        #expect(abs(SectionEyebrowLabel.Size.standard.kerning - 0.8) < 0.0001)
+        #expect(abs(SectionEyebrowLabel.Size.compact.kerning - 0.72) < 0.0001)
+        #expect(SectionEyebrowLabel.Size.compact.kerning < SectionEyebrowLabel.Size.standard.kerning)
+    }
+
+    /// None of the four kernings the sub-label tier had accumulated is what it draws at now. Stated
+    /// as a set rather than as one comparison because the failure being guarded is a site being
+    /// *reverted*, and any of the four is a revert.
+    @Test func noneOfTheFourStrayKerningsSurvives() {
+        let retired: [CGFloat] = [0.45, 0.54, 0.6, 0.7]
+        let live = SectionEyebrowLabel.Size.compact.kerning
+        #expect(!retired.contains { abs($0 - live) < 0.0001 })
+    }
+
+    /// `SidebarMetrics` re-typed the eyebrow's own two numbers as literals, and
+    /// `SettingsViewSupport`'s group header chains off that pair — so the settings rail and the
+    /// sidebar would both have kept drawing 10/0.8 through any change to the eyebrow. The equality
+    /// is what a size change to `SectionEyebrowLabel` now has to carry with it.
+    @Test func theSidebarContextHeaderIsTheEyebrow() throws {
+        #expect(SidebarMetrics.contextHeaderFontSize == SectionEyebrowLabel.Size.standard.fontSize)
+        #expect(abs(SidebarMetrics.contextHeaderKerning - SectionEyebrowLabel.Size.standard.kerning) < 0.0001)
+        #expect(SettingsRailMetrics.groupHeaderFontSize == SectionEyebrowLabel.Size.standard.fontSize)
+        #expect(abs(SettingsRailMetrics.groupHeaderKerning - SectionEyebrowLabel.Size.standard.kerning) < 0.0001)
+
+        // The equality above holds just as well for two hand-typed 10s, which is how the pair got
+        // here. What may not come back is the literal.
+        let sidebar = try strippingComments(sourceFile("Cadence/macOS/Views/SidebarViewSupport.swift"))
+        #expect(sidebar.contains("enum SidebarMetrics"), "non-vacuity: still the metrics' file")
+        #expect(sidebar.contains("contextHeaderFontSize: CGFloat = SectionEyebrowLabel"))
+        #expect(sidebar.contains("contextHeaderKerning: CGFloat = SectionEyebrowLabel"))
+    }
+
+    /// **The load-bearing negative.** Same shape as `noSurfaceHandRollsTheSharedEyebrow` above and
+    /// the colour sweep in `CadenceAccentStorageSweepTests`: the fork has to be absent from every
+    /// file under `Cadence/`, which no amount of the shared spelling elsewhere can satisfy. No
+    /// allowlist — measured at six hits before this conversion and none after, with no false
+    /// positive in either direction.
+    @Test func noSurfaceHandRollsTheCompactEyebrow() throws {
+        var scanned = 0
+        var offenders: [String] = []
+
+        for path in try swiftFiles(under: "Cadence") {
+            scanned += 1
+            if handRolledCompactEyebrowLines(in: strippingLineCommentsFast(try sourceFile(path))) > 0 {
+                offenders.append(path)
+            }
+        }
+
+        #expect(scanned > 250, "scanned only \(scanned) files under Cadence/")
+        #expect(
+            offenders.isEmpty,
+            "hand-rolled 9pt sub-label eyebrow(s) in: \(offenders.sorted().joined(separator: ", "))"
+        )
+    }
+
+    /// The detector against text that is not the repository, so the sweep above cannot be one typo
+    /// away from scanning for a pattern nothing matches.
+    @Test func theCompactDetectorFindsTheShapeAndIgnoresItsNeighbours() {
+        #expect(handRolledCompactEyebrowLines(in: """
+        Text(group.source.uppercased())
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(Theme.dim)
+            .kerning(0.6)
+        """) == 1)
+
+        // Tinted by the context's own colour rather than `Theme.dim` — two of the six were, and a
+        // detector keyed only on the neutral tints would have missed them.
+        #expect(handRolledCompactEyebrowLines(in: """
+        Text(group.context.name.uppercased())
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(Color(hex: group.context.colorHex))
+        """) == 1)
+
+        // The shared spelling.
+        #expect(handRolledCompactEyebrowLines(in: "SectionEyebrowLabel(text: title, size: .compact)") == 0)
+
+        // A 9pt semibold chevron beside an uppercase title — the commonest 9pt shape in the app and
+        // the one a looser detector would drown in. It is a glyph, not a `Text`.
+        #expect(handRolledCompactEyebrowLines(in: """
+        Text(title.uppercased())
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Theme.text)
+        Image(systemName: "chevron.up.chevron.down")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(color.opacity(0.55))
+        """) == 0)
+
+        // The 10pt tier, which is the *other* detector's job.
+        #expect(handRolledCompactEyebrowLines(in: """
+        Text(title.uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Theme.dim)
+            .kerning(0.8)
+        """) == 0)
+    }
+
+    /// The positive half, with exact counts, so a converted site that leaves for a *new* bespoke
+    /// spelling the detector does not model still fails something. `TaskInspectorFieldSupportViews`
+    /// is in the list at 1 because its group label reads the shared view while the count drawn
+    /// beside it reads `SectionEyebrowLabel.Size.compact.font` — one call, one derived font, no
+    /// second kerning constant.
+    @Test func theConvertedCompactSitesCallTheSharedLabel() throws {
+        try expectCallSites(of: "SectionEyebrowLabel", at: [
+            "Cadence/macOS/CadenceCalendarPicker.swift": 1,
+            "Cadence/macOS/Views/AIActionsSupportViews.swift": 1,
+            "Cadence/macOS/Views/ContainerPickerSupportViews.swift": 1,
+            "Cadence/macOS/Views/GoalAttachWorkSheet.swift": 1,
+            "Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift": 1,
+            "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift": 1,
+            "Cadence/Shared/Components/EstimatePickerControl.swift": 1,
+            "Cadence/iOS/iOSChoicePicker.swift": 1
+        ])
+
+        // The inspector's own kerning constant is gone rather than left unread — a metric that
+        // still compiles and is drawn by nothing is how `subtitle` survived three deletions.
+        try expectNoLiveMention(of: "groupLabelKerning")
+    }
+}
+
+/// Counts the hand-rolled **sub-label** eyebrow: a 9pt semibold/bold `Text` that is uppercased,
+/// within six lines of an eyebrow tint — `Theme.dim`, `Theme.muted`, or a list/context
+/// `Color(hex:)`, because two of the six converted sites took the container's own colour.
+///
+/// Deliberately a second function rather than a wider `handRolledEyebrowLines`: the two tiers are
+/// separate decisions, and one detector spanning both would report "the sub-label tier exists" as a
+/// failure. `.uppercased()` is required rather than optional here (the 10pt detector also accepts
+/// `.kerning(0.8)`) because the sub-label tier has no single kerning to key on — that was the bug.
+private func handRolledCompactEyebrowLines(in source: String) -> Int {
+    let fonts = [
+        ".font(.system(size: 9, weight: .semibold))",
+        ".font(.system(size: 9, weight: .bold))"
+    ]
+    let lines = source.components(separatedBy: "\n")
+    var count = 0
+
+    for (index, line) in lines.enumerated() {
+        guard fonts.contains(where: line.contains) else { continue }
+        let window = lines[max(0, index - 6)...min(lines.count - 1, index + 6)].joined(separator: "\n")
+        guard window.contains(".textCase(.uppercase)") || window.contains(".uppercased()") else { continue }
+        let eyebrowTint = window.contains("Theme.dim")
+            || window.contains("Theme.muted")
+            || window.contains("Color(hex:")
+        if eyebrowTint { count += 1 }
+    }
+    return count
+}
 
 /// Fails unless `name` is called exactly `count` times in each listed file.
 ///

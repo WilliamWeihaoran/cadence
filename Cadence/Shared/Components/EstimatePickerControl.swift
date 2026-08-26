@@ -133,10 +133,7 @@ struct EstimatePickerPopoverContent: View {
     @ViewBuilder
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(title)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .kerning(0.54)
+            SectionEyebrowLabel(text: title, size: .compact)
 
             Spacer(minLength: 0)
 

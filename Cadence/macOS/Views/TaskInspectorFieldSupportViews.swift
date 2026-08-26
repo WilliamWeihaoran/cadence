@@ -16,9 +16,11 @@ enum TaskInspectorFieldRowMetrics {
     static let valueFont = Font.system(size: 11)
     static let groupHorizontalPadding: CGFloat = 10
     static let groupCornerRadius: CGFloat = 8
-    static let groupLabelFont = Font.system(size: 9, weight: .semibold)
-    /// ~0.06em at 9pt.
-    static let groupLabelKerning: CGFloat = 0.54
+    /// The *trailing* value beside a group label — a count, not an eyebrow — drawn at the
+    /// eyebrow's own size so the two sit on one line. The label itself is
+    /// `SectionEyebrowLabel(size: .compact)`; there is no second kerning constant here any more
+    /// (T-284 — it was 0.54, one of four the 9pt tier had accumulated).
+    static let groupLabelFont = SectionEyebrowLabel.Size.compact.font
 }
 
 /// Shared metrics for the inspector's `List › Section` breadcrumb. The segments themselves are
@@ -81,10 +83,7 @@ struct TaskInspectorGroupLabel: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(title.uppercased())
-                .font(TaskInspectorFieldRowMetrics.groupLabelFont)
-                .foregroundStyle(Theme.dim)
-                .kerning(TaskInspectorFieldRowMetrics.groupLabelKerning)
+            SectionEyebrowLabel(text: title, size: .compact)
 
             Spacer(minLength: 0)
 

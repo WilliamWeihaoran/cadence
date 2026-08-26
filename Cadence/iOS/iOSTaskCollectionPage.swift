@@ -240,7 +240,7 @@ struct iOSTaskCollectionSections: View {
                 iOSTaskGroupSection(
                     title: "Completed",
                     color: Theme.green,
-                    tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks),
+                    tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
                     showsContainer: showsContainer,
                     opacity: 0.62,
                     dropIdentity: .completion

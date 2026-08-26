@@ -80,7 +80,8 @@ struct TaskDragPayloadTests {
         #expect(TaskDragPayload.listTaskID(from: id.uuidString) == nil)
     }
 
-    /// Every other drag context's payload, refused. These are the prefixes listed in `CLAUDE.md`.
+    /// Every other drag context's payload, refused. These are the prefixes listed in
+    /// `docs/CLAUDE_REFERENCE.md`.
     @Test func listTaskIDRejectsEveryForeignContext() {
         let id = UUID().uuidString
         let foreign = [

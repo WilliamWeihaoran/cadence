@@ -1,32 +1,39 @@
 #if os(iOS)
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// The circular add affordance itself — the glyph, the fill, the shadow and the touch target, and
-/// nothing else.
+/// nothing else. No `Button`, and no gesture.
 ///
-/// It is deliberately split from the page-level wiring below. The button takes a bare `action`
-/// closure and knows nothing about seeds, sheets or which screen it is on, so the drag behaviour
-/// (drag the button onto a section, a list or a date and the created task picks that destination up)
-/// attaches *outside* it, rather than to inlined `Button`s that would each need the same gestures
-/// bolted on and would drift apart the moment one of them did.
+/// It is deliberately split from the page-level wiring below, and from the gesture in
+/// `iOSCaptureRadialMenuButton`. Both placements draw this and neither owns it, so the drag
+/// behaviour (drag the button onto a section, a list or a date and the created task picks that
+/// destination up) and the hold-for-palette behaviour attach *outside* it rather than to inlined
+/// copies that would each need the same gestures bolted on and would drift apart the moment one of
+/// them did.
 ///
-/// **Both capture buttons in the app are this one.** The iPad's corner `+` and the iPhone tab bar's
-/// centre `+` are the same action in deliberately different *places*, which is a layout difference
-/// the rules allow; they had also drifted into different *looks* — 56pt/22pt semibold/shadow r16 y7
-/// against 44pt/19pt **bold**/shadow r10 y4 — which is not a placement consequence of anything. The
-/// size is: a 56pt circle does not fit inside a 46pt tab-bar row between four tab items, while a
-/// button floating over a page has nothing to fit inside. So `diameter` is the one parameter, and
-/// the glyph and the shadow are **derived** from it rather than passed, at the ratios the 56pt
-/// button already used — which is what stops the next size from becoming the next look.
+/// **Both capture buttons in the app are this one, and since T-282 that is true of the gesture as
+/// well as the look.** The iPad's corner `+` and the iPhone tab bar's centre `+` are the same
+/// control in deliberately different *places*, which is a layout difference the rules allow. They
+/// had drifted into different *looks* — 56pt/22pt semibold/shadow r16 y7 against 44pt/19pt
+/// **bold**/shadow r10 y4 — and then, under T-171, into different *capabilities*: the phone's held
+/// open a palette of Task / Event / Note and the iPad's could capture nothing but a task. Neither
+/// is a placement consequence. The size is: a 56pt circle does not fit inside a 46pt tab-bar row
+/// between four tab items, while a button floating over a page has nothing to fit inside. So
+/// `diameter` is the one parameter, the glyph and the shadow are **derived** from it rather than
+/// passed, at the ratios the 56pt button already used, and the one thing the two placements still
+/// choose for themselves is which way the palette's arc opens — see
+/// `CadenceCapturePalettePlacement`.
+///
+/// This used to be two types: a `Button` wrapper called `iOSCircularAddButton` and the bare circle
+/// beside it. The wrapper is gone rather than left unused, because a `Button` competes for the raw
+/// touch the gesture needs and a type that still compiles while nothing calls it is exactly how the
+/// page header's `subtitle` parameter survived three deletions. The name moved down to the circle,
+/// which is what it always described.
 ///
 /// The macOS counterpart is `FloatingNewTaskButton`; same shape, same job, same reasoning about why
 /// a page — unlike a board column — opens the full composer rather than an inline row.
 struct iOSCircularAddButton: View {
-    let action: () -> Void
-    /// Defaults to the floating size; the tab bar passes its own. See `floatingDiameter`.
-    var diameter: CGFloat = iOSCircularAddButton.floatingDiameter
-    var accessibilityLabel: String = "New Task"
+    let diameter: CGFloat
 
     /// 56pt, comfortably over the 44pt floor, and the diameter the trailing/bottom padding of the
     /// floating placement is measured against.
@@ -35,28 +42,6 @@ struct iOSCircularAddButton: View {
     static let edgeInset: CGFloat = 22
     /// What a scroll view under the button has to keep free so its last row is never buried.
     static var scrollClearance: CGFloat { floatingDiameter + edgeInset * 2 }
-
-    var body: some View {
-        Button(action: action) {
-            iOSCircularAddButtonFace(diameter: diameter)
-        }
-        .buttonStyle(.iosPressable)
-        .accessibilityLabel(accessibilityLabel)
-    }
-}
-
-/// The circle itself, with no `Button` around it.
-///
-/// Split out for the iPhone tab bar's centre `+`, which under T-171 carries a `DragGesture` instead
-/// of a tap: a palette that opens on stillness and a drag that starts on movement both need the raw
-/// touch, and a `Button` would compete for it. The gesture synthesises the tap. This is the same
-/// look either way — the split is exactly so it *stays* the same look, which is the drift the
-/// `diameter`-derived glyph and shadow above exist to prevent.
-///
-/// The drag preview the custom gesture carries is this face too, so the thing under the finger is
-/// the thing that was pressed.
-struct iOSCircularAddButtonFace: View {
-    let diameter: CGFloat
 
     var body: some View {
         Image(systemName: "plus")
@@ -70,12 +55,14 @@ struct iOSCircularAddButtonFace: View {
     }
 }
 
-/// Pins `iOSFloatingAddButton` to a page's bottom-trailing corner at **regular width only**, and
-/// opens `iOSCreateTaskSheet` seeded for that page.
+/// Pins the capture `+` to a page's bottom-trailing corner at **regular width only**, and gives it
+/// the same three things the tab bar's centre `+` has: a tap that opens `iOSCreateTaskSheet` seeded
+/// for that page, a hold that opens the capture palette, and a drag onto a row that seeds the
+/// composer from wherever it lands.
 ///
 /// **Regular width only, on purpose.** On compact width the tab bar already carries a centre `+`
-/// that opens the same sheet, and a corner button beside it would be the second affordance for one
-/// action on one screen — the duplication this app has removed repeatedly. Compact surfaces lost
+/// that does the same three things, and a corner button beside it would be the second affordance
+/// for one action on one screen — the duplication this app has removed repeatedly. Compact surfaces lost
 /// their inline capture bar and gained nothing; the bar's job moved to the bar that was already
 /// there. The size-class check lives in here rather than at the four call sites so no page can
 /// forget it.
@@ -93,7 +80,11 @@ private struct iOSFloatingCreateTaskLayer: ViewModifier {
     let seed: CadenceTaskComposerSeed
     let onCreated: ((AppTask) -> Void)?
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var isPresented = false
+    /// One live touch on this page's `+`, and the mailbox the host presents from. Per page rather
+    /// than per app: several pages can be alive at once on iPad, and only the one under the finger
+    /// may open a composer — which is what the old `CadenceTaskDropCoordinator` routing existed to
+    /// arrange, and what separate state gives for free.
+    @State private var interaction = iOSCaptureInteraction(placement: .bottomTrailing)
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
@@ -104,17 +95,18 @@ private struct iOSFloatingCreateTaskLayer: ViewModifier {
             .contentMargins(.bottom, isRegularWidth ? iOSCircularAddButton.scrollClearance : 0, for: .scrollContent)
             .overlay(alignment: .bottomTrailing) {
                 if isRegularWidth {
-                    iOSCircularAddButton { isPresented = true }
-                        .iOSNewTaskDragSource(onCreated: onCreated)
-                        // The corner inset belongs to the placement, not to the button: the tab
-                        // bar's copy is centred in a row and must not carry it.
-                        .padding(.trailing, iOSCircularAddButton.edgeInset)
-                        .padding(.bottom, iOSCircularAddButton.edgeInset)
+                    iOSCaptureRadialMenuButton(
+                        diameter: iOSCircularAddButton.floatingDiameter,
+                        interaction: interaction,
+                        baseSeed: seed
+                    )
+                    // The corner inset belongs to the placement, not to the button: the tab
+                    // bar's copy is centred in a row and must not carry it.
+                    .padding(.trailing, iOSCircularAddButton.edgeInset)
+                    .padding(.bottom, iOSCircularAddButton.edgeInset)
                 }
             }
-            .sheet(isPresented: $isPresented) {
-                iOSCreateTaskSheet(seed: seed, onCreated: onCreated)
-            }
+            .iOSCaptureHost(interaction, onCreated: onCreated)
     }
 }
 
@@ -129,46 +121,7 @@ extension View {
     }
 }
 
-// MARK: - Drag to create
-
-/// Makes a create-task button draggable, and presents the composer seeded from wherever it lands.
-///
-/// **`.onDrag`/`.onDrop`, not `.draggable`/`.dropDestination`, and the choice is not cosmetic.**
-/// The `.draggable` family installs gesture recognizers that delay tap recognition across the
-/// whole enclosing `ScrollView`; that is why the sidebar's drag was rewritten onto
-/// `.onDrag`/`.onDrop` with a `DropDelegate` after it killed the sidebar cards' taps. The control
-/// this attaches to is a **button whose tap is the affordance nearly every use reaches for**, so a
-/// mechanism that can blunt a tap is disqualified before anything else is weighed. `.onDrag` is a
-/// `UIDragInteraction`: its long-press recognizer fails the instant the finger lifts, so the
-/// `Button` underneath still fires immediately. Drag is an addition here, not a replacement.
-///
-/// The sheet is presented by the *source*, not by the target. A drop can land on a row inside a
-/// list inside a tab, none of which owns task creation; routing the resolved seed back through
-/// `CadenceTaskDropCoordinator` to the button that started the drag keeps one presentation site
-/// per button and means a drop-created task goes through exactly the same `iOSCreateTaskSheet` —
-/// and so the same `TaskCreationService` — as a tap-created one.
-private struct iOSNewTaskDragSourceModifier: ViewModifier {
-    let onCreated: ((AppTask) -> Void)?
-
-    /// Identifies this button for the lifetime of the view, so a drop can find its way home.
-    @State private var sourceID = UUID()
-    @State private var request: CadenceTaskDropCoordinator.Request?
-
-    func body(content: Content) -> some View {
-        content
-            .onDrag {
-                CadenceTaskDropPayload.itemProvider(sourceID: sourceID)
-            }
-            .onChange(of: CadenceTaskDropCoordinator.shared.pending?.id) { _, _ in
-                if let delivered = CadenceTaskDropCoordinator.shared.consume(for: sourceID) {
-                    request = delivered
-                }
-            }
-            .sheet(item: $request) { pending in
-                iOSCreateTaskSheet(seed: pending.seed, onCreated: onCreated)
-            }
-    }
-}
+// MARK: - Where a create-task drag can land
 
 /// The gap a create-task drag opens: a dashed placeholder that says a new task lands here, and
 /// names the placement it will inherit.
@@ -241,9 +194,10 @@ private struct iOSNewTaskGhostRow: View {
 /// The ghost is also the view's **only** added layer, at one radius — the rows this lands on carry
 /// no background of their own, and the fill that used to sit under them is gone rather than joined.
 ///
-/// `onDrop(of:)` filters by content type synchronously, so this lights up for a create-task drag
-/// and for nothing else: a task-reorder or bundle drag is plain text and never reaches it. See
-/// `UTType.cadenceNewTaskDrag`.
+/// It lights up for a create-task drag and for nothing else, because the only thing that can point
+/// at it is `iOSCaptureInteraction`'s own hit test against `iOSNewTaskDropFrameRegistry` — a
+/// task-reorder or bundle drag is a `Transferable` string travelling through SwiftUI's own
+/// machinery and never touches this registry at all.
 private struct iOSNewTaskDropTargetModifier: ViewModifier {
     /// Evaluated at drop time, not at layout time, so a row whose list or date changed while the
     /// drag was in flight seeds what it now says rather than what it said when it last rendered.
@@ -256,8 +210,7 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
     /// list rather than a floating card.
     let horizontalInset: CGFloat
 
-    @State private var isTargeted = false
-    /// Separate from `isTargeted` so the open/close is driven by an explicit
+    /// Separate from `isCustomDragTarget` so the open/close is driven by an explicit
     /// `withAnimation(.spring(…))`, the same way reorder moves are animated everywhere else.
     @State private var showsGhost = false
     /// This target's name in `iOSNewTaskDropFrameRegistry`, stable for the view's lifetime.
@@ -268,10 +221,9 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
     @Environment(\.iOSNewTaskDropTargetsAreLive) private var isLive
 
     func body(content: Content) -> some View {
-        // Read once per render rather than per event: the `.onDrop` path can afford to resolve at
-        // drop time because it is handed the closure, but the custom drag hit-tests against a
-        // registry and has to have been *told*. SwiftUI re-runs this body when the row's model
-        // changes, so the published answer is the same one the row is drawing.
+        // Read once per render rather than per event: the drag hit-tests against a registry, so
+        // the registry has to have been *told* what this row would seed. SwiftUI re-runs this body
+        // when the row's model changes, so the published answer is the same one the row is drawing.
         let placementKey = dropKey()
         let placementListName = listName()
         let isCustomDragTarget = iOSCaptureDragTargeting.shared.currentTargetID == registrationID
@@ -292,22 +244,20 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
             }
         }
         // **The target is the whole block, not the glyphs inside it.** Without this a stack only
-        // hit-tests where it actually drew something, and `onDrop` is hit-tested like any other
-        // interaction — so `iOSTaskGroupHeader`, an `HStack` of an eyebrow label, a `Spacer` and a
-        // count badge, accepted a dropped `+` on the two ends of the row and refused the ~250pt of
-        // empty header between them. A task row was unaffected only because it already carries its
-        // own `contentShape(Rectangle())`; the header, having no tap of its own, had nothing to
-        // make it whole. Declared here rather than at each host so the answer cannot differ by
-        // call site — and so the ghost's own strip is part of the target while it is open.
+        // hit-tests where it actually drew something — so `iOSTaskGroupHeader`, an `HStack` of an
+        // eyebrow label, a `Spacer` and a count badge, accepted a dropped `+` on the two ends of
+        // the row and refused the ~250pt of empty header between them. A task row was unaffected
+        // only because it already carries its own `contentShape(Rectangle())`; the header, having
+        // no tap of its own, had nothing to make it whole. Declared here rather than at each host
+        // so the answer cannot differ by call site — and so the ghost's own strip is part of the
+        // target while it is open.
         .contentShape(Rectangle())
-        .onDrop(of: [.cadenceNewTaskDrag], isTargeted: $isTargeted) { providers in
-            handleDrop(providers, dropKey: dropKey())
-        }
-        // **Two mechanisms reach this one target, on purpose.** The iPad's corner `+` still uses
-        // `.onDrag`, whose `UIDragInteraction` resolves its own hit-testing; the iPhone tab bar's
-        // centre `+` carries T-171's custom gesture, which cannot, and so hit-tests against
-        // published frames. Rather than fork the target, both feed the same ghost and the same
-        // `CadenceTaskDropSupport.seed(forDropKey:)`.
+        // **One mechanism reaches this target, since T-282.** Both `+`s now carry T-171's custom
+        // gesture, which cannot ask UIKit to hit-test for it and so hit-tests against published
+        // frames instead. The iPad's corner button used `.onDrag` until the palette arrived there;
+        // `UIDragInteraction`'s lift *is* a ~350ms long press, so it wants the same window the
+        // palette does and the two cannot share a touch. The `.onDrop` half went with it rather
+        // than being left as a second, sourceless path into the same ghost.
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
             iOSNewTaskDropFrameRegistry.shared.setFrame(frame, for: registrationID)
         }
@@ -327,40 +277,15 @@ private struct iOSNewTaskDropTargetModifier: ViewModifier {
         .onDisappear {
             iOSNewTaskDropFrameRegistry.shared.unregister(registrationID)
         }
-        .onChange(of: isTargeted || isCustomDragTarget) { _, targeted in
+        .onChange(of: isCustomDragTarget) { _, targeted in
             withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
                 showsGhost = targeted
             }
         }
     }
-
-    private func handleDrop(_ providers: [NSItemProvider], dropKey: String) -> Bool {
-        let identifier = UTType.cadenceNewTaskDrag.identifier
-        guard let provider = providers.first(where: {
-            $0.hasItemConformingToTypeIdentifier(identifier)
-        }) else { return false }
-
-        let todayKey = DateFormatters.todayKey()
-        provider.loadDataRepresentation(forTypeIdentifier: identifier) { data, _ in
-            guard let data, let payload = String(data: data, encoding: .utf8) else { return }
-            Task { @MainActor in
-                CadenceTaskDropCoordinator.shared.deliver(
-                    payload: payload,
-                    dropKey: dropKey,
-                    todayKey: todayKey
-                )
-            }
-        }
-        return true
-    }
 }
 
 extension View {
-    /// See `iOSNewTaskDragSourceModifier` — including why this is `.onDrag` and not `.draggable`.
-    func iOSNewTaskDragSource(onCreated: ((AppTask) -> Void)? = nil) -> some View {
-        modifier(iOSNewTaskDragSourceModifier(onCreated: onCreated))
-    }
-
     /// Offers this view as a destination for a create-task drag. `dropKey` speaks the vocabulary
     /// in `CadenceTaskDropSupport`; `listName` resolves the one thing that vocabulary cannot carry.
     func iOSNewTaskDropTarget(
@@ -381,7 +306,7 @@ extension View {
     /// something to hand over.
     ///
     /// A `nil` identity, or one `CadenceTaskDropSupport.dropKey(forGroup:)` resolves to nothing —
-    /// Overdue, Past Do, Active, Completed — attaches no `onDrop` at all, so the header does not
+    /// Overdue, Past Do, Active, Completed — registers no target at all, so the header does not
     /// light up rather than lighting up and seeding nothing. That is the deliberate difference from
     /// the row target, which always has a list to give; see `dropKey(forGroup:)`.
     @ViewBuilder

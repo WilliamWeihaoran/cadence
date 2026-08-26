@@ -28,10 +28,20 @@ enum TaskGroupingMode: String, CaseIterable, Identifiable {
 // beside them. They carry the list's `colorHex` rather than a resolved `Color`, which is what lets
 // `CadenceTodayOverdueSummarySurfaceTests` recompute the whole derivation without SwiftUI.
 
+/// What a `MacTaskRow` suppresses, and it is down to one thing.
+///
+/// **`.list` is gone (T-290), because it had stopped meaning anything.** Its only effect was to
+/// hide the list chip on a list's own Tasks tab — a *surface* answer that
+/// `CadenceTaskSurfaceOptions.showsContainerChip(on: .listDetail)` now gives, through the row's
+/// `showsContainer`. With the chip moved off this axis, `.list` and `.standard` compiled to the
+/// same row, and a case that draws nothing is how the page header's `subtitle` parameter survived
+/// three deletions.
+///
+/// `.todayGrouped` earns its keep: it drops the **do-date pill**, because the section it appears in
+/// is the day.
 enum MacTaskRowStyle {
     case standard
     case todayGrouped
-    case list
 }
 
 /// Shared, pure index math for the inline "picker badge" style controls

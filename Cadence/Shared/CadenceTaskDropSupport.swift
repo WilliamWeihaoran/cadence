@@ -1,58 +1,4 @@
 import Foundation
-import Observation
-import UniformTypeIdentifiers
-
-// MARK: - The drag's own type
-
-extension UTType {
-    /// The create-task drag's payload type.
-    ///
-    /// Every drag context in this app carries a unique payload prefix so a drop target cannot be
-    /// handed a payload from an unrelated one — `area:`, `project:`, `listTask:`, `taskBundle:`,
-    /// `allDayEvent:`, and a bare task UUID are the ones already in use. This drag adds
-    /// `newTask:` (below), but it also registers under a **content type** of its own rather than
-    /// plain text, and that is what makes the rule structural rather than advisory:
-    /// `onDrop(of:)` filters on content type *synchronously*, so a task row refuses a
-    /// task-reorder drag before it ever lights up as a target. Registering as `public.text` and
-    /// checking the prefix after an asynchronous load would mean the row highlights, accepts, and
-    /// then does nothing — the failure mode this codebase keeps shipping.
-    ///
-    /// The prefix is still checked on the way out. The type keeps *other people's* drags away; the
-    /// prefix keeps a malformed one of our own from being read as a source identifier.
-    static let cadenceNewTaskDrag = UTType(exportedAs: "com.haoranwei.Cadence.new-task-drag")
-}
-
-/// The string a create-task drag carries: `newTask:<source UUID>`.
-///
-/// The identifier is the *button* the drag started from, not the task being created — no task
-/// exists yet. It is what lets the drop find its way back to the control the finger lifted from,
-/// which matters on iPad where several pages (and so several floating buttons) can be alive at
-/// once and only one of them should open a composer.
-enum CadenceTaskDropPayload {
-    static let prefix = "newTask:"
-
-    static func string(for sourceID: UUID) -> String {
-        "\(prefix)\(sourceID.uuidString)"
-    }
-
-    static func sourceID(from payload: String) -> UUID? {
-        guard payload.hasPrefix(prefix) else { return nil }
-        return UUID(uuidString: String(payload.dropFirst(prefix.count)))
-    }
-
-    static func itemProvider(sourceID: UUID) -> NSItemProvider {
-        let provider = NSItemProvider()
-        let data = Data(string(for: sourceID).utf8)
-        provider.registerDataRepresentation(
-            forTypeIdentifier: UTType.cadenceNewTaskDrag.identifier,
-            visibility: .ownProcess
-        ) { completion in
-            completion(data, nil)
-            return nil
-        }
-        return provider
-    }
-}
 
 // MARK: - Drop key → seed
 
@@ -284,6 +230,22 @@ enum CadenceTaskDropSupport {
         return seed
     }
 
+    /// The seed a released **capture drag** commits to: the placement it landed on, or — when it
+    /// landed on nothing at all — whatever the button itself already knew.
+    ///
+    /// The base is not always empty, which is the whole reason this overload exists. The tab bar's
+    /// `+` is deliberately unscoped, so its base *is* an empty seed; a page's corner `+` is already
+    /// standing on a list, or on today, and a drag that fizzles over blank space should not throw
+    /// that away and hand back a bare Inbox composer.
+    static func seed(
+        forDropKey key: String?,
+        todayKey: String,
+        base: CadenceTaskComposerSeed
+    ) -> CadenceTaskComposerSeed {
+        guard let key, !key.isEmpty else { return base }
+        return seed(forDropKey: key, todayKey: todayKey)
+    }
+
     private static func apply(
         _ part: String,
         to seed: inout CadenceTaskComposerSeed,
@@ -425,48 +387,5 @@ enum CadenceTaskDropSupport {
         guard value != "scheduled", value != "unscheduled" else { return nil }
         guard DateFormatters.date(from: value) != nil, value >= todayKey else { return nil }
         return value
-    }
-}
-
-// MARK: - Routing the drop back to the button
-
-/// Carries a resolved drop from wherever it landed back to the create-task button it was dragged
-/// from, which is the control that owns the composer sheet.
-///
-/// A shared object rather than a preference or an environment value for the reason
-/// `SidebarDragContext` documents: a drag source and its drop target are arbitrarily far apart in
-/// the view tree and cannot pass anything up or down between `onDrag` and `performDrop`. Unlike
-/// `SidebarDragContext` this one is `@Observable`, because the button has to *react* to a drop
-/// rather than merely read state during one.
-@Observable
-final class CadenceTaskDropCoordinator {
-    struct Request: Identifiable, Equatable {
-        let id = UUID()
-        /// The button the drag started from. Only that button presents.
-        let sourceID: UUID
-        let seed: CadenceTaskComposerSeed
-    }
-
-    static let shared = CadenceTaskDropCoordinator()
-
-    private(set) var pending: Request?
-
-    /// Returns false — and changes nothing — for a payload this context did not write.
-    @discardableResult
-    func deliver(payload: String, dropKey: String, todayKey: String) -> Bool {
-        guard let sourceID = CadenceTaskDropPayload.sourceID(from: payload) else { return false }
-        pending = Request(
-            sourceID: sourceID,
-            seed: CadenceTaskDropSupport.seed(forDropKey: dropKey, todayKey: todayKey)
-        )
-        return true
-    }
-
-    /// Hands the request to its own source exactly once. Every other live button asks and gets
-    /// nothing, which is what stops a drop opening four composers on an iPad.
-    func consume(for sourceID: UUID) -> Request? {
-        guard let request = pending, request.sourceID == sourceID else { return nil }
-        pending = nil
-        return request
     }
 }

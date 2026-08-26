@@ -332,7 +332,7 @@ struct iOSListDetailView: View {
                     iOSTaskGroupSection(
                         title: "Completed",
                         color: Theme.green,
-                        tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks),
+                        tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
                         showsContainer: false,
                         opacity: 0.62,
                         dropIdentity: .completion

@@ -63,9 +63,7 @@ struct iOSContainerChoicePopover: View {
     }
 
     private func groupLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(Theme.dim)
+        SectionEyebrowLabel(text: text, size: .compact)
             .padding(.horizontal, 2)
     }
 
