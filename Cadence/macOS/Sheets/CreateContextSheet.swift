@@ -36,7 +36,7 @@ struct CreateContextSheet: View {
             colorHex: selectedColor,
             icon: selectedIcon
         )
-        ctx.order = contexts.count
+        ctx.order = CadenceOrderAllocation.nextOrder(after: contexts, order: \.order)
         modelContext.insert(ctx)
         dismiss()
     }

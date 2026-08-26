@@ -91,7 +91,7 @@ struct LinksView: View {
         let link = SavedLink(title: title.isEmpty ? urlStr : title, url: urlStr)
         link.area = area
         link.project = project
-        link.order = links.count
+        link.order = CadenceOrderAllocation.nextOrder(after: links, order: \.order)
         modelContext.insert(link)
         newTitle = ""
         newURL = ""

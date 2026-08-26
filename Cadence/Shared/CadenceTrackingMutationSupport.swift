@@ -87,7 +87,7 @@ enum CadenceTrackingMutationSupport {
     }
 
     private static func nextOrder<T>(in items: [T], order: (T) -> Int) -> Int {
-        (items.map(order).max() ?? -1) + 1
+        CadenceOrderAllocation.nextOrder(after: items, order: order)
     }
 
     private static func nextOrder(in goals: [Goal]) -> Int {
