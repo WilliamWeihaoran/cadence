@@ -36,6 +36,42 @@ struct DateFormatterSupportTests {
         #expect(TimeFormatters.durationLabel(actual: 0, estimated: 30) == "-/30m")
     }
 
+    /// `normalizedDateKey` is the single spelling of "this text is a storage key".
+    ///
+    /// The rule under test is normalize-when-unambiguous, reject-when-the-century-is-a-guess:
+    /// `"2026-8-20"` names one day and becomes `"2026-08-20"`, while `"26-8-2"` parses just as
+    /// happily to the year 26 AD and is refused rather than stored as `"0026-08-02"`.
+    @Test func normalizedDateKeyCanonicalizesUnambiguousSpellingsAndRefusesAShortYear() {
+        #expect(DateFormatters.normalizedDateKey("2026-08-20") == "2026-08-20")
+        #expect(DateFormatters.normalizedDateKey("2026-8-20") == "2026-08-20")
+        #expect(DateFormatters.normalizedDateKey("2026-8-2") == "2026-08-02")
+        #expect(DateFormatters.normalizedDateKey("  2026-8-20  ") == "2026-08-20")
+        #expect(DateFormatters.normalizedDateKey("2026-008-020") == "2026-08-20")
+        #expect(DateFormatters.normalizedDateKey("2026/08/20") == "2026-08-20")
+
+        // Refused, and the first two are the interesting ones: the parse succeeds, so nothing but
+        // this function stands between them and a stored key.
+        #expect(DateFormatters.date(from: "26-8-2") != nil)
+        #expect(DateFormatters.normalizedDateKey("26-8-2") == nil)
+        #expect(DateFormatters.normalizedDateKey("0026-08-02") == "0026-08-02")
+        #expect(DateFormatters.normalizedDateKey("2026-13-01") == nil)
+        #expect(DateFormatters.normalizedDateKey("2026-02-30") == nil)
+        #expect(DateFormatters.normalizedDateKey("2026-08-20T10:00") == nil)
+        #expect(DateFormatters.normalizedDateKey("next Tuesday") == nil)
+        #expect(DateFormatters.normalizedDateKey("") == nil)
+    }
+
+    /// Why the padding is not pedantry: the app compares storage keys as strings, so a key that is
+    /// not fixed-width sorts into a different day than it means.
+    @Test func aLenientlySpelledKeyOrdersWrongUntilItIsNormalized() throws {
+        let raw = "2026-8-20"
+        let canonical = try #require(DateFormatters.normalizedDateKey(raw))
+
+        #expect((raw < "2026-08-25") == false)
+        #expect(canonical < "2026-08-25")
+        #expect(DateFormatters.date(from: raw) == DateFormatters.date(from: canonical))
+    }
+
     @Test func timeLabelsWrapEndOfDayToMidnight() throws {
         #expect(TimeFormatters.timeString(from: 24 * 60) == "12 AM")
         #expect(TimeFormatters.timeRange(startMin: 18 * 60, endMin: 24 * 60) == "6 PM – 12 AM")

@@ -428,25 +428,6 @@ _Nothing in flight._
   Not decided, and worth asking the user once there is something to look at: what happens to a task
   with no list — its own group, or the bottom of the page.
 
-- [T-299] **A date that parses is stored unnormalized, and lexical ordering then lies.** From the
-  third external audit (Codex, 2026-08-26); **premise verified, and demonstrated rather than
-  argued.** Several paths validate a date by parsing it and then keep the raw string.
-  `DateFormatter` with `yyyy-MM-dd` and `en_US_POSIX` is lenient: measured on this toolchain,
-  `2026-8-20` parses happily and *would* format back as `2026-08-20`. The code never asks it to.
-  Why that is a real defect and not pedantry, also measured: **`"2026-8-20" < "2026-08-25"` is
-  `false`** — the whole app relies on fixed-width keys so that lexical comparison equals
-  chronological comparison, which `AppTask` says in as many words. A task stored as `2026-8-20`
-  can miss "due today", overdue, grouping, sorting and equality at once.
-  Sites: `CadenceMCPArgumentParsing` returns the raw string after a successful parse;
-  `CadenceMCPServiceSupport` returns the trimmed raw value; `CadenceWriteService` stores it on both
-  the update and the due-date path. **The app already has the right pattern** —
-  `AIActionService.swift:157` normalizes back through `DateFormatters.dateKey(from:)` and documents
-  this exact failure mode. Fix by giving `DateFormatters` a `normalizedDateKey(_:)` and routing MCP
-  input through it. Test with `2026-8-20` and assert `2026-08-20` is stored.
-  **The MCP write path is the one place in the app that takes dates from outside**, gated on
-  `CADENCE_MCP_ENABLE_WRITES` and mutating the real store from a second process with no UI — so it
-  is exactly where a malformed key can be introduced without anyone watching.
-
 - [T-300] **The drag-and-drop date seed has the same lenient-parse bug.** From the same audit,
   premise verified verbatim: `CadenceTaskDropSupport.dateValue` does
   `guard DateFormatters.date(from: value) != nil` and then `return value`. Same class as [[T-299]],
@@ -1242,6 +1223,45 @@ _Nothing in flight._
   pinned either way, so the exception cannot decay into an oversight.
 
 ## Done
+
+- [T-299] _(sha to be added on commit)_ **A date that parses is now normalized before it is
+  stored, so lexical ordering stops lying.** Filed from the third external audit (Codex,
+  2026-08-26). The premise held: `DateFormatter` with `yyyy-MM-dd` and `en_US_POSIX` accepts
+  `2026-8-20`, `2026-8-2`, `2026/08/20` and `2026-008-020`, and every site that validated by
+  parsing kept the caller's spelling. `"2026-8-20" < "2026-08-25"` is `false`, so such a key loses
+  every comparison the app makes on dates at once.
+
+  **Demonstrated end to end before and after**, by driving the built `CadenceMCPServer` over stdio
+  against a temp store (`CADENCE_MCP_STORE_URL`, never the app-group store). Before: `create_task`
+  with `dueDate: "2026-8-20"` stored `"2026-8-20"`, and `list_tasks` with
+  `dueDateFrom: "2026-8-1"` / `dueDateTo: "2026-9-30"` returned **nothing at all** — the task was
+  invisible to a range that contains it. `"26-9-2"` was accepted and stored verbatim. After: the
+  same calls store `"2026-08-20"`, the filter finds the task, and `"26-9-2"` is an error.
+
+  **The fix is one function.** `DateFormatters.normalizedDateKey(_:)` parses and then re-formats,
+  and is the single spelling of "this text is a storage key". Routed through it:
+  `CadenceMCPServiceSupport.validatedOptionalDate` / `resolvedDateKey` (which is what
+  `CadenceWriteService`'s create, update and schedule arms call, so all three store canonical keys),
+  `CadenceReadService`'s `dueDateFrom` / `dueDateTo` / `scheduledDate` / bundle `dateKey` filters —
+  the read half of the same bug, where an unnormalized bound silently matched nothing —
+  `CadenceMCPArgumentParsing.dateKey`, and `AIActionService.normalizedDate`, which had grown the
+  rule locally and now shares it.
+
+  **Normalize versus reject, decided.** Normalize whenever the meaning is unambiguous: `2026-8-20`
+  and `2026-8-2` each name exactly one day, and refusing them would only make callers guess our
+  padding. Reject exactly one thing — a year that is not four digits. `"26-8-2"` parses to the year
+  26 AD and would normalize to `"0026-08-02"`, which is a century the caller never chose; a century
+  is a guess, not a spelling. Everything else the audit worried about (`2026-13-01`, `2026-02-30`,
+  `2026-08-20T10:00`, trailing garbage) never parsed in the first place — measured, not assumed.
+
+  The argument layer's own normalization is now belt-and-braces: with only it reverted the stored
+  key stays canonical, because the service layer catches it. What that layer still buys is the
+  error an agent reads — `Invalid dueDate: 26-9-2. Expected yyyy-MM-dd, today, tomorrow, yesterday,
+  or in N days.` rather than a bare invalid-key throw — and independence from every future consumer
+  of `dateKey(_:)` remembering to validate downstream.
+
+  [[T-300]] is the same class in `CadenceTaskDropSupport.dateValue` and is now a one-line call to
+  the same helper.
 
 - [T-304] _(sha to be added on commit)_ **A do date and a deadline that name one day now draw one
   chip — the flag — on both platforms.** Reported by the user 2026-08-26 with a screenshot of macOS

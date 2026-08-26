@@ -146,14 +146,14 @@ enum AIActionService {
     /// Tuesday" or "2026-13-01" must not silently become a task with a wrong — or a garbage —
     /// due date, and that is a decision worth a test of its own rather than one inferred from
     /// `applyTaskDrafts`.
+    ///
+    /// Re-formatted, not returned as typed: `DateFormatters.ymd` is lenient about a single-digit
+    /// month — `"2026-8-20"` parses — and this used to hand that string straight through to
+    /// `TaskCreationDraft.dueDateKey`, where no "due today" check, group or sort key could see it.
+    /// Found by `AINoteActionReviewTests`; `DateFormatters.normalizedDateKey` now carries that rule
+    /// for every caller that takes a date from outside the app, this one and MCP alike, so there is
+    /// one spelling of it rather than two that can drift.
     static func normalizedDate(_ value: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let date = DateFormatters.date(from: trimmed) else { return "" }
-        // Re-formatted, not returned as typed. `DateFormatters.ymd` is lenient about a single-digit
-        // month — `"2026-8-20"` parses — and this used to hand that string straight through to
-        // `TaskCreationDraft.dueDateKey`. Every date comparison in Cadence is a string comparison
-        // against a canonical `yyyy-MM-dd`, so a task stored with `"2026-8-20"` is due on a day that
-        // no "due today" check, no group and no sort key can see. Found by `AINoteActionReviewTests`.
-        return DateFormatters.dateKey(from: date)
+        DateFormatters.normalizedDateKey(value) ?? ""
     }
 }

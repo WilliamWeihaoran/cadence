@@ -65,7 +65,12 @@ extension Dictionary where Key == String, Value == MCP.Value {
         guard let raw = string(key)?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
             return nil
         }
-        if DateFormatters.date(from: raw) != nil { return raw }
+        // Normalized, never returned as typed. `yyyy-MM-dd` parsing is lenient — `"2026-8-20"`
+        // and `"2026/08/20"` both parse — and this is the outside edge of the app, so the raw text
+        // an agent sent used to become a stored key that no comparison in Cadence can match.
+        // `normalizedDateKey` rejects only what is genuinely ambiguous (a short year), and anything
+        // it refuses falls through to the relative-day forms below and then to the error message.
+        if let normalized = DateFormatters.normalizedDateKey(raw) { return normalized }
         let normalized = raw.lowercased()
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())

@@ -171,18 +171,18 @@ final class CadenceReadService {
             filtered = filtered.filter { !$0.isDone }
         }
 
-        if let dueDateFrom = options.dueDateFrom {
-            _ = try parsedDate(dueDateFrom)
+        // Normalized rather than parsed-and-discarded: these three filters compare the caller's
+        // string against stored keys, so a lenient spelling like `"2026-8-20"` used to validate and
+        // then quietly match nothing at all (`>=`, `<=` and `==` all read it as a different day).
+        if let dueDateFrom = try normalizedDateKey(options.dueDateFrom) {
             filtered = filtered.filter { !$0.dueDate.isEmpty && $0.dueDate >= dueDateFrom }
         }
 
-        if let dueDateTo = options.dueDateTo {
-            _ = try parsedDate(dueDateTo)
+        if let dueDateTo = try normalizedDateKey(options.dueDateTo) {
             filtered = filtered.filter { !$0.dueDate.isEmpty && $0.dueDate <= dueDateTo }
         }
 
-        if let scheduledDate = options.scheduledDate {
-            _ = try parsedDate(scheduledDate)
+        if let scheduledDate = try normalizedDateKey(options.scheduledDate) {
             filtered = filtered.filter { $0.scheduledDate == scheduledDate }
         }
 
@@ -252,8 +252,7 @@ final class CadenceReadService {
     func listTaskBundles(options: CadenceTaskBundleListOptions) throws -> [CadenceTaskBundleSummary] {
         var bundles = try fetchTaskBundles()
 
-        if let dateKey = options.dateKey {
-            _ = try parsedDate(dateKey)
+        if let dateKey = try normalizedDateKey(options.dateKey) {
             bundles = bundles.filter { $0.dateKey == dateKey }
         }
 
@@ -1271,8 +1270,9 @@ final class CadenceReadService {
         try CadenceMCPServiceSupport.weekKey(for: dateKey)
     }
 
-    private func parsedDate(_ dateKey: String) throws -> Date {
-        try CadenceMCPServiceSupport.parsedDate(dateKey)
+    /// `nil` in, `nil` out; anything else is normalized to a canonical key or throws.
+    private func normalizedDateKey(_ dateKey: String?) throws -> String? {
+        try CadenceMCPServiceSupport.validatedOptionalDate(dateKey)
     }
 
     private func uuid(from id: String) throws -> UUID {

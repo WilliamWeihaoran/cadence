@@ -7,20 +7,33 @@ nonisolated enum CadenceMCPServiceSupport {
         return trimmed
     }
 
+    /// The canonical `yyyy-MM-dd` spelling of an externally supplied date, or `invalidDate`.
+    ///
+    /// **MCP is the only door through which a date enters Cadence from outside**, so it is the only
+    /// place a non-canonical key can be written with nobody watching. These three helpers used to
+    /// validate by parsing and then return the *raw* text, which let `"2026-8-20"` through as
+    /// typed — a key that parses, displays fine, and loses every string comparison it should win
+    /// (`"2026-8-20" < "2026-08-25"` is `false`). See `DateFormatters.normalizedDateKey` for what is
+    /// normalized versus rejected and why.
+    static func normalizedDateKey(_ dateKey: String) throws -> String {
+        guard let normalized = DateFormatters.normalizedDateKey(dateKey) else {
+            throw CadenceReadError.invalidDate(dateKey)
+        }
+        return normalized
+    }
+
     static func validatedOptionalDate(_ dateKey: String?) throws -> String? {
         guard let dateKey else { return nil }
         let trimmed = dateKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        _ = try parsedDate(trimmed)
-        return trimmed
+        return try normalizedDateKey(trimmed)
     }
 
     static func resolvedDateKey(_ dateKey: String?) throws -> String {
         guard let dateKey else { return DateFormatters.todayKey() }
         let trimmed = dateKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return DateFormatters.todayKey() }
-        _ = try parsedDate(trimmed)
-        return trimmed
+        return try normalizedDateKey(trimmed)
     }
 
     static func weekKey(for dateKey: String) throws -> String {

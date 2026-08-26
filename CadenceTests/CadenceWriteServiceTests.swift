@@ -291,6 +291,70 @@ struct CadenceWriteServiceTests {
         #expect(task.summary.estimatedMinutes == 60)
     }
 
+    /// MCP is the one door through which a date reaches the store from outside the app, and every
+    /// write arm used to keep the caller's spelling verbatim after validating it by parsing. A task
+    /// stored as `"2026-8-20"` is due before the 25th and sorts after it, so it misses "due today",
+    /// overdue, grouping and sorting at once with nothing malformed on screen.
+    ///
+    /// Asserted against the **stored** `AppTask`, not the returned DTO, because the DTO could echo a
+    /// normalized string while the model kept the raw one.
+    @Test func externallySuppliedDatesAreStoredCanonicallyOnCreateUpdateAndSchedule() throws {
+        let fixture = try Fixture()
+        let created = try fixture.writeService.createTask(options: .init(
+            title: "Lenient dates",
+            dueDate: "2026-8-20",
+            scheduledDate: "2026-8-2"
+        ))
+        let taskID = try #require(UUID(uuidString: created.summary.id))
+        func stored() throws -> AppTask {
+            let tasks = try fixture.modelContext.fetch(FetchDescriptor<AppTask>())
+            return try #require(tasks.first { $0.id == taskID })
+        }
+
+        #expect(try stored().dueDate == "2026-08-20")
+        #expect(try stored().scheduledDate == "2026-08-02")
+        // The point of the padding: this comparison is `false` for the string that was sent.
+        #expect(try stored().dueDate < "2026-08-25")
+
+        _ = try fixture.writeService.updateTask(options: .init(taskId: created.summary.id, dueDate: "2026-9-1"))
+        #expect(try stored().dueDate == "2026-09-01")
+
+        _ = try fixture.writeService.scheduleTask(options: .init(
+            taskId: created.summary.id,
+            scheduledDate: "2026-9-3",
+            scheduledStartMin: 540
+        ))
+        #expect(try stored().scheduledDate == "2026-09-03")
+        #expect(try stored().scheduledStartMin == 540)
+
+        // A two-digit year parses to the year 26 AD. That is a century the caller never chose, so
+        // it is an error rather than a silent normalization, and nothing is written.
+        #expect(throws: CadenceReadError.self) {
+            try fixture.writeService.updateTask(options: .init(taskId: created.summary.id, dueDate: "26-9-2"))
+        }
+        #expect(try stored().dueDate == "2026-09-01")
+    }
+
+    /// The read half of the same defect: these filters compare the caller's text against stored
+    /// keys, so an unnormalized bound silently matches nothing instead of failing loudly.
+    @Test func listTaskFiltersNormalizeTheirDateBoundsBeforeComparing() throws {
+        let fixture = try Fixture()
+        _ = try fixture.writeService.createTask(options: .init(
+            title: "In range",
+            dueDate: "2026-08-20",
+            scheduledDate: "2026-08-20"
+        ))
+
+        let byDueRange = try fixture.readService.listTasks(options: .init(
+            dueDateFrom: "2026-8-1",
+            dueDateTo: "2026-8-31"
+        ))
+        #expect(byDueRange.map(\.title) == ["In range"])
+
+        let byScheduledDay = try fixture.readService.listTasks(options: .init(scheduledDate: "2026-8-20"))
+        #expect(byScheduledDay.map(\.title) == ["In range"])
+    }
+
     @Test func appendCoreNoteCreatesMissingAndAppendsExistingNotes() throws {
         let fixture = try Fixture()
 

@@ -197,6 +197,34 @@ nonisolated enum DateFormatters {
         ymd.date(from: key)
     }
 
+    /// Parses a date the way `date(from:)` does and returns the **canonical** `yyyy-MM-dd` spelling
+    /// of it, or `nil` when the text is not a date this app will accept.
+    ///
+    /// This exists because `ymd` is lenient and every date comparison in Cadence is a string
+    /// comparison. Measured on this toolchain: `"2026-8-20"` parses happily, `"2026/08/20"` parses,
+    /// and `"2026-008-020"` parses — while `"2026-08-20T10:00"`, `"2026-13-01"` and `"2026-02-30"`
+    /// do not. So "it parsed" is not the same claim as "it is a storage key", and code that
+    /// validates by parsing and then keeps the raw string writes a key nothing can match:
+    /// `"2026-8-20" < "2026-08-25"` is **`false`**, so a task due before the 25th sorts after it,
+    /// misses "due today", misses overdue, and lands in the wrong group. `AppTask` states the
+    /// fixed-width invariant in as many words; this is the one function that enforces it.
+    ///
+    /// **Normalize, don't reject, when the meaning is unambiguous.** `"2026-8-20"` and `"2026-8-2"`
+    /// each name exactly one day, and refusing them would only push a caller into guessing our
+    /// padding rules. The single exception is a **year that is not four digits**: `"26-8-2"` parses
+    /// to the year 26 AD and formats back as `"0026-08-02"`, so normalizing it silently would store
+    /// a date two millennia from the one that was meant. A century is a guess, not a spelling, so
+    /// that one is rejected and the caller sees an error.
+    ///
+    /// `AIActionService.normalizedDate` reached the same conclusion for model-authored dates before
+    /// this helper existed; it stays as the empty-string-returning wrapper its call sites want.
+    static func normalizedDateKey(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let date = ymd.date(from: trimmed) else { return nil }
+        guard trimmed.prefix(while: \.isNumber).count == 4 else { return nil }
+        return dateKey(from: date)
+    }
+
     /// Resolves a `yyyy-MM-dd` key to midnight **in `calendar`'s own time zone**.
     ///
     /// `ymd` pins a locale but not a time zone, so it parses in the system zone. That is fine
