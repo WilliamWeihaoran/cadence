@@ -109,8 +109,14 @@ struct iOSCreateTaskSheet: View {
         // the keyboard never comes up — the whole point of this screen.
         .onAppear {
             DispatchQueue.main.async { focusedField = .title }
+            reconcileContainer()
         }
         .onChange(of: fields.container) { _, _ in normalizeSection() }
+        // **T-317: the lists change too, not just the selection.** Re-normalizing only when the
+        // *selection* changes is what let a sheet go on naming a list that had been deleted in
+        // another window or removed by sync. `@Query` republishes when the store does, so this
+        // flips the moment the chosen list stops existing.
+        .onChange(of: containerStillExists) { _, _ in reconcileContainer() }
     }
 
     /// Spacings come from `CadenceTaskComposerLayout` rather than being written here, so the height
@@ -196,8 +202,8 @@ struct iOSCreateTaskSheet: View {
             iOSTaskComposerMarkerSuggestions(
                 kind: .list,
                 shortcut: shortcut,
-                activeAreas: activeAreas,
-                activeProjects: activeProjects,
+                areas: areas,
+                projects: projects,
                 allTags: tags,
                 onPickContainer: { selection in
                     title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
@@ -211,8 +217,8 @@ struct iOSCreateTaskSheet: View {
             iOSTaskComposerMarkerSuggestions(
                 kind: .tag,
                 shortcut: shortcut,
-                activeAreas: activeAreas,
-                activeProjects: activeProjects,
+                areas: areas,
+                projects: projects,
                 allTags: tags,
                 onPickContainer: { _ in },
                 onPickTag: { tag in
@@ -235,8 +241,8 @@ struct iOSCreateTaskSheet: View {
             selectedTags: $selectedTags,
             newTagName: $newTagName,
             titleText: title,
-            activeAreas: activeAreas,
-            activeProjects: activeProjects,
+            areas: areas,
+            projects: projects,
             availableSections: availableSections,
             allTags: tags,
             onPickPriority: { priority in
@@ -250,16 +256,27 @@ struct iOSCreateTaskSheet: View {
 
     // MARK: - Derived state
 
-    private var activeAreas: [Area] {
-        areas.filter(\.isActive)
-    }
-
-    private var activeProjects: [Project] {
-        projects.filter(\.isActive)
-    }
-
+    /// **One pair of arrays feeds everything this sheet does with a list.**
+    ///
+    /// The tile that names the destination, the sections its neighbour offers, and the
+    /// `TaskCreationService` the Add button builds all read `areas` / `projects`. The sheet used to
+    /// hand the tiles an `activeAreas` / `activeProjects` filtered copy while building the service
+    /// from the unfiltered one, so a list completed or archived while the sheet was open made the
+    /// tile read "Inbox" while the task landed in that list (T-318). Which lists a *picker* may
+    /// offer is a separate question, answered by `CadenceTaskComposerSupport.pickable*` at the
+    /// control that asks it.
     private var containerResolver: TaskContainerResolver {
         TaskContainerResolver(areas: areas, projects: projects)
+    }
+
+    /// `false` once the chosen list has stopped existing. Watched rather than read, so the sheet
+    /// reacts to the store changing under it — see the `onChange` in `body`.
+    private var containerStillExists: Bool {
+        !CadenceTaskComposerSupport.namesMissingContainer(
+            fields.container,
+            areas: areas,
+            projects: projects
+        )
     }
 
     private var availableSections: [String] {
@@ -281,8 +298,32 @@ struct iOSCreateTaskSheet: View {
         fields.sectionName = containerResolver.normalizedSectionName(fields.sectionName, for: fields.container)
     }
 
+    /// Puts the selection back where it can be honoured, and says so when it had to.
+    ///
+    /// **T-317.** `TaskContainerResolver.applyContainer` attaches nothing for an id it cannot find
+    /// and `insertTask` inserts the task regardless, so a stale selection produced an Inbox task
+    /// under a sheet that still named a list. Rather than let that reach the service, the sheet
+    /// resets the field the user can see and refuses this Add: the composer still holds every value
+    /// they typed, so confirming costs one more tap and nothing is lost by asking.
+    ///
+    /// Returns whether the selection was already good.
+    @discardableResult
+    private func reconcileContainer() -> Bool {
+        guard CadenceTaskComposerSupport.namesMissingContainer(
+            fields.container,
+            areas: areas,
+            projects: projects
+        ) else { return true }
+
+        fields.container = .inbox
+        normalizeSection()
+        actionError = CadenceTaskComposerSupport.missingContainerNotice
+        return false
+    }
+
     private func create() {
         guard canCreate else { return }
+        guard reconcileContainer() else { return }
 
         let draft = CadenceTaskComposerSupport.draft(
             title: title,

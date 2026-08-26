@@ -25,6 +25,9 @@ struct CreateTaskSheet: View {
     @State private var doDate:            Date
     @State private var selectedTags:      [Tag] = []
 
+    /// Why the sheet is still open. `nil` on every path that has not failed.
+    @State private var actionError: String?
+
     @State private var showPriorityPicker = false
     @State private var showDoPicker  = false
     @State private var showDuePicker = false
@@ -57,6 +60,7 @@ struct CreateTaskSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             keyboardShortcuts
+            actionErrorNotice
             titleSection
             notesSection
             subtasksSection
@@ -69,9 +73,28 @@ struct CreateTaskSheet: View {
         .frame(width: 600)
         .background(Theme.surface)
         .onAppear {
+            reconcileContainer()
             normalizeSelectedSection()
         }
         .onChange(of: selectedContainer) { _, _ in normalizeSelectedSection() }
+        // **T-317: the lists change too, not just the selection.** The section was re-normalized
+        // whenever the *selection* changed and never when the available lists did, so a container
+        // deleted in another window or removed by sync stayed selected — and creation quietly
+        // downgraded it to the Inbox. `@Query` republishes when the store does, so this flips the
+        // moment the chosen list stops existing.
+        .onChange(of: containerStillExists) { _, _ in reconcileContainer() }
+    }
+
+    /// Said above the title field: the sheet has stayed open, and this is the reason. Placed there
+    /// rather than beside the Add button for the reason iOS.s composer gives — the fields
+    /// underneath are the ones that survived, and the user is about to press Add again.
+    @ViewBuilder
+    private var actionErrorNotice: some View {
+        if let actionError {
+            CadenceInlineFailureNotice(text: actionError)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+        }
     }
 
     private var keyboardShortcuts: some View {
@@ -317,6 +340,16 @@ struct CreateTaskSheet: View {
         TaskContainerResolver(areas: areas, projects: projects)
     }
 
+    /// `false` once the chosen list has stopped existing. Watched rather than read — see the
+    /// `onChange` in `body`.
+    private var containerStillExists: Bool {
+        !CadenceTaskComposerSupport.namesMissingContainer(
+            selectedContainer,
+            areas: areas,
+            projects: projects
+        )
+    }
+
     private var availableSections: [String] {
         containerResolver.availableSections(for: selectedContainer)
     }
@@ -332,8 +365,32 @@ struct CreateTaskSheet: View {
         TaskTitleSupport.priorityShortcut(in: title)?.title ?? TaskTitleSupport.normalized(title)
     }
 
+    /// Puts the selection back where it can be honoured, and says so when it had to.
+    ///
+    /// **T-317.** `TaskContainerResolver.applyContainer` attaches nothing for an id it cannot find
+    /// and `insertTask` inserts the task regardless, so a stale selection produced an Inbox task
+    /// under a sheet whose badge still named a list. The badge is reset where the user can see it
+    /// and this Add is refused; the composer still holds everything they typed, so confirming costs
+    /// one keystroke and nothing is lost by asking.
+    ///
+    /// Returns whether the selection was already good.
+    @discardableResult
+    private func reconcileContainer() -> Bool {
+        guard CadenceTaskComposerSupport.namesMissingContainer(
+            selectedContainer,
+            areas: areas,
+            projects: projects
+        ) else { return true }
+
+        selectedContainer = .inbox
+        normalizeSelectedSection()
+        actionError = CadenceTaskComposerSupport.missingContainerNotice
+        return false
+    }
+
     private func createTask() {
         guard !trimmedTitle.isEmpty else { return }
+        guard reconcileContainer() else { return }
         let draft = TaskCreationDraft(
             title: title,
             notes: notes,
@@ -350,6 +407,7 @@ struct CreateTaskSheet: View {
         guard TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: modelContext) != nil else {
             return
         }
+        actionError = nil
         // Fast-path reconcile so a newly-created scheduled/due task's notification is picked up
         // immediately, instead of waiting for the next scenePhase checkpoint.
         HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)

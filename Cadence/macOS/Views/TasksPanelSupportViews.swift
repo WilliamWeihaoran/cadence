@@ -147,12 +147,15 @@ struct ContainerPickerBadge: View {
 
     @State private var showPicker = false
 
+    /// The name of the list the selection actually resolves to, and "Inbox" when it resolves to
+    /// none — including when the list it named has been deleted.
+    ///
+    /// It used to answer a bare "Area" / "Project" in that last case, which reads as a list and is
+    /// not one: `TaskContainerResolver.applyContainer` attaches nothing for an id it cannot find,
+    /// so the destination was already the Inbox and the badge was the only thing still claiming
+    /// otherwise (T-317). Shared with the iOS composer's List tile so the two cannot drift.
     private var label: String {
-        switch selection {
-        case .inbox:           return "Inbox"
-        case .area(let id):    return areas.first(where: { $0.id == id })?.name ?? "Area"
-        case .project(let id): return projects.first(where: { $0.id == id })?.name ?? "Project"
-        }
+        CadenceTaskComposerSupport.containerName(for: selection, areas: areas, projects: projects)
     }
 
     private var labelIcon: String {

@@ -107,9 +107,15 @@ say "== scratch directories =="
 # an isolated tree removed from under a running build makes the failed `cd` fall
 # through to the live repo, and the run then reports exit 0 against the wrong
 # sources. Staleness = untouched for 30 minutes, which a live build never is.
+# `find -newermt` is NOT usable for this. Measured 2026-08-27: on this machine it
+# matches nothing even against a file created one second ago, so every directory read
+# as stale and `--apply` deleted live agents' trees -- it took a running agent's
+# isolated copy out from under it mid-run. Compare mtimes numerically instead.
 for d in "$SCRATCH_ROOT"/*/*/scratchpad/(agent|lead)-*(N/); do
   sz=$(du -sh "$d" 2>/dev/null | cut -f1)
-  if [[ -n $(find "$d" -newermt '-30 minutes' -print -quit 2>/dev/null) ]]; then
+  newest=$(find "$d" -type f -exec stat -f %m {} + 2>/dev/null | sort -rn | head -1)
+  age=$(( $(date +%s) - ${newest:-0} ))
+  if (( age < 1800 )); then
     say "  $sz  ${d:t}  -- ACTIVE, left alone"
   else
     say "  $sz  ${d:t}  (stale)"

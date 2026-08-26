@@ -40,8 +40,14 @@ struct iOSTaskComposerValueTiles: View {
     @Binding var newTagName: String
     /// The live title, read only so the priority tile can show a `!!!` the moment it is typed.
     let titleText: String
-    let activeAreas: [Area]
-    let activeProjects: [Project]
+    /// **Every list, not the active ones.** These are the same two arrays the sheet builds its
+    /// `TaskCreationService` from, which is the point: the List tile named its list out of a
+    /// filtered copy while the save read the unfiltered one, so a list archived or completed while
+    /// the sheet was open made the tile read "Inbox" and the task land in that list (T-318). The
+    /// picker below still offers only active lists — `CadenceTaskComposerSupport.pickable*` —
+    /// because what may be newly *chosen* is a different question from what a selection *names*.
+    let areas: [Area]
+    let projects: [Project]
     let availableSections: [String]
     let allTags: [Tag]
     /// Setting the priority explicitly also has to take any `!` marker out of the title, or the
@@ -116,8 +122,8 @@ struct iOSTaskComposerValueTiles: View {
         }
         .popover(isPresented: $showContainerPicker) {
             iOSContainerChoicePopover(
-                activeAreas: activeAreas,
-                activeProjects: activeProjects,
+                activeAreas: CadenceTaskComposerSupport.pickableAreas(areas),
+                activeProjects: CadenceTaskComposerSupport.pickableProjects(projects),
                 selection: containerToken,
                 isPresented: $showContainerPicker
             )
@@ -224,34 +230,40 @@ struct iOSTaskComposerValueTiles: View {
         )
     }
 
-    private var selectedArea: Area? {
-        guard case .area(let id) = fields.container else { return nil }
-        return activeAreas.first { $0.id == id }
-    }
-
-    private var selectedProject: Project? {
-        guard case .project(let id) = fields.container else { return nil }
-        return activeProjects.first { $0.id == id }
+    /// The list the selection names, resolved **once** and read by the tile's name, glyph and
+    /// colour alike, out of the same arrays the sheet saves through.
+    private var resolvedContainer: GoalLinkTarget? {
+        CadenceTaskComposerSupport.resolvedContainer(
+            for: fields.container,
+            areas: areas,
+            projects: projects
+        )
     }
 
     private var containerTitle: String {
-        if let selectedArea { return selectedArea.name.isEmpty ? "Untitled Area" : selectedArea.name }
-        if let selectedProject { return selectedProject.name.isEmpty ? "Untitled Project" : selectedProject.name }
-        return CadenceTaskInspectorSupport.inboxSegmentTitle
+        CadenceTaskComposerSupport.containerName(
+            for: fields.container,
+            areas: areas,
+            projects: projects
+        )
     }
 
     private var containerIcon: String {
-        selectedProject == nil ? "tray.full.fill" : "checklist"
+        switch resolvedContainer {
+        case .project: return "checklist"
+        case .area, .none: return "tray.full.fill"
+        }
     }
 
     private var containerColor: Color {
-        if let selectedArea { return Color(hex: selectedArea.colorHex) }
-        if let selectedProject { return Color(hex: selectedProject.colorHex) }
-        return Theme.dim
+        guard let resolvedContainer else { return Theme.dim }
+        return Color(hex: resolvedContainer.colorHex)
     }
 
+    /// Whether the tile is naming a list at all. A selection whose list has gone reads as unset
+    /// here for the same reason it reads "Inbox" above: that is where the task would go.
     private var isInbox: Bool {
-        fields.container == .inbox
+        resolvedContainer == nil
     }
 
     private var showsSectionTile: Bool {
@@ -344,8 +356,11 @@ enum iOSTaskComposerMarkerKind {
 struct iOSTaskComposerMarkerSuggestions: View {
     let kind: iOSTaskComposerMarkerKind
     let shortcut: TaskTitleInlineShortcut
-    let activeAreas: [Area]
-    let activeProjects: [Project]
+    /// Every list. A suggestion strip is a picker, so it narrows to the active ones itself through
+    /// `CadenceTaskComposerSupport.pickable*` — the sheet hands every control the same two arrays
+    /// rather than a differently-filtered copy each (T-318).
+    let areas: [Area]
+    let projects: [Project]
     let allTags: [Tag]
     let onPickContainer: (TaskContainerSelection) -> Void
     let onPickTag: (Tag) -> Void
@@ -356,11 +371,13 @@ struct iOSTaskComposerMarkerSuggestions: View {
     }
 
     private var matchingAreas: [Area] {
-        activeAreas.filter { CadenceTaskComposerSupport.matchesQuery($0.name, query: shortcut.query) }
+        CadenceTaskComposerSupport.pickableAreas(areas)
+            .filter { CadenceTaskComposerSupport.matchesQuery($0.name, query: shortcut.query) }
     }
 
     private var matchingProjects: [Project] {
-        activeProjects.filter { CadenceTaskComposerSupport.matchesQuery($0.name, query: shortcut.query) }
+        CadenceTaskComposerSupport.pickableProjects(projects)
+            .filter { CadenceTaskComposerSupport.matchesQuery($0.name, query: shortcut.query) }
     }
 
     private var matchingTags: [Tag] {

@@ -258,6 +258,101 @@ enum CadenceTaskComposerSupport {
         return "\(usable.count) tags"
     }
 
+    // MARK: - Container resolution
+
+    /// The lists a container picker may **offer**.
+    ///
+    /// Both pickers already filter this way — macOS's `ContainerPickerFilterSupport.groups` and
+    /// iOS's `iOSContainerChoicePopover` — so the rule is written once here and derived at the
+    /// controls rather than handed to them. That matters because "which lists may be offered" and
+    /// "which list does this selection name" are different questions, and a composer that takes
+    /// two arrays for the first and two more for the second is a composer whose label and whose
+    /// save can disagree. See `resolvedContainer(for:areas:projects:)`.
+    static func pickableAreas(_ areas: [Area]) -> [Area] {
+        areas.filter(\.isActive)
+    }
+
+    static func pickableProjects(_ projects: [Project]) -> [Project] {
+        projects.filter(\.isActive)
+    }
+
+    /// The list a selection names, or `nil` when it names none — either because it is Inbox, or
+    /// because the list it named is no longer in the store.
+    ///
+    /// **This is the composer's one source.** The tile that says which list the task is going to,
+    /// the sections that tile's neighbour offers, and the `TaskCreationService` the Add button
+    /// builds all read the same two arrays through here, so there is no arrangement in which the
+    /// sheet can show one destination and save into another (T-318).
+    ///
+    /// Membership is existence, not activity, which is the rule the app's other write surface
+    /// already applies: `CadenceWriteService.resolveContainer` accepts any container it can find
+    /// and throws `containerNotFound` only when there is none. A list that has been archived or
+    /// completed since the sheet opened is still a real place a seeded task can go; a list that
+    /// has been deleted is not.
+    static func resolvedContainer(
+        for selection: TaskContainerSelection,
+        areas: [Area],
+        projects: [Project]
+    ) -> GoalLinkTarget? {
+        switch selection {
+        case .inbox:
+            return nil
+        case .area(let id):
+            return areas.first(where: { $0.id == id }).map { GoalLinkTarget.area($0) }
+        case .project(let id):
+            return projects.first(where: { $0.id == id }).map { GoalLinkTarget.project($0) }
+        }
+    }
+
+    /// Whether the selection names a list that is not there any more.
+    ///
+    /// Inbox is never missing: it is the *absence* of a list, so there is nothing to lose.
+    static func namesMissingContainer(
+        _ selection: TaskContainerSelection,
+        areas: [Area],
+        projects: [Project]
+    ) -> Bool {
+        guard selection != .inbox else { return false }
+        return resolvedContainer(for: selection, areas: areas, projects: projects) == nil
+    }
+
+    /// The selection a composer should be holding, given the lists that exist right now.
+    ///
+    /// **T-317.** A create sheet keeps its selection in `@State` and re-normalized only when the
+    /// *selection* changed, never when the available lists did, so an id for a list deleted in
+    /// another window or removed by sync stayed reachable — and `TaskContainerResolver`
+    /// `applyContainer` attaches nothing for an id it cannot find while the insert goes ahead
+    /// anyway. The task then landed in the Inbox while the sheet still named a list.
+    static func normalizedContainer(
+        _ selection: TaskContainerSelection,
+        areas: [Area],
+        projects: [Project]
+    ) -> TaskContainerSelection {
+        namesMissingContainer(selection, areas: areas, projects: projects) ? .inbox : selection
+    }
+
+    /// What the composer's List control says.
+    ///
+    /// `Inbox` covers both "no list chosen" and "the chosen list is gone", because those are the
+    /// same destination — the second only after `normalizedContainer` has made it so. Dimmer
+    /// styling is what conveys unset, exactly as the task inspector's breadcrumb does it.
+    static func containerName(
+        for selection: TaskContainerSelection,
+        areas: [Area],
+        projects: [Project]
+    ) -> String {
+        resolvedContainer(for: selection, areas: areas, projects: projects)?.displayName
+            ?? CadenceTaskInspectorSupport.inboxSegmentTitle
+    }
+
+    /// Said in the composer when the list it was holding has gone.
+    ///
+    /// The creation is refused rather than quietly downgraded: an Inbox task the user did not ask
+    /// for is indistinguishable from one they did, and the sheet still holds everything they typed,
+    /// so saying so and letting them press Add again costs one tap and no work.
+    static let missingContainerNotice =
+        "That list is no longer available. Add again to create this task in the Inbox."
+
     // MARK: - Container tokens
 
     /// `TaskContainerSelection` as the `"inbox"` / `"area:UUID"` / `"project:UUID"` string the iOS
