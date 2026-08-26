@@ -67,23 +67,53 @@ struct CadencePressFeedbackSurfaceTests {
     /// The style's own body. The blue wash lives inside a macOS fence, and the other branch hands
     /// the configuration to iOS's press style rather than re-spelling 0.97 / 0.62 — the numbers
     /// being in one place is the reason `.iosPressable` and this branch cannot drift.
+    ///
+    /// **Scoped to one function body, and it has to be.** The first version of this test sliced
+    /// from `struct CadencePlainButtonBody` to the end of the file and asked `range(of:)` for the
+    /// *first* wash. That found the fenced one and stopped, so adding a second `Theme.blue` wash
+    /// to the `#else` branch — keeping the delegation, so every positive assertion still held —
+    /// compiled on iOS and passed this suite. Both branches are now cut out of the body and
+    /// asserted separately, and the paint is counted rather than located.
     @Test func theHoverWashIsFencedAndTouchGetsPressFeedback() throws {
-        let code = try pressFeedbackStrippingComments(
-            pressFeedbackSourceFile("Cadence/Shared/CadenceHoverStyles.swift")
-        )
+        let raw = try pressFeedbackSourceFile("Cadence/Shared/CadenceHoverStyles.swift")
+        let code = try pressFeedbackStrippingComments(raw)
         #expect(code.contains("struct CadencePlainButtonBody"), "non-vacuity: still the style's file")
+        // The stripper ran, and it blanks rather than deletes — so these offsets mean something.
+        #expect(code != raw)
+        #expect(code.count == raw.count)
 
-        // The wash is drawn once, and only under the fence.
-        let body = try #require(code.range(of: "struct CadencePlainButtonBody"))
-        let fenced = code[body.lowerBound...]
-        let fenceStart = try #require(fenced.range(of: "#if os(macOS)"))
-        let fenceElse = try #require(fenced.range(of: "#else"))
-        let wash = try #require(fenced.range(of: "Theme.blue.opacity(backgroundOpacity)"))
-        #expect(fenceStart.lowerBound < wash.lowerBound)
-        #expect(wash.upperBound < fenceElse.lowerBound)
+        let styleBody = try cadenceFunctionBody("private struct CadencePlainButtonBody: View", in: code)
+        let viewBody = try cadenceFunctionBody("var body: some View", in: styleBody)
+        let fence = try #require(viewBody.range(of: "#else"))
+        let pointerBranch = String(viewBody[viewBody.startIndex..<fence.lowerBound])
+        let touchBranch = String(viewBody[fence.upperBound...])
 
-        // And the touch branch delegates rather than duplicating.
-        #expect(code.contains("iOSPressableButtonStyle().makeBody(configuration: configuration)"))
+        // The pointer keeps the wash — both halves of it — and the hover tracking that drives it.
+        #expect(pointerBranch.contains("#if os(macOS)"))
+        #expect(pointerBranch.contains("Theme.blue.opacity(backgroundOpacity)"))
+        #expect(pointerBranch.contains("Theme.blue.opacity(strokeOpacity)"))
+        #expect(pointerBranch.contains("CadenceHoverTracking(isHovered: $isHovered)"))
+
+        // The finger draws nothing of its own. It delegates, and the only thing it adds back is the
+        // hit area, which is shape rather than paint.
+        #expect(touchBranch.contains("iOSPressableButtonStyle().makeBody(configuration: configuration)"))
+        #expect(touchBranch.contains(".contentShape(RoundedRectangle(cornerRadius: 10))"))
+        for paint in ["Theme.", ".background(", ".overlay", ".fill(", "strokeBorder", "opacity("] {
+            #expect(touchBranch.contains(paint) == false, "the touch branch paints \(paint)")
+        }
+
+        // Counted over the whole body, so the wash cannot be drawn twice under either branch.
+        #expect(viewBody.components(separatedBy: "Theme.blue").count - 1 == 2)
+        #expect(viewBody.components(separatedBy: ".background(").count - 1 == 1)
+
+        // One level up: `makeBody` hands the configuration straight to the body above, so a wash
+        // cannot be reintroduced on the wrapper instead.
+        let makeBody = try cadenceFunctionBody("func makeBody(configuration: Configuration) -> some View", in: code)
+        #expect(makeBody.contains("CadencePlainButtonBody(configuration: configuration)"))
+        #expect(makeBody.contains("#if") == false)
+        #expect(makeBody.contains("Theme.") == false)
+
+        // The numbers stay in one place: iOS's press feedback is not re-spelled here.
         #expect(!code.contains("0.97"))
         #expect(!code.contains("0.62"))
     }
@@ -93,14 +123,43 @@ struct CadencePressFeedbackSurfaceTests {
     /// than the callers. Pinned so a later "cleanup" that fences these individually has to argue
     /// with a test rather than quietly reintroduce nine spellings of one platform check.
     @Test func theSharedPickersKeepOneUnfencedStyle() throws {
-        for path in [
+        // All five shared files that spell the style, not the two the ticket happened to name.
+        // `CadenceDatePicker` and `EstimatePickerControl` are the two that genuinely reach iOS;
+        // `CadenceButtons` and `CadenceContextPicker` are whole-file `#if os(macOS)` today, which
+        // is T-288's business and not this one. What is pinned for all four is the same: the style
+        // is applied straight, and no caller re-spells the platform split the style now handles.
+        let straight = [
+            "Cadence/Shared/Components/CadenceButtons.swift",
+            "Cadence/Shared/Components/CadenceContextPicker.swift",
             "Cadence/Shared/Components/CadenceDatePicker.swift",
             "Cadence/Shared/Components/EstimatePickerControl.swift"
-        ] {
+        ]
+        for path in straight {
             let code = try pressFeedbackStrippingComments(pressFeedbackSourceFile(path))
             #expect(code.contains(".buttonStyle(.cadencePlain)"), "\(path)")
             #expect(!code.contains("iosPressable"), "\(path) re-spells the platform split")
         }
+
+        // `CadenceTagChip` is the one deliberate fork, and says so in its own comment: the chip's
+        // *style* is the genuine platform difference. One of each, so the fork stays a fork.
+        let chipPath = "Cadence/Shared/Components/CadenceTagChip.swift"
+        let chip = try pressFeedbackStrippingComments(pressFeedbackSourceFile(chipPath))
+        #expect(chip.components(separatedBy: ".buttonStyle(.cadencePlain)").count - 1 == 1, "\(chipPath)")
+        #expect(chip.components(separatedBy: ".buttonStyle(.iosPressable)").count - 1 == 1, "\(chipPath)")
+
+        // And the sweep, so the list above cannot silently stop being all of them. A sixth file
+        // spelling the style is fine; one of these five *losing* it is a caller being fenced by
+        // hand, which is the thing this pins.
+        var scanned = 0
+        var spelling: Set<String> = []
+        for path in try pressFeedbackSwiftFiles(under: "Cadence/Shared") {
+            scanned += 1
+            let code = try pressFeedbackStrippingComments(pressFeedbackSourceFile(path))
+            if code.contains(".buttonStyle(.cadencePlain)") { spelling.insert(path) }
+        }
+        // Non-vacuity: the folder held 117 files when this was written.
+        #expect(scanned > 90, "scanned only \(scanned) files under Cadence/Shared")
+        #expect(spelling.isSuperset(of: Set(straight + [chipPath])), "missing: \(Set(straight + [chipPath]).subtracting(spelling).sorted())")
     }
 }
 
