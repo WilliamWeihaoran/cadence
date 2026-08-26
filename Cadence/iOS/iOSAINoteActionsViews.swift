@@ -86,7 +86,7 @@ struct iOSNoteAIActionsMenu: View {
         switch payload {
         case .summary(let markdown):
             iOSAISummaryReviewSheet(markdown: markdown) {
-                CadenceAINoteSummary.append(markdown, to: note, modelContext: modelContext)
+                try CadenceAINoteSummary.append(markdown, to: note, modelContext: modelContext)
             }
         case .taskDrafts(let drafts):
             iOSAITaskDraftReviewSheet(
@@ -143,10 +143,15 @@ private enum iOSAIReviewPayload: Identifiable {
 /// confirmation. Closing the sheet leaves the note untouched.
 struct iOSAISummaryReviewSheet: View {
     let markdown: String
-    let onAppend: () -> Void
+    /// Throwing, so a failed commit reaches this sheet rather than being swallowed under it.
+    /// `Append` used to dismiss unconditionally over a `try? modelContext?.save()`, which is a
+    /// sheet closing on a summary that was never written (T-315).
+    let onAppend: () throws -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// The same slot `iOSAITaskDraftReviewSheet` keeps, feeding the same kind of alert.
+    @State private var errorMessage: String?
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
@@ -176,16 +181,32 @@ struct iOSAISummaryReviewSheet: View {
                     Button("Discard") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Append") {
-                        onAppend()
-                        dismiss()
-                    }
-                    .fontWeight(.semibold)
+                    Button("Append") { append() }
+                        .fontWeight(.semibold)
                 }
             }
             .tint(Theme.blue)
+            .alert("Nothing Appended", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
         }
         .preferredColorScheme(.dark)
+    }
+
+    /// Dismisses only once the summary is in the store. The draft sheet below already worked this
+    /// way; the summary half of the same service had drifted, and this is it adopting the neighbour.
+    private func append() {
+        do {
+            try onAppend()
+            dismiss()
+        } catch {
+            errorMessage = AIErrorPresenter.message(for: error)
+        }
     }
 }
 
@@ -228,8 +249,12 @@ struct iOSAITaskDraftReviewSheet: View {
         horizontalSizeClass == .regular
     }
 
+    /// Read from `AIActionService.container`, which is also what `applyApproved` writes through —
+    /// so the label and the destination are one answer rather than two that agreed by hand. They
+    /// used to be two, both spelling `area ?? project`, and a note owned by an area *and* a project
+    /// is the case where that answer is wrong (T-316).
     private var destinationName: String {
-        area?.name ?? project?.name ?? "Inbox"
+        AIActionService.container(area: area, project: project).name ?? "Inbox"
     }
 
     var body: some View {

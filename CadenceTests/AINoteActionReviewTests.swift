@@ -514,6 +514,201 @@ struct AINoteActionReviewTests {
         let raw = try sourceFile("Cadence/Services/AI/AIActionService.swift")
         #expect(raw.contains("#if os(macOS)"))
     }
+
+    // MARK: - T-315: a summary that cannot be saved is not reported as saved
+
+    private func storedNote(in modelContext: ModelContext) throws -> Note {
+        try #require(try modelContext.fetch(FetchDescriptor<Note>()).first)
+    }
+
+    /// **The half that was missing.** `appending(_:to:)` — the string formatting — has been pinned
+    /// since T-185, while the commit under it was `try? modelContext?.save()` and nothing looked at
+    /// it at all. A summary is only appended if it is *stored*, so this reads it back out of the
+    /// context rather than off the object that was just mutated.
+    @Test func anAcceptedSummaryIsInTheStoreOnceTheCommitLands() throws {
+        let modelContext = try emptyStore()
+        let note = Note(kind: .permanent, title: "Notepad", content: "Notes.")
+        modelContext.insert(note)
+        try modelContext.save()
+
+        try CadenceAINoteSummary.append("Recap.", to: note, modelContext: modelContext)
+
+        #expect(try storedNote(in: modelContext).content == "Notes.\n\n## AI Summary\n\nRecap.")
+    }
+
+    /// **The T-315 assertion.** The commit throws, so the append throws — the review sheet's
+    /// `Append` cannot dismiss over it — and the note is left exactly as it was found, so the error
+    /// the sheet shows and the note behind it agree.
+    ///
+    /// The commit is injected because a `save()` that throws cannot be provoked out of an in-memory
+    /// container, and an error path no test can reach is an error path no test can prove.
+    @Test func aSummaryWhoseCommitThrowsIsRefusedAndLeavesTheNoteUntouched() throws {
+        let modelContext = try emptyStore()
+        let note = Note(kind: .permanent, title: "Notepad", content: "Notes.")
+        modelContext.insert(note)
+        try modelContext.save()
+        let updatedAtBefore = note.updatedAt
+
+        #expect(throws: AIActionError.self) {
+            try CadenceAINoteSummary.append("Recap.", to: note, modelContext: modelContext) { _ in
+                throw AIActionError.emptyNote
+            }
+        }
+
+        #expect(note.content == "Notes.")
+        #expect(note.updatedAt == updatedAtBefore)
+        #expect(try storedNote(in: modelContext).content == "Notes.")
+    }
+
+    /// An empty summary is still nothing to write, and writing nothing is not a failure.
+    @Test func anEmptySummaryCommitsNothingAndThrowsNothing() throws {
+        let modelContext = try emptyStore()
+        let note = Note(kind: .permanent, title: "Notepad", content: "Notes.")
+        modelContext.insert(note)
+        try modelContext.save()
+
+        var commits = 0
+        try CadenceAINoteSummary.append("   \n ", to: note, modelContext: modelContext) { _ in commits += 1 }
+
+        #expect(commits == 0)
+        #expect(note.content == "Notes.")
+    }
+
+    /// Both summary sheets take a **throwing** append and dismiss only after it returns. Exact
+    /// counts, so restoring either unconditional `dismiss()` — the T-315 shape — fails here rather
+    /// than passing on a "contains".
+    @Test func neitherSummarySheetDismissesOverAnUnsavedSummary() throws {
+        try expectOccurrences(of: "let onAppend: () throws -> Void", at: [
+            Self.iosActionsView: 1,
+            Self.macReviewSheet: 1,
+        ])
+        // One call each, and it is the `try` one: `"onAppend()"` counts every call, `"try onAppend()"`
+        // counts only the guarded ones, so equal counts mean no unguarded call survives.
+        try expectOccurrences(of: "onAppend()", at: [Self.iosActionsView: 1, Self.macReviewSheet: 1])
+        try expectOccurrences(of: "try onAppend()", at: [Self.iosActionsView: 1, Self.macReviewSheet: 1])
+
+        // And the swallow is gone from the shared append itself rather than worked around above.
+        let support = try strippingComments(sourceFile(Self.sharedSupport))
+        #expect(support.contains("modelContext: ModelContext,"))
+        #expect(support.contains("commit: (ModelContext) throws -> Void"))
+        #expect(!support.contains("try?"), "the summary append still swallows its commit")
+    }
+
+    // MARK: - T-316: one container for the note, and the project wins
+
+    private struct DoubleOwnedNote {
+        var modelContext: ModelContext
+        var area: Area
+        var project: Project
+        var note: Note
+    }
+
+    /// A note carrying an area *and* a project. Not a contrived state:
+    /// `DataIntegrityRepairServiceTests.duplicateDailyNotesAreMerged` pins that the repair service
+    /// deliberately keeps both owners on a merged note.
+    private func doubleOwnedNote() throws -> DoubleOwnedNote {
+        let modelContext = try emptyStore()
+        let context = Context(name: "Work")
+        let area = Area(name: "Engineering", context: context)
+        let project = Project(name: "Launch", context: context)
+        let note = Note(kind: .list, title: "Kickoff", content: "Ship the thing.", area: area, project: project)
+        modelContext.insert(context)
+        modelContext.insert(area)
+        modelContext.insert(project)
+        modelContext.insert(note)
+        try modelContext.save()
+        return DoubleOwnedNote(modelContext: modelContext, area: area, project: project, note: note)
+    }
+
+    /// The one decision, in the one place it is now made. Project first, because it is the narrower
+    /// task container — the same side the app already takes when a note is moved explicitly.
+    @Test func theContainerPrefersTheProjectAndFallsBackThroughAreaToInbox() throws {
+        let fixture = try doubleOwnedNote()
+
+        #expect(
+            AIActionService.container(area: fixture.area, project: fixture.project)
+                == AINoteContainer(name: "Launch", selection: .project(fixture.project.id))
+        )
+        #expect(
+            AIActionService.container(area: nil, project: fixture.project)
+                == AINoteContainer(name: "Launch", selection: .project(fixture.project.id))
+        )
+        #expect(
+            AIActionService.container(area: fixture.area, project: nil)
+                == AINoteContainer(name: "Engineering", selection: .area(fixture.area.id))
+        )
+        #expect(AIActionService.container(area: nil, project: nil) == AINoteContainer.noList)
+        #expect(AINoteContainer.noList.name == nil)
+        #expect(AINoteContainer.noList.selection == .inbox)
+    }
+
+    /// The first of the three readers: what the model is told the note belongs to.
+    @Test func thePromptNamesTheProjectForADoubleOwnedNote() throws {
+        let fixture = try doubleOwnedNote()
+
+        let context = try AIActionService.noteContext(
+            note: fixture.note,
+            area: fixture.area,
+            project: fixture.project
+        )
+
+        #expect(context.containerName == "Launch")
+    }
+
+    /// **The T-316 assertion the ticket asks for**, through the same `applyApproved` both review
+    /// sheets write with: a double-owned note's extracted tasks land in the project, and the area is
+    /// cleared rather than left alongside it.
+    @Test func theExtractedTasksOfADoubleOwnedNoteLandInTheProject() throws {
+        let fixture = try doubleOwnedNote()
+        let review = CadenceAIDraftReview(drafts: [draft(title: "Book the room")])
+
+        let created = try review.applyApproved(
+            area: fixture.area,
+            project: fixture.project,
+            areas: [fixture.area],
+            projects: [fixture.project],
+            modelContext: fixture.modelContext
+        )
+
+        #expect(created.count == 1)
+        #expect(created.first?.project?.id == fixture.project.id)
+        #expect(created.first?.area == nil)
+    }
+
+    /// An area-only note is unaffected — the precedence changed, the fallback did not.
+    @Test func anAreaOnlyNoteStillCreatesItsTasksInTheArea() throws {
+        let fixture = try doubleOwnedNote()
+        let review = CadenceAIDraftReview(drafts: [draft(title: "Book the room")])
+
+        let created = try review.applyApproved(
+            area: fixture.area,
+            areas: [fixture.area],
+            projects: [fixture.project],
+            modelContext: fixture.modelContext
+        )
+
+        #expect(created.first?.area?.id == fixture.area.id)
+        #expect(created.first?.project == nil)
+    }
+
+    /// Resolved once, read three times. The prompt context and the write read it inside the service;
+    /// the iOS review sheet's destination label reads the same function rather than answering for
+    /// itself, which is what stopped the label and the destination being two facts.
+    @Test func theContainerIsResolvedOnceAndReadByAllThreeCallSites() throws {
+        let servicePath = "Cadence/Services/AI/AIActionService.swift"
+        try expectOccurrences(of: "static func container(area: Area?, project: Project?) -> AINoteContainer", at: [servicePath: 1])
+        try expectOccurrences(of: "container(area: area, project: project)", at: [servicePath: 2])
+        try expectOccurrences(of: "AIActionService.container(area: area, project: project)", at: [Self.iosActionsView: 1])
+
+        for path in [servicePath, Self.iosActionsView] {
+            let code = try strippingComments(sourceFile(path))
+            #expect(!code.contains("area?.name ?? project?.name"), "\(path) still answers the container for itself")
+        }
+        // The area-first insertion branch is gone rather than shadowed by the new resolver.
+        let service = try strippingComments(sourceFile(servicePath))
+        #expect(!service.contains("selection = .area("))
+        #expect(service.contains("let selection = container(area: area, project: project).selection"))
+    }
 }
 
 // MARK: - Source-reading helpers

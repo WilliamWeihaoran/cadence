@@ -59,12 +59,46 @@ enum CadenceAINoteSummary {
         return "\(existing)\(separator)\(heading)\n\n\(trimmedSummary)"
     }
 
+    /// Files an accepted summary into the note **and commits it**, throwing when the commit fails.
+    ///
+    /// This was `try? modelContext?.save()`, and both review sheets dismiss the moment it returns —
+    /// so a failed commit closed the sheet over a note the store never took, and the summary went
+    /// with the sheet. The other half of this same service already gets this right:
+    /// `AIActionService.applyTaskDrafts` throws on its save and both of its review sheets catch and
+    /// present `AIErrorPresenter.message(for:)`. This is that shape, not a new one.
+    ///
+    /// `ModelContext` is non-optional now for the same reason the `try?` had to go: passing `nil`
+    /// meant "quietly do not persist", which is the failure this ticket is about spelled a second
+    /// way.
+    ///
+    /// **The note is put back the way it was found when the commit throws**, so the error the sheet
+    /// shows and the note behind it agree. Without that the user reads "could not save" over a note
+    /// already displaying the summary.
+    ///
+    /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
+    ///   because a `save()` that throws cannot be provoked out of an in-memory container, and an
+    ///   undo path no test can reach is an undo path no test can prove. Same reasoning as
+    ///   `CadencePendingChangePersistence`, which covers inserts and deletes rather than an
+    ///   in-place edit like this one.
     @MainActor
-    static func append(_ summary: String, to note: Note, modelContext: ModelContext?) {
+    static func append(
+        _ summary: String,
+        to note: Note,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         guard let content = appending(summary, to: note.content) else { return }
+        let previousContent = note.content
+        let previousUpdatedAt = note.updatedAt
         note.content = content
         note.updatedAt = Date()
-        try? modelContext?.save()
+        do {
+            try commit(modelContext)
+        } catch {
+            note.content = previousContent
+            note.updatedAt = previousUpdatedAt
+            throw error
+        }
     }
 }
 

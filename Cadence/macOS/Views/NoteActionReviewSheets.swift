@@ -4,8 +4,14 @@ import SwiftData
 
 struct AISummaryReviewSheet: View {
     let markdown: String
-    let onAppend: () -> Void
+    /// Throwing, so a failed commit reaches this sheet instead of being swallowed under it. The
+    /// append was `try? modelContext?.save()` and this button dismissed unconditionally, so the
+    /// sheet closed on a note that had not been written (T-315).
+    let onAppend: () throws -> Void
     @Environment(\.dismiss) private var dismiss
+    /// The same slot `AITaskDraftReviewSheet` keeps for the same reason: what went wrong stays on
+    /// the sheet the user is looking at.
+    @State private var statusMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -23,6 +29,12 @@ struct AISummaryReviewSheet: View {
             .background(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.red)
+            }
+
             HStack {
                 Spacer()
                 Button("Close") {
@@ -35,8 +47,7 @@ struct AISummaryReviewSheet: View {
                 .padding(.vertical, 8)
 
                 Button("Append to Note") {
-                    onAppend()
-                    dismiss()
+                    append()
                 }
                 .buttonStyle(.cadencePlain)
                 .font(.system(size: 12, weight: .semibold))
@@ -50,6 +61,18 @@ struct AISummaryReviewSheet: View {
         .padding(20)
         .frame(width: 560, height: 520)
         .background(Theme.bg)
+    }
+
+    /// Dismisses only once the summary is actually in the store. Exactly what
+    /// `AITaskDraftReviewSheet.createSelected` below already does with its own write — the two
+    /// halves of this service had drifted apart, and this is the one adopting the other.
+    private func append() {
+        do {
+            try onAppend()
+            dismiss()
+        } catch {
+            statusMessage = AIErrorPresenter.message(for: error)
+        }
     }
 }
 

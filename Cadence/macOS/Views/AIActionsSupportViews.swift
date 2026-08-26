@@ -21,8 +21,11 @@ enum NoteActionSupport {
     /// Forwards to `CadenceAINoteSummary`, which is where the heading and the separator rule live
     /// now that iOS files a summary into a note too. Kept as a name because this menu's call sites
     /// read better through it.
-    static func appendSummary(_ summary: String, to note: Note, modelContext: ModelContext?) {
-        CadenceAINoteSummary.append(summary, to: note, modelContext: modelContext)
+    ///
+    /// Throwing, and taking a non-optional context, because the thing it forwards to is (T-315).
+    /// A forwarder that swallowed what it forwards would put the defect back one call earlier.
+    static func appendSummary(_ summary: String, to note: Note, modelContext: ModelContext) throws {
+        try CadenceAINoteSummary.append(summary, to: note, modelContext: modelContext)
     }
 
     /// Forwards for the same reason `appendSummary` does: iOS's row menu copies the same link, and
@@ -298,7 +301,7 @@ struct NoteActionMenu: View {
         switch payload {
         case .summary(let markdown):
             AISummaryReviewSheet(markdown: markdown) {
-                appendSummary(markdown)
+                try appendSummary(markdown)
                 self.payload = nil
             }
         case .taskDrafts(let drafts):
@@ -313,11 +316,11 @@ struct NoteActionMenu: View {
         }
     }
 
-    private func appendSummary(_ markdown: String) {
+    private func appendSummary(_ markdown: String) throws {
         if let onAppendSummary {
             onAppendSummary(markdown)
         } else {
-            NoteActionSupport.appendSummary(markdown, to: note, modelContext: modelContext)
+            try NoteActionSupport.appendSummary(markdown, to: note, modelContext: modelContext)
         }
     }
 

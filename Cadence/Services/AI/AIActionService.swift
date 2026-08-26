@@ -40,7 +40,44 @@ struct AITaskDraftValidation: Equatable {
     var isValid: Bool { errors.isEmpty }
 }
 
+/// **One answer to "which list is this note's", for the whole AI note-action path.**
+///
+/// A note can carry an area *and* a project at once: `DataIntegrityRepairService` merges duplicate
+/// notes and deliberately keeps both owners, and both iOS note surfaces hand both straight into the
+/// AI menu. That state used to be resolved three separate times inside this one path — the prompt's
+/// container name, the iOS review sheet's destination label, and the task insertion — and each of
+/// the three independently answered `area ?? project`. One decision spelled three times is three
+/// places for it to drift, so it is spelled here once and read from three call sites.
+///
+/// **Project wins**, because it is the narrower task container: tasks pulled out of a project's
+/// note belong to that project, not to whatever area the project sits under. The app already takes
+/// this side elsewhere — moving a note to a list explicitly clears the sibling field to keep a
+/// single owner (`NoteActionSupport.move`).
+struct AINoteContainer: Equatable {
+    /// What to call the container, and `nil` when the note has no list. The prompt omits the field
+    /// rather than naming an "Inbox" that is not a list the model could reason about.
+    var name: String?
+    /// Where extracted tasks are created.
+    var selection: TaskContainerSelection
+
+    /// A note owned by no list at all. Spelled `noList` rather than `none`, which at a call site
+    /// reads as `Optional.none`.
+    static let noList = AINoteContainer(name: nil, selection: .inbox)
+}
+
 enum AIActionService {
+    /// Resolves a note's owners into the single container the prompt, the label and the write all
+    /// read. See `AINoteContainer` for why project takes precedence.
+    static func container(area: Area?, project: Project?) -> AINoteContainer {
+        if let project {
+            return AINoteContainer(name: project.name, selection: .project(project.id))
+        }
+        if let area {
+            return AINoteContainer(name: area.name, selection: .area(area.id))
+        }
+        return .noList
+    }
+
     static func noteContext(note: Note, area: Area? = nil, project: Project? = nil) throws -> AITextNoteContext {
         let title = note.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let content = note.content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -48,7 +85,7 @@ enum AIActionService {
         return AITextNoteContext(
             title: title.isEmpty ? "Untitled Note" : title,
             content: content,
-            containerName: area?.name ?? project?.name
+            containerName: container(area: area, project: project).name
         )
     }
 
@@ -95,14 +132,7 @@ enum AIActionService {
             throw AIActionError.invalidDrafts(validationErrors.joined(separator: " "))
         }
 
-        let selection: TaskContainerSelection
-        if let area {
-            selection = .area(area.id)
-        } else if let project {
-            selection = .project(project.id)
-        } else {
-            selection = .inbox
-        }
+        let selection = container(area: area, project: project).selection
         let service = TaskCreationService(areas: areas, projects: projects)
         for draft in selected {
             guard let priority = TaskPriority(rawValue: draft.priority.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) else {
