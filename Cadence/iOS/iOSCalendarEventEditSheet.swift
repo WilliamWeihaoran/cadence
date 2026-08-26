@@ -579,7 +579,7 @@ struct iOSCalendarEventEditSheet: View {
         ) else {
             // A rejected write used to return here and do nothing at all: the sheet stayed open,
             // unchanged, with no indication that the save had failed.
-            actionError = "Couldn't save this event to Apple Calendar."
+            actionError = CadenceCalendarEventEditingSupport.saveFailureNotice
             return
         }
         actionError = nil
@@ -590,7 +590,7 @@ struct iOSCalendarEventEditSheet: View {
         if calendarManager.deleteEvent(event, span: scope.eventSpan) {
             dismiss()
         } else {
-            actionError = "Couldn't delete this event from Apple Calendar."
+            actionError = CadenceCalendarEventEditingSupport.deleteFailureNotice
         }
     }
 

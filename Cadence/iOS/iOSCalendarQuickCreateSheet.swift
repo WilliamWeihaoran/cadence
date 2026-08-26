@@ -32,6 +32,7 @@ struct iOSCalendarQuickCreateSheet: View {
     @State private var showContainerPicker = false
     @State private var showSectionPicker = false
     @State private var showStartTimePicker = false
+    @State private var actionError: String?
 
     /// `initialKind` is what the capture palette's **Event** segment needs: the segmented control
     /// is still there and still switches, but a palette that says "Event" and opens on Task would
@@ -161,6 +162,7 @@ struct iOSCalendarQuickCreateSheet: View {
     private var compactFormLayout: some View {
         VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
             header
+            actionErrorNotice
             kindPicker
             titleSection
             formDetails
@@ -173,6 +175,7 @@ struct iOSCalendarQuickCreateSheet: View {
         HStack(alignment: .top, spacing: iOSEditorSheetMetrics.groupSpacing) {
             VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
                 header
+                actionErrorNotice
                 kindPicker
                 titleSection
                 timeSection
@@ -300,6 +303,22 @@ struct iOSCalendarQuickCreateSheet: View {
             options: iOSCalendarQuickCreateKind.allCases.map { ($0, $0.title) },
             selection: $kind
         )
+    }
+
+    /// The same notice the event *edit* sheet shows, in the same component, reading the same
+    /// string — rather than a third spelling of "that didn't work". It sits directly under the
+    /// create button, which is the control that appeared to do nothing.
+    @ViewBuilder
+    private var actionErrorNotice: some View {
+        if let actionError {
+            iOSEditorSection(title: nil, style: .ruled) {
+                Text(actionError)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 
     /// No eyebrow. It read "TASK" / "BLOCK" / "EVENT" — the word the segmented control directly
@@ -527,8 +546,15 @@ struct iOSCalendarQuickCreateSheet: View {
         dismiss()
     }
 
+    /// Every exit from here that is not a created event now says so. It used to have two silent
+    /// ones: an unparseable `dateKey`, and a rejected write — missing Calendar access, no writable
+    /// calendar, an end date not after the start, or a throwing EventKit save, all of which arrive
+    /// as the same `false`. The sheet simply returned, so the create button looked inert (T-324).
     private func createEvent() {
-        guard let baseDate = DateFormatters.date(from: dateKey) else { return }
+        guard let baseDate = DateFormatters.date(from: dateKey) else {
+            actionError = CadenceCalendarEventEditingSupport.saveFailureNotice
+            return
+        }
         let startDate: Date
         let endDate: Date
         if eventIsAllDay {
@@ -546,7 +572,11 @@ struct iOSCalendarQuickCreateSheet: View {
             calendarID: selectedCalendarID,
             notes: notes,
             isAllDay: eventIsAllDay
-        ) else { return }
+        ) else {
+            actionError = CadenceCalendarEventEditingSupport.saveFailureNotice
+            return
+        }
+        actionError = nil
         dismiss()
     }
 

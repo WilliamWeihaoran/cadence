@@ -253,6 +253,87 @@ struct CalendarTimelineRangeTests {
         #expect(CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: "  ").contains("read-only calendar"))
     }
 
+    // MARK: - What a rejected write says (T-324)
+
+    /// The two sentences an iOS event sheet shows when EventKit refuses. Held in one place so the
+    /// quick-create sheet could adopt the edit sheet's wording rather than invent a third.
+    @Test func theWriteFailureNoticesNameTheOperationAndTheApp() {
+        #expect(CadenceCalendarEventEditingSupport.saveFailureNotice == "Couldn't save this event to Apple Calendar.")
+        #expect(CadenceCalendarEventEditingSupport.deleteFailureNotice == "Couldn't delete this event from Apple Calendar.")
+        #expect(
+            CadenceCalendarEventEditingSupport.saveFailureNotice
+                != CadenceCalendarEventEditingSupport.deleteFailureNotice
+        )
+    }
+
+    /// `iOSCalendarQuickCreateSheet.createEvent()` is a private method on a SwiftUI view in an
+    /// `#if os(iOS)` file, so this target can neither call it nor compile it. The scan is scoped
+    /// to that **function body**.
+    ///
+    /// What it pins is the shape of the bug rather than a spelling: `createEvent()` used to leave
+    /// two paths that returned without a word — an unparseable date key, and the `false` that
+    /// missing access, no writable calendar, a bad range and a throwing save all collapse into.
+    /// A bare `else { return }` anywhere in this body is that bug back.
+    @Test func theQuickCreateSheetHasNoSilentEventFailurePath() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        #expect(raw.count > 400, "iOSCalendarQuickCreateSheet.swift read as \(raw.count) characters")
+
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped != raw, "the comment stripper removed nothing")
+        #expect(stripped.count == raw.count, "the stripper changed the length")
+
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "createEvent", in: stripped),
+            "could not find createEvent()"
+        )
+        #expect(body.contains("calendarManager.createEvent("), "createEvent() body looks wrong")
+        #expect(
+            body.contains("actionError = CadenceCalendarEventEditingSupport.saveFailureNotice"),
+            "createEvent() no longer reports a rejected write"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(silentReturnPattern, in: body) == 0,
+            "createEvent() still has a failure path that returns without saying anything"
+        )
+    }
+
+    /// Both iOS event sheets read the shared notices, so neither can drift into wording of its own.
+    @Test func bothIOSEventSheetsReadTheSharedWriteFailureNotices() throws {
+        for relativePath in [
+            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
+            "Cadence/iOS/iOSCalendarEventEditSheet.swift"
+        ] {
+            let stripped = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(relativePath))
+            #expect(
+                stripped.contains("CadenceCalendarEventEditingSupport.saveFailureNotice"),
+                "\(relativePath) does not use the shared save-failure notice"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#""Couldn.t save this event"#, in: stripped) == 0,
+                "\(relativePath) spells the save-failure notice itself"
+            )
+        }
+    }
+
+    /// The needles above match what they hunt and miss what they protect.
+    @Test func theSilentReturnNeedleMatchesTheOldSpellingAndNotTheNew() {
+        #expect(CadenceSourceScan.matchCount(silentReturnPattern, in: "        ) else { return }") == 1)
+        #expect(CadenceSourceScan.matchCount(silentReturnPattern, in: "else {\n            return\n        }") == 1)
+        #expect(
+            CadenceSourceScan.matchCount(
+                silentReturnPattern,
+                in: "else {\n    actionError = CadenceCalendarEventEditingSupport.saveFailureNotice\n    return\n}"
+            ) == 0
+        )
+        #expect(CadenceSourceScan.matchCount(#""Couldn.t save this event"#, in: "\"Couldn't save this event to Apple Calendar.\"") == 1)
+        #expect(
+            CadenceSourceScan.matchCount(
+                #""Couldn.t save this event"#,
+                in: "CadenceCalendarEventEditingSupport.saveFailureNotice"
+            ) == 0
+        )
+    }
+
     // MARK: - Where a timeline opens
 
     /// The canvas starts at `calendarStartHour` and a scroll view opens at the top of its content,
@@ -370,3 +451,8 @@ struct CalendarTimelineRangeTests {
         #expect(CadenceScheduleSupport.timelineScrollOffset(forHour: 0, hourHeight: 58) == CGFloat(0))
     }
 }
+
+/// `else {` followed by nothing but `return` — a guard that fails and says nothing. Written with
+/// `\s*` rather than a fixed shape so both the one-line `) else { return }` and the multi-line
+/// form match.
+private let silentReturnPattern = #"else\s*\{\s*return\b[^\n]*\s*\}?"#

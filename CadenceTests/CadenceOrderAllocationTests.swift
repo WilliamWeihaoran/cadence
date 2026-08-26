@@ -123,23 +123,25 @@ struct CadenceOrderAllocationTests {
     /// to the enclosing struct, which would pass on an unrelated `.count` elsewhere in the file.
     @Test func bothMacOSSheetsAllocateThroughTheSharedHelper() throws {
         let sites = [
-            ("Cadence/macOS/Sheets/CreateContextSheet.swift", "create", "ctx.order"),
-            ("Cadence/macOS/Views/LinksView.swift", "addLink", "link.order")
+            ("Cadence/macOS/Sheets/CreateContextSheet.swift", "create", "ctx.order", "modelContext.insert("),
+            // T-327 moved this one insert behind CadenceSavedLinkPersistence, which commits it.
+            // The anchor moved with it; the allocation assertions below are unchanged.
+            ("Cadence/macOS/Views/LinksView.swift", "addLink", "link.order", "CadenceSavedLinkPersistence.insert(")
         ]
 
-        for (relativePath, function, assignment) in sites {
-            let raw = try sourceFile(relativePath)
+        for (relativePath, function, assignment, insertion) in sites {
+            let raw = try CadenceSourceScan.sourceFile(relativePath)
             #expect(raw.count > 400, "\(relativePath) read as \(raw.count) characters")
 
-            let stripped = try strippingComments(raw)
+            let stripped = CadenceSourceScan.strippingComments(raw)
             #expect(stripped != raw, "\(relativePath): the comment stripper removed nothing")
             #expect(stripped.count == raw.count, "\(relativePath): the stripper changed the length")
 
             let body = try #require(
-                functionBody(named: function, in: stripped),
+                CadenceSourceScan.functionBody(named: function, in: stripped),
                 "\(relativePath): could not find \(function)()"
             )
-            #expect(body.contains("modelContext.insert("), "\(function)() body looks wrong")
+            #expect(body.contains(insertion), "\(function)() body looks wrong")
             #expect(body.contains(assignment), "\(function)() no longer assigns \(assignment)")
 
             #expect(
@@ -147,7 +149,7 @@ struct CadenceOrderAllocationTests {
                 "\(function)() does not allocate through CadenceOrderAllocation"
             )
             #expect(
-                matches(countingAllocationPattern, in: body) == 0,
+                CadenceSourceScan.matchCount(countingAllocationPattern, in: body) == 0,
                 "\(function)() still allocates an order by counting"
             )
         }
@@ -156,15 +158,15 @@ struct CadenceOrderAllocationTests {
     /// The needle above is only worth trusting if it matches the spelling it is hunting and misses
     /// the spelling it is protecting.
     @Test func theCountingNeedleMatchesTheOldSpellingAndNotTheNew() {
-        #expect(matches(countingAllocationPattern, in: "ctx.order = contexts.count") == 1)
-        #expect(matches(countingAllocationPattern, in: "link.order = links.count") == 1)
+        #expect(CadenceSourceScan.matchCount(countingAllocationPattern, in: "ctx.order = contexts.count") == 1)
+        #expect(CadenceSourceScan.matchCount(countingAllocationPattern, in: "link.order = links.count") == 1)
         #expect(
-            matches(
+            CadenceSourceScan.matchCount(
                 countingAllocationPattern,
                 in: "ctx.order = CadenceOrderAllocation.nextOrder(after: contexts, order: \\.order)"
             ) == 0
         )
-        #expect(matches(countingAllocationPattern, in: "let shown = rows.count") == 0)
+        #expect(CadenceSourceScan.matchCount(countingAllocationPattern, in: "let shown = rows.count") == 0)
     }
 
     /// The body extractor must return the function it was asked for and stop at its closing brace.
@@ -183,15 +185,15 @@ struct CadenceOrderAllocationTests {
         }
         """
 
-        let stripped = try strippingComments(source)
+        let stripped = CadenceSourceScan.strippingComments(source)
         #expect(stripped == source, "a URL scheme's slashes are not a comment")
 
-        let body = try #require(functionBody(named: "create", in: stripped))
+        let body = try #require(CadenceSourceScan.functionBody(named: "create", in: stripped))
         #expect(body.contains("value.order = 3"))
         #expect(!body.contains("other"))
-        #expect(matches(countingAllocationPattern, in: body) == 0)
-        #expect(matches(countingAllocationPattern, in: source) == 1)
-        #expect(functionBody(named: "missing", in: source) == nil)
+        #expect(CadenceSourceScan.matchCount(countingAllocationPattern, in: body) == 0)
+        #expect(CadenceSourceScan.matchCount(countingAllocationPattern, in: source) == 1)
+        #expect(CadenceSourceScan.functionBody(named: "missing", in: source) == nil)
     }
 
     /// The stripper blanks a real comment while leaving the code beside it alone, and never
@@ -199,7 +201,7 @@ struct CadenceOrderAllocationTests {
     @Test func theCommentStripperBlanksCommentsWithoutShortening() throws {
         let source = "let url = \"https://example.com\" // a trailing note\nlet n = 1\n"
 
-        let stripped = try strippingComments(source)
+        let stripped = CadenceSourceScan.strippingComments(source)
 
         #expect(stripped != source)
         #expect(stripped.count == source.count)
@@ -209,68 +211,13 @@ struct CadenceOrderAllocationTests {
     }
 }
 
-// MARK: - Source-reading helpers
+// MARK: - The needle
 
 /// `<something>.order = <something>.count` — the allocation-by-counting spelling, and not a bare
 /// `.count` read used for a badge or a guard.
-private let countingAllocationPattern = #"\.order\s*=\s*[A-Za-z_][A-Za-z0-9_]*\.count\b"#
-
-private func matches(_ pattern: String, in text: String) -> Int {
-    guard let regex = try? NSRegularExpression(pattern: pattern) else { return -1 }
-    return regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
-}
-
-private func repositoryRoot() -> URL {
-    URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-}
-
-private func sourceFile(_ relativePath: String) throws -> String {
-    try String(contentsOf: repositoryRoot().appendingPathComponent(relativePath), encoding: .utf8)
-}
-
-/// Blanks `//` line comments and `/* */` block comments so the assertions read code rather than
-/// prose. The replacement is spaces of equal length, so the stripped string is never shorter than
-/// the raw one — compare with `!=`, never with `<`.
 ///
-/// The `(?<!:)` matters here rather than being defensive dressing: `LinksView.addLink()` contains
-/// `hasPrefix("http://")`, and a stripper that blanked from those slashes to the end of the line
-/// would eat that line's `{` while leaving its `}` behind. Brace matching would then close the
-/// function early and the scan would report a body that stops before the allocation it is here to
-/// read.
-private func strippingComments(_ source: String) throws -> String {
-    var result = source
-    for pattern in ["(?<!:)//[^\n]*", "/\\*(?s:.)*?\\*/"] {
-        while let range = result.range(of: pattern, options: .regularExpression) {
-            let width = result.distance(from: range.lowerBound, to: range.upperBound)
-            result.replaceSubrange(range, with: String(repeating: " ", count: width))
-        }
-    }
-    return result
-}
-
-/// The text between the braces of `func <name>(`, found by brace matching from the first `{` after
-/// the signature. Returns `nil` when the function is absent or its braces never balance.
-private func functionBody(named name: String, in source: String) -> String? {
-    guard let signature = source.range(of: "func \(name)(") else { return nil }
-    guard let open = source.range(of: "{", range: signature.upperBound..<source.endIndex) else {
-        return nil
-    }
-
-    var depth = 0
-    var index = open.lowerBound
-    while index < source.endIndex {
-        let character = source[index]
-        if character == "{" {
-            depth += 1
-        } else if character == "}" {
-            depth -= 1
-            if depth == 0 {
-                return String(source[source.index(after: open.lowerBound)..<index])
-            }
-        }
-        index = source.index(after: index)
-    }
-    return nil
-}
+/// The source-reading helpers this file used to carry are now `CadenceSourceScan`, shared with the
+/// other scans that have to read a private method on a SwiftUI view. Their comment stripper is
+/// still spelled `(?<!:)//` for the reason documented there, which `LinksView.addLink()` — with
+/// its `hasPrefix("http://")` — is the reason for.
+private let countingAllocationPattern = #"\.order\s*=\s*[A-Za-z_][A-Za-z0-9_]*\.count\b"#

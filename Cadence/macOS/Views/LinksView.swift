@@ -12,6 +12,7 @@ struct LinksView: View {
     @State private var showingAdd = false
     @State private var newTitle = ""
     @State private var newURL = ""
+    @State private var actionError: String?
 
     private var links: [SavedLink] {
         if let area {
@@ -46,8 +47,18 @@ struct LinksView: View {
                     title: $newTitle,
                     url: $newURL,
                     onSave: { addLink() },
-                    onCancel: { showingAdd = false; newTitle = ""; newURL = "" }
+                    onCancel: { showingAdd = false; newTitle = ""; newURL = ""; actionError = nil }
                 )
+            }
+
+            if let actionError {
+                Text(actionError)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 10)
             }
 
             Divider().background(Theme.borderSubtle)
@@ -69,7 +80,7 @@ struct LinksView: View {
                                     title: "Delete Link?",
                                     message: "This will permanently delete \"\(link.title)\"."
                                 ) {
-                                    modelContext.delete(link)
+                                    deleteLink(link)
                                 }
                             }
                         }
@@ -92,10 +103,31 @@ struct LinksView: View {
         link.area = area
         link.project = project
         link.order = CadenceOrderAllocation.nextOrder(after: links, order: \.order)
-        modelContext.insert(link)
+        // `modelContext.insert(link)` alone left the new link waiting on autosave, so a quit
+        // before that flush lost it. The commit happens inside the helper, which removes the
+        // link again if it throws.
+        do {
+            try CadenceSavedLinkPersistence.insert(link, in: modelContext)
+        } catch {
+            actionError = CadenceSavedLinkPersistence.saveFailureNotice
+            return
+        }
+        actionError = nil
         newTitle = ""
         newURL = ""
         showingAdd = false
+    }
+
+    /// A delete with no commit is undone by the next launch, which is the one failure the user
+    /// cannot tell from success. The helper rolls a failed delete back, so the row the message
+    /// talks about is visibly still there.
+    private func deleteLink(_ link: SavedLink) {
+        do {
+            try CadenceSavedLinkPersistence.delete(link, in: modelContext)
+            actionError = nil
+        } catch {
+            actionError = CadenceSavedLinkPersistence.deleteFailureNotice
+        }
     }
 }
 

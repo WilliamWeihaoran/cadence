@@ -647,8 +647,9 @@ struct iOSListLinksPanel: View {
         link.area = area
         link.project = project
         link.order = (links.map(\.order).max() ?? -1) + 1
-        modelContext.insert(link)
-        try? modelContext.save()
+        // Same commit as macOS, through the one helper, so the two surfaces cannot drift on
+        // whether a saved link is actually saved (T-327).
+        try? CadenceSavedLinkPersistence.insert(link, in: modelContext)
         newTitle = ""
         newURL = ""
         isAdding = false
@@ -660,8 +661,7 @@ struct iOSListLinksPanel: View {
     }
 
     private func delete(_ link: SavedLink) {
-        modelContext.delete(link)
-        try? modelContext.save()
+        try? CadenceSavedLinkPersistence.delete(link, in: modelContext)
     }
 }
 

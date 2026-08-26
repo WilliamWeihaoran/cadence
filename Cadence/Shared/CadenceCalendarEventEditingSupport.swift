@@ -10,6 +10,18 @@ import Foundation
 /// Save and Delete enabled on an event EventKit would refuse. Both then failed silently — the
 /// save threw, the sheet stayed open, and nothing said why.
 enum CadenceCalendarEventEditingSupport {
+    /// Shown when an event write was rejected.
+    ///
+    /// One sentence, not four: `createEvent`/`updateEvent` answer `Bool`, so missing Calendar
+    /// access, no writable calendar, a rejected date range and a throwing EventKit save are the
+    /// same value by the time a sheet can react. Naming a cause the return type cannot support
+    /// would be a guess printed as a fact. Both iOS event sheets read these two strings so the
+    /// wording cannot drift into a third variant (T-324).
+    static let saveFailureNotice = "Couldn't save this event to Apple Calendar."
+
+    /// The delete half of `saveFailureNotice`, for the same reason.
+    static let deleteFailureNotice = "Couldn't delete this event from Apple Calendar."
+
     /// Shown in place of the calendar picker and the delete button when the event cannot be
     /// written. It names the calendar so the sentence is about *this* event rather than a
     /// general disclaimer.
