@@ -33,6 +33,44 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-291] **A failed cascade leaves a list's goal links already deleted.** From an external
+  read-only audit (Codex, 2026-08-26); **premise verified against the code before filing.**
+  `CadenceListDeleteHelpers.deleteProject` calls `delete(uniqueGoalListLinks(...))` on the line
+  *before* `guard cascadeDeleteTasks(...) else { return false }`, and `deleteArea` has the identical
+  ordering. So a fetch failure returns `false` with the links already gone — and every caller saves
+  anyway (`EditListSheet`, macOS `SettingsView`, `iOSListDeletionSupport`). The list survives, its
+  tasks survive, and a goal silently loses the list feeding its percentage. Delete the links only
+  after the cascade has committed to succeeding, or make the whole delete one unit that rolls back.
+  Note the `false` return is currently advisory: callers save regardless, which is arguably the
+  deeper bug and should be decided at the same time.
+
+- [T-292] **Seven paths set a task's context from `project.context` alone.** From the same audit,
+  premise verified. `CadenceTaskMutationSupport` does `project.context ?? project.area?.context`,
+  and it is the **only** file in the repo that does — measured. `TaskCreationService`,
+  `CadenceWriteService`, `SchedulePanelComponents`, `TasksPanelComponents`, `TasksPanelSupport`,
+  `KanbanBoardSupport` and `KanbanSectionColumnView` each assign `task.context = project.context`.
+  A task created or moved inside an **area-owned project whose own context is nil** then carries
+  `task.project` with no denormalized `task.context`, so context-scoped queries and counts miss it.
+  The fix is one shared spelling, not seven edits — this is the shape T-175 and T-290 already have.
+
+- [T-293] **Editing a project's context on iOS leaves its tasks pointing at the old one.** From the
+  same audit, premise verified. `iOSListEditorViews` assigns `project.context` and `project.area`,
+  then calls `reassignTasks(in:)` — which only forwards to
+  `CadenceSectionEditingSupport.applySectionNameChanges`. Its own doc comment says it is about
+  section names, so this is a gap rather than a regression: nothing ever re-pointed the tasks.
+  Related to [[T-292]]: both are the denormalized `task.context` going stale, and they should
+  probably be fixed by the same helper.
+
+- [T-294] **Copied subtasks on a recurrence spawn never set `parentTask`.**
+  From the same audit, premise verified. `CadenceTaskRecurrenceWorkflowSupport` builds each copy as
+  `Subtask(title:)` plus `order` and assigns the array to `nextTask.subtasks`, relying on SwiftData
+  to back-populate the inverse. The existing test reads `next.subtasks`, so it cannot see the
+  difference. Lower priority than the three above because it is probably fine in practice — but the
+  delete and export paths read `Subtask.parentTask` **directly**, and this codebase already declines
+  to trust inverse back-population elsewhere for exactly that reason (see the `GoalListLink` detach
+  note in `CLAUDE.md`, which severs both sides before deleting). Pin it with a test that fetches a
+  `Subtask` and reads `parentTask`, not one that reads the parent's array.
+
 - [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
   Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes
   `rsync` + `git show HEAD:<path>` restore instead. The workaround has a real ongoing cost: the
