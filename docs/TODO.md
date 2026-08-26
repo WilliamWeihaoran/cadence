@@ -33,6 +33,38 @@ _Nothing in flight._
 
 ## Open — decided, not started
 
+- [T-323] **iOS keeps a stale Calendar permission after an EventKit store change.** From the
+  EventKit side-effect audit (Codex, 2026-08-26); premise verified by direct comparison — macOS's
+  store-change path increments `storeVersion` **and** calls `refreshAuthorizationState()`; iOS's
+  increments only, and the guard against stale cached authorization is pinned on macOS alone.
+  So revoking Calendar access while iOS is running leaves the app believing it still has it, which
+  is the same failure [[T-253]] fixed for Reminders on macOS — a permission read once and never
+  re-derived. Route the iOS store change through a handler that does both.
+
+- [T-324] **A quick-created event that fails to save says nothing at all.** From the same audit,
+  premise verified: `iOSCalendarQuickCreateSheet` calls `guard calendarManager.createEvent(...)`
+  and the file contains no error surface. Missing access, no writable calendar, failed validation
+  or a throwing EventKit save all return `false`, and the sheet simply returns — the user watches
+  nothing happen.
+  **Both correct patterns already exist**: the iOS event *edit* sheet shows `actionError`, and
+  macOS has a concrete `CalendarWriteFailure` model with a shared alert. Adopt one rather than
+  inventing a third.
+
+- [T-325] **An event note can reach Apple Calendar after the local save failed.** From the same
+  audit, premise verified: `iOSEventNoteEditorSheet` does `try? modelContext.save()` and then
+  pushes the note text into the native event; the EventKit update returns `Void`, so its own
+  failure is only printed.
+  **This is the [[T-322]] family with a sharper edge, and worth ranking above the others in it.**
+  A swallowed save that only closes a sheet is recoverable — the user retypes. Here an unverified
+  local commit is followed by a write to an **external system that cannot be rolled back**: Apple
+  Calendar can end up holding note text that Cadence does not, and no amount of retrying in Cadence
+  undoes it. Order the local save first with real error handling, and only then sync — or declare
+  the native sync best-effort and show that state, rather than leaving it ambiguous.
+
+  This is also the third finding in a row where **iOS lags a pattern macOS already has**
+  (see [[T-323]], [[T-324]]). Worth noting as a direction rather than three coincidences: macOS's
+  `CalendarManager` grew failure reporting and rollback, and the iOS sibling did not follow.
+
 - [T-319] **iOS task creation reports success for a task that was not saved.** From the silent-
   persistence audit (Codex, 2026-08-26); premise verified — `iOSCreateTaskSheet` does
   `try? modelContext.save()` at :280, then schedules notification reconciliation at :284, calls
