@@ -61,6 +61,13 @@ Rules:
   suites, and tests appended inside the wrong `struct` are invisible to
   `-only-testing:.../ThatSuite` while still passing in a full run — so every mutation reads as
   a survivor. Check the scoped run's test count before trusting a green mutation.
+- **A test name reused in another suite makes mutation evidence ambiguous.** Two suites may each
+  declare `theSourceScanReachesTheFilesItClaimsTo`; both compile and both run, because Swift
+  Testing scopes by `struct`. But the log prints the bare function name with no suite qualifier,
+  so `grep '✔ Test thatName()'` cannot tell them apart — and a survivor in your suite is masked
+  by a pass in the other one, which reads as a kill. Before trusting a mutation, confirm
+  `grep -c '✔ Test <name>()'` on a green log returns exactly **1**. If it returns more, rename
+  yours to something suite-specific rather than reasoning about which line is which.
 - Avoid ambiguous substring traps; use word boundaries, negative lookbehind, or a narrower call-site
   assertion.
 - When comparing a `CGFloat` with arithmetic in `#expect`, bind the arithmetic to a typed
