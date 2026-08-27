@@ -43,6 +43,36 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-351] **A list with an old remembered tab opens the global default instead of Tasks.** From the
+  navigation-persistence audit (Codex, 2026-08-27); **premise verified.**
+  `ListDetailView.restoreRememberedTab()` reads the per-list value through the *failable*
+  `ListDetailPage(rawValue:)` and, when that returns nil, falls back to
+  `resolved(defaultPageRawValue)` — the user's **global** default. The shared rule
+  `ListDetailPage.resolved(_:)` exists precisely to map a stale raw value to the canonical page, and
+  this path never calls it with the stale value.
+  So a list still holding a removed tab name like `Planning` opens **Links** if that is the global
+  default, rather than Tasks. And this is not hypothetical: `ListDetailPageTests` explicitly
+  documents that per-list remembered tabs can contain old `Planning` values.
+  One-line fix — resolve the remembered raw value itself rather than discarding it. Test with a
+  stored `Planning`, a global default of `Links`, and an expected `Tasks`.
+
+- [T-352] **DECIDE: should the root destination persist? A comment already says it does.** From the
+  same audit; **premise verified** — `macOSRootView` holds the selection in `@State` with **zero**
+  `SceneStorage` or `AppStorage`, and no restore path exists anywhere. iPad regular width is the
+  same, while the *compact* tab and task subsection are persisted, so one platform has two
+  different answers depending on width.
+  **The defect worth acting on is not the missing feature — it is the comment.**
+  `macOSRootSupportViews.swift` documents a parameter as non-nil for "an `.inbox` selection
+  **restored at launch**", describing a mechanism that does not exist. That is the **third** such
+  comment found this week: [[T-333]] has one claiming macOS reads a shared sorter it does not, and
+  [[T-337]] carries one justifying an unseeded button by a drop path that no longer exists. A
+  comment asserting a mechanism is worse than a missing mechanism, because it stops the next reader
+  checking.
+  So: decide the contract, and **fix the comment either way**. If root navigation should persist,
+  start with stable destinations only — Today, Inbox, All Tasks, Habits, Goals, Calendar. **Do not
+  persist area or project ids until [[T-345]] lands**, or launch will restore a selection pointing
+  at a deleted list, which is that ticket's bug made permanent.
+
 - [T-348] **A reference to a deleted note silently retargets to a different note with the same
   title.** From the markdown-reference audit (Codex, 2026-08-27); **premise verified at
   `NoteReferenceSupport.linkedNotes`**: the resolver tries `reference.noteID` in an `if let` chain,
