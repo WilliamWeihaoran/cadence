@@ -127,6 +127,11 @@ Before treating a red run as a code regression, check:
   exited early.
 - UI-test failures in an ordinary test run: the run was not scoped to `CadenceTests`.
 - Compile failures that name your file are real until proven otherwise.
+- **Count compile errors with `grep -cE '\.swift:[0-9]+:[0-9]+: error:'`, not `grep -c 'error:'`.**
+  A failing test whose message contains the word "error" — e.g. `Caught error: .notFound(...)` from
+  a source scan — matches the loose pattern, so a genuine mutation kill reads as a build break and
+  gets thrown away. The loose pattern only ever over-counts, so it never launders a bad result into
+  a good one; it discards good evidence, which is quieter and easier to miss.
 - `sleep` is blocked in this harness, including inside `nohup`'d background jobs — a poll loop
   written with it burns every iteration instantly and exits 0 having watched nothing, which reads
   exactly like "the condition never fired". Use the `Monitor` tool to wait on a condition.
