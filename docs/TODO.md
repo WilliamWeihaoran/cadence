@@ -43,6 +43,46 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-348] **A reference to a deleted note silently retargets to a different note with the same
+  title.** From the markdown-reference audit (Codex, 2026-08-27); **premise verified at
+  `NoteReferenceSupport.linkedNotes`**: the resolver tries `reference.noteID` in an `if let` chain,
+  and when that fails it **falls through** to matching on `fallbackTitle`. `linkedTasks` and the
+  backlink count do the same, and iOS's tap navigation duplicates the resolver.
+  **The root is that the parsed type cannot tell a stale ID from no ID.** `[[note:<deleted-id>|Budget]]`
+  and `[[Budget]]` reach the same code path, so a reference that named a *specific* note by id
+  quietly starts pointing at whichever other note is called Budget. The user wrote a precise
+  reference and gets an imprecise one back.
+  It reaches MCP reads too, so an agent asking about a note is told about the wrong one.
+  Fix by splitting the parsed reference: title-fallback only when the markdown had no valid id form.
+  The existing tests pin the safe half — a stable id beats a stale title, and a title-only
+  reference that resolves to nothing disappears. **Nothing pins that an explicit id must not
+  retarget**, which is why this survived.
+
+- [T-349] **A deleted embedded task stays interactive in an open editor.** From the same audit;
+  **inferred from a repeated pattern**, not measured at runtime, and the entry should keep that
+  distinction. Each editor caches newly embedded tasks in `recentEmbeddedTasks` to cover creation
+  latency, and lookup falls back to that cache when the live query no longer has the task. Delete
+  the task elsewhere and the card can still toggle, rename, open and hover against a cached object.
+  Four surfaces repeat it: `NotePanel`, `NoteEditorPane`, `ListNotesSupportViews`, and iOS's
+  editing surface.
+  The fix shape matters: the cache should serve **creation latency only**, so a fallback hit should
+  re-verify by fetching the id and drop the cached value when that misses. And the missing-card
+  behaviour must stay — the markdown reference remains, the actions stop working. Test the helper,
+  not the private SwiftUI methods.
+
+- [T-350] **An image can be garbage-collected out of a note that still references it.** From the
+  same audit, premise verified — `MarkdownImageAssetServiceTests` contains a fixture line
+  `Inline ![ignored](cadence-image://…)` and asserts it **is** ignored.
+  That is correct for **rendering**: an inline image stays paragraph text rather than becoming a
+  block. The bug is that **asset lifecycle and export reuse the rendering predicate**, so
+  `referencedIDs` counts only standalone references — and a list or note delete can collect an
+  asset that a surviving note still shows inline. That is data loss, narrow but real.
+  Reachable mainly by hand-editing an image into a sentence, since paste and photo insertion both
+  create standalone blocks — so **low frequency, permanent consequence**.
+  **Do not widen the shared predicate**, which would change what renders as a block. Split the API:
+  standalone references for rendering and block deletion, all references for lifecycle and export.
+  The inline-capable pattern already exists in `MarkdownStyleRangeSupport`.
+
 - [T-345] **The macOS sidebar can stay selected on a list that no longer exists.** From the
   selection-after-mutation audit (Codex, 2026-08-27); premise verified — `iOSListViews` has
   `effectiveSelectedRoute` and retargets when the active route disappears, and the macOS root has
