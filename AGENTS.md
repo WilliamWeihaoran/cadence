@@ -69,6 +69,8 @@ Read the nearest scoped `AGENTS.md` before editing under that tree:
 Long references, searchable only when needed:
 
 - `docs/CONTEXT_INDEX.md` - small routing map by change type.
+- `docs/AUDIT_BRIEF.md` - what an external audit report needs to be cheap to act on. Hand it to
+  anyone producing findings; the report that used it cost two greps to verify instead of a search.
 - `docs/AGENTS_REFERENCE.md` - detailed root runbook and red-run history.
 - `docs/SHARED_AGENTS_REFERENCE.md` - detailed Shared guide.
 - `docs/IOS_AGENTS_REFERENCE.md` - detailed iOS guide.
