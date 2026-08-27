@@ -43,6 +43,37 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-356] **A recurring 10-minute task spawns its next occurrence as 30 minutes.** From the
+  recurrence-spawn audit (Codex, 2026-08-27); **premise verified, and the codebase argues against
+  itself in writing.**
+  `CadenceTaskRecurrenceWorkflowSupport.swift:261` sets
+  `nextTask.estimatedMinutes = max(task.estimatedMinutes, 30)`. `AppTask.swift:238` documents that
+  **exact expression as the rejected rule**: *"The rule is not `max(estimatedMinutes, 30)` … That
+  floor cannot tell 'no estimate' from 'a deliberate short estimate', so it also rounded a real
+  10-minute task up to half an hour, contradicting the block drawn for it, the label inside that
+  block, and the overlap solver."*
+  So the anti-pattern is documented in one file and executed in another. Ran the probe: `max(10, 30)`
+  is `30`.
+  Live, because creation accepts short estimates and clamps only to **5**, and the timeline tests
+  pin that a 10-minute task stays 10. Complete or cancel a recurring 10-minute task and the next
+  occurrence is half an hour — changing its block, its label, timeline collisions, and any exported
+  or MCP-read duration.
+  The fix is to use the model's single rule, `task.timelineDurationMinutes`, which keeps 10 at 10,
+  keeps unset at the 30-minute default, and keeps a dirty sub-5 positive at the documented 5-minute
+  floor. Test: recurring task at 10 minutes, complete it, assert the spawned occurrence is 10.
+
+- [T-357] **`TaskCompletionAnimationManager` bypasses the shared status path when it has no context
+  — and that is now the second bypass found in that one file.** From the same audit; **inferred, not
+  measured**, and the entry keeps that: the manager's context is set on root appear and it is
+  injected app-wide, so the contextless branch probably never runs in the shipping app. If it did,
+  a recurring task completed through it would not spawn its successor.
+  **Read it together with [[T-341]]**, which found the *same file* writing `task.status = .todo`
+  directly at line 102 while calling the correct helper at line 41. Two independent audits, two
+  different bypasses, one file. That is no longer a coincidence worth two tickets — whoever fixes
+  T-341 should route **every** status write in that manager through the shared helper and pin that
+  no direct `task.status =` assignment survives there.
+  Hardening, not a production bug. Say so in the commit rather than inflating it.
+
 - [T-353] **The widgets keep their own definition of Today, and it is narrower than the app's.**
   From the widget-parity audit (Codex, 2026-08-27); **premise verified**: `scheduledDate < todayKey`
   appears in `CadenceTaskQuerySupport` and **zero times** in `CadenceTodayWidgetSupport`. Extends
