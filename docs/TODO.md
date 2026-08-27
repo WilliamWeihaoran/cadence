@@ -174,25 +174,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   mutation, and delete commit — **after** each shared wrapper exists, not before, or the test
   becomes a brittle census of scattered call sites.
 
-- [T-356] **A recurring 10-minute task spawns its next occurrence as 30 minutes.** From the
-  recurrence-spawn audit (Codex, 2026-08-27); **premise verified, and the codebase argues against
-  itself in writing.**
-  `CadenceTaskRecurrenceWorkflowSupport.swift:261` sets
-  `nextTask.estimatedMinutes = max(task.estimatedMinutes, 30)`. `AppTask.swift:238` documents that
-  **exact expression as the rejected rule**: *"The rule is not `max(estimatedMinutes, 30)` … That
-  floor cannot tell 'no estimate' from 'a deliberate short estimate', so it also rounded a real
-  10-minute task up to half an hour, contradicting the block drawn for it, the label inside that
-  block, and the overlap solver."*
-  So the anti-pattern is documented in one file and executed in another. Ran the probe: `max(10, 30)`
-  is `30`.
-  Live, because creation accepts short estimates and clamps only to **5**, and the timeline tests
-  pin that a 10-minute task stays 10. Complete or cancel a recurring 10-minute task and the next
-  occurrence is half an hour — changing its block, its label, timeline collisions, and any exported
-  or MCP-read duration.
-  The fix is to use the model's single rule, `task.timelineDurationMinutes`, which keeps 10 at 10,
-  keeps unset at the 30-minute default, and keeps a dirty sub-5 positive at the documented 5-minute
-  floor. Test: recurring task at 10 minutes, complete it, assert the spawned occurrence is 10.
-
 - [T-357] **`TaskCompletionAnimationManager` bypasses the shared status path when it has no context
   — and that is now the second bypass found in that one file.** From the same audit; **inferred, not
   measured**, and the entry keeps that: the manager's context is set on root appear and it is

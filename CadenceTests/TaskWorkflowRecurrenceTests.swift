@@ -349,5 +349,59 @@ struct TaskWorkflowRecurrenceTests {
         #expect(next.recurrenceRule == .daily)
         #expect(next.recurrenceSeriesID == task.recurrenceSeriesID)
     }
+
+    // MARK: - 9. The next occurrence inherits the predecessor's duration, not a 30-minute floor
+
+    @Test func spawnedOccurrenceKeepsAShortEstimateInsteadOfRoundingItUpToHalfAnHour() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let task = makeRecurringTask(scheduledDate: "2026-08-04")
+        task.estimatedMinutes = 10
+        context.insert(task)
+        try context.save()
+
+        TaskWorkflowService.markDone(task, in: context)
+        try context.save()
+
+        guard let next = try spawnedTask(for: task, in: context) else {
+            Issue.record("Expected a spawned next occurrence")
+            return
+        }
+        // `max(estimatedMinutes, 30)` is the rule `AppTask.timelineDurationMinutes` documents as
+        // rejected: it cannot tell "no estimate" from "a deliberate short estimate", so it turns a
+        // real 10-minute occurrence into a half-hour block, label and overlap footprint.
+        #expect(next.estimatedMinutes == 10)
+        #expect(next.timelineDurationMinutes == 10)
+    }
+
+    @Test func spawnedOccurrenceKeepsTheUnsetDefaultAndTheSubFloorClamp() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        // Zero is the only value that means "unset"; it resolves to the 30-minute default.
+        let unset = makeRecurringTask(title: "No estimate", scheduledDate: "2026-08-04")
+        unset.estimatedMinutes = 0
+        // A positive estimate below the floor is still the user's answer: it lands on 5, not 30.
+        let subFloor = makeRecurringTask(title: "Dirty estimate", scheduledDate: "2026-08-04")
+        subFloor.estimatedMinutes = 3
+        context.insert(unset)
+        context.insert(subFloor)
+        try context.save()
+
+        TaskWorkflowService.markDone(unset, in: context)
+        TaskWorkflowService.markDone(subFloor, in: context)
+        try context.save()
+
+        guard let unsetNext = try spawnedTask(for: unset, in: context),
+              let subFloorNext = try spawnedTask(for: subFloor, in: context) else {
+            Issue.record("Expected both recurring tasks to spawn a next occurrence")
+            return
+        }
+        #expect(unsetNext.estimatedMinutes == AppTask.defaultTimelineDurationMinutes)
+        #expect(unsetNext.timelineDurationMinutes == 30)
+        #expect(subFloorNext.estimatedMinutes == AppTask.minimumTimelineDurationMinutes)
+        #expect(subFloorNext.timelineDurationMinutes == 5)
+    }
 }
 #endif
