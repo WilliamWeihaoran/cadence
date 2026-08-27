@@ -9,6 +9,25 @@ week by audits that had only seen the open list.
 
 248 entries.
 
+## History corrections
+
+Found by an external commit-claim audit (Codex, 2026-08-28), not by the author. Recorded here
+because the commits are already pushed and cannot be amended.
+
+- **`84bc624` closes T-371 without saying so.** Its message describes recording the query-limit
+  audit and adding a warning-count trap; its diff also adds the schedule comparators, switches four
+  sort sites, adds `CadenceScheduleOrderingTests.swift` (306 lines) and removes T-371 from the open
+  list. Cause: `git add -A` after copying an agent's files, in a block meant for docs only. So T-371
+  did not vanish from a docs commit — it landed in one.
+- **`5b8d8bd` overstates T-359's call sites.** Its message says the shared habit toggle store is used
+  by "macOS, iOS, focus and the widget intent". `CadenceFocusPlanningSupport` holds only a tombstone
+  comment at line 298; it does not call the store. The real set is macOS habits, iOS habits, and the
+  widget intent. The one-writer property the commit claims still holds.
+- **`d4bc391` shipped T-356's comment and tests without its fix**, leaving `main` red until
+  `5d2c196`. Cause: the file was copied out of an agent's tree while that agent was running its
+  revert-mutation. The rule that came out of it: check the bytes you actually copy, not a diff you
+  ran a few tool calls earlier.
+
 ## Done
 
 - [T-319] `c022f61` **iOS task creation reports success for a task that was not saved.** From the silent-
