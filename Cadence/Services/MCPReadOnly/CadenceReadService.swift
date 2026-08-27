@@ -229,7 +229,7 @@ final class CadenceReadService {
         }
 
         let subtasks = (task.subtasks ?? [])
-            .sorted { $0.order < $1.order }
+            .sorted(by: CadenceMCPOrdering.precedes)
             .map {
                 CadenceSubtaskSummary(
                     id: $0.id.uuidString,
@@ -260,7 +260,9 @@ final class CadenceReadService {
             .sorted {
                 if $0.dateKey != $1.dateKey { return $0.dateKey < $1.dateKey }
                 if $0.startMin != $1.startMin { return $0.startMin < $1.startMin }
-                return $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle) == .orderedAscending
+                let titles = $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle)
+                if titles != .orderedSame { return titles == .orderedAscending }
+                return $0.id.uuidString < $1.id.uuidString
             }
             .prefix(cappedLimit(options.limit))
             .map(taskBundleSummary))
@@ -290,7 +292,7 @@ final class CadenceReadService {
                     (normalizedStatus == nil || area.statusRaw == normalizedStatus) &&
                     (contextUUID == nil || area.context?.id == contextUUID)
                 }
-                .sorted { $0.order < $1.order }
+                .sorted(by: CadenceMCPOrdering.precedes)
                 .map(containerRef)
         }
 
@@ -300,7 +302,7 @@ final class CadenceReadService {
                     (normalizedStatus == nil || project.statusRaw == normalizedStatus) &&
                     (contextUUID == nil || project.context?.id == contextUUID)
                 }
-                .sorted { $0.order < $1.order }
+                .sorted(by: CadenceMCPOrdering.precedes)
                 .map(containerRef)
         }
 
@@ -318,10 +320,7 @@ final class CadenceReadService {
             }
         }
         return Array(contexts
-            .sorted {
-                if $0.order != $1.order { return $0.order < $1.order }
-                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }
+            .sorted(by: CadenceMCPOrdering.precedes)
             .prefix(cappedLimit(limit))
             .map(contextRef))
     }
@@ -334,10 +333,10 @@ final class CadenceReadService {
         let today = DateFormatters.todayKey()
         let overdue = active.filter { !$0.dueDate.isEmpty && $0.dueDate < today }
         let links = try linksForContainer(kind: kind, id: uuid)
-            .sorted { $0.order < $1.order }
+            .sorted(by: CadenceMCPOrdering.precedes)
             .map(linkSummary)
         let noteDocuments = try notesForContainer(kind: kind, id: uuid)
-            .sorted { $0.order < $1.order }
+            .sorted(by: CadenceMCPOrdering.precedes)
             .map(documentSummary)
 
         return CadenceContainerSummary(
@@ -359,10 +358,10 @@ final class CadenceReadService {
 
         let areas = try fetchAreas()
             .filter { $0.context?.id == id }
-            .sorted { $0.order < $1.order }
+            .sorted(by: CadenceMCPOrdering.precedes)
         let projects = try fetchProjects()
             .filter { $0.context?.id == id }
-            .sorted { $0.order < $1.order }
+            .sorted(by: CadenceMCPOrdering.precedes)
         let goals = try fetchGoals().filter { $0.context?.id == id }
         let tasks = try fetchTasks().filter { $0.context?.id == id }
         let activeTasks = tasks.filter { !$0.isDone && !$0.isCancelled }
@@ -429,7 +428,7 @@ final class CadenceReadService {
         }
 
         let noteSummaries = docs
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted(by: CadenceMCPOrdering.recencyPrecedes)
             .map(documentSummary)
         return Array(noteSummaries.prefix(cappedLimit(limit)))
     }
@@ -494,7 +493,7 @@ final class CadenceReadService {
         }
 
         return Array(notes
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted(by: CadenceMCPOrdering.recencyPrecedes)
             .prefix(cappedLimit(options.limit))
             .map(noteSummary))
     }
@@ -537,10 +536,7 @@ final class CadenceReadService {
         }
 
         return Array(goals
-            .sorted {
-                if $0.order != $1.order { return $0.order < $1.order }
-                return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-            }
+            .sorted(by: CadenceMCPOrdering.precedes)
             .prefix(cappedLimit(options.limit))
             .map(goalSummary))
     }
@@ -612,10 +608,7 @@ final class CadenceReadService {
         }
 
         return Array(habits
-            .sorted {
-                if $0.order != $1.order { return $0.order < $1.order }
-                return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-            }
+            .sorted(by: CadenceMCPOrdering.precedes)
             .prefix(cappedLimit(options.limit))
             .map(habitSummary))
     }
@@ -634,10 +627,7 @@ final class CadenceReadService {
         }
 
         return Array(links
-            .sorted {
-                if $0.order != $1.order { return $0.order < $1.order }
-                return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-            }
+            .sorted(by: CadenceMCPOrdering.precedes)
             .prefix(cappedLimit(options.limit))
             .map(linkSummary))
     }
@@ -1259,7 +1249,10 @@ final class CadenceReadService {
         if lhs.scheduledDate != rhs.scheduledDate { return lhs.scheduledDate < rhs.scheduledDate }
         if lhs.scheduledStartMin != rhs.scheduledStartMin { return lhs.scheduledStartMin < rhs.scheduledStartMin }
         if lhs.order != rhs.order { return lhs.order < rhs.order }
-        return lhs.createdAt > rhs.createdAt
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+        // Same reason as `CadenceMCPOrdering`: `createdAt` is a `Date` written by a save, and a
+        // seeded or imported batch shares one.
+        return lhs.id.uuidString < rhs.id.uuidString
     }
 
     private func resolvedDateKey(_ dateKey: String?) throws -> String {

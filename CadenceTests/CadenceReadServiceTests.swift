@@ -360,6 +360,211 @@ struct CadenceReadServiceTests {
         #expect(scoped.subtitle == NoteReferencePanelSupport.noteKindLabel(.meeting))
     }
 
+    // MARK: - T-372, MCP list order is total or it is noise
+
+    @Test func containerListsHoldTheirOrderWhenDifferentContextsShareAnOrderSlot() throws {
+        let forward = try OrderingFixture(reversedInsertion: false)
+        let reversed = try OrderingFixture(reversedInsertion: true)
+
+        let forwardContainers = try forward.service.listContainers()
+        let reversedContainers = try reversed.service.listContainers()
+
+        #expect(forwardContainers.map(\.id) == reversedContainers.map(\.id))
+        #expect(forwardContainers.map(\.id) == OrderingFixture.expectedContainerIDs.map(\.uuidString))
+        // Two areas named "Admin" at the same `order` in two contexts: only identity separates them.
+        #expect(forwardContainers.map(\.name) == ["Errands", "Operations", "Admin", "Admin", "Launch", "Move"])
+
+        let forwardContexts = try forward.service.listContexts()
+        let reversedContexts = try reversed.service.listContexts()
+        #expect(forwardContexts.map(\.id) == reversedContexts.map(\.id))
+        #expect(forwardContexts.map(\.name) == ["Personal", "Work"])
+
+        let forwardWork = try forward.service.contextSummary(contextID: OrderingFixture.workContextID.uuidString)
+        let reversedWork = try reversed.service.contextSummary(contextID: OrderingFixture.workContextID.uuidString)
+        #expect(forwardWork.areas.map(\.id) == reversedWork.areas.map(\.id))
+        #expect(forwardWork.areas.map(\.name) == ["Operations", "Admin"])
+        #expect(forwardWork.projects.map(\.id) == reversedWork.projects.map(\.id))
+    }
+
+    @Test func containerSummaryDocumentsAndLinksHoldTheirOrderAcrossReads() throws {
+        let forward = try OrderingFixture(reversedInsertion: false)
+        let reversed = try OrderingFixture(reversedInsertion: true)
+
+        let forwardSummary = try forward.service.containerSummary(
+            kind: "project",
+            id: OrderingFixture.launchProjectID.uuidString
+        )
+        let reversedSummary = try reversed.service.containerSummary(
+            kind: "project",
+            id: OrderingFixture.launchProjectID.uuidString
+        )
+
+        #expect(forwardSummary.documents.map(\.id) == reversedSummary.documents.map(\.id))
+        #expect(forwardSummary.documents.map(\.title) == ["Runbook", "Spec", "Charter"])
+
+        #expect(forwardSummary.links.map(\.id) == reversedSummary.links.map(\.id))
+        // Two links titled "Design" share `order == 0`; the id leg is the only thing left.
+        #expect(forwardSummary.links.map(\.title) == ["Design", "Design", "Roadmap", "Tracker"])
+        #expect(forwardSummary.links.map(\.id) == OrderingFixture.expectedLinkIDs.map(\.uuidString))
+    }
+
+    @Test func documentAndNoteListsBreakATiedUpdatedAtInsteadOfLeavingItToTheStore() throws {
+        let forward = try OrderingFixture(reversedInsertion: false)
+        let reversed = try OrderingFixture(reversedInsertion: true)
+
+        let forwardDocs = try forward.service.listDocuments()
+        let reversedDocs = try reversed.service.listDocuments()
+        #expect(forwardDocs.map(\.id) == reversedDocs.map(\.id))
+        #expect(forwardDocs.map(\.id) == OrderingFixture.expectedDocumentIDs.map(\.uuidString))
+        #expect(forwardDocs.map(\.title) == ["Runbook", "Spec", "Charter"])
+
+        let forwardNotes = try forward.service.listNotes(options: .init(limit: 50))
+        let reversedNotes = try reversed.service.listNotes(options: .init(limit: 50))
+        #expect(forwardNotes.map(\.id) == reversedNotes.map(\.id))
+        #expect(forwardNotes.map(\.id) == OrderingFixture.expectedDocumentIDs.map(\.uuidString))
+    }
+
+    /// One store, built twice from the same rows in opposite insertion orders.
+    ///
+    /// Every id is pinned, so the two runs differ *only* in the sequence the store hands rows back
+    /// — which is exactly the difference a partial comparator passes through to the response and a
+    /// total one absorbs. Fixture values collide the way the real store collides: `order` is
+    /// assigned per container, so areas in different contexts sit at the same slot, and two of them
+    /// even share a name.
+    ///
+    /// The tests assert permutation equality **and** the exact expected sequence. The second half
+    /// is what keeps them honest: an unsorted `FetchDescriptor` is free to return the same order
+    /// twice, and on such a run permutation equality alone would hold for a partial comparator too.
+    /// Asserting the reverse — that the two raw fetch orders *differ* — was tried and removed: it
+    /// is a property of the store, not of the code under test, and it was observed both ways
+    /// across runs, so it fails against correct code roughly at random.
+    @MainActor
+    private final class OrderingFixture {
+        let container: ModelContainer
+        let modelContext: ModelContext
+        let service: CadenceReadService
+
+        static func pinnedID(_ byte: UInt8) -> UUID {
+            UUID(uuid: (0, 0, 0, 0, 0, 0, 0x40, 0, 0x80, 0, 0, 0, 0, 0, 0, byte))
+        }
+
+        static let workContextID = pinnedID(0x11)
+        static let personalContextID = pinnedID(0x12)
+        static let operationsAreaID = pinnedID(0x21)
+        static let errandsAreaID = pinnedID(0x22)
+        static let workAdminAreaID = pinnedID(0x31)
+        static let personalAdminAreaID = pinnedID(0x32)
+        static let launchProjectID = pinnedID(0x41)
+        static let moveProjectID = pinnedID(0x42)
+        static let specNoteID = pinnedID(0x51)
+        static let runbookNoteID = pinnedID(0x52)
+        static let charterNoteID = pinnedID(0x53)
+        static let roadmapLinkID = pinnedID(0x61)
+        static let designLinkID = pinnedID(0x62)
+        static let trackerLinkID = pinnedID(0x63)
+        static let duplicateDesignLinkID = pinnedID(0x64)
+
+        /// Areas first (`order`, then name, then id), then projects — the shape `listContainers`
+        /// concatenates.
+        static let expectedContainerIDs: [UUID] = [
+            errandsAreaID, operationsAreaID, workAdminAreaID, personalAdminAreaID,
+            launchProjectID, moveProjectID,
+        ]
+
+        static let expectedLinkIDs: [UUID] = [
+            designLinkID, duplicateDesignLinkID, roadmapLinkID, trackerLinkID,
+        ]
+
+        /// `order` first, then title: "Runbook" and "Spec" both sit at slot 0.
+        static let expectedDocumentIDs: [UUID] = [runbookNoteID, specNoteID, charterNoteID]
+
+        /// One timestamp for every document, so `updatedAt` decides nothing.
+        static let sharedStamp = Date(timeIntervalSince1970: 1_774_000_000)
+
+        init(reversedInsertion: Bool) throws {
+            // Locals, not the properties: the nested `insert` below would otherwise capture `self`
+            // before every stored property is initialized.
+            let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            let modelContext = ModelContext(container)
+
+            let work = Context(name: "Work")
+            work.id = Self.workContextID
+            work.order = 0
+            let personal = Context(name: "Personal")
+            personal.id = Self.personalContextID
+            personal.order = 0
+
+            let operations = Area(name: "Operations", context: work)
+            operations.id = Self.operationsAreaID
+            operations.order = 0
+            let errands = Area(name: "Errands", context: personal)
+            errands.id = Self.errandsAreaID
+            errands.order = 0
+            let workAdmin = Area(name: "Admin", context: work)
+            workAdmin.id = Self.workAdminAreaID
+            workAdmin.order = 1
+            let personalAdmin = Area(name: "Admin", context: personal)
+            personalAdmin.id = Self.personalAdminAreaID
+            personalAdmin.order = 1
+
+            let launch = Project(name: "Launch", context: work)
+            launch.id = Self.launchProjectID
+            launch.order = 0
+            let move = Project(name: "Move", context: personal)
+            move.id = Self.moveProjectID
+            move.order = 0
+
+            func listNote(id: UUID, title: String, order: Int) -> Note {
+                Note(
+                    id: id,
+                    kind: .list,
+                    title: title,
+                    order: order,
+                    createdAt: Self.sharedStamp,
+                    updatedAt: Self.sharedStamp,
+                    project: launch
+                )
+            }
+
+            let spec = listNote(id: Self.specNoteID, title: "Spec", order: 0)
+            let runbook = listNote(id: Self.runbookNoteID, title: "Runbook", order: 0)
+            let charter = listNote(id: Self.charterNoteID, title: "Charter", order: 1)
+
+            func savedLink(id: UUID, title: String, order: Int) -> SavedLink {
+                let link = SavedLink(title: title, url: "https://example.com/\(title.lowercased())")
+                link.id = id
+                link.order = order
+                link.project = launch
+                return link
+            }
+
+            let roadmap = savedLink(id: Self.roadmapLinkID, title: "Roadmap", order: 0)
+            let design = savedLink(id: Self.designLinkID, title: "Design", order: 0)
+            let tracker = savedLink(id: Self.trackerLinkID, title: "Tracker", order: 1)
+            let duplicateDesign = savedLink(id: Self.duplicateDesignLinkID, title: "Design", order: 0)
+
+            func insert<T: PersistentModel>(_ models: [T]) {
+                for model in reversedInsertion ? models.reversed() : models {
+                    modelContext.insert(model)
+                }
+            }
+
+            insert([work, personal])
+            insert([operations, errands, workAdmin, personalAdmin])
+            insert([launch, move])
+            insert([spec, runbook, charter])
+            insert([roadmap, design, tracker, duplicateDesign])
+            try modelContext.save()
+
+            self.container = container
+            self.modelContext = modelContext
+
+            // Migrations off: this fixture pins `updatedAt` on purpose, and a migration pass would
+            // restamp the rows the recency test needs tied.
+            service = CadenceReadService(container: container, performsMigrations: false)
+        }
+    }
+
     @MainActor
     private final class Fixture {
         let container: ModelContainer

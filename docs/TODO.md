@@ -43,6 +43,15 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-372a] **`CadenceSearchMatcher.rank` is the one ordering left partial after [[T-372]].** Found
+  while fixing T-372 and deliberately not fixed there: `rank` ends at score-then-title
+  (`Shared/CadenceSearchMatcher.swift` lines 27-30), so two hits with the same score and the same
+  title — two tasks called "Admin" in two contexts, a duplicated saved link — come back in fetch
+  order. It is the *shared* matcher, so the MCP `search()` tool and the macOS/iOS search surfaces
+  all inherit it, and closing it means threading an identity closure through every `rank` call
+  site rather than the one-file change T-372 was. Scoped out to keep the MCP fix reviewable; the
+  fix shape is the same `id` tail `CadenceMCPOrdering.precedes` now uses.
+
 - [T-375] **A completed task's deep link lands on All Tasks without opening the task, and the
   macOS destination→sidebar mapping has an unpinned `?? .today` fallback.** Residue from [[T-368]],
   filed rather than folded into it. (a) T-368 killed the lingering-arm bug — the dangerous half —
@@ -147,13 +156,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   two bundles sharing a start. Reach: iPad Today, iOS calendar, macOS calendar and schedule panels.
   `TaskOrdering.fallbackPrecedes` is the fix and it lives in `Models/`, compiled into every target —
   there is no packaging reason this helper stopped short.
-
-- [T-372] **MCP read APIs return order-only lists, so another agent sees nondeterministic order.**
-  Measured. `listContainers(kind: nil)` sorts areas by `order` alone before concatenating, and areas
-  in different contexts routinely share `order == 0`. This is worse than the UI equivalent: an agent
-  reading Cadence twice sees rows move and cannot tell that from a real change, so it re-reads and
-  spends tokens proving nothing happened. Shared total comparators for container refs, documents,
-  and links, applied at the MCP boundary.
 
 - [T-373] **The EventKit and Reminders comparators both tie on realistic duplicates.** EventKit's is
   named "total" but stops at start-date-then-title, and recurring or imported meetings routinely

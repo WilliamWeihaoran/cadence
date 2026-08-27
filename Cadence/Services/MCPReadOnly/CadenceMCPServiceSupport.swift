@@ -168,3 +168,104 @@ nonisolated enum CadenceResolvedContainer {
         }
     }
 }
+
+/// The one total order every MCP list response sorts by.
+///
+/// `order` alone is a **partial** order here. Every model in this list numbers its own sequence
+/// from zero — `Area`, `Project`, `Context`, `Note`, `SavedLink`, `Goal`, `Habit`, `Subtask` — so
+/// two rows with different parents routinely claim the same slot. `listContainers(kind: nil)` is
+/// the clearest case: it sorts *all* areas across *all* contexts by `order` and then concatenates
+/// projects behind them, and one area per context sitting at `order == 0` is the normal shape of
+/// the store, not an edge case. `Array.sorted(by:)` is not a stable sort, and the rows arrive in
+/// whatever order the store handed them over, so the tied run comes back differently between
+/// reads.
+///
+/// This matters more at this boundary than on screen. A person who sees two rows swap re-reads the
+/// screen and moves on; an agent reading Cadence twice **cannot distinguish a reshuffle from a real
+/// edit**, so it re-reads and spends tokens establishing that nothing changed.
+///
+/// `id` closes it, exactly the way `TaskOrdering.fallbackPrecedes`, `TagSupport.precedes` and
+/// `CadenceSidebarLists.precedes` close theirs: unique, stable across launches and across
+/// processes, and never part of the sort the user can see.
+///
+/// One comparator, several key extractors. Three near-copies of this rule is the shape that drifts.
+nonisolated enum CadenceMCPOrdering {
+    /// What a row is ordered by: its own sequence, then its title, then the identity that ends it.
+    struct SortKey {
+        let order: Int
+        let title: String
+        let id: UUID
+    }
+
+    /// Total: two rows compare equal only when they are the same row.
+    ///
+    /// Deliberately not a `Comparable` conformance. The title leg is case-insensitive while a
+    /// synthesized `==` would not be, which would leave `"inbox"` and `"Inbox"` unordered *and*
+    /// unequal — a `Comparable` that breaks its own contract.
+    static func precedes(_ lhs: SortKey, _ rhs: SortKey) -> Bool {
+        if lhs.order != rhs.order { return lhs.order < rhs.order }
+
+        let titles = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+        if titles != .orderedSame { return titles == .orderedAscending }
+
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
+    static func sortKey(_ area: Area) -> SortKey {
+        SortKey(order: area.order, title: area.name, id: area.id)
+    }
+
+    static func sortKey(_ project: Project) -> SortKey {
+        SortKey(order: project.order, title: project.name, id: project.id)
+    }
+
+    static func sortKey(_ context: Context) -> SortKey {
+        SortKey(order: context.order, title: context.name, id: context.id)
+    }
+
+    static func sortKey(_ note: Note) -> SortKey {
+        SortKey(order: note.order, title: note.displayTitle, id: note.id)
+    }
+
+    static func sortKey(_ link: SavedLink) -> SortKey {
+        SortKey(order: link.order, title: link.title, id: link.id)
+    }
+
+    static func sortKey(_ goal: Goal) -> SortKey {
+        SortKey(order: goal.order, title: goal.title, id: goal.id)
+    }
+
+    static func sortKey(_ habit: Habit) -> SortKey {
+        SortKey(order: habit.order, title: habit.title, id: habit.id)
+    }
+
+    static func sortKey(_ subtask: Subtask) -> SortKey {
+        SortKey(order: subtask.order, title: subtask.title, id: subtask.id)
+    }
+
+    static func precedes(_ lhs: Area, _ rhs: Area) -> Bool { precedes(sortKey(lhs), sortKey(rhs)) }
+
+    static func precedes(_ lhs: Project, _ rhs: Project) -> Bool { precedes(sortKey(lhs), sortKey(rhs)) }
+
+    static func precedes(_ lhs: Context, _ rhs: Context) -> Bool { precedes(sortKey(lhs), sortKey(rhs)) }
+
+    static func precedes(_ lhs: Note, _ rhs: Note) -> Bool { precedes(sortKey(lhs), sortKey(rhs)) }
+
+    static func precedes(_ lhs: SavedLink, _ rhs: SavedLink) -> Bool { precedes(sortKey(lhs), sortKey(rhs)) }
+
+    static func precedes(_ lhs: Goal, _ rhs: Goal) -> Bool { precedes(sortKey(lhs), sortKey(rhs)) }
+
+    static func precedes(_ lhs: Habit, _ rhs: Habit) -> Bool { precedes(sortKey(lhs), sortKey(rhs)) }
+
+    static func precedes(_ lhs: Subtask, _ rhs: Subtask) -> Bool { precedes(sortKey(lhs), sortKey(rhs)) }
+
+    /// Documents and notes listed newest-first, then the same total tail.
+    ///
+    /// `updatedAt` alone ties on every note a migration, an import or a bulk edit touched in one
+    /// pass — `NoteMigrationService` writes a run of notes inside a single save, and `Date` here is
+    /// whatever that save stamped.
+    static func recencyPrecedes(_ lhs: Note, _ rhs: Note) -> Bool {
+        if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
+        return precedes(sortKey(lhs), sortKey(rhs))
+    }
+}
