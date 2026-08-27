@@ -43,6 +43,48 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-341] **Restoring a cancelled task on macOS leaves its completion timestamp behind.** From the
+  status-lifecycle audit (Codex, 2026-08-27); **premise verified, and the framing is tighter than
+  reported.** `TaskCompletionAnimationManager` calls `TaskWorkflowService.markTodo(task)` at line
+  **41** — the correct path, which clears `completedAt` — and then at line **102**, in the same
+  file, the cancelled branch assigns `task.status = .todo` directly. So restoring a cancelled task
+  leaves a non-nil `completedAt` on an open task, violating the lifecycle invariant, and skips the
+  reconcile the wrapper performs.
+  Not two files disagreeing across a platform boundary: **one file disagreeing with itself, sixty
+  lines apart.** The existing test asserts the status and not the timestamp, which is why it
+  survived. Smallest live invariant bug on this list — fix it first, and extend the test to assert
+  `completedAt == nil`.
+
+- [T-342] **A frozen macOS surface drops tasks that became done, but keeps ones that became
+  cancelled.** From the same audit, premise verified: `TaskSurfaceFreezeModels` filters
+  `{ !$0.isDone }` in two places and never considers `isCancelled`. So a task cancelled while a
+  surface is frozen stays visible in an active frozen group until the freeze releases.
+  **The app already has the right predicate** — `CadenceTaskQuerySupport.isFinishedTask` defines
+  finished as done *or* cancelled, and the logbook and history already use it. The freeze filter
+  simply predates or ignores it. Existing tests pin the done case and not the cancelled one, which
+  is the same shape as [[T-341]]: half a rule tested, so half a rule implemented.
+
+- [T-343] **Six iOS paths change a task's status without reconciling its notifications.** From the
+  same audit; **measured in source, runtime impact inferred.** The row actions, task views, board
+  cards, markdown surface, bundle sheet and focus view all complete or reopen through the pure
+  shared helper without the app-side reconcile that macOS's `TaskWorkflowService` performs.
+  **This is a latency bug, not a correctness one**, and the entry should say so: `iOSRootView`
+  reconciles on scene-phase changes — widened to *every* change in `75e36c4` — so a stale
+  notification survives only until the next lifecycle checkpoint. Related to [[T-306]] and
+  [[T-312]], which fixed the same gap for the out-of-process writers.
+  The audit's own constraint is the important half: **do not push the reconcile into the shared
+  helper**, because widgets and MCP use the same mutation paths and must not schedule app-side
+  notifications. An iOS-side wrapper, or explicit call sites.
+
+- [T-344] **DECISION NEEDED: what does the completion circle mean on a cancelled task?** From the
+  same audit, and filed as a question because the behaviour may be deliberate.
+  The shared toggle treats any non-done task as "mark done", cancelled included. The iOS detail
+  sheet's comments say that is intended — the circle owns done/todo, the cancel button owns
+  cancelled/restore. But the row's swipe label shows **"Done"** on a cancelled task rather than
+  "Restore", so the two surfaces describe the same gesture differently.
+  Either is defensible; the current state is that nothing pins which. Decide, then pin it with one
+  test or one comment — the audit's own recommendation, and the right one.
+
 - [T-340] **Two more places a task keeps a context its owner no longer has.** Found while closing
   [[T-292]] and [[T-293]], and deliberately not folded in.
   1. Editing an **area's** context re-points tasks filed directly in that area, but not tasks in
