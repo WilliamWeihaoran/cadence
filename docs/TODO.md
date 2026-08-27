@@ -43,6 +43,137 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-358] **Section state is one JSON blob, so two devices editing different sections clobber each
+  other.** CloudKit audit (Codex, 2026-08-27); shape measured, cross-device outcome inferred.
+  `Area.sectionConfigsRaw` (and Project's) holds the whole section array as one string, and ~20 call
+  sites read the array, change one section, and write the array back. The iOS list editor snapshots
+  configs on appear and writes the snapshot on save, so a Mac-side edit to a *different* section is
+  overwritten with no per-section merge point. `TaskSectionConfig` already has a stable `uuid`; the
+  identity exists and persistence throws it away. Fix: one merge helper that reloads by `uuid` before
+  save and applies only changed fields. Keep `sectionNamesRaw` compatibility.
+
+- [T-359] **Two devices can create two `HabitCompletion` rows for the same habit and the same day, and
+  the count sums both.** Extends [[T-328]] — that ticket says the repair service cannot *see*
+  `HabitCompletion`; this says what it would need to repair. Measured: four files construct
+  `HabitCompletion(` with an insert-if-none-exists toggle —
+  `CadenceFocusPlanningSupport`, `CadenceWidgetIntents`, `CadenceWidgetRefreshCenter`,
+  `HabitsView`. Different UUIDs means both rows survive sync, and `completionCountsByDate()` adds
+  them, so one real check-in can satisfy a `targetCount` or `.timesPerWeek` habit. Decide collapse
+  semantics (`max` vs `sum`) before writing the repair.
+
+- [T-360] **Duplicate-tag merge keeps the newer timestamp and throws away the newer colour — and the
+  guard that was supposed to prevent that is unreachable.** Sharper than filed. `TagSupport.swift:273`
+  copies `colorHex` only `if target.colorHex...isEmpty`, but `Tag.colorHex` defaults to `"#6b7a99"`
+  and is never empty for an app-created tag, so the branch is **dead code**. Line 279 then sets
+  `updatedAt = max(target, source)`. Net: the surviving tag **advertises the newer timestamp while
+  carrying the older colour** — it lies about its own freshness, which is worse than losing the
+  colour, because nothing downstream can detect the loss. Note the trap for whoever fixes it: the
+  `desc` branch three lines above has the *identical* shape and **is** live, because `desc` really
+  can be empty. Two branches that look the same, one works.
+
+- [T-361] **Turning reminders off cancels nothing until a scene-phase sweep.** Notification audit;
+  measured. `NotificationManager.reconcile` correctly calls `cancelAll()` when disabled — but
+  **zero** `onChange(of: notificationsEnabled)` handlers exist on either platform, so the toggle
+  writes `UserDefaults` and stops. Pending OS notifications survive until the app next backgrounds.
+  A reminder can fire after the user just turned reminders off, which reads as the setting not
+  working. Fix is small: react to the toggle on both platforms — cancel on false, reconcile on true.
+
+- [T-362] **Eleven macOS/iOS surfaces change a task's date or time without reconciling
+  notifications.** Extends [[T-343]] (iOS *status* paths); this is the *date/time* half. Measured
+  source, inferred staleness. Move a task from 9am to 3pm and the 9am notification stays pending
+  until a lifecycle checkpoint. The create sheets on both platforms and `iOSTaskDetailSheet.applyDates()`
+  already do this correctly — copy them. Wrap save+reconcile app-side; do **not** push it into the
+  shared helpers that widgets and MCP call without reviewing that boundary.
+
+- [T-363] **An out-of-range `reminderMinuteOfDay` schedules a daily reminder at whatever time
+  reconcile happened to run.** Measured by probe: `Calendar.date(bySettingHour:minute:second:of:)`
+  returns `nil` for -15, 1440 and 1500, and `NotificationScheduling.swift:190` ends `?? now`. Not
+  reachable from the picker; reachable from existing or imported data. `Habit.swift` already
+  documents that the model does no range validation. Guard `0...1439` in the planner and return
+  `nil`.
+
+- [T-364] **Task-creation surfaces that report success still bypass the rollback API.** Undo audit;
+  measured. `TaskCreationService` itself says success-reporting surfaces should prefer
+  `createTask(from:into:)`, and `CreateTaskSheet`, `InlineTaskComposerView`, and four
+  note/markdown embed paths do not — they insert, swallow or skip the save, then dismiss, clear the
+  composer, or refresh the embed. `iOSCreateTaskSheet` is the pattern to copy: it catches, keeps the
+  sheet open, and reconciles only after the commit lands. Related: [[T-321]], [[T-322]].
+
+- [T-365] **Ordinary task deletes swallow the final save failure and return `true`.** Extends
+  [[T-322]] with the highest-risk single site. `CadenceTaskMutationSupport` documents why ordinary
+  deletes must commit immediately, then does `try? modelContext.save()`, cancels notifications, and
+  reports success — so macOS and iOS row deletes cannot tell a failed delete from a real one, and
+  no rollback runs. `CadencePendingChangePersistence.commitDelete` already rolls back on throw and
+  is already tested. Route through it and let the failure be visible.
+
+- [T-366] **The embed field popover calls `onChanged()` whether or not the write landed.** Measured.
+  `TaskEmbedFieldEditorPopover` mutates the live task, swallows the save, then unconditionally tells
+  the note editor to refresh its rendered task card — so the card repaints with values the store may
+  not hold. Narrower [[T-322]] case. `AINoteActionSupport` shows the right shape: snapshot the
+  fields, restore them on failure, rather than rolling back unrelated pending work.
+
+- [T-367] **Global Cmd+Z on the model context is either a feature or a hazard, and nothing says
+  which.** P3, source measured, runtime behaviour not measured. The macOS root installs an
+  `UndoManager` on the shared `ModelContext` and routes non-text Cmd+Z/Cmd+Shift+Z into it, while
+  destructive copy elsewhere tells the user "This cannot be undone." Editor undo is correctly scoped
+  to the text view. **Decide:** if global model undo is real, pin what it may undo; if not, remove
+  the root fallback. Do not leave it undecided — the current state means neither the code nor the
+  copy can be trusted.
+
+- [T-368] **A stale task deep link leaves `pendingTaskID` armed indefinitely, and it can fire much
+  later.** Deep-link audit; measured. Only two call sites clear it —
+  `TasksPanelComponents.swift:439` and `iOSTaskViews.swift:444` — and both live inside a **rendered
+  task row**. The root sends `.task(id)` to Today, but Today excludes done and cancelled tasks and
+  hides completed rows by default. So tapping a widget link for a task that was finished elsewhere
+  opens Today, shows nothing, and **leaves the ID armed** — it can open the task later, detached
+  from the tap that requested it. Fix at the root: fetch by ID, open the inspector if found, clear
+  if not, and decide the fallback route for a task Today won't show.
+
+- [T-369] **The Calendar widget links to "the calendar", not to the date it was showing.** Measured.
+  The widget snapshot has a `date`; the URL is bare `cadence://calendar` and the parser takes no
+  payload, so the app lands on whatever date the calendar was parked on. `CalendarNavigationManager`
+  already carries a concrete date and `CalendarPageInteractionSupport` already applies an external
+  jump — the plumbing exists, the link just doesn't use it. Either add a date payload or make bare
+  `cadence://calendar` explicitly jump to today; drifting to a remembered date is the one behaviour
+  nobody asked for.
+
+- [T-370] **Deep-link root application is correct and unpinned; the parser's URL shape is
+  undecided.** Two P2/P3s. (a) `iOSRootView` correctly writes *both* the sidebar selection and the
+  compact tab route, and `macOSRootView` sets selection — no test guards either; the compact route
+  *table* is well pinned, the wiring that consumes it is not. Relates to [[T-334]]. (b) The parser
+  switches on `url.host`, so singleton routes silently ignore extra path components and
+  `cadence:///today` is rejected. Not reachable from app-owned widgets, which emit canonical URLs.
+  Pick strict or lenient and pin it.
+
+- [T-371] **Schedule and bundle ordering stop before they reach a total order.**
+  `CadenceScheduleSupport` ends both its task comparators at bare `$0.order < $1.order` (lines 58,
+  292) — and `TaskOrdering` documents that `order` is assigned **per container**, so any cross-list
+  surface routinely compares equal values. Bundles sort on `startMin` alone with nothing preventing
+  two bundles sharing a start. Reach: iPad Today, iOS calendar, macOS calendar and schedule panels.
+  `TaskOrdering.fallbackPrecedes` is the fix and it lives in `Models/`, compiled into every target —
+  there is no packaging reason this helper stopped short.
+
+- [T-372] **MCP read APIs return order-only lists, so another agent sees nondeterministic order.**
+  Measured. `listContainers(kind: nil)` sorts areas by `order` alone before concatenating, and areas
+  in different contexts routinely share `order == 0`. This is worse than the UI equivalent: an agent
+  reading Cadence twice sees rows move and cannot tell that from a real change, so it re-reads and
+  spends tokens proving nothing happened. Shared total comparators for container refs, documents,
+  and links, applied at the MCP boundary.
+
+- [T-373] **The EventKit and Reminders comparators both tie on realistic duplicates.** EventKit's is
+  named "total" but stops at start-date-then-title, and recurring or imported meetings routinely
+  share both. Apple Reminders sorts on due date and title while `AppleReminderItem` already carries
+  a stable `id` it never uses. Both fixes are one line: end on the identity the app already has.
+
+- [T-374] **The most common defect shape in 21 audits is "a correct shared helper exists and call
+  sites don't use it" — enforce it mechanically.** Synthesis, not a new defect. [[T-359]] (four
+  open-coded habit toggles), [[T-362]] (eleven unreconciled date edits), [[T-364]] (creation paths
+  bypassing `TaskCreationService`), [[T-365]], [[T-343]] all have that shape, and each was found by
+  a human-scale read that will not repeat reliably. `CadenceCreateTaskCommitSurfaceTests` is already
+  the right instrument. Extend that source-scan pattern to habit completion, task date/time
+  mutation, and delete commit — **after** each shared wrapper exists, not before, or the test
+  becomes a brittle census of scattered call sites.
+
 - [T-356] **A recurring 10-minute task spawns its next occurrence as 30 minutes.** From the
   recurrence-spawn audit (Codex, 2026-08-27); **premise verified, and the codebase argues against
   itself in writing.**
