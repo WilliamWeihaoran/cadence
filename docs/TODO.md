@@ -43,6 +43,46 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-353] **The widgets keep their own definition of Today, and it is narrower than the app's.**
+  From the widget-parity audit (Codex, 2026-08-27); **premise verified**: `scheduledDate < todayKey`
+  appears in `CadenceTaskQuerySupport` and **zero times** in `CadenceTodayWidgetSupport`. Extends
+  [[T-305]].
+  So an unfinished task planned for a past day with no due date is on the app's Today page and
+  absent from the Today widget — and because the Calendar widget's "Next up" reuses the Today
+  widget's picker, **one divergence produces two wrong widgets**. The Calendar widget can say
+  nothing is urgent while Today has work on it.
+  The widget rank has no past-do branch either, so this is a definition living in two places rather
+  than a missed case. Fix by making the shared membership and rank callable from widget support —
+  note the widget target compiles its own subset, so "call the shared helper" needs checking rather
+  than assuming.
+
+- [T-354] **`review launch plan !!!` becomes a high-priority task in the app and a literal title in
+  the widget.** From the same audit, premise verified: `TaskCreationService` resolves the shortcut
+  through `TaskTitleSupport.priorityShortcut`, and `CadenceWidgetIntents` references it **zero**
+  times. Extends [[T-314]].
+  Same words, two different tasks, depending only on where you typed them — and the widget keeps
+  the `!!!` in the title, so the artefact is visible afterwards. The existing widget test covers
+  simple titles only, which is why it survived.
+  Prefer routing capture through `TaskCreationService` over calling the title helper directly:
+  [[T-314]] is already about eliminating that open-coded copy, and every other creation rule it
+  skips is the same bug waiting.
+
+- [T-355] **DECIDE: the milestone widget mixes directions with their own milestones.** From the same
+  audit; measured code, inferred product impact.
+  The app's Goals surface is hierarchical — top-level goals are groups, milestones nest beneath. The
+  widget prioritizes every active goal, parent or child, into one flat pool. Since a parent's
+  contribution **already recurses through its sub-goals**, the widget can show a rollup and one of
+  its own children side by side as peer "priority milestones", double-counting the child's progress
+  in the reader's eye.
+  Two coherent answers: mirror the app and prioritize top-level directions, letting their summaries
+  carry the milestones; or be genuinely milestone-first, filter out top-level goals, and rename the
+  copy away from "Active goals". **The current mixed pool is only defensible with a test saying it
+  is deliberate**, and there is none.
+
+  Note the audit also reported [[T-301]] as looking already fixed. It is being fixed **right now**
+  in uncommitted work — the audit ran against the dirty tree and read an agent's in-flight change.
+  Not stale on `main`; do not close it on that basis until that work lands.
+
 - [T-351] **A list with an old remembered tab opens the global default instead of Tasks.** From the
   navigation-persistence audit (Codex, 2026-08-27); **premise verified.**
   `ListDetailView.restoreRememberedTab()` reads the per-list value through the *failable*
