@@ -43,6 +43,47 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-345] **The macOS sidebar can stay selected on a list that no longer exists.** From the
+  selection-after-mutation audit (Codex, 2026-08-27); premise verified — `iOSListViews` has
+  `effectiveSelectedRoute` and retargets when the active route disappears, and the macOS root has
+  **no** selection normalizer at all.
+  Delete an area or project from its edit sheet or Settings and the root `selection` can stay
+  pointing at the deleted id. The detail loaders then render **nothing** — not an explanation, not
+  an empty state, just blank content — which reads as the app having lost the page rather than the
+  list having been deleted.
+  Two halves worth fixing together: normalize the selection, **and** give the loaders an explicit
+  missing-list state. Either alone leaves a blank pane reachable.
+
+- [T-346] **macOS Goals keeps a deleted goal selected whenever the search box is empty.** From the
+  same audit, premise verified at `GoalsView.swift:106`:
+  `visibleGoals.contains(where: { $0.id == selectedGoalID }) || trimmedQuery.isEmpty`.
+  **That condition conflates two different questions** — "does this goal still exist?" and "is it
+  hidden by the current search?" — and answers both with "assume it is fine when search is empty".
+  Empty search is exactly the state in which a *deleted* goal is most likely still selected, so the
+  guard is weakest precisely where it is needed.
+  Fix by separating them: missing from `allGoals` should **always** retarget; hidden by search may
+  keep the current product behaviour. Both correct patterns already exist — iOS clears the selected
+  goal before deleting, and macOS Habits retargets when its selection leaves the visible set.
+
+- [T-347] **Six local iOS sheets present a detail view without the deleted-model guard.** From the
+  same audit; measured in source, runtime impact inferred.
+  The root task and bundle hosts route through `CadenceDetailPanelPresentation.resolveHeldSubject`,
+  which closes a sheet when the held model is genuinely deleted. Four task sheets and two bundle
+  sheets present the detail view directly and skip it, so an external deletion while the sheet is
+  open leaves it holding a dead model.
+  **Preserve the distinction the shared rule already makes**, which is the subtle part: leaving the
+  page's query must *not* close the sheet; only actual deletion should. That difference is why the
+  guard exists rather than a simple existence check.
+  The audit's fourth step is the one that keeps this closed: a source scan so a direct detail sheet
+  cannot bypass the guard again. Note the shape that has failed here repeatedly — scope it to a
+  function body and count call sites, do not `range(of:)` for the first match.
+
+  **These three reverse the direction of a pattern worth not over-fitting.** Five findings this week
+  had iOS lagging a model macOS already grew ([[T-323]], [[T-324]], [[T-325]], [[T-339]]). Here
+  macOS lags iOS twice over — iOS normalizes both the list route and the goal selection, macOS
+  neither. The drift is not one-directional, and a sweep that only ports macOS to iOS would miss
+  half of it.
+
 - [T-341] **Restoring a cancelled task on macOS leaves its completion timestamp behind.** From the
   status-lifecycle audit (Codex, 2026-08-27); **premise verified, and the framing is tighter than
   reported.** `TaskCompletionAnimationManager` calls `TaskWorkflowService.markTodo(task)` at line
