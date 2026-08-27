@@ -43,6 +43,36 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-389] **macOS edits a meeting note, fails to mirror it to Apple Calendar, and says nothing.**
+  External ID stability audit (Codex, 2026-08-27, read at `84bc624`, clean tree).
+  **Verified:** `CadenceEventNoteSupport.commitNote` — which saves Cadence first, then reports
+  whether Apple Calendar accepted the mirror write — is called from exactly one place,
+  `iOS/iOSEventNoteEditorSheet.swift:181`. macOS goes through
+  `EventNoteSupportViews.syncNativeCalendarNotes` instead and **discards the return value**, while
+  `CalendarManager.updateEventNotes(calendarEventID:)` returns `nil` when the stored EventKit id no
+  longer resolves.
+  So on a Mac, editing a note whose `calendarEventID` is stale or replaced keeps editing locally,
+  never reaches Apple Calendar, and produces none of iOS's "saved but not synced" notice. The
+  shared helper is right and tested; macOS bypasses its outcome model. Extends the pattern already
+  closed as T-325 to the desktop surface.
+  Fix: route macOS through `commitNote`, or make `syncNativeCalendarNotes` return a typed result and
+  surface the miss.
+
+- [T-390] **A list's calendar link is a raw EventKit id with no recovery path, and nothing says
+  whether that is intentional.** P3, **inferred, not measured** — the ticket keeps that distinction.
+  Verified: `Area.swift:18` and `Project.swift:19` store `linkedCalendarID` as a bare
+  `EKCalendar` identifier, and **zero** title or source metadata is stored anywhere alongside it.
+  Event notes filter by exact stored calendar id, and hidden-calendar preferences use the same
+  id-only set.
+  If Apple Calendar deletes and recreates a calendar, or an import produces an equivalent calendar
+  under a new id, the link silently points at nothing — and relinking leaves old meeting notes
+  attached to the old id.
+  **This may be fine.** Raw id storage is acceptable if EventKit identifiers are treated as
+  permanent; the real gap is that the app never states that contract or tests it. So the decision
+  comes first: either document that these ids are opaque and unrecoverable, or store title and
+  source so a stale link can warn and offer rebinding. **Do not auto-match by title without a
+  conflict UI** — silently rebinding a calendar link is worse than leaving it broken.
+
 - [T-387] **Three subtask-creation paths set only one side of the relationship, and the house rule
   says not to.** SwiftData to-many traversal audit (Codex, 2026-08-27, read at `84bc624`, clean
   tree). `Cadence/Models/AGENTS.md` requires appending to an optional to-many by assigning a new
