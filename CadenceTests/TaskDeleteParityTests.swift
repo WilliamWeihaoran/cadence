@@ -201,6 +201,185 @@ struct TaskDeleteParityTests {
         #expect(reported == [emptied.id])
     }
 
+    // MARK: - A refused commit (T-365)
+
+    /// `ModelContext.save()` cannot be made to throw out of an in-memory container, which is why
+    /// `deleteTasks` takes its commit as a parameter — the same seam, for the same reason, that
+    /// `CadencePendingChangePersistence` documents.
+    private struct DeleteCommitRefused: Error {}
+
+    private func refuseTheCommit(_ modelContext: ModelContext) throws {
+        throw DeleteCommitRefused()
+    }
+
+    /// T-365, the failure half. The delete used to end in `try? modelContext.save()` and `return
+    /// true`, so a refused commit was indistinguishable from a real deletion: the rows stayed
+    /// marked deleted in the context the list reads from, present in the store the next launch
+    /// reads from, and both platforms reported success over it.
+    ///
+    /// Everything the sweep marked comes back, not just the task — the subtask it unlinked and the
+    /// bundle it disposed of are part of the same pending change, and one `rollback()` is what
+    /// makes `deleteFailureNotice`'s "Nothing was removed" true rather than approximately true.
+    @Test func arefusedTaskDeleteKeepsTheTaskAndReportsFailure() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let bundle = TaskBundle(title: "Block", dateKey: "2026-08-11", startMin: 540, durationMinutes: 60)
+        let task = AppTask(title: "Still here")
+        task.bundle = bundle
+        bundle.tasks = [task]
+        let step = Subtask(title: "Its only step")
+        step.parentTask = task
+        for model in [bundle, task, step] as [any PersistentModel] {
+            modelContext.insert(model)
+        }
+        try modelContext.save()
+
+        let reported = CadenceTaskMutationSupport.delete(
+            task,
+            modelContext: modelContext,
+            commit: refuseTheCommit
+        )
+
+        #expect(reported == false, "a delete whose commit was refused reported success")
+        #expect(!modelContext.hasChanges, "the refused delete was left pending in the context")
+        #expect(
+            try modelContext.fetch(FetchDescriptor<AppTask>()).map(\.title) == ["Still here"],
+            "the row is hidden from the list and undeleted in the store — the worst of both"
+        )
+        #expect(try modelContext.fetch(FetchDescriptor<Subtask>()).count == 1)
+        #expect(try modelContext.fetch(FetchDescriptor<TaskBundle>()).count == 1)
+        #expect(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).map(\.title) == ["Still here"])
+        #expect(try ModelContext(container).fetch(FetchDescriptor<Subtask>()).count == 1)
+    }
+
+    /// The success half, unchanged by the fix and asserted from a second context: an ordinary
+    /// delete still commits itself, because a task swiped away has no enclosing unit of work to
+    /// ride and a delete left waiting on autosave is lost by a quit.
+    @Test func anOrdinaryTaskDeleteCommitsToTheStoreAndReportsSuccess() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let task = AppTask(title: "Going away")
+        let step = Subtask(title: "Its only step")
+        step.parentTask = task
+        modelContext.insert(task)
+        modelContext.insert(step)
+        try modelContext.save()
+
+        #expect(CadenceTaskMutationSupport.delete(task, modelContext: modelContext))
+
+        #expect(!modelContext.hasChanges, "the delete was left pending in the context")
+        #expect(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).isEmpty)
+        #expect(try ModelContext(container).fetch(FetchDescriptor<Subtask>()).isEmpty)
+    }
+
+    /// Where the commit goes, and what a refused one skips.
+    ///
+    /// Two things this target cannot reach behaviourally. The commit is one line inside a function
+    /// whose other twenty `try? modelContext.save()` neighbours are not this ticket's, so the
+    /// needle is scoped by the gate it sits in rather than counted file-wide. The notification
+    /// cancellation is a `Task` against a real `UNUserNotificationCenter`, so its *position* is
+    /// what can be pinned: it follows the commit, and the failure branch returns before reaching
+    /// it — a delete that promises it removed nothing must not have cancelled the reminder either.
+    @Test func theSharedDeleteCommitsThroughThePendingChangeSpineAndCancelsOnlyOnSuccess() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift")
+        #expect(raw.count > 400, "the delete core read as \(raw.count) characters")
+        let core = CadenceSourceScan.strippingComments(raw)
+        #expect(core != raw, "the comment stripper removed nothing")
+        #expect(core.count == raw.count, "the stripper changed the length")
+        #expect(core.contains("static func deleteTasks("), "the shared task-deletion core moved")
+
+        let spineCommit = #"if commitsImmediately \{\s*do \{\s*try CadencePendingChangePersistence\.commitDelete\(in: modelContext, commit: commit\)\s*\} catch \{\s*return false"#
+        #expect(
+            CadenceSourceScan.matchCount(spineCommit, in: core) == 1,
+            "the ordinary delete no longer commits through the spine that rolls back"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"try\? modelContext\.save\(\)\s*\}\s*Task \{ await NotificationManager"#, in: core) == 0,
+            "the swallowed save T-365 removed is back"
+        )
+
+        let cancelsAfterTheCommit = #"catch \{\s*return false\s*\}\s*\}\s*Task \{ await NotificationManager\.shared\.cancel\(taskIDs: Array\(taskIDs\)\) \}\s*return true"#
+        #expect(
+            CadenceSourceScan.matchCount(cancelsAfterTheCommit, in: core) == 1,
+            "a refused delete now cancels the reminder for a task it just put back"
+        )
+
+        // Both needles against the spellings they must and must not accept.
+        #expect(
+            CadenceSourceScan.matchCount(
+                spineCommit,
+                in: "if commitsImmediately {\n            do {\n                try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)\n            } catch {\n                return false\n            }\n        }"
+            ) == 1,
+            "the commit needle does not match the spelling it is hunting"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                spineCommit,
+                in: "if commitsImmediately {\n            try? modelContext.save()\n        }"
+            ) == 0,
+            "the commit needle accepts the swallowed save"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                cancelsAfterTheCommit,
+                in: "catch {\n                return false\n            }\n        }\n\n        Task { await NotificationManager.shared.cancel(taskIDs: Array(taskIDs)) }\n        return true"
+            ) == 1,
+            "the ordering needle does not match the spelling it is hunting"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                cancelsAfterTheCommit,
+                in: "if commitsImmediately {\n            try? modelContext.save()\n        }\n\n        Task { await NotificationManager.shared.cancel(taskIDs: Array(taskIDs)) }\n        return true"
+            ) == 0,
+            "the ordering needle passes on a delete that cancels whatever happened"
+        )
+    }
+
+    /// One sentence, four objects. The task notice is worded from the same template the three
+    /// deletes that could already fail use, and it earns the second half the same way: the commit
+    /// rolls back, so the row is back where the user can see it.
+    @Test func theTaskDeleteFailureNoticeMakesTheSamePromiseAsItsThreeNeighbours() {
+        #expect(CadenceTaskMutationSupport.deleteFailureNotice
+                == "Couldn't delete this task. Nothing was removed.")
+        #expect(CadenceTaskMutationSupport.deleteFailureNotice.contains("Nothing was removed"))
+
+        let notices = CadenceListDeletionKind.allCases.map(\.deleteFailureNotice)
+            + [CadenceNoteDeletionSummary.deleteFailureNotice, CadenceTaskMutationSupport.deleteFailureNotice]
+        #expect(Set(notices).count == notices.count, "two screens name the same object")
+    }
+
+    /// The iOS half of "propagate the failure", which this target builds on macOS and so cannot
+    /// call. The row's `deleteTask()` used to discard the result; it reads it now, and the second
+    /// alert is where the sentence lands — an alert dismisses itself on the button tap, so the
+    /// row cannot stay open and say why the way the note and list sheets do.
+    @Test func theIOSRowReportsADeleteThatDidNotLand() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift")
+        #expect(raw.count > 400, "the iOS row read as \(raw.count) characters")
+        let row = CadenceSourceScan.strippingComments(raw)
+        #expect(row != raw, "the comment stripper removed nothing")
+        #expect(row.count == raw.count, "the stripper changed the length")
+        #expect(row.contains("struct iOSTaskRow: View"), "the iOS row moved")
+
+        let deleteTask = try #require(
+            CadenceSourceScan.functionBody(named: "deleteTask", in: row),
+            "iOSTaskViews.swift has no deleteTask()"
+        )
+        #expect(
+            deleteTask.contains("deleteFailed = !CadenceTaskMutationSupport.delete(task, modelContext: modelContext)"),
+            "the row still throws away the delete's answer"
+        )
+        #expect(row.contains("@State private var deleteFailed = false"))
+        #expect(
+            row.contains(#".alert("Couldn't Delete Task", isPresented: $deleteFailed)"#),
+            "the row has nowhere to report a failed delete"
+        )
+        #expect(
+            row.contains("Text(CadenceTaskMutationSupport.deleteFailureNotice)"),
+            "the row words the failure itself instead of reading the shared sentence"
+        )
+    }
+
     // MARK: - Cross-platform parity
 
     #if os(macOS)
@@ -256,6 +435,31 @@ struct TaskDeleteParityTests {
         #expect(shared.subtasks == 0)
         #expect(shared.bundles == 0)
         #expect(shared.spawned == nil)
+    }
+
+    /// The macOS side of "propagate the failure". `ModelContext.deleteTask(_:)` returned `Void`,
+    /// so the five macOS surfaces that call it had no answer to read even in principle — the
+    /// shared core's `false` stopped at the wrapper. It is a `Bool` now, and this is the whole
+    /// journey: refuse the commit at the bottom, read the failure at the top, and find the task
+    /// still there.
+    @Test func themacOSDeleteWrapperHandsARefusedCommitBackToItsCaller() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let task = AppTask(title: "Still here")
+        modelContext.insert(task)
+        try modelContext.save()
+
+        #expect(modelContext.deleteTask(task, commit: refuseTheCommit) == false)
+        #expect(!modelContext.hasChanges)
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).map(\.title) == ["Still here"])
+        #expect(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).map(\.title) == ["Still here"])
+
+        // And the ordinary path through the same wrapper still lands. Re-fetched rather than
+        // reusing the reference above, because the rollback is what put that row back and the
+        // object the list would be holding after one is the one the store hands out now.
+        let restored = try #require(modelContext.fetch(FetchDescriptor<AppTask>()).first)
+        #expect(modelContext.deleteTask(restored))
+        #expect(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).isEmpty)
     }
     #endif
 }

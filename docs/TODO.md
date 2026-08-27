@@ -43,6 +43,16 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-376] **Five macOS surfaces can now read a failed delete and still say nothing.** Residue from
+  [[T-365]], recorded by that agent rather than absorbed. `TasksPanelComponents`,
+  `KanbanCardStateSupport`, `TaskInspectorContentSupportViews`, `TimelineTaskBlockInteractionSupport`
+  and `macOSRootCommandActionSupport` all call `ModelContext.deleteTask(_:)`, which now returns a
+  `Bool` — and discard it. Nothing is lost, because the rollback puts the row back on screen by
+  itself, but macOS stays silent where the iOS row now shows
+  `CadenceTaskMutationSupport.deleteFailureNotice`. `iOSTaskDetailSheet` has the same gap: it
+  dismisses on delete regardless. This is a product decision about where a desktop row may put a
+  notice, not a defect — the promise the code makes is already true.
+
 - [T-372a] **`CadenceSearchMatcher.rank` is the one ordering left partial after [[T-372]].** Found
   while fixing T-372 and deliberately not fixed there: `rank` ends at score-then-title
   (`Shared/CadenceSearchMatcher.swift` lines 27-30), so two hits with the same score and the same
@@ -81,16 +91,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   them, so one real check-in can satisfy a `targetCount` or `.timesPerWeek` habit. Decide collapse
   semantics (`max` vs `sum`) before writing the repair.
 
-- [T-360] **Duplicate-tag merge keeps the newer timestamp and throws away the newer colour — and the
-  guard that was supposed to prevent that is unreachable.** Sharper than filed. `TagSupport.swift:273`
-  copies `colorHex` only `if target.colorHex...isEmpty`, but `Tag.colorHex` defaults to `"#6b7a99"`
-  and is never empty for an app-created tag, so the branch is **dead code**. Line 279 then sets
-  `updatedAt = max(target, source)`. Net: the surviving tag **advertises the newer timestamp while
-  carrying the older colour** — it lies about its own freshness, which is worse than losing the
-  colour, because nothing downstream can detect the loss. Note the trap for whoever fixes it: the
-  `desc` branch three lines above has the *identical* shape and **is** live, because `desc` really
-  can be empty. Two branches that look the same, one works.
-
 - [T-362] **Eleven macOS/iOS surfaces change a task's date or time without reconciling
   notifications.** Extends [[T-343]] (iOS *status* paths); this is the *date/time* half. Measured
   source, inferred staleness. Move a task from 9am to 3pm and the 9am notification stays pending
@@ -111,13 +111,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   note/markdown embed paths do not — they insert, swallow or skip the save, then dismiss, clear the
   composer, or refresh the embed. `iOSCreateTaskSheet` is the pattern to copy: it catches, keeps the
   sheet open, and reconciles only after the commit lands. Related: [[T-321]], [[T-322]].
-
-- [T-365] **Ordinary task deletes swallow the final save failure and return `true`.** Extends
-  [[T-322]] with the highest-risk single site. `CadenceTaskMutationSupport` documents why ordinary
-  deletes must commit immediately, then does `try? modelContext.save()`, cancels notifications, and
-  reports success — so macOS and iOS row deletes cannot tell a failed delete from a real one, and
-  no rollback runs. `CadencePendingChangePersistence.commitDelete` already rolls back on throw and
-  is already tested. Route through it and let the failure be visible.
 
 - [T-366] **The embed field popover calls `onChanged()` whether or not the write landed.** Measured.
   `TaskEmbedFieldEditorPopover` mutates the live task, swallows the save, then unconditionally tells

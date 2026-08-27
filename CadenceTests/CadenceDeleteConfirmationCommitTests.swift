@@ -162,7 +162,10 @@ struct CadenceDeleteConfirmationCommitTests {
         )
         #expect(core.contains("static func deleteTasks("), "the shared task-deletion core moved")
         #expect(core.contains("commitsImmediately: Bool = true"), "the sweep lost its commit gate")
-        let gatedCommit = #"processPendingChanges\(\)\s*if commitsImmediately \{\s*try\? modelContext\.save\(\)"#
+        // T-365 changed what the gate encloses — `try? modelContext.save()` became a commit
+        // through the shared spine — without changing the thing this test is about, which is that
+        // the gate is still there and the cascade still closes it.
+        let gatedCommit = #"processPendingChanges\(\)\s*if commitsImmediately \{\s*do \{\s*try CadencePendingChangePersistence\.commitDelete\("#
         #expect(
             CadenceSourceScan.matchCount(gatedCommit, in: core) == 1,
             "the mid-cascade commit is no longer gated; re-derive what a refused list delete leaves"
@@ -170,16 +173,23 @@ struct CadenceDeleteConfirmationCommitTests {
         #expect(
             CadenceSourceScan.matchCount(
                 gatedCommit,
-                in: "processPendingChanges()\n        if commitsImmediately {\n            try? modelContext.save()\n        }"
+                in: "processPendingChanges()\n        if commitsImmediately {\n            do {\n                try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)"
             ) == 1,
             "the needle does not match the spelling it is hunting"
         )
         #expect(
             CadenceSourceScan.matchCount(
                 gatedCommit,
-                in: "processPendingChanges()\n        try? modelContext.save()"
+                in: "processPendingChanges()\n        try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)"
             ) == 0,
             "the needle matches an ungated mid-cascade commit"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                gatedCommit,
+                in: "processPendingChanges()\n        if commitsImmediately {\n            try? modelContext.save()\n        }"
+            ) == 0,
+            "the needle still accepts the swallowed save T-365 removed"
         )
 
         // And the cascades are what close the gate.

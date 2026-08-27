@@ -334,4 +334,140 @@ struct TagSupportTests {
         task.tags = [b, c, a]
         #expect(task.sortedTags.map(\.slug) == ["bug-a", "bug-b", "bug-c"])
     }
+
+    // MARK: - Duplicate merge policy (T-360)
+
+    /// A same-slug duplicate with one explicit timestamp for both `createdAt` and `updatedAt`.
+    /// Every case below runs through `deduplicateTags`, the merge's only caller.
+    private func duplicateTag(
+        _ idPrefix: String,
+        name: String,
+        desc: String = "",
+        colorHex: String,
+        order: Int,
+        isArchived: Bool = false,
+        stamp: Date
+    ) -> Cadence.Tag {
+        Cadence.Tag(
+            id: UUID(uuidString: "\(idPrefix)-0000-0000-0000-000000000000")!,
+            name: name,
+            slug: "bug",
+            desc: desc,
+            colorHex: colorHex,
+            order: order,
+            isArchived: isArchived,
+            createdAt: stamp,
+            updatedAt: stamp
+        )
+    }
+
+    @Test func duplicateMergeKeepsTheCanonicalColourAndDoesNotInheritTheDuplicatesFreshness() throws {
+        // The chosen policy: canonical metadata wins, and `updatedAt` describes what the survivor
+        // is actually showing. The survivor keeps its own colour, so it keeps its own stamp.
+        // T-360 was the pair of rules disagreeing — `max(updatedAt)` unconditionally, next to a
+        // colour copy that could not fire, so the record advertised an edit it had discarded.
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let older = Date(timeIntervalSince1970: 1_700_000_000)
+        let newer = older.addingTimeInterval(86_400)
+
+        // Why the old colour guard was dead rather than merely conservative: `Tag.colorHex`
+        // defaults to a non-empty hex, so `target.colorHex.isEmpty` is unreachable for any tag the
+        // app created. Pinned so the unreachable form cannot come back.
+        #expect(!Cadence.Tag(name: "Bug").colorHex.isEmpty)
+
+        let canonical = duplicateTag(
+            "AAAAAAAA", name: "Bug", desc: "Something broken.", colorHex: "#ff6b6b", order: 0, stamp: older
+        )
+        let newerDuplicate = duplicateTag(
+            "BBBBBBBB", name: "bug", desc: "Also broken.", colorHex: "#4ecb71", order: 1, stamp: newer
+        )
+        context.insert(canonical)
+        context.insert(newerDuplicate)
+
+        #expect(TagSupport.deduplicateTags(in: context))
+
+        let survivors = try context.fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(survivors.count == 1)
+        let survivor = try #require(survivors.first)
+        #expect(survivor.id == canonical.id)
+        #expect(survivor.colorHex == "#ff6b6b")
+        #expect(survivor.desc == "Something broken.")
+        #expect(survivor.name == "Bug")
+        // Oldest creation still wins; that is a correction, not a claim of freshness.
+        #expect(survivor.createdAt == older)
+        // The one T-360 asserts: nothing of the newer row survived, so nothing may say it did.
+        #expect(survivor.updatedAt == older)
+    }
+
+    @Test func duplicateMergeStillAdoptsADescriptionTheCanonicalLacksAndEarnsThatStamp() throws {
+        // The `desc` branch has the same shape as the colour one and is genuinely live, because a
+        // tag really can have no description. Pinned so a later reader cannot collapse the two
+        // branches into one rule in either direction. Here the canonical wins on `isArchived`,
+        // which `preferredDuplicateTagSort` ranks above `desc` — otherwise the described row would
+        // be the canonical one and there would be nothing to adopt.
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let older = Date(timeIntervalSince1970: 1_700_000_000)
+        let newer = older.addingTimeInterval(86_400)
+
+        let canonical = duplicateTag(
+            "AAAAAAAA", name: "Bug", colorHex: "#ff6b6b", order: 0, stamp: older
+        )
+        let describedDuplicate = duplicateTag(
+            "BBBBBBBB",
+            name: "bug",
+            desc: "Something broken.",
+            colorHex: "#4ecb71",
+            order: 1,
+            isArchived: true,
+            stamp: newer
+        )
+        context.insert(canonical)
+        context.insert(describedDuplicate)
+
+        #expect(TagSupport.deduplicateTags(in: context))
+
+        let survivors = try context.fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(survivors.count == 1)
+        let survivor = try #require(survivors.first)
+        #expect(survivor.id == canonical.id)
+        #expect(survivor.desc == "Something broken.")
+        #expect(survivor.isArchived == false)
+        // Not the mirror case: the canonical already has a usable colour, so it keeps it.
+        #expect(survivor.colorHex == "#ff6b6b")
+        // The survivor really is showing the newer row's description, so this stamp is earned.
+        #expect(survivor.updatedAt == newer)
+    }
+
+    @Test func duplicateMergeFillsAColourTheCanonicalDoesNotUsablyHave() throws {
+        // "The canonical has no colour" has to mean *no usable colour*, not `isEmpty`: a row from
+        // CloudKit, an import, or a legacy store can carry a string the app cannot render, and an
+        // empty-string test never fires on anything the app itself wrote. When the fill does
+        // happen the survivor is showing the duplicate's colour, so the stamp moves with it.
+        let older = Date(timeIntervalSince1970: 1_700_000_000)
+        let newer = older.addingTimeInterval(86_400)
+
+        for unusable in ["not-a-colour", ""] {
+            let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            let context = ModelContext(container)
+            let canonical = duplicateTag(
+                "AAAAAAAA", name: "Bug", desc: "Something broken.", colorHex: unusable, order: 0, stamp: older
+            )
+            let newerDuplicate = duplicateTag(
+                "BBBBBBBB", name: "bug", desc: "Also broken.", colorHex: "#4ECB71", order: 1, stamp: newer
+            )
+            context.insert(canonical)
+            context.insert(newerDuplicate)
+
+            #expect(TagSupport.deduplicateTags(in: context))
+
+            let survivors = try context.fetch(FetchDescriptor<Cadence.Tag>())
+            #expect(survivors.count == 1)
+            let survivor = try #require(survivors.first)
+            #expect(survivor.id == canonical.id)
+            #expect(survivor.colorHex == "#4ecb71")
+            #expect(survivor.updatedAt == newer)
+        }
+    }
 }

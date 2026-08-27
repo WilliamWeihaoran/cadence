@@ -3,13 +3,21 @@ import SwiftData
 import Foundation
 
 extension ModelContext {
-    func deleteTask(_ task: AppTask) {
+    /// - Returns: `false` when the delete could not be committed and was rolled back (T-365).
+    ///   `@discardableResult` because most rows have nothing to do with the answer — the rollback
+    ///   puts the row back on screen by itself — but the answer exists now, which it did not when
+    ///   the shared core swallowed its save.
+    @discardableResult
+    func deleteTask(
+        _ task: AppTask,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         let taskID = task.id
-        deleteTasks(withIDs: [taskID])
+        return deleteTasks(withIDs: [taskID], commit: commit)
     }
 
     /// Deletes the given tasks and everything hanging off them. Returns `false` — having changed
-    /// nothing — when the store could not be read.
+    /// nothing — when the delete did not go through.
     ///
     /// The deletion itself lives in `CadenceTaskMutationSupport.deleteTasks(withIDs:…)`, which is
     /// also iOS's only delete path; this wrapper exists solely to supply the two macOS-only hooks
@@ -19,13 +27,24 @@ extension ModelContext {
     /// core, not here, unless it is genuinely AppKit-shaped.
     ///
     /// `commitsImmediately` is forwarded rather than fixed here so the list cascades can defer the
-    /// commit to the confirmation that owns it — see the shared core for why.
+    /// commit to the confirmation that owns it — see the shared core for why. `commit` is
+    /// forwarded for the same reason: the wrapper is the only macOS-side delete path, so a test
+    /// that wants to watch a refused commit travel back out through it needs the seam here too.
+    ///
+    /// The `false` this returns used to mean one thing — the store could not be read — and now
+    /// means two; the other is a commit that was refused and rolled back. Both leave the store
+    /// exactly as it was, which is why one return value can carry them.
     @discardableResult
-    func deleteTasks(withIDs taskIDs: Set<UUID>, commitsImmediately: Bool = true) -> Bool {
+    func deleteTasks(
+        withIDs taskIDs: Set<UUID>,
+        commitsImmediately: Bool = true,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         CadenceTaskMutationSupport.deleteTasks(
             withIDs: taskIDs,
             modelContext: self,
             commitsImmediately: commitsImmediately,
+            commit: commit,
             willDelete: { ids in
                 Self.cancelTaskState(for: ids)
             },

@@ -266,17 +266,63 @@ nonisolated enum TagSupport {
         return lhs.createdAt < rhs.createdAt
     }
 
+    /// The duplicate-merge policy, stated once: **the canonical tag's metadata wins, and
+    /// `updatedAt` never claims more freshness than the surviving values carry.**
+    ///
+    /// Which record is canonical is `preferredDuplicateTagSort`'s call — active over archived,
+    /// most used, described, lowest `order`, oldest — and that is deliberately *not* "whichever
+    /// row was written last". The commonest way this store grows duplicate slugs is a second
+    /// device seeding `defaultTags`: those rows are newer than everything while carrying no user
+    /// intent at all, so letting `updatedAt` pick the winner would revert a recoloured tag to its
+    /// seed colour. A duplicate therefore never overwrites a value the canonical already has.
+    ///
+    /// What a duplicate may do is *fill a value the canonical does not have*. When it does, the
+    /// survivor is showing the duplicate's edit, so the stamp moves with it; when it does not, the
+    /// stamp stays the canonical's own. An unconditional `max(target.updatedAt, source.updatedAt)`
+    /// is what T-360 was: the survivor advertised the newer row's freshness while displaying the
+    /// older row's colour, so nothing downstream could tell the colour had been dropped — and
+    /// `CadenceReadService.tagDetail` publishes that stamp over MCP.
+    ///
+    /// `order` and `createdAt` still merge conservatively and deliberately do **not** move
+    /// `updatedAt`: no writer in the app stamps `updatedAt` when it assigns either
+    /// (`seedDefaultTags` backfills `order` without one), so they are not part of what the stamp
+    /// describes. `isArchived` cannot make the survivor reflect the source at all — an active
+    /// duplicate always sorts ahead of an archived one, so the canonical is archived only when
+    /// every duplicate is, and this line then re-confirms the value it already had.
     private static func mergeTagMetadata(from source: Tag, into target: Tag) {
-        if target.desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        var adoptedSourceMetadata = false
+
+        // Live branch: `desc` really can be empty, and empty means unset rather than cleared —
+        // the same reading `preferredDuplicateTagSort` takes when it ranks a described tag first.
+        if target.desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !source.desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             target.desc = source.desc
+            adoptedSourceMetadata = true
         }
-        if target.colorHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            target.colorHex = source.colorHex
+
+        // This branch reads like the one above but was not: it asked `target.colorHex.isEmpty`,
+        // and `Tag.colorHex` defaults to a non-empty hex, so for anything the app created it was
+        // structurally unreachable. "The canonical has no colour" for a row that arrived from
+        // CloudKit, an import, or a legacy store means no *usable* colour, which is the judgement
+        // `normalizedColorHex` already makes everywhere else in this module.
+        if usableColorHex(target) == nil, let sourceColorHex = usableColorHex(source) {
+            target.colorHex = sourceColorHex
+            adoptedSourceMetadata = true
         }
+
         target.order = min(target.order, source.order)
         target.isArchived = target.isArchived && source.isArchived
         target.createdAt = min(target.createdAt, source.createdAt)
-        target.updatedAt = max(target.updatedAt, source.updatedAt)
+        if adoptedSourceMetadata {
+            target.updatedAt = max(target.updatedAt, source.updatedAt)
+        }
+    }
+
+    /// The tag's colour if it is one, otherwise `nil`. `normalizedColorHex` returns its fallback
+    /// for anything that is not `#rrggbb`, so an empty fallback turns "invalid" into "absent".
+    private static func usableColorHex(_ tag: Tag) -> String? {
+        let normalized = normalizedColorHex(tag.colorHex, fallback: "")
+        return normalized.isEmpty ? nil : normalized
     }
 
     private static func moveTagRelationships(from source: Tag, into target: Tag) {

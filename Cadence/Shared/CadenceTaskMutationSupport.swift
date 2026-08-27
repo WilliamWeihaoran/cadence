@@ -327,9 +327,27 @@ enum CadenceTaskMutationSupport {
         }
     }
 
+    /// Shown when an ordinary task delete could not be committed (T-365).
+    ///
+    /// The second sentence is the one `CadencePendingChangePersistence.commitDelete`'s rollback
+    /// earns, and it is deliberately the **same** promise `CadenceListDeletionKind` and
+    /// `CadenceNoteDeletionSummary` already make: the row is back where the user can see it, so
+    /// nothing has been lost while they decide whether to try again. Before T-365 this path could
+    /// not have said it — `try? modelContext.save()` left the task marked deleted in the context
+    /// and undeleted in the store, which is the state the sentence denies.
+    ///
+    /// Like the other three, it names its own object rather than saying "item": four screens, four
+    /// nouns, one shape.
+    static let deleteFailureNotice = "Couldn't delete this task. Nothing was removed."
+
+    /// - Parameter commit: See `deleteTasks(withIDs:modelContext:commitsImmediately:commit:…)`.
     @discardableResult
-    static func delete(_ task: AppTask, modelContext: ModelContext) -> Bool {
-        deleteTasks(withIDs: [task.id], modelContext: modelContext)
+    static func delete(
+        _ task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        deleteTasks(withIDs: [task.id], modelContext: modelContext, commit: commit)
     }
 
     /// The one task-deletion core. Every surface on both platforms funnels through here — macOS's
@@ -337,7 +355,9 @@ enum CadenceTaskMutationSupport {
     /// hooks — because the two used to be independent implementations and the iOS one quietly
     /// lacked bundle disposal, notification cancellation, and relationship detachment.
     ///
-    /// Returns `false` — having changed nothing — when the store could not be read.
+    /// Returns `false` — having changed nothing — when the store could not be read, and (T-365)
+    /// when an immediate commit was refused, in which case the delete has been rolled back and the
+    /// rows are visible again. `deleteFailureNotice` is the sentence for the second case.
     ///
     /// Both fetches below are `guard let try? …` rather than `(try? fetch(…)) ?? []`, which would
     /// make a failed read indistinguishable from an empty store, and every consequence of that
@@ -372,15 +392,33 @@ enum CadenceTaskMutationSupport {
     ///   `processPendingChanges()` runs either way: it settles the inverse relationships this
     ///   function severed by hand, and it does not write to the store.
     ///
-    ///   The notification cancellation below is *not* gated, deliberately. It is not a store write,
-    ///   it was already unconditional before the flag existed, and a reminder cancelled for a task
-    ///   that comes back is re-scheduled by the next reconcile — whereas a reminder left armed for
-    ///   a task that really is gone fires at the user.
+    ///   **That commit goes through `CadencePendingChangePersistence.commitDelete` and its failure
+    ///   is returned (T-365).** It used to be `try? modelContext.save()`, which is the one
+    ///   spelling that leaves the two halves of a delete disagreeing: the rows marked deleted in
+    ///   the context the list reads from, and present in the store the next launch reads from.
+    ///   Neither macOS nor iOS could tell that from a delete that landed. Committing through the
+    ///   shared spine means a refused save rolls the whole pending delete back — the task, its
+    ///   subtasks, the emptied bundle and the repaired recurrence links, which are one pending
+    ///   change by this point — and this function says so with `false`.
+    ///
+    ///   The notification cancellation below is *not* gated on `commitsImmediately`, deliberately.
+    ///   It is not a store write, it was already unconditional before the flag existed, and a
+    ///   reminder cancelled for a task that comes back is re-scheduled by the next reconcile —
+    ///   whereas a reminder left armed for a task that really is gone fires at the user. A
+    ///   **refused** commit is the one case that skips it, because it returns first: the task is
+    ///   demonstrably still there, so cancelling its reminder would be a change made by a delete
+    ///   that promises it made none.
+    ///
+    /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter for
+    ///   the reason `CadencePendingChangePersistence` gives — a `save()` that throws cannot be
+    ///   provoked out of an in-memory container, and a rollback no test can reach is a rollback no
+    ///   test can prove.
     @discardableResult
     static func deleteTasks(
         withIDs taskIDs: Set<UUID>,
         modelContext: ModelContext,
         commitsImmediately: Bool = true,
+        commit: (ModelContext) throws -> Void = { try $0.save() },
         willDelete: (Set<UUID>) -> Void = { _ in },
         didDeleteBundles: (Set<UUID>) -> Void = { _ in }
     ) -> Bool {
@@ -423,7 +461,11 @@ enum CadenceTaskMutationSupport {
 
         modelContext.processPendingChanges()
         if commitsImmediately {
-            try? modelContext.save()
+            do {
+                try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)
+            } catch {
+                return false
+            }
         }
 
         // Cheaper than a full reconcile since we already know exactly which tasks were removed.

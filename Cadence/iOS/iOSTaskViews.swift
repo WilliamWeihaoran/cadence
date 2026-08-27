@@ -29,6 +29,10 @@ struct iOSTaskRow: View {
     // (`iOSTaskInspectorHost`); all the row does is ask.
     @Environment(\.iOSTaskInspector) private var taskInspector
     @State private var showDeleteConfirmation = false
+    /// T-365. The delete can fail, so the row needs somewhere to say so. It is a flag rather than
+    /// a `String?` because there is exactly one sentence for this and it lives on the mutation
+    /// helper — the row reads it, it does not word it.
+    @State private var deleteFailed = false
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
 
     private var isRegularWidth: Bool {
@@ -122,6 +126,16 @@ struct iOSTaskRow: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This removes the task and its subtasks.")
+            }
+            // The other half of that confirmation. A destructive alert dismisses itself on the
+            // button tap, so — unlike the note and list sheets, which stay open and say why — this
+            // row reports the failure in a second alert. Same shape as
+            // `iOSTaskRowActionViews`'s "Couldn't Update the Series" beside it, and the same
+            // promise: the rollback put the task back, so nothing was removed.
+            .alert("Couldn't Delete Task", isPresented: $deleteFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(CadenceTaskMutationSupport.deleteFailureNotice)
             }
             .onAppear(perform: handlePendingDeepLink)
             .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
@@ -430,8 +444,11 @@ struct iOSTaskRow: View {
         CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
     }
 
+    /// Attempt, then decide — the shape `iOSNoteDeleteConfirmationSheet.confirm()` uses. The
+    /// delete returns `false` when its commit was refused and rolled back, and a row that ignored
+    /// that reported a deletion the store never took.
     private func deleteTask() {
-        CadenceTaskMutationSupport.delete(task, modelContext: modelContext)
+        deleteFailed = !CadenceTaskMutationSupport.delete(task, modelContext: modelContext)
     }
 
     private func openDetail() {
