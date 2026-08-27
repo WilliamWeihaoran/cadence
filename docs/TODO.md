@@ -43,6 +43,34 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-392] **Settings reads the calendar zoom as `Int` while the calendar writes it as `Double`.**
+  UserDefaults key lifecycle audit (Codex, read at `5b8d8bd`, clean tree). **Verified, including the
+  probe:** `iOSCalendarView.swift:18` binds `CadenceCalendarZoom.storageKey` as a `Double`, the
+  pinch gesture commits fractional values, and `iOSSettingsView.swift:17` declares
+  `@AppStorage("ios.calendar.zoomLevel") private var calendarZoomLevel = 1` — the same key, typed
+  `Int`, offering three density rows. Ran it: a stored `1.5` reads back as `double: 1.5` and
+  `int: 1`. So Settings shows the wrong density and, worse, writing from Settings overwrites a
+  continuous pinch zoom with a coarse integer.
+  Note the key is already centralised on `CadenceCalendarZoom.storageKey`; Settings re-spelled the
+  literal instead of using it, which is how the types drifted apart.
+  Fix: bind `Double` through the shared key, and decide whether the picker snaps to presets or
+  preserves fractional values until the user picks one.
+
+- [T-393] **A restored old backup can keep `Pursuit` rows forever, because the migration is gated on
+  a global flag rather than on content.** Inferred, not measured — the ticket keeps that.
+  `PursuitToGoalMigration.runIfNeeded` skips when `pursuitToGoalMigration.v1.completed` is true in
+  `UserDefaults`, and restore runs *before* startup maintenance. So a device that already migrated,
+  then restores a backup containing `Pursuit` rows, skips the migration and leaves them stranded —
+  and the privacy reset clears restore flags but not migration flags.
+  Fix: make the check content-aware. Either run the idempotent migration until `Pursuit` leaves the
+  schema, or, when the flag is set, still look for surviving rows.
+
+- [T-394] **`ios.notes.activeCoreTab` is documented as orphaned and never purged.** P3, cleanup only,
+  no live behaviour bug — no reader or writer remains. Verified: `retiredKeys` in
+  `CadenceNotesEditorPreferences` contains **zero** mentions of it, while the purge mechanism,
+  its startup call, and its tests already exist for exactly this. Add the key, update the doc
+  comment, extend the test.
+
 - [T-391] **Habit day quantity split across rows now reads lower.** Residue from [[T-359]]'s
   `max`-not-`sum` decision. The old test `dailyStreakCountsSummedCompletionsAcrossMultipleRecordsForSameDay`
   pinned that a target-3 habit satisfied by rows of `count: 2` + `count: 1` counts as done; under
@@ -380,6 +408,12 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   documents that per-list remembered tabs can contain old `Planning` values.
   One-line fix — resolve the remembered raw value itself rather than discarding it. Test with a
   stored `Planning`, a global default of `Links`, and an expected `Tasks`.
+
+  **Extended by the UserDefaults lifecycle audit (2026-08-27):** the fix site is
+  `ListDetailView.restoreRememberedTab()`, which uses failable `ListDetailPage(rawValue:)` and, when
+  that returns nil, discards the stale per-list value and falls back to the **global** default —
+  rather than calling `ListDetailPage.resolved(_:)`, which exists to map stale raw values to
+  `.tasks`. Test: stored per-list `"Planning"`, global default `"Links"`, expect `.tasks`.
 
 - [T-352] **DECIDE: should the root destination persist? A comment already says it does.** From the
   same audit; **premise verified** — `macOSRootView` holds the selection in `@State` with **zero**
