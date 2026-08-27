@@ -37,18 +37,15 @@ enum CadenceTodayPresentationSupport {
         )
     }
 
-    static func accent(for groupKind: CadenceTodayTaskGroupKind) -> Color {
-        switch groupKind {
-        case .overdue:
-            return Theme.red
-        case .pastDo:
-            return Theme.amber
-        case .dueToday:
-            return Theme.red.opacity(0.85)
-        case .plannedToday:
-            return Theme.blue
-        }
-    }
+    /// The one heading on Today that is not a list's name, and the only date-shaped group left on
+    /// the page (T-305). It stays at the top because a missed deadline outranks where the work
+    /// lives; everything under it is grouped by list.
+    static let overdueSectionTitle = "Overdue"
+
+    /// And its tint. Computed, not stored: `Theme.red` is selectable (T-15) and a `static let`
+    /// would freeze on the palette active at first access — the same rule
+    /// `completedSectionAccent` below follows.
+    static var overdueSectionAccent: Color { Theme.red }
 
     /// The heading over the day's finished work, on every Today. macOS said "Completed" and iOS
     /// said "Completed Today" for the same section over the same predicate — `completedAt` inside
@@ -67,19 +64,6 @@ enum CadenceTodayPresentationSupport {
     // Computed, not stored: `Theme.green` is selectable (T-15) and a `static let` would
     // freeze on the palette active at first access.
     static var completedSectionAccent: Color { Theme.green }
-
-    static func symbol(for groupKind: CadenceTodayTaskGroupKind) -> String {
-        switch groupKind {
-        case .overdue:
-            return "exclamationmark.triangle.fill"
-        case .pastDo:
-            return "calendar.badge.exclamationmark"
-        case .dueToday:
-            return "flag.fill"
-        case .plannedToday:
-            return "sun.max.fill"
-        }
-    }
 
     /// Today's empty state, on every platform. `iOSCompactTodayEmptyState` draws it on iOS and
     /// macOS's `TasksPanel` passes the same two strings to `EmptyStateView`; it is the only empty

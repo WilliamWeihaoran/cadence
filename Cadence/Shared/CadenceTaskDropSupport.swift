@@ -22,6 +22,9 @@ enum CadenceTaskGroupDropIdentity: Equatable {
     case completion
     /// A whole list. `key` is the `inbox` / `a_<uuid>` / `p_<uuid>` spelling `assignTask` parses.
     case list(key: String, name: String)
+    /// A list group **on the Today screen**. The same list, plus the day the page is about — see
+    /// `dropKey(forGroup:)` for why it is a case of its own rather than a `.list`.
+    case todayList(key: String, name: String)
     /// A kanban section inside a list. Carries the list too: a section belongs to one.
     case section(listKey: String, listName: String, name: String)
     case priority(TaskPriority)
@@ -118,6 +121,18 @@ enum CadenceTaskDropSupport {
             return nil
         case .list(let key, _):
             return "list:\(key)"
+        case .todayList(let key, _):
+            // **A group seeds everything that defines membership in it, not just the narrowest
+            // thing.** A row is under this header because it is in that list *and* because it is
+            // on Today; a key naming only the list would file the new task correctly and then let
+            // it vanish from the page it was dropped on, which is the one outcome a drop target
+            // must not produce. Same rule as `.section`, which carries its list for the same
+            // reason: a section belongs to a list, and a Today list group belongs to today.
+            //
+            // A plain `.list` — a list detail's empty state, the Inbox panel — must *not* pick a
+            // date up here. There the day is not part of what the group is, and seeding one would
+            // be inventing a date the destination never named.
+            return "list:\(key)\(separator)date:today"
         case .section(let listKey, _, let name):
             return "list:\(listKey)\(separator)section:\(name)"
         case .priority(let priority):
@@ -132,7 +147,7 @@ enum CadenceTaskDropSupport {
     /// The display name a group's caption needs and its key cannot carry. See `placementCaption`.
     static func listName(forGroup identity: CadenceTaskGroupDropIdentity) -> String {
         switch identity {
-        case .list(_, let name): return name
+        case .list(_, let name), .todayList(_, let name): return name
         case .section(_, let listName, _): return listName
         case .todayDate, .completion, .priority: return ""
         }
@@ -381,11 +396,17 @@ enum CadenceTaskDropSupport {
     /// Today screen, and a row in one of them carries a day that has already been and gone — a new
     /// task cannot be done yesterday, and starting it life late is worse than starting it undated.
     /// Keys are `yyyy-MM-dd`, so the string comparison *is* the date comparison.
+    ///
+    /// **The comparison is only a date comparison once the key is fixed-width**, which is why the
+    /// canonical spelling is taken from `normalizedDateKey` rather than the caller's text being
+    /// kept after a parse: `"2026-8-20"` parses happily and then sorts *after* `"2026-08-25"`, so
+    /// validating by parsing and returning the raw string would seed a composer with a key that
+    /// loses every later comparison — the past check on this very line included.
     private static func dateValue(_ value: String, todayKey: String) -> String? {
         if value == "today" { return todayKey }
         // "Scheduled" and "Unscheduled" name a bucket, not a day. See the type comment.
         guard value != "scheduled", value != "unscheduled" else { return nil }
-        guard DateFormatters.date(from: value) != nil, value >= todayKey else { return nil }
-        return value
+        guard let key = DateFormatters.normalizedDateKey(value), key >= todayKey else { return nil }
+        return key
     }
 }

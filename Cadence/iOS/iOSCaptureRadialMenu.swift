@@ -290,15 +290,6 @@ struct iOSCaptureRequest: Identifiable {
 struct iOSCaptureRadialMenuButton: View {
     let diameter: CGFloat
     let interaction: iOSCaptureInteraction
-    /// What a plain tap — and the palette's **Task** segment — opens the composer with.
-    ///
-    /// The tab bar's `+` seeds nothing on purpose: you press it from any tab and file the task
-    /// afterwards. A page's corner `+` is already standing somewhere, so it seeds that somewhere —
-    /// a list detail hands in its list, Today hands in today's do date. Which is why this is a
-    /// parameter rather than a constant: the two placements differ in what they *know*, not in what
-    /// they can do. A drop that lands on a real target overrides it; a drop that lands on nothing
-    /// falls back to it, the same degrade-to-the-tap rule one level up.
-    var baseSeed: CadenceTaskComposerSeed = CadenceTaskComposerSeed()
 
     var body: some View {
         iOSCircularAddButton(diameter: diameter)
@@ -350,11 +341,11 @@ struct iOSCaptureRadialMenuButton: View {
     private func commit(_ outcome: CadenceCapturePressOutcome, droppedOn target: UUID?) {
         switch outcome {
         case .tap:
-            interaction.request(.task(baseSeed))
+            interaction.request(.task(seed(for: .tap, droppedOn: nil)))
         case .action(let action):
             interaction.request(kind(for: action))
         case .drop:
-            interaction.request(.task(seed(forTarget: target)))
+            interaction.request(.task(seed(for: .drop, droppedOn: target)))
         case .dismissed, .none:
             break
         }
@@ -362,23 +353,30 @@ struct iOSCaptureRadialMenuButton: View {
 
     private func kind(for action: CadenceCaptureAction) -> iOSCaptureRequest.Kind {
         switch action {
-        case .task: return .task(baseSeed)
+        case .task: return .task(seed(for: .action(.task), droppedOn: nil))
         case .event: return .event
         case .note: return .note
         }
     }
 
-    /// A drop that landed on nothing degrades to the composer a tap would have opened — which on a
-    /// page's corner `+` is that page's own seed, not an empty one. That is the same
-    /// degrade-to-the-tap rule `CadenceTaskDropSupport.dropKey(for:)` already applies to a row with
-    /// nothing to inherit, applied one level up, and it is stated in `Shared/` rather than here so
-    /// it can be asserted as a value.
-    private func seed(forTarget target: UUID?) -> CadenceTaskComposerSeed {
+    /// **The button contributes nothing; the target contributes everything** (T-337). All three
+    /// commitments route through one resolver, and only the drag hands it a target — so a tap on a
+    /// list detail's corner `+` and a tap on the tab bar's open the same empty composer, and a drop
+    /// that landed on nothing is a tap that travelled.
+    ///
+    /// This is deliberately the only place the button touches a seed. The rule itself is a value in
+    /// `Shared/` — see `CadenceCaptureSeedResolver` — because "the page you are standing on is not
+    /// a statement about what you are creating" is the kind of decision a call-site default quietly
+    /// reverses.
+    private func seed(
+        for outcome: CadenceCapturePressOutcome,
+        droppedOn target: UUID?
+    ) -> CadenceTaskComposerSeed {
         let placement = target.flatMap { iOSNewTaskDropFrameRegistry.shared.placement(for: $0) }
-        return CadenceTaskDropSupport.seed(
-            forDropKey: placement?.dropKey,
-            todayKey: DateFormatters.todayKey(),
-            base: baseSeed
+        return CadenceCaptureSeedResolver.seed(
+            for: outcome,
+            dropKey: placement?.dropKey,
+            todayKey: DateFormatters.todayKey()
         )
     }
 }

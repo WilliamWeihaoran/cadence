@@ -620,6 +620,13 @@ struct CadenceCalendarWeekdayHeaderConvergenceTests {
     /// The count is the load-bearing half. A third hand-rolled day header would satisfy any
     /// "the two existing ones are fine" assertion, which is the failure mode the eyebrow sweep in
     /// this file was written for; a new one has to be a line in the table below.
+    ///
+    /// The third entry is not a day header. `CadenceWidgetDateSupport.weekdayLabel` is a string
+    /// helper — the widget target draws its result, over in `CadenceWidgets/`, which this walk does
+    /// not reach — and it reads `DateFormatters.dayOfWeek` for the reason this file cares about in
+    /// the first place: it used to spell the day with `date.formatted(...)` and followed the host
+    /// locale (T-301). It has no font to set, which is why the offender check below still passes
+    /// over it unchanged.
     @Test func theOnlyTwoWeekdayLabelsInTheAppReadTheSharedMetric() throws {
         var found: [String] = []
         var offenders: [String] = []
@@ -640,6 +647,7 @@ struct CadenceCalendarWeekdayHeaderConvergenceTests {
 
         #expect(scanned > 250, "scanned only \(scanned) files under Cadence/")
         #expect(found.sorted() == [
+            "Cadence/Services/CadenceTodayWidgetSupport.swift",
             "Cadence/iOS/iOSCalendarTimelineViews.swift",
             "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift"
         ])

@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -17,29 +18,35 @@ import Testing
 /// The precedent is `NoteEditorPerformanceRegressionTests` and `CadenceSharedBoardChromeTests`.
 struct CadenceTodayUnificationTests {
 
-    // MARK: - Sections: the intent vocabulary
+    // MARK: - Sections: Overdue, then the day's lists
 
-    /// Today's groups say *why* a task is in front of you. macOS grouped by list — one flat tier of
-    /// area/project groups — so the same day read as an inventory on the desktop and as a plan on
-    /// the phone. The four names are `CadenceTodayTaskGroupKind`'s and always were; what changed is
-    /// that macOS now reads them instead of spelling the same buckets "Past Due" and "Do Today".
-    @Test func todayHasExactlyFourIntentGroupsAndTheyAreNamedForTheIntent() {
+    /// **"Planned Today" is gone from the product, not merely unselected** (T-305). On the Today
+    /// page "today" is the page, so a heading restating it carried no information — the standing
+    /// page-header rule, one level down. The four-bucket enum survives only as the vocabulary a
+    /// dropped `+` speaks, and it carries no titles for anything to draw.
+    @Test func todayNoLongerHeadsAGroupWithTheNameOfThePage() throws {
         #expect(CadenceTodayTaskGroupKind.allCases.count == 4)
-        #expect(CadenceTodayTaskGroupKind.overdue.title == "Overdue")
-        #expect(CadenceTodayTaskGroupKind.pastDo.title == "Past Do")
-        #expect(CadenceTodayTaskGroupKind.dueToday.title == "Due Today")
-        #expect(CadenceTodayTaskGroupKind.plannedToday.title == "Planned Today")
+        // "Due Today" is deliberately **not** in this list: it is still a live heading on the
+        // Calendar board's date grouping and on the habits list, where it names a date on a page
+        // that is not scoped to one. It was only ever wrong on Today.
+        #expect(try liveTextOccurrences(of: "Planned Today") == 0)
+        #expect(try liveTextOccurrences(of: "Past Do") == 0)
+        // The self-check the two above need: a scan that finds nothing passes every absence
+        // assertion ever written. "Overdue" is a string this app definitely still ships.
+        #expect(try liveTextOccurrences(of: "Overdue") > 0)
+        // The one date-shaped heading that stays, and stays at the top.
+        #expect(CadenceTodayPresentationSupport.overdueSectionTitle == "Overdue")
     }
 
     /// **The T-161 test for the sections.** Both platforms' Today must derive its groups from the
-    /// one shared function. Revert either to a local list of the same four predicates — which is
-    /// exactly what macOS's `todayDateSections` was — and this fails; pinning `todayGroups` itself
-    /// would not have noticed.
+    /// one shared function. Revert either to a local list of the same predicates — which is exactly
+    /// what macOS's `todayDateSections` was — and this fails; pinning `todayGroups` itself would
+    /// not have noticed.
     ///
     /// macOS calls it twice on purpose: once for the sections it draws and once for the hover-freeze
     /// snapshot that has to describe the same sections. Two call sites that must agree is the
     /// argument for the count being exact rather than "contains".
-    @Test func everyTodaySurfaceGroupsByIntentThroughTheSharedQuery() throws {
+    @Test func everyTodaySurfaceGroupsThroughTheSharedQuery() throws {
         try expectCallSites(
             of: "CadenceTaskQuerySupport.todayGroups",
             at: [
@@ -47,13 +54,44 @@ struct CadenceTodayUnificationTests {
                 "Cadence/iOS/iPadTodayView.swift": 1,
             ]
         )
+        // And both hand it the contexts the sidebar order is derived from. A host that passed `[]`
+        // would fall back to alphabetical list groups on one platform while the other used sidebar
+        // order — the same day, two orders. macOS's needle is the two-argument tail because
+        // `contexts: contexts` alone is seven other section views on that file.
+        try expectCallSites(
+            of: "todayKey: todayKey, contexts: contexts",
+            at: ["Cadence/macOS/Views/TasksPanel.swift": 2]
+        )
+        try expectCallSites(
+            of: "contexts: contexts",
+            at: ["Cadence/iOS/iPadTodayView.swift": 1]
+        )
     }
 
     /// The accents go with the names: a group that says "Overdue" in `Theme.red` on one platform
-    /// and in neutral `Theme.dim` on another is two different statements.
-    @Test func bothPlatformsTintTheirTodayGroupsFromTheSharedAccent() throws {
+    /// and in neutral `Theme.dim` on another is two different statements. The tint travels **on the
+    /// group** now — a list group is its list's colour — so what has to be pinned is that neither
+    /// host decides the tint for itself.
+    @Test func bothPlatformsTintTheirTodayGroupsFromTheGroupItself() throws {
         try expectCallSites(
-            of: "CadenceTodayPresentationSupport.accent",
+            of: "group.accent",
+            at: [
+                "Cadence/macOS/Views/TasksPanel.swift": 1,
+                "Cadence/iOS/iOSTodayTaskSections.swift": 1,
+            ]
+        )
+        // Overdue's red is decided once, where the group is built.
+        try expectCallSites(
+            of: "CadenceTodayPresentationSupport.overdueSectionAccent",
+            at: ["Cadence/Shared/CadenceTaskQuerySupport.swift": 1]
+        )
+    }
+
+    /// And a row under a header that already prints its list's name does not repeat it in a chip.
+    /// Both hosts `&&` the surface's answer with the group's own.
+    @Test func neitherHostRepeatsTheListNameOnEveryRowOfAListGroup() throws {
+        try expectCallSites(
+            of: "group.showsContainerChip",
             at: [
                 "Cadence/macOS/Views/TasksPanel.swift": 1,
                 "Cadence/iOS/iOSTodayTaskSections.swift": 1,
@@ -336,6 +374,365 @@ struct CadenceTodayUnificationTests {
     }
 }
 
+/// **T-305: what Today's groups actually are, pinned by value.**
+///
+/// One seeded day, and the assertions name the groups it produces and the order of the rows inside
+/// them. The two are pinned separately on purpose: the grouping rule and the sort inside a group
+/// are different decisions, and a test that folded them together could not tell you which one
+/// broke.
+///
+/// A real `ModelContainer` rather than bare model objects, because the whole point of the change is
+/// that a group *is* a list — which means area/project/context relationships have to be live.
+@MainActor
+struct CadenceTodayListGroupingTests {
+    private let todayKey = "2026-08-11"
+    private let yesterdayKey = "2026-08-10"
+
+    private func makeContext() throws -> ModelContext {
+        let container = try ModelContainer(
+            for: CadenceSchema.schema,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        return ModelContext(container)
+    }
+
+    /// Two contexts, three lists, and the sidebar order is deliberately **not** alphabetical:
+    /// Work's Admin and Launch come before Home's Errands, so an implementation that sorted list
+    /// groups by name would produce Admin / Errands / Launch and fail.
+    private struct Day {
+        let modelContext: ModelContext
+        let contexts: [Context]
+        let admin: Area
+        let launch: Project
+        let errands: Area
+        var tasks: [AppTask]
+    }
+
+    private func seedDay() throws -> Day {
+        let modelContext = try makeContext()
+
+        let work = Context(name: "Work")
+        work.order = 0
+        let home = Context(name: "Home")
+        home.order = 1
+        modelContext.insert(work)
+        modelContext.insert(home)
+
+        let admin = Area(name: "Admin", context: work)
+        admin.order = 1
+        let errands = Area(name: "Errands", context: home)
+        errands.order = 0
+        let launch = Project(name: "Launch", context: work)
+        launch.order = 0
+        modelContext.insert(admin)
+        modelContext.insert(errands)
+        modelContext.insert(launch)
+
+        // `order` ascends with creation so the sort's tie-break is readable rather than incidental.
+        var order = 0
+        func task(
+            _ title: String,
+            due: String = "",
+            scheduled: String = "",
+            area: Area? = nil,
+            project: Project? = nil
+        ) -> AppTask {
+            let task = AppTask(title: title)
+            task.dueDate = due
+            task.scheduledDate = scheduled
+            task.area = area
+            task.project = project
+            task.order = order
+            order += 1
+            modelContext.insert(task)
+            return task
+        }
+
+        let tasks = [
+            task("Ship the beta", due: "2026-08-09", project: launch),
+            task("Pay the invoice", due: yesterdayKey, area: admin),
+            task("Draft the notes", scheduled: todayKey, project: launch),
+            task("Review the spec", due: todayKey, project: launch),
+            task("Buy milk", scheduled: todayKey, area: errands),
+            task("Call the plumber", due: todayKey),
+            task("File receipts", scheduled: todayKey, area: admin),
+        ]
+
+        return Day(
+            modelContext: modelContext,
+            contexts: [work, home],
+            admin: admin,
+            launch: launch,
+            errands: errands,
+            tasks: tasks
+        )
+    }
+
+    private func groups(for day: Day) -> [CadenceTodayTaskGroup] {
+        CadenceTaskQuerySupport.todayGroups(
+            from: CadenceTaskQuerySupport.activeTodayTasks(
+                from: day.tasks,
+                todayKey: todayKey,
+                sortMode: .listOrder
+            ),
+            todayKey: todayKey,
+            contexts: day.contexts
+        )
+    }
+
+    // MARK: - The grouping
+
+    /// **The decision, by value.** Overdue first — the one date-shaped group left, because a missed
+    /// deadline outranks where the work lives — and then one group per list in sidebar order, with
+    /// the unfiled task's Inbox at the head of them.
+    ///
+    /// Membership is asserted as sets here so this test says nothing about the order *within* a
+    /// group; that is the next test's job, and keeping them apart is what lets a broken sort and a
+    /// broken grouping be told apart.
+    @Test func todayIsOverdueAndThenTheDaysListsInSidebarOrder() throws {
+        let day = try seedDay()
+        let produced = groups(for: day)
+
+        #expect(produced.map(\.title) == ["Overdue", "Inbox", "Admin", "Launch", "Errands"])
+
+        let membership = produced.map { Set($0.tasks.map(\.title)) }
+        #expect(membership == [
+            ["Ship the beta", "Pay the invoice"],
+            ["Call the plumber"],
+            ["File receipts"],
+            ["Review the spec", "Draft the notes"],
+            ["Buy milk"],
+        ])
+
+        // Not one row lost or duplicated between the flat day and its groups.
+        #expect(produced.flatMap { $0.tasks.map(\.id) }.count == 7)
+        #expect(Set(produced.flatMap { $0.tasks.map(\.id) }) == Set(day.tasks.map(\.id)))
+    }
+
+    /// A group is identified by its list, not by its position, so a collapse state and a `ForEach`
+    /// survive the day changing shape around them.
+    @Test func aListGroupIsIdentifiedByTheListItIsFor() throws {
+        let day = try seedDay()
+        let produced = groups(for: day)
+
+        #expect(produced.map(\.identity) == [
+            .overdue,
+            .list(key: "inbox"),
+            .list(key: "a_\(day.admin.id.uuidString)"),
+            .list(key: "p_\(day.launch.id.uuidString)"),
+            .list(key: "a_\(day.errands.id.uuidString)"),
+        ])
+        #expect(Set(produced.map(\.id)).count == produced.count)
+    }
+
+    /// **The open question, answered: a task with no list gets the Inbox group.**
+    ///
+    /// Not a nameless bucket at the foot of the page — that is "Planned Today" again in everything
+    /// but the label, a group defined by what it is *not*. "Inbox" is what the sidebar, the Kanban
+    /// board and macOS's own by-list grouping already call an unfiled task's home, it sits first
+    /// there too, and — unlike a tail bucket — it is a real destination, so the header can accept a
+    /// dropped `+`.
+    @Test func aTaskWithNoListGetsTheInboxGroupAndTheInboxGroupLeadsTheLists() throws {
+        let day = try seedDay()
+        let produced = groups(for: day)
+
+        let inbox = try #require(produced.first { $0.identity == .list(key: "inbox") })
+        #expect(inbox.title == CadenceBoardCardMetadata.inboxLabel)
+        #expect(inbox.tasks.map(\.title) == ["Call the plumber"])
+        // Directly under Overdue, and ahead of every real list.
+        #expect(produced.firstIndex { $0.id == inbox.id } == 1)
+        // The list *and* the day — see `aListGroupHeaderOffersItsListToADroppedPlusAndOverdueOffersNothing`.
+        #expect(CadenceTaskDropSupport.dropKey(forGroup: inbox.dropIdentity) == "list:inbox|date:today")
+    }
+
+    // MARK: - The sort inside a group
+
+    /// **Where the deleted date axis went.** Nothing re-sorts inside `todayGroups`; the caller's
+    /// order survives, and the caller's order leads with `todayRank`. So Launch reads "Review the
+    /// spec" (due today) before "Draft the notes" (merely planned for today) without a heading
+    /// saying so, and Overdue keeps the flat day's order too.
+    ///
+    /// Mutate the rank and this fails while the grouping test above stays green.
+    @Test func theOrderInsideAGroupIsTheCallersTodayRankedSort() throws {
+        let day = try seedDay()
+        let produced = groups(for: day)
+
+        let launch = try #require(produced.first { $0.identity == .list(key: "p_\(day.launch.id.uuidString)") })
+        #expect(launch.tasks.map(\.title) == ["Review the spec", "Draft the notes"])
+
+        let overdue = try #require(produced.first { $0.identity == .overdue })
+        #expect(overdue.tasks.map(\.title) == ["Ship the beta", "Pay the invoice"])
+
+        // And the grouping is a stable partition of exactly that array: every group's rows appear
+        // in the same relative order they had in the flat day.
+        let flat = CadenceTaskQuerySupport.activeTodayTasks(
+            from: day.tasks,
+            todayKey: todayKey,
+            sortMode: .listOrder
+        )
+        let flatIndex = Dictionary(uniqueKeysWithValues: flat.enumerated().map { ($0.element.id, $0.offset) })
+        for group in produced {
+            let positions = group.tasks.compactMap { flatIndex[$0.id] }
+            #expect(positions == positions.sorted(), "\(group.title) reordered its rows")
+        }
+    }
+
+    /// **One today-rank, and both platforms lead their Today sort with it.**
+    ///
+    /// A due date outranks a do date, the way every other Today rule has it. macOS used to spell
+    /// its own rank inside `TasksPanel` with the middle two tests in the other order, so a task due
+    /// today and planned for yesterday read as past-do there and as due-today on iOS.
+    @Test func oneTodayRankAndADueDateOutranksADoDate() throws {
+        let today = "2026-08-11"
+        func rank(due: String = "", scheduled: String = "") -> Int {
+            let task = AppTask(title: "t")
+            task.dueDate = due
+            task.scheduledDate = scheduled
+            return CadenceTaskQuerySupport.todayRank(task, todayKey: today)
+        }
+
+        #expect(rank(due: "2026-08-09") == 0)
+        #expect(rank(scheduled: "2026-08-10") == 1)
+        #expect(rank(due: today) == 2)
+        #expect(rank(scheduled: today) == 3)
+        #expect(rank() == 4)
+        // The case the two spellings disagreed on.
+        #expect(rank(due: today, scheduled: "2026-08-10") == 2)
+    }
+
+    /// **The T-161 test for the rank**, and for the condition that used to make macOS's copy
+    /// unreachable. `TodayView` builds its panel with `enableControls: true`, so a rank gated on
+    /// `!enableControls` never ran — which was survivable while four date headings carried the
+    /// urgency the sort had dropped, and is not now that Today groups by list.
+    @Test func macOSTodayLeadsItsSortWithTheSharedRank() throws {
+        try expectCallSites(
+            of: "CadenceTaskQuerySupport.todayRank",
+            at: ["Cadence/macOS/Views/TasksPanel.swift": 1]
+        )
+        #expect(try liveTextOccurrences(of: "mode == .todayOverview && !enableControls") == 0)
+        #expect(try liveTextOccurrences(of: "mode == .todayOverview") > 0)
+    }
+
+    // MARK: - The rollover banner
+
+    /// **What makes the roll-over feel like it did something.** While the banner is up, the tasks it
+    /// is offering are withheld from the grouped list — so a list whose only work today is
+    /// yesterday's leftovers has no group at all. Confirming the roll makes that group appear, with
+    /// the task in it, instead of moving the row between two date-shaped buckets.
+    @Test func aRolledOverTaskJoinsItsListsGroupRatherThanASecondDateBucket() throws {
+        let modelContext = try makeContext()
+        let home = Context(name: "Home")
+        home.order = 0
+        let errands = Area(name: "Errands", context: home)
+        modelContext.insert(home)
+        modelContext.insert(errands)
+
+        let leftover = AppTask(title: "Water the plants")
+        leftover.scheduledDate = yesterdayKey
+        leftover.area = errands
+        modelContext.insert(leftover)
+
+        let all = [leftover]
+        let pastDo = CadenceTodayRolloverSupport.pastDoTasks(from: all, todayKey: todayKey)
+        #expect(pastDo.map(\.title) == ["Water the plants"])
+
+        func todayGroups(noticeVisible: Bool) -> [CadenceTodayTaskGroup] {
+            CadenceTaskQuerySupport.todayGroups(
+                from: CadenceTodayRolloverSupport.groupedTasks(
+                    from: CadenceTaskQuerySupport.activeTodayTasks(
+                        from: all,
+                        todayKey: todayKey,
+                        sortMode: .listOrder
+                    ),
+                    withholding: pastDo,
+                    isNoticeVisible: noticeVisible
+                ),
+                todayKey: todayKey,
+                contexts: [home]
+            )
+        }
+
+        // Banner up: the row is in the banner and nowhere else, so Errands has no group.
+        #expect(todayGroups(noticeVisible: true).isEmpty)
+
+        CadenceTodayRolloverSupport.rollOver(pastDo, todayKey: todayKey, modelContext: modelContext)
+        #expect(leftover.scheduledDate == todayKey)
+
+        // Rolled: it is in its list, and the page has grown a list group rather than a date one.
+        let after = todayGroups(noticeVisible: false)
+        #expect(after.map(\.title) == ["Errands"])
+        let group = try #require(after.first)
+        #expect(group.tasks.map(\.title) == ["Water the plants"])
+        #expect(group.identity == CadenceTodayGroupIdentity.list(key: "a_\(errands.id.uuidString)"))
+    }
+
+    // MARK: - What a group offers, and what its rows say
+
+    /// Overdue is drawn from every list at once, so its rows are the only ones on Today that still
+    /// need a chip naming where the work lives. A list group's header already prints the name.
+    @Test func onlyOverdueRowsStillNameTheirList() throws {
+        let day = try seedDay()
+        let produced = groups(for: day)
+
+        #expect(produced.map(\.showsContainerChip) == [true, false, false, false, false])
+    }
+
+    /// Overdue is defined by a day that has gone by, so its header seeds nothing and does not light
+    /// up. A list group is a list and says so — in the same `list:` spelling `assignTask` parses,
+    /// which is why the key comes from `CadenceTaskDropSupport.containerKey` rather than being
+    /// re-spelled by the grouping.
+    ///
+    /// **And it says the day as well** (T-337). Today's headers used to be date-shaped, so a `+`
+    /// dropped anywhere on this page produced work that stayed on it. Once the page groups by list,
+    /// a header offering only its list would create a task that was filed correctly and then
+    /// vanished from the page it was dropped on — so a Today list group is `.todayList`, which
+    /// resolves to the joined key. The seed is what the assertion is really about: a key-shape
+    /// check alone would pass against a resolver that read `date:today` and dropped it.
+    @Test func aListGroupHeaderOffersItsListAndTodayToADroppedPlusAndOverdueOffersNothing() throws {
+        let day = try seedDay()
+        let produced = groups(for: day)
+
+        let overdue = try #require(produced.first { $0.identity == .overdue })
+        #expect(CadenceTaskDropSupport.dropKey(forGroup: overdue.dropIdentity) == nil)
+
+        let launch = try #require(produced.first { $0.title == "Launch" })
+        let key = try #require(CadenceTaskDropSupport.dropKey(forGroup: launch.dropIdentity))
+        #expect(key == "list:p_\(day.launch.id.uuidString)|date:today")
+
+        let seed = CadenceTaskDropSupport.seed(forDropKey: key, todayKey: todayKey)
+        #expect(seed.container == .project(day.launch.id))
+        #expect(seed.doDateKey == todayKey)
+        // A do date, not a due date: Today's list groups are what you have *planned*, and a due
+        // date is a commitment the header never made.
+        #expect(seed.dueDateKey.isEmpty)
+    }
+
+    /// The order of the list groups is the sidebar's, and `TasksPanelSupport.listGroups` — All
+    /// Tasks' by-list mode — reads the same function, so the two by-list surfaces cannot present
+    /// their groups in different orders.
+    @Test func listGroupOrderIsTheSidebarOrderWithInboxFirst() throws {
+        let day = try seedDay()
+
+        #expect(CadenceTaskQuerySupport.listGroupOrder(contexts: day.contexts) == [
+            "inbox",
+            "a_\(day.admin.id.uuidString)",
+            "p_\(day.launch.id.uuidString)",
+            "a_\(day.errands.id.uuidString)",
+        ])
+    }
+
+    /// A task holding both an area and a project is grouped under the **project**, which is
+    /// `CadenceTaskDropSupport.listKey(for:)`'s rule: the more specific container is where the rest
+    /// of the UI already shows it.
+    @Test func aTaskHoldingBothContainersIsGroupedUnderTheProject() throws {
+        let day = try seedDay()
+        let repaired = day.tasks[0]
+        repaired.area = day.admin
+
+        #expect(CadenceTaskQuerySupport.listGroupKey(for: repaired) == "p_\(day.launch.id.uuidString)")
+    }
+}
+
 // MARK: - Source-reading helpers
 
 /// Fails unless `name` appears exactly `count` times in each listed file.
@@ -375,6 +772,36 @@ private func expectNoLiveMention(
             sourceLocation: sourceLocation
         )
     }
+}
+
+/// How many times `text` appears in `Cadence/` as **live code** rather than inside a comment.
+///
+/// Returned rather than asserted so one helper serves both an absence assertion and the presence
+/// self-check that keeps it from going vacuous. Unlike `expectNoLiveMention` it takes a literal, so
+/// it can reach a user-facing string with a space in it; comments are exempt, so the tombstones
+/// explaining what was removed can keep saying the words.
+private func liveTextOccurrences(of text: String) throws -> Int {
+    var total = 0
+    var scanned = 0
+    for path in try swiftFiles(under: "Cadence") {
+        let raw = try sourceFile(path)
+        let code = try strippingComments(raw)
+        // The stripper blanks comments to spaces of equal length, so an unequal length would mean
+        // it had eaten code — and a `<` guard would be red whatever the source said. See
+        // `Cadence/Shared/AGENTS.md`.
+        guard code.count == raw.count else {
+            throw CadenceTodayScanFailure.strippingChangedLength(path)
+        }
+        scanned += 1
+        total += code.components(separatedBy: text).count - 1
+    }
+    guard scanned > 300 else { throw CadenceTodayScanFailure.tooFewFiles(scanned) }
+    return total
+}
+
+private enum CadenceTodayScanFailure: Error {
+    case strippingChangedLength(String)
+    case tooFewFiles(Int)
 }
 
 /// The source text of one top-level declaration, from its `struct`/`enum` line to the next

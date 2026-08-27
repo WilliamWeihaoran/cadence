@@ -30,7 +30,7 @@ struct iOSTodayOverdueSummaries {
 
 /// Today's list of counted task groups — **the** one, for both hosts.
 ///
-/// The phone's Today and the iPad task column each drew their own copy of this: the same four
+/// The phone's Today and the iPad task column each drew their own copy of this: the same
 /// `CadenceTodayTaskGroup`s, the same "Completed Today" group under them, and the same empty state,
 /// stacked 14pt apart on one and 15pt on the other, padded 14 on one and 18 on the other. Two
 /// copies of one list is how the previous round of this sweep found the iPad heading its groups
@@ -79,7 +79,10 @@ struct iOSTodayTaskSections: View {
     /// **The rollover notice counts as content.** While it is up the grouped list is deliberately
     /// *missing* the tasks it is offering, so a day whose only open work is yesterday's leftovers
     /// has no groups — and without the last clause this view would draw "nothing planned" directly
-    /// under a banner listing four things to do.
+    /// under a banner listing four things to do. Since T-305 the withheld rows are missing from
+    /// *their lists'* groups rather than from a "Past Do" section, so confirming the roll makes a
+    /// list group appear rather than moving rows between two date buckets — which is the whole
+    /// point of the roll being visible.
     ///
     /// **The past-due summaries count as content too**, for the same reason the notice does: a day
     /// with nothing planned but three columns whose deadlines have gone by would otherwise read
@@ -187,16 +190,20 @@ struct iOSTodayTaskSections: View {
         let showsContainer = CadenceTaskSurfaceOptions.showsContainerChip(on: .today)
 
         let stack = VStack(alignment: .leading, spacing: metrics.groupSpacing) {
-            ForEach(taskGroups, id: \.title) { group in
-                // Due Today and Planned Today accept a dropped `+`; Overdue and Past Do are defined
-                // by a day that has gone by, so they do not light up.
+            ForEach(taskGroups) { group in
+                // A list group accepts a dropped `+` and inherits its list; Overdue is defined by a
+                // day that has gone by, so it does not light up.
                 // `CadenceTaskDropSupport.dropKey(forGroup:)` decides, once, for both layouts.
+                //
+                // `showsContainer` is `&&`-ed with the group's own answer rather than replaced by
+                // it: the surface still decides whether Today names lists at all, and the group
+                // then withholds the chip inside a header that already prints the list's name.
                 iOSTaskGroupSection(
                     title: group.title,
-                    color: CadenceTodayPresentationSupport.accent(for: group.kind),
+                    color: group.accent,
                     tasks: group.tasks,
-                    showsContainer: showsContainer,
-                    dropIdentity: .todayDate(group.kind)
+                    showsContainer: showsContainer && group.showsContainerChip,
+                    dropIdentity: group.dropIdentity
                 )
             }
 

@@ -77,15 +77,11 @@ enum TaskPickerHighlightSupport {
 }
 
 enum TasksPanelSupport {
+    /// `CadenceTaskQuerySupport.listGroupOrder`, not a second copy of it. Today groups by list too
+    /// now (T-305), and two by-list surfaces that ordered their groups differently is exactly the
+    /// drift moving the rule out of here prevents.
     static func sidebarListOrder(contexts: [Context]) -> [String] {
-        var order: [String] = ["inbox"]
-        for context in contexts.sorted(by: { $0.order < $1.order }) {
-            let sortedAreas = (context.areas ?? []).sorted { $0.order < $1.order }
-            let sortedProjects = (context.projects ?? []).sorted { $0.order < $1.order }
-            order.append(contentsOf: sortedAreas.map { "a_\($0.id.uuidString)" })
-            order.append(contentsOf: sortedProjects.map { "p_\($0.id.uuidString)" })
-        }
-        return order
+        CadenceTaskQuerySupport.listGroupOrder(contexts: contexts)
     }
 
     static func makeFlatSection(
@@ -130,28 +126,16 @@ enum TasksPanelSupport {
         }
     }
 
+    /// `CadenceTaskQuerySupport.listGroupKey`, for the same reason `sidebarListOrder` above is the
+    /// shared one. Note that the shared rule reads **project before area**, which this one did not:
+    /// see that function for why the more specific container wins on a row repaired into holding
+    /// both. `listGroupShell` below now agrees with it, so a group's key and the list its header
+    /// draws cannot name different containers.
     private static func listGroupKey(for task: AppTask) -> String {
-        if let area = task.area {
-            return "a_\(area.id.uuidString)"
-        }
-        if let project = task.project {
-            return "p_\(project.id.uuidString)"
-        }
-        return "inbox"
+        CadenceTaskQuerySupport.listGroupKey(for: task)
     }
 
     private static func listGroupShell(for task: AppTask, key: String) -> TodayTaskGroup {
-        if let area = task.area {
-            return TodayTaskGroup(
-                id: key,
-                contextIcon: area.context?.icon,
-                contextColor: area.context.map { Color(hex: $0.colorHex) },
-                listIcon: area.icon,
-                listName: area.name,
-                listColor: Color(hex: area.colorHex),
-                tasks: []
-            )
-        }
         if let project = task.project {
             return TodayTaskGroup(
                 id: key,
@@ -160,6 +144,17 @@ enum TasksPanelSupport {
                 listIcon: project.icon,
                 listName: project.name,
                 listColor: Color(hex: project.colorHex),
+                tasks: []
+            )
+        }
+        if let area = task.area {
+            return TodayTaskGroup(
+                id: key,
+                contextIcon: area.context?.icon,
+                contextColor: area.context.map { Color(hex: $0.colorHex) },
+                listIcon: area.icon,
+                listName: area.name,
+                listColor: Color(hex: area.colorHex),
                 tasks: []
             )
         }

@@ -67,9 +67,11 @@ struct CadenceTodayRolloverSurfaceTests {
         #expect(rolled.map(\.title) == ["Due later"])
     }
 
-    /// The same set `CadenceTaskQuerySupport.todayGroups` puts in `.pastDo`. If these two ever
-    /// disagree the banner lists tasks the section below it does not, or the other way round.
-    @Test func pastDoTasksMatchTheSharedTodayGroup() throws {
+    /// Exactly the set the grouped list withholds while the banner is up. There is no "Past Do"
+    /// section to compare against any more (T-305) — the offered rows are held out of *their own
+    /// lists'* groups — so the parity that matters is banner-against-withheld: if these two ever
+    /// disagree the banner lists tasks the page below it also shows, or the other way round.
+    @Test func pastDoTasksAreExactlyWhatTheGroupedListWithholds() throws {
         let today = "2026-08-20"
         let tasks = [
             task(title: "Past do", scheduled: "2026-08-19"),
@@ -80,15 +82,20 @@ struct CadenceTodayRolloverSurfaceTests {
         ]
 
         let active = CadenceTaskQuerySupport.activeTodayTasks(from: tasks, todayKey: today, sortMode: .listOrder)
-        let groupPastDo = CadenceTaskQuerySupport
-            .todayGroups(from: active, todayKey: today)
-            .first { $0.kind == .pastDo }?
-            .tasks ?? []
-
         let bannerPastDo = CadenceTodayRolloverSupport.pastDoTasks(from: tasks, todayKey: today)
 
-        #expect(Set(groupPastDo.map(\.id)) == Set(bannerPastDo.map(\.id)))
+        let shown = CadenceTodayRolloverSupport.groupedTasks(
+            from: active,
+            withholding: bannerPastDo,
+            isNoticeVisible: true
+        )
+        let withheld = Set(active.map(\.id)).subtracting(shown.map(\.id))
+
+        #expect(withheld == Set(bannerPastDo.map(\.id)))
         #expect(bannerPastDo.count == 2)
+        // Non-vacuous on both sides: the banner is offering something and the page is still
+        // showing something.
+        #expect(!shown.isEmpty)
     }
 
     /// Idempotent: the host may hand it the whole store or an already-Today-filtered array.

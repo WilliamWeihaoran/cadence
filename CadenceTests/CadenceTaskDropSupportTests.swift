@@ -344,4 +344,45 @@ struct CadenceTaskDropSupportTests {
             listName: "Home"
         ) == "Inbox")
     }
+
+    // MARK: - The day a key names is stored fixed-width
+
+    /// `DateFormatters.date(from:)` is lenient — `"2026-8-20"` parses — and every date comparison
+    /// in Cadence is a string comparison, so a seed that kept the caller's spelling would hand the
+    /// composer a key that loses those comparisons. The seed carries the canonical one.
+    @Test func aLenientlySpelledDayIsSeededInItsFixedWidthSpelling() {
+        let seed = CadenceTaskDropSupport.seed(
+            forDropKey: "list:inbox|date:2026-8-20|due:2026-9-2",
+            todayKey: "2026-08-17"
+        )
+
+        #expect(seed.doDateKey == "2026-08-20")
+        #expect(seed.dueDateKey == "2026-09-02")
+    }
+
+    /// The past-date rule is that string comparison, so it only holds on a canonical key.
+    /// `"2026-8-16" >= "2026-08-17"` is **true** — `"8"` sorts after `"0"` — so comparing the raw
+    /// text lets a day that has already gone by through the guard that exists to stop it.
+    @Test func aLenientlySpelledPastDayIsStillDropped() {
+        let seed = CadenceTaskDropSupport.seed(
+            forDropKey: "list:inbox|date:2026-8-16|due:2026-8-16",
+            todayKey: "2026-08-17"
+        )
+
+        #expect(seed.doDateKey == "")
+        #expect(seed.dueDateKey == "")
+        // The comparison this guard rests on, stated so the test's premise cannot rot silently.
+        #expect("2026-8-16" >= "2026-08-17")
+    }
+
+    /// Two digits short of a year is a century-sized guess, not a spelling, so it is refused
+    /// rather than normalised — `normalizedDateKey` would otherwise store the year 26 AD.
+    @Test func aTwoDigitYearSeedsNoDateAtAll() {
+        let seed = CadenceTaskDropSupport.seed(
+            forDropKey: "list:inbox|date:26-8-20",
+            todayKey: "2026-08-17"
+        )
+
+        #expect(seed.doDateKey == "")
+    }
 }

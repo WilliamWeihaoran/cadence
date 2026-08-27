@@ -56,15 +56,35 @@ struct CadenceCalendarDateMemory {
 
     /// The `yyyy-MM-dd` spelling of a remembered day. Normalised to the start of the day, so two
     /// instants on the same day are one stored value.
+    ///
+    /// **`calendar` is honoured all the way to the string**, not just to `startOfDay`. Snapping in
+    /// the caller's calendar and then spelling the result with the default-time-zone
+    /// `DateFormatters.dateKey(from:)` reads correctly and is wrong the moment the two disagree:
+    /// midnight in Tokyo is the previous afternoon in New York, so the key written for a day the
+    /// user is looking at would name the day before it. Every call site passes `Calendar.current`
+    /// today, so this is the parameter being made to mean what it says rather than a live bug —
+    /// but a parameter that is read for one half of a two-step conversion and dropped for the
+    /// other is the shape that becomes one.
     static func storageKey(for date: Date, calendar: Calendar = .current) -> String {
-        DateFormatters.dateKey(from: calendar.startOfDay(for: date))
+        DateFormatters.dateKey(from: calendar.startOfDay(for: date), calendar: calendar)
     }
 
     /// A stored key read back, or `nil` for "nothing remembered". An empty string is what an
     /// unwritten key reads as, and a garbage one is what a downgrade or a hand-edited plist leaves
     /// behind; both mean the caller should fall back rather than land on a date it invented.
+    ///
+    /// Parsed in `calendar`'s time zone for the reason `storageKey` writes in it: a key parsed in
+    /// the system zone and then snapped in another calendar's is a day off whenever the two zones
+    /// straddle midnight, which would make the round trip through this type lossy.
+    ///
+    /// It goes through `normalizedDateKey` first because the calendar-aware parse is component
+    /// arithmetic, and `DateComponents(month: 13)` *rolls over* into the next year rather than
+    /// failing. A hand-edited plist saying `2026-13-01` has to keep reading as "nothing
+    /// remembered", not as January 2027.
     static func date(fromStored raw: String?, calendar: Calendar = .current) -> Date? {
-        guard let raw, !raw.isEmpty, let parsed = DateFormatters.date(from: raw) else { return nil }
+        guard let raw, !raw.isEmpty,
+              let key = DateFormatters.normalizedDateKey(raw),
+              let parsed = DateFormatters.date(from: key, in: calendar) else { return nil }
         return calendar.startOfDay(for: parsed)
     }
 

@@ -309,13 +309,6 @@ enum StoreBackupManager {
         }
     }
 
-    private static let folderDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return formatter
-    }()
-
     static var backupRootURL: URL {
         (try? defaultStoreDirectoryURL().appendingPathComponent(backupDirectoryName, isDirectory: true))
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -745,7 +738,7 @@ enum StoreBackupManager {
         fileManager: FileManager = .default
     ) -> URL {
         let backupRootURL = backupRootURL(for: storeDirectoryURL)
-        let baseName = "\(folderDateFormatter.string(from: date))-\(reason.rawValue)"
+        let baseName = "\(DateFormatters.backupFolderTimestamp.string(from: date))-\(reason.rawValue)"
         var candidate = backupRootURL.appendingPathComponent(baseName, isDirectory: true)
         var suffix = 2
         while fileManager.fileExists(atPath: candidate.path) {

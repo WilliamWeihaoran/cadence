@@ -56,9 +56,9 @@ struct iOSCircularAddButton: View {
 }
 
 /// Pins the capture `+` to a page's bottom-trailing corner at **regular width only**, and gives it
-/// the same three things the tab bar's centre `+` has: a tap that opens `iOSCreateTaskSheet` seeded
-/// for that page, a hold that opens the capture palette, and a drag onto a row that seeds the
-/// composer from wherever it lands.
+/// the same three things the tab bar's centre `+` has: a tap that opens an unseeded
+/// `iOSCreateTaskSheet`, a hold that opens the capture palette, and a drag onto a row, a section, a
+/// column or a list that seeds the composer from wherever it lands.
 ///
 /// **Regular width only, on purpose.** On compact width the tab bar already carries a centre `+`
 /// that does the same three things, and a corner button beside it would be the second affordance
@@ -67,17 +67,18 @@ struct iOSCircularAddButton: View {
 /// there. The size-class check lives in here rather than at the four call sites so no page can
 /// forget it.
 ///
-/// **The seed is a value in.** Inbox seeds nothing, a list detail seeds its own list, Today seeds
-/// today's do date. Keeping it a plain `CadenceTaskComposerSeed` parameter is also what lets a
-/// future drop target hand one in — the destination the button is dropped on simply produces a
-/// different seed, and nothing about the presentation has to change.
+/// **It seeds nothing, and takes no seed to pass on.** It used to: Today handed in today's do date
+/// and a list detail handed in its own list (T-282), on the reasoning that a page's corner `+` is
+/// already standing somewhere. T-337 reverses that. Context comes from the *drop target* and from
+/// nowhere else — a button standing on the Today page is not a statement about what you are
+/// creating, while dropping onto a list is — so the parameter is gone rather than defaulted, and
+/// the two placements now differ only in size and position.
 ///
 /// **Nothing hides under it.** `contentMargins(.bottom:for: .scrollContent)` insets the scrollable
 /// content of the page's scroll views by the button's whole footprint, so the last row can always be
 /// brought out from under it. It is done here, once, rather than as per-screen bottom padding —
 /// which is what would silently break the next time the button changed size.
 private struct iOSFloatingCreateTaskLayer: ViewModifier {
-    let seed: CadenceTaskComposerSeed
     let onCreated: ((AppTask) -> Void)?
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// One live touch on this page's `+`, and the mailbox the host presents from. Per page rather
@@ -97,8 +98,7 @@ private struct iOSFloatingCreateTaskLayer: ViewModifier {
                 if isRegularWidth {
                     iOSCaptureRadialMenuButton(
                         diameter: iOSCircularAddButton.floatingDiameter,
-                        interaction: interaction,
-                        baseSeed: seed
+                        interaction: interaction
                     )
                     // The corner inset belongs to the placement, not to the button: the tab
                     // bar's copy is centred in a row and must not carry it.
@@ -112,12 +112,11 @@ private struct iOSFloatingCreateTaskLayer: ViewModifier {
 
 extension View {
     /// Overlays the page-level task-creation button in the bottom-trailing corner. See
-    /// `iOSFloatingCreateTaskLayer` for why it is regular-width only and why the seed is a value.
+    /// `iOSFloatingCreateTaskLayer` for why it is regular-width only and why it takes no seed.
     func iOSFloatingCreateTaskButton(
-        seed: CadenceTaskComposerSeed = CadenceTaskComposerSeed(),
         onCreated: ((AppTask) -> Void)? = nil
     ) -> some View {
-        modifier(iOSFloatingCreateTaskLayer(seed: seed, onCreated: onCreated))
+        modifier(iOSFloatingCreateTaskLayer(onCreated: onCreated))
     }
 }
 

@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -14,6 +15,9 @@ import Testing
 @Suite("Capture palette")
 struct CadenceCapturePaletteTests {
     private let metrics = CadenceCapturePaletteMetricsValues.standard
+    /// A fixed "today" for the seed assertions: `CadenceTaskDropSupport` refuses a day that has
+    /// already gone by, so a test reading the real clock would change meaning overnight.
+    private let todayKey = "2026-08-17"
 
     // MARK: - Case 1: quick press then move
 
@@ -498,8 +502,11 @@ struct CadenceCapturePaletteTests {
 
         #expect(body.contains("iOSCaptureRadialMenuButton("))
         #expect(body.contains(".iOSCaptureHost("))
-        // The page's own seed still reaches the composer a tap opens.
-        #expect(body.contains("baseSeed: seed"))
+        // T-337: and it hands the button nothing to open the composer with. The modifier takes no
+        // seed at all now, so there is no parameter left for a call site to fill back in.
+        #expect(body.contains("baseSeed") == false)
+        #expect(layer.contains("let seed:") == false)
+        #expect(layer.contains("CadenceTaskComposerSeed") == false)
 
         // And the three things it replaced are gone rather than left beside it.
         #expect(body.contains("iOSNewTaskDragSource") == false)
@@ -522,15 +529,79 @@ struct CadenceCapturePaletteTests {
         #expect(root.contains("iOSCaptureInteraction(placement: .bottomCentre)"))
     }
 
-    /// **The tab bar's tap stays unscoped and the page's does not, and that is a difference in what
-    /// the two buttons *know*, not in what they can do.** You press the bar's `+` from any tab and
-    /// file the task afterwards; a corner `+` is already standing on a list or on today.
-    @Test func onlyThePageButtonSeedsItsTap() throws {
+    /// **Neither `+` seeds its tap, and that used to be the difference between them.**
+    ///
+    /// This test is inherited rather than new: it pinned "the tab bar's button carries no
+    /// `baseSeed`" as the *one* thing the two placements did not share, on T-282's reasoning that a
+    /// page's corner `+` is already standing somewhere and so may hand that somewhere in. T-337
+    /// reverses that half — context comes from the drop target, not from the page you are standing
+    /// on — so the same assertion now covers both call sites and states the rule instead of the
+    /// exception. It is kept and widened rather than deleted, because deleting it would leave
+    /// nothing at all watching the corner button's call site for a seed creeping back in.
+    ///
+    /// The parameter is gone from `iOSCaptureRadialMenuButton` as well (below), so this is the
+    /// call-site half of a rule the type no longer has a way to break.
+    @Test func neitherPlacementSeedsItsTap() throws {
         let shell = try strippingComments(sourceFile("Cadence/iOS/iOSCompactTabShell.swift"))
-        let button = try cadenceFunctionBody("private struct iOSCompactCaptureButton: View", in: shell)
+        let bar = try cadenceFunctionBody("private struct iOSCompactCaptureButton: View", in: shell)
 
-        #expect(button.contains("iOSCaptureRadialMenuButton("))
+        #expect(bar.contains("iOSCaptureRadialMenuButton("))
+        #expect(bar.contains("baseSeed") == false)
+
+        let corner = try strippingComments(sourceFile("Cadence/iOS/iOSFloatingCreateTaskButton.swift"))
+        let layer = try cadenceFunctionBody(
+            "private struct iOSFloatingCreateTaskLayer: ViewModifier",
+            in: corner
+        )
+        #expect(layer.contains("iOSCaptureRadialMenuButton("))
+        #expect(layer.contains("baseSeed") == false)
+
+        // And the four pages that mount the corner button hand it nothing either — the parameter
+        // was removed, so a `seed:` label anywhere here would not compile, and a *new* one would
+        // have to be added deliberately rather than defaulted into place.
+        for file in try iOSSourceFiles() {
+            let code = try strippingComments(String(contentsOf: file, encoding: .utf8))
+            #expect(
+                code.contains(".iOSFloatingCreateTaskButton(seed:") == false,
+                "\(file.lastPathComponent) still seeds the corner +"
+            )
+        }
+    }
+
+    /// **The button itself cannot hold a seed to pass on.** The call-site scan above is the half a
+    /// reader can see; this is the half that makes it hold — there is no `baseSeed` property left
+    /// on the control, so the only route from a page into a new task's fields is a drop.
+    @Test func theCaptureButtonHasNoSeedOfItsOwn() throws {
+        let source = try strippingComments(sourceFile("Cadence/iOS/iOSCaptureRadialMenu.swift"))
+        let button = try cadenceFunctionBody("struct iOSCaptureRadialMenuButton: View", in: source)
+
+        #expect(button.contains("iOSCircularAddButton("))
         #expect(button.contains("baseSeed") == false)
+        // The one place the button names a seed at all is the resolver call, which reads the drop
+        // target and nothing else. A bare `CadenceTaskComposerSeed(` here would be a second answer.
+        #expect(button.contains("CadenceCaptureSeedResolver.seed("))
+        #expect(button.contains("CadenceTaskComposerSeed(") == false)
+        // And it reads the key off the target it was actually handed. `dropKey: nil` here would
+        // compile, would keep every value assertion green, and would make every drop a tap.
+        #expect(button.contains("dropKey: placement?.dropKey"))
+
+        // **Each arm hands the resolver the outcome it really got.** The resolver decides by
+        // outcome, so a `.tap` arm that reported `.drop` — or handed over the drag's target —
+        // would route the tap straight back through the inheriting branch. That is the shape of
+        // the reversal this ticket is undoing, and it is one token wide.
+        let commit = try cadenceFunctionBody(
+            "private func commit(_ outcome: CadenceCapturePressOutcome, droppedOn target: UUID?)",
+            in: button
+        )
+        #expect(commit.contains("seed(for: .tap, droppedOn: nil)"))
+        #expect(commit.contains("seed(for: .drop, droppedOn: target)"))
+
+        let kind = try cadenceFunctionBody(
+            "private func kind(for action: CadenceCaptureAction) -> iOSCaptureRequest.Kind",
+            in: button
+        )
+        #expect(kind.contains("seed(for: .action(.task), droppedOn: nil)"))
+        #expect(kind.contains("case .event: return .event"))
     }
 
     /// **One routing for the three composers.** The shell used to own `handle(_:)`, a `sheet(item:)`
@@ -625,6 +696,174 @@ struct CadenceCapturePaletteTests {
 
         let ended = try cadenceFunctionBody("func ended() -> CadenceCapturePressOutcome", in: source)
         #expect(ended.contains("CadenceCapturePressResolver.outcome(atEndOf:"))
+    }
+
+    // MARK: - T-337: context comes from where you drop it, and from nothing else
+
+    /// **A tap is just a task.** The outcome decides, not the key — so a `.tap` that happens to be
+    /// handed a perfectly good drop key still seeds nothing. That is the arm T-282 wrote the other
+    /// way round, and the one a future reader is most likely to "restore".
+    @Test func aTapSeedsNothingEvenWhenAKeyIsAvailable() {
+        let seeded = CadenceCaptureSeedResolver.seed(
+            for: .tap,
+            dropKey: "list:inbox\(CadenceTaskDropSupport.separator)date:today",
+            todayKey: todayKey
+        )
+
+        #expect(seeded == CadenceTaskComposerSeed())
+        #expect(seeded.doDateKey.isEmpty)
+        #expect(seeded.container == .inbox)
+        #expect(seeded.sectionName == TaskSectionDefaults.defaultName)
+    }
+
+    /// **Choosing Task from the palette is also just a task.** Hold, slide, release: the segment
+    /// says *what kind of thing*, and nothing about where it goes. The other two segments carry no
+    /// seed at all — an event and a note are not tasks — so this is the whole no-context half.
+    @Test func aPaletteSegmentSeedsNothingEither() {
+        for action in CadenceCaptureAction.allCases {
+            #expect(
+                CadenceCaptureSeedResolver.seed(
+                    for: .action(action),
+                    dropKey: "list:p_\(UUID().uuidString)",
+                    todayKey: todayKey
+                ) == CadenceTaskComposerSeed()
+            )
+        }
+
+        // And the two ways a press ends without asking for anything.
+        #expect(CadenceCaptureSeedResolver.seed(for: .dismissed, dropKey: "date:today", todayKey: todayKey) == CadenceTaskComposerSeed())
+        #expect(CadenceCaptureSeedResolver.seed(for: .none, dropKey: "date:today", todayKey: todayKey) == CadenceTaskComposerSeed())
+    }
+
+    /// **A drop onto a row inherits that row's placement** — the list, the section and both dates,
+    /// and none of the judgements a row also carries. The key comes from `dropKey(for:)` rather
+    /// than a literal, so this is the seed the shipped path actually produces.
+    @Test func aDropOnARowSeedsThatRowsPlacement() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let project = Project(name: "Website")
+        let task = AppTask(title: "Ship the nav")
+        task.project = project
+        task.sectionName = "Backlog"
+        task.scheduledDate = "2026-08-20"
+        task.dueDate = "2026-08-24"
+        task.priority = .high
+        context.insert(project)
+        context.insert(task)
+
+        let seeded = CadenceCaptureSeedResolver.seed(
+            for: .drop,
+            dropKey: CadenceTaskDropSupport.dropKey(for: task),
+            todayKey: todayKey
+        )
+
+        #expect(seeded.container == .project(project.id))
+        #expect(seeded.sectionName == "Backlog")
+        #expect(seeded.doDateKey == "2026-08-20")
+        #expect(seeded.dueDateKey == "2026-08-24")
+        // Placement, not judgement: the row's priority is its own.
+        #expect(seeded.priority == .none)
+    }
+
+    /// **A section header seeds its section *and* its container**, which is the question T-337
+    /// asks. A section belongs to exactly one list, so a key naming only the column would resolve
+    /// against the Inbox default and quietly file the task in the wrong place — and the Inbox has
+    /// no columns to name, which is why the identity for it collapses back to the list.
+    @Test func aDropOnASectionHeaderSeedsItsColumnAndItsList() throws {
+        let areaID = UUID()
+        // Bound to a non-optional first: `seed(for:dropKey:todayKey:)` takes `String?`, so a
+        // `#require` written inline would be reported as redundant rather than checking anything.
+        let key: String = try #require(CadenceTaskDropSupport.dropKey(
+            forGroup: CadenceTaskDropSupport.groupIdentity(
+                container: .area(areaID),
+                listName: "Home",
+                sectionName: "Errands"
+            )
+        ))
+        let seeded = CadenceCaptureSeedResolver.seed(for: .drop, dropKey: key, todayKey: todayKey)
+
+        #expect(seeded.container == .area(areaID))
+        #expect(seeded.sectionName == "Errands")
+        // A column says where, not when: a header that also seeded a date would be inventing one.
+        #expect(seeded.doDateKey.isEmpty)
+        #expect(seeded.dueDateKey.isEmpty)
+    }
+
+    /// **An empty kanban column seeds exactly what the same column full of cards seeds.** A group's
+    /// identity comes from the list's configuration, not from its contents, so emptiness changes
+    /// nothing about the answer — which is the point, because the empty column is the case a row
+    /// drop cannot reach at all and therefore the one this whole rule exists for.
+    ///
+    /// Built through `sectionGroups(includingEmpty: true)`, the same call the board makes, so the
+    /// empty column is present here for the same reason it is present on screen.
+    @Test func anEmptyColumnSeedsWhatTheFilledOneNextToItSeeds() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let project = Project(name: "Website")
+        let card = AppTask(title: "Ship the nav")
+        card.project = project
+        card.sectionName = "Doing"
+        context.insert(project)
+        context.insert(card)
+
+        let columns = CadenceTaskQuerySupport.sectionGroups(
+            from: [card],
+            sectionNames: ["Doing", "Backlog"],
+            includingEmpty: true
+        )
+        let identities = columns.map { column in
+            CadenceTaskDropSupport.groupIdentity(
+                container: .project(project.id),
+                listName: "Website",
+                sectionName: column.title
+            )
+        }
+        #expect(columns.count == 2)
+        let empty = try #require(columns.firstIndex { $0.tasks.isEmpty })
+        let filled = try #require(columns.firstIndex { !$0.tasks.isEmpty })
+        #expect(columns[empty].title == "Backlog")
+
+        func seed(_ identity: CadenceTaskGroupDropIdentity) throws -> CadenceTaskComposerSeed {
+            let key: String = try #require(CadenceTaskDropSupport.dropKey(forGroup: identity))
+            return CadenceCaptureSeedResolver.seed(for: .drop, dropKey: key, todayKey: todayKey)
+        }
+
+        let emptySeed = try seed(identities[empty])
+        #expect(emptySeed.container == .project(project.id))
+        #expect(emptySeed.sectionName == "Backlog")
+        // The filled column beside it differs in exactly one field — its name — which is what says
+        // the identity is read off the column rather than off whatever happens to be sitting in it.
+        var asIfFilled = emptySeed
+        asIfFilled.sectionName = "Doing"
+        let filledSeed = try seed(identities[filled])
+        #expect(filledSeed == asIfFilled)
+        // And the empty one really is offered, rather than being drawn and then refusing.
+        #expect(CadenceTaskDropSupport.showsWhenEmpty(identities[empty]))
+    }
+
+    /// **A list with no columns drawn at all still has an identity**: the page's own empty state is
+    /// the drop target, and it seeds the list. This is the other empty case — a list detail or an
+    /// Inbox with nothing in it, where there is no row and no header narrower to point at.
+    @Test func anEmptyListGroupSeedsItsList() throws {
+        let projectID = UUID()
+        let identity = CadenceTaskDropSupport.groupIdentity(container: .project(projectID), listName: "Website")
+        let key: String = try #require(CadenceTaskDropSupport.dropKey(forGroup: identity))
+        let seeded = CadenceCaptureSeedResolver.seed(for: .drop, dropKey: key, todayKey: todayKey)
+
+        #expect(seeded.container == .project(projectID))
+        #expect(seeded.sectionName == TaskSectionDefaults.defaultName)
+        #expect(CadenceTaskDropSupport.showsWhenEmpty(identity))
+    }
+
+    /// **A drag that came down on nothing is a tap that travelled.** With no page seed left to fall
+    /// back to, the degrade-to-the-tap rule and the tap now agree by construction — which is what
+    /// makes "nothing under the finger" safe to leave as a plain miss rather than a cancel.
+    @Test func aDropOnNothingSeedsWhatATapSeeds() {
+        let tapped = CadenceCaptureSeedResolver.seed(for: .tap, dropKey: nil, todayKey: todayKey)
+
+        #expect(CadenceCaptureSeedResolver.seed(for: .drop, dropKey: nil, todayKey: todayKey) == tapped)
+        #expect(CadenceCaptureSeedResolver.seed(for: .drop, dropKey: "", todayKey: todayKey) == tapped)
+        #expect(tapped == CadenceTaskComposerSeed())
     }
 }
 

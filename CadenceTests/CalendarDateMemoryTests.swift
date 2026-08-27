@@ -48,6 +48,82 @@ struct CalendarDateMemoryTests {
         }
     }
 
+    /// The `calendar` parameter is honoured, and this is the assertion that says so on **any**
+    /// host. Pacific/Honolulu is UTC−10 and Pacific/Kiritimati is UTC+14, so midnight on the 19th
+    /// in one and midnight on the 20th in the other are **the same instant** — 2026-08-19T10:00Z.
+    /// An implementation that snaps in the caller's calendar and then spells the result in the
+    /// device's own time zone therefore returns the same key for both, whatever that device's zone
+    /// is, and cannot satisfy the two expectations below at once.
+    ///
+    /// Every call site passes `Calendar.current` today, so this pins an API promise rather than a
+    /// shipping bug — but the promise is the reason the parameter is there (T-302).
+    @Test
+    func theStoredKeyNamesTheDayTheGivenCalendarIsOn() throws {
+        let honolulu = try fixedZoneCalendar("Pacific/Honolulu")
+        let kiritimati = try fixedZoneCalendar("Pacific/Kiritimati")
+        // 2026-08-19 12:00 in Honolulu; 2026-08-20 12:00 in Kiritimati. One instant, two days.
+        let instant = try #require(
+            utcCalendar().date(from: DateComponents(year: 2026, month: 8, day: 19, hour: 22))
+        )
+
+        #expect(CadenceCalendarDateMemory.storageKey(for: instant, calendar: honolulu) == "2026-08-19")
+        #expect(CadenceCalendarDateMemory.storageKey(for: instant, calendar: kiritimati) == "2026-08-20")
+        // The premise, stated so it cannot rot: those two midnights really are one instant.
+        let honoluluMidnight = try startOfDay("2026-08-19", in: honolulu)
+        let kiritimatiMidnight = try startOfDay("2026-08-20", in: kiritimati)
+        #expect(honoluluMidnight == kiritimatiMidnight)
+    }
+
+    /// The parse side of the same promise. A key read back in a calendar has to land on midnight
+    /// **in that calendar's zone**, or the round trip through this type loses a day for any device
+    /// whose zone straddles the stored day's midnight.
+    @Test
+    func aStoredKeyIsReadBackAtMidnightInTheGivenCalendarsZone() throws {
+        let honolulu = try fixedZoneCalendar("Pacific/Honolulu")
+        let kiritimati = try fixedZoneCalendar("Pacific/Kiritimati")
+
+        let honoluluMidnight = try startOfDay("2026-08-19", in: honolulu)
+        let kiritimatiMidnight = try startOfDay("2026-08-20", in: kiritimati)
+
+        #expect(CadenceCalendarDateMemory.date(fromStored: "2026-08-19", calendar: honolulu) == honoluluMidnight)
+        #expect(CadenceCalendarDateMemory.date(fromStored: "2026-08-20", calendar: kiritimati) == kiritimatiMidnight)
+    }
+
+    /// A key naming a month that does not exist is not a rolled-over date, it is nothing
+    /// remembered. The calendar-aware parse is component arithmetic and `month: 13` rolls into the
+    /// next January on its own, so the validation has to happen before it.
+    @Test
+    func anImpossibleStoredKeyReadsBackAsNothingRemembered() throws {
+        let honolulu = try fixedZoneCalendar("Pacific/Honolulu")
+
+        #expect(CadenceCalendarDateMemory.date(fromStored: "2026-13-01", calendar: honolulu) == nil)
+        #expect(CadenceCalendarDateMemory.date(fromStored: "2026-02-30", calendar: honolulu) == nil)
+    }
+
+    private func utcCalendar() -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        return calendar
+    }
+
+    /// A Gregorian calendar in a named zone that has never observed daylight saving, so the
+    /// offsets quoted above hold for every date in these tests.
+    private func fixedZoneCalendar(_ identifier: String) throws -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: identifier))
+        return calendar
+    }
+
+    private func startOfDay(_ key: String, in calendar: Calendar) throws -> Date {
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        let components = DateComponents(
+            year: parts.first,
+            month: parts.dropFirst().first,
+            day: parts.dropFirst(2).first
+        )
+        return try #require(calendar.date(from: components))
+    }
+
     /// "Nothing remembered" has three spellings and all three have to mean the same thing, because
     /// the caller's fallback is the real today and its alternative is landing on a date it invented.
     @Test

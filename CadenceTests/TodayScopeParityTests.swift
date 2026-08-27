@@ -78,22 +78,23 @@ struct TodayScopeParityTests {
     }
     #endif
 
-    /// A past-do task must not be filed under "Planned Today" — the label would be describing a
-    /// plan the user made yesterday and missed. macOS gives it its own "Past Do" section.
-    @Test func pastDoTasksGetTheirOwnGroupRatherThanPlannedToday() {
+    /// Today's groups are Overdue and then the day's lists (T-305). These tasks have no list, so
+    /// they all land in Inbox — and the date distinctions that used to be three separate headings
+    /// survive as the *order* inside that one group: past do, then due today, then do today.
+    @Test func theDaysNonOverdueWorkFallsIntoItsListsGroupInTodayRankOrder() {
         let tasks = CadenceTaskQuerySupport.activeTodayTasks(
             from: seededTasks(),
             todayKey: todayKey,
             sortMode: .listOrder
         )
 
-        let groups = CadenceTaskQuerySupport.todayGroups(from: tasks, todayKey: todayKey)
-        let byKind = Dictionary(uniqueKeysWithValues: groups.map { ($0.kind, $0.tasks.map(\.title)) })
+        let groups = CadenceTaskQuerySupport.todayGroups(from: tasks, todayKey: todayKey, contexts: [])
 
-        #expect(byKind[.pastDo] == ["Past do"])
-        #expect(byKind[.overdue] == ["Past due"])
-        #expect(byKind[.dueToday] == ["Due today"])
-        #expect(byKind[.plannedToday] == ["Do today"])
+        #expect(groups.map(\.title) == ["Overdue", "Inbox"])
+        #expect(groups.map { $0.tasks.map(\.title) } == [
+            ["Past due"],
+            ["Past do", "Due today", "Do today"],
+        ])
     }
 
     /// A due date outranks a do date in both implementations, so a task that is both past due and
@@ -108,12 +109,13 @@ struct TodayScopeParityTests {
 
         #expect(tasks.count == 1)
 
-        let groups = CadenceTaskQuerySupport.todayGroups(from: tasks, todayKey: todayKey)
-        #expect(groups.map(\.kind) == [.overdue])
+        let groups = CadenceTaskQuerySupport.todayGroups(from: tasks, todayKey: todayKey, contexts: [])
+        #expect(groups.map(\.identity) == [.overdue])
     }
 
-    /// Section order on a flat, un-grouped list has to match the grouped order, or the same four
-    /// buckets read differently depending on a toggle.
+    /// The flat sort still ranks the day past due → past do → due today → do today. Since T-305 it
+    /// is the *only* thing that says so — Today's headings are lists now, so this rank is what
+    /// orders the rows inside each of them.
     @Test func flatTodaySortOrderMatchesTheGroupOrder() {
         let sorted = CadenceTaskQuerySupport.activeTodayTasks(
             from: seededTasks(),

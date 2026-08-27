@@ -100,9 +100,10 @@ struct iOSCompactRootShell: View {
         // The palette and the drag puck both have to leave the 46pt bar row the button sits in, so
         // they are drawn here, once, above every tab — together with the three composers a finished
         // press can ask for. Same reasoning as `iOSTaskInspectorHost()`: a control that must draw
-        // outside its container cannot be hosted by that container. A plain tap is still
-        // deliberately unscoped — you press it from any tab and file the task afterwards — which is
-        // the `baseSeed` the bar's button does *not* pass; a page's corner `+` does.
+        // outside its container cannot be hosted by that container. A plain tap is deliberately
+        // unscoped — you press it from any tab and file the task afterwards — and since T-337 that
+        // is true of the corner `+` as well: neither placement passes a seed, because context comes
+        // from the drop target and nowhere else.
         .iOSCaptureHost(captureInteraction)
         // Carries the bar's colour down through the home-indicator strip, so the bar does not float
         // on a band of page background. Bottom edge only — the status bar keeps the page's own.

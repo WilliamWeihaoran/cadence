@@ -75,10 +75,11 @@ struct CrossPlatformParityTests {
         }
     }
 
-    /// The widget helpers format by hand — a deliberate main-actor workaround, since widget
-    /// timeline providers cannot touch `DateFormatters`' isolated statics. The workaround read its
-    /// components off `Calendar.current`, so the workaround itself introduced the divergence: the
-    /// Today and Calendar widgets matched no rows and every task rendered "Overdue".
+    /// The widget helpers used to format by hand, as a main-actor workaround: widget timeline
+    /// providers run off the main actor and `DateFormatters` was isolated. The workaround read its
+    /// components off `Calendar.current`, so the workaround itself introduced a divergence — the
+    /// Today and Calendar widgets matched no rows and every task rendered "Overdue". They forward
+    /// to `DateFormatters` now (T-301), and this stays as the assertion that they still agree.
     @Test func theWidgetsDeriveTheSameStorageKeyAsTheApp() throws {
         let reference = try #require(DateFormatters.date(from: "2026-08-11"))
 
@@ -99,6 +100,29 @@ struct CrossPlatformParityTests {
 
         let parsed = try #require(CadenceWidgetDateSupport.parsedDate(fromKey: "2026-08-11"))
         #expect(CadenceWidgetDateSupport.dateKey(from: parsed) == "2026-08-11")
+    }
+
+    /// A widget's date labels sit on the home screen beside app chrome that is English on every
+    /// host, because `DateFormatters` pins every display format to `en_US_POSIX`. These three were
+    /// built with `date.formatted(...)` instead, which follows `Locale.current`: measured on this
+    /// toolchain under `fr_FR` they read `SAM.` and `15 août`, and under `ar_SA` — where the
+    /// current calendar is Islamic too — `سبت`, `٢` and `٢ ربيع الأول`. The assertion is the
+    /// English value, which is what a pinned formatter returns on any of those hosts.
+    @Test func theWidgetsSpellDatesInEnglishTheWayTheAppDoes() throws {
+        let saturday = try #require(DateFormatters.date(from: "2026-08-15"))
+
+        #expect(CadenceWidgetDateSupport.weekdayLabel(from: saturday) == "SAT")
+        #expect(CadenceWidgetDateSupport.dayNumberLabel(from: saturday) == "15")
+        #expect(CadenceWidgetDateSupport.dayLabel(fromKey: "2026-08-15") == "Aug 15")
+        #expect(CadenceWidgetDateSupport.dueLabel(for: "2026-08-15", todayKey: "2026-08-01") == "Due Aug 15")
+        #expect(CadenceWidgetDateSupport.dueLabel(for: "2026-08-15", todayKey: "2026-08-20") == "Overdue Aug 15")
+
+        // The app's own spelling of the same day, so the two cannot drift apart in either
+        // direction — the widget is not merely English, it is the app's English.
+        #expect(CadenceWidgetDateSupport.dayLabel(fromKey: "2026-08-15")
+            == DateFormatters.shortDateString(from: "2026-08-15"))
+        #expect(CadenceWidgetDateSupport.weekdayLabel(from: saturday)
+            == DateFormatters.dayOfWeek.string(from: saturday).uppercased())
     }
 
     // MARK: - Archived kanban columns survive a write through `sectionNames`

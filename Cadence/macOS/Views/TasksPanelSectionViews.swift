@@ -219,7 +219,8 @@ struct TasksPanelIntentSectionView: View {
     let title: String
     let accent: Color
     let tasks: [AppTask]
-    /// The panel's surface answer — see `TasksPanel.options`.
+    /// The panel's surface answer, narrowed by the group's own — see `TasksPanel.options` and
+    /// `CadenceTodayTaskGroup.showsContainerChip`.
     let showsContainer: Bool
     let contexts: [Context]
     let areas: [Area]
@@ -250,11 +251,14 @@ struct TasksPanelIntentSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    // `.standard`, not `.todayGrouped`: that style suppresses the do-date pill and
-                    // the list chip because the *group header* used to name the list. Today groups
-                    // by intent now, so the row is the only thing that can say where a task lives
-                    // and when it was meant to be done — which is what iOS's Today row already
-                    // said, chip for chip.
+                    // `.standard`, not `.todayGrouped`: that style suppresses the do-date pill as
+                    // well as the list chip, and the do date is a thing Today's rows still have to
+                    // say — a list group holds work due today and work merely planned for it, and
+                    // the row is the only thing that tells them apart. The **list** chip is
+                    // withheld by `showsContainer` instead (`CadenceTodayTaskGroup`
+                    // .showsContainerChip), which is off inside a list group and on inside Overdue,
+                    // so the one duplication `.todayGrouped` existed to avoid is still avoided
+                    // without losing the date.
                     MacTaskRow(task: task, style: .standard, showsContainer: showsContainer, contexts: contexts, areas: areas, projects: projects)
                         .opacity(opacity)
                         .draggable(taskDragPayload(task))

@@ -382,3 +382,43 @@ nonisolated enum CadenceCaptureDropHitTest: Sendable {
         return best?.id
     }
 }
+
+// MARK: - What a finished press seeds
+
+/// The composer seed a finished capture press commits to.
+///
+/// **T-337: context comes from where you drop it, not from where you started.** A tap is just a
+/// task. A palette segment is just a task, an event or a note. Only a drag that came down on a
+/// registered target inherits anything, and a drag that came down on nothing is a tap that
+/// travelled. So the drop key is the *only* input that can put a list, a section or a date into a
+/// new task, and this function is where that is said once.
+///
+/// It takes the outcome rather than only the key so the rule is a value the wrong answer can be
+/// mutated into: a `.tap` arm that consulted `dropKey` would compile, would look reasonable, and
+/// would restore exactly the page-seeding this ticket removed. That reversal is the one worth a
+/// failing test — see `T-282`, which seeded a page's corner `+` for reasons this supersedes.
+/// Main-actor isolated, unlike everything above it in this file, because it reaches
+/// `CadenceTaskDropSupport` — and a seed is only ever built while presenting a composer, which is
+/// main-actor work anyway. The gesture values above stay `nonisolated` because they are pure
+/// geometry and arithmetic with nothing to reach.
+enum CadenceCaptureSeedResolver {
+    static func seed(
+        for outcome: CadenceCapturePressOutcome,
+        dropKey: String?,
+        todayKey: String
+    ) -> CadenceTaskComposerSeed {
+        switch outcome {
+        case .drop:
+            // `base` is empty because the button has nothing of its own to contribute any more —
+            // which is also what makes a fizzled drop identical to a tap rather than a fallback to
+            // the page. See `CadenceTaskDropSupport.seed(forDropKey:todayKey:base:)`.
+            return CadenceTaskDropSupport.seed(
+                forDropKey: dropKey,
+                todayKey: todayKey,
+                base: CadenceTaskComposerSeed()
+            )
+        case .tap, .action, .dismissed, .none:
+            return CadenceTaskComposerSeed()
+        }
+    }
+}

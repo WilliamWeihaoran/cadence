@@ -53,6 +53,27 @@ nonisolated enum DateFormatters {
         return f
     }()
 
+    /// `yyyyMMdd-HHmmss` — the local-time stamp `PersistenceController` names a store backup
+    /// folder with, as in `20260827-014233-preMigration`.
+    ///
+    /// Storage rather than display, like `archiveTimestamp`: nobody reads it as a sentence, but a
+    /// directory name is a name, and one that followed the host would sort differently and could
+    /// contain a slash. It is here rather than beside the backup code because this file's opening
+    /// rule is categorical — an agent looking for every date format Cadence writes has this file
+    /// and nothing else to look in, and a formatter declared privately somewhere else is invisible
+    /// to that search however correct it is.
+    ///
+    /// Local time, not UTC, and that is the one difference from `archiveTimestamp`: this string is
+    /// shown back to the user as the backup they are being offered, so it has to name the hour
+    /// they remember. Uniqueness does not rest on it — `uniqueBackupDirectory` suffixes a
+    /// collision — so a DST fallback repeating an hour costs a `-2`, not a lost backup.
+    static let backupFolderTimestamp: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        return f
+    }()
+
     /// The six formatters below are locale-pinned for the reason `monthYear` and `shortMonthYear`
     /// state: **this repo pins every fixed-format formatter**, because the app is English-only and
     /// an unpinned one follows the host's locale. They were the only fixed-format formatters that

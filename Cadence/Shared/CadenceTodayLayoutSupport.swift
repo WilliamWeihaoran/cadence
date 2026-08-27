@@ -137,9 +137,16 @@ nonisolated enum CadenceTodayLayoutSupport {
 /// `Theme.bg` page — takes the card for the same reason the phone does.
 nonisolated struct CadenceTodaySectionMetrics: Equatable, Sendable {
     /// Between one counted task group and the next. **One number for both layouts**: the gap
-    /// between "Overdue" and "Planned Today" is not something a wider pane needs more of, and it is
-    /// the 14/15 split this type exists to close. It is also what Inbox and All Tasks stack at, so
-    /// the three segments of one tab agree.
+    /// between "Overdue" and the first list under it is not something a wider pane needs more of,
+    /// and it is the 14/15 split this type exists to close. It is also what Inbox and All Tasks
+    /// stack at, so the three segments of one tab agree.
+    ///
+    /// This used to read "between Overdue and Planned Today", and cited that pair as a split that
+    /// was deliberate rather than width-driven. The *spacing* claim still holds and is the only
+    /// claim this property makes; the pair does not. T-305 removed "Planned Today" — on the Today
+    /// page "today" is the page, so the heading restated it — and grouped the day's remaining work
+    /// by list instead. Overdue is still the first group and still the only date-shaped one. See
+    /// `CadenceTaskQuerySupport.todayGroups`.
     let groupSpacing: CGFloat
     /// How wide the column of rows grows before it stops. The one figure that legitimately differs:
     /// a task pane whose floor is `taskPaneMinWidth` can hold a wider readable column than a phone,

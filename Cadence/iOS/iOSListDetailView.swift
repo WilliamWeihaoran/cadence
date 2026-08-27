@@ -189,11 +189,12 @@ struct iOSListDetailView: View {
                 .id(containerIdentity)
         }
         .background(Theme.bg.ignoresSafeArea())
-        // Seeded with this list, so the composer opens already filed where you are. The seed is
-        // recomputed from `containerSelection` on every update, so switching lists in the iPad
-        // sidebar — which updates this subtree rather than rebuilding it — cannot leave the button
-        // pointing at the list you just left.
-        .iOSFloatingCreateTaskButton(seed: CadenceTaskComposerSeed(container: containerSelection))
+        // Unseeded. It used to hand this page's list to the composer; T-337 moved that inheritance
+        // to the drop — the list's own section headers, its kanban columns and its empty state are
+        // all drop targets, and each seeds this container by name. That also retires the staleness
+        // this comment used to warn about: with nothing captured at the button, switching lists in
+        // the iPad sidebar has nothing left to leave pointing at the list you just left.
+        .iOSFloatingCreateTaskButton()
         // The page carries its own header, so an empty inline nav title was the only thing keeping
         // the bar around — 44pt of chrome holding one chevron above a header that already named the
         // list. The chevron is in the header now and the bar is gone. On iPad this view is hosted

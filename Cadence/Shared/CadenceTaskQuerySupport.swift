@@ -82,28 +82,183 @@ enum CadenceTaskQuerySupport {
         return dayStart..<calendar.startOfDay(for: nextDay)
     }
 
-    /// The same four sections macOS's `todayDateSections` draws, in the same order. A due date
-    /// outranks a do date, so a task is only ever considered for `pastDo` once both due buckets
-    /// have passed on it.
-    static func todayGroups(from tasks: [AppTask], todayKey: String) -> [CadenceTodayTaskGroup] {
+    /// Today's groups, on both platforms: **Overdue, and then the day's work by list** (T-305).
+    ///
+    /// This replaced a four-way split by date intent — Overdue, Past Do, Due Today, Planned Today.
+    /// Three things were wrong with it, and the user named all three:
+    ///
+    /// 1. "Planned Today" restates the page. On the Today view everything is today, so the heading
+    ///    carried no information — the standing rule that a page header does not describe the page
+    ///    you are already on, applied one level down.
+    /// 2. Today was the only task surface grouped by *when*; every other one groups by list, and
+    ///    the `PAST DUE LISTS` cards directly above these groups are list-shaped too. One page,
+    ///    two grouping axes.
+    /// 3. A rolled-over task moved from one date bucket to another, which looked like nothing had
+    ///    happened. It now leaves the red section and joins its list, which is what makes the roll
+    ///    visible.
+    ///
+    /// **Overdue stays at the top and stays date-shaped**, deliberately: a missed deadline is a
+    /// fact about the day that outranks where the work lives, and it is the one thing on Today
+    /// worth pulling out of its list. Everything else — due today, do today, and yesterday's plans
+    /// once they have been rolled — falls into its list's group.
+    ///
+    /// **The order inside a group is the caller's sort, untouched.** This partitions and never
+    /// re-sorts: both hosts hand in an array already ordered by `activeTodayTasks` (iOS) or
+    /// `compareTasksForCurrentSort` (macOS), and both of those lead with a today-rank, so a list
+    /// group reads due-today before merely-do-today without needing a heading to say so. That rank
+    /// is where the deleted axis went; it is a sort now instead of four headings.
+    ///
+    /// `contexts` is only for the order of the list groups — see `listGroupOrder(contexts:)`.
+    static func todayGroups(
+        from tasks: [AppTask],
+        todayKey: String,
+        contexts: [Context]
+    ) -> [CadenceTodayTaskGroup] {
         let overdue = tasks.filter { !$0.dueDate.isEmpty && $0.dueDate < todayKey }
-        let dueToday = tasks.filter { $0.dueDate == todayKey }
-        let claimedIDs = Set(overdue.map(\.id)).union(dueToday.map(\.id))
-        let remaining = tasks.filter { !claimedIDs.contains($0.id) }
+        let overdueIDs = Set(overdue.map(\.id))
 
-        return [
-            CadenceTodayTaskGroup(kind: .overdue, tasks: overdue),
-            CadenceTodayTaskGroup(
-                kind: .pastDo,
-                tasks: remaining.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate < todayKey }
-            ),
-            CadenceTodayTaskGroup(kind: .dueToday, tasks: dueToday),
-            CadenceTodayTaskGroup(
-                kind: .plannedToday,
-                tasks: remaining.filter { $0.scheduledDate.isEmpty || $0.scheduledDate >= todayKey }
+        var groups: [CadenceTodayTaskGroup] = []
+        if !overdue.isEmpty {
+            groups.append(
+                CadenceTodayTaskGroup(
+                    identity: .overdue,
+                    title: CadenceTodayPresentationSupport.overdueSectionTitle,
+                    accent: CadenceTodayPresentationSupport.overdueSectionAccent,
+                    listIcon: nil,
+                    contextIcon: nil,
+                    contextColor: nil,
+                    tasks: overdue
+                )
             )
-        ]
-        .filter { !$0.tasks.isEmpty }
+        }
+
+        groups.append(
+            contentsOf: todayListGroups(
+                from: tasks.filter { !overdueIDs.contains($0.id) },
+                contexts: contexts
+            )
+        )
+        return groups
+    }
+
+    /// The day's remaining work, one group per list, in the sidebar's order.
+    ///
+    /// **A task with no list gets the Inbox group, and the Inbox group sits first.** That is not a
+    /// new answer invented for Today: `TasksPanelSupport.listGroups`, the Kanban board's first
+    /// column, `CadenceBoardCardMetadata.inboxLabel` and the sidebar's top row all already call an
+    /// unfiled task's home "Inbox", with `tray.fill` and a neutral tint, and `listGroupOrder`
+    /// leads with it. The alternative considered was a nameless bucket at the foot of the page —
+    /// which is "Planned Today" again in everything but the label, a group defined by what it is
+    /// *not*, on the page whose whole complaint was a heading that carried no information. Inbox is
+    /// also a real destination, so this group can accept a dropped `+`; a tail bucket could not.
+    static func todayListGroups(
+        from tasks: [AppTask],
+        contexts: [Context]
+    ) -> [CadenceTodayTaskGroup] {
+        var tasksByKey: [String: [AppTask]] = [:]
+        var firstTaskByKey: [String: AppTask] = [:]
+        for task in tasks {
+            let key = listGroupKey(for: task)
+            tasksByKey[key, default: []].append(task)
+            if firstTaskByKey[key] == nil { firstTaskByKey[key] = task }
+        }
+
+        let shells = firstTaskByKey.mapValues { listGroupShell(for: $0) }
+        let ordered = listGroupOrder(contexts: contexts).filter { tasksByKey[$0] != nil }
+        let orderedSet = Set(ordered)
+        // A list whose context was archived, or which arrived from CloudKit before its context
+        // did, is reachable from a task and not from `contexts`. Sorted by the name the header
+        // will actually print, then by key, so the tail is stable rather than in `Dictionary`
+        // order.
+        let leftovers = tasksByKey.keys
+            .filter { !orderedSet.contains($0) }
+            .sorted { lhs, rhs in
+                let lhsTitle = shells[lhs]?.title ?? ""
+                let rhsTitle = shells[rhs]?.title ?? ""
+                if lhsTitle != rhsTitle {
+                    return lhsTitle.localizedCaseInsensitiveCompare(rhsTitle) == .orderedAscending
+                }
+                return lhs < rhs
+            }
+
+        return (ordered + leftovers).compactMap { key in
+            guard let shell = shells[key], let groupTasks = tasksByKey[key] else { return nil }
+            return CadenceTodayTaskGroup(
+                identity: shell.identity,
+                title: shell.title,
+                accent: shell.accent,
+                listIcon: shell.listIcon,
+                contextIcon: shell.contextIcon,
+                contextColor: shell.contextColor,
+                tasks: groupTasks
+            )
+        }
+    }
+
+    /// Which list a task is grouped under, in the one spelling this app has for that string.
+    ///
+    /// **Project before area**, which is `CadenceTaskDropSupport.listKey(for:)`'s rule and its
+    /// reason: `TaskCreationService` leaves a project task's `area` nil, so a row holding both has
+    /// been repaired into that state and the more specific container is where the UI already shows
+    /// it. The key itself comes from `CadenceTaskDropSupport.containerKey(for:)` rather than being
+    /// re-spelled, so a group's id and the drop key its header offers cannot drift apart.
+    static func listGroupKey(for task: AppTask) -> String {
+        if let project = task.project {
+            return CadenceTaskDropSupport.containerKey(for: .project(project.id))
+        }
+        if let area = task.area {
+            return CadenceTaskDropSupport.containerKey(for: .area(area.id))
+        }
+        return CadenceTaskDropSupport.containerKey(for: .inbox)
+    }
+
+    /// Every list key in sidebar order, Inbox first — the order any by-list grouping presents its
+    /// groups in. `TasksPanelSupport.listGroups` reads this one too, so All Tasks' by-list mode and
+    /// Today's groups cannot come out in different orders.
+    static func listGroupOrder(contexts: [Context]) -> [String] {
+        var order: [String] = [CadenceTaskDropSupport.containerKey(for: .inbox)]
+        for context in contexts.sorted(by: { $0.order < $1.order }) {
+            let sortedAreas = (context.areas ?? []).sorted { $0.order < $1.order }
+            let sortedProjects = (context.projects ?? []).sorted { $0.order < $1.order }
+            order.append(contentsOf: sortedAreas.map { CadenceTaskDropSupport.containerKey(for: .area($0.id)) })
+            order.append(contentsOf: sortedProjects.map { CadenceTaskDropSupport.containerKey(for: .project($0.id)) })
+        }
+        return order
+    }
+
+    /// A list group with no tasks in it yet: everything the header draws, read off one member.
+    private static func listGroupShell(for task: AppTask) -> CadenceTodayTaskGroup {
+        if let project = task.project {
+            return CadenceTodayTaskGroup(
+                identity: .list(key: CadenceTaskDropSupport.containerKey(for: .project(project.id))),
+                title: project.name,
+                accent: Color(hex: project.colorHex),
+                listIcon: project.icon,
+                contextIcon: project.context?.icon,
+                contextColor: project.context.map { Color(hex: $0.colorHex) },
+                tasks: []
+            )
+        }
+        if let area = task.area {
+            return CadenceTodayTaskGroup(
+                identity: .list(key: CadenceTaskDropSupport.containerKey(for: .area(area.id))),
+                title: area.name,
+                accent: Color(hex: area.colorHex),
+                listIcon: area.icon,
+                contextIcon: area.context?.icon,
+                contextColor: area.context.map { Color(hex: $0.colorHex) },
+                tasks: []
+            )
+        }
+        return CadenceTodayTaskGroup(
+            identity: .list(key: CadenceTaskDropSupport.containerKey(for: .inbox)),
+            title: CadenceBoardCardMetadata.inboxLabel,
+            accent: Theme.dim,
+            listIcon: "tray.fill",
+            contextIcon: nil,
+            contextColor: nil,
+            tasks: []
+        )
     }
 
     static func activeInboxTasks(from tasks: [AppTask], sortMode: CadenceTaskSortMode) -> [AppTask] {
@@ -251,9 +406,23 @@ enum CadenceTaskQuerySupport {
     /// read better with it. The definition lives on the enum.
     static func priorityRank(_ priority: TaskPriority) -> Int { priority.rank }
 
-    /// Mirrors the section order in `todayGroups` so a flat, un-grouped Today list still reads
-    /// past due → past do → due today → do today.
-    private static func todayRank(_ task: AppTask, todayKey: String) -> Int {
+    /// How urgent a task is *today*: past due, then past do, then due today, then do today.
+    ///
+    /// **Since T-305 this is the only thing that says so.** Today used to head those four states as
+    /// four sections; it groups by list now, so the day's shape survives as the leading term of the
+    /// sort inside each list rather than as headings above it.
+    ///
+    /// A due date outranks a do date, exactly as `todayGroups` and `dateBuckets` have it: `dueDate
+    /// == todayKey` is tested *before* `scheduledDate < todayKey`, so a task due today and planned
+    /// for yesterday reads as due-today.
+    ///
+    /// Internal rather than `private` for two reasons, and the second is the load-bearing one: so
+    /// tests reach the copy production runs (the rule `dateBuckets` records), and so macOS's
+    /// `TasksPanel.todayTaskSortRank` can *call* it. That method used to be a fourth spelling of
+    /// this rank which disagreed with this one — it tested `scheduledDate < todayKey` before
+    /// `dueDate == todayKey`, so the two platforms ordered a task due today and do-dated yesterday
+    /// differently, on the same day, from the same data.
+    static func todayRank(_ task: AppTask, todayKey: String) -> Int {
         if !task.dueDate.isEmpty && task.dueDate < todayKey { return 0 }
         if task.dueDate == todayKey { return 2 }
         if !task.scheduledDate.isEmpty && task.scheduledDate < todayKey { return 1 }

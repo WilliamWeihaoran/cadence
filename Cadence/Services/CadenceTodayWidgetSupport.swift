@@ -211,51 +211,56 @@ nonisolated enum CadenceTodayWidgetSupport {
     }
 }
 
+/// The widget target's date vocabulary.
+///
+/// **Everything here now forwards to `DateFormatters`.** This enum was originally a hand-rolled
+/// copy because `DateFormatters` was main-actor isolated and widget timeline providers run off the
+/// main actor — but the T-87 sweep marked that enum `nonisolated`, and `Cadence/Shared/`
+/// `DateFormatters.swift` is compiled into `CadenceWidgets` alongside this file. So the workaround
+/// outlived its reason, and what was left of it was a second set of date formats that drifted:
+/// the labels below were built with `date.formatted(...)`, which follows `Locale.current`, so a
+/// widget on a French phone rendered `SAM.` and `15 août` beside the app's English chrome on the
+/// same home screen. The pinned formatters are the whole point of that file.
 nonisolated enum CadenceWidgetDateSupport {
     /// Gregorian regardless of `Calendar.current`'s identifier, matching `DateFormatters.ymd`,
-    /// which is what every stored key was written with. Formatting by hand here is a deliberate
-    /// main-actor workaround (see `parsedDate` below) — but reading the components off
-    /// `Calendar.current` made the workaround introduce a calendar divergence: under a Buddhist
-    /// current calendar this returned `"2569-08-11"`, which matches no row in the store, so the
-    /// Today and Calendar widgets rendered permanently empty and every task read "Overdue".
+    /// which is what every stored key was written with. The hand-rolled copy this replaces once
+    /// read its components off `Calendar.current`: under a Buddhist current calendar `dateKey`
+    /// then returned `"2569-08-11"`, which matches no row in the store, so the Today and Calendar
+    /// widgets rendered permanently empty and every task read "Overdue".
     nonisolated static func storageCalendar(inheritingTimeZoneFrom calendar: Calendar) -> Calendar {
-        var gregorian = Calendar(identifier: .gregorian)
-        gregorian.timeZone = calendar.timeZone
-        return gregorian
+        DateFormatters.storageCalendar(inheritingTimeZoneFrom: calendar)
     }
 
     /// Calendar-injectable core. The `Calendar.current` convenience below is what the widget
     /// actually calls, but a test host is always Gregorian, so without a seam no assertion here
     /// can tell a correct implementation from one that reads `Calendar.current`'s components.
     nonisolated static func dateKey(from date: Date, calendar: Calendar) -> String {
-        let components = storageCalendar(inheritingTimeZoneFrom: calendar)
-            .dateComponents([.year, .month, .day], from: date)
-        let year = components.year ?? 0
-        let month = components.month ?? 1
-        let day = components.day ?? 1
-        return String(format: "%04d-%02d-%02d", year, month, day)
+        DateFormatters.dateKey(from: date, calendar: calendar)
     }
 
     nonisolated static func dateKey(from date: Date) -> String {
         dateKey(from: date, calendar: .current)
     }
 
+    /// `"SAT"`. Pinned to `en_US_POSIX` via `DateFormatters.dayOfWeek`, so it reads the same on
+    /// every host — see the note on this enum for what following the host looked like.
     nonisolated static func weekdayLabel(from date: Date) -> String {
-        date.formatted(.dateTime.weekday(.abbreviated)).uppercased()
+        DateFormatters.dayOfWeek.string(from: date).uppercased()
     }
 
+    /// `"15"`. Pinned too, and the numerals are the reason: `DateFormatters.dayNumber` documents
+    /// that an unpinned `"d"` renders Arabic-Indic digits under an `ar` host.
     nonisolated static func dayNumberLabel(from date: Date) -> String {
-        date.formatted(.dateTime.day())
+        DateFormatters.dayNumber.string(from: date)
     }
 
     /// Cadence's single due-date vocabulary: `nil` (no due date at all), "Due today",
     /// "Due tomorrow", "Overdue Aug 2", "Due Aug 14".
     ///
     /// This is the one implementation — `CadenceFocusSupport.dueLabel(forDueDateKey:todayKey:)`
-    /// forwards here. It lives in this enum rather than beside the focus helper because it has to
-    /// stay `nonisolated`: widget timeline providers run off the main actor, and every date helper
-    /// the focus copy reached for (`DateFormatters.shortDateString`, `.dayOffset`) is main-actor
-    /// isolated. Parsing goes through `parsedDate(fromKey:)` for the same reason.
+    /// forwards here. It lives in this enum rather than beside the focus helper because that is
+    /// where the widget target's callers already look for it; the `nonisolated` marks are kept
+    /// explicit for the same reason, since widget timeline providers run off the main actor.
     ///
     /// Returns `nil` — never a generic stand-in string — when the task has no due date, so a task
     /// due later can never render identically to one with no deadline at all. An overdue task
@@ -281,23 +286,15 @@ nonisolated enum CadenceWidgetDateSupport {
         return "Due \(day)"
     }
 
-    /// "Aug 14" for a `yyyy-MM-dd` key, falling back to the raw key when it cannot be parsed —
-    /// the same contract as `DateFormatters.shortDateString(from:)`, minus the main-actor formatter.
+    /// "Aug 14" for a `yyyy-MM-dd` key, falling back to the raw key when it cannot be parsed.
+    /// Literally `DateFormatters.shortDateString(from:)` — the app and the widget say the date the
+    /// same way because they now say it with the same formatter.
     nonisolated static func dayLabel(fromKey key: String) -> String {
-        guard let date = parsedDate(fromKey: key) else { return key }
-        return date.formatted(.dateTime.month(.abbreviated).day())
+        DateFormatters.shortDateString(from: key)
     }
 
-    /// Parses a `yyyy-MM-dd` key without touching `DateFormatters`, whose statics are main-actor
-    /// isolated. Widget timeline providers run off the main actor, so every helper in this enum
-    /// has to stay `nonisolated` — same reason `dateKey(from:)` formats by hand.
+    /// Resolves a `yyyy-MM-dd` key to midnight in the current calendar's time zone.
     nonisolated static func parsedDate(fromKey key: String) -> Date? {
-        let parts = key.split(separator: "-")
-        guard parts.count == 3,
-              let year = Int(parts[0]),
-              let month = Int(parts[1]),
-              let day = Int(parts[2]) else { return nil }
-        return storageCalendar(inheritingTimeZoneFrom: .current)
-            .date(from: DateComponents(year: year, month: month, day: day))
+        DateFormatters.date(from: key, in: .current)
     }
 }

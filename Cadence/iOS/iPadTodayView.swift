@@ -16,6 +16,9 @@ struct iPadTodayView: View {
     /// `CadenceTodayOverdueSummarySupport`.
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    /// For the *order* of Today's list groups only — `CadenceTaskQuerySupport.listGroupOrder`
+    /// presents them in sidebar order, which is a context-by-context walk (T-305).
+    @Query(sort: \Context.order) private var contexts: [Context]
     @AppStorage("ios.today.sortMode") private var sortModeRaw = CadenceTaskSortMode.priority.rawValue
     @AppStorage("ios.today.showCompleted") private var showCompleted = false
     @AppStorage("ios.today.sidePanel") private var sidePanelRaw = iPadTodaySidePanel.notes.rawValue
@@ -81,9 +84,13 @@ struct iPadTodayView: View {
     }
 
     /// The banner is already listing the tasks it is offering to roll, so the grouped list below it
-    /// withholds them — a Past Do section under the notice would be the same rows twice. Dismissing
-    /// merges them straight back in; `groupedTasks` returns the array whole once the notice is
-    /// down, and nothing is written to make that happen.
+    /// withholds them — the same rows under the notice *and* in their lists' groups would be the
+    /// same rows twice. Dismissing merges them straight back in; `groupedTasks` returns the array
+    /// whole once the notice is down, and nothing is written to make that happen.
+    ///
+    /// **The withholding is what makes the roll visible now** (T-305). The offered tasks are held
+    /// out of their own lists' groups, so confirming the roll does not shuffle rows between two
+    /// date buckets — a list group appears, or grows, with the work that was yesterday's.
     private var todayTaskGroups: [CadenceTodayTaskGroup] {
         CadenceTaskQuerySupport.todayGroups(
             from: CadenceTodayRolloverSupport.groupedTasks(
@@ -91,7 +98,8 @@ struct iPadTodayView: View {
                 withholding: pastDoTasks,
                 isNoticeVisible: isRolloverNoticeVisible
             ),
-            todayKey: todayKey
+            todayKey: todayKey,
+            contexts: contexts
         )
     }
 
@@ -185,10 +193,14 @@ struct iPadTodayView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .background(Theme.bg.ignoresSafeArea())
-        // Seeded with today's do date, which is what the "Add a task for today…" field it replaced
-        // did implicitly and silently. The button says nothing about the date; the sheet's chip
-        // strip shows it, so the assumption is visible before the task is created.
-        .iOSFloatingCreateTaskButton(seed: CadenceTaskComposerSeed(doDateKey: todayKey))
+        // Unseeded, like every other `+` in the app. It used to hand in today's do date, which is
+        // what the "Add a task for today…" field it replaced did implicitly — T-337 takes that
+        // back: standing on Today is not a statement that the task is for today. Dropping the
+        // button on one of this page's **list groups** still is, and that path seeds the day as
+        // well as the list — `CadenceTaskGroupDropIdentity.todayList`. That pairing is what keeps
+        // the unseeded button honest here: without it a `+` dropped on Today would produce work
+        // that vanished off Today.
+        .iOSFloatingCreateTaskButton()
         // No `.navigationTitle("Today")`. Both layouts head themselves — the compact one with
         // "THURSDAY, AUGUST 13 / Today", the iPad one with `iPadTodayTaskHeader` — so a large nav
         // title said "Today" a second time, 60pt above the first.

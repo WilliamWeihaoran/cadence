@@ -75,6 +75,53 @@ struct CadenceTaskGroupDropSupportTests {
         #expect(seed.container == .area(areaID))
     }
 
+    /// **A Today list group is a list *and* a day, and a plain list group is only a list.**
+    ///
+    /// Today groups by list (T-305), so its headers are no longer date-shaped — and a header there
+    /// that offered only its list would create a task that was filed correctly and then vanished
+    /// off the page it was dropped on. `.todayList` is the case that says both. `.list` must stay
+    /// dateless: a list detail's empty state and the Inbox panel are the same shape of destination
+    /// with no day in them, and picking one up there would be inventing a date nothing named.
+    ///
+    /// The seed is the assertion that matters. A key-shape check alone would pass against a
+    /// resolver that read `date:today` and threw it away.
+    @Test func aTodayListGroupOffersTheDayAsWellAsTheListAndAPlainListGroupDoesNot() throws {
+        let projectID = UUID()
+        let key = "p_\(projectID.uuidString)"
+
+        #expect(
+            CadenceTaskDropSupport.dropKey(forGroup: .todayList(key: key, name: "Launch"))
+                == "list:\(key)\(CadenceTaskDropSupport.separator)date:today"
+        )
+
+        let onToday = CadenceTaskDropSupport.seed(
+            forDropKey: try #require(CadenceTaskDropSupport.dropKey(forGroup: .todayList(key: key, name: "Launch"))),
+            todayKey: todayKey
+        )
+        #expect(onToday.container == .project(projectID))
+        #expect(onToday.doDateKey == todayKey)
+        // Planned for today, not due today: the header claims the do date and nothing else.
+        #expect(onToday.dueDateKey.isEmpty)
+
+        let elsewhere = CadenceTaskDropSupport.seed(
+            forDropKey: try #require(CadenceTaskDropSupport.dropKey(forGroup: .list(key: key, name: "Launch"))),
+            todayKey: todayKey
+        )
+        #expect(elsewhere.container == .project(projectID))
+        #expect(elsewhere.doDateKey.isEmpty)
+
+        // Both are real destinations, so both survive emptying; and the ghost can name the list
+        // for either, which it can only do if `listName(forGroup:)` answers for the new case too.
+        #expect(CadenceTaskDropSupport.showsWhenEmpty(.todayList(key: key, name: "Launch")))
+        #expect(CadenceTaskDropSupport.listName(forGroup: .todayList(key: key, name: "Launch")) == "Launch")
+        #expect(
+            CadenceTaskDropSupport.placementCaption(
+                forGroup: .todayList(key: key, name: "Launch"),
+                todayKey: todayKey
+            ) == "Launch · Do Today"
+        )
+    }
+
     /// The case the whole feature exists for: a kanban column you made and have not filled. The
     /// header carries the list *and* the section, because a section belongs to one list — a key
     /// naming only the section would be resolved against an Inbox default and lose the column.

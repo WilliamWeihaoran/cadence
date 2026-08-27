@@ -6,7 +6,7 @@ import Testing
 /// Completed`) and the page under it — measured at exactly 100pt on an iPad Pro 13-inch, in **all
 /// five** tabs.
 ///
-/// **What it was.** `iOSListDetailView` takes `.iOSFloatingCreateTaskButton(seed:)`, which writes
+/// **What it was.** `iOSListDetailView` takes `.iOSFloatingCreateTaskButton()`, which writes
 /// `.contentMargins(.bottom, iOSCircularAddButton.scrollClearance, for: .scrollContent)` — 56 + 22×2
 /// = 100pt — so the page's bottom-reaching list can always be brought out from under the corner `+`.
 /// `contentMargins` is inherited through the environment, so it also landed on

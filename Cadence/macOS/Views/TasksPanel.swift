@@ -254,42 +254,48 @@ struct TasksPanel: View {
             overdueSectionsSection(summaries: derived.overdueSectionSummaries)
         }
 
-        todayIntentSections(derived: derived, showsRollover: showsRollover)
+        todayGroupSections(derived: derived, showsRollover: showsRollover)
     }
 
-    /// Today's groups, and the whole of them: Overdue, Past Do, Due Today, Planned Today.
+    /// Today's groups, and the whole of them: **Overdue, then the day's work by list** (T-305).
     ///
-    /// **The buckets come from `CadenceTaskQuerySupport.todayGroups`** — the shared function both
-    /// iOS Todays already called — rather than from a fourth macOS re-derivation of the same four
-    /// predicates. `todayDateSections` was that re-derivation, spelling the same buckets "Past Due"
-    /// and "Do Today", and it sat behind a Group picker that also offered by-list and by-priority
-    /// while Today defaulted to by-list. A day's page groups by *why*, so there is nothing left for
-    /// the picker to choose between and Today no longer draws one; sort and order still apply, and
-    /// they apply *inside* each group.
+    /// They come from `CadenceTaskQuerySupport.todayGroups`, the shared function both iOS Todays
+    /// already called, so the page's shape is decided once for both platforms. It used to be four
+    /// date buckets — Overdue, Past Do, Due Today, Planned Today; the last of those restated the
+    /// page, and Today was the app's only task surface not grouped by list. What the date axis is
+    /// still worth is inside each group: `compareTasksForCurrentSort` leads with
+    /// `todayTaskSortRank`, so a list reads past-do, then due-today, then do-today without four
+    /// headings to say so.
     ///
-    /// The rollover banner still withholds the over-do tasks it is offering to roll, so `.pastDo`
-    /// is simply empty while the banner is up and `todayGroups` drops it.
+    /// One section component for both kinds of group, because a group is a group: what changes is
+    /// the tint (the list's own colour, or Overdue's red), whether the rows still name their list
+    /// (`showsContainerChip` — off under a header that already prints the name), and whether the
+    /// header accepts a dropped `+`.
+    ///
+    /// The rollover banner still withholds the over-do tasks it is offering to roll. Those rows are
+    /// now missing from *their lists'* groups rather than from a "Past Do" section, which is what
+    /// makes confirming the roll do something visible.
     @ViewBuilder
-    private func todayIntentSections(derived: TasksPanelDerivedState, showsRollover: Bool) -> some View {
+    private func todayGroupSections(derived: TasksPanelDerivedState, showsRollover: Bool) -> some View {
         let tasks = applyFreeze(
             derived.todayGroupedTaskItems(showRolloverNotice: showsRollover)
                 .sorted(by: compareTasksForCurrentSort)
         )
 
-        ForEach(CadenceTaskQuerySupport.todayGroups(from: tasks, todayKey: todayKey)) { group in
-            let dropKey = CadenceTaskDropSupport.dropKey(forGroup: .todayDate(group.kind))
+        ForEach(CadenceTaskQuerySupport.todayGroups(from: tasks, todayKey: todayKey, contexts: contexts)) { group in
+            let dropKey = CadenceTaskDropSupport.dropKey(forGroup: group.dropIdentity)
 
             TasksPanelIntentSectionView(
                 title: group.title,
-                accent: CadenceTodayPresentationSupport.accent(for: group.kind),
+                accent: group.accent,
                 tasks: group.tasks,
-                showsContainer: options.showsContainerChip,
+                showsContainer: options.showsContainerChip && group.showsContainerChip,
                 contexts: contexts,
                 areas: areas,
                 projects: projects,
-                isCollapsed: collapsedGroupIDs.contains(intentGroupID(group.kind)),
+                isCollapsed: collapsedGroupIDs.contains(group.id),
                 dragOverTaskID: $dragOverTaskID,
-                onToggle: { toggleGroup(intentGroupID(group.kind)) },
+                onToggle: { toggleGroup(group.id) },
                 taskDragPayload: taskDragPayload,
                 onDropOnSectionPayload: dropCoordinator.sectionDropHandler(for: dropKey),
                 onDropOnTaskPayload: { payload, targetTask in
@@ -302,10 +308,6 @@ struct TasksPanel: View {
                 }
             )
         }
-    }
-
-    private func intentGroupID(_ kind: CadenceTodayTaskGroupKind) -> String {
-        "today-intent-\(kind.rawValue)"
     }
 
     private func todaySummary(derived: TasksPanelDerivedState) -> CadenceTodaySummary? {
@@ -494,9 +496,10 @@ struct TasksPanel: View {
         )
     }
 
-    /// List-group snapshots are a `.byDoDate` concern only: Today groups by intent and has no
-    /// by-list mode to freeze. `frozenTaskOrder` still holds the row order steady under the
-    /// pointer on both, which is what the freeze is for.
+    /// List-group snapshots are a `.byDoDate` concern only. Today groups by list too now, but it
+    /// draws its groups through `TasksPanelIntentSectionView` rather than `TodayTaskGroup`, so
+    /// there is no `FrozenTodayTaskGroup` for it to snapshot. `frozenTaskOrder` still holds the row
+    /// order steady under the pointer on both, which is what the freeze is for.
     private func currentFrozenListSnapshotForHover(_ derived: TasksPanelDerivedState) -> [FrozenTodayTaskGroup] {
         guard mode == .byDoDate, activeGroupingMode == .byList else { return [] }
         return currentFrozenListGroupSnapshot(for: byDoDateSortedTasks(derived))
@@ -545,11 +548,11 @@ struct TasksPanel: View {
                 CadenceEnumPickerBadge(title: "Sort", selection: $localSortField)
                 CadenceEnumPickerBadge(title: "Order", selection: $localSortDirection)
             }
-            // No grouping control on Today. Its sections are the day's four intents — see
-            // `todayIntentSections` — and a picker offering "by list" beside them would be
-            // offering to answer a different question than the page asks. It used to exclude
-            // `.byDate` here for the mirror-image reason: Today's by-date grouping *was* the
-            // intent grouping, spelled differently and reachable only by not choosing it.
+            // No grouping control on Today. Its sections are Overdue and then the day's lists —
+            // see `todayGroupSections` — which is the one grouping the page has, so there is
+            // nothing for a picker to choose between. `_localGroupingMode` still falls back to
+            // `.byList` for this mode, which is now a description of what Today actually does
+            // rather than a mode it declines to use.
             if mode != .todayOverview {
                 CadenceEnumPickerBadge(title: "Group", selection: $localGroupingMode)
             }
@@ -646,20 +649,21 @@ struct TasksPanel: View {
     private func currentFrozenFlatSectionSnapshot(derived: TasksPanelDerivedState) -> [FrozenFlatTaskSection] {
         switch mode {
         case .todayOverview:
-            // Today has one grouping — the day's four intents — so there is no switch here any
-            // more. The buckets are `CadenceTaskQuerySupport.todayGroups`', the same ones
-            // `todayIntentSections` draws, rather than a second list of the same predicates under
-            // the names "Past Due" and "Do Today".
+            // Today has one grouping — Overdue, then by list — so there is no switch here any
+            // more. The groups are `CadenceTaskQuerySupport.todayGroups`', the same ones
+            // `todayGroupSections` draws, rather than a second list of the same predicates under
+            // names of their own.
             let todayTasks = applyFreeze(
                 derived.todayGroupedTaskItems(showRolloverNotice: shouldShowRolloverNotice(derived))
                     .sorted(by: compareTasksForCurrentSort)
             )
-            return CadenceTaskQuerySupport.todayGroups(from: todayTasks, todayKey: todayKey).compactMap { group in
+            let groups = CadenceTaskQuerySupport.todayGroups(from: todayTasks, todayKey: todayKey, contexts: contexts)
+            return groups.compactMap { group in
                 makeFlatSection(
-                    id: intentGroupID(group.kind),
+                    id: group.id,
                     title: group.title,
                     tasks: group.tasks,
-                    dropKey: CadenceTaskDropSupport.dropKey(forGroup: .todayDate(group.kind))
+                    dropKey: CadenceTaskDropSupport.dropKey(forGroup: group.dropIdentity)
                 )
             }
         case .byDoDate:
@@ -692,28 +696,36 @@ struct TasksPanel: View {
         }
     }
 
+    /// **Today ranks by urgency first, then by whatever the Sort chips say** — and the `!enableControls`
+    /// half of this condition is gone (T-305).
+    ///
+    /// It used to read `mode == .todayOverview && !enableControls`, and the only `TasksPanel` that
+    /// is a Today (`TodayView`) passes `enableControls: true`, so the rank never ran: macOS Today
+    /// sorted purely by the Sort/Order chips. That was invisible while the page was *grouped* by
+    /// the same four date states — the headings carried the urgency the sort had dropped. Grouping
+    /// by list takes the headings away, and with them the only thing keeping a due-today task with
+    /// no do date off the bottom of its list, where `.date` ascending files an empty
+    /// `scheduledDate`.
+    ///
+    /// So the rank leads, exactly as iOS's `sortTodayTasks` has always had it, and the user's
+    /// chosen field and direction order the rows *inside* each rank. `.byDoDate` — All Tasks — is
+    /// untouched and still sorts purely by the chips.
     private func compareTasksForCurrentSort(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
-        // Keep the legacy today ranking only for the dedicated Today overview mode.
-        if mode == .todayOverview && !enableControls {
+        if mode == .todayOverview {
             let leftRank = todayTaskSortRank(lhs)
             let rightRank = todayTaskSortRank(rhs)
             if leftRank != rightRank { return leftRank < rightRank }
-            // The tie-break is the shared one, not a local `order`-then-`title` pair. `order` is
-            // assigned per container, so this cross-list view routinely compares tasks with equal
-            // `order` — and equal titles are not rare either. Without `createdAt` and `id` behind
-            // them the rank ties were an unstable sort.
-            return TaskOrdering.fallbackPrecedes(lhs, rhs)
+            return taskSortPrecedes(lhs, rhs, field: activeSortField, direction: activeSortDirection)
         }
 
         return taskSortPrecedes(lhs, rhs, field: activeSortField, direction: activeSortDirection)
     }
 
+    /// `CadenceTaskQuerySupport.todayRank`, not a local copy of it. The copy that used to live here
+    /// tested `scheduledDate < todayKey` *before* `dueDate == todayKey`, which is the opposite of
+    /// what every other Today rule does — see that function for what the disagreement cost.
     private func todayTaskSortRank(_ task: AppTask) -> Int {
-        if !task.dueDate.isEmpty && task.dueDate < todayKey { return 0 }
-        if !task.scheduledDate.isEmpty && task.scheduledDate < todayKey { return 1 }
-        if task.dueDate == todayKey { return 2 }
-        if task.scheduledDate == todayKey { return 3 }
-        return 4
+        CadenceTaskQuerySupport.todayRank(task, todayKey: todayKey)
     }
 
     // MARK: - Section builders
