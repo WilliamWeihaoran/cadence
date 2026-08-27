@@ -13,18 +13,17 @@ enum CadenceTaskQuerySupport {
         sortMode: CadenceTaskSortMode
     ) -> [AppTask] {
         tasks
-            .filter { task in
-                guard !task.isDone && !task.isCancelled else { return false }
-                // The four buckets macOS's `TasksPanelDerivedState` shows on Today, in the same
-                // order: due today, past due, do today, and — the one this used to omit — *past
-                // do*. A task planned for yesterday and never finished is still today's work; it
-                // was appearing nowhere on iPad while macOS listed it under "Past Do" and offered
-                // the rollover banner for it.
-                return task.dueDate == todayKey ||
-                    !task.dueDate.isEmpty && task.dueDate < todayKey ||
-                    task.scheduledDate == todayKey ||
-                    !task.scheduledDate.isEmpty && task.scheduledDate < todayKey
-            }
+            // The four buckets macOS's `TasksPanelDerivedState` shows on Today, in the same order:
+            // due today, past due, do today, and — the one this used to omit — *past do*. A task
+            // planned for yesterday and never finished is still today's work; it was appearing
+            // nowhere on iPad while macOS listed it under "Past Do" and offered the rollover
+            // banner for it.
+            //
+            // Those four conditions were spelled out here. They are `AppTask.isTodayWork` now, in
+            // `Models/`, because the widget target compiles `Models/` and **not** `Shared/`: it
+            // could not call this, so it kept a second and narrower copy, which is T-353. Do not
+            // re-inline the predicate.
+            .filter { $0.isTodayWork(todayKey: todayKey) }
             .sorted { sortTodayTasks($0, $1, todayKey: todayKey, sortMode: sortMode) }
     }
 
@@ -422,12 +421,14 @@ enum CadenceTaskQuerySupport {
     /// this rank which disagreed with this one — it tested `scheduledDate < todayKey` before
     /// `dueDate == todayKey`, so the two platforms ordered a task due today and do-dated yesterday
     /// differently, on the same day, from the same data.
+    ///
+    /// The four branches themselves moved to `AppTask.todayStanding(todayKey:)` under T-353, for
+    /// the reason given there: `Shared/` is not compiled into `CadenceWidgets`, so the widget's
+    /// rank could not call this one and was a *fifth* spelling, missing the past-do branch
+    /// outright. This is the same rank it always was; it is no longer the only copy of it because
+    /// it is no longer a copy.
     static func todayRank(_ task: AppTask, todayKey: String) -> Int {
-        if !task.dueDate.isEmpty && task.dueDate < todayKey { return 0 }
-        if task.dueDate == todayKey { return 2 }
-        if !task.scheduledDate.isEmpty && task.scheduledDate < todayKey { return 1 }
-        if task.scheduledDate == todayKey { return 3 }
-        return 4
+        task.todayRank(todayKey: todayKey)
     }
 
     private static func sortTodayTasks(

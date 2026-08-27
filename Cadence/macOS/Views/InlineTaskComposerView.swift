@@ -35,6 +35,8 @@ struct InlineTaskComposer: View {
     /// Bumped after each create so the title field is rebuilt and re-autofocuses, leaving the
     /// composer ready for the next card instead of stranding the caret.
     @State private var entryGeneration = 0
+    /// Shown in place of the hint when a create could not be committed (T-364).
+    @State private var actionError: String?
 
     init(surface: InlineTaskComposerSurface, onDismiss: @escaping () -> Void) {
         self.surface = surface
@@ -174,10 +176,18 @@ struct InlineTaskComposer: View {
         .accessibilityLabel("Scheduled \(label)")
     }
 
+    /// The composer has no other place to speak, so the hint line doubles as its error line.
     private var hint: some View {
-        Text("Return to add · Esc to close")
-            .font(.system(size: 9))
-            .foregroundStyle(Theme.dim)
+        Group {
+            if let actionError {
+                Text(actionError)
+                    .foregroundStyle(Theme.red)
+            } else {
+                Text("Return to add · Esc to close")
+                    .foregroundStyle(Theme.dim)
+            }
+        }
+        .font(.system(size: 9))
     }
 
     // MARK: - Date chip bindings
@@ -210,12 +220,25 @@ struct InlineTaskComposer: View {
 
     // MARK: - Actions
 
+    /// **T-364.** Clearing the title and bumping `entryGeneration` is this composer's whole
+    /// success report: the card the user typed vanishes and the field re-focuses for the next one.
+    /// It used to run over a `try?` save, so a refused commit emptied the composer and left nothing
+    /// on screen or in the store. `createTask` takes the task back out on a throw, so the composer
+    /// keeps every character and the hint line says why instead of "Return to add".
     private func create() {
         guard InlineTaskComposerSupport.canCreate(title: title) else { return }
         let draft = InlineTaskComposerSupport.draft(title: title, fields: fields, tags: selectedTags)
-        guard TaskCreationService(areas: areas, projects: projects)
-            .insertTask(from: draft, into: modelContext) != nil else { return }
-        try? modelContext.save()
+        let created: AppTask?
+        do {
+            created = try TaskCreationService(areas: areas, projects: projects)
+                .createTask(from: draft, into: modelContext)
+        } catch {
+            actionError = TaskCreationService.saveFailureNotice
+            return
+        }
+        guard created != nil else { return }
+
+        actionError = nil
         // Same fast-path reconcile the create sheet runs, so a card created with a do date does not
         // wait for the next scenePhase checkpoint to get its reminder.
         HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)

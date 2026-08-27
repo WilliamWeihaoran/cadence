@@ -862,7 +862,8 @@ struct CadenceCancelledTaskReachabilityTests {
     // MARK: - Call sites
 
     /// The predicate is only worth one place if the three completed queries actually read it, and
-    /// only three of the six filters in that file may still mention `isCancelled` — the active ones.
+    /// only the filters that still spell their own settled guard may mention `isCancelled` — the
+    /// active ones that have not yet been routed through a shared predicate.
     @Test func theCompletedQueriesAllReadTheOnePredicate() throws {
         try expectOccurrences(
             of: "isFinishedTask(",
@@ -874,8 +875,13 @@ struct CadenceCancelledTaskReachabilityTests {
         try expectOccurrences(
             of: "isCancelled",
             at: [
-                // activeTodayTasks, activeInboxTasks, activeTasks — and nothing else.
-                "Cadence/Shared/CadenceTaskQuerySupport.swift": 3,
+                // activeInboxTasks, activeTasks — and nothing else. `activeTodayTasks` was the
+                // third until T-353: its whole membership test, settled guard included, is
+                // `AppTask.isTodayWork(todayKey:)` now, which lives in `Models/` because
+                // `CadenceWidgets` compiles that folder and not `Shared/`. The count going *down*
+                // here is the shared rule arriving, not a filter losing its guard —
+                // `TodayScopeParityTests` pins that finished and cancelled work stays off Today.
+                "Cadence/Shared/CadenceTaskQuerySupport.swift": 2,
                 // openTasks, isFinishedTask, isOpenTask. `inboxTasks` is no longer one of them.
                 "Cadence/Shared/CadenceTaskQuerySharedSupport.swift": 3
             ]

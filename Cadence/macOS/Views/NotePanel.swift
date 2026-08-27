@@ -264,10 +264,20 @@ struct NotePanel: View {
             subtaskTitles: [],
             tags: []
         )
-        guard let task = TaskCreationService(areas: [], projects: []).insertTask(from: draft, into: modelContext) else {
+        // T-364: commit first, hand the reference back second. The editor writes
+        // `[[task:UUID|Title]]` into the note only when this returns non-nil, so a refused commit
+        // has to return nil — otherwise the note keeps a reference to a task the store never took,
+        // and the line renders as a broken embed forever. `createTask` has already removed the
+        // task again by the time it throws.
+        let created: AppTask?
+        do {
+            created = try TaskCreationService(areas: [], projects: [])
+                .createTask(from: draft, into: modelContext)
+        } catch {
             return nil
         }
-        try? modelContext.save()
+        guard let task = created else { return nil }
+
         recentEmbeddedTasks[task.id] = task
         activeTextView?.markdownTaskEmbeds[task.id] = MarkdownTaskEmbedRenderInfo.task(task)
         return .task(task)

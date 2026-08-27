@@ -139,28 +139,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `ownLinkedListCount`. Generic names on own-only numbers are the actual defect — an agent reading
   `taskCount` has no reason to suspect it excludes sub-goals.
 
-- [T-382] **Every MCP list and search tool truncates silently — there is no way for an agent to know
-  it got a page.** Pagination audit (Codex, 2026-08-27, read at `c54cadb`, clean tree).
-  **Verified by counting: `hasMore`, `nextCursor` and `totalCount` appear ZERO times anywhere in
-  `Cadence/Services/MCPReadOnly` or `CadenceMCPServer`.** The schemas expose only `limit`, capped at
-  200 by `cappedLimit`, and the DTOs are bare arrays. So an agent asking for tasks gets an array
-  that is either complete or the first 200, indistinguishable. That is a worse failure at a machine
-  boundary than a human one: a person notices a suspiciously round list, an agent reasons on it.
-  Fix once, as a shared envelope — `items`, `returnedCount`, `totalCount`, `hasMore`, cursor —
-  rather than per tool. Do this first; it makes every other item here observable.
-
-- [T-383] **`list_containers(kind: nil)` can return zero projects, and [[T-372]] made that
-  reliable.** Verified: `CadenceReadService.swift:290` appends areas, `:300` appends projects, and
-  `:309` applies `prefix(cappedLimit(limit))` **after** the concatenation. With more areas than the
-  limit, projects are cut entirely.
-  The sharp part: before T-372 the order was nondeterministic, so *which* rows you lost varied.
-  T-372 gave that call a total order — which is correct and worth having — but it means the
-  truncation is now perfectly reproducible: you lose **all** projects, every time. Determinism made
-  the bug consistent, not smaller. The existing test pins area-first concatenation, so it passes
-  either way.
-  Fix: require `kind` for capped calls, return per-kind buckets with counts, or merge both kinds
-  into one globally sorted candidate list *before* capping.
-
 - [T-384] **`limit` caps the response, not the work.** `list_tasks(limit: 1)` still fetches every
   task with a bare `FetchDescriptor<AppTask>()`, filters and sorts in memory, then takes one. The
   same shape repeats across notes, containers, contexts, tags, goals, habits, links, bundles and
@@ -279,26 +257,12 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   them, so one real check-in can satisfy a `targetCount` or `.timesPerWeek` habit. Decide collapse
   semantics (`max` vs `sum`) before writing the repair.
 
-- [T-362] **Eleven macOS/iOS surfaces change a task's date or time without reconciling
-  notifications.** Extends [[T-343]] (iOS *status* paths); this is the *date/time* half. Measured
-  source, inferred staleness. Move a task from 9am to 3pm and the 9am notification stays pending
-  until a lifecycle checkpoint. The create sheets on both platforms and `iOSTaskDetailSheet.applyDates()`
-  already do this correctly — copy them. Wrap save+reconcile app-side; do **not** push it into the
-  shared helpers that widgets and MCP call without reviewing that boundary.
-
 - [T-363] **An out-of-range `reminderMinuteOfDay` schedules a daily reminder at whatever time
   reconcile happened to run.** Measured by probe: `Calendar.date(bySettingHour:minute:second:of:)`
   returns `nil` for -15, 1440 and 1500, and `NotificationScheduling.swift:190` ends `?? now`. Not
   reachable from the picker; reachable from existing or imported data. `Habit.swift` already
   documents that the model does no range validation. Guard `0...1439` in the planner and return
   `nil`.
-
-- [T-364] **Task-creation surfaces that report success still bypass the rollback API.** Undo audit;
-  measured. `TaskCreationService` itself says success-reporting surfaces should prefer
-  `createTask(from:into:)`, and `CreateTaskSheet`, `InlineTaskComposerView`, and four
-  note/markdown embed paths do not — they insert, swallow or skip the save, then dismiss, clear the
-  composer, or refresh the embed. `iOSCreateTaskSheet` is the pattern to copy: it catches, keeps the
-  sheet open, and reconciles only after the commit lands. Related: [[T-321]], [[T-322]].
 
 - [T-366] **The embed field popover calls `onChanged()` whether or not the write landed.** Measured.
   `TaskEmbedFieldEditorPopover` mutates the live task, swallows the save, then unconditionally tells
@@ -355,19 +319,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   T-341 should route **every** status write in that manager through the shared helper and pin that
   no direct `task.status =` assignment survives there.
   Hardening, not a production bug. Say so in the commit rather than inflating it.
-
-- [T-353] **The widgets keep their own definition of Today, and it is narrower than the app's.**
-  From the widget-parity audit (Codex, 2026-08-27); **premise verified**: `scheduledDate < todayKey`
-  appears in `CadenceTaskQuerySupport` and **zero times** in `CadenceTodayWidgetSupport`. Extends
-  [[T-305]].
-  So an unfinished task planned for a past day with no due date is on the app's Today page and
-  absent from the Today widget — and because the Calendar widget's "Next up" reuses the Today
-  widget's picker, **one divergence produces two wrong widgets**. The Calendar widget can say
-  nothing is urgent while Today has work on it.
-  The widget rank has no past-do branch either, so this is a definition living in two places rather
-  than a missed case. Fix by making the shared membership and rank callable from widget support —
-  note the widget target compiles its own subset, so "call the shared helper" needs checking rather
-  than assuming.
 
 - [T-354] **`review launch plan !!!` becomes a high-priority task in the app and a literal title in
   the widget.** From the same audit, premise verified: `TaskCreationService` resolves the shortcut

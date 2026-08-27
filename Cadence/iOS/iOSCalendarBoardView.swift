@@ -227,7 +227,7 @@ struct iOSCalendarBoardPlanner: View {
     }
 
     private func schedule(_ task: AppTask, on dateKey: String) {
-        CadenceTaskMutationSupport.moveTaskToDate(task, dateKey: dateKey, modelContext: modelContext)
+        CadenceTaskDateEditing.moveTaskToDate(task, dateKey: dateKey, in: modelContext)
     }
 
     private func move(_ bundle: TaskBundle, on dateKey: String) {

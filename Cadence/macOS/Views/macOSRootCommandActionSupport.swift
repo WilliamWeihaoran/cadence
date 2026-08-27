@@ -15,13 +15,24 @@ enum RootCommandActionSupport {
         }
     }
 
-    static func toggleTodayDate(for task: AppTask, kind: HoveredTaskDateKind) {
+    /// `T` / `D` over a hovered row. Both halves go through `CadenceTaskDateEditing`, so the
+    /// keystroke that moves a task off today also retires today's reminder for it (T-362) — a
+    /// keyboard toggle is exactly the case where nothing else is about to touch `scenePhase`.
+    static func toggleTodayDate(for task: AppTask, kind: HoveredTaskDateKind, in context: ModelContext) {
         let todayKey = DateFormatters.todayKey()
         switch kind {
         case .doDate:
-            task.scheduledDate = task.scheduledDate == todayKey ? "" : todayKey
+            if task.scheduledDate == todayKey {
+                CadenceTaskDateEditing.clearScheduledDate(task, in: context)
+            } else {
+                CadenceTaskDateEditing.setScheduledDate(todayKey, for: task, in: context)
+            }
         case .dueDate:
-            task.dueDate = task.dueDate == todayKey ? "" : todayKey
+            if task.dueDate == todayKey {
+                CadenceTaskDateEditing.clearDueDate(task, in: context)
+            } else {
+                CadenceTaskDateEditing.setDueDate(todayKey, for: task, in: context)
+            }
         }
     }
 
@@ -50,7 +61,7 @@ enum RootCommandActionSupport {
         }
     }
 
-    static func nudgeDate(for task: AppTask, kind: HoveredTaskDateKind, delta: Int) {
+    static func nudgeDate(for task: AppTask, kind: HoveredTaskDateKind, delta: Int, in context: ModelContext) {
         let currentKey: String
         switch kind {
         case .doDate:
@@ -63,9 +74,9 @@ enum RootCommandActionSupport {
         let nudgedKey = DateFormatters.dateKey(from: nudged)
         switch kind {
         case .doDate:
-            task.scheduledDate = nudgedKey
+            CadenceTaskDateEditing.setScheduledDate(nudgedKey, for: task, in: context)
         case .dueDate:
-            task.dueDate = nudgedKey
+            CadenceTaskDateEditing.setDueDate(nudgedKey, for: task, in: context)
         }
     }
 

@@ -116,17 +116,20 @@ struct TaskEmbedFieldEditorPopover: View {
                         get: { dateSelection },
                         set: {
                             dateSelection = $0
-                            task.scheduledDate = DateFormatters.dateKey(from: $0)
-                            persist()
+                            CadenceTaskDateEditing.setScheduledDate(
+                                DateFormatters.dateKey(from: $0),
+                                for: task,
+                                in: modelContext
+                            )
+                            onChanged()
                         }
                     ),
                     viewMonth: $dateViewMonth,
                     isOpen: popoverOpenBinding,
                     showsClear: true,
                     onClear: {
-                        task.scheduledDate = ""
-                        task.scheduledStartMin = -1
-                        persist()
+                        CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
+                        onChanged()
                     },
                     inlineStyle: true
                 )
@@ -141,16 +144,20 @@ struct TaskEmbedFieldEditorPopover: View {
                     get: { dateSelection },
                     set: {
                         dateSelection = $0
-                        task.dueDate = DateFormatters.dateKey(from: $0)
-                        persist()
+                        CadenceTaskDateEditing.setDueDate(
+                            DateFormatters.dateKey(from: $0),
+                            for: task,
+                            in: modelContext
+                        )
+                        onChanged()
                     }
                 ),
                 viewMonth: $dateViewMonth,
                 isOpen: popoverOpenBinding,
                 showsClear: true,
                 onClear: {
-                    task.dueDate = ""
-                    persist()
+                    CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
+                    onChanged()
                 },
                 inlineStyle: true
             )
@@ -281,8 +288,8 @@ struct TaskEmbedFieldEditorPopover: View {
 
             if task.scheduledStartMin >= 0 {
                 Button {
-                    task.scheduledStartMin = -1
-                    persist()
+                    CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)
+                    onChanged()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 13, weight: .semibold))
@@ -297,12 +304,20 @@ struct TaskEmbedFieldEditorPopover: View {
     private var scheduledStartBinding: Binding<Int> {
         Binding(
             get: { task.scheduledStartMin >= 0 ? task.scheduledStartMin : defaultScheduledStartMin },
-            set: {
+            set: { startMin in
+                // A time on no day is not a slot, so an untimed task materialises the day the
+                // popover is showing before it takes the minute — one edit, one reconcile.
                 if task.scheduledDate.isEmpty {
-                    task.scheduledDate = DateFormatters.dateKey(from: dateSelection)
+                    CadenceTaskDateEditing.setScheduledSlot(
+                        dateKey: DateFormatters.dateKey(from: dateSelection),
+                        startMin: startMin,
+                        for: task,
+                        in: modelContext
+                    )
+                } else {
+                    CadenceTaskDateEditing.setScheduledTime(startMin, for: task, in: modelContext)
                 }
-                task.scheduledStartMin = max(0, min($0, 1425))
-                persist()
+                onChanged()
             }
         )
     }

@@ -446,13 +446,20 @@ struct iOSMarkdownEditingSurface: View {
             subtaskTitles: [],
             tags: []
         )
-        guard let task = TaskCreationService(areas: areas, projects: projects)
-            .insertTask(from: draft, into: modelContext) else {
+        // T-364: commit first, hand the markdown back second. `iOSMarkdownEditor` replaces the
+        // typed line with this string exactly when it is non-nil, so a refused commit has to
+        // return nil — otherwise the draft keeps a `[[task:UUID|Title]]` for a task the store
+        // never took. The registration below is success bookkeeping and waits with it.
+        let created: AppTask?
+        do {
+            created = try TaskCreationService(areas: areas, projects: projects)
+                .createTask(from: draft, into: modelContext)
+        } catch {
             return nil
         }
+        guard let task = created else { return nil }
 
         recentEmbeddedTasks[task.id] = task
-        try? modelContext.save()
         return NoteReferenceParser.taskReferenceMarkdown(for: task)
     }
 

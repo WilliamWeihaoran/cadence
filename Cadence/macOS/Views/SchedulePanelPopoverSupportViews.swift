@@ -145,6 +145,7 @@ struct TaskPriorityPickerPopover: View {
 /// Estimate left this well for the title row: it is a property of the task, not a date.
 struct TaskDetailScheduleGroupSection: View {
     @Bindable var task: AppTask
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         TaskInspectorRecessedSection(title: "Schedule") {
@@ -160,13 +161,18 @@ struct TaskDetailScheduleGroupSection: View {
                         // for. Same order as the inspector's Unschedule action.
                         guard !isOn else { return }
                         SchedulingActions.removeFromCalendar(task)
-                        task.scheduledStartMin = -1
-                        task.scheduledDate = ""
+                        CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
                     }
                 ),
                 date: Binding(
                     get: { DateFormatters.date(from: task.scheduledDate) ?? Date() },
-                    set: { task.scheduledDate = DateFormatters.dateKey(from: $0) }
+                    set: {
+                        CadenceTaskDateEditing.setScheduledDate(
+                            DateFormatters.dateKey(from: $0),
+                            for: task,
+                            in: modelContext
+                        )
+                    }
                 )
             )
 
@@ -181,12 +187,18 @@ struct TaskDetailScheduleGroupSection: View {
                 isOn: Binding(
                     get: { !task.dueDate.isEmpty },
                     set: { isOn in
-                        if !isOn { task.dueDate = "" }
+                        if !isOn { CadenceTaskDateEditing.clearDueDate(task, in: modelContext) }
                     }
                 ),
                 date: Binding(
                     get: { DateFormatters.date(from: task.dueDate) ?? Date() },
-                    set: { task.dueDate = DateFormatters.dateKey(from: $0) }
+                    set: {
+                        CadenceTaskDateEditing.setDueDate(
+                            DateFormatters.dateKey(from: $0),
+                            for: task,
+                            in: modelContext
+                        )
+                    }
                 )
             )
 

@@ -84,11 +84,21 @@ nonisolated enum CadenceCalendarWidgetSupport {
             .todayTasks(from: openTasks, todayKey: todayKey)
             .first
 
+        // **`upcomingTask != nil` is load-bearing, not belt-and-braces.** `.empty` is not a
+        // count — it swaps the whole body for `emptyState`, and "Next up" is inside the branch it
+        // replaces. So a store whose only open work is a task planned for an earlier day rendered
+        // the empty state even once `todayTasks` could see it: `days` spans today forward, and
+        // `overdueCount` is due-dates only, so neither term has a past-do branch. That is the same
+        // missing rule as T-353, a third time, and fixing the picker alone left this widget still
+        // saying nothing was urgent while the app's Today page had work on it. Asking the picker
+        // whether it found anything reuses `AppTask.isTodayWork` instead of adding a fourth date
+        // comparison here.
         let totalVisibleCount = days.reduce(0) { $0 + $1.totalCount }
+        let isEmpty = totalVisibleCount == 0 && overdueCount == 0 && upcomingTask == nil
 
         return CadenceCalendarWidgetSnapshot(
             date: today,
-            state: totalVisibleCount == 0 && overdueCount == 0 ? .empty : .ready,
+            state: isEmpty ? .empty : .ready,
             statusMessage: nil,
             days: days,
             overdueCount: overdueCount,

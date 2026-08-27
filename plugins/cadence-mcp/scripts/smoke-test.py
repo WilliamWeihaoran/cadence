@@ -78,6 +78,34 @@ TAG_DETAIL_KEYS = {"summary", "taskCount", "noteCount", "createdAt", "updatedAt"
 NOTE_SUMMARY_KEYS = {"id", "kind", "title", "key", "container", "updatedAt", "excerpt", "tags"}
 NOTE_SUMMARY_OPTIONAL = {"key", "container"}
 
+# T-382: every list/search tool answers with a page envelope rather than a bare array, so a caller
+# can tell a complete result from the first 200 rows. `nextOffset` is absent (not null) when there
+# is no next page, because Swift's synthesized `Codable` omits a nil optional.
+PAGE_KEYS = {"items", "offset", "returnedCount", "totalCount", "hasMore", "nextOffset"}
+PAGE_OPTIONAL = {"nextOffset"}
+
+
+def page_items(payload, label: str) -> list:
+    """Assert the page envelope's shape and its internal consistency, then hand back the rows.
+
+    The counts are checked here rather than at each call site: `returnedCount` disagreeing with
+    `len(items)`, or `hasMore` disagreeing with `nextOffset`, is the exact failure that makes the
+    envelope worse than the bare array it replaced.
+    """
+    if not isinstance(payload, dict):
+        raise AssertionError(f"{label}: expected a page envelope, got {type(payload).__name__}")
+    check_keys(payload, PAGE_KEYS, PAGE_OPTIONAL, label)
+    items = payload["items"]
+    if payload["returnedCount"] != len(items):
+        raise AssertionError(f"{label}: returnedCount {payload['returnedCount']} != {len(items)} items")
+    if payload["totalCount"] < payload["returnedCount"]:
+        raise AssertionError(f"{label}: totalCount {payload['totalCount']} < returnedCount")
+    if payload["hasMore"] != ("nextOffset" in payload):
+        raise AssertionError(f"{label}: hasMore {payload['hasMore']} disagrees with nextOffset presence")
+    if payload["hasMore"] != (payload["offset"] + payload["returnedCount"] < payload["totalCount"]):
+        raise AssertionError(f"{label}: hasMore disagrees with offset/returnedCount/totalCount")
+    return items
+
 
 def check_keys(payload: dict, expected: set, optional: set, label: str) -> None:
     actual = set(payload)
@@ -376,7 +404,7 @@ def main() -> int:
         list_contexts_response = read_response(26)
         if list_contexts_response["result"].get("isError", False):
             raise AssertionError(list_contexts_response["result"]["content"][0]["text"])
-        context_hits = json.loads(list_contexts_response["result"]["content"][0]["text"])
+        context_hits = page_items(json.loads(list_contexts_response["result"]["content"][0]["text"]), "list_contexts")
         if context_hits != []:
             raise AssertionError(f"expected empty contexts in fresh store, got {context_hits}")
 
@@ -476,7 +504,7 @@ def main() -> int:
         list_notes_response = read_response(23)
         if list_notes_response["result"].get("isError", False):
             raise AssertionError(list_notes_response["result"]["content"][0]["text"])
-        note_hits = json.loads(list_notes_response["result"]["content"][0]["text"])
+        note_hits = page_items(json.loads(list_notes_response["result"]["content"][0]["text"]), "list_notes")
         if not any(note["id"] == daily_note["id"] for note in note_hits):
             raise AssertionError(f"expected list_notes to include appended daily note, got {note_hits}")
 
@@ -506,7 +534,7 @@ def main() -> int:
         core_search_response = read_response(18)
         if core_search_response["result"].get("isError", False):
             raise AssertionError(core_search_response["result"]["content"][0]["text"])
-        core_search_hits = json.loads(core_search_response["result"]["content"][0]["text"])
+        core_search_hits = page_items(json.loads(core_search_response["result"]["content"][0]["text"]), "search_cadence core_notes")
         if not any(hit["entityType"] == "daily_note" and hit["entityId"] == daily_note["id"] for hit in core_search_hits):
             raise AssertionError(f"expected core_notes search to find daily note, got {core_search_hits}")
 
@@ -521,7 +549,7 @@ def main() -> int:
         default_search_response = read_response(19)
         if default_search_response["result"].get("isError", False):
             raise AssertionError(default_search_response["result"]["content"][0]["text"])
-        default_search_hits = json.loads(default_search_response["result"]["content"][0]["text"])
+        default_search_hits = page_items(json.loads(default_search_response["result"]["content"][0]["text"]), "search_cadence default")
         if not any(hit["entityType"] == "daily_note" and hit["entityId"] == daily_note["id"] for hit in default_search_hits):
             raise AssertionError(f"expected default search to include core notes, got {default_search_hits}")
 
@@ -537,7 +565,7 @@ def main() -> int:
             response = read_response(offset)
             if response["result"].get("isError", False):
                 raise AssertionError(response["result"]["content"][0]["text"])
-            json.loads(response["result"]["content"][0]["text"])
+            page_items(json.loads(response["result"]["content"][0]["text"]), tool_name)
 
         send(
             {
@@ -550,7 +578,7 @@ def main() -> int:
         list_documents_response = read_response(20)
         if list_documents_response["result"].get("isError", False):
             raise AssertionError(list_documents_response["result"]["content"][0]["text"])
-        json.loads(list_documents_response["result"]["content"][0]["text"])
+        page_items(json.loads(list_documents_response["result"]["content"][0]["text"]), "list_documents")
 
         send(
             {
@@ -575,7 +603,7 @@ def main() -> int:
         event_note_search_response = read_response(22)
         if event_note_search_response["result"].get("isError", False):
             raise AssertionError(event_note_search_response["result"]["content"][0]["text"])
-        json.loads(event_note_search_response["result"]["content"][0]["text"])
+        page_items(json.loads(event_note_search_response["result"]["content"][0]["text"]), "search_cadence event_notes")
 
         send(
             {
@@ -686,7 +714,7 @@ def main() -> int:
         flexible_list_response = read_response(29)
         if flexible_list_response["result"].get("isError", False):
             raise AssertionError(flexible_list_response["result"]["content"][0]["text"])
-        flexible_list = json.loads(flexible_list_response["result"]["content"][0]["text"])
+        flexible_list = page_items(json.loads(flexible_list_response["result"]["content"][0]["text"]), "list_tasks flexible")
         if not any(task["id"] == flexible_task["summary"]["id"] for task in flexible_list):
             raise AssertionError(f"expected list_tasks flexible filters to return created task, got {flexible_list}")
 
@@ -735,7 +763,7 @@ def main() -> int:
             f"No task bundle found with id {MISSING_UUID}.",
         )
 
-        containers = call_ok(42, "list_containers", {"limit": 3})
+        containers = page_items(call_ok(42, "list_containers", {"limit": 3}), "list_containers")
         if containers != []:
             raise AssertionError(f"expected no containers in a fresh store, got {containers}")
         call_error(43, "list_containers", {"kind": "folder"}, "invalid container kind", "Invalid container kind: folder")
@@ -944,18 +972,18 @@ def main() -> int:
         # read-write container opens, and tasks and notes exist by now, so those three can be
         # checked against real rows. Bundles, goals, habits, links, contexts and containers have
         # no MCP creation path and stay empty here — that half of the gap is still open.
-        tag_details = call_ok(78, "list_tags", {"limit": 50})
+        tag_details = page_items(call_ok(78, "list_tags", {"limit": 50}), "list_tags")
         if not tag_details:
             raise AssertionError("expected seeded default tags in the fixture store")
         check_keys(tag_details[0], TAG_DETAIL_KEYS, set(), "list_tags element")
         check_keys(tag_details[0]["summary"], TAG_SUMMARY_KEYS, set(), "list_tags summary")
 
-        task_rows = call_ok(79, "list_tasks", {"limit": 50, "includeCompleted": True})
+        task_rows = page_items(call_ok(79, "list_tasks", {"limit": 50, "includeCompleted": True}), "list_tasks")
         if not task_rows:
             raise AssertionError("expected the created probe tasks in list_tasks")
         check_keys(task_rows[0], TASK_SUMMARY_KEYS, TASK_SUMMARY_OPTIONAL, "list_tasks element")
 
-        note_rows = call_ok(80, "list_notes", {"limit": 10})
+        note_rows = page_items(call_ok(80, "list_notes", {"limit": 10}), "list_notes rows")
         if not note_rows:
             raise AssertionError("expected the appended daily note in list_notes")
         check_keys(note_rows[0], NOTE_SUMMARY_KEYS, NOTE_SUMMARY_OPTIONAL, "list_notes element")
@@ -998,7 +1026,12 @@ def main() -> int:
         recent_writes_response = read_response(15)
         if recent_writes_response["result"].get("isError", False):
             raise AssertionError(recent_writes_response["result"]["content"][0]["text"])
-        recent_writes = json.loads(recent_writes_response["result"]["content"][0]["text"])
+        recent_writes_page = json.loads(recent_writes_response["result"]["content"][0]["text"])
+        recent_writes = page_items(recent_writes_page, "get_recent_mcp_writes")
+        # The audit log is longer than the four rows asked for, so this is the one call in the file
+        # that observes a real `hasMore` rather than a page that happens to hold everything.
+        if not recent_writes_page["hasMore"] or recent_writes_page["nextOffset"] != 4:
+            raise AssertionError(f"expected a truncated audit page to report more, got {recent_writes_page}")
         if not recent_writes or recent_writes[0]["tool"] != "bulk_cancel_tasks":
             raise AssertionError(f"expected newest audit entry to be bulk_cancel_tasks, got {recent_writes}")
 

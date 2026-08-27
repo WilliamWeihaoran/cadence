@@ -349,10 +349,10 @@ struct CadenceWriteServiceTests {
             dueDateFrom: "2026-8-1",
             dueDateTo: "2026-8-31"
         ))
-        #expect(byDueRange.map(\.title) == ["In range"])
+        #expect(byDueRange.items.map(\.title) == ["In range"])
 
         let byScheduledDay = try fixture.readService.listTasks(options: .init(scheduledDate: "2026-8-20"))
-        #expect(byScheduledDay.map(\.title) == ["In range"])
+        #expect(byScheduledDay.items.map(\.title) == ["In range"])
     }
 
     @Test func appendCoreNoteCreatesMissingAndAppendsExistingNotes() throws {
@@ -419,7 +419,7 @@ struct CadenceWriteServiceTests {
         #expect(entries.allSatisfy { $0.timestamp == "1970-01-01T00:00:01Z" })
         #expect(entries.allSatisfy { !$0.entityId.isEmpty })
         #expect(entries.first?.summary == "Created task: Audit me")
-        #expect(try CadenceMCPAuditLogger.recentEntries(limit: 2, logURL: auditURL).map(\.tool) == [
+        #expect(try CadenceMCPAuditLogger.recentEntries(limit: 2, logURL: auditURL).items.map(\.tool) == [
             "append_core_note",
             "cancel_task",
         ])

@@ -280,6 +280,36 @@ struct CadenceMCPToolContractTests {
         #expect(structStoredPropertyNames("Alpha", in: dtoFixture).contains("title") == false)
         #expect(structStoredPropertyNames("Missing", in: dtoFixture).isEmpty)
     }
+
+    /// **T-382: `hasMore` is only actionable beside an advertised `offset`.**
+    ///
+    /// Nothing under `CadenceMCPServer/` is unit-*executed*, so the schema and the router can
+    /// disagree with each other and with the service while every target stays green. This scan
+    /// pins the one relationship the envelope depends on: every tool that advertises a `limit`
+    /// also advertises an `offset`, and every router arm that reads a `limit` also reads an
+    /// `offset` and forwards it. A tool that reports `hasMore: true` with no way to ask for the
+    /// next page is a worse answer than the silent truncation it replaced — it tells the caller
+    /// rows are missing and then strands it there.
+    @Test func everyLimitBearingToolAdvertisesTheOffsetThatMakesHasMoreActionable() throws {
+        let definitions = strippingComments(try sourceFile(Self.definitionsPath))
+        let router = strippingComments(try sourceFile(Self.routerPath))
+
+        let advertisedLimits = occurrences(of: "\"limit\": integerProperty", in: definitions)
+        let advertisedOffsets = occurrences(of: "\"offset\": integerProperty", in: definitions)
+        let routedLimits = occurrences(of: "strictInt(\"limit\")", in: router)
+        let routedOffsets = occurrences(of: "strictInt(\"offset\")", in: router)
+
+        // Non-vacuity: a scan that read an empty or renamed file finds nothing and would otherwise
+        // report 0 == 0 as agreement. These are the paged tools that exist today.
+        #expect(definitions.contains("list_containers"))
+        #expect(router.contains("case \"list_containers\":"))
+        #expect(advertisedLimits >= 12)
+        #expect(routedLimits >= 12)
+
+        #expect(advertisedOffsets == advertisedLimits)
+        #expect(routedOffsets == routedLimits)
+        #expect(routedOffsets == advertisedOffsets)
+    }
 }
 
 // MARK: - Extraction
@@ -480,6 +510,18 @@ private extension CadenceMCPToolContractTests {
             }
             return result
         }.joined(separator: "\n")
+    }
+
+    /// Non-overlapping occurrences of `needle`. Returns 0 for an empty needle rather than looping.
+    func occurrences(of needle: String, in source: String) -> Int {
+        guard !needle.isEmpty else { return 0 }
+        var count = 0
+        var cursor = source.startIndex
+        while let found = source.range(of: needle, range: cursor..<source.endIndex) {
+            count += 1
+            cursor = found.upperBound
+        }
+        return count
     }
 
     func strippingComments(_ source: String) -> String {

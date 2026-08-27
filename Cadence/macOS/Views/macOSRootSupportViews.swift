@@ -440,14 +440,15 @@ struct DeleteConfirmationLayerView: View {
 
 struct DatePickerLayerView: View {
     @Environment(HoveredTaskDatePickerManager.self) private var hoveredTaskDatePickerManager
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         if let request = hoveredTaskDatePickerManager.request {
             HoveredTaskDatePickerOverlay(
                 request: request,
                 onUpdateDate: { hoveredTaskDatePickerManager.request?.selectedDate = $0 },
-                onConfirm: { hoveredTaskDatePickerManager.confirm() },
-                onClear: { hoveredTaskDatePickerManager.clearDate() },
+                onConfirm: { hoveredTaskDatePickerManager.confirm(in: modelContext) },
+                onClear: { hoveredTaskDatePickerManager.clearDate(in: modelContext) },
                 onCancel: { hoveredTaskDatePickerManager.cancel() }
             )
             .transition(.opacity.combined(with: .scale(scale: 0.985)))

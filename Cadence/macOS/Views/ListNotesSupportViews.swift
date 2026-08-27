@@ -322,11 +322,18 @@ struct TaskNoteEditorPane: View {
             tags: []
         )
 
-        guard let embeddedTask = TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: modelContext) else {
+        // T-364: commit first, hand the reference back second. The editor writes
+        // `[[task:UUID|Title]]` into the note only when this returns non-nil, so a refused commit
+        // has to return nil rather than leave the note pointing at a task the store never took.
+        let created: AppTask?
+        do {
+            created = try TaskCreationService(areas: areas, projects: projects)
+                .createTask(from: draft, into: modelContext)
+        } catch {
             return nil
         }
+        guard let embeddedTask = created else { return nil }
 
-        try? modelContext.save()
         recentEmbeddedTasks[embeddedTask.id] = embeddedTask
         editorTextView?.markdownTaskEmbeds[embeddedTask.id] = MarkdownTaskEmbedRenderInfo.task(embeddedTask)
         return .task(embeddedTask)

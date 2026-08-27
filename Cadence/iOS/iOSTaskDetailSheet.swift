@@ -332,15 +332,18 @@ struct iOSTaskDetailSheet: View {
             get: { task.scheduledStartMin },
             set: { minutes in
                 guard minutes >= 0 else {
-                    CadenceTaskMutationSupport.clearScheduledTime(task, modelContext: modelContext)
+                    CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)
                     return
                 }
+                // A time needs a day under it, so an untimed task adopts today first. `applyDates`
+                // reconciles the new day; the wrapper below reconciles the minute (T-362) — before
+                // this ticket only the first half did.
                 if !hasScheduledDate {
                     scheduledDate = Date()
                     hasScheduledDate = true
                     applyDates()
                 }
-                CadenceTaskMutationSupport.setScheduledTime(minutes, for: task, modelContext: modelContext)
+                CadenceTaskDateEditing.setScheduledTime(minutes, for: task, in: modelContext)
             }
         )
     }
@@ -390,14 +393,15 @@ struct iOSTaskDetailSheet: View {
         }
     }
 
+    /// Already reconciled before T-362 — this is the shape the rest of the app was missing. It
+    /// now says so through the shared wrapper rather than pairing the two calls by hand.
     private func applyDates() {
-        CadenceTaskMutationSupport.setPlanningDates(
+        CadenceTaskDateEditing.setPlanningDates(
             scheduledDate: hasScheduledDate ? DateFormatters.dateKey(from: scheduledDate) : nil,
             dueDate: hasDueDate ? DateFormatters.dateKey(from: dueDate) : nil,
             for: task,
-            modelContext: modelContext
+            in: modelContext
         )
-        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
     }
 
     private func saveTask() {

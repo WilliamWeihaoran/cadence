@@ -127,6 +127,19 @@ than naming a build.
 
 ## Working Rules
 
+- **Every `list_*` tool, `search_cadence` and `get_recent_mcp_writes` answer with `CadencePage`,
+  not a bare array** (T-382). The envelope is `items`, `offset`, `returnedCount`, `totalCount`,
+  `hasMore`, `nextOffset`, declared once in `Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift`.
+  Add a new list tool through `CadencePage.paging` and give it an `offset` argument beside its
+  `limit`; a `hasMore: true` that the caller cannot act on is worse than the silent truncation the
+  envelope replaced. `CadenceTests` pins the schema/router halves of that pairing by scan
+  (`everyLimitBearingToolAdvertisesTheOffsetThatMakesHasMoreActionable`), because nothing here is
+  unit-executed.
+- **`CadencePage.paging` takes one already-ordered candidate list, so a tool that draws from two
+  sources must merge before it pages.** `listContainers` used to sort areas and projects
+  separately, concatenate, and cap — which returned zero projects whenever areas outnumbered the
+  limit (T-383), reproducibly so after T-372. `CadenceMCPOrdering.precedes` is total across kinds
+  already; use it on one merged list rather than re-introducing a per-kind cap.
 - Keep MCP behavior read-oriented unless the requested change clearly adds write capability.
 - Prefer stable response schemas over exposing raw SwiftData models. If a model change forces a DTO
   change, make it deliberately and update the smoke test's expectations in the same commit.

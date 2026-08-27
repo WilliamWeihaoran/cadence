@@ -196,4 +196,241 @@ struct CadenceCreateTaskCommitSurfaceTests {
         #expect(CadenceSourceScan.matchCount(#"insertTask\("#, in: ".createTask(from: draft, into: c)") == 0)
         #expect(CadenceSourceScan.matchCount(#"dismiss\(\)"#, in: "dismiss()") == 1)
     }
+
+    // MARK: - T-364: the other six surfaces
+
+    /// One surface that creates a task and then reports that it did.
+    ///
+    /// **T-364.** Six of these called `insertTask` — the sibling that leaves the commit to the
+    /// caller — and then skipped the save entirely or ran it through `try?` and reported success
+    /// regardless. `failureBranch` is a regex rather than a substring on purpose: a `catch` that
+    /// exists but falls through is exactly the bug, so the pattern has to see the exit too.
+    private struct CommitSurface {
+        let path: String
+        let function: String
+        /// The whole `catch` block, which must both say what went wrong and leave the function.
+        let failureBranch: String
+        /// Spellings that may only run once the commit has landed.
+        let successSpellings: [String]
+    }
+
+    /// A composer reports a failed commit where the user is already looking and keeps everything
+    /// they typed; an embed reports it by handing back no reference at all, which is what stops the
+    /// note text from being written.
+    private static let composerFailureBranch =
+        #"catch \{[^}]*actionError = TaskCreationService\.saveFailureNotice[^}]*return[^}]*\}"#
+    private static let embedFailureBranch = #"catch \{[^}]*return nil[^}]*\}"#
+
+    private var commitSurfaces: [CommitSurface] {
+        [
+            CommitSurface(
+                path: "Cadence/macOS/Sheets/CreateTaskSheet.swift",
+                function: "createTask",
+                failureBranch: Self.composerFailureBranch,
+                successSpellings: [
+                    "HabitNotificationReconcileSupport.scheduleReconcile",
+                    "dismiss()",
+                    "taskCreationManager.presentSuccessToast()"
+                ]
+            ),
+            CommitSurface(
+                path: "Cadence/macOS/Views/InlineTaskComposerView.swift",
+                function: "create",
+                failureBranch: Self.composerFailureBranch,
+                successSpellings: [
+                    "HabitNotificationReconcileSupport.scheduleReconcile",
+                    "title = \"\"",
+                    "entryGeneration += 1"
+                ]
+            ),
+            CommitSurface(
+                path: "Cadence/macOS/Views/NotePanel.swift",
+                function: "createEmbeddedTask",
+                failureBranch: Self.embedFailureBranch,
+                successSpellings: ["recentEmbeddedTasks[", "return .task("]
+            ),
+            CommitSurface(
+                path: "Cadence/macOS/Views/NoteEditorPane.swift",
+                function: "createEmbeddedTask",
+                failureBranch: Self.embedFailureBranch,
+                successSpellings: ["recentEmbeddedTasks[", "return .task("]
+            ),
+            CommitSurface(
+                path: "Cadence/macOS/Views/ListNotesSupportViews.swift",
+                function: "createEmbeddedTask",
+                failureBranch: Self.embedFailureBranch,
+                successSpellings: ["recentEmbeddedTasks[", "return .task("]
+            ),
+            CommitSurface(
+                path: "Cadence/iOS/iOSMarkdownEditingSurface.swift",
+                function: "createEmbeddedTaskReference",
+                failureBranch: Self.embedFailureBranch,
+                successSpellings: [
+                    "recentEmbeddedTasks[",
+                    "return NoteReferenceParser.taskReferenceMarkdown("
+                ]
+            )
+        ]
+    }
+
+    /// Every remaining creation surface goes through the committing entry point, and nothing that
+    /// tells the user it worked sits above the branch where it did not.
+    ///
+    /// For the four note/markdown embeds "reports success" means **returning the reference**: the
+    /// editors write `[[task:UUID|Title]]` into the note exactly when this returns non-nil, so the
+    /// only thing keeping a note free of a reference to a task the store never took is that the
+    /// return sits below the `catch`.
+    @Test func everyRemainingCreateSurfaceCommitsBeforeItReportsSuccess() throws {
+        for surface in commitSurfaces {
+            let raw = try CadenceSourceScan.sourceFile(surface.path)
+            #expect(raw.count > 400, "\(surface.path) read as \(raw.count) characters")
+
+            let stripped = CadenceSourceScan.strippingComments(raw)
+            #expect(stripped != raw, "\(surface.path): the comment stripper removed nothing")
+            #expect(stripped.count == raw.count, "\(surface.path): the stripper changed the length")
+
+            let body = try #require(
+                CadenceSourceScan.functionBody(named: surface.function, in: stripped),
+                "could not find \(surface.function)() in \(surface.path)"
+            )
+            #expect(!body.isEmpty, "\(surface.function)() in \(surface.path) read as an empty body")
+            #expect(
+                body.contains(".createTask("),
+                "\(surface.path) does not create through the committing entry point"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"insertTask\("#, in: body) == 0,
+                "\(surface.path) still calls the non-committing sibling"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"try\?"#, in: body) == 0,
+                "\(surface.path) still swallows an error"
+            )
+
+            let failureBranch = try #require(
+                body.range(of: surface.failureBranch, options: .regularExpression),
+                "\(surface.path) has no catch branch that both reports the failure and returns"
+            )
+            for spelling in surface.successSpellings {
+                let success = try #require(
+                    body.range(of: spelling),
+                    "\(surface.path) no longer spells \(spelling)"
+                )
+                #expect(
+                    success.lowerBound >= failureBranch.upperBound,
+                    "\(surface.path): \(spelling) runs before the failed commit has returned"
+                )
+            }
+        }
+    }
+
+    /// The note embed pane bumps `note.updatedAt` as part of the creation, so that bump has to be
+    /// put back when the commit throws — otherwise a refused embed leaves the note marked as
+    /// edited for text that was never written. Both non-success exits restore it, which is why the
+    /// count is two rather than one.
+    @Test func theNoteEmbedPaneRestoresItsTimestampBumpOnEveryFailedExit() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NoteEditorPane.swift")
+        #expect(raw.count > 400, "NoteEditorPane.swift read as \(raw.count) characters")
+
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped != raw, "the comment stripper removed nothing")
+        #expect(stripped.count == raw.count, "the stripper changed the length")
+
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "createEmbeddedTask", in: stripped),
+            "could not find createEmbeddedTask()"
+        )
+
+        let snapshot = try #require(
+            body.range(of: "let previousUpdatedAt = note.updatedAt"),
+            "the bump is made with nothing held to put back"
+        )
+        let bump = try #require(body.range(of: "note.updatedAt = Date()"))
+        #expect(snapshot.upperBound <= bump.lowerBound, "the snapshot is taken after the bump")
+        #expect(
+            CadenceSourceScan.matchCount(#"note\.updatedAt = Date\(\)"#, in: body) == 1,
+            "the note is bumped more than once"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"note\.updatedAt = previousUpdatedAt"#, in: body) == 2,
+            "one of the two non-success exits keeps the note marked as edited"
+        )
+    }
+
+    /// Why that restore is the pane's own job and not something the shared helper does for it.
+    ///
+    /// `commitInsert` undoes **the insert**, deliberately: it deletes the objects it was handed and
+    /// leaves every other pending edit in the context alone, so a failed creation cannot take the
+    /// user's unrelated work with it. The note's timestamp is one of those unrelated edits, so
+    /// nothing puts it back and the caller has to.
+    ///
+    /// **`hasChanges` is the assertion that can tell the two undo shapes apart.** The value on
+    /// `note.updatedAt` cannot: a live `Note` reference reads back the assigned value whether the
+    /// context kept the edit or discarded it, so a `commitInsert` mutated to `modelContext
+    /// .rollback()` survives an equality check on it. The pending-change flag does not — a targeted
+    /// delete leaves the note's edit pending, a context rollback throws it away with everything
+    /// else. Found by mutating exactly that and watching the equality check pass.
+    @Test func aRefusedCreationLeavesTheNotesOwnTimestampForTheCallerToRestore() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let note = Note(kind: .list, title: "Plan")
+        modelContext.insert(note)
+        try modelContext.save()
+
+        let previousUpdatedAt = note.updatedAt
+        let bumped = Date(timeIntervalSince1970: 1_800_000_000)
+        note.updatedAt = bumped
+
+        #expect(throws: CommitRefused.self) {
+            try TaskCreationService(areas: [], projects: [])
+                .createTask(
+                    from: draft(title: "Embedded"),
+                    into: modelContext,
+                    commit: { _ in throw CommitRefused() }
+                )
+        }
+
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty)
+        #expect(
+            modelContext.hasChanges,
+            "the undo discarded the note's pending edit too, so the pane's restore is dead code"
+        )
+        #expect(note.updatedAt == bumped && bumped != previousUpdatedAt)
+        #expect(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).isEmpty)
+    }
+
+    /// Non-vacuity for the scan above: it names six real files, each holding the function it says
+    /// it does, and a path that does not exist throws rather than reading as an empty pass.
+    @Test func theSixCreateSurfaceFilesAreAllReachedByTheScan() throws {
+        var paths: Set<String> = []
+        for surface in commitSurfaces {
+            let raw = try CadenceSourceScan.sourceFile(surface.path)
+            #expect(raw.count > 400, "\(surface.path) read as \(raw.count) characters")
+            #expect(
+                raw.contains("func \(surface.function)("),
+                "\(surface.path) holds no func \(surface.function)("
+            )
+            paths.insert(surface.path)
+        }
+        #expect(paths.count == 6, "the surface table lost a file: \(paths.sorted())")
+
+        #expect(throws: (any Error).self) {
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ThereIsNoSuchFile.swift")
+        }
+    }
+
+    /// The two `catch` patterns match a branch that reports and leaves, and miss one that only
+    /// reports — which is the whole difference this ticket is about.
+    @Test func theFailedCommitBranchPatternsRequireTheCatchToLeaveTheFunction() {
+        #expect(CadenceSourceScan.matchCount(Self.embedFailureBranch, in: "catch {\n return nil\n }") == 1)
+        #expect(CadenceSourceScan.matchCount(Self.embedFailureBranch, in: "catch {\n }") == 0)
+        #expect(CadenceSourceScan.matchCount(
+            Self.composerFailureBranch,
+            in: "catch {\n actionError = TaskCreationService.saveFailureNotice\n return\n }"
+        ) == 1)
+        #expect(CadenceSourceScan.matchCount(
+            Self.composerFailureBranch,
+            in: "catch {\n actionError = TaskCreationService.saveFailureNotice\n }"
+        ) == 0)
+    }
 }

@@ -333,8 +333,7 @@ struct TaskDetailActionsSection: View {
                     help: "Unschedule"
                 ) {
                     SchedulingActions.removeFromCalendar(task)
-                    task.scheduledStartMin = -1
-                    task.scheduledDate = ""
+                    CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
                 }
             }
 

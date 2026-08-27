@@ -76,7 +76,7 @@ enum RootCommandEventSupport {
         case .act(.cancelDelete):
             context.deleteConfirmationManager.cancel()
         case .act(.confirmDatePicker):
-            context.hoveredTaskDatePickerManager.confirm()
+            context.hoveredTaskDatePickerManager.confirm(in: context.modelContext)
         case .act(.cancelDatePicker):
             context.hoveredTaskDatePickerManager.cancel()
         case .passToOverlay, .noModal:
@@ -119,7 +119,7 @@ enum RootCommandEventSupport {
             if event.modifierFlags.contains(.shift) {
                 context.hoveredTaskDatePickerManager.present(for: task, kind: .doDate)
             } else {
-                RootCommandActionSupport.toggleTodayDate(for: task, kind: .doDate)
+                RootCommandActionSupport.toggleTodayDate(for: task, kind: .doDate, in: context.modelContext)
             }
             return nil
         case 2:
@@ -127,7 +127,7 @@ enum RootCommandEventSupport {
             if event.modifierFlags.contains(.shift) {
                 context.hoveredTaskDatePickerManager.present(for: task, kind: .dueDate)
             } else {
-                RootCommandActionSupport.toggleTodayDate(for: task, kind: .dueDate)
+                RootCommandActionSupport.toggleTodayDate(for: task, kind: .dueDate, in: context.modelContext)
             }
             return nil
         case 35:
@@ -178,7 +178,7 @@ enum RootCommandEventSupport {
                   let task = context.hoveredTaskManager.hoveredTask,
                   let dateKind = context.hoveredTaskManager.hoveredDateKind else { return event }
             let delta = event.keyCode == 27 ? -1 : 1
-            RootCommandActionSupport.nudgeDate(for: task, kind: dateKind, delta: delta)
+            RootCommandActionSupport.nudgeDate(for: task, kind: dateKind, delta: delta, in: context.modelContext)
             return nil
         default:
             return event

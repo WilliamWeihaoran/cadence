@@ -313,14 +313,18 @@ struct MacTaskRow: View {
                 get: { dueDatePickerDate },
                 set: {
                     dueDatePickerDate = $0
-                    task.dueDate = DateFormatters.dateKey(from: $0)
+                    CadenceTaskDateEditing.setDueDate(
+                        DateFormatters.dateKey(from: $0),
+                        for: task,
+                        in: modelContext
+                    )
                 }
             ),
             viewMonth: $dueDateViewMonth,
             isOpen: $showDueDatePicker,
             showsClear: true,
             onClear: {
-                task.dueDate = ""
+                CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
             }
         )
     }
@@ -331,14 +335,18 @@ struct MacTaskRow: View {
                 get: { doDatePickerDate },
                 set: {
                     doDatePickerDate = $0
-                    task.scheduledDate = DateFormatters.dateKey(from: $0)
+                    CadenceTaskDateEditing.setScheduledDate(
+                        DateFormatters.dateKey(from: $0),
+                        for: task,
+                        in: modelContext
+                    )
                 }
             ),
             viewMonth: $doDateViewMonth,
             isOpen: $showDoDatePicker,
             showsClear: true,
             onClear: {
-                task.scheduledDate = ""
+                CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
             }
         )
     }

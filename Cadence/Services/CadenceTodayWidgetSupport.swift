@@ -53,7 +53,7 @@ nonisolated enum CadenceTodayWidgetSupport {
         todayKey: String,
         limit: Int = 3
     ) throws -> CadenceTodayWidgetSnapshot {
-        let tasks = try modelContext.fetch(relevantTaskFetchDescriptor(todayKey: todayKey))
+        let tasks = try modelContext.fetch(todayCandidateFetchDescriptor())
         let suppressedTaskIDs = CadenceWidgetRefreshCenter.suppressedTaskIDs()
         return snapshot(
             from: tasks,
@@ -79,12 +79,20 @@ nonisolated enum CadenceTodayWidgetSupport {
 
         for task in todayTasks(from: tasks, todayKey: todayKey) where !suppressedTaskIDs.contains(task.id) {
             totalCount += 1
-            if !task.dueDate.isEmpty && task.dueDate < todayKey {
+            // The badges read the shared standing rather than the dates a third time. Exhaustive
+            // on purpose: the three counts must add up to `totalCount`, and before T-353 they did
+            // not — a past-do task fell through all three branches, so a widget drawing one row
+            // could read "0 overdue, 0 due, 0 planned" beside it.
+            switch task.todayStanding(todayKey: todayKey) {
+            case .pastDue:
                 overdueCount += 1
-            } else if task.dueDate == todayKey {
+            case .dueToday:
                 dueTodayCount += 1
-            } else if task.scheduledDate == todayKey {
+            case .pastDo, .doToday:
+                // Yesterday's plan is still planned work; "Planned" is the badge it belongs under.
                 scheduledTodayCount += 1
+            case nil:
+                break // Unreachable: `todayTasks` drops anything with no standing.
             }
 
             if visibleTasks.count < visibleLimit {
@@ -146,15 +154,24 @@ nonisolated enum CadenceTodayWidgetSupport {
         return min(referenceDate.addingTimeInterval(fallbackInterval), nextStartOfDay)
     }
 
+    /// The widget's Today list — **the app's Today scope, in the app's Today rank order**, with a
+    /// priority tie-break of its own on top.
+    ///
+    /// Both of those used to be spelled here: a local `rank` with no past-do branch and a
+    /// `rank < 3` membership test. So an unfinished task planned for an earlier day with no due
+    /// date was on the app's Today page and missing from this list — and from the Calendar
+    /// widget's "Next up", which is `.first` of this same call. That is T-353, and the reason it
+    /// was two definitions rather than one missed case is that `Cadence/Shared/` is not compiled
+    /// into `CadenceWidgets`. `AppTask.isTodayWork` / `todayStanding` are in `Models/`, which is,
+    /// so this and `CadenceTaskQuerySupport.activeTodayTasks` now read the same rule.
     nonisolated static func todayTasks(
         from tasks: [AppTask],
         todayKey: String
     ) -> [AppTask] {
         tasks.compactMap { task -> (task: AppTask, rank: Int, priorityRank: Int)? in
-            guard !task.isDone && !task.isCancelled else { return nil }
-            let taskRank = rank(task, todayKey: todayKey)
-            guard taskRank < 3 else { return nil }
-            return (task, taskRank, priorityRank(task.priority))
+            guard task.isTodayWork(todayKey: todayKey),
+                  let standing = task.todayStanding(todayKey: todayKey) else { return nil }
+            return (task, standing.rawValue, priorityRank(task.priority))
         }
             .sorted { lhs, rhs in
                 if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
@@ -180,27 +197,30 @@ nonisolated enum CadenceTodayWidgetSupport {
         )
     }
 
-    private nonisolated static func rank(_ task: AppTask, todayKey: String) -> Int {
-        if !task.dueDate.isEmpty && task.dueDate < todayKey { return 0 }
-        if task.dueDate == todayKey { return 1 }
-        if task.scheduledDate == todayKey { return 2 }
-        return 3
-    }
-
     private nonisolated static func priorityRank(_ priority: TaskPriority) -> Int { priority.rank }
 
-    private nonisolated static func relevantTaskFetchDescriptor(todayKey: String) -> FetchDescriptor<AppTask> {
+    /// The rows the store has to hand over for `todayTasks` to pick from — **a deliberate
+    /// superset, and deliberately ignorant of what day it is.**
+    ///
+    /// A `#Predicate` is a macro compiled to a store query; it cannot call
+    /// `AppTask.isTodayWork(todayKey:)`, so this is the one place a Today rule *could* only exist
+    /// as a second copy. It used to be one: three date terms with no past-do branch, which is why
+    /// fixing `todayTasks` alone would have left the shipping widget still missing the task —
+    /// the row never reached it. So the date terms are gone rather than corrected. What is left
+    /// says only "unfinished, and carrying at least one date", which every standing in
+    /// `CadenceTodayStanding` implies and no future edit to that rule can outgrow.
+    ///
+    /// Internal rather than `private` so a test can drive the store query and the in-memory scope
+    /// from one fixture set and require the same ids —
+    /// `theWidgetsStoreQueryKeepsEveryTaskItsTodayScopeAdmits`.
+    nonisolated static func todayCandidateFetchDescriptor() -> FetchDescriptor<AppTask> {
         let doneStatus = TaskStatus.done.rawValue
         let cancelledStatus = TaskStatus.cancelled.rawValue
 
         let predicate = #Predicate<AppTask> { task in
             task.statusRaw != doneStatus &&
             task.statusRaw != cancelledStatus &&
-            (
-                task.scheduledDate == todayKey ||
-                task.dueDate == todayKey ||
-                (task.dueDate != "" && task.dueDate < todayKey)
-            )
+            (task.dueDate != "" || task.scheduledDate != "")
         }
 
         return FetchDescriptor<AppTask>(predicate: predicate)

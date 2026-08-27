@@ -101,6 +101,13 @@ struct TaskCreationService {
     ///
     /// Prefer `createTask(from:into:)` on any surface that reports success — dismissing, navigating
     /// or handing the task on. See its note for why.
+    ///
+    /// **T-364 moved every such surface off this method.** What is left are callers that genuinely
+    /// do not report success: `SchedulingActions.createTask`, a timeline drop handler that mutates
+    /// pending alongside `dropTask`/`addTask` and tells nobody anything, and
+    /// `AIActionService.applyTaskDrafts`, which batches many drafts into one `try modelContext.save()`
+    /// and rethrows so its review sheets can present the failure. A new caller here needs the same
+    /// answer to "what does this surface show when the save throws?"
     @discardableResult
     func insertTask(from draft: TaskCreationDraft, into modelContext: ModelContext) -> AppTask? {
         insertion(from: draft, into: modelContext)?.task

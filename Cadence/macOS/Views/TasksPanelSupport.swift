@@ -271,15 +271,18 @@ enum TasksPanelSupport {
                 }
             }
         } else if dropKey == "date:today" {
-            task.scheduledDate = todayKey
+            CadenceTaskDateEditing.setScheduledDate(todayKey, for: task, in: modelContext)
         } else if dropKey == "date:scheduled" {
             if task.scheduledDate.isEmpty || task.scheduledDate == todayKey {
                 let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-                task.scheduledDate = DateFormatters.dateKey(from: tomorrow)
+                CadenceTaskDateEditing.setScheduledDate(
+                    DateFormatters.dateKey(from: tomorrow),
+                    for: task,
+                    in: modelContext
+                )
             }
         } else if dropKey == "date:unscheduled" {
-            task.scheduledDate = ""
-            task.scheduledStartMin = -1
+            CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
         } else if dropKey.hasPrefix("priority:") {
             let raw = String(dropKey.dropFirst(9))
             if let priority = TaskPriority(rawValue: raw) {

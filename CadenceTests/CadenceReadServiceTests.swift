@@ -44,7 +44,7 @@ struct CadenceReadServiceTests {
             limit: 50
         ))
 
-        #expect(results.map(\.title) == ["Write MCP bridge"])
+        #expect(results.items.map(\.title) == ["Write MCP bridge"])
     }
 
     @Test func containerSummaryCountsTasksAndDocuments() throws {
@@ -129,41 +129,41 @@ struct CadenceReadServiceTests {
         let bundleDetail = try fixture.service.getTaskBundle(bundleID: bundle.id.uuidString)
 
         #expect(taskDetail.summary.goal?.id == goal.id.uuidString)
-        #expect(try fixture.service.listTags(query: "feature").first?.summary.slug == "feature")
-        #expect(try fixture.service.listNotes(options: .init(kind: "list", query: "Design")).map(\.id) == [note.id.uuidString])
+        #expect(try fixture.service.listTags(query: "feature").items.first?.summary.slug == "feature")
+        #expect(try fixture.service.listNotes(options: .init(kind: "list", query: "Design")).items.map(\.id) == [note.id.uuidString])
         #expect(noteDetail.linkedTasks.map(\.id) == [task.id.uuidString])
         #expect(noteDetail.backlinks.map(\.id) == [backlink.id.uuidString])
-        #expect(try fixture.service.listGoals(options: .init(query: "Ship")).map(\.id) == [goal.id.uuidString])
+        #expect(try fixture.service.listGoals(options: .init(query: "Ship")).items.map(\.id) == [goal.id.uuidString])
         #expect(goalDetail.linkedContainers.map(\.id) == [fixture.project.id.uuidString])
         #expect(goalDetail.directTasks.map(\.id) == [task.id.uuidString])
         #expect(goalDetail.summary.parentGoalId == parentGoal.id.uuidString)
         #expect(goalDetail.summary.parentGoalTitle == parentGoal.title)
         #expect(goalDetail.summary.isTopLevel == false)
         #expect(goalDetail.summary.kind == GoalKind.completable.rawValue)
-        #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString)).first?.completedToday == true)
-        #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString)).first?.goal?.id == goal.id.uuidString)
-        #expect(try fixture.service.listLinks(options: .init(containerKind: "project", containerId: fixture.project.id.uuidString)).map(\.id) == [savedLink.id.uuidString])
-        #expect(try fixture.service.listTaskBundles(options: .init(dateKey: "2026-05-01")).map(\.id) == [bundle.id.uuidString])
+        #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString)).items.first?.completedToday == true)
+        #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString)).items.first?.goal?.id == goal.id.uuidString)
+        #expect(try fixture.service.listLinks(options: .init(containerKind: "project", containerId: fixture.project.id.uuidString)).items.map(\.id) == [savedLink.id.uuidString])
+        #expect(try fixture.service.listTaskBundles(options: .init(dateKey: "2026-05-01")).items.map(\.id) == [bundle.id.uuidString])
         #expect(bundleDetail.tasks.map(\.id) == [task.id.uuidString])
-        #expect(try fixture.service.search(query: "Goal Spec", scopes: ["links"]).first?.entityType == "saved_link")
-        #expect(try fixture.service.search(query: "Write daily", scopes: ["habits"]).first?.entityType == "habit")
-        #expect(try fixture.service.search(query: "Ship Goals", scopes: ["goals"]).first?.entityType == "goal")
-        #expect(try fixture.service.search(query: "feature", scopes: ["tags"]).first?.entityType == "tag")
+        #expect(try fixture.service.search(query: "Goal Spec", scopes: ["links"]).items.first?.entityType == "saved_link")
+        #expect(try fixture.service.search(query: "Write daily", scopes: ["habits"]).items.first?.entityType == "habit")
+        #expect(try fixture.service.search(query: "Ship Goals", scopes: ["goals"]).items.first?.entityType == "goal")
+        #expect(try fixture.service.search(query: "feature", scopes: ["tags"]).items.first?.entityType == "tag")
 
         // What used to be a pursuit is now a top-level ongoing goal owning the milestone.
         let parentSummary = try #require(try fixture.service.listGoals(options: .init(
             contextId: fixture.context.id.uuidString,
             query: "Cadence Platform"
-        )).first)
+        )).items.first)
         #expect(parentSummary.id == parentGoal.id.uuidString)
         #expect(parentSummary.isTopLevel)
         #expect(parentSummary.kind == GoalKind.ongoing.rawValue)
         #expect(parentSummary.subGoalCount == 1)
 
         let contexts = try fixture.service.listContexts()
-        #expect(contexts.first { $0.id == fixture.context.id.uuidString }?.goalCount == 2)
+        #expect(contexts.items.first { $0.id == fixture.context.id.uuidString }?.goalCount == 2)
 
-        #expect(try fixture.service.search(query: "Cadence Platform", scopes: ["goals"]).first?.entityType == "goal")
+        #expect(try fixture.service.search(query: "Cadence Platform", scopes: ["goals"]).items.first?.entityType == "goal")
     }
 
     @Test func readServiceMigratesLegacyListDocumentsOnInit() throws {
@@ -185,11 +185,11 @@ struct CadenceReadServiceTests {
         let detail = try service.getDocument(documentID: legacyDoc.id.uuidString)
         let searchHits = try service.search(query: "Canonical", scopes: ["documents"])
 
-        #expect(documents.map(\.id) == [legacyDoc.id.uuidString])
-        #expect(documents.map(\.title) == ["Launch Plan"])
+        #expect(documents.items.map(\.id) == [legacyDoc.id.uuidString])
+        #expect(documents.items.map(\.title) == ["Launch Plan"])
         #expect(detail.id == legacyDoc.id.uuidString)
         #expect(detail.content == "Canonical content after migration")
-        #expect(searchHits.map(\.entityId).contains(legacyDoc.id.uuidString))
+        #expect(searchHits.items.map(\.entityId).contains(legacyDoc.id.uuidString))
     }
 
     @Test func searchHonorsScopes() throws {
@@ -210,11 +210,11 @@ struct CadenceReadServiceTests {
         let eventNoteBodyHits = try fixture.service.search(query: "launch")
         let eventNoteScopedBodyHits = try fixture.service.search(query: "launch", scopes: ["event_notes"])
 
-        #expect(taskHits.map(\.entityType) == ["task"])
-        #expect(docHits.map(\.entityType) == ["document"])
-        #expect(eventNoteTitleHits.map(\.entityType) == ["event_note"])
-        #expect(eventNoteBodyHits.contains { $0.entityType == "event_note" })
-        #expect(eventNoteScopedBodyHits.map(\.entityType) == ["event_note"])
+        #expect(taskHits.items.map(\.entityType) == ["task"])
+        #expect(docHits.items.map(\.entityType) == ["document"])
+        #expect(eventNoteTitleHits.items.map(\.entityType) == ["event_note"])
+        #expect(eventNoteBodyHits.items.contains { $0.entityType == "event_note" })
+        #expect(eventNoteScopedBodyHits.items.map(\.entityType) == ["event_note"])
     }
 
     /// A week-based streak must be spelled in weeks on the MCP search surface.
@@ -265,13 +265,13 @@ struct CadenceReadServiceTests {
         try fixture.modelContext.save()
 
         let weeklySubtitle = try #require(
-            fixture.service.search(query: "Swim laps", scopes: ["habits"]).first?.subtitle
+            fixture.service.search(query: "Swim laps", scopes: ["habits"]).items.first?.subtitle
         )
         #expect(weeklySubtitle == "Work - 3 week streak")
         #expect(!weeklySubtitle.contains("day"))
 
         let dailySubtitle = try #require(
-            fixture.service.search(query: "Swim warmup", scopes: ["habits"]).first?.subtitle
+            fixture.service.search(query: "Swim warmup", scopes: ["habits"]).items.first?.subtitle
         )
         #expect(dailySubtitle == "Work - 2 day streak")
     }
@@ -323,7 +323,7 @@ struct CadenceReadServiceTests {
         try fixture.modelContext.save()
 
         let hits = try fixture.service.search(query: "Zettel", scopes: ["notes"])
-        let byType = Dictionary(uniqueKeysWithValues: hits.map { ($0.entityType, $0.subtitle) })
+        let byType = Dictionary(uniqueKeysWithValues: hits.items.map { ($0.entityType, $0.subtitle) })
 
         // The prose, in the vocabulary the app's own tabs use.
         #expect(byType["permanent_note"] == "Notepad")
@@ -336,7 +336,7 @@ struct CadenceReadServiceTests {
 
         // The retired vocabulary is gone from every subtitle in the response, not only the two
         // asserted above.
-        #expect(!hits.contains { $0.subtitle == "Permanent note" || $0.subtitle == "Meeting note" })
+        #expect(!hits.items.contains { $0.subtitle == "Permanent note" || $0.subtitle == "Meeting note" })
 
         // The stable keys: unchanged, and asserted as the whole set so a rename cannot hide in one.
         #expect(Set(byType.keys) == ["daily_note", "weekly_note", "permanent_note", "document", "event_note"])
@@ -351,13 +351,157 @@ struct CadenceReadServiceTests {
         fixture.modelContext.insert(eventNote)
         try fixture.modelContext.save()
 
-        let scoped = try #require(fixture.service.search(query: "Zettel", scopes: ["event_notes"]).first)
-        let unscoped = try #require(fixture.service.search(query: "Zettel", scopes: ["notes"]).first)
+        let scoped = try #require(fixture.service.search(query: "Zettel", scopes: ["event_notes"]).items.first)
+        let unscoped = try #require(fixture.service.search(query: "Zettel", scopes: ["notes"]).items.first)
 
         #expect(scoped.entityType == "event_note")
         #expect(scoped.subtitle == "Event note")
         #expect(scoped.subtitle == unscoped.subtitle)
         #expect(scoped.subtitle == NoteReferencePanelSupport.noteKindLabel(.meeting))
+    }
+
+    // MARK: - T-382 / T-383, a page that says it is a page
+
+    /// **T-382: a full page names the rows it left behind.**
+    ///
+    /// Before the envelope, `list_tasks` answered with a bare array. Ask for 3 of 7 and you get
+    /// three rows and no way at all to learn about the other four — the same response a store
+    /// holding exactly three tasks produces. A person notices a suspiciously round list; an agent
+    /// reasons on it as the population.
+    @Test func aFullPageOfTasksReportsTheRowsItLeftBehind() throws {
+        let fixture = try PagingFixture(taskCount: 7)
+
+        let page = try fixture.service.listTasks(options: .init(limit: 3))
+
+        #expect(page.returnedCount == 3)
+        #expect(page.items.count == 3)
+        #expect(page.totalCount == 7)
+        #expect(page.totalCount > page.returnedCount)
+        #expect(page.hasMore)
+        #expect(page.offset == 0)
+        #expect(page.nextOffset == 3)
+    }
+
+    /// A result under the cap says so, rather than leaving the caller to guess from the row count.
+    @Test func aPageShorterThanItsLimitReportsCountsThatAgree() throws {
+        let fixture = try PagingFixture(taskCount: 7)
+
+        let page = try fixture.service.listTasks(options: .init(limit: 50))
+
+        // Non-vacuity: the fixture really has rows, so equal counts are not two zeroes agreeing.
+        #expect(page.returnedCount == 7)
+        #expect(page.returnedCount == page.totalCount)
+        #expect(page.hasMore == false)
+        #expect(page.nextOffset == nil)
+    }
+
+    /// The sharp case: `returnedCount == limit` **and** nothing left.
+    ///
+    /// A `hasMore` computed as "did we fill the page?" is right on every input except this one,
+    /// which is exactly the input a caller hits when the store size happens to be a multiple of
+    /// the limit. Both spellings are asserted — a page whose last row is the last row, and a final
+    /// page reached by walking an offset — because the first alone passes for `returnedCount <
+    /// limit` logic and the second alone passes for a bare `offset + limit >= totalCount` that
+    /// never looked at the rows.
+    @Test func aPageThatEndsExactlyOnTheLastRowDoesNotClaimMore() throws {
+        let fixture = try PagingFixture(taskCount: 7)
+
+        let exact = try fixture.service.listTasks(options: .init(limit: 7))
+        #expect(exact.returnedCount == 7)
+        #expect(exact.totalCount == 7)
+        #expect(exact.hasMore == false)
+        #expect(exact.nextOffset == nil)
+
+        let lastPage = try fixture.service.listTasks(options: .init(limit: 3, offset: 4))
+        #expect(lastPage.returnedCount == 3)
+        #expect(lastPage.offset == 4)
+        #expect(lastPage.totalCount == 7)
+        #expect(lastPage.hasMore == false)
+        #expect(lastPage.nextOffset == nil)
+    }
+
+    /// **T-383: more areas than the limit no longer costs the caller every project.**
+    ///
+    /// `listContainers` used to sort each kind on its own, append projects behind areas, and only
+    /// then apply the cap — so a capped unfiltered call returned a page that *could not* contain a
+    /// project. [[T-372]] made that reproducible rather than random: you lose all of them, every
+    /// read. The fix merges both kinds into one totally ordered candidate list before capping,
+    /// which is also the only shape a single `offset` can page honestly.
+    @Test func cappedContainerListsStillReachProjectsWhenAreasOutnumberTheLimit() throws {
+        let fixture = try PagingFixture(taskCount: 0, areaNames: ["Area A", "Area B", "Area C", "Area D", "Area E"], projectNames: ["Alpha Project", "Beta Project"])
+
+        // Non-vacuity: the store really holds five areas and two projects, and the areas really do
+        // outnumber the limit under test.
+        #expect(try fixture.service.listContainers(kind: "area", limit: 200).totalCount == 5)
+        #expect(try fixture.service.listContainers(kind: "project", limit: 200).totalCount == 2)
+
+        let page = try fixture.service.listContainers(limit: 3)
+
+        #expect(page.totalCount == 7)
+        #expect(page.returnedCount == 3)
+        #expect(page.hasMore)
+        // "Alpha Project" sorts ahead of every "Area …" at the same `order`, so a merged list puts
+        // a project on the first page. A concatenated one cannot.
+        #expect(page.items.contains { $0.kind == "project" })
+        #expect(page.items.map(\.name) == ["Alpha Project", "Area A", "Area B"])
+    }
+
+    /// Walking `nextOffset` visits every row of both kinds once — the property `hasMore` is only
+    /// worth reporting if it holds.
+    @Test func containerPagingWalksEveryRowOfBothKindsExactlyOnce() throws {
+        let fixture = try PagingFixture(taskCount: 0, areaNames: ["Area A", "Area B", "Area C", "Area D", "Area E"], projectNames: ["Alpha Project", "Beta Project"])
+
+        var walked: [String] = []
+        var offset: Int? = 0
+        var guardRail = 0
+        while let next = offset, guardRail < 20 {
+            guardRail += 1
+            let page = try fixture.service.listContainers(limit: 2, offset: next)
+            walked += page.items.map(\.name)
+            #expect(page.totalCount == 7)
+            offset = page.nextOffset
+        }
+
+        #expect(walked == ["Alpha Project", "Area A", "Area B", "Area C", "Area D", "Area E", "Beta Project"])
+        #expect(Set(walked).count == walked.count)
+        #expect(walked.count == 7)
+        #expect(guardRail == 4)
+    }
+
+    @MainActor
+    private final class PagingFixture {
+        let container: ModelContainer
+        let modelContext: ModelContext
+        let service: CadenceReadService
+
+        init(taskCount: Int, areaNames: [String] = [], projectNames: [String] = []) throws {
+            container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            modelContext = ModelContext(container)
+
+            let context = Context(name: "Work")
+            modelContext.insert(context)
+
+            for index in 0..<max(taskCount, 0) {
+                let task = AppTask(title: String(format: "Task %02d", index))
+                task.context = context
+                modelContext.insert(task)
+            }
+            // Every container sits at `order == 0`, which is the normal shape of a store that
+            // numbers each kind from zero — and the shape that makes the merged sort observable.
+            for name in areaNames {
+                let area = Area(name: name, context: context)
+                area.order = 0
+                modelContext.insert(area)
+            }
+            for name in projectNames {
+                let project = Project(name: name, context: context)
+                project.order = 0
+                modelContext.insert(project)
+            }
+            try modelContext.save()
+
+            service = CadenceReadService(container: container, performsMigrations: false)
+        }
     }
 
     // MARK: - T-372, MCP list order is total or it is noise
@@ -369,15 +513,17 @@ struct CadenceReadServiceTests {
         let forwardContainers = try forward.service.listContainers()
         let reversedContainers = try reversed.service.listContainers()
 
-        #expect(forwardContainers.map(\.id) == reversedContainers.map(\.id))
-        #expect(forwardContainers.map(\.id) == OrderingFixture.expectedContainerIDs.map(\.uuidString))
+        #expect(forwardContainers.items.map(\.id) == reversedContainers.items.map(\.id))
+        #expect(forwardContainers.items.map(\.id) == OrderingFixture.expectedContainerIDs.map(\.uuidString))
         // Two areas named "Admin" at the same `order` in two contexts: only identity separates them.
-        #expect(forwardContainers.map(\.name) == ["Errands", "Operations", "Admin", "Admin", "Launch", "Move"])
+        // T-383 merged the two kinds into one ordered list before capping, so "Launch" and "Move"
+        // now sit among the `order == 0` rows by name instead of behind every area.
+        #expect(forwardContainers.items.map(\.name) == ["Errands", "Launch", "Move", "Operations", "Admin", "Admin"])
 
         let forwardContexts = try forward.service.listContexts()
         let reversedContexts = try reversed.service.listContexts()
-        #expect(forwardContexts.map(\.id) == reversedContexts.map(\.id))
-        #expect(forwardContexts.map(\.name) == ["Personal", "Work"])
+        #expect(forwardContexts.items.map(\.id) == reversedContexts.items.map(\.id))
+        #expect(forwardContexts.items.map(\.name) == ["Personal", "Work"])
 
         let forwardWork = try forward.service.contextSummary(contextID: OrderingFixture.workContextID.uuidString)
         let reversedWork = try reversed.service.contextSummary(contextID: OrderingFixture.workContextID.uuidString)
@@ -414,14 +560,14 @@ struct CadenceReadServiceTests {
 
         let forwardDocs = try forward.service.listDocuments()
         let reversedDocs = try reversed.service.listDocuments()
-        #expect(forwardDocs.map(\.id) == reversedDocs.map(\.id))
-        #expect(forwardDocs.map(\.id) == OrderingFixture.expectedDocumentIDs.map(\.uuidString))
-        #expect(forwardDocs.map(\.title) == ["Runbook", "Spec", "Charter"])
+        #expect(forwardDocs.items.map(\.id) == reversedDocs.items.map(\.id))
+        #expect(forwardDocs.items.map(\.id) == OrderingFixture.expectedDocumentIDs.map(\.uuidString))
+        #expect(forwardDocs.items.map(\.title) == ["Runbook", "Spec", "Charter"])
 
         let forwardNotes = try forward.service.listNotes(options: .init(limit: 50))
         let reversedNotes = try reversed.service.listNotes(options: .init(limit: 50))
-        #expect(forwardNotes.map(\.id) == reversedNotes.map(\.id))
-        #expect(forwardNotes.map(\.id) == OrderingFixture.expectedDocumentIDs.map(\.uuidString))
+        #expect(forwardNotes.items.map(\.id) == reversedNotes.items.map(\.id))
+        #expect(forwardNotes.items.map(\.id) == OrderingFixture.expectedDocumentIDs.map(\.uuidString))
     }
 
     /// One store, built twice from the same rows in opposite insertion orders.
@@ -464,11 +610,12 @@ struct CadenceReadServiceTests {
         static let trackerLinkID = pinnedID(0x63)
         static let duplicateDesignLinkID = pinnedID(0x64)
 
-        /// Areas first (`order`, then name, then id), then projects — the shape `listContainers`
-        /// concatenates.
+        /// One merged sequence (`order`, then name, then id) across both kinds — the shape
+        /// `listContainers` produces since T-383. It used to concatenate areas ahead of projects,
+        /// which is what let a capped call drop every project.
         static let expectedContainerIDs: [UUID] = [
-            errandsAreaID, operationsAreaID, workAdminAreaID, personalAdminAreaID,
-            launchProjectID, moveProjectID,
+            errandsAreaID, launchProjectID, moveProjectID, operationsAreaID,
+            workAdminAreaID, personalAdminAreaID,
         ]
 
         static let expectedLinkIDs: [UUID] = [

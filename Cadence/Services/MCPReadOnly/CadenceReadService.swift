@@ -65,6 +65,7 @@ nonisolated struct CadenceTaskListOptions: Sendable {
     var textQuery: String? = nil
     var tagSlugs: [String]? = nil
     var limit: Int = 50
+    var offset: Int = 0
 }
 
 nonisolated struct CadenceNoteListOptions: Sendable {
@@ -74,6 +75,7 @@ nonisolated struct CadenceNoteListOptions: Sendable {
     var query: String? = nil
     var tagSlugs: [String]? = nil
     var limit: Int = 50
+    var offset: Int = 0
 }
 
 nonisolated struct CadenceGoalListOptions: Sendable {
@@ -81,6 +83,7 @@ nonisolated struct CadenceGoalListOptions: Sendable {
     var contextId: String? = nil
     var query: String? = nil
     var limit: Int = 50
+    var offset: Int = 0
 }
 
 nonisolated struct CadenceHabitListOptions: Sendable {
@@ -88,6 +91,7 @@ nonisolated struct CadenceHabitListOptions: Sendable {
     var goalId: String? = nil
     var query: String? = nil
     var limit: Int = 50
+    var offset: Int = 0
 }
 
 nonisolated struct CadenceSavedLinkListOptions: Sendable {
@@ -95,11 +99,13 @@ nonisolated struct CadenceSavedLinkListOptions: Sendable {
     var containerId: String? = nil
     var query: String? = nil
     var limit: Int = 50
+    var offset: Int = 0
 }
 
 nonisolated struct CadenceTaskBundleListOptions: Sendable {
     var dateKey: String? = nil
     var limit: Int = 50
+    var offset: Int = 0
 }
 
 @MainActor
@@ -160,7 +166,7 @@ final class CadenceReadService {
         )
     }
 
-    func listTasks(options: CadenceTaskListOptions) throws -> [CadenceTaskSummary] {
+    func listTasks(options: CadenceTaskListOptions) throws -> CadencePage<CadenceTaskSummary> {
         let tasks = try fetchTasks()
         var filtered = tasks.filter { !$0.isCancelled }
 
@@ -215,10 +221,11 @@ final class CadenceReadService {
             }
         }
 
-        return filtered
-            .sorted(by: taskSort)
-            .prefix(cappedLimit(options.limit))
-            .map { taskSummary($0, allTasks: tasks) }
+        return CadencePage.paging(
+            filtered.sorted(by: taskSort),
+            offset: options.offset,
+            limit: options.limit
+        ) { taskSummary($0, allTasks: tasks) }
     }
 
     func getTask(taskID: String) throws -> CadenceTaskDetail {
@@ -249,23 +256,21 @@ final class CadenceReadService {
         )
     }
 
-    func listTaskBundles(options: CadenceTaskBundleListOptions) throws -> [CadenceTaskBundleSummary] {
+    func listTaskBundles(options: CadenceTaskBundleListOptions) throws -> CadencePage<CadenceTaskBundleSummary> {
         var bundles = try fetchTaskBundles()
 
         if let dateKey = try normalizedDateKey(options.dateKey) {
             bundles = bundles.filter { $0.dateKey == dateKey }
         }
 
-        return Array(bundles
-            .sorted {
-                if $0.dateKey != $1.dateKey { return $0.dateKey < $1.dateKey }
-                if $0.startMin != $1.startMin { return $0.startMin < $1.startMin }
-                let titles = $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle)
-                if titles != .orderedSame { return titles == .orderedAscending }
-                return $0.id.uuidString < $1.id.uuidString
-            }
-            .prefix(cappedLimit(options.limit))
-            .map(taskBundleSummary))
+        let ordered = bundles.sorted {
+            if $0.dateKey != $1.dateKey { return $0.dateKey < $1.dateKey }
+            if $0.startMin != $1.startMin { return $0.startMin < $1.startMin }
+            let titles = $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle)
+            if titles != .orderedSame { return titles == .orderedAscending }
+            return $0.id.uuidString < $1.id.uuidString
+        }
+        return CadencePage.paging(ordered, offset: options.offset, limit: options.limit, transform: taskBundleSummary)
     }
 
     func getTaskBundle(bundleID: String) throws -> CadenceTaskBundleDetail {
@@ -280,36 +285,63 @@ final class CadenceReadService {
         )
     }
 
-    func listContainers(kind: String? = nil, status: String? = nil, contextID: String? = nil, limit: Int = 50) throws -> [CadenceContainerRef] {
+    /// Areas and projects as **one** ordered sequence, not two concatenated ones (T-383).
+    ///
+    /// This used to sort each kind separately, append projects behind areas, and only then apply
+    /// `prefix(cappedLimit(limit))`. With more areas than the limit that cut every project — the
+    /// caller asked for containers and got a page that could not contain one, with nothing in the
+    /// response saying so. [[T-372]] made it worse in the only way determinism can: before it, the
+    /// order was unstable and *which* rows you lost varied between reads; after it, you lose all
+    /// projects, every time.
+    ///
+    /// Merging rather than requiring `kind` or returning per-kind buckets, because merging is the
+    /// option that keeps T-372's total order meaningful. `CadenceMCPOrdering.precedes` is already
+    /// defined over `SortKey`, not over `Area` or `Project`, and it ends on `id` — so it is
+    /// *already* a total order across both kinds and needs no new rule to merge them. Buckets would
+    /// need two offsets and two `hasMore` flags for one `limit`; requiring `kind` would turn the
+    /// default 50-row call into an error. One ordered list is the only shape `CadencePage`'s single
+    /// `offset` can page honestly.
+    ///
+    /// Kind-filtered calls are unchanged. The unfiltered call now interleaves the two kinds by
+    /// `order`/name/id instead of listing all areas first; that ordering change is the fix, not a
+    /// side effect of it.
+    func listContainers(kind: String? = nil, status: String? = nil, contextID: String? = nil, limit: Int = 50, offset: Int = 0) throws -> CadencePage<CadenceContainerRef> {
         let contextUUID = try contextID.map(uuid)
         let normalizedKind = try kind.map(normalizeContainerKind)
         let normalizedStatus = try status.map { try validateContainerStatus($0, kind: normalizedKind) }
 
-        var refs: [CadenceContainerRef] = []
+        var candidates: [(key: CadenceMCPOrdering.SortKey, container: CadenceResolvedContainer)] = []
         if normalizedKind == nil || normalizedKind == "area" {
-            refs += try fetchAreas()
+            candidates += try fetchAreas()
                 .filter { area in
                     (normalizedStatus == nil || area.statusRaw == normalizedStatus) &&
                     (contextUUID == nil || area.context?.id == contextUUID)
                 }
-                .sorted(by: CadenceMCPOrdering.precedes)
-                .map(containerRef)
+                .map { (CadenceMCPOrdering.sortKey($0), CadenceResolvedContainer.area($0)) }
         }
 
         if normalizedKind == nil || normalizedKind == "project" {
-            refs += try fetchProjects()
+            candidates += try fetchProjects()
                 .filter { project in
                     (normalizedStatus == nil || project.statusRaw == normalizedStatus) &&
                     (contextUUID == nil || project.context?.id == contextUUID)
                 }
-                .sorted(by: CadenceMCPOrdering.precedes)
-                .map(containerRef)
+                .map { (CadenceMCPOrdering.sortKey($0), CadenceResolvedContainer.project($0)) }
         }
 
-        return Array(refs.prefix(cappedLimit(limit)))
+        candidates.sort { CadenceMCPOrdering.precedes($0.key, $1.key) }
+
+        return CadencePage.paging(candidates, offset: offset, limit: limit) { candidate in
+            switch candidate.container {
+            case .area(let area):
+                return containerRef(area)
+            case .project(let project):
+                return containerRef(project)
+            }
+        }
     }
 
-    func listContexts(includeArchived: Bool = false, query: String? = nil, limit: Int = 50) throws -> [CadenceContextRef] {
+    func listContexts(includeArchived: Bool = false, query: String? = nil, limit: Int = 50, offset: Int = 0) throws -> CadencePage<CadenceContextRef> {
         var contexts = try fetchContexts()
         if !includeArchived {
             contexts = contexts.filter { !$0.isArchived }
@@ -319,10 +351,12 @@ final class CadenceReadService {
                 CadenceSearchMatcher.matchScore(query: query, fields: [context.name, context.icon]) != nil
             }
         }
-        return Array(contexts
-            .sorted(by: CadenceMCPOrdering.precedes)
-            .prefix(cappedLimit(limit))
-            .map(contextRef))
+        return CadencePage.paging(
+            contexts.sorted(by: CadenceMCPOrdering.precedes),
+            offset: offset,
+            limit: limit,
+            transform: contextRef
+        )
     }
 
     func containerSummary(kind: String, id: String) throws -> CadenceContainerSummary {
@@ -413,7 +447,7 @@ final class CadenceReadService {
         )
     }
 
-    func listDocuments(containerKind: String? = nil, containerID: String? = nil, query: String? = nil, limit: Int = 50) throws -> [CadenceDocumentSummary] {
+    func listDocuments(containerKind: String? = nil, containerID: String? = nil, query: String? = nil, limit: Int = 50, offset: Int = 0) throws -> CadencePage<CadenceDocumentSummary> {
         var docs = try fetchNotes().filter { $0.kind == .list }
 
         if let containerFilter = try resolvedContainerFilter(kind: containerKind, id: containerID) {
@@ -427,10 +461,12 @@ final class CadenceReadService {
             }
         }
 
-        let noteSummaries = docs
-            .sorted(by: CadenceMCPOrdering.recencyPrecedes)
-            .map(documentSummary)
-        return Array(noteSummaries.prefix(cappedLimit(limit)))
+        return CadencePage.paging(
+            docs.sorted(by: CadenceMCPOrdering.recencyPrecedes),
+            offset: offset,
+            limit: limit,
+            transform: documentSummary
+        )
     }
 
     func getDocument(documentID: String) throws -> CadenceDocumentDetail {
@@ -451,7 +487,7 @@ final class CadenceReadService {
         throw CadenceReadError.documentNotFound(documentID)
     }
 
-    func listTags(includeArchived: Bool = false, query: String? = nil, limit: Int = 50) throws -> [CadenceTagDetail] {
+    func listTags(includeArchived: Bool = false, query: String? = nil, limit: Int = 50, offset: Int = 0) throws -> CadencePage<CadenceTagDetail> {
         var tags = try fetchTags()
         if !includeArchived {
             tags = tags.filter { !$0.isArchived }
@@ -461,12 +497,10 @@ final class CadenceReadService {
                 CadenceSearchMatcher.matchScore(query: query, fields: [tag.name, tag.slug, tag.desc]) != nil
             }
         }
-        return Array(TagSupport.sorted(tags)
-            .prefix(cappedLimit(limit))
-            .map(tagDetail))
+        return CadencePage.paging(TagSupport.sorted(tags), offset: offset, limit: limit, transform: tagDetail)
     }
 
-    func listNotes(options: CadenceNoteListOptions) throws -> [CadenceNoteSummary] {
+    func listNotes(options: CadenceNoteListOptions) throws -> CadencePage<CadenceNoteSummary> {
         var notes = try fetchNotes()
 
         if let kind = options.kind {
@@ -492,10 +526,12 @@ final class CadenceReadService {
             }
         }
 
-        return Array(notes
-            .sorted(by: CadenceMCPOrdering.recencyPrecedes)
-            .prefix(cappedLimit(options.limit))
-            .map(noteSummary))
+        return CadencePage.paging(
+            notes.sorted(by: CadenceMCPOrdering.recencyPrecedes),
+            offset: options.offset,
+            limit: options.limit,
+            transform: noteSummary
+        )
     }
 
     func getNote(noteID: String) throws -> CadenceNoteDetail {
@@ -518,7 +554,7 @@ final class CadenceReadService {
         )
     }
 
-    func listGoals(options: CadenceGoalListOptions) throws -> [CadenceGoalSummary] {
+    func listGoals(options: CadenceGoalListOptions) throws -> CadencePage<CadenceGoalSummary> {
         let contextUUID = try options.contextId.map(uuid)
         let normalizedStatus = try options.status.map(validateGoalStatus)
         var goals = try fetchGoals()
@@ -535,10 +571,12 @@ final class CadenceReadService {
             }
         }
 
-        return Array(goals
-            .sorted(by: CadenceMCPOrdering.precedes)
-            .prefix(cappedLimit(options.limit))
-            .map(goalSummary))
+        return CadencePage.paging(
+            goals.sorted(by: CadenceMCPOrdering.precedes),
+            offset: options.offset,
+            limit: options.limit,
+            transform: goalSummary
+        )
     }
 
     func getGoal(goalID: String) throws -> CadenceGoalDetail {
@@ -590,7 +628,7 @@ final class CadenceReadService {
         )
     }
 
-    func listHabits(options: CadenceHabitListOptions) throws -> [CadenceHabitSummary] {
+    func listHabits(options: CadenceHabitListOptions) throws -> CadencePage<CadenceHabitSummary> {
         let contextUUID = try options.contextId.map(uuid)
         let goalUUID = try options.goalId.map(uuid)
         var habits = try fetchHabits()
@@ -607,13 +645,15 @@ final class CadenceReadService {
             }
         }
 
-        return Array(habits
-            .sorted(by: CadenceMCPOrdering.precedes)
-            .prefix(cappedLimit(options.limit))
-            .map(habitSummary))
+        return CadencePage.paging(
+            habits.sorted(by: CadenceMCPOrdering.precedes),
+            offset: options.offset,
+            limit: options.limit,
+            transform: habitSummary
+        )
     }
 
-    func listLinks(options: CadenceSavedLinkListOptions) throws -> [CadenceSavedLinkSummary] {
+    func listLinks(options: CadenceSavedLinkListOptions) throws -> CadencePage<CadenceSavedLinkSummary> {
         var links = try fetchLinks()
 
         if let containerFilter = try resolvedContainerFilter(kind: options.containerKind, id: options.containerId) {
@@ -626,15 +666,17 @@ final class CadenceReadService {
             }
         }
 
-        return Array(links
-            .sorted(by: CadenceMCPOrdering.precedes)
-            .prefix(cappedLimit(options.limit))
-            .map(linkSummary))
+        return CadencePage.paging(
+            links.sorted(by: CadenceMCPOrdering.precedes),
+            offset: options.offset,
+            limit: options.limit,
+            transform: linkSummary
+        )
     }
 
-    func search(query: String, scopes: [String]? = nil, limit: Int = 50) throws -> [CadenceSearchHit] {
+    func search(query: String, scopes: [String]? = nil, limit: Int = 50, offset: Int = 0) throws -> CadencePage<CadenceSearchHit> {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
+        guard !trimmed.isEmpty else { return .empty(offset: max(offset, 0)) }
 
         let selectedScopes = try validateScopes(scopes ?? ["tasks", "containers", "contexts", "documents", "core_notes", "event_notes", "goals", "habits", "links", "tags"])
         let noteScopes = Set(["documents", "notes", "core_notes", "event_notes"])
@@ -795,12 +837,13 @@ final class CadenceReadService {
 
         // Hits carry the score `matchScore` already produced above, so rank on it directly.
         let ranked = CadenceSearchMatcher.rank(hits, score: { $0.score }, title: { $0.title })
-        return Array(ranked.prefix(cappedLimit(limit)))
+        return CadencePage.paging(ranked, offset: offset, limit: limit) { $0 }
     }
 
-    func recentMCPWrites(limit: Int = 50) throws -> [CadenceMCPAuditEntry] {
+    func recentMCPWrites(limit: Int = 50, offset: Int = 0) throws -> CadencePage<CadenceMCPAuditEntry> {
         try CadenceMCPAuditLogger.recentEntries(
             limit: limit,
+            offset: offset,
             logURL: CadenceModelContainerFactory.auditLogURL()
         )
     }
@@ -1334,10 +1377,6 @@ final class CadenceReadService {
             }
             return normalized
         })
-    }
-
-    private func cappedLimit(_ limit: Int) -> Int {
-        CadenceMCPServiceSupport.cappedLimit(limit)
     }
 
     private func format(_ date: Date) -> String {

@@ -1,5 +1,64 @@
 import Foundation
 
+/// The one envelope every MCP list and search response is wrapped in.
+///
+/// A bare array cannot say whether it is the whole answer. Every list tool here caps at
+/// `CadenceMCPServiceSupport.cappedLimit` and hands back a plain array, so a caller receiving 200
+/// rows cannot tell a complete result from the first page of a much longer one. That is a worse
+/// failure at a machine boundary than at a human one: a person notices a suspiciously round
+/// number and scrolls; an agent reasons on the array as if it were the population.
+///
+/// One envelope rather than per-tool fields, for two reasons. A caller learns the shape once and
+/// reads it on eleven tools. And `hasMore` is only actionable beside an `offset` that is defined
+/// against **one** totally ordered candidate list — which is why `listContainers` had to stop
+/// concatenating two independently ordered kinds (T-383) before this could mean anything.
+///
+/// `limit: 0` is a legitimate request: it returns no rows and a truthful `totalCount`, which is
+/// the cheapest way to ask "how many are there?".
+nonisolated struct CadencePage<Item: Codable & Sendable>: Codable, Sendable {
+    /// The rows on this page, in the response's total order.
+    let items: [Item]
+    /// Zero-based index of `items.first` in the ordered candidate list, clamped to `totalCount`.
+    let offset: Int
+    /// `items.count`, restated so a caller need not trust its own array length after transport.
+    let returnedCount: Int
+    /// How many rows matched the filters, **before** `offset` and `limit` were applied.
+    let totalCount: Int
+    /// `true` when ordered rows remain after this page.
+    let hasMore: Bool
+    /// The `offset` that fetches the next page, or `nil` when there is no next page.
+    let nextOffset: Int?
+
+    static func empty(offset: Int = 0) -> CadencePage<Item> {
+        CadencePage(items: [], offset: offset, returnedCount: 0, totalCount: 0, hasMore: false, nextOffset: nil)
+    }
+
+    /// Slice `candidates` — already filtered and already in the response's total order.
+    ///
+    /// `transform` runs only on the rows that survive the slice, so paging stays cheaper than the
+    /// map it replaces. It does not make the *fetch* cheaper; that is T-384 and is not this.
+    static func paging<Element>(
+        _ candidates: [Element],
+        offset: Int,
+        limit: Int,
+        transform: (Element) throws -> Item
+    ) rethrows -> CadencePage<Item> {
+        let totalCount = candidates.count
+        let start = min(max(offset, 0), totalCount)
+        let end = min(start + CadenceMCPServiceSupport.cappedLimit(limit), totalCount)
+        let items = try candidates[start..<end].map(transform)
+        let hasMore = end < totalCount
+        return CadencePage(
+            items: items,
+            offset: start,
+            returnedCount: items.count,
+            totalCount: totalCount,
+            hasMore: hasMore,
+            nextOffset: hasMore ? end : nil
+        )
+    }
+}
+
 nonisolated struct CadenceContextRef: Codable, Sendable {
     let id: String
     let name: String

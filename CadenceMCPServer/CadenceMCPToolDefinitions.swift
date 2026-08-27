@@ -2,7 +2,11 @@ import Foundation
 import MCP
 
 enum CadenceMCPToolDefinitions {
-    private static let serverVersion = "0.2.0"
+    // 0.3.0, not 0.2.1: every `list_*` tool, `search_cadence` and `get_recent_mcp_writes` now answer
+    // with a `CadencePage` object instead of a bare array (T-382). A client that indexes the
+    // response breaks, so the advertised version has to say so — it is the only signal an already
+    // installed client gets.
+    private static let serverVersion = "0.3.0"
     private static let writeToolNames: Set<String> = [
         "create_task",
         "update_task",
@@ -45,14 +49,16 @@ enum CadenceMCPToolDefinitions {
                 "containerId": uuidProperty("Optional area/project UUID."),
                 "textQuery": stringProperty("Optional task text search."),
                 "tagSlugs": flexibleStringArrayProperty("Optional array of tag names/slugs. Tasks must have every requested tag."),
-                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ])),
             Tool(name: "get_task", description: "Get full read-only detail for one Cadence task.", inputSchema: schema([
                 "taskId": uuidProperty("Task UUID."),
             ], required: ["taskId"])),
             Tool(name: "list_task_bundles", description: "List scheduled Cadence task bundles.", inputSchema: schema([
                 "date": dateProperty("Optional bundle date, yyyy-MM-dd or natural day."),
-                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ])),
             Tool(name: "get_task_bundle", description: "Get read-only detail for one Cadence task bundle.", inputSchema: schema([
                 "bundleId": uuidProperty("Task bundle UUID."),
@@ -60,7 +66,8 @@ enum CadenceMCPToolDefinitions {
             Tool(name: "list_contexts", description: "List Cadence contexts with summary counts.", inputSchema: schema([
                 "includeArchived": booleanProperty("Include archived contexts."),
                 "query": stringProperty("Optional context search."),
-                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ])),
             Tool(name: "get_context_summary", description: "Summarize one Cadence context, including its areas and projects.", inputSchema: schema([
                 "contextId": uuidProperty("Context UUID."),
@@ -69,7 +76,8 @@ enum CadenceMCPToolDefinitions {
                 "kind": stringProperty("Optional area or project.", enumValues: ["area", "project"]),
                 "status": stringProperty("Optional raw status."),
                 "contextId": uuidProperty("Optional context UUID."),
-                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ])),
             Tool(name: "get_container_summary", description: "Summarize one Cadence area or project.", inputSchema: schema([
                 "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),
@@ -78,7 +86,8 @@ enum CadenceMCPToolDefinitions {
             Tool(name: "list_tags", description: "List Cadence tags with task and note counts.", inputSchema: schema([
                 "includeArchived": booleanProperty("Include archived tags."),
                 "query": stringProperty("Optional tag search."),
-                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ])),
             Tool(name: "get_core_notes", description: "Read daily, weekly, and permanent Cadence notes without creating missing notes.", inputSchema: schema([
                 "date": dateProperty("Optional yyyy-MM-dd date key or natural day. Defaults to today."),
@@ -89,7 +98,8 @@ enum CadenceMCPToolDefinitions {
                 "containerId": uuidProperty("Optional area/project UUID."),
                 "query": stringProperty("Optional note search."),
                 "tagSlugs": flexibleStringArrayProperty("Optional array of tag names/slugs. Notes must have every requested tag."),
-                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ])),
             Tool(name: "get_note", description: "Get full Cadence note content plus note/task references and backlinks.", inputSchema: schema([
                 "noteId": uuidProperty("Note UUID."),
@@ -98,7 +108,8 @@ enum CadenceMCPToolDefinitions {
                 "containerKind": stringProperty("Optional area or project.", enumValues: ["area", "project"]),
                 "containerId": uuidProperty("Optional area/project UUID."),
                 "query": stringProperty("Optional document search."),
-                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ])),
             Tool(name: "get_document", description: "Get full markdown content for one Cadence document.", inputSchema: schema([
                 "documentId": uuidProperty("Document UUID."),
@@ -107,7 +118,8 @@ enum CadenceMCPToolDefinitions {
                 "status": stringProperty("Optional goal status: active, done, or paused.", enumValues: GoalStatus.allCases.map(\.rawValue)),
                 "contextId": uuidProperty("Optional context UUID."),
                 "query": stringProperty("Optional goal search."),
-                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ])),
             Tool(name: "get_goal", description: "Get full read-only detail for one Cadence goal.", inputSchema: schema([
                 "goalId": uuidProperty("Goal UUID."),
@@ -116,21 +128,25 @@ enum CadenceMCPToolDefinitions {
                 "contextId": uuidProperty("Optional context UUID."),
                 "goalId": uuidProperty("Optional goal UUID."),
                 "query": stringProperty("Optional habit search."),
-                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ])),
             Tool(name: "list_links", description: "List saved links attached to Cadence areas or projects.", inputSchema: schema([
                 "containerKind": stringProperty("Optional area or project.", enumValues: ["area", "project"]),
                 "containerId": uuidProperty("Optional area/project UUID."),
                 "query": stringProperty("Optional link search."),
-                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ])),
             Tool(name: "search_cadence", description: "Search Cadence tasks, containers, contexts, documents, notes, goals, habits, links, and tags.", inputSchema: schema([
                 "query": stringProperty("Search query.", minLength: 1),
                 "scopes": flexibleStringArrayProperty("Optional scopes: tasks, containers, contexts, documents, notes, core_notes, event_notes, goals, habits, links, tags.", enumValues: ["tasks", "containers", "contexts", "documents", "notes", "core_notes", "event_notes", "goals", "habits", "links", "tags"]),
-                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ], required: ["query"])),
             Tool(name: "get_recent_mcp_writes", description: "Read recent Cadence MCP write audit log entries.", inputSchema: schema([
-                "limit": integerProperty("Optional result limit, capped at 200.", minimum: 0, maximum: 200),
+                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
             ])),
             Tool(name: "create_task", description: "Create a Cadence task without Calendar side effects.", inputSchema: schema([
                 "title": stringProperty("Task title.", minLength: 1),

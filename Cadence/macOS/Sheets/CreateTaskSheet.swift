@@ -404,9 +404,22 @@ struct CreateTaskSheet: View {
             scheduledStartMin: seed.scheduledStartMin,
             estimatedMinutes: seed.estimatedMinutes
         )
-        guard TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: modelContext) != nil else {
+        // T-364: the commit is part of the creation, and it can fail. Everything below this line
+        // is the success experience — a reconcile pass, a success toast, a closed sheet — and none
+        // of it may run over a task the store did not take. On a throw `createTask` has already
+        // removed the task and its subtasks again, so the sheet is back to exactly what the user
+        // typed, with the reason above the title field. `iOSCreateTaskSheet.create()` is the same
+        // shape; the two composers do not get to differ about this.
+        let created: AppTask?
+        do {
+            created = try TaskCreationService(areas: areas, projects: projects)
+                .createTask(from: draft, into: modelContext)
+        } catch {
+            actionError = TaskCreationService.saveFailureNotice
             return
         }
+        guard created != nil else { return }
+
         actionError = nil
         // Fast-path reconcile so a newly-created scheduled/due task's notification is picked up
         // immediately, instead of waiting for the next scenePhase checkpoint.

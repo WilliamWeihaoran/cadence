@@ -473,12 +473,28 @@ struct NoteEditorPane: View {
             tags: []
         )
 
-        guard let task = TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: modelContext) else {
+        // T-364, two orderings in one. The reference is handed back only after the commit lands,
+        // because the editor writes `[[task:UUID|Title]]` into the note exactly when this returns
+        // non-nil — a nil return is what keeps the note free of a dangling reference. And the
+        // note's own timestamp bump rides in that same commit and is put back when it throws, the
+        // shape `AINoteActionSupport.append` uses, so a refused creation cannot leave the note
+        // marked as edited for an embed that was never written.
+        let previousUpdatedAt = note.updatedAt
+        note.updatedAt = Date()
+
+        let created: AppTask?
+        do {
+            created = try TaskCreationService(areas: areas, projects: projects)
+                .createTask(from: draft, into: modelContext)
+        } catch {
+            note.updatedAt = previousUpdatedAt
+            return nil
+        }
+        guard let task = created else {
+            note.updatedAt = previousUpdatedAt
             return nil
         }
 
-        note.updatedAt = Date()
-        try? modelContext.save()
         recentEmbeddedTasks[task.id] = task
         editorTextView?.markdownTaskEmbeds[task.id] = MarkdownTaskEmbedRenderInfo.task(task)
         return .task(task)

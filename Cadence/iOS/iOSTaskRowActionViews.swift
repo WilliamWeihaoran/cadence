@@ -19,7 +19,7 @@ enum iOSTaskRowSwipeActions {
                 systemImage: "sun.max.fill",
                 tint: Theme.amber
             ) {
-                CadenceTaskMutationSupport.scheduleToday(task, modelContext: modelContext)
+                CadenceTaskDateEditing.scheduleToday(task, in: modelContext)
             },
             CadenceSwipeAction(
                 id: "do-tomorrow",
@@ -27,7 +27,7 @@ enum iOSTaskRowSwipeActions {
                 systemImage: "calendar",
                 tint: Theme.blue
             ) {
-                CadenceTaskMutationSupport.scheduleTomorrow(task, modelContext: modelContext)
+                CadenceTaskDateEditing.scheduleTomorrow(task, in: modelContext)
             }
         ]
     }
@@ -225,8 +225,8 @@ struct iOSTaskRowDateChip: View {
 
     private func setDate(_ key: String) {
         switch field {
-        case .doDate: CadenceTaskMutationSupport.setScheduledDate(key, for: task, modelContext: modelContext)
-        case .dueDate: CadenceTaskMutationSupport.setDueDate(key, for: task, modelContext: modelContext)
+        case .doDate: CadenceTaskDateEditing.setScheduledDate(key, for: task, in: modelContext)
+        case .dueDate: CadenceTaskDateEditing.setDueDate(key, for: task, in: modelContext)
         }
     }
 
@@ -234,8 +234,8 @@ struct iOSTaskRowDateChip: View {
     /// why this goes through `clearScheduledDate` rather than writing `""` here.
     private func clearDate() {
         switch field {
-        case .doDate: CadenceTaskMutationSupport.clearScheduledDate(task, modelContext: modelContext)
-        case .dueDate: CadenceTaskMutationSupport.clearDueDate(task, modelContext: modelContext)
+        case .doDate: CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
+        case .dueDate: CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
         }
     }
 
@@ -605,26 +605,26 @@ struct iOSTaskRowContextMenu: View {
     private var doDateMenu: some View {
         Menu {
             Button {
-                CadenceTaskMutationSupport.scheduleToday(task, modelContext: modelContext)
+                CadenceTaskDateEditing.scheduleToday(task, in: modelContext)
             } label: {
                 Label("Today", systemImage: "sun.max.fill")
             }
 
             Button {
-                CadenceTaskMutationSupport.scheduleTomorrow(task, modelContext: modelContext)
+                CadenceTaskDateEditing.scheduleTomorrow(task, in: modelContext)
             } label: {
                 Label("Tomorrow", systemImage: "calendar")
             }
 
             Button {
-                CadenceTaskMutationSupport.scheduleNextWeek(task, modelContext: modelContext)
+                CadenceTaskDateEditing.scheduleNextWeek(task, in: modelContext)
             } label: {
                 Label("Next Week", systemImage: "calendar.badge.clock")
             }
 
             if !task.scheduledDate.isEmpty {
                 Button {
-                    CadenceTaskMutationSupport.clearScheduledDate(task, modelContext: modelContext)
+                    CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
                 } label: {
                     Label("Clear Do Date", systemImage: "xmark.circle")
                 }
@@ -637,26 +637,26 @@ struct iOSTaskRowContextMenu: View {
     private var dueDateMenu: some View {
         Menu {
             Button {
-                CadenceTaskMutationSupport.dueToday(task, modelContext: modelContext)
+                CadenceTaskDateEditing.dueToday(task, in: modelContext)
             } label: {
                 Label("Today", systemImage: "flag.fill")
             }
 
             Button {
-                CadenceTaskMutationSupport.dueTomorrow(task, modelContext: modelContext)
+                CadenceTaskDateEditing.dueTomorrow(task, in: modelContext)
             } label: {
                 Label("Tomorrow", systemImage: "calendar")
             }
 
             Button {
-                CadenceTaskMutationSupport.dueNextWeek(task, modelContext: modelContext)
+                CadenceTaskDateEditing.dueNextWeek(task, in: modelContext)
             } label: {
                 Label("Next Week", systemImage: "calendar.badge.clock")
             }
 
             if !task.dueDate.isEmpty {
                 Button {
-                    CadenceTaskMutationSupport.clearDueDate(task, modelContext: modelContext)
+                    CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
                 } label: {
                     Label("Clear Due Date", systemImage: "xmark.circle")
                 }

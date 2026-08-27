@@ -75,6 +75,33 @@ nonisolated struct TaskSectionConfig: Codable, Hashable, Identifiable {
     }
 }
 
+/// The four ways a task's dates can make it **today's** work, in the order Today sorts them.
+///
+/// **This lives in `Models/` for a build reason, not a taxonomy one.** `Cadence/Shared/` — where
+/// `CadenceTaskQuerySupport` draws the app's Today — is *not* compiled into `CadenceWidgets`;
+/// `Cadence/Models/` is, in that target's explicit source list, alongside `TaskOrdering` which is
+/// here for exactly the same reason. So a Today rule that the widget must obey cannot sit beside
+/// the app's Today query, and while it had no home both targets kept their own (T-353). This is
+/// that home: `AppTask.todayStanding(todayKey:)` is the definition, `CadenceTaskQuerySupport` and
+/// `CadenceTodayWidgetSupport` are callers.
+///
+/// The raw values are the sort key. They are **not** the order the cases are decided in — see
+/// `AppTask.todayStanding(todayKey:)` — and nothing persists them, so they are free to change
+/// together with that sort.
+nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
+    /// A deadline already missed.
+    case pastDue = 0
+    /// Planned for an earlier day and never finished — still today's work, and the case the
+    /// widget's copy of this rule never had.
+    case pastDo = 1
+    case dueToday = 2
+    case doToday = 3
+
+    /// The rank of a task today has no claim on: one past the last real standing, so
+    /// `rank < notTodayRank` is the membership test in `Int` form.
+    nonisolated static let notTodayRank = 4
+}
+
 /// A concrete action item. Lives inside an Area, Project, Milestone, or as an inbox item.
 @Model final class AppTask {
     var id: UUID = UUID()
@@ -312,6 +339,45 @@ nonisolated struct TaskSectionConfig: Codable, Hashable, Identifiable {
     /// isolated, and a caller that already knows "today" should not recompute it per row.
     nonisolated func isOverdue(todayKey: String) -> Bool {
         statusRaw != TaskStatus.done.rawValue && AppTask.isDueDateOverdue(dueDate, todayKey: todayKey)
+    }
+
+    /// Where this task's dates place it in **today's** work, or `nil` when today has no claim on
+    /// it. See `CadenceTodayStanding` for why the rule lives in `Models/`.
+    ///
+    /// Dates only: a settled task still has a standing, because `CadenceTaskQuerySupport.todayRank`
+    /// has always ranked one and macOS's Today sort calls that. Membership — which *does* exclude
+    /// settled work — is `isTodayWork(todayKey:)`.
+    ///
+    /// **A due date outranks a do date**, so `.dueToday` is decided before `.pastDo` and a task
+    /// due today and planned for yesterday reads as due-today. That is the order `todayGroups` and
+    /// `dateBuckets` already had, and the one macOS's deleted local rank got backwards.
+    nonisolated func todayStanding(todayKey: String) -> CadenceTodayStanding? {
+        if !dueDate.isEmpty && dueDate < todayKey { return .pastDue }
+        if dueDate == todayKey { return .dueToday }
+        if !scheduledDate.isEmpty && scheduledDate < todayKey { return .pastDo }
+        if scheduledDate == todayKey { return .doToday }
+        return nil
+    }
+
+    /// **The one membership test for Today**, on every surface that draws the day.
+    ///
+    /// Unfinished, and dated into today by any of the four standings — including `.pastDo`, work
+    /// planned for an earlier day and never done, which is still today's work. That case is the
+    /// whole of T-353: the widget kept a second, narrower spelling of this rule with no past-do
+    /// branch, so a task planned for yesterday with no due date sat on the app's Today page and
+    /// was missing from the Today widget *and* from the Calendar widget's "Next up", which reads
+    /// the same picker.
+    nonisolated func isTodayWork(todayKey: String) -> Bool {
+        statusRaw != TaskStatus.done.rawValue &&
+            statusRaw != TaskStatus.cancelled.rawValue &&
+            todayStanding(todayKey: todayKey) != nil
+    }
+
+    /// `todayStanding`'s sort key, with `CadenceTodayStanding.notTodayRank` for a task today has no
+    /// claim on. The `Int` spelling is what `CadenceTaskQuerySupport.todayRank` and macOS's
+    /// `TasksPanel` compare; both now come through here.
+    nonisolated func todayRank(todayKey: String) -> Int {
+        todayStanding(todayKey: todayKey)?.rawValue ?? CadenceTodayStanding.notTodayRank
     }
 
     var hidesEmptyDueDateInList: Bool {

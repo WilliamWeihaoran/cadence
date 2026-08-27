@@ -380,7 +380,7 @@ private struct iOSScheduleHourRow: View {
                                 // Only this pane offers it: the "Ready to Schedule" stack a cleared
                                 // task falls back into is directly above the grid here.
                                 onClearTime: {
-                                    CadenceTaskMutationSupport.clearScheduledTime(task, modelContext: modelContext)
+                                    CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)
                                 }
                             )
                         }
@@ -576,8 +576,12 @@ private struct iOSScheduleReadyTaskRow: View {
     }
 
     private func schedule(at startMin: Int) {
-        CadenceTaskMutationSupport.setScheduledDate(DateFormatters.todayKey(), for: task, modelContext: modelContext)
-        CadenceTaskMutationSupport.setScheduledTime(startMin, for: task, modelContext: modelContext)
+        CadenceTaskDateEditing.setScheduledSlot(
+            dateKey: DateFormatters.todayKey(),
+            startMin: startMin,
+            for: task,
+            in: modelContext
+        )
     }
 
     private var rowTint: Color {
