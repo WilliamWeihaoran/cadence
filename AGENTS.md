@@ -96,6 +96,14 @@ Long references, searchable only when needed:
 - Always build into a private `-derivedDataPath` when another build may be running.
 - A private DerivedData path isolates build output, not the macOS test host's app-group container.
   Use `scripts/test-host-lock.sh` for macOS test runs.
+- The lock lives at **`${TMPDIR}/cadence-macos-test-host.lock`**, not `/private/tmp`. `$TMPDIR`
+  resolves under `/var/folders/...` here, so checking `/private/tmp` reports the host free while a
+  run is live. Ask the script (`test-host-lock.sh status`); do not stat a path you guessed.
+- **A dead owner pid does not mean a stale lock.** A `nohup`'d `xcodebuild` outlives the shell that
+  acquired the lease, so the recorded pid is routinely gone while the run continues. The script
+  reclaims only on an expired lease **and** zero live test hosts — that conjunction is deliberate.
+  Never force the lock because the owner looks dead; that starts a second host against the same
+  app-group container, which is the T-236 corruption the lock exists to prevent.
 - If `xcodebuild` sits at `Command line invocation` with 0% CPU, suspect a project-file lock before
   debugging Swift.
 - Never create simulator devices. Use one existing stock simulator and `scripts/simulator-claim.sh`.
@@ -119,6 +127,9 @@ Before treating a red run as a code regression, check:
   exited early.
 - UI-test failures in an ordinary test run: the run was not scoped to `CadenceTests`.
 - Compile failures that name your file are real until proven otherwise.
+- `sleep` is blocked in this harness, including inside `nohup`'d background jobs — a poll loop
+  written with it burns every iteration instantly and exits 0 having watched nothing, which reads
+  exactly like "the condition never fired". Use the `Monitor` tool to wait on a condition.
 
 Full incident details are in `docs/AGENTS_REFERENCE.md`.
 

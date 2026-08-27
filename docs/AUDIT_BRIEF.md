@@ -85,6 +85,19 @@ It is more valuable than it looks. "Task deletion fetches subtasks first, detach
 repairs recurrence links, and deletes empty bundles through one shared path" tells the next agent
 where the good pattern lives. Vague reassurance ("looks fine") does not.
 
+## 9. Say which tree you read
+
+Audits run against the working tree, not `main`. One 2026-08-27 audit reported a ticket as already
+fixed; it was reading three agents' uncommitted work, so it was correct about what it read and wrong
+about the branch. Closing that ticket on its evidence would have credited work that had not landed.
+
+The reverse is worse and has not happened yet: an audit reading a dirty tree will also *miss*
+defects that in-flight work introduced but has not committed, and report the file as clean.
+
+So state the commit (`git rev-parse --short HEAD`) and whether the tree was dirty
+(`git status --porcelain | wc -l`). Two lines, and they tell the reader whether a "looks solid"
+means the branch is solid or only somebody's scratch state was.
+
 ## What not to change
 
 - Read-only, no build, no tests. That division is why this is cheap: discovery is read-a-lot,
