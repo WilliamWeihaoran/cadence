@@ -12,6 +12,7 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     var duplicateAreasMerged: Int = 0
     var duplicateProjectsMerged: Int = 0
     var duplicateNotesMerged: Int = 0
+    var duplicateHabitCompletionsRemoved: Int = 0
     var movedAreas: Int = 0
     var movedProjects: Int = 0
     var movedTasks: Int = 0
@@ -27,6 +28,7 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
             duplicateAreasMerged > 0 ||
             duplicateProjectsMerged > 0 ||
             duplicateNotesMerged > 0 ||
+            duplicateHabitCompletionsRemoved > 0 ||
             movedAreas > 0 ||
             movedProjects > 0 ||
             movedTasks > 0 ||
@@ -58,6 +60,7 @@ nonisolated enum DataIntegrityRepairService {
         var documents: [Document]
         var links: [SavedLink]
         var goalLinks: [GoalListLink]
+        var habitCompletions: [HabitCompletion]
     }
 
     private static let logger = Logger(subsystem: "com.haoranwei.Cadence", category: "DataIntegrity")
@@ -125,7 +128,8 @@ nonisolated enum DataIntegrityRepairService {
             notes: context.fetch(FetchDescriptor<Note>()),
             documents: context.fetch(FetchDescriptor<Document>()),
             links: context.fetch(FetchDescriptor<SavedLink>()),
-            goalLinks: context.fetch(FetchDescriptor<GoalListLink>())
+            goalLinks: context.fetch(FetchDescriptor<GoalListLink>()),
+            habitCompletions: context.fetch(FetchDescriptor<HabitCompletion>())
         )
         var state = RepairState()
 
@@ -143,6 +147,49 @@ nonisolated enum DataIntegrityRepairService {
         }
 
         repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
+        repairDuplicateHabitCompletions(in: store, modelContext: context, report: &report)
+    }
+
+    /// T-359: two devices can each mint a `HabitCompletion` for the same habit and the same day.
+    /// The `id`s differ, so CloudKit keeps both, and before this pass `completionCountsByDate()`
+    /// added them — one real check-in satisfying a `targetCount` of 2, or a `.timesPerWeek` target
+    /// reached with half the check-ins it names.
+    ///
+    /// This is [[T-328]]'s missing fetch, not a second repair mechanism beside it: that ticket
+    /// counted `HabitCompletion` among the models this service never looks at, and the fetch above
+    /// is now one of the ones it does.
+    ///
+    /// The collapse rule is `CadenceHabitCompletionStore`'s, deliberately not restated here — the
+    /// read (`HabitCompletion.collapsedCount(of:)`), the writer and this pass have to agree about
+    /// what a duplicated habit-day is worth, and the way they agree is by being one function.
+    ///
+    /// Grouped by **`(habit.id, date)`** rather than by habit instance, because two `Habit` rows
+    /// carrying one `id` is a state a restore can leave behind and their days are the same day.
+    /// Rows with no habit are left alone: an unowned completion is an orphan, which is the other
+    /// half of [[T-328]] and not this ticket. Rows with an empty `date` are left alone too — they
+    /// describe no day, so "the same day twice" is not a claim that can be made about them.
+    private static func repairDuplicateHabitCompletions(
+        in store: RepairStore,
+        modelContext: ModelContext,
+        report: inout DataIntegrityRepairReport
+    ) {
+        struct HabitDay: Hashable {
+            let habitID: UUID
+            let date: String
+        }
+
+        var rowsByDay: [HabitDay: [HabitCompletion]] = [:]
+        for completion in store.habitCompletions {
+            guard let habit = completion.habit, !completion.date.isEmpty else { continue }
+            rowsByDay[HabitDay(habitID: habit.id, date: completion.date), default: []].append(completion)
+        }
+
+        for rows in rowsByDay.values where rows.count > 1 {
+            report.duplicateHabitCompletionsRemoved += CadenceHabitCompletionStore.collapseDuplicates(
+                rows,
+                modelContext: modelContext
+            )
+        }
     }
 
     private static func mergeContext(
@@ -502,7 +549,7 @@ nonisolated enum DataIntegrityRepairService {
     private static func log(_ report: DataIntegrityRepairReport) {
         guard report.changed else { return }
         logger.info(
-            "Data integrity repair merged contexts=\(report.duplicateContextsMerged, privacy: .public), areas=\(report.duplicateAreasMerged, privacy: .public), projects=\(report.duplicateProjectsMerged, privacy: .public), notes=\(report.duplicateNotesMerged, privacy: .public), movedTasks=\(report.movedTasks, privacy: .public) from \(report.source, privacy: .public)"
+            "Data integrity repair merged contexts=\(report.duplicateContextsMerged, privacy: .public), areas=\(report.duplicateAreasMerged, privacy: .public), projects=\(report.duplicateProjectsMerged, privacy: .public), notes=\(report.duplicateNotesMerged, privacy: .public), habitCompletions=\(report.duplicateHabitCompletionsRemoved, privacy: .public), movedTasks=\(report.movedTasks, privacy: .public) from \(report.source, privacy: .public)"
         )
     }
 }

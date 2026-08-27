@@ -294,19 +294,7 @@ enum CadenceGoalGroupSupport {
     }
 }
 
-enum CadenceHabitSupport {
-    static func toggle(_ habit: Habit, on dateKey: String, modelContext: ModelContext) {
-        let existing = (habit.completions ?? []).filter { $0.date == dateKey }
-        if existing.isEmpty {
-            let completion = HabitCompletion(date: dateKey, habit: habit)
-            modelContext.insert(completion)
-            habit.completions = (habit.completions ?? []) + [completion]
-        } else {
-            for completion in existing {
-                habit.completions = (habit.completions ?? []).filter { $0.id != completion.id }
-                modelContext.delete(completion)
-            }
-        }
-        try? modelContext.save()
-    }
-}
+// `CadenceHabitSupport.toggle` lived here and was one of four open-coded copies of the habit
+// check-in toggle (T-359). It moved to `Services/CadenceHabitCompletionStore.swift`, which the
+// widget extension's target also compiles — this file's target does not include it, so a shared
+// toggle here could never have been the *one* toggle while `ToggleHabitCompletionIntent` existed.

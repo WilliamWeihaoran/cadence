@@ -206,21 +206,9 @@ struct ToggleHabitCompletionIntent: AppIntent {
             return HabitToggleResult(changed: false, habitID: nil, isDoneToday: false)
         }
 
-        let existing = (habit.completions ?? []).filter { $0.date == dateKey }
-        let isDoneToday: Bool
-        if existing.isEmpty {
-            let completion = HabitCompletion(date: dateKey, habit: habit)
-            modelContext.insert(completion)
-            habit.completions = (habit.completions ?? []) + [completion]
-            isDoneToday = true
-        } else {
-            for completion in existing {
-                habit.completions = (habit.completions ?? []).filter { $0.id != completion.id }
-                modelContext.delete(completion)
-            }
-            isDoneToday = false
-        }
-        try modelContext.save()
+        // The toggle itself is `CadenceHabitCompletionStore`'s, shared with the macOS habits list
+        // and iOS (T-359). It saves, and the throw is what `perform()` reports.
+        let isDoneToday = try CadenceHabitCompletionStore.toggle(habit, on: dateKey, modelContext: modelContext)
         return HabitToggleResult(
             changed: true,
             habitID: habit.id,

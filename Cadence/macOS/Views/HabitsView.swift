@@ -170,15 +170,10 @@ struct HabitsView: View {
     }
 
     private func toggleHabit(_ habit: Habit) {
-        let existing = (habit.completions ?? []).filter { $0.date == todayKey }
-        if !existing.isEmpty {
-            for completion in existing {
-                modelContext.delete(completion)
-            }
-        } else {
-            let c = HabitCompletion(date: todayKey, habit: habit)
-            modelContext.insert(c)
-        }
+        // One writer for a habit check-in, on every surface: see `CadenceHabitCompletionStore`
+        // and T-359. The swallow is deliberate — the row is already gone or present in the
+        // context the list renders from, and a second tap is the retry.
+        _ = try? CadenceHabitCompletionStore.toggle(habit, on: todayKey, modelContext: modelContext)
     }
 }
 

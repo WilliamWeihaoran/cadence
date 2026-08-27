@@ -4,7 +4,9 @@
 //
 //  Regression coverage for Habit model computation logic: currentStreak (daily / daysOfWeek /
 //  timesPerWeek / monthly), frequencyDays JSON round-tripping, reminderMinuteOfDay validation,
-//  and HabitCompletion.count vs targetCount day-satisfaction.
+//  and HabitCompletion.count vs targetCount day-satisfaction. Several rows for one day
+//  collapse to the largest rather than adding (T-359); the argument is in
+//  CadenceHabitCompletionDuplicateTests.
 //
 
 import Foundation
@@ -424,7 +426,15 @@ struct HabitStreakTests {
         #expect(habit.currentStreak(asOf: today, calendar: cal) == 2)
     }
 
-    @Test func dailyStreakCountsSummedCompletionsAcrossMultipleRecordsForSameDay() throws {
+    /// This test used to assert the opposite — that two rows for one day **add**, so `count 2` plus
+    /// `count 1` met a `targetCount` of 3. T-359 reversed it: several rows for one habit-day are
+    /// what two devices checking in produce, not a quantity the user split, and adding them let one
+    /// check-in satisfy a target. The day is now worth its largest row.
+    ///
+    /// The value that the old spelling protected is not lost, because nothing writes it: no path in
+    /// the app increments an existing row, so a day genuinely worth 3 is one row of 3, and `max`
+    /// reads that unchanged. `CadenceHabitCompletionDuplicateTests` carries the full argument.
+    @Test func dailyStreakCollapsesMultipleRecordsForOneDayToTheLargest() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
         let cal = Self.gregorian()
@@ -434,14 +444,14 @@ struct HabitStreakTests {
         habit.targetCount = 3
         context.insert(habit)
 
-        // Same day split across two separate completion rows (count 2 + count 1 == 3) should
-        // still satisfy the day's requirement.
-        Self.complete(habit, on: Self.key(2026, 3, 10), count: 2, context: context)
-        Self.complete(habit, on: Self.key(2026, 3, 10), count: 1, context: context)
+        Self.complete(habit, on: Self.key(2026, 3, 9), count: 2, context: context)
+        Self.complete(habit, on: Self.key(2026, 3, 9), count: 1, context: context)
         try context.save()
 
+        // Mar 9 is worth 2, not 3, so it never met the target and there is no streak to carry.
+        #expect(habit.completionCountsByDate()[Self.key(2026, 3, 9)] == 2)
         let today = Self.date(2026, 3, 10, calendar: cal)
-        #expect(habit.currentStreak(asOf: today, calendar: cal) == 1)
+        #expect(habit.currentStreak(asOf: today, calendar: cal) == 0)
     }
 
     @Test func daysOfWeekTargetCountRepresentsSelectedDayCountNotPerDayQuantity() throws {

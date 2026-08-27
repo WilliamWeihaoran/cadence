@@ -206,10 +206,20 @@ import Foundation
     /// Internal rather than private so `HabitInsights.swift` can score a `.timesPerWeek` window in
     /// the same week vocabulary `weeklyStreak` uses instead of re-deriving the totals from
     /// `completions` a second time.
+    ///
+    /// **Several rows for one date collapse to the largest, they do not add** — see
+    /// `HabitCompletion.collapsedCount(of:)` for why. This is the read side of T-359: two devices
+    /// checking one habit in on one day mint two rows that both survive CloudKit merge, and adding
+    /// them let a single check-in satisfy a `targetCount` or a `.timesPerWeek` target.
+    /// `DataIntegrityRepairService` removes the extra rows; this makes the count right in the
+    /// window before it runs, and on any device that has not run it yet.
+    ///
+    /// Summing *across* the days of a week — what `weeklyStreak` and `recentWeeklyTargetRate` do
+    /// with this dictionary — is untouched. The collapse is within one date key only.
     func completionCountsByDate() -> [String: Int] {
         var result: [String: Int] = [:]
         for completion in completions ?? [] {
-            result[completion.date, default: 0] += max(0, completion.count)
+            result[completion.date] = max(result[completion.date] ?? 0, max(0, completion.count))
         }
         return result
     }

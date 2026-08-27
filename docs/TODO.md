@@ -43,6 +43,16 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-391] **Habit day quantity split across rows now reads lower.** Residue from [[T-359]]'s
+  `max`-not-`sum` decision. The old test `dailyStreakCountsSummedCompletionsAcrossMultipleRecordsForSameDay`
+  pinned that a target-3 habit satisfied by rows of `count: 2` + `count: 1` counts as done; under
+  `max` that day reads 2 and breaks the streak. Verified this cannot arise from the app: every
+  `HabitCompletion(...)` construction omits `count`, which defaults to 1, and no writer sets it
+  higher. So the only source would be a legacy store from a build that did write counts, or a future
+  archive import ([[T-274]]). If either turns out to exist, the collapse needs to be
+  `max(count) per row-set` rather than plain `max`, or repair needs to fold split rows before
+  collapsing.
+
 - [T-389] **macOS edits a meeting note, fails to mirror it to Apple Calendar, and says nothing.**
   External ID stability audit (Codex, 2026-08-27, read at `84bc624`, clean tree).
   **Verified:** `CadenceEventNoteSupport.commitNote` — which saves Cadence first, then reports

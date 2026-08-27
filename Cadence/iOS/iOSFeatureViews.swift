@@ -410,7 +410,7 @@ struct iOSHabitsView: View {
     }
 
     private func toggle(_ habit: Habit) {
-        CadenceHabitSupport.toggle(habit, on: todayKey, modelContext: modelContext)
+        _ = try? CadenceHabitCompletionStore.toggle(habit, on: todayKey, modelContext: modelContext)
     }
 }
 #endif
