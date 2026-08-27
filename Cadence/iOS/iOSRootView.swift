@@ -25,6 +25,9 @@ struct iOSRootView: View {
     @Environment(CadenceFocusHandoffCenter.self) private var focusHandoffCenter
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// Read for exactly one thing: resolving a `.task` deep link to a real row before navigating.
+    /// A fetch by id, not a `@Query` — nothing here observes tasks.
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query private var allTasksForNotifications: [AppTask]
@@ -179,9 +182,16 @@ private extension iOSRootView {
     /// test failing.
     func handleDeepLinkRoute() {
         guard let deepLink = deepLinkManager.route?.deepLink else { return }
-        let destination = deepLink.featureDestination
+        // Not `deepLink.featureDestination`: a `.task` link has to be resolved against the store
+        // first, because Today's scope is narrower than "any task" and the id it arms has no owner
+        // outside a rendered row. `CadenceDeepLinkResolutionSupport` holds that decision, in
+        // `Shared/` where `CadenceTests` can reach it.
+        let destination = deepLinkManager.resolvedDestination(
+            for: deepLink,
+            modelContext: modelContext
+        )
         selection = destination.item
-        apply(deepLink.compactRoute)
+        apply(destination.compactRoute)
     }
 
     /// Show the Focus screen on whichever shell is up, without disturbing a Focus screen already

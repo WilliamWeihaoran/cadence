@@ -269,18 +269,19 @@ struct macOSRootView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
     }
 
+    /// A `.task` link no longer routes blind. `resolvedDestination(for:modelContext:)` fetches the
+    /// row, disarms `pendingTaskID` when Today will not show it, and answers with a page that
+    /// will — see `CadenceDeepLinkResolutionSupport`.
     private func handleDeepLinkRoute() {
         guard let route = deepLinkManager.route?.deepLink else { return }
-        switch route {
-        case .today, .task:
-            selection = .today
-        case .habits:
-            selection = .habits
-        case .goals:
-            selection = .goals
-        case .calendar:
-            selection = .calendar
-        }
+        let destination = deepLinkManager.resolvedDestination(
+            for: route,
+            modelContext: currentModelContext
+        )
+        // Mapped through `SidebarStaticDestination` rather than a second switch, so the sidebar's
+        // feature-to-item table stays the only one. Every destination a deep link can produce is
+        // in it; `.today` is the safety net, not a route.
+        selection = SidebarStaticDestination.allCases.first { $0.feature == destination }?.item ?? .today
     }
 }
 

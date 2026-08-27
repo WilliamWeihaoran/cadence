@@ -43,6 +43,17 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-375] **A completed task's deep link lands on All Tasks without opening the task, and the
+  macOS destination→sidebar mapping has an unpinned `?? .today` fallback.** Residue from [[T-368]],
+  filed rather than folded into it. (a) T-368 killed the lingering-arm bug — the dangerous half —
+  but tapping a widget link for a task you finished elsewhere still does not *show* you that task;
+  All Tasks keeps completed rows behind a collapsed toggle. Deciding to auto-expand or auto-select
+  there is a product call, not a bug fix. (b) `macOSRootView` now maps a resolved destination
+  through `SidebarStaticDestination.allCases.first { $0.feature == destination } ?? .today`. That
+  is correct today — every destination `resolvedDestination` can return is in that table, and
+  `allTasks` is a case — but nothing pins it, so a future resolver returning `.notes` or `.inbox`
+  would silently route to Today with the suite green.
+
 - [T-358] **Section state is one JSON blob, so two devices editing different sections clobber each
   other.** CloudKit audit (Codex, 2026-08-27); shape measured, cross-device outcome inferred.
   `Area.sectionConfigsRaw` (and Project's) holds the whole section array as one string, and ~20 call
@@ -119,15 +130,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   to the text view. **Decide:** if global model undo is real, pin what it may undo; if not, remove
   the root fallback. Do not leave it undecided — the current state means neither the code nor the
   copy can be trusted.
-
-- [T-368] **A stale task deep link leaves `pendingTaskID` armed indefinitely, and it can fire much
-  later.** Deep-link audit; measured. Only two call sites clear it —
-  `TasksPanelComponents.swift:439` and `iOSTaskViews.swift:444` — and both live inside a **rendered
-  task row**. The root sends `.task(id)` to Today, but Today excludes done and cancelled tasks and
-  hides completed rows by default. So tapping a widget link for a task that was finished elsewhere
-  opens Today, shows nothing, and **leaves the ID armed** — it can open the task later, detached
-  from the tap that requested it. Fix at the root: fetch by ID, open the inspector if found, clear
-  if not, and decide the fallback route for a task Today won't show.
 
 - [T-369] **The Calendar widget links to "the calendar", not to the date it was showing.** Measured.
   The widget snapshot has a `date`; the URL is bare `cadence://calendar` and the parser takes no

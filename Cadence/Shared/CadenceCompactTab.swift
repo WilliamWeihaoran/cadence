@@ -151,9 +151,16 @@ nonisolated extension CadenceFeatureDestination {
 }
 
 nonisolated extension CadenceDeepLink {
-    /// The feature a link opens. `.task` resolves to Today rather than to a screen of its own:
-    /// the task itself is surfaced by `CadenceDeepLinkManager.pendingTaskID`, which the task rows
-    /// watch and turn into a detail sheet.
+    /// The feature a link opens *before* the store is consulted. `.task` answers Today here
+    /// because Today is where a live task's row lives, and the row turns
+    /// `CadenceDeepLinkManager.pendingTaskID` into a detail sheet.
+    ///
+    /// **Roots must not route a `.task` link on this alone.** Today's scope excludes done and
+    /// cancelled work and anything dated for another day, so this answer is wrong for a large
+    /// class of real links; `CadenceDeepLinkManager.resolvedDestination(for:modelContext:)` fetches
+    /// the row and overrides it (and disarms `pendingTaskID`) when Today will not show it. This
+    /// property remains the answer for every singleton route, and the pre-resolution answer for
+    /// `.task`.
     var featureDestination: CadenceFeatureDestination {
         switch self {
         case .today, .task: return .today
