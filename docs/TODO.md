@@ -43,6 +43,34 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-387] **Three subtask-creation paths set only one side of the relationship, and the house rule
+  says not to.** SwiftData to-many traversal audit (Codex, 2026-08-27, read at `84bc624`, clean
+  tree). `Cadence/Models/AGENTS.md` requires appending to an optional to-many by assigning a new
+  array rather than trusting inverse timing. **Verified:** `subtask.parentTask = task` appears at
+  `macOS/Views/SchedulePanelComponents.swift:153`, `Services/TaskCreationService.swift:175` and
+  `Services/MCPReadOnly/CadenceWriteService.swift:169`, while only `iOSTaskDetailSheet.swift:444`
+  and `iOSSampleDataSupport.swift:431` also assign `task.subtasks = (task.subtasks ?? []) + …`.
+  So iOS does it correctly and the other three rely on SwiftData back-populating the inverse —
+  which [[T-338]] already documents as unsafe. The macOS popover is wrong by house rule outright;
+  the service and MCP paths may happen to be correct because a save and refetch runs before any
+  reader looks, and **nothing pins that**, which is the more dangerous state of the two.
+  Fix: one shared insert helper that sets the inverse, inserts the row, and assigns the parent
+  array — used by all four call sites. Test after **save and refetch**, asserting both sides;
+  the existing tests only prove rows were inserted or that the returned parent has subtasks, which
+  a one-sided write can satisfy.
+
+- [T-388] **`listGoals` reports a goal's own counts under names that read like totals, while
+  `getGoal` reports recursive ones.** Verified: `CadenceReadService.swift:929-930` computes
+  `linkedListCount` from `goal.listLinks` and `taskCount` from `goal.tasks` — flat, own-only —
+  while lines 551 and 558 in the same file use `GoalContributionResolver`, which deliberately walks
+  direct tasks, linked lists **and sub-goals**.
+  So a direction whose milestone owns a task reports one number in `listGoals` and a different one
+  in `getGoal.contribution`, with nothing in the field names to say why. The UI already treats
+  inherited linked lists as counting toward a direction, so own-only is the odd one out.
+  Decide the contract: use the resolver for summary counts, or rename to `ownTaskCount` /
+  `ownLinkedListCount`. Generic names on own-only numbers are the actual defect — an agent reading
+  `taskCount` has no reason to suspect it excludes sub-goals.
+
 - [T-382] **Every MCP list and search tool truncates silently — there is no way for an agent to know
   it got a page.** Pagination audit (Codex, 2026-08-27, read at `c54cadb`, clean tree).
   **Verified by counting: `hasMore`, `nextCursor` and `totalCount` appear ZERO times anywhere in
