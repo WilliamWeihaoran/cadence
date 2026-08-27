@@ -82,13 +82,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `desc` branch three lines above has the *identical* shape and **is** live, because `desc` really
   can be empty. Two branches that look the same, one works.
 
-- [T-361] **Turning reminders off cancels nothing until a scene-phase sweep.** Notification audit;
-  measured. `NotificationManager.reconcile` correctly calls `cancelAll()` when disabled — but
-  **zero** `onChange(of: notificationsEnabled)` handlers exist on either platform, so the toggle
-  writes `UserDefaults` and stops. Pending OS notifications survive until the app next backgrounds.
-  A reminder can fire after the user just turned reminders off, which reads as the setting not
-  working. Fix is small: react to the toggle on both platforms — cancel on false, reconcile on true.
-
 - [T-362] **Eleven macOS/iOS surfaces change a task's date or time without reconciling
   notifications.** Extends [[T-343]] (iOS *status* paths); this is the *date/time* half. Measured
   source, inferred staleness. Move a task from 9am to 3pm and the 9am notification stays pending
