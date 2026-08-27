@@ -7,9 +7,176 @@ read. Nothing was trimmed: each entry keeps its prose and the SHA that shipped i
 Search here before filing anything that sounds familiar — several tickets were re-reported this
 week by audits that had only seen the open list.
 
-233 entries.
+248 entries.
 
 ## Done
+
+- [T-319] `c022f61` **iOS task creation reports success for a task that was not saved.** From the silent-
+  persistence audit (Codex, 2026-08-26); premise verified — `iOSCreateTaskSheet` does
+  `try? modelContext.save()` at :280, then schedules notification reconciliation at :284, calls
+  `onCreated?(task)` at :286 and dismisses at :287. A throwing save produces the entire success
+  experience, including a reconcile pass over a task that does not exist.
+  **The app already has the right pattern twice**: the shared insertion helpers save inside
+  `do/catch`, **delete the newly inserted object on failure**, and throw; AI task creation throws
+  too. So the fix is to route through the existing helper rather than invent handling.
+
+- [T-320] `c022f61` **iOS destructive confirmations close before the deletion is even attempted.** From the
+  same audit; premise verified and **worse than reported**: `iOSNoteDeletionSupport` calls
+  `dismiss()` on :133 and `onConfirm()` on :134 — it does not dismiss before knowing the *result*,
+  it dismisses before the work *starts*. The delete then swallows its own save failure. List and
+  context deletion share the shape.
+  Related to [[T-291]], which is one specific ordering bug inside a list cascade; this is the
+  confirmation contract around it. The correct pattern exists: the privacy reset throws through its
+  service and the iOS settings surface shows failure text instead of claiming success.
+
+- [T-315] `2d3ab5e` **An AI summary that fails to save still closes the sheet as a success.** From the AI
+  note-action audit (Codex, 2026-08-26); premise verified at the exact line —
+  `AINoteActionSupport.swift:67` is `try? modelContext?.save()`, so a throwing save is swallowed,
+  and both review sheets dismiss immediately afterwards. The user watches the sheet close and has
+  no summary.
+  **The same file already does this correctly for the other action.** Task extraction throws on
+  save and its review sheets catch and present the error rather than dismissing — on both
+  platforms. So this is one of two sibling paths having drifted, not a missing practice.
+  Fix: make the append throwing, require a non-optional `ModelContext`, and have both summary
+  callbacks catch and show `AIErrorPresenter.message(for:)`. Note what the audit also observed —
+  the summary's *string formatting* is pinned by tests while its *persistence* is not, which is
+  why this survived. Same shape as [[T-291]], [[T-298]] and [[T-307]]: a failure collapsing into
+  an ordinary result, now the fourth instance.
+
+- [T-316] `2d3ab5e` **A note owned by both an area and a project gives its AI-extracted tasks to the area.**
+  From the same audit, premise verified: `AIActionService.swift:51` resolves the container as
+  `area?.name ?? project?.name`, and the draft-application path creates area tasks before it checks
+  project. The iOS review sheet's destination label repeats the same precedence.
+  **The double-owned state is reachable, and a test pins that it is preserved** — the integrity
+  repair service deliberately keeps a merged note carrying both, and the iOS surfaces pass both
+  straight into the AI menu. So this is not a hypothetical.
+  **The sharp framing, which the audit got right:** this is not a cross-platform mismatch. It is
+  one decision — area first, project second — repeated three times inside the AI note-action path.
+  And the app already disagrees with it elsewhere: an explicit note move clears the sibling field
+  to maintain a single owner (`AIActionsSupportViews.swift:36` and `:42`).
+  Fix by resolving the container once and preferring **project**, as the narrower task container,
+  then using that one answer for the prompt context, the destination label and the task insertion.
+  Test with a double-owned note and assert the tasks land in the project.
+
+- [T-296] `6ed9245` **Two subtask deletes bypass the shared detach.** From the same audit, premise verified.
+  `CadenceTaskMutationSupport` sets `subtask.parentTask = nil` before deleting, deliberately —
+  this codebase does not trust inverse back-population to have happened by the time a resolver reads
+  it. Two call sites delete directly without it: `iOSTaskDetailSheet.swift:451` and
+  `SchedulePanelComponents.swift:109`. Not a confirmed crash; it is the strict path and the loose
+  path disagreeing about the same operation. Fix with one shared `deleteSubtask` helper that nils
+  the inverse, removes from the parent's array, then deletes. Related to [[T-294]] — both are this
+  codebase's stated distrust of inverse propagation being honoured in one place and not another.
+
+- [T-294] `6ed9245` **Copied subtasks on a recurrence spawn never set `parentTask`.**
+  From the same audit, premise verified. `CadenceTaskRecurrenceWorkflowSupport` builds each copy as
+  `Subtask(title:)` plus `order` and assigns the array to `nextTask.subtasks`, relying on SwiftData
+  to back-populate the inverse. The existing test reads `next.subtasks`, so it cannot see the
+  difference. Lower priority than the three above because it is probably fine in practice — but the
+  delete and export paths read `Subtask.parentTask` **directly**, and this codebase already declines
+  to trust inverse back-population elsewhere for exactly that reason (see the `GoalListLink` detach
+  note in `CLAUDE.md`, which severs both sides before deleting). Pin it with a test that fetches a
+  `Subtask` and reads `parentTask`, not one that reads the parent's array.
+
+- [T-307] `afe97c2` **A failed tag fetch is reported to the caller as a successful write.** From the same
+  audit, premise verified: `TagSupport.resolveTags` returns `nil` when the fetch throws, and
+  `setTags(named:on:in:)` is `guard let resolved = ... else { return }` — a silent no-op. MCP's
+  update path treats a non-nil `tagNames` as a real requested change and then saves and audits
+  success, so a tag-only update can report done having changed nothing, and a create can produce an
+  untagged task. An AI agent has no way to tell.
+  Same shape as [[T-291]] and [[T-298]]: a failure collapsing into an ordinary result. Fix by
+  resolving tags **before** the mutation and throwing on failure, rather than letting a nil answer
+  mean "nothing to do".
+
+- [T-308] `afe97c2` **An unknown section name is silently redirected to the container's first section.**
+  From the same audit, premise verified at `CadenceMCPServiceSupport.normalizedSectionName`: a
+  non-empty requested name that matches nothing falls through to `available.first ?? default`. So
+  an agent's typo — `Backlogg` for `Backlog` — puts the task in whatever section happens to be
+  first, and the write reports success.
+  A fallback is right for an *absent* section name and wrong for a *wrong* one; the current code
+  cannot tell those apart. Either reject a non-empty unmatched name for a specified container, or
+  return the requested-versus-stored section in the response so the caller can see the redirect.
+
+- [T-291] `908b1c5` **A failed cascade leaves a list's goal links already deleted.** From an external
+  read-only audit (Codex, 2026-08-26); **premise verified against the code before filing.**
+  `CadenceListDeleteHelpers.deleteProject` calls `delete(uniqueGoalListLinks(...))` on the line
+  *before* `guard cascadeDeleteTasks(...) else { return false }`, and `deleteArea` has the identical
+  ordering. So a fetch failure returns `false` with the links already gone — and every caller saves
+  anyway (`EditListSheet`, macOS `SettingsView`, `iOSListDeletionSupport`). The list survives, its
+  tasks survive, and a goal silently loses the list feeding its percentage. Delete the links only
+  after the cascade has committed to succeeding, or make the whole delete one unit that rolls back.
+  Note the `false` return is currently advisory: callers save regardless, which is arguably the
+  deeper bug and should be decided at the same time.
+
+- [T-323] `f804dd8` **iOS keeps a stale Calendar permission after an EventKit store change.** From the
+  EventKit side-effect audit (Codex, 2026-08-26); premise verified by direct comparison — macOS's
+  store-change path increments `storeVersion` **and** calls `refreshAuthorizationState()`; iOS's
+  increments only, and the guard against stale cached authorization is pinned on macOS alone.
+  So revoking Calendar access while iOS is running leaves the app believing it still has it, which
+  is the same failure [[T-253]] fixed for Reminders on macOS — a permission read once and never
+  re-derived. Route the iOS store change through a handler that does both.
+
+- [T-325] `f804dd8` **An event note can reach Apple Calendar after the local save failed.** From the same
+  audit, premise verified: `iOSEventNoteEditorSheet` does `try? modelContext.save()` and then
+  pushes the note text into the native event; the EventKit update returns `Void`, so its own
+  failure is only printed.
+  **This is the [[T-322]] family with a sharper edge, and worth ranking above the others in it.**
+  A swallowed save that only closes a sheet is recoverable — the user retypes. Here an unverified
+  local commit is followed by a write to an **external system that cannot be rolled back**: Apple
+  Calendar can end up holding note text that Cadence does not, and no amount of retrying in Cadence
+  undoes it. Order the local save first with real error handling, and only then sync — or declare
+  the native sync best-effort and show that state, rather than leaving it ambiguous.
+
+  This is also the third finding in a row where **iOS lags a pattern macOS already has**
+  (see [[T-323]], [[T-324]]). Worth noting as a direction rather than three coincidences: macOS's
+  `CalendarManager` grew failure reporting and rollback, and the iOS sibling did not follow.
+
+- [T-292] `cddc366` **Seven paths set a task's context from `project.context` alone.** From the same audit,
+  premise verified. `CadenceTaskMutationSupport` does `project.context ?? project.area?.context`,
+  and it is the **only** file in the repo that does — measured. `TaskCreationService`,
+  `CadenceWriteService`, `SchedulePanelComponents`, `TasksPanelComponents`, `TasksPanelSupport`,
+  `KanbanBoardSupport` and `KanbanSectionColumnView` each assign `task.context = project.context`.
+  A task created or moved inside an **area-owned project whose own context is nil** then carries
+  `task.project` with no denormalized `task.context`, so context-scoped queries and counts miss it.
+  The fix is one shared spelling, not seven edits — this is the shape T-175 and T-290 already have.
+  **Sharper framing, from the task-creation audit 2026-08-26:** the clearest way to state this is
+  *create versus move*. Creating a task into a project sets `task.context = project.context`;
+  moving one into the **same** project uses the area fallback. So two tasks sitting in one
+  project can carry different context values based only on how they got there — which is a
+  much easier defect to argue about than seven paths against one helper, and points at the
+  same fix.
+
+- [T-293] `cddc366` **Editing a project's context on iOS leaves its tasks pointing at the old one.** From the
+  same audit, premise verified. `iOSListEditorViews` assigns `project.context` and `project.area`,
+  then calls `reassignTasks(in:)` — which only forwards to
+  `CadenceSectionEditingSupport.applySectionNameChanges`. Its own doc comment says it is about
+  section names, so this is a gap rather than a regression: nothing ever re-pointed the tasks.
+  Related to [[T-292]]: both are the denormalized `task.context` going stale, and they should
+  probably be fixed by the same helper.
+
+- [T-317] `2fc02d9` **A task whose chosen list has vanished is created anyway, silently in the Inbox.** From
+  the task-creation audit (Codex, 2026-08-26). **Measured in the code, live trigger inferred** —
+  the auditor did not reproduce the UI race, and neither have I.
+  `TaskCreationService.applyContainer` guards on finding the area or project by id and simply
+  returns when it cannot, attaching nothing — and `insertTask` inserts the task regardless. So a
+  create sheet holding a container id for a list deleted in another window, or removed by sync,
+  produces an Inbox task while the sheet showed a list. Both create sheets keep the selection in
+  state and only re-normalize when the *selection* changes, not when the available lists change,
+  which is what makes the stale id reachable.
+  **The app already has the right answer on its other write surface**: MCP write resolution throws
+  when the requested container is missing. Fix by giving the resolver a throwing or preflighted
+  form so creation fails visibly, or resets the selection where the user can see it, rather than
+  quietly downgrading to Inbox.
+
+- [T-318] `2fc02d9` **The iOS create sheet can say Inbox while saving into an inactive list.** From the same
+  audit; **measured in the code, live trigger inferred.** The visible container tile resolves names
+  from `activeAreas` / `activeProjects` and falls back to Inbox text when the selection is not
+  among them — but the save path constructs its service from **all** `areas` / `projects`. So if a
+  list is completed or archived while the sheet is open, the tile reads Inbox and the task lands in
+  the inactive list.
+  The fix is not to patch the label: **resolve the visible container and the saved container from
+  one source.** Two sources that agree today are what produced this. If inactive lists are not
+  valid targets, the selection should reset to Inbox when its list leaves the active set — which is
+  the same shape as [[T-317]], where a selection outlives the thing it names.
 
 - [T-289] `920c7a0` **Two iOS buttons wear macOS's hover style.** From the [[T-123]] split. `.iosPressable`
   **VERIFIED 2026-08-26 — keep open. The sweep is done and clean; the pin has a hole.** The valuable
