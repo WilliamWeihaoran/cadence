@@ -43,6 +43,54 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-382] **Every MCP list and search tool truncates silently — there is no way for an agent to know
+  it got a page.** Pagination audit (Codex, 2026-08-27, read at `c54cadb`, clean tree).
+  **Verified by counting: `hasMore`, `nextCursor` and `totalCount` appear ZERO times anywhere in
+  `Cadence/Services/MCPReadOnly` or `CadenceMCPServer`.** The schemas expose only `limit`, capped at
+  200 by `cappedLimit`, and the DTOs are bare arrays. So an agent asking for tasks gets an array
+  that is either complete or the first 200, indistinguishable. That is a worse failure at a machine
+  boundary than a human one: a person notices a suspiciously round list, an agent reasons on it.
+  Fix once, as a shared envelope — `items`, `returnedCount`, `totalCount`, `hasMore`, cursor —
+  rather than per tool. Do this first; it makes every other item here observable.
+
+- [T-383] **`list_containers(kind: nil)` can return zero projects, and [[T-372]] made that
+  reliable.** Verified: `CadenceReadService.swift:290` appends areas, `:300` appends projects, and
+  `:309` applies `prefix(cappedLimit(limit))` **after** the concatenation. With more areas than the
+  limit, projects are cut entirely.
+  The sharp part: before T-372 the order was nondeterministic, so *which* rows you lost varied.
+  T-372 gave that call a total order — which is correct and worth having — but it means the
+  truncation is now perfectly reproducible: you lose **all** projects, every time. Determinism made
+  the bug consistent, not smaller. The existing test pins area-first concatenation, so it passes
+  either way.
+  Fix: require `kind` for capped calls, return per-kind buckets with counts, or merge both kinds
+  into one globally sorted candidate list *before* capping.
+
+- [T-384] **`limit` caps the response, not the work.** `list_tasks(limit: 1)` still fetches every
+  task with a bare `FetchDescriptor<AppTask>()`, filters and sorts in memory, then takes one. The
+  same shape repeats across notes, containers, contexts, tags, goals, habits, links, bundles and
+  search. A performance bug, not an output bug — the cap runs after the expensive part.
+  The correct pattern is already in the tree: `CadenceDeepLinkResolutionSupport` uses a predicate
+  plus `fetchLimit = 1`. Start with detail lookups and simple date/status/container filters, which
+  are straightforwardly predicate-backed; full-text note search may legitimately need in-memory
+  scoring and can stay.
+
+- [T-385] **`get_today_brief` caps Inbox at 50 while every other section is uncapped, and says
+  nothing.** Verified: `prefix(50)` appears exactly once in `CadenceReadService`, on the inbox
+  array; scheduled, due and overdue are unbounded. `CadenceTodayBrief` carries arrays with no
+  counts or overflow flags, and the tool schema takes only `date`, so a caller cannot raise it or
+  detect it. 51 active inbox tasks silently become 50.
+  The widget code already has the better pattern — visible rows beside true totals. Copy it.
+
+- [T-386] **iOS says "Completed 40" and draws 24 rows — and the comment explaining why points at the
+  wrong ticket.** Verified: the options bar receives the full `completedTasks.count` while the
+  rendered group receives rows capped at the touch tier's 24, and the group header then counts the
+  capped array. So two counts on one screen disagree, both derived from the same list.
+  The cap itself may well be right for a phone; what is missing is the remainder — a "+N more" or
+  wording that says it is showing the first 24.
+  Also: `CadenceTaskSurfaceOptions.swift:129` says the decision lives in "`docs/TODO.md` T-291".
+  **That pointer is stale** — T-291 is closed and archived, and was about ordering inside a list
+  cascade. Fix the reference while fixing the behaviour, or the next reader loses the same time.
+
 - [T-377] **Searching "done" finds tasks on your Mac and nothing on your iPhone.** Cross-surface
   drift audit (Codex, 2026-08-27, read at `c54cadb`, clean tree); **verified by counting**:
   `statusAliases` appears **2** times in `Cadence/macOS/Views/GlobalSearchIndexSupport.swift` and
@@ -185,14 +233,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   switches on `url.host`, so singleton routes silently ignore extra path components and
   `cadence:///today` is rejected. Not reachable from app-owned widgets, which emit canonical URLs.
   Pick strict or lenient and pin it.
-
-- [T-371] **Schedule and bundle ordering stop before they reach a total order.**
-  `CadenceScheduleSupport` ends both its task comparators at bare `$0.order < $1.order` (lines 58,
-  292) — and `TaskOrdering` documents that `order` is assigned **per container**, so any cross-list
-  surface routinely compares equal values. Bundles sort on `startMin` alone with nothing preventing
-  two bundles sharing a start. Reach: iPad Today, iOS calendar, macOS calendar and schedule panels.
-  `TaskOrdering.fallbackPrecedes` is the fix and it lives in `Models/`, compiled into every target —
-  there is no packaging reason this helper stopped short.
 
 - [T-373] **The EventKit and Reminders comparators both tie on realistic duplicates.** EventKit's is
   named "total" but stops at start-date-then-title, and recurring or imported meetings routinely

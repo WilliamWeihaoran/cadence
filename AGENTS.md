@@ -127,6 +127,10 @@ Before treating a red run as a code regression, check:
   exited early.
 - UI-test failures in an ordinary test run: the run was not scoped to `CadenceTests`.
 - Compile failures that name your file are real until proven otherwise.
+- **A warning count from a run that did not recompile the file is vacuous.** An incremental
+  `xcodebuild test` reuses object files, so `grep -c warning:` returns 0 whether or not your change
+  introduced warnings. Only trust a warning count from a run that actually rebuilt the file you
+  edited — check the log for its `SwiftCompile`/`CompileSwift` line before quoting the number.
 - **Count compile errors with `grep -cE '\.swift:[0-9]+:[0-9]+: error:'`, not `grep -c 'error:'`.**
   A failing test whose message contains the word "error" — e.g. `Caught error: .notFound(...)` from
   a source scan — matches the loose pattern, so a genuine mutation kill reads as a build break and

@@ -37,6 +37,37 @@ enum CadenceScheduleSupport {
     // The sixth, `tasks(on:from:includeCompleted:)`, was deleted outright — it had no callers,
     // and it was the source of the `= true` precedent the other two copied.
 
+    /// The one ordering for scheduled task rows on a day: start minute, then the app's total
+    /// task tie-break.
+    ///
+    /// Both callers below used to stop at a bare `$0.order < $1.order`. `order` is assigned
+    /// **per container** — `CadenceTaskQuerySupport.nextTaskOrder(in:)` maxes over one list —
+    /// so two tasks scheduled at the same minute out of two different lists compared equal in
+    /// both directions and `sorted` was free to return either arrangement. Every surface these
+    /// functions feed is cross-list: iPad Today, the iOS calendar, and the macOS calendar page
+    /// and schedule panel. `TaskOrdering.fallbackPrecedes` closes it on `id`, and it lives in
+    /// `Models/`, which every target compiles.
+    nonisolated static func scheduledTaskPrecedes(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
+        if lhs.scheduledStartMin != rhs.scheduledStartMin {
+            return lhs.scheduledStartMin < rhs.scheduledStartMin
+        }
+        return TaskOrdering.fallbackPrecedes(lhs, rhs)
+    }
+
+    /// The one ordering for bundle rows: day, start minute, title, then id — **total**, for the
+    /// same reason. Nothing in `TaskBundle` stops two bundles sharing a `dateKey` and a
+    /// `startMin`, and `startMin` alone was the entire comparator at both call sites below.
+    ///
+    /// `displayTitle` rather than `title` because that is the string the row draws: an untitled
+    /// bundle reads "Task Bundle" on screen and should sort where it reads.
+    nonisolated static func bundlePrecedes(_ lhs: TaskBundle, _ rhs: TaskBundle) -> Bool {
+        if lhs.dateKey != rhs.dateKey { return lhs.dateKey < rhs.dateKey }
+        if lhs.startMin != rhs.startMin { return lhs.startMin < rhs.startMin }
+        let titles = lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle)
+        if titles != .orderedSame { return titles == .orderedAscending }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
     static func scheduledTasks(
         on dateKey: String,
         from tasks: [AppTask],
@@ -51,18 +82,13 @@ enum CadenceScheduleSupport {
                 $0.scheduledDate == dateKey &&
                 $0.scheduledStartMin >= 0
             }
-            .sorted {
-                if $0.scheduledStartMin != $1.scheduledStartMin {
-                    return $0.scheduledStartMin < $1.scheduledStartMin
-                }
-                return $0.order < $1.order
-            }
+            .sorted(by: scheduledTaskPrecedes)
     }
 
     static func bundles(on dateKey: String, from bundles: [TaskBundle], includeCompleted: Bool) -> [TaskBundle] {
         bundles
             .filter { $0.dateKey == dateKey && (includeCompleted || !$0.isCompleted) }
-            .sorted { $0.startMin < $1.startMin }
+            .sorted(by: bundlePrecedes)
     }
 
     /// Which hour row of an hour-by-hour day list a scheduled minute belongs in.
@@ -284,14 +310,7 @@ enum CadenceScheduleSupport {
             (includeCompleted || !task.isDone) {
             result[task.scheduledDate, default: []].append(task)
         }
-        return result.mapValues { tasks in
-            tasks.sorted {
-                if $0.scheduledStartMin != $1.scheduledStartMin {
-                    return $0.scheduledStartMin < $1.scheduledStartMin
-                }
-                return $0.order < $1.order
-            }
-        }
+        return result.mapValues { $0.sorted(by: scheduledTaskPrecedes) }
     }
 
     static func unscheduledTasksByDate(_ tasks: [AppTask]) -> [String: [AppTask]] {
@@ -323,7 +342,7 @@ enum CadenceScheduleSupport {
         for bundle in bundles where includeCompleted || !bundle.isCompleted {
             result[bundle.dateKey, default: []].append(bundle)
         }
-        return result.mapValues { $0.sorted { $0.startMin < $1.startMin } }
+        return result.mapValues { $0.sorted(by: bundlePrecedes) }
     }
 
     static func items<T>(on dateKey: String, in itemsByDate: [String: [T]]) -> [T] {
