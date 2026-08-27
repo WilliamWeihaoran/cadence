@@ -43,6 +43,50 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-377] **Searching "done" finds tasks on your Mac and nothing on your iPhone.** Cross-surface
+  drift audit (Codex, 2026-08-27, read at `c54cadb`, clean tree); **verified by counting**:
+  `statusAliases` appears **2** times in `Cadence/macOS/Views/GlobalSearchIndexSupport.swift` and
+  **0** times in `Cadence/iOS/iOSSearchView.swift`. So macOS matches status words like *done* or
+  *completed* through aliases while iOS only matches them if they literally appear in the task's
+  text. macOS also searches tag **slugs**; iOS searches tag names only. The scheduled-active icon
+  differs too — macOS shows `calendar.badge.clock`, iOS shows only done/not-done.
+  There is no shared task-search candidate helper, which is why the two drifted. Fix: shared
+  support for searchable fields, aliases, and result facts; keep row rendering platform-local.
+
+- [T-378] **A completed or archived list is findable on macOS and invisible on iOS — and nobody has
+  decided which is right.** Same audit. macOS list search includes lifecycle aliases; iOS
+  pre-filters areas and projects to active only. Unlike its siblings this is **not** a code bug:
+  the product rule is simply unpinned, and either surface could be the correct one. Decide whether
+  search should reach finished lists at all, then put the inclusion policy and the field policy in
+  one shared place and let both surfaces render their own rows. Do not "fix" it by making iOS match
+  macOS without answering the question first.
+
+- [T-379] **The same calendar list sorts differently on the two platforms, and neither order is
+  stable.** Verified: `CalendarManager.swift:187` and `:199` use raw `$0.title < $1.title`;
+  `iOSCalendarManager.swift:27` uses `localizedCaseInsensitiveCompare`. So calendars differing only
+  by case or by locale-sensitive collation appear in different orders in Settings and in the
+  calendar pickers. **Beyond what the audit noted:** neither spelling ends on a stable identity, so
+  two calendars with equal titles are unordered *within* a platform as well. Fix is one shared
+  sorter ending on `calendarIdentifier` — the same total-order shape [[T-372]] just applied at the
+  MCP boundary.
+
+- [T-380] **You can create an event named `" "` on macOS, and the same empty event is labelled two
+  different things.** Verified: `CalendarManager.swift:223` is `title.isEmpty ? "New Event"` and
+  `TimelineDayCanvas.swift:262` checks exact emptiness the same way — so a whitespace-only title is
+  not empty, passes the guard, and becomes a real event title. iOS trims
+  `.whitespacesAndNewlines` first, gates creation on the trimmed value, and falls back to
+  **`"Untitled Event"`**. Two defects in one place: macOS accepts a blank-looking title, and the
+  fallback label disagrees across surfaces. Related to [[T-332]]. Fix: one shared event-title
+  normalizer, or generalise the existing task-title support.
+
+- [T-381] **The Kanban column splits on `isDone`, so a cancelled task would land in the active
+  column — and only the caller stops it.** P3, and the audit is careful to say why: this cannot
+  happen today, because the sole caller filters cancelled tasks before passing them in
+  (`KanbanListSectionSupportViews`). Verified: `KanbanSectionColumnView.swift:44` and `:52` split on
+  `!$0.isDone` / `$0.isDone`, while `CadenceTaskQuerySharedSupport.isFinishedTask` is the correct
+  predicate. So the helper is right by caller shape rather than by construction, and nothing pins
+  that. Either use `isFinishedTask` in the column, or add a test proving every caller pre-filters.
+
 - [T-376] **Five macOS surfaces can now read a failed delete and still say nothing.** Residue from
   [[T-365]], recorded by that agent rather than absorbed. `TasksPanelComponents`,
   `KanbanCardStateSupport`, `TaskInspectorContentSupportViews`, `TimelineTaskBlockInteractionSupport`
