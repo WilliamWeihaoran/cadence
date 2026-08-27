@@ -264,7 +264,7 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         // a real 10-minute occurrence into a half-hour block, label and overlap footprint.
         // `timelineDurationMinutes` keeps 10 at 10, keeps unset (0) at the 30-minute default, and
         // keeps a dirty sub-5 positive at the 5-minute floor every write path already enforces.
-        nextTask.estimatedMinutes = max(task.estimatedMinutes, 30)
+        nextTask.estimatedMinutes = task.timelineDurationMinutes
         nextTask.sectionName = task.sectionName
         nextTask.area = task.area
         nextTask.project = task.project

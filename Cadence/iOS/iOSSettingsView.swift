@@ -68,6 +68,11 @@ struct iOSSettingsView: View {
         }
         .iOSListDeletion(target: $pendingDeletion)
         .onAppear { cloudAccount.refreshIfNeeded() }
+        // T-361: the toggle used to write `UserDefaults` and stop, leaving pending notifications
+        // alive until the next scene-phase sweep. Both directions are handled in one shared place.
+        .onChange(of: notificationsEnabled) { _, enabled in
+            HabitNotificationReconcileSupport.notificationsEnabledDidChange(to: enabled, in: modelContext)
+        }
     }
 
     /// iPhone: a list of categories, and one category at a time when you pick one.

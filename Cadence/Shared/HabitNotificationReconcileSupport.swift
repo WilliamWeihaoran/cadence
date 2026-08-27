@@ -2,7 +2,8 @@ import Foundation
 import SwiftData
 
 /// Shared fast-path notification reconcile trigger for task/habit create, edit, and delete call
-/// sites across macOS and iOS. Kept tiny and side-effect-only so each call site stays a one-liner.
+/// sites across macOS and iOS, plus the shared reaction to Settings' "Enable reminders" toggle.
+/// Kept tiny and side-effect-only so each call site stays a one-liner.
 nonisolated enum HabitNotificationReconcileSupport {
     /// Main-actor by requirement, not by convenience.
     ///
@@ -43,5 +44,85 @@ nonisolated enum HabitNotificationReconcileSupport {
     ) -> (tasks: [AppTask], habits: [Habit])? {
         guard let tasks, let habits else { return nil }
         return (tasks, habits)
+    }
+}
+
+/// The two side effects flipping Settings → "Enable reminders" can have, as injectable values.
+///
+/// Injectable for the same reason `CadenceNotificationCanceller` is: both branches bottom out in
+/// `NotificationManager`, which early-returns inside a test host, so from the outside a branch
+/// that ran and a branch that did not look identical — and this toggle has two branches that are
+/// each other's inverse, which is exactly the shape where a swapped pair stays green forever.
+///
+/// The cancel half delegates to `CadenceNotificationCanceller.live` rather than restating
+/// `NotificationManager.shared.cancelAll()`, so "how the app cancels pending notifications" keeps
+/// one owner.
+@MainActor
+struct CadenceNotificationsEnabledEffects {
+    private let cancel: () async -> Void
+    private let reconcile: (ModelContext) -> Void
+
+    init(
+        cancel: @escaping () async -> Void,
+        reconcile: @escaping (ModelContext) -> Void
+    ) {
+        self.cancel = cancel
+        self.reconcile = reconcile
+    }
+
+    func cancelPendingNotifications() async {
+        await cancel()
+    }
+
+    func reconcileNotifications(in context: ModelContext) {
+        reconcile(context)
+    }
+
+    static var live: Self {
+        Self(
+            cancel: { await CadenceNotificationCanceller.live.run() },
+            reconcile: { HabitNotificationReconcileSupport.scheduleReconcile(in: $0) }
+        )
+    }
+}
+
+extension HabitNotificationReconcileSupport {
+    /// The one reaction to Settings → "Enable reminders" changing, shared by both platforms.
+    ///
+    /// **T-361.** `reconcile` has always done the right thing when the setting is off — it calls
+    /// `cancelAll()` — but nothing observed the setting *changing*. The toggle wrote
+    /// `UserDefaults` and stopped, so pending OS notifications survived until the app next hit a
+    /// scene-phase checkpoint and a reminder could fire moments after the user switched reminders
+    /// off. The symmetric half matters just as much: switching reminders back on scheduled
+    /// nothing until the app backgrounded, which reads as the setting doing nothing at all.
+    ///
+    /// Off does **not** route through `scheduleReconcile`. That path fetches first and skips the
+    /// pass when either fetch fails (see `reconcileInput`), which would make "the reminders you
+    /// just turned off go away" conditional on a store read succeeding. Cancelling is
+    /// unconditional; it needs no state to be correct.
+    @MainActor
+    static func applyNotificationsEnabledChange(
+        _ enabled: Bool,
+        in context: ModelContext,
+        effects: CadenceNotificationsEnabledEffects? = nil
+    ) async {
+        // `? = nil` rather than `= .live`, and for a compiler reason rather than a style one: a
+        // default argument expression is evaluated in a *nonisolated* context, so naming a
+        // main-actor-isolated `.live` there does not compile. Same shape as the wind-down entry
+        // points, which take `reconciler: CadenceWindDownReconciler? = nil` for the same reason.
+        let effects = effects ?? .live
+        if enabled {
+            effects.reconcileNotifications(in: context)
+        } else {
+            await effects.cancelPendingNotifications()
+        }
+    }
+
+    /// The call-site spelling: a SwiftUI `.onChange` body is synchronous, and both settings owners
+    /// should stay a single line that names the shared entry point rather than growing a local
+    /// branch each that can drift apart.
+    @MainActor
+    static func notificationsEnabledDidChange(to enabled: Bool, in context: ModelContext) {
+        Task { await applyNotificationsEnabledChange(enabled, in: context) }
     }
 }
