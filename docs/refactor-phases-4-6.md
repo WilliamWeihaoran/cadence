@@ -1,9 +1,25 @@
 # Refactor Phases 4–6 — Audit Findings
 
+## Status — read this before anything else
+
+**This is a source of findings, not a tracker. `docs/TODO.md` is the authoritative task list.**
+A finding here becomes work only when someone files it as a `T-` ticket; nothing is tracked as
+open or closed in this file, and its checkboxes mean nothing.
+
+**It is stale, and how stale is the point.** The audit was taken at `249b475` — two weeks and
+several hundred commits ago. The header used to say "nothing here has been fixed"; that has not
+been true for a while. Spot-checked 2026-08-27: at least P4-17 (an unpinned formatter locale),
+P5-09 (`normalizedSectionName` trimming in one copy only) and several Phase 4 findings have been
+overtaken by later work.
+
+So: **verify the finding itself before acting on it, not just its line number.** The instruction
+below to grep the symbol rather than trust the line is still right — it simply does not go far
+enough. A finding that is already fixed reads exactly like one that is not.
+
 ## How to use this file
 
 This is a standing worklist produced by a read-only audit of Cadence, taken around commit
-`249b475`. It assumes you have no context beyond the repo itself. Nothing here has been fixed.
+`249b475`. It assumes you have no context beyond the repo itself.
 
 Three sections:
 
@@ -34,8 +50,10 @@ the symbol name in each finding is the durable identifier; grep for that.
   instances of the same pressure.
 - Run tests scoped: `-only-testing:CadenceTests`. An unscoped run pulls in `CadenceUITests`,
   which cannot launch headless and aborts the whole run.
-- Warning baseline is 3 (`MarkdownLinkSupport`, `SchedulingService`,
-  `SettingsNotificationsSection`). Any increase is a regression.
+- Warning baseline is **zero** across `Cadence`, `CadenceWidgets` and `CadenceMCPServer`; grep
+  with no path filter. (This file originally said three, naming three specific files. That was true
+  at `249b475` and is not true now — those three were cleared. An agent trusting the old number
+  could ship three warnings and believe it was within budget.)
 - `Cadence/macOS/Editor/` was deliberately excluded from this audit.
 
 **The dominant defect shape in this repo is one idea implemented more than once, then

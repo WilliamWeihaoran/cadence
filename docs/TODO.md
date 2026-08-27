@@ -31,6 +31,16 @@ two. The three-pane floor of 1022pt that this note used to cite is gone with the
 
 _Nothing in flight._
 
+## Where findings come from
+
+This file is authoritative. Two other documents hold *findings*, not tracked work:
+
+- [`refactor-phases-4-6.md`](refactor-phases-4-6.md) — 153 findings from a read-only audit at
+  `249b475`, **two weeks stale**. A good hunting ground; verify each finding against current code
+  before filing it, because several have been overtaken.
+- [`TODO_DONE.md`](TODO_DONE.md) — everything shipped, with SHAs. **Search it before filing**;
+  tickets have been re-reported here more than once.
+
 ## Open — decided, not started
 
 - [T-340] **Two more places a task keeps a context its owner no longer has.** Found while closing
