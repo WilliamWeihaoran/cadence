@@ -164,12 +164,7 @@ final class CadenceWriteService {
         task.tags = tags
 
         context.insert(task)
-        for (index, subtaskTitle) in subtaskTitles.enumerated() {
-            let subtask = Subtask(title: subtaskTitle)
-            subtask.parentTask = task
-            subtask.order = index
-            context.insert(subtask)
-        }
+        CadenceTaskMutationSupport.insertSubtasks(titled: subtaskTitles, into: task, modelContext: context)
 
         try saveNotifyAndAudit(.task(tool: "create_task", id: task.id, summary: "Created task: \(task.title)"))
         return try readService.getTask(taskID: task.id.uuidString)

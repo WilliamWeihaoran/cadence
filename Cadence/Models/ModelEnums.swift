@@ -53,6 +53,93 @@ nonisolated enum TaskPriority: String, Codable, CaseIterable, Hashable {
     }
 }
 
+/// The `!` / `!!` / `!!!` shortcut in a typed task title, parsed once for every surface that
+/// captures a task.
+///
+/// It lives in `Models/` rather than beside `TaskTitleSupport` in `Shared/` for one mechanical
+/// reason: `CadenceWidgets` has an explicit source list that compiles all of `Models/` and three
+/// files of `Shared/`. `TaskTitleSupport.priorityShortcut` was therefore unreachable from
+/// `CadenceWidgetIntents`, which open-coded a bare trim instead — so `review launch plan !!!`
+/// became a high-priority task titled "review launch plan" when typed in the app and a
+/// default-priority task still titled "review launch plan !!!" when typed in the widget (T-354).
+/// `TaskTitleSupport` now delegates here and stays the name the app's own call sites use.
+///
+/// The mapping is bang count to priority, so like `TaskPriority.rank` it is a property of the
+/// enum's own vocabulary rather than of any one screen.
+nonisolated enum TaskTitleShortcutParsing {
+    /// The trim rule for a typed title.
+    ///
+    /// Spelled out here rather than delegated to `CadenceTitleNormalization`, which is the app's
+    /// one trim rule but is not in the widget target's source list.
+    /// `WidgetSupportTests.taskTitleShortcutTrimAgreesWithTheSharedTitleTrim` pins the two against
+    /// each other so this copy cannot drift away from it.
+    static func normalized(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The title with its priority marks removed, plus the priority they asked for — or `nil` when
+    /// the title carries no shortcut.
+    ///
+    /// Marks are read at both ends and the louder one wins, so `"!! ship it !!!"` is high.
+    static func priorityShortcut(in title: String) -> TaskTitlePriorityShortcut? {
+        var cleanedTitle = normalized(title)
+        var bangCounts: [Int] = []
+
+        if let leadingCount = leadingBangCount(in: cleanedTitle) {
+            bangCounts.append(leadingCount)
+            cleanedTitle = normalized(String(cleanedTitle.dropFirst(leadingCount)))
+        }
+
+        if let trailingCount = trailingBangCount(in: cleanedTitle) {
+            bangCounts.append(trailingCount)
+            cleanedTitle = normalized(String(cleanedTitle.dropLast(trailingCount)))
+        }
+
+        guard let bangCount = bangCounts.max() else { return nil }
+        return TaskTitlePriorityShortcut(
+            title: cleanedTitle,
+            priority: priority(forBangCount: bangCount)
+        )
+    }
+
+    /// Resolves `title` and, when it carries a shortcut, overwrites `priority` with it. A title
+    /// with no shortcut leaves `priority` exactly as the caller had it — which is how a composer
+    /// with a priority picker keeps the user's pick.
+    static func titleApplyingPriorityShortcut(
+        _ title: String,
+        priority: inout TaskPriority
+    ) -> String {
+        guard let shortcut = priorityShortcut(in: title) else {
+            return normalized(title)
+        }
+        priority = shortcut.priority
+        return shortcut.title
+    }
+
+    static func leadingBangCount(in title: String) -> Int? {
+        let count = title.prefix { $0 == "!" }.count
+        return count > 0 ? count : nil
+    }
+
+    static func trailingBangCount(in title: String) -> Int? {
+        let count = title.reversed().prefix { $0 == "!" }.count
+        return count > 0 ? count : nil
+    }
+
+    static func priority(forBangCount count: Int) -> TaskPriority {
+        switch count {
+        case 1: return .low
+        case 2: return .medium
+        default: return .high
+        }
+    }
+}
+
+nonisolated struct TaskTitlePriorityShortcut: Equatable {
+    let title: String
+    let priority: TaskPriority
+}
+
 nonisolated enum TaskStatus: String, Codable, CaseIterable, Hashable {
     case todo        = "todo"
     case inProgress  = "inprogress"

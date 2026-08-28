@@ -12,37 +12,59 @@ import Foundation
 /// Pure and `nonisolated`: safe to call from widget timeline providers and the MCP server, both
 /// of which run off the main actor.
 nonisolated enum CadenceSearchMatcher {
-    /// Rank pre-scored items: score descending, then title case-insensitive ascending.
+    /// Rank pre-scored items: score descending, then title case-insensitive ascending, then
+    /// `identity` ascending.
+    ///
+    /// **T-372a.** With an `identity` this is a **total** order and the same set of hits ranks to
+    /// the same sequence on every call. Without one it stops at title, and two hits sharing a score
+    /// and a title — two tasks called "Admin" in two contexts, a saved link added twice — come back
+    /// in whatever order the store handed them over, which is a property of the store rather than
+    /// of this code. Pass one. The parameter is optional only because `rank` is called from files
+    /// this change was not allowed to touch; see the T-372a entry in `docs/TODO.md` for the two
+    /// that still need threading.
+    ///
+    /// Deliberately a closure rather than an `Item: Identifiable` constraint. `CadenceSearchHit` —
+    /// the MCP `search()` row, and the case the ticket is about — is not `Identifiable`, and a
+    /// constrained overload would have silently selected the partial order for exactly the caller
+    /// that needed the total one.
     ///
     /// Decorate–sort–undecorate. `matchScore` folds and regex-strips every field on each call, so
     /// scoring inside the comparator would cost O(n log n) normalizations of the same strings;
-    /// scoring once up front makes it O(n) for an identical ordering.
+    /// scoring once up front makes it O(n) for an identical ordering. `identity` is evaluated once
+    /// per item for the same reason.
     nonisolated static func rank<Item>(
         _ items: [Item],
         score: (Item) -> Int,
-        title: (Item) -> String
+        title: (Item) -> String,
+        identity: ((Item) -> String)? = nil
     ) -> [Item] {
         items
-            .map { (item: $0, score: score($0), title: title($0)) }
+            .map { (item: $0, score: score($0), title: title($0), identity: identity?($0) ?? "") }
             .sorted { lhs, rhs in
                 if lhs.score != rhs.score { return lhs.score > rhs.score }
-                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+                let titles = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+                if titles != .orderedSame { return titles == .orderedAscending }
+                return lhs.identity < rhs.identity
             }
             .map(\.item)
     }
 
     /// Rank items by scoring `fields` against `query`. Items that do not match at all sink to the
     /// bottom (`Int.min`) rather than being dropped — filtering is the caller's decision.
+    ///
+    /// `identity` carries through to the comparator above; the note there applies here too.
     nonisolated static func rank<Item>(
         _ items: [Item],
         query: String,
         title: (Item) -> String,
-        fields: (Item) -> [String]
+        fields: (Item) -> [String],
+        identity: ((Item) -> String)? = nil
     ) -> [Item] {
         rank(
             items,
             score: { matchScore(query: query, fields: fields($0)) ?? Int.min },
-            title: title
+            title: title,
+            identity: identity
         )
     }
 

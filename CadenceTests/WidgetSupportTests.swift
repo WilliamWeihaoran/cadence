@@ -476,4 +476,196 @@ struct WidgetSupportTests {
         #expect(snapshot.days.first?.scheduledCount == 1)
         #expect(snapshot.days.dropFirst().first?.scheduledCount == 1)
     }
+
+    // MARK: - T-354: the widget's capture and the app's creation are one rule
+
+    /// `review launch plan !!!` typed into the widget and typed into the app have to produce the
+    /// same task. They did not: `TaskCreationService` resolves the shortcut through
+    /// `TaskTitleSupport`, and `CaptureTaskIntent` open-coded a bare trim, so the widget stored a
+    /// default-priority task whose title still carried the `!!!`.
+    @Test func widgetCaptureAndAppCreationAgreeOnPriorityShortcutTitles() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let typed = "review launch plan !!!"
+
+        let draft = TaskCreationDraft(
+            title: typed,
+            notes: "",
+            priority: .none,
+            container: .inbox,
+            sectionName: TaskSectionDefaults.defaultName,
+            dueDateKey: "",
+            scheduledDateKey: "",
+            subtaskTitles: [],
+            tags: []
+        )
+        let appTask = try #require(
+            try TaskCreationService(areas: [], projects: [])
+                .createTask(from: draft, into: modelContext)
+        )
+
+        try CaptureTaskIntent.captureTask(title: typed, planForToday: false, in: modelContext)
+        let widgetTask = try #require(
+            try modelContext.fetch(FetchDescriptor<AppTask>()).first { $0.id != appTask.id }
+        )
+
+        #expect(appTask.title == "review launch plan")
+        #expect(appTask.priority == .high)
+        #expect(widgetTask.title == appTask.title)
+        #expect(widgetTask.priority == appTask.priority)
+        #expect(widgetTask.estimatedMinutes == appTask.estimatedMinutes)
+    }
+
+    /// A leading shortcut, and a title that is nothing but bangs. The second is the case where a
+    /// naive "strip the marks" would leave an empty title behind, so the widget has to answer it
+    /// the same way the app does rather than storing a blank row.
+    @Test func widgetCaptureResolvesLeadingShortcutsAndRefusesBangOnlyTitles() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        try CaptureTaskIntent.captureTask(title: "!! call mom", planForToday: false, in: modelContext)
+        try CaptureTaskIntent.captureTask(title: "!!!", planForToday: false, in: modelContext)
+
+        let tasks = try modelContext.fetch(FetchDescriptor<AppTask>())
+        #expect(tasks.count == 1)
+        #expect(tasks.first?.title == "call mom")
+        #expect(tasks.first?.priority == .medium)
+    }
+
+    // MARK: - T-369: the calendar link names a date
+
+    /// The widget draws a fortnight starting at its snapshot's `date`; its "Open Calendar" link
+    /// has to land on that day rather than wherever the calendar was last parked.
+    @Test func calendarWidgetLinkCarriesTheDateTheWidgetShowed() throws {
+        let today = try #require(DateFormatters.date(from: "2026-05-11"))
+
+        let due = AppTask(title: "Due")
+        due.dueDate = "2026-05-11"
+
+        let snapshot = CadenceCalendarWidgetSupport.snapshot(
+            from: [due],
+            today: today,
+            dayCount: 3
+        )
+
+        #expect(snapshot.calendarURL.absoluteString == "cadence://calendar/2026-05-11")
+
+        let link = try #require(CadenceDeepLink(url: snapshot.calendarURL))
+        #expect(link == .calendar(dateKey: "2026-05-11"))
+        // The date the app will actually open, asked of the same helper both roots call.
+        #expect(link.calendarDateKey(todayKey: "2026-08-28") == "2026-05-11")
+    }
+
+    /// The dated form has to survive a round trip through the parser, or the widget is emitting a
+    /// URL the app throws the payload away from.
+    @Test func datedCalendarDeepLinkRoundTripsThroughTheParser() throws {
+        let datedURL = try #require(URL(string: "cadence://calendar/2026-05-11"))
+        let dated = try #require(CadenceDeepLink(url: datedURL))
+
+        #expect(dated.url.absoluteString == "cadence://calendar/2026-05-11")
+        #expect(dated == .calendar(dateKey: "2026-05-11"))
+
+        // A mangled payload still opens the calendar rather than being rejected outright, and
+        // falls back to today rather than to a remembered date.
+        let mangledURL = try #require(URL(string: "cadence://calendar/not-a-date"))
+        let mangled = try #require(CadenceDeepLink(url: mangledURL))
+        #expect(mangled == .calendar(dateKey: nil))
+        #expect(mangled.calendarDateKey(todayKey: "2026-08-28") == "2026-08-28")
+    }
+
+    /// The bare link is the case the ticket calls out by name: it must mean today, and the jump
+    /// has to actually be issued rather than leaving the timeline where it was parked.
+    @Test func bareCalendarDeepLinkJumpsToTodayRatherThanARememberedDate() throws {
+        let manager = CalendarNavigationManager.shared
+        manager.clear()
+
+        let now = try #require(DateFormatters.date(from: "2026-08-28"))
+        let handled = manager.openCalendarLink(
+            .calendar(dateKey: nil),
+            now: now,
+            todayKey: "2026-08-28"
+        )
+
+        #expect(handled)
+        #expect(manager.request?.dateKey == "2026-08-28")
+
+        // A dated link wins over both the remembered position and today.
+        manager.clear()
+        #expect(manager.openCalendarLink(.calendar(dateKey: "2026-05-11"), now: now, todayKey: "2026-08-28"))
+        #expect(manager.request?.dateKey == "2026-05-11")
+
+        // Every other route leaves the calendar alone.
+        manager.clear()
+        #expect(!manager.openCalendarLink(.today, now: now, todayKey: "2026-08-28"))
+        #expect(manager.request == nil)
+        manager.clear()
+    }
+
+    /// `TaskTitleShortcutParsing` had to spell its own trim because `CadenceTitleNormalization`,
+    /// the app's one trim rule, is not in the widget target's source list. This is the guard that
+    /// the copy cannot drift from the original.
+    @Test func taskTitleShortcutTrimAgreesWithTheSharedTitleTrim() {
+        let samples = [
+            "  review launch plan  ",
+            "review launch plan\n",
+            "\n\t spaced \t\n",
+            "   ",
+            "",
+            "already clean"
+        ]
+
+        // Non-vacuity: at least one sample has to be a string the trim actually changes, or this
+        // would pass against two implementations that both returned their argument.
+        #expect(samples.contains { CadenceTitleNormalization.normalized($0) != $0 })
+
+        for sample in samples {
+            #expect(
+                TaskTitleShortcutParsing.normalized(sample) == CadenceTitleNormalization.normalized(sample),
+                "trim disagreed for \(String(reflecting: sample))"
+            )
+        }
+    }
+
+    // MARK: - T-355: the milestone widget shows milestones
+
+    /// A direction's contribution already recurses through its milestones, so listing both as peer
+    /// "priority milestones" shows the same progress twice. The pool is the leaves of the active
+    /// tree: milestones where a direction has them, the direction itself where it has none.
+    @Test func milestoneWidgetShowsMilestonesNotTheirParentDirections() {
+        let now = DateFormatters.date(from: "2026-05-11")!
+
+        let direction = Goal(title: "Ship v2")
+        let milestone = Goal(title: "Beta cut")
+        direction.subGoals = [milestone]
+        milestone.parentGoal = direction
+
+        let lone = Goal(title: "Learn Swift concurrency")
+
+        let prioritized = CadenceMilestoneWidgetSupport.prioritizedGoals(
+            from: [direction, milestone, lone],
+            now: now
+        )
+
+        #expect(prioritized.map(\.title) == ["Beta cut", "Learn Swift concurrency"])
+    }
+
+    /// A direction whose only milestone is finished is itself the leaf: dropping it would empty a
+    /// widget the app still has active work on.
+    @Test func milestoneWidgetKeepsADirectionWhoseMilestonesAreAllDone() {
+        let now = DateFormatters.date(from: "2026-05-11")!
+
+        let direction = Goal(title: "Ship v2")
+        let milestone = Goal(title: "Beta cut")
+        milestone.status = .done
+        direction.subGoals = [milestone]
+        milestone.parentGoal = direction
+
+        let prioritized = CadenceMilestoneWidgetSupport.prioritizedGoals(
+            from: [direction, milestone],
+            now: now
+        )
+
+        #expect(prioritized.map(\.title) == ["Ship v2"])
+    }
 }

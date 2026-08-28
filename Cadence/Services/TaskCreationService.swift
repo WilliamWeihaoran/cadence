@@ -164,26 +164,11 @@ struct TaskCreationService {
         containerResolver.applyContainer(draft.container, to: task)
 
         modelContext.insert(task)
-        let subtasks = insertSubtasks(draft.subtaskTitles, parent: task, into: modelContext)
+        let subtasks = CadenceTaskMutationSupport.insertSubtasks(
+            titled: draft.subtaskTitles,
+            into: task,
+            modelContext: modelContext
+        )
         return (task, [task] + subtasks)
-    }
-
-    @discardableResult
-    private func insertSubtasks(
-        _ titles: [String],
-        parent task: AppTask,
-        into modelContext: ModelContext
-    ) -> [Subtask] {
-        var inserted: [Subtask] = []
-        for (index, title) in titles.enumerated() {
-            let trimmed = TaskTitleSupport.normalized(title)
-            guard !trimmed.isEmpty else { continue }
-            let subtask = Subtask(title: trimmed)
-            subtask.parentTask = task
-            subtask.order = index
-            modelContext.insert(subtask)
-            inserted.append(subtask)
-        }
-        return inserted
     }
 }

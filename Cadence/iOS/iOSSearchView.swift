@@ -47,11 +47,10 @@ struct iOSSearchView: View {
         !trimmedQuery.isEmpty
     }
 
+    /// The scope picker's "Completed" toggle is a user setting, not a second inclusion policy —
+    /// which tasks are searchable at all is `CadenceTaskSearchSupport`'s to say (T-377).
     private var searchableTasks: [AppTask] {
-        tasks.filter { task in
-            guard !task.isCancelled else { return false }
-            return includeCompletedTasks || !task.isDone
-        }
+        tasks.filter { CadenceTaskSearchSupport.isSearchable($0, includingCompleted: includeCompletedTasks) }
     }
 
     private var showsTasks: Bool {
@@ -134,28 +133,32 @@ struct iOSSearchView: View {
         return suggested.map { taskResult($0, score: 0) }
     }
 
+    /// Which lists search can reach is `CadenceListSearchSupport`'s decision, not this view's —
+    /// the T-378 rule and the evidence for it are recorded there. This screen used to pre-filter
+    /// to `isActive`, so a completed or archived list was findable on the Mac and invisible here
+    /// even though tapping one would have opened its detail page perfectly well.
     private var listResults: [iOSSearchResult] {
-        let listItems = areas.filter(\.isActive).map { area in
+        let listItems = areas.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }.map { area in
             let count = CadenceTaskQuerySupport.openTaskCount(for: area)
             return iOSSearchListCandidate(
                 title: area.name.isEmpty ? "Untitled Area" : area.name,
                 subtitle: area.context?.name ?? "Area",
-                detail: count == 1 ? "1 task" : "\(count) tasks",
+                detail: listDetail(lifecycle: CadenceListSearchSupport.lifecycle(of: area), openTaskCount: count),
                 icon: area.icon,
                 color: Color(hex: area.colorHex),
                 route: .area(area.id),
-                fields: [area.name, area.desc, area.context?.name ?? ""]
+                fields: CadenceListSearchSupport.searchFields(for: area)
             )
-        } + projects.filter(\.isActive).map { project in
+        } + projects.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }.map { project in
             let count = CadenceTaskQuerySupport.openTaskCount(for: project)
             return iOSSearchListCandidate(
                 title: project.name.isEmpty ? "Untitled Project" : project.name,
                 subtitle: [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " / "),
-                detail: count == 1 ? "1 task" : "\(count) tasks",
+                detail: listDetail(lifecycle: CadenceListSearchSupport.lifecycle(of: project), openTaskCount: count),
                 icon: project.icon,
                 color: Color(hex: project.colorHex),
                 route: .project(project.id),
-                fields: [project.name, project.desc, project.context?.name ?? "", project.area?.name ?? ""]
+                fields: CadenceListSearchSupport.searchFields(for: project)
             )
         }
 
@@ -183,7 +186,7 @@ struct iOSSearchView: View {
 
         if isSearching {
             return searchableNotes.compactMap { note in
-                let tagText = note.sortedTags.map(\.name).joined(separator: " ")
+                let tagText = CadenceSearchTagSupport.text(for: note.sortedTags)
                 let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
                 guard let score = CadenceSearchMatcher.matchScore(
                     query: trimmedQuery,
@@ -245,20 +248,12 @@ struct iOSSearchView: View {
         return calendarSearchEvents.prefix(8).map { eventResult($0, score: 0) }
     }
 
+    /// Fields and aliases come from `CadenceTaskSearchSupport`; this view keeps the row. The list
+    /// this used to build by hand had no lifecycle aliases and no tag slugs, so *done*,
+    /// *completed* and a hand-set slug found tasks on the Mac and nothing here (T-377).
     private var rankedTaskResults: [iOSSearchResult] {
         searchableTasks.compactMap { task in
-            let tagText = task.sortedTags.map(\.name).joined(separator: " ")
-            guard let score = CadenceSearchMatcher.matchScore(
-                query: trimmedQuery,
-                fields: [
-                    task.title,
-                    task.notes,
-                    task.containerName,
-                    task.resolvedSectionName,
-                    task.priority.label,
-                    tagText
-                ]
-            ) else {
+            guard let score = CadenceTaskSearchSupport.matchScore(query: trimmedQuery, task: task) else {
                 return nil
             }
             return taskResult(task, score: score)
@@ -272,11 +267,29 @@ struct iOSSearchView: View {
             title: task.title.isEmpty ? "Untitled Task" : task.title,
             subtitle: taskSubtitle(task),
             detail: taskDetail(task),
-            icon: task.isDone ? "checkmark.circle.fill" : "circle",
+            icon: taskIcon(for: CadenceTaskSearchSupport.glyph(for: task)),
             color: Theme.priorityColor(task.priority),
             score: score,
             dueLabel: taskDueLabel(task)
         )
+    }
+
+    /// This screen's symbols for the three shared glyph states. A task with a timeline slot drew a
+    /// plain `circle` here and `calendar.badge.clock` on the Mac; the two rows may keep their own
+    /// vocabulary for done-ness, but not their own idea of which states exist.
+    private func taskIcon(for glyph: CadenceTaskSearchGlyph) -> String {
+        switch glyph {
+        case .scheduled: "calendar.badge.clock"
+        case .completed: "checkmark.circle.fill"
+        case .active: "circle"
+        }
+    }
+
+    /// A finished list says so where an active one shows its open-task count: the count is zero or
+    /// stale on a list nobody is working, and "Archived" is what the row needs to say instead.
+    private func listDetail(lifecycle: CadenceListSearchLifecycle, openTaskCount: Int) -> String {
+        guard lifecycle.isActive else { return lifecycle.statusLabel }
+        return openTaskCount == 1 ? "1 task" : "\(openTaskCount) tasks"
     }
 
     var body: some View {

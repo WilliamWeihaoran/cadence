@@ -37,24 +37,28 @@ private enum SidebarListEntry: Identifiable {
         }
     }
 
-    var order: Int {
+    /// This row, flattened to what `CadenceSidebarLists` orders by. `kindRank` used to live here
+    /// as a hand-rolled twin of `CadenceSidebarLists.Kind.rank`; the shared type owns it now.
+    func sidebarListItem(contextID: UUID) -> CadenceSidebarLists.Item {
         switch self {
-        case .area(let area): return area.order
-        case .project(let project): return project.order
-        }
-    }
-
-    var kindRank: Int {
-        switch self {
-        case .area: return 0
-        case .project: return 1
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .area(let area): return area.name
-        case .project(let project): return project.name
+        case .area(let area):
+            return CadenceSidebarLists.Item(
+                id: area.id,
+                kind: .area,
+                name: area.name,
+                colorHex: area.colorHex,
+                order: area.order,
+                contextID: contextID
+            )
+        case .project(let project):
+            return CadenceSidebarLists.Item(
+                id: project.id,
+                kind: .project,
+                name: project.name,
+                colorHex: project.colorHex,
+                order: project.order,
+                contextID: contextID
+            )
         }
     }
 
@@ -86,20 +90,23 @@ struct ContextSection: View {
     @State private var projectForEdit: Project? = nil
     @State private var dragOverListItem: SidebarListDragItem? = nil
 
-    private var areas: [Area] { (context.areas ?? []).filter(\.isActive).sorted { $0.order < $1.order } }
-    private var projects: [Project] { (context.projects ?? []).filter(\.isActive).sorted { $0.order < $1.order } }
+    // Unordered on purpose: the one ordering is `CadenceSidebarLists.sorted`, below. Sorting here
+    // too would be a second rule in front of it, and the bare `$0.order < $1.order` that used to
+    // sit here was not even a total one.
+    private var areas: [Area] { (context.areas ?? []).filter(\.isActive) }
+    private var projects: [Project] { (context.projects ?? []).filter(\.isActive) }
     private var hasLists: Bool { !areas.isEmpty || !projects.isEmpty }
+
+    /// **T-333.** This used to be a private copy of `CadenceSidebarLists.sorted` that stopped at
+    /// name, so two same-kind rows sharing an `order` and a name were unordered against each other
+    /// and the column could reshuffle between renders — while the iPad, which draws the same region
+    /// through `CadenceSidebarLists.sections`, held still. Both columns now read the one rule, `id`
+    /// tail included.
     private var listEntries: [SidebarListEntry] {
-        let areaEntries = areas.map(SidebarListEntry.area)
-        let projectEntries = projects.map(SidebarListEntry.project)
-        let entries = areaEntries + projectEntries
-        let hasGlobalOrder = Set(entries.map(\.order)).count == entries.count
-        guard hasGlobalOrder else { return areaEntries + projectEntries }
-        return entries.sorted { lhs, rhs in
-            if lhs.order != rhs.order { return lhs.order < rhs.order }
-            if lhs.kindRank != rhs.kindRank { return lhs.kindRank < rhs.kindRank }
-            return lhs.label.localizedCaseInsensitiveCompare(rhs.label) == .orderedAscending
-        }
+        CadenceSidebarLists.sorted(
+            areas.map(SidebarListEntry.area) + projects.map(SidebarListEntry.project),
+            item: { $0.sidebarListItem(contextID: context.id) }
+        )
     }
 
     var body: some View {

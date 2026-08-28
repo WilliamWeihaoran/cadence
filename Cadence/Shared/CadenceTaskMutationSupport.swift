@@ -500,6 +500,71 @@ enum CadenceTaskMutationSupport {
         return true
     }
 
+    /// The one place a subtask is attached to a parent task.
+    ///
+    /// The create-side counterpart to `deleteSubtask` below, and it exists for the same reason:
+    /// this codebase does not trust SwiftData to have back-populated an inverse by the moment the
+    /// next resolver reads it, so both sides are written explicitly. Five surfaces used to
+    /// open-code the insert and only two of them agreed with the rule in `Cadence/Models/AGENTS.md`
+    /// — the macOS task detail popover, `TaskCreationService` and the MCP write service set
+    /// `subtask.parentTask` and never appended to `parent.subtasks` (T-338, T-387).
+    ///
+    /// **Those three were not broken, and the tests below cannot make them look broken.** T-387
+    /// guessed at a window before the save where a SwiftUI list re-renders off a `task.subtasks`
+    /// the write never reached. Measured 2026-08-28, that window does not exist on the create
+    /// side: setting `subtask.parentTask = task` leaves `task.subtasks` correct *immediately*, with
+    /// no save and no `processPendingChanges`, because SwiftData back-populates the inverse inside
+    /// the owning context synchronously. The behavioural tests in
+    /// `CadenceSubtaskInverseParityTests` were written against the unfixed call sites first and
+    /// passed there.
+    ///
+    /// So this helper is a convention, not a repair — the same standing as the explicit
+    /// `copy.parentTask = nextTask` in the recurrence spawn, which T-294 also found unobservable
+    /// and kept anyway. What justifies it is the *delete* side, where the window is real and was
+    /// measured (T-296): between `modelContext.delete` and the next flush the parent's array still
+    /// holds the deleted row. One subtask path trusting back-population and its neighbour refusing
+    /// to is how the two answers drift apart, and drift is what produced three spellings of this
+    /// insert. The source scan in that suite is what actually holds the rule; this doc comment and
+    /// the two writes below are what make the rule worth holding.
+    ///
+    /// Blank titles are dropped rather than stored, so a caller can hand over raw user input.
+    /// `order` defaults to one past the highest the parent already holds; pass it only to place a
+    /// row somewhere other than the end.
+    ///
+    /// Saving is deliberately the caller's, same as `deleteSubtask`: the surfaces differ on whether
+    /// a subtask edit commits immediately or rides an enclosing save.
+    @discardableResult
+    static func insertSubtask(
+        titled title: String,
+        into parent: AppTask,
+        order: Int? = nil,
+        modelContext: ModelContext
+    ) -> Subtask? {
+        let trimmed = CadenceTitleNormalization.normalized(title)
+        guard !trimmed.isEmpty else { return nil }
+
+        let existing = parent.subtasks ?? []
+        let subtask = Subtask(title: trimmed)
+        subtask.order = order ?? ((existing.map(\.order).max() ?? -1) + 1)
+        subtask.parentTask = parent
+        modelContext.insert(subtask)
+        parent.subtasks = existing + [subtask]
+        return subtask
+    }
+
+    /// The batch spelling of `insertSubtask(titled:into:order:modelContext:)`, for the creation
+    /// paths that take a list of titles typed into a composer or handed over by an MCP client.
+    /// Rows land in the given order, appended after whatever the parent already holds; blanks are
+    /// skipped without consuming an `order` slot.
+    @discardableResult
+    static func insertSubtasks(
+        titled titles: [String],
+        into parent: AppTask,
+        modelContext: ModelContext
+    ) -> [Subtask] {
+        titles.compactMap { insertSubtask(titled: $0, into: parent, modelContext: modelContext) }
+    }
+
     /// The one place a single subtask is deleted from.
     ///
     /// It exists for the same reason the loop in `deleteTasks` above writes `subtask.parentTask = nil`

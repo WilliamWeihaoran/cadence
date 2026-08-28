@@ -420,15 +420,10 @@ enum iOSSampleDataSupport {
         return 1
     }
 
+    /// Seeded rows go through the same shared insert every real creation path uses, so the sample
+    /// data cannot drift into being the one place that spells the relationship differently.
     private static func addSubtasks(_ titles: [String], to task: AppTask, modelContext: ModelContext) {
-        let subtasks = titles.enumerated().map { index, title in
-            let subtask = Subtask(title: title)
-            subtask.order = index
-            subtask.parentTask = task
-            modelContext.insert(subtask)
-            return subtask
-        }
-        task.subtasks = (task.subtasks ?? []) + subtasks
+        CadenceTaskMutationSupport.insertSubtasks(titled: titles, into: task, modelContext: modelContext)
     }
 }
 #endif

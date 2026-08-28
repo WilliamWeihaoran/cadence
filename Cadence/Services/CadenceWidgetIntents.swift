@@ -122,24 +122,47 @@ struct CaptureTaskIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
+        guard let capture = Self.resolvedCapture(from: title) else {
             return .result(dialog: "Add a task title.")
         }
 
         let container = try CadenceStoreSupport.makeSharedWriteContainer()
         let modelContext = ModelContext(container)
         try Self.captureTask(
-            title: trimmed,
+            title: title,
             planForToday: planForToday,
             in: modelContext
         )
         CadenceWidgetIntentWriteSupport.publish()
-        return .result(dialog: "Captured \(trimmed).")
+        // The cleaned title, not what was typed: the dialog is a receipt for the row that was
+        // written, and quoting the raw text back would name a task that does not exist.
+        return .result(dialog: "Captured \(capture.title).")
+    }
+
+    /// What a typed capture resolves to, or `nil` when there is nothing to create.
+    ///
+    /// **T-354.** This used to be a bare `trimmingCharacters(in:)`, so the widget stored
+    /// `"review launch plan !!!"` at default priority while the same words typed into the app
+    /// produced a *high*-priority task titled `"review launch plan"` — the same sentence making
+    /// two different tasks depending only on where it was typed, with the `!!!` left visible in
+    /// the title afterwards as the artefact. `TaskTitleShortcutParsing` is the rule
+    /// `TaskCreationService` resolves the shortcut through, moved into `Models/` so this target
+    /// can reach it; see its note.
+    ///
+    /// A title that is *only* marks resolves to an empty title and creates nothing, which is the
+    /// same "nothing to create" answer `TaskCreationService.insertion(from:into:)` gives.
+    static func resolvedCapture(from typed: String) -> (title: String, priority: TaskPriority)? {
+        var priority = TaskPriority.none
+        let title = TaskTitleShortcutParsing.titleApplyingPriorityShortcut(typed, priority: &priority)
+        guard !title.isEmpty else { return nil }
+        return (title, priority)
     }
 
     static func captureTask(title: String, planForToday: Bool, in modelContext: ModelContext) throws {
-        let task = AppTask(title: title)
+        guard let capture = resolvedCapture(from: title) else { return }
+
+        let task = AppTask(title: capture.title)
+        task.priority = capture.priority
         task.estimatedMinutes = 30
         task.order = try nextTaskOrder(in: modelContext)
         if planForToday {

@@ -438,14 +438,11 @@ struct iOSTaskDetailSheet: View {
     }
 
     private func addSubtask() {
-        let trimmed = newSubtaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        let subtask = Subtask(title: trimmed)
-        subtask.order = ((task.subtasks ?? []).map(\.order).max() ?? -1) + 1
-        subtask.parentTask = task
-        modelContext.insert(subtask)
-        task.subtasks = (task.subtasks ?? []) + [subtask]
+        guard CadenceTaskMutationSupport.insertSubtask(
+            titled: newSubtaskTitle,
+            into: task,
+            modelContext: modelContext
+        ) != nil else { return }
         newSubtaskTitle = ""
         try? modelContext.save()
     }

@@ -130,15 +130,37 @@ nonisolated enum CadenceSidebarLists {
     /// When every row in the section holds a distinct `order`, that number is a single sequence the
     /// user dragged and areas and projects interleave freely. When it does not — the usual case for
     /// a context holding both, since each model numbers from zero — the two kinds are kept apart so
-    /// a shared `order` value cannot interleave them arbitrarily. This is the rule
-    /// `ContextSection.listEntries` already applies on macOS.
+    /// a shared `order` value cannot interleave them arbitrarily.
     static func sorted(_ items: [Item]) -> [Item] {
-        let hasGlobalOrder = Set(items.map(\.order)).count == items.count
-        guard hasGlobalOrder else {
-            return items.filter { $0.kind == .area }.sorted(by: precedes)
-                + items.filter { $0.kind == .project }.sorted(by: precedes)
+        sorted(items, item: { $0 })
+    }
+
+    /// The same rule, for a caller that has to keep its own element type.
+    ///
+    /// **T-333.** macOS's `ContextSection` holds `Area` / `Project` model objects, because its rows
+    /// drag and its drop delegate writes `order` back — it cannot render a flattened `Item`. So it
+    /// carried its own copy of the rule above, and the copy stopped one leg short: it ended at
+    /// `order`, kind, then name, with no `id` tail, and the two per-kind pre-sorts feeding it were
+    /// a bare `$0.order < $1.order`. Ordinary data behaves. Legacy, imported or CloudKit data with
+    /// two same-kind rows sharing an `order` **and** a name reshuffles between renders on the Mac
+    /// while the iPad — which routes through `sections(_:_:)` — holds still.
+    ///
+    /// Decorate–sort–undecorate on the caller's own values, so nothing is looked back up by `id`:
+    /// two rows may legitimately share one (a restore that duplicated a row is exactly the data
+    /// this exists for), and a dictionary keyed on `id` would silently drop one of them.
+    static func sorted<Element>(_ elements: [Element], item: (Element) -> Item) -> [Element] {
+        let decorated = elements.map { (element: $0, item: item($0)) }
+        let hasGlobalOrder = Set(decorated.map(\.item.order)).count == decorated.count
+
+        func ordered(_ subset: [(element: Element, item: Item)]) -> [Element] {
+            subset.sorted { precedes($0.item, $1.item) }.map(\.element)
         }
-        return items.sorted(by: precedes)
+
+        guard hasGlobalOrder else {
+            return ordered(decorated.filter { $0.item.kind == .area })
+                + ordered(decorated.filter { $0.item.kind == .project })
+        }
+        return ordered(decorated)
     }
 
     /// A **total** order: `order`, then kind, then name, then id. A partial one here is an unstable

@@ -108,12 +108,12 @@ struct CadenceCompactTabTests {
         #expect(CadenceDeepLink.task(taskID).featureDestination == .today)
         #expect(CadenceDeepLink.habits.featureDestination == .habits)
         #expect(CadenceDeepLink.goals.featureDestination == .goals)
-        #expect(CadenceDeepLink.calendar.featureDestination == .calendar)
+        #expect(CadenceDeepLink.calendar(dateKey: nil).featureDestination == .calendar)
 
         #expect(CadenceDeepLink.today.compactRoute.tab == .tasks)
         #expect(CadenceDeepLink.task(taskID).compactRoute.tasksSection == .today)
-        #expect(CadenceDeepLink.calendar.compactRoute.tab == .calendar)
-        #expect(CadenceDeepLink.calendar.compactRoute.pushedDestination == nil)
+        #expect(CadenceDeepLink.calendar(dateKey: nil).compactRoute.tab == .calendar)
+        #expect(CadenceDeepLink.calendar(dateKey: nil).compactRoute.pushedDestination == nil)
         #expect(CadenceDeepLink.habits.compactRoute.tab == .more)
         #expect(CadenceDeepLink.habits.compactRoute.pushedDestination == .habits)
         #expect(CadenceDeepLink.goals.compactRoute.pushedDestination == .goals)
@@ -124,7 +124,7 @@ struct CadenceCompactTabTests {
     @Test func widgetURLsRouteToTheTabTheirFeatureLivesOn() throws {
         let urls: [(URL, CadenceCompactTab)] = [
             (CadenceDeepLink.today.url, .tasks),
-            (CadenceDeepLink.calendar.url, .calendar),
+            (CadenceDeepLink.calendar(dateKey: nil).url, .calendar),
             (CadenceDeepLink.habits.url, .more),
             (CadenceDeepLink.goals.url, .more)
         ]

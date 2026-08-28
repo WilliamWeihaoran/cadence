@@ -43,6 +43,46 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-401] **`Cadence/Models/AGENTS.md` states the to-many rule without saying which half was
+  measured.** From the T-387 work, and it is the reason two independent audits filed the same false
+  finding. The guide says to append to an optional to-many by assigning a new array rather than
+  trusting the inverse. On the **delete** side that is measured — T-296 found the window. On the
+  **create** side it is not: mutations that dropped `parent.subtasks = existing + [subtask]` and
+  that dropped `subtask.parentTask = parent` **both survived**, because SwiftData back-populates
+  the inverse *and* the array synchronously inside the owning context. So the create-side rule is a
+  convention worth keeping, not a repair — and stating it as if it were a repair generated T-338 and
+  T-387, with T-294 hitting the same thing and recording it only in a test comment. Mark the two
+  halves apart in the guide.
+
+- [T-402] **`ModelContext.rollback()` un-deletes but does not un-edit.** Measured while fixing
+  T-321. Deleted rows come back to a fetch — which is why `commitDelete` and the cascade rollbacks
+  are correct — but field values assigned to an already-materialised `PersistentModel` survive it:
+  after `area.name = "New"; rollback()`, the store holds `"Old"` while the live `Area` every SwiftUI
+  view reads still answers `"New"`. An editor that rolls back and then says "Nothing was changed" is
+  therefore truthful about the store and lying about the screen — T-321's own defect wearing a fix's
+  clothes. `commitEdit` accordingly offers no rollback undo and snapshots fields instead. No other
+  `rollback()` caller exists in `Cadence/` today; if one is added, it needs this distinction.
+
+- [T-403] **`CadenceCalendarEventSearchSupport.identity(of:)` re-spells the first two lines of
+  `CadenceEventNoteSupport.rawIdentifier`.** From the T-373 work, kept visible rather than hidden:
+  `rawIdentifier` is main-actor isolated and `precedes` must stay `nonisolated` because
+  `iOSCalendarManager.fetchEvents` passes it to `sorted(by:)` as a plain function value. The fix is
+  one `nonisolated` keyword on `rawIdentifier`; that file was off-limits to the batch that found it.
+
+- [T-404] **Widget capture still bypasses the rest of `TaskCreationService`.** From T-354, which
+  fixed only the priority shortcut. The blocker is `CadencePendingChangePersistence` not being in
+  the widget target's explicit source list, so closing it means a project-file edit — decide that
+  before attempting it.
+
+- [T-405] **The iOS half of T-369 is compile-checked only.** `iOSCalendarView` applies a dated
+  calendar link after `CadenceCalendarDateMemory` restores, but `CadenceTests` cannot see
+  `Cadence/iOS/`, so that ordering is verified by an iOS-simulator build rather than by a test.
+
+- [T-406] **`TaskTitleShortcutParsing.normalized` is a guarded second copy of the app's trim rule.**
+  From T-354. It lives in `Models/` because the widget target's source list reaches `Models/` and
+  almost none of `Shared/`. A test pins the two spellings agreeing; the duplication is deliberate
+  and the pin is what makes it safe.
+
 - [T-399] **A cancelled kanban card sits in the active half of its column and never reaches the
   completed half.** Residue from [[T-342]]. `KanbanSectionColumnView.unfrozenActiveTasks` is
   `filter { !$0.isDone }` and `completedTasks` beside it is `filter { $0.isDone }` — a cancelled task
@@ -67,22 +107,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   archive import ([[T-274]]). If either turns out to exist, the collapse needs to be
   `max(count) per row-set` rather than plain `max`, or repair needs to fold split rows before
   collapsing.
-
-- [T-387] **Three subtask-creation paths set only one side of the relationship, and the house rule
-  says not to.** SwiftData to-many traversal audit (Codex, 2026-08-27, read at `84bc624`, clean
-  tree). `Cadence/Models/AGENTS.md` requires appending to an optional to-many by assigning a new
-  array rather than trusting inverse timing. **Verified:** `subtask.parentTask = task` appears at
-  `macOS/Views/SchedulePanelComponents.swift:153`, `Services/TaskCreationService.swift:175` and
-  `Services/MCPReadOnly/CadenceWriteService.swift:169`, while only `iOSTaskDetailSheet.swift:444`
-  and `iOSSampleDataSupport.swift:431` also assign `task.subtasks = (task.subtasks ?? []) + …`.
-  So iOS does it correctly and the other three rely on SwiftData back-populating the inverse —
-  which [[T-338]] already documents as unsafe. The macOS popover is wrong by house rule outright;
-  the service and MCP paths may happen to be correct because a save and refetch runs before any
-  reader looks, and **nothing pins that**, which is the more dangerous state of the two.
-  Fix: one shared insert helper that sets the inverse, inserts the row, and assigns the parent
-  array — used by all four call sites. Test after **save and refetch**, asserting both sides;
-  the existing tests only prove rows were inserted or that the returned parent has subtasks, which
-  a one-sided write can satisfy.
 
 - [T-388] **`listGoals` reports a goal's own counts under names that read like totals, while
   `getGoal` reports recursive ones.** Verified: `CadenceReadService.swift:929-930` computes
@@ -121,24 +145,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Also: `CadenceTaskSurfaceOptions.swift:129` says the decision lives in "`docs/TODO.md` T-291".
   **That pointer is stale** — T-291 is closed and archived, and was about ordering inside a list
   cascade. Fix the reference while fixing the behaviour, or the next reader loses the same time.
-
-- [T-377] **Searching "done" finds tasks on your Mac and nothing on your iPhone.** Cross-surface
-  drift audit (Codex, 2026-08-27, read at `c54cadb`, clean tree); **verified by counting**:
-  `statusAliases` appears **2** times in `Cadence/macOS/Views/GlobalSearchIndexSupport.swift` and
-  **0** times in `Cadence/iOS/iOSSearchView.swift`. So macOS matches status words like *done* or
-  *completed* through aliases while iOS only matches them if they literally appear in the task's
-  text. macOS also searches tag **slugs**; iOS searches tag names only. The scheduled-active icon
-  differs too — macOS shows `calendar.badge.clock`, iOS shows only done/not-done.
-  There is no shared task-search candidate helper, which is why the two drifted. Fix: shared
-  support for searchable fields, aliases, and result facts; keep row rendering platform-local.
-
-- [T-378] **A completed or archived list is findable on macOS and invisible on iOS — and nobody has
-  decided which is right.** Same audit. macOS list search includes lifecycle aliases; iOS
-  pre-filters areas and projects to active only. Unlike its siblings this is **not** a code bug:
-  the product rule is simply unpinned, and either surface could be the correct one. Decide whether
-  search should reach finished lists at all, then put the inclusion policy and the field policy in
-  one shared place and let both surfaces render their own rows. Do not "fix" it by making iOS match
-  macOS without answering the question first.
 
 - [T-381] **The Kanban column splits on `isDone`, so a cancelled task would land in the active
   column — and only the caller stops it.** P3, and the audit is careful to say why: this cannot
@@ -208,14 +214,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the root fallback. Do not leave it undecided — the current state means neither the code nor the
   copy can be trusted.
 
-- [T-369] **The Calendar widget links to "the calendar", not to the date it was showing.** Measured.
-  The widget snapshot has a `date`; the URL is bare `cadence://calendar` and the parser takes no
-  payload, so the app lands on whatever date the calendar was parked on. `CalendarNavigationManager`
-  already carries a concrete date and `CalendarPageInteractionSupport` already applies an external
-  jump — the plumbing exists, the link just doesn't use it. Either add a date payload or make bare
-  `cadence://calendar` explicitly jump to today; drifting to a remembered date is the one behaviour
-  nobody asked for.
-
 - [T-370] **Deep-link root application is correct and unpinned; the parser's URL shape is
   undecided.** Two P2/P3s. (a) `iOSRootView` correctly writes *both* the sidebar selection and the
   compact tab route, and `macOSRootView` sets selection — no test guards either; the compact route
@@ -223,11 +221,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   switches on `url.host`, so singleton routes silently ignore extra path components and
   `cadence:///today` is rejected. Not reachable from app-owned widgets, which emit canonical URLs.
   Pick strict or lenient and pin it.
-
-- [T-373] **The EventKit and Reminders comparators both tie on realistic duplicates.** EventKit's is
-  named "total" but stops at start-date-then-title, and recurring or imported meetings routinely
-  share both. Apple Reminders sorts on due date and title while `AppleReminderItem` already carries
-  a stable `id` it never uses. Both fixes are one line: end on the identity the app already has.
 
 - [T-374] **The most common defect shape in 21 audits is "a correct shared helper exists and call
   sites don't use it" — enforce it mechanically.** Synthesis, not a new defect. [[T-359]] (four
@@ -237,33 +230,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the right instrument. Extend that source-scan pattern to habit completion, task date/time
   mutation, and delete commit — **after** each shared wrapper exists, not before, or the test
   becomes a brittle census of scattered call sites.
-
-- [T-354] **`review launch plan !!!` becomes a high-priority task in the app and a literal title in
-  the widget.** From the same audit, premise verified: `TaskCreationService` resolves the shortcut
-  through `TaskTitleSupport.priorityShortcut`, and `CadenceWidgetIntents` references it **zero**
-  times. Extends [[T-314]].
-  Same words, two different tasks, depending only on where you typed them — and the widget keeps
-  the `!!!` in the title, so the artefact is visible afterwards. The existing widget test covers
-  simple titles only, which is why it survived.
-  Prefer routing capture through `TaskCreationService` over calling the title helper directly:
-  [[T-314]] is already about eliminating that open-coded copy, and every other creation rule it
-  skips is the same bug waiting.
-
-- [T-355] **DECIDE: the milestone widget mixes directions with their own milestones.** From the same
-  audit; measured code, inferred product impact.
-  The app's Goals surface is hierarchical — top-level goals are groups, milestones nest beneath. The
-  widget prioritizes every active goal, parent or child, into one flat pool. Since a parent's
-  contribution **already recurses through its sub-goals**, the widget can show a rollup and one of
-  its own children side by side as peer "priority milestones", double-counting the child's progress
-  in the reader's eye.
-  Two coherent answers: mirror the app and prioritize top-level directions, letting their summaries
-  carry the milestones; or be genuinely milestone-first, filter out top-level goals, and rename the
-  copy away from "Active goals". **The current mixed pool is only defensible with a test saying it
-  is deliberate**, and there is none.
-
-  Note the audit also reported [[T-301]] as looking already fixed. It is being fixed **right now**
-  in uncommitted work — the audit ran against the dirty tree and read an agent's in-flight change.
-  Not stale on `main`; do not close it on that basis until that work lands.
 
 - [T-352] **DECIDE: should the root destination persist? A comment already says it does.** From the
   same audit; **premise verified** — `macOSRootView` holds the selection in `@State` with **zero**
@@ -331,17 +297,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   correctly refused there. It is its own ticket.
   This is the fifth finding where **iOS lags a model macOS already grew** (see [[T-323]], [[T-324]],
   [[T-325]]). At five, the pattern is the work: port the model once rather than patch the sixth.
-
-- [T-338] **macOS adds a subtask by writing one side of the relationship; iOS writes both.** Found
-  while closing [[T-296]], which fixed the same asymmetry on the *delete* side.
-  `TaskDetailPopover.addSubtask` (`SchedulePanelComponents.swift:148-157`) sets
-  `subtask.parentTask = task` and never appends to `task.subtasks`; the iOS `addSubtask` writes
-  both. It is why `deleteSubtask` had to take the parent explicitly rather than trusting
-  `subtask.parentTask` — a back-reference that may be the only side written.
-  The rule T-296 established is the fix: **write both sides explicitly, never depend on
-  back-population timing.** T-296 measured why that matters on the delete side — between the delete
-  and the next flush, the parent's array still holds the deleted row, and that window is exactly
-  when a SwiftUI list re-renders. Whether the create side has an equivalent window is unmeasured.
 
 - [T-337] **The `+` inherits context from what you drop it on, and from nothing else.** The user's
   rule, 2026-08-26, and it supersedes [[T-336]] and reverses part of [[T-282]]:
@@ -415,15 +370,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   may differ across widths, capability may not — and a seed is arguably capability rather than
   placement. **Ask the user before touching it**, and if the answer is "leave it", record that here
   and close, because the test currently pins the opposite of what a reader might assume.
-
-- [T-333] **The macOS sidebar keeps a private copy of list ordering that iOS routes through the
-  shared one.** From the same audit, premise verified — including that `iOSRootSidebar`'s own
-  comment claims macOS reads the shared sorter, which it does not. Ordinary data behaves; legacy,
-  imported or CloudKit data with duplicate same-kind order or name can drift, because the shared
-  sorter ends in an id tie-break and the macOS copy does not.
-  Either route macOS through `CadenceSidebarLists`, or **pin the fork deliberately with a test and
-  fix the comment that says otherwise**. A comment asserting a sharing that does not exist is worse
-  than the fork: it is what stops the next reader from checking.
 
 - [T-328] **`DataIntegrityRepairService` cannot see four of the models that can be orphaned.**
   From the same audit, premise verified by counting fetches: it fetches `Context`, `Area`,

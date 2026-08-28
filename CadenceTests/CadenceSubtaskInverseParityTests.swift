@@ -245,6 +245,202 @@ struct CadenceSubtaskInverseParityTests {
         #expect(survivors.count == 1)
         #expect(survivors.first?.parentTask?.id == task.id)
     }
+
+    // MARK: - T-338 / T-387: one shared subtask insert
+
+    /// The insert helper's own contract: trimming, ordering, the blank-title guard, both sides
+    /// before any save, and both sides again in the store afterwards.
+    ///
+    /// Read the `#expect`s on the two sides as a *specification*, not as a trap the one-sided
+    /// writes would have sprung. They would not have: back-population makes them true either way
+    /// (see the two call-site tests below). What they pin is that the helper never regresses to
+    /// writing *neither* — dropping the insert, or attaching to the wrong parent.
+    @Test func insertingASubtaskThroughTheSharedHelperWritesBothSidesBeforeAnySave() throws {
+        let container = try makeContainer()
+        let modelContext = ModelContext(container)
+
+        let task = AppTask(title: "Plan the offsite")
+        modelContext.insert(task)
+        try modelContext.save()
+
+        // Non-vacuity: nothing is attached yet, so nothing below can be reading a fixture.
+        #expect((task.subtasks ?? []).isEmpty)
+        #expect(try fetchSubtasks(in: container).isEmpty)
+
+        let first = try #require(CadenceTaskMutationSupport.insertSubtask(
+            titled: "  Book the room  ",
+            into: task,
+            modelContext: modelContext
+        ))
+        let second = try #require(CadenceTaskMutationSupport.insertSubtask(
+            titled: "Send the agenda",
+            into: task,
+            modelContext: modelContext
+        ))
+
+        #expect(first.title == "Book the room")
+        #expect(first.order == 0)
+        #expect(second.order == 1)
+
+        // Both sides, in the window before the flush: the parent's array *and* each child's
+        // back-reference.
+        #expect((task.subtasks ?? []).sorted { $0.order < $1.order }.map(\.id) == [first.id, second.id])
+        #expect(first.parentTask?.id == task.id)
+        #expect(second.parentTask?.id == task.id)
+
+        // A blank title is not a row, and does not consume an order slot.
+        #expect(CadenceTaskMutationSupport.insertSubtask(
+            titled: " \n ",
+            into: task,
+            modelContext: modelContext
+        ) == nil)
+        #expect((task.subtasks ?? []).count == 2)
+
+        try modelContext.save()
+
+        let sides = try storedSubtaskSides(in: container, taskID: task.id)
+        #expect(sides.parentArray == ["Book the room", "Send the agenda"])
+        #expect(sides.backReferenced == ["Book the room", "Send the agenda"])
+    }
+
+    /// The composer path, and the test that measured T-387's central claim and found it false.
+    ///
+    /// `TaskCreationService.insertTask` hands the task back *pending* — the sheet commits
+    /// afterwards — so the window the ticket predicted is directly reachable here: a subtask
+    /// attached by `subtask.parentTask = task` alone, read back through `task.subtasks` before any
+    /// save. Run against the unfixed call site on 2026-08-28, every assertion below **passed**.
+    /// SwiftData back-populates the inverse inside the owning context synchronously, so there is no
+    /// interval in which the parent's array is stale. The create side is not the delete side, where
+    /// T-296 measured a real window.
+    ///
+    /// It is kept because it is the first test on this path to read `Subtask.parentTask` at all —
+    /// `TaskCreationServiceTests` asserts `task.subtasks` and nothing else, and the back-reference
+    /// is the side `CadenceTaskMutationSupport.deleteTasks` sweeps by. A future change that leaves
+    /// a subtask orphaned from its parent fails here rather than at the next delete.
+    @Test func theComposerCreationPathWritesBothSidesBeforeItsCommit() throws {
+        let container = try makeContainer()
+        let modelContext = ModelContext(container)
+
+        let draft = TaskCreationDraft(
+            title: "Run the review",
+            notes: "",
+            priority: .none,
+            container: .inbox,
+            sectionName: TaskSectionDefaults.defaultName,
+            dueDateKey: "",
+            scheduledDateKey: "",
+            subtaskTitles: ["  Draft the deck  ", "", "Rehearse"],
+            tags: []
+        )
+
+        let task = try #require(TaskCreationService(areas: [], projects: [])
+            .insertTask(from: draft, into: modelContext))
+
+        // Non-vacuity for "before the commit": the rows are pending in this context only, so a
+        // second context on the same container still sees an empty store.
+        #expect(try fetchSubtasks(in: container).isEmpty)
+
+        let pending = (task.subtasks ?? []).sorted { $0.order < $1.order }
+        #expect(pending.map(\.title) == ["Draft the deck", "Rehearse"])
+        #expect(pending.allSatisfy { $0.parentTask?.id == task.id })
+
+        try modelContext.save()
+
+        let sides = try storedSubtaskSides(in: container, taskID: task.id)
+        #expect(sides.parentArray == ["Draft the deck", "Rehearse"])
+        #expect(sides.backReferenced == ["Draft the deck", "Rehearse"])
+    }
+
+    /// The MCP path, which saves inside the call, so the store is the only place to look.
+    ///
+    /// T-387 called this the more dangerous of the two states — correct only because a save and a
+    /// refetch happen before any reader does. Half of that is right: nothing pinned it. The other
+    /// half is not, as the composer test above measured. What the ticket was actually pointing at
+    /// survives the correction: this path had no assertion on the back-reference at all.
+    @Test func theMCPCreatePathLandsBothSidesInTheStore() throws {
+        let container = try makeContainer()
+        let modelContext = ModelContext(container)
+        let writeService = CadenceWriteService(context: modelContext, auditLogger: nil)
+
+        let detail = try writeService.createTask(options: .init(
+            title: "Wire the endpoint",
+            subtaskTitles: ["  Schema  ", "", "Handler"]
+        ))
+
+        // This is the assertion the suite already had, and it is the one that could not tell the
+        // difference: the returned detail is read back through the parent, which a one-sided write
+        // satisfies once the save has back-populated it.
+        #expect(detail.subtasks.map(\.title) == ["Schema", "Handler"])
+
+        let storedTaskID = try #require(
+            ModelContext(container)
+                .fetch(FetchDescriptor<AppTask>())
+                .first(where: { $0.title == "Wire the endpoint" })?
+                .id
+        )
+
+        let sides = try storedSubtaskSides(in: container, taskID: storedTaskID)
+        #expect(sides.parentArray == ["Schema", "Handler"])
+        #expect(sides.backReferenced == ["Schema", "Handler"])
+    }
+
+    /// All five creation surfaces route through the one helper.
+    ///
+    /// Scanned because four of the five are unreachable from this target: three are `private func`s
+    /// inside SwiftUI views and two of those live under `Cadence/iOS/`, which is not compiled into
+    /// the macOS test bundle at all. The behavioural tests above cover the two that are callable.
+    @Test func everySubtaskCreationCallSiteRoutesThroughTheSharedInsertHelper() throws {
+        let callSites: [(path: String, call: String, anchor: String)] = [
+            (
+                "Cadence/macOS/Views/SchedulePanelComponents.swift",
+                "CadenceTaskMutationSupport.insertSubtask(",
+                "private func addSubtask() {"
+            ),
+            (
+                "Cadence/iOS/iOSTaskDetailSheet.swift",
+                "CadenceTaskMutationSupport.insertSubtask(",
+                "private func addSubtask() {"
+            ),
+            (
+                "Cadence/Services/TaskCreationService.swift",
+                "CadenceTaskMutationSupport.insertSubtasks(",
+                "func insertTask(from draft: TaskCreationDraft, into modelContext: ModelContext) -> AppTask? {"
+            ),
+            (
+                "Cadence/Services/MCPReadOnly/CadenceWriteService.swift",
+                "CadenceTaskMutationSupport.insertSubtasks(",
+                "func createTask(options: CadenceCreateTaskOptions) throws -> CadenceTaskDetail {"
+            ),
+            (
+                "Cadence/iOS/iOSSampleDataSupport.swift",
+                "CadenceTaskMutationSupport.insertSubtasks(",
+                "private static func addSubtasks(_ titles: [String], to task: AppTask, modelContext: ModelContext) {"
+            )
+        ]
+
+        for site in callSites {
+            let raw = try subtaskSourceFile(site.path)
+            let code = strippingSwiftComments(raw)
+
+            // Non-vacuity: a missing or empty read, and a stripper that silently did nothing or
+            // changed the file's length, all have to be red rather than quietly green.
+            #expect(raw.count > 500, "\(site.path) read back as \(raw.count) characters")
+            #expect(code != raw, "\(site.path) has no comments to strip; the stripper did nothing")
+            #expect(code.count == raw.count, "\(site.path) changed length under the stripper")
+            #expect(code.contains(site.anchor), "\(site.path) no longer contains \(site.anchor)")
+
+            let routed = occurrences(of: site.call, in: code)
+            #expect(routed == 1, "\(site.path) routes through \(site.call) \(routed) times, expected 1")
+
+            // The two spellings a hand-rolled insert needs. Neither may survive anywhere in these
+            // files: a second, open-coded path is exactly the divergence the helper removes.
+            let constructed = occurrences(of: "Subtask(title:", in: code)
+            #expect(constructed == 0, "\(site.path) still builds a Subtask directly \(constructed) times")
+
+            let inverseWrites = occurrences(of: ".parentTask = ", in: code)
+            #expect(inverseWrites == 0, "\(site.path) still writes the subtask inverse by hand \(inverseWrites) times")
+        }
+    }
 }
 
 // MARK: - Source access
@@ -276,4 +472,27 @@ private func strippingSwiftComments(_ source: String) -> String {
         }
     }
     return result
+}
+
+/// Both sides of the subtask relationship as the **store** holds them, read back through a fresh
+/// `ModelContext`: the parent's own array, and the rows that name the parent through `parentTask`.
+///
+/// The distinction is the whole point of T-387. A one-sided write makes these two disagree in the
+/// window before a save; after a save they agree, which is why "assert both, after save and
+/// refetch" is the assertion the old tests were missing rather than a stricter spelling of one
+/// they had.
+private func storedSubtaskSides(
+    in container: ModelContainer,
+    taskID: UUID
+) throws -> (parentArray: [String], backReferenced: [String]) {
+    let context = ModelContext(container)
+    let storedTask = try context.fetch(FetchDescriptor<AppTask>()).first { $0.id == taskID }
+    let parentArray = (storedTask?.subtasks ?? [])
+        .sorted { $0.order < $1.order }
+        .map(\.title)
+    let backReferenced = try context.fetch(FetchDescriptor<Subtask>())
+        .filter { $0.parentTask?.id == taskID }
+        .sorted { $0.order < $1.order }
+        .map(\.title)
+    return (parentArray, backReferenced)
 }

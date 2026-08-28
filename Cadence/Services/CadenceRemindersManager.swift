@@ -302,7 +302,22 @@ final class RemindersManager {
         )
     }
 
-    nonisolated private static func sortItems(_ lhs: AppleReminderItem, _ rhs: AppleReminderItem) -> Bool {
+    /// **T-373.** A **total** order: due date (dated before undated), then title, then `id`.
+    ///
+    /// It used to stop at title, and the tie it left open is the ordinary case rather than a corner
+    /// one: every undated reminder shares the `nil` due date, so the whole undated tail was ordered
+    /// on title alone, and a list that legitimately holds two reminders called "Pay rent" — one per
+    /// Reminders list — could hand them back either way round. `fetchReminders` is asynchronous and
+    /// its order is EventKit's, not ours, so "either way round" means the Inbox rows could swap
+    /// between two refreshes with nothing having changed.
+    ///
+    /// `id` is the EventKit calendar-item identifier the item already carries and never used for
+    /// anything but completion lookups. Internal rather than private so the ordering can be pinned
+    /// without an authorized store; the manager itself cannot be tested at all without one.
+    ///
+    /// Deliberately not a `Comparable` conformance, for the reason `CadenceMCPOrdering.precedes`
+    /// gives: the title leg is case-insensitive while a synthesized `==` would not be.
+    nonisolated static func sortItems(_ lhs: AppleReminderItem, _ rhs: AppleReminderItem) -> Bool {
         switch (lhs.dueDate, rhs.dueDate) {
         case let (left?, right?) where left != right:
             return left < right
@@ -311,7 +326,9 @@ final class RemindersManager {
         case (nil, _?):
             return false
         default:
-            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            let titles = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+            if titles != .orderedSame { return titles == .orderedAscending }
+            return lhs.id < rhs.id
         }
     }
 }

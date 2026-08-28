@@ -40,14 +40,72 @@ nonisolated enum CadenceCalendarEventSearchSupport {
         (event.endDate ?? now) >= now
     }
 
-    /// Total, including the title tie-break. macOS sorted on `startDate` alone, which leaves the
-    /// order of two events starting at the same minute undefined — and an all-day event starts at
-    /// midnight, so the tie is the common case on the results this fix newly admits.
+    /// The start this file orders on: `startDate`, or the occurrence's own date when EventKit hands
+    /// back a series member with no start of its own.
+    static func startInstant(of event: EKEvent) -> Date {
+        event.startDate ?? event.occurrenceDate ?? Date.distantFuture
+    }
+
+    /// The identity leg of `precedes`, and the reason it is spelled here rather than borrowed.
+    ///
+    /// `CadenceEventNoteSupport` owns what an event identifier *is*, and `event(from:identifier:)`
+    /// below pays main-actor isolation to use it. `precedes` cannot: it is handed to `sorted(by:)`
+    /// from `iOSCalendarManager.fetchEvents` as a plain function value, so it has to stay
+    /// `nonisolated`. What it reads is the same pair of EventKit fields
+    /// `CadenceEventNoteSupport.rawIdentifier` reads, in the same order, and it deliberately does
+    /// **not** reach for that function's `#occurrence=` suffix: occurrences of one series differ in
+    /// `startInstant`, which is compared first, so the suffix could never break a tie this leg is
+    /// asked to break.
+    ///
+    /// Measured rather than assumed: EventKit gives even a never-saved `EKEvent` a distinct
+    /// `calendarItemIdentifier`, so this leg separates two such events too. The comparator is still
+    /// exposed field-by-field below, so the leg can be pinned against chosen identities rather than
+    /// against whatever EventKit happens to mint.
+    static func identity(of event: EKEvent) -> String {
+        if let eventIdentifier = event.eventIdentifier, !eventIdentifier.isEmpty {
+            return eventIdentifier
+        }
+        return event.calendarItemIdentifier
+    }
+
+    /// **T-373.** A **total** order: start, then title, then identity.
+    ///
+    /// It was called total while it stopped at title. Two events sharing a start *and* a title are
+    /// not the exotic case the name implied they were — a recurring meeting fetched across a window
+    /// gives one per occurrence, an all-day event starts at midnight like every other all-day
+    /// event, and a calendar subscribed to twice yields the same meeting twice. Tied, `sorted` was
+    /// free to return either arrangement, so the Mac's Cmd+K results and the iPhone's event list
+    /// could reorder themselves between two identical reads.
+    ///
+    /// Deliberately not a `Comparable` conformance on some wrapper, for the reason
+    /// `CadenceMCPOrdering.precedes` gives: the title leg is case-insensitive while a synthesized
+    /// `==` would not be, which would leave `"standup"` and `"Standup"` neither ordered nor equal.
     static func precedes(_ lhs: EKEvent, _ rhs: EKEvent) -> Bool {
-        let lhsStart = lhs.startDate ?? lhs.occurrenceDate ?? Date.distantFuture
-        let rhsStart = rhs.startDate ?? rhs.occurrenceDate ?? Date.distantFuture
+        isOrderedBefore(
+            lhsStart: startInstant(of: lhs),
+            lhsTitle: lhs.title ?? "",
+            lhsIdentity: identity(of: lhs),
+            rhsStart: startInstant(of: rhs),
+            rhsTitle: rhs.title ?? "",
+            rhsIdentity: identity(of: rhs)
+        )
+    }
+
+    /// The comparator over the three fields it reads, so a test can pin every leg — the identity
+    /// one included — without an `EKEventStore` that has saved anything. The same shape
+    /// `CadenceCalendarSorting.isOrderedBefore` uses, and for the same reason.
+    static func isOrderedBefore(
+        lhsStart: Date,
+        lhsTitle: String,
+        lhsIdentity: String,
+        rhsStart: Date,
+        rhsTitle: String,
+        rhsIdentity: String
+    ) -> Bool {
         if lhsStart != rhsStart { return lhsStart < rhsStart }
-        return (lhs.title ?? "").localizedCaseInsensitiveCompare(rhs.title ?? "") == .orderedAscending
+        let titles = lhsTitle.localizedCaseInsensitiveCompare(rhsTitle)
+        if titles != .orderedSame { return titles == .orderedAscending }
+        return lhsIdentity < rhsIdentity
     }
 
     /// Resolve a picked search result back to its `EKEvent`.

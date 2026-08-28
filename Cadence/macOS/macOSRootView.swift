@@ -282,6 +282,10 @@ struct macOSRootView: View {
             for: route,
             modelContext: currentModelContext
         )
+        // Selecting the Calendar page is not the whole of opening the calendar: the timeline
+        // restores wherever it was last scrolled, so without this the link lands on a remembered
+        // date. `openCalendarLink` returns false for every other route and is a no-op for them.
+        calendarNavigationManager.openCalendarLink(route)
         // Mapped through `SidebarStaticDestination` rather than a second switch, so the sidebar's
         // feature-to-item table stays the only one. Every destination a deep link can produce is
         // in it; `.today` is the safety net, not a route.

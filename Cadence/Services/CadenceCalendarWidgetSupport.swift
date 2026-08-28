@@ -30,8 +30,10 @@ nonisolated struct CadenceCalendarWidgetSnapshot: Hashable {
     /// snapshot literals that only care about the title stay source-compatible.
     var upcomingDueDate: String = ""
 
+    /// Points at the day this snapshot is *about*, which is the first cell of the strip it draws.
+    /// See `CadenceDeepLink.calendar` for what a link without one used to do.
     var calendarURL: URL {
-        CadenceDeepLink.calendar.url
+        CadenceDeepLink.calendar(dateKey: CadenceWidgetDateSupport.dateKey(from: date)).url
     }
 
     var isUnavailable: Bool {

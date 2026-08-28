@@ -218,7 +218,7 @@ struct CadenceDeepLinkTests {
             (CadenceDeepLink.today, CadenceFeatureDestination.today),
             (.habits, .habits),
             (.goals, .goals),
-            (.calendar, .calendar)
+            (.calendar(dateKey: nil), .calendar)
         ] {
             #expect(
                 manager.resolvedDestination(for: link, modelContext: modelContext, todayKey: todayKey) == expected

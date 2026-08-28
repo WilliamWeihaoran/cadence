@@ -9,6 +9,7 @@ struct iOSCalendarView: View {
     /// does nothing.
     var isCompactTabRoot = false
     @Environment(iOSCalendarManager.self) private var calendarManager
+    @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query private var allBundles: [TaskBundle]
     @AppStorage("ios.calendar.viewMode") private var viewModeRaw = CadenceCalendarViewMode.week.rawValue
@@ -261,6 +262,12 @@ struct iOSCalendarView: View {
         .background(Theme.bg.ignoresSafeArea())
         .iOSHidesCompactNavigationBar()
         .onAppear(perform: restorePersistedCalendarDates)
+        // A calendar link that arrives while this page is already standing. `onAppear` covers the
+        // cold-start tap; this covers the warm one, and the token is what makes a *repeat* tap on
+        // the same day still count as a new request.
+        .onChange(of: deepLinkManager.route?.token) { _, _ in
+            applyCalendarDeepLinkDate()
+        }
         .onChange(of: eventWindowKey, initial: true) { _, _ in
             refreshVisibleEvents()
         }
@@ -469,6 +476,27 @@ struct iOSCalendarView: View {
         } else {
             anchorDate = selectedDate
         }
+
+        // After the restore, deliberately: a link that names a day outranks where the calendar was
+        // left, which is the whole of T-369.
+        applyCalendarDeepLinkDate()
+    }
+
+    /// Moves to the day a `cadence://calendar` link names, if the standing route is one.
+    ///
+    /// **T-369.** The Calendar widget draws a fortnight from its snapshot's date and its "Open
+    /// Calendar" link used to carry no date at all, so the tap landed on `dateMemory`'s remembered
+    /// position — not the day on screen, and not today either. The link now names a day, and a
+    /// bare one means today; `CadenceDeepLink.calendarDateKey(todayKey:)` is that single answer,
+    /// shared with the macOS root so the two shells cannot read one URL two ways.
+    private func applyCalendarDeepLinkDate() {
+        guard let deepLink = deepLinkManager.route?.deepLink,
+              let dateKey = deepLink.calendarDateKey(),
+              let date = DateFormatters.date(from: dateKey, in: calendar) else { return }
+
+        let day = calendar.startOfDay(for: date)
+        selectedDate = day
+        anchorDate = day
     }
 
     private func rememberCalendarPosition() {

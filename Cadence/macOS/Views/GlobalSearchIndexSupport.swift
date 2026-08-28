@@ -109,16 +109,20 @@ enum GlobalSearchIndexSupport {
         }, query: query)
     }
 
+    /// Which lists search can see, and which words reach them, is `CadenceListSearchSupport`'s
+    /// decision — the T-378 rule is recorded there. The subtitle below is this surface's own row
+    /// rendering, built from the shared lifecycle fact rather than from a second
+    /// `isArchived ? … : isDone ? …` chain, which labelled a *cancelled* project "Active".
     static func areaResults(areas: [Area], query: String) -> [GlobalSearchResult] {
         rankedResults(areas.compactMap { area in
+            guard CadenceListSearchSupport.isSearchable(area, query: query) else { return nil }
             let contextName = area.context?.name ?? "No context"
-            let lifecycle = area.isArchived ? "archived" : (area.isDone ? "completed done" : "active")
-            guard matches(query: query, fields: [area.name, area.desc, contextName, lifecycle]) else { return nil }
+            guard matches(query: query, fields: CadenceListSearchSupport.searchFields(for: area)) else { return nil }
             return GlobalSearchResult(
                 id: "area-\(area.id.uuidString)",
                 category: .areas,
                 title: area.name,
-                subtitle: "\(contextName) • \(CadenceTaskQuerySupport.openTaskCount(for: area)) active tasks • \(area.isArchived ? "Archived" : (area.isDone ? "Completed" : "Active"))",
+                subtitle: "\(contextName) • \(CadenceTaskQuerySupport.openTaskCount(for: area)) active tasks • \(CadenceListSearchSupport.lifecycle(of: area).statusLabel)",
                 icon: area.icon,
                 tintHex: area.colorHex,
                 destination: .area(area.id)
@@ -128,16 +132,16 @@ enum GlobalSearchIndexSupport {
 
     static func projectResults(projects: [Project], query: String) -> [GlobalSearchResult] {
         rankedResults(projects.compactMap { project in
+            guard CadenceListSearchSupport.isSearchable(project, query: query) else { return nil }
             let contextName = project.context?.name ?? "No context"
             let areaName = project.area?.name
             let summary = [contextName, areaName].compactMap { $0 }.joined(separator: " • ")
-            let lifecycle = project.isArchived ? "archived" : (project.isDone ? "completed done" : "active")
-            guard matches(query: query, fields: [project.name, project.desc, summary, lifecycle]) else { return nil }
+            guard matches(query: query, fields: CadenceListSearchSupport.searchFields(for: project)) else { return nil }
             return GlobalSearchResult(
                 id: "project-\(project.id.uuidString)",
                 category: .projects,
                 title: project.name,
-                subtitle: "\(summary) • \(CadenceTaskQuerySupport.openTaskCount(for: project)) active tasks • \(project.isArchived ? "Archived" : (project.isDone ? "Completed" : "Active"))",
+                subtitle: "\(summary) • \(CadenceTaskQuerySupport.openTaskCount(for: project)) active tasks • \(CadenceListSearchSupport.lifecycle(of: project).statusLabel)",
                 icon: project.icon,
                 tintHex: project.colorHex,
                 destination: .project(project.id)
@@ -145,9 +149,13 @@ enum GlobalSearchIndexSupport {
         }, query: query)
     }
 
+    /// The palette always includes completed tasks; iOS asks the same helper with its "Completed"
+    /// toggle. Fields, aliases and the glyph state come from `CadenceTaskSearchSupport` so the two
+    /// surfaces cannot drift apart again (T-377) — what stays here is the row: this subtitle, and
+    /// the symbol names the desktop draws.
     static func taskResults(tasks: [AppTask], query: String) -> [GlobalSearchResult] {
         let base = tasks
-            .filter { !$0.isCancelled }
+            .filter { CadenceTaskSearchSupport.isSearchable($0, includingCompleted: true) }
             .sorted {
                 if $0.isDone != $1.isDone { return !$0.isDone && $1.isDone }
                 if $0.order != $1.order { return $0.order < $1.order }
@@ -155,17 +163,8 @@ enum GlobalSearchIndexSupport {
             }
 
         return Array(rankedResults(base.compactMap { task in
-            let container = task.project?.name ?? task.area?.name ?? "Inbox"
-            let contextName = task.context?.name ?? ""
-            let notesSnippet = task.notes.isEmpty ? "" : task.notes
-            let tagText = task.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
-            let statusAliases = [
-                task.isDone ? "completed done" : "active todo",
-                task.priority.label,
-                task.resolvedSectionName,
-                tagText
-            ].joined(separator: " ")
-            guard matches(query: query, fields: [task.title, container, contextName, notesSnippet, statusAliases]) else { return nil }
+            let container = CadenceTaskSearchSupport.containerLabel(for: task)
+            guard matches(query: query, fields: CadenceTaskSearchSupport.searchFields(for: task)) else { return nil }
 
             let meta: [String] = [
                 container,
@@ -180,11 +179,21 @@ enum GlobalSearchIndexSupport {
                 category: .tasks,
                 title: task.title.isEmpty ? "Untitled Task" : task.title,
                 subtitle: meta.joined(separator: " • "),
-                icon: task.scheduledStartMin >= 0 ? "calendar.badge.clock" : "checkmark.circle",
+                icon: taskIcon(for: CadenceTaskSearchSupport.glyph(for: task)),
                 tintHex: task.containerColor,
                 destination: .task(task.id)
             )
         }, query: query).prefix(query.isEmpty ? 10 : 14))
+    }
+
+    /// The desktop's symbols for the three shared glyph states. `completed` and `active` draw the
+    /// same circle here on purpose: this row already carries the word "Completed" or "Active" at
+    /// the end of its subtitle, which an iOS row has no room for.
+    static func taskIcon(for glyph: CadenceTaskSearchGlyph) -> String {
+        switch glyph {
+        case .scheduled: "calendar.badge.clock"
+        case .completed, .active: "checkmark.circle"
+        }
     }
 
     static func goalResults(goals: [Goal], query: String) -> [GlobalSearchResult] {
@@ -299,7 +308,7 @@ enum GlobalSearchIndexSupport {
             } else {
                 dateLabel = "Event note"
             }
-            let tagText = note.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
+            let tagText = CadenceSearchTagSupport.text(for: note.sortedTags)
             let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
             guard matches(query: query, fields: [title, content, dateLabel, tagText]) else { return nil }
             return GlobalSearchResult(

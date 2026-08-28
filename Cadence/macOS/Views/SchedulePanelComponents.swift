@@ -146,13 +146,11 @@ struct TaskDetailPopover: View {
     }
 
     private func addSubtask() {
-        let trimmed = newSubtaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let existing = (task.subtasks ?? []).count
-        let subtask = Subtask(title: trimmed)
-        subtask.parentTask = task
-        subtask.order = existing
-        modelContext.insert(subtask)
+        guard CadenceTaskMutationSupport.insertSubtask(
+            titled: newSubtaskTitle,
+            into: task,
+            modelContext: modelContext
+        ) != nil else { return }
         newSubtaskTitle = ""
     }
 

@@ -54,17 +54,24 @@ nonisolated enum CadenceMilestoneWidgetSupport {
         now: Date = Date(),
         limit: Int
     ) -> CadenceMilestoneWidgetSnapshot {
-        let activeGoals = prioritizedGoals(from: goals, now: now)
-        let visibleGoals = Array(activeGoals.prefix(max(limit, 0))).map { widgetGoal($0, now: now) }
+        let pool = prioritizedGoals(from: goals, now: now)
+        let visibleGoals = Array(pool.prefix(max(limit, 0))).map { widgetGoal($0, now: now) }
+        let activeGoals = goals.filter { $0.status == .active }
 
         return CadenceMilestoneWidgetSnapshot(
             date: now,
-            state: activeGoals.isEmpty ? .empty : .ready,
+            state: pool.isEmpty ? .empty : .ready,
             statusMessage: nil,
-            totalGoalCount: activeGoals.count,
-            // Union, not sum: `activeGoals` holds both directions and their nested milestones, and
-            // a direction's contributing tasks already include its milestones', so adding the
-            // per-goal counts reports the same overdue task once per level it hangs under.
+            // The header's number, and it counts the same things the header names: "Milestones 7"
+            // over a list the widget draws seven of. Before T-355 it counted every active goal
+            // including the directions the list does not show.
+            totalGoalCount: pool.count,
+            // Union, not sum, and over **every** active goal rather than over the pool. Union
+            // because a direction's contributing tasks already include its milestones', so adding
+            // per-goal counts reports the same overdue task once per level it hangs under. Over
+            // every active goal because a direction that steps out of the pool can still own
+            // overdue tasks directly, and this badge is the app's overdue total, not the visible
+            // rows'.
             totalOverdueTaskCount: activeGoals.reduce(into: Set<UUID>()) { partial, goal in
                 partial.formUnion(GoalContributionResolver.overdueTasks(for: goal, now: now).map(\.id))
             }.count,
@@ -108,8 +115,7 @@ nonisolated enum CadenceMilestoneWidgetSupport {
         // walk the goal's whole sub-tree, and a comparator runs O(n log n) times — so this was
         // four full tree walks per comparison, inside a widget timeline where the CPU and memory
         // budget is hard. Now it is two per goal, once.
-        let decorated = goals
-            .filter { $0.status == .active }
+        let decorated = activeMilestonePool(from: goals)
             .map { goal in
                 (
                     goal: goal,
@@ -149,6 +155,48 @@ nonisolated enum CadenceMilestoneWidgetSupport {
                 return normalizedTitle(lhs.title) < normalizedTitle(rhs.title)
             }
             .map(\.goal)
+    }
+
+    /// The goals this widget ranks against each other: the **leaves** of the active goal tree.
+    ///
+    /// **T-355, a decision rather than a defect fix.** The pool used to be every active goal,
+    /// parent and child alike. The app's Goals page is hierarchical — a top-level goal is a
+    /// *direction* and renders as a header card above its milestones — and
+    /// `GoalContributionResolver` recurses through sub-goals, so a direction's progress already
+    /// contains its milestones'. Flattening both into one pool could therefore put a rollup and
+    /// one of its own children side by side as peer "priority milestones", showing the child's
+    /// progress twice to a reader with no way to see that they are the same work.
+    ///
+    /// The answer is to be genuinely milestone-first, which is what every string this widget draws
+    /// already claims: "Milestone Momentum", "Priority milestone", "No active milestones", "Open
+    /// Milestones". A goal is in the pool when no active goal is nested beneath it. A direction
+    /// with live milestones steps aside for them; a goal with none — an un-nested goal, or a
+    /// direction whose milestones are all done — *is* the leaf and stays.
+    ///
+    /// That last clause is why this is not simply `!goal.isTopLevel`. Filtering directions out
+    /// wholesale would empty the widget for a user whose goals are not nested at all, while the
+    /// app's own Goals page still shows them work — a widget going blank is a worse answer than
+    /// the double count it was meant to fix.
+    ///
+    /// Descendants are walked recursively, not one level down. `GoalAssignmentRules` documents
+    /// that goals nest exactly one level, but the editors enforce that, not the store, so a third
+    /// level arriving over CloudKit must not put a middle goal back beside its own child.
+    static func activeMilestonePool(from goals: [Goal]) -> [Goal] {
+        goals.filter { $0.status == .active && !hasActiveDescendant($0) }
+    }
+
+    private static func hasActiveDescendant(_ goal: Goal) -> Bool {
+        var visited: Set<UUID> = [goal.id]
+
+        func walk(_ parent: Goal) -> Bool {
+            for child in parent.subGoals ?? [] where visited.insert(child.id).inserted {
+                if child.status == .active { return true }
+                if walk(child) { return true }
+            }
+            return false
+        }
+
+        return walk(goal)
     }
 
     private static func widgetGoal(

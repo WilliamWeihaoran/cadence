@@ -7,6 +7,10 @@ nonisolated enum TaskTitleSupport {
     // The trim rule itself lives in `CadenceTitleNormalization`, shared with event titles and
     // the list/context/habit name forms. Task titles are not a special case of it; they are the
     // same case, plus the shortcut parsing below.
+    //
+    // The shortcut parsing itself now lives in `TaskTitleShortcutParsing`, in `Models/`, because
+    // that is the only place `CadenceWidgets` can see it — see T-354. What is left here is the
+    // app-facing name for it, plus the marker/segment helpers only the editors use.
 
     static func normalized(_ title: String) -> String {
         CadenceTitleNormalization.normalized(title)
@@ -29,24 +33,7 @@ nonisolated enum TaskTitleSupport {
     }
 
     static func priorityShortcut(in title: String) -> TaskTitlePriorityShortcut? {
-        var cleanedTitle = normalized(title)
-        var bangCounts: [Int] = []
-
-        if let leadingCount = leadingBangCount(in: cleanedTitle) {
-            bangCounts.append(leadingCount)
-            cleanedTitle = normalized(String(cleanedTitle.dropFirst(leadingCount)))
-        }
-
-        if let trailingCount = trailingBangCount(in: cleanedTitle) {
-            bangCounts.append(trailingCount)
-            cleanedTitle = normalized(String(cleanedTitle.dropLast(trailingCount)))
-        }
-
-        guard let bangCount = bangCounts.max() else { return nil }
-        return TaskTitlePriorityShortcut(
-            title: cleanedTitle,
-            priority: priority(forBangCount: bangCount)
-        )
+        TaskTitleShortcutParsing.priorityShortcut(in: title)
     }
 
     static func priorityMark(for priority: TaskPriority) -> String {
@@ -62,11 +49,7 @@ nonisolated enum TaskTitleSupport {
         _ title: String,
         priority: inout TaskPriority
     ) -> String {
-        guard let shortcut = priorityShortcut(in: title) else {
-            return normalized(title)
-        }
-        priority = shortcut.priority
-        return shortcut.title
+        TaskTitleShortcutParsing.titleApplyingPriorityShortcut(title, priority: &priority)
     }
 
     static func priorityShortcutSegments(in title: String) -> TaskTitlePriorityShortcutSegments? {
@@ -94,22 +77,12 @@ nonisolated enum TaskTitleSupport {
         return nil
     }
 
-    private static func priority(forBangCount count: Int) -> TaskPriority {
-        switch count {
-        case 1: return .low
-        case 2: return .medium
-        default: return .high
-        }
-    }
-
     private static func leadingBangCount(in title: String) -> Int? {
-        let count = title.prefix { $0 == "!" }.count
-        return count > 0 ? count : nil
+        TaskTitleShortcutParsing.leadingBangCount(in: title)
     }
 
     private static func trailingBangCount(in title: String) -> Int? {
-        let count = title.reversed().prefix { $0 == "!" }.count
-        return count > 0 ? count : nil
+        TaskTitleShortcutParsing.trailingBangCount(in: title)
     }
 
     private static func trailingInlineShortcut(in title: String, marker: Character) -> TaskTitleInlineShortcut? {
@@ -122,11 +95,6 @@ nonisolated enum TaskTitleSupport {
             query: String(title[queryStart...])
         )
     }
-}
-
-nonisolated struct TaskTitlePriorityShortcut: Equatable {
-    let title: String
-    let priority: TaskPriority
 }
 
 nonisolated struct TaskTitlePriorityShortcutSegments: Equatable {
