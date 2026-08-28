@@ -110,27 +110,45 @@ final class CadenceWriteService {
     private let notifiesExternalWrites: Bool
     private let auditLogger: CadenceMCPAuditLogger?
 
-    init(container: ModelContainer, notifiesExternalWrites: Bool = false, auditLogger: CadenceMCPAuditLogger? = nil) {
+    /// Startup steps executed by *this* instance, plus any its private read service ran. `0` once
+    /// the caller has said the container factory already prepared the store (T-309).
+    private(set) var executedStartupStepCount = 0
+
+    /// `preparesStore: false` says the caller has already run `CadenceMCPStorePreparation.prepare`
+    /// over this store — which `CadenceModelContainerFactory.makeReadWriteContainer()` does, and
+    /// which is why `main.swift` passes it (T-309). The private read service never migrates either
+    /// way: either this initializer just did, or the caller says it was already done.
+    init(
+        container: ModelContainer,
+        notifiesExternalWrites: Bool = false,
+        auditLogger: CadenceMCPAuditLogger? = nil,
+        preparesStore: Bool = true
+    ) {
         let context = ModelContext(container)
-        NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-write-service")
-        TagSupport.seedDefaultTags(in: context)
-        TagSupport.syncAllNoteTagsFromMarkdown(in: context)
-        DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "mcp-write-service")
+        let steps = preparesStore
+            ? CadenceMCPStorePreparation.prepare(in: context, source: "mcp-write-service")
+            : 0
         self.context = context
-        self.readService = CadenceReadService(context: context)
+        self.readService = CadenceReadService(context: context, performsMigrations: false)
         self.notifiesExternalWrites = notifiesExternalWrites
         self.auditLogger = auditLogger
+        self.executedStartupStepCount = steps + readService.executedStartupStepCount
     }
 
-    init(context: ModelContext, notifiesExternalWrites: Bool = false, auditLogger: CadenceMCPAuditLogger? = nil) {
-        NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-write-service-context")
-        TagSupport.seedDefaultTags(in: context)
-        TagSupport.syncAllNoteTagsFromMarkdown(in: context)
-        DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "mcp-write-service-context")
+    init(
+        context: ModelContext,
+        notifiesExternalWrites: Bool = false,
+        auditLogger: CadenceMCPAuditLogger? = nil,
+        preparesStore: Bool = true
+    ) {
+        let steps = preparesStore
+            ? CadenceMCPStorePreparation.prepare(in: context, source: "mcp-write-service-context")
+            : 0
         self.context = context
-        self.readService = CadenceReadService(context: context)
+        self.readService = CadenceReadService(context: context, performsMigrations: false)
         self.notifiesExternalWrites = notifiesExternalWrites
         self.auditLogger = auditLogger
+        self.executedStartupStepCount = steps + readService.executedStartupStepCount
     }
 
     func createTask(options: CadenceCreateTaskOptions) throws -> CadenceTaskDetail {

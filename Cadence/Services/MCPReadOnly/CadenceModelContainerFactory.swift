@@ -1,6 +1,51 @@
 import Foundation
 import SwiftData
 
+/// The read-write startup sequence, spelled once.
+///
+/// **T-309: this ran three times over one store on a single `CadenceMCPServer` launch.**
+/// `makeReadWriteContainer()` did all four steps, then `CadenceReadService.init` re-ran the note
+/// migration, then `CadenceWriteService.init` re-ran all four *and* built a private
+/// `CadenceReadService` that re-ran the note migration a fourth time — all before a single tool
+/// call had arrived. Mostly wasted work, but each extra pass is another window in which a second
+/// process mutates the store the running app has open, and the arrangement was only ever safe
+/// while every one of the four operations stayed perfectly idempotent, which nothing enforced.
+///
+/// The fix is deliberately **not** a guard inside these functions. It is that the sequence lives
+/// here, the one caller that owns startup runs it, and every other entry point is *told* it has
+/// already run — `CadenceReadService(performsMigrations:)` and
+/// `CadenceWriteService(preparesStore:)`. An automatic skip would be cached state with no way to
+/// invalidate it; a flag is readable at the call site, which is where the mistake was.
+///
+/// `executedStartupStepCount` on the two services exists so a test can state the count instead of
+/// the prose.
+nonisolated enum CadenceMCPStorePreparation {
+    /// How many distinct operations `prepare(in:source:)` performs. The services report what they
+    /// executed against this rather than against a literal.
+    static let stepCount = 4
+
+    /// Note migration, tag seeding, tag sync, integrity repair — in that order. The order is not
+    /// cosmetic: `syncAllNoteTagsFromMarkdown` resolves tags `seedDefaultTags` may have just
+    /// created, and the repair pass runs last so it sees the migrated shape.
+    @discardableResult
+    static func prepare(in context: ModelContext, source: String) -> Int {
+        NoteMigrationService.migrateAndRecordFailure(in: context, source: source)
+        TagSupport.seedDefaultTags(in: context)
+        TagSupport.syncAllNoteTagsFromMarkdown(in: context)
+        DataIntegrityRepairService.repairAndRecordFailure(in: context, source: source)
+        return stepCount
+    }
+
+    /// The note migration alone. `CadenceReadService` runs this and nothing else when it is asked
+    /// to migrate: a read of a store nobody has migrated still has to see canonical notes, but a
+    /// read has no business seeding tags or repairing relationships.
+    @discardableResult
+    static func migrateNotes(in context: ModelContext, source: String) -> Int {
+        NoteMigrationService.migrateAndRecordFailure(in: context, source: source)
+        return 1
+    }
+}
+
 nonisolated enum CadenceModelContainerFactory {
     static let storeURLEnvironmentKey = "CADENCE_MCP_STORE_URL"
     static let createStoreIfMissingEnvironmentKey = "CADENCE_MCP_CREATE_STORE_IF_MISSING"
@@ -32,10 +77,7 @@ nonisolated enum CadenceModelContainerFactory {
         )
         let container = try ModelContainer(for: CadenceSchema.schema, configurations: [configuration])
         let context = ModelContext(container)
-        NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-container")
-        TagSupport.seedDefaultTags(in: context)
-        TagSupport.syncAllNoteTagsFromMarkdown(in: context)
-        DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "mcp-container")
+        CadenceMCPStorePreparation.prepare(in: context, source: "mcp-container")
         return container
     }
 

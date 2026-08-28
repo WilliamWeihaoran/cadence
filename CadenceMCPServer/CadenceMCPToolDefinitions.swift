@@ -11,7 +11,12 @@ enum CadenceMCPToolDefinitions {
     // envelopes too (T-385), so `brief["inbox"][0]` breaks exactly as `list_tasks` did. It is a
     // separate bump rather than a quiet ride on 0.3.0 because a client that already updated for
     // 0.3.0 would otherwise have no signal that a second response shape moved.
-    private static let serverVersion = "0.4.0"
+    //
+    // 0.5.0 is a **renamed key**, not a reshaped one: `CadenceGoalSummary.taskCount` and
+    // `.linkedListCount` are now `ownTaskCount` and `ownLinkedListCount` (T-388). It breaks a
+    // reading client as hard as the two shape changes above and more quietly — the key is absent
+    // rather than the value the wrong type — so it gets its own bump on the same argument.
+    private static let serverVersion = "0.5.0"
     private static let writeToolNames: Set<String> = [
         "create_task",
         "update_task",

@@ -329,8 +329,28 @@ nonisolated struct CadenceGoalSummary: Codable, Sendable {
     let parentGoalId: String?
     let parentGoalTitle: String?
     let isTopLevel: Bool
-    let linkedListCount: Int
-    let taskCount: Int
+    /// **`own`, not a total, and the prefix is the whole point (T-388).**
+    ///
+    /// These two were `linkedListCount` and `taskCount`, computed flat from `goal.listLinks` and
+    /// `goal.tasks`, while `getGoal`'s `contribution` block reported `GoalContributionResolver`'s
+    /// numbers for the same goal — which walk sub-goals, and linked lists too. Both figures are
+    /// defensible. A direction whose milestone owns the work reporting `taskCount: 0` beside
+    /// `contribution.totalTasks: 12` is not, because nothing in the name said which question was
+    /// being answered.
+    ///
+    /// The names moved rather than the arithmetic, for two reasons. This struct is also every row
+    /// of `getGoal.subGoals`, where the *own* count is the right number — a milestone row carrying
+    /// a recursively rolled-up figure would double-count against the parent's `contribution` block
+    /// printed directly above it. And the recursive answers are not missing from the surface:
+    /// `getGoal.contribution` already carries `totalTasks`, `directTaskCount` and
+    /// `linkedListCount`. What `listGoals` gains is a cheap, honest row —
+    /// `GoalContributionResolver.summary` dedupes a recursive task walk per goal, which is exactly
+    /// the "cap the response, not the work" shape T-384 is removing elsewhere in this same file.
+    ///
+    /// `subGoalCount` and `habitCount` beside them are own-only too and still generically named;
+    /// that is the same defect, filed as [[T-414]] rather than widened into this one.
+    let ownLinkedListCount: Int
+    let ownTaskCount: Int
     let subGoalCount: Int
     let habitCount: Int
     let createdAt: String

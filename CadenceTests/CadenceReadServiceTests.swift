@@ -853,6 +853,339 @@ struct CadenceReadServiceTests {
         }
     }
 
+    // MARK: - T-384, `limit` capped the response and not the work
+
+    /// **The number these assert on could not be observed before T-384.** `limit` sliced a list
+    /// that had already been fetched whole, filtered and sorted, so `list_tasks(limit: 1)` and
+    /// `list_tasks(limit: 5000)` were indistinguishable from outside — which is why a performance
+    /// defect this size sat in a heavily tested file. `CadenceReadService.fetchedRowCount` counts
+    /// rows materialised through a fetch descriptor; relationship traversals are not counted,
+    /// because an edge from a row already in memory is the thing being switched *to*.
+    @Test func detailLookupsReadOneRowRatherThanTheWholeTable() throws {
+        let volume = try VolumeFixture()
+        let service = volume.service
+
+        let beforeTask = service.fetchedRowCount
+        let task = try service.getTask(taskID: volume.targetTaskID.uuidString)
+        let taskRows = service.fetchedRowCount - beforeTask
+
+        let beforeGoal = service.fetchedRowCount
+        _ = try service.getGoal(goalID: volume.targetGoalID.uuidString)
+        let goalRows = service.fetchedRowCount - beforeGoal
+
+        let beforeDocument = service.fetchedRowCount
+        _ = try service.getDocument(documentID: volume.targetDocumentID.uuidString)
+        let documentRows = service.fetchedRowCount - beforeDocument
+
+        #expect(task.summary.id == volume.targetTaskID.uuidString)
+        // One row each. `getTask` used to fetch every task twice over — once to find the row and
+        // once more to feed `taskSummary`'s dead `allTasks:` parameter.
+        #expect(taskRows == 1)
+        #expect(goalRows == 1)
+        #expect(documentRows == 1)
+        // Non-vacuity: the store really does hold the rows a whole-table fetch would have read.
+        #expect(volume.taskCount > 20)
+    }
+
+    @Test func aMissingIdCostsOneRowRatherThanEveryRow() throws {
+        let volume = try VolumeFixture()
+        let service = volume.service
+        let absent = UUID().uuidString
+
+        let before = service.fetchedRowCount
+        #expect(throws: CadenceReadError.self) { try service.getTask(taskID: absent) }
+        #expect(throws: CadenceReadError.self) { try service.getGoal(goalID: absent) }
+        #expect(throws: CadenceReadError.self) { try service.getNote(noteID: absent) }
+
+        // Three misses, three empty fetches. `getNote`'s two whole-table reads — it resolves
+        // backlinks across every note — now happen only once the id is known to exist.
+        #expect(service.fetchedRowCount - before == 0)
+    }
+
+    @Test func containerScopedReadsAnswerFromTheContainersOwnEdges() throws {
+        let volume = try VolumeFixture()
+        let service = volume.service
+        let projectID = volume.projectID.uuidString
+
+        let beforeList = service.fetchedRowCount
+        let tasks = try service.listTasks(options: .init(containerKind: "project", containerId: projectID, limit: 5))
+        let listRows = service.fetchedRowCount - beforeList
+
+        let beforeSummary = service.fetchedRowCount
+        let summary = try service.containerSummary(kind: "project", id: projectID)
+        let summaryRows = service.fetchedRowCount - beforeSummary
+
+        let beforeContext = service.fetchedRowCount
+        let contextSummary = try service.contextSummary(contextID: volume.contextID.uuidString)
+        let contextRows = service.fetchedRowCount - beforeContext
+
+        // The results are unchanged; only the route to them is.
+        #expect(tasks.totalCount == volume.activeProjectTaskCount)
+        #expect(summary.activeTaskCount == volume.activeProjectTaskCount)
+        #expect(contextSummary.activeTaskCount == volume.activeProjectTaskCount)
+
+        // One row each. `containerSummary` used to resolve the container three times over — once
+        // for its edges, once for `container:`, once for the section configs — which is what this
+        // number caught.
+        #expect(listRows == 1)
+        #expect(summaryRows == 1)
+        #expect(contextRows == 1)
+    }
+
+    @Test func coreNotesReadsCoreNotesRatherThanEveryNote() throws {
+        let volume = try VolumeFixture()
+        let service = volume.service
+
+        let before = service.fetchedRowCount
+        let snapshot = try service.coreNotes(dateKey: VolumeFixture.dailyKey)
+        let rows = service.fetchedRowCount - before
+
+        #expect(snapshot.dailyNote?.id == volume.dailyNoteID.uuidString)
+        #expect(snapshot.weeklyNote != nil)
+        #expect(snapshot.permanentNote == nil)
+        // Daily, weekly, and an empty permanent-kind fetch — not the document pile beside them.
+        #expect(rows == 2)
+        #expect(volume.documentCount > 10)
+    }
+
+    /// `get_today_brief` builds four sections that are all subsets of the active tasks, and used to
+    /// open with a bare `fetchTasks()`. The only thing that wanted the finished rows was
+    /// `taskSummary`'s dead `allTasks:` parameter. **This asserts the fetch, not the paging** —
+    /// T-385's envelope over the four sections is untouched.
+    @Test func theBriefReadsActiveTasksRatherThanEveryTask() throws {
+        let volume = try VolumeFixture()
+        let service = volume.service
+
+        let before = service.fetchedRowCount
+        let brief = try service.todayBrief(dateKey: VolumeFixture.dailyKey, limit: 5)
+        let rows = service.fetchedRowCount - before
+
+        // The finished and cancelled rows are never materialised; the two core notes still are.
+        #expect(rows == volume.activeProjectTaskCount + 2)
+        #expect(rows < volume.taskCount + 2 + VolumeFixture.inactiveTaskCount)
+        // The paging still behaves: the section reports its true total behind a small limit.
+        #expect(brief.inbox.totalCount == 0)
+        #expect(brief.scheduledTasks.returnedCount <= 5)
+    }
+
+    @Test func archivedRowsAreExcludedByTheStoreNotAfterTheFetch() throws {
+        let volume = try VolumeFixture()
+        let service = volume.service
+
+        let before = service.fetchedRowCount
+        let contexts = try service.listContexts(limit: 50)
+        let rows = service.fetchedRowCount - before
+
+        #expect(contexts.totalCount == 1)
+        #expect(rows == 1)
+        // Non-vacuity: asking for the archived ones does read them.
+        let beforeAll = service.fetchedRowCount
+        let all = try service.listContexts(includeArchived: true, limit: 50)
+        #expect(all.totalCount == 1 + VolumeFixture.archivedContextCount)
+        #expect(service.fetchedRowCount - beforeAll == 1 + VolumeFixture.archivedContextCount)
+    }
+
+    /// The container branch of `listTasks` is new code, not a moved line: it reads the container's
+    /// `tasks` edge instead of a predicate over every task, so the status rules it used to inherit
+    /// from the shared filter chain have to be re-applied there. This is the test that says they
+    /// are.
+    @Test func aContainerScopedListStillHidesDoneAndCancelledUnlessAsked() throws {
+        let volume = try VolumeFixture()
+        let projectID = volume.projectID.uuidString
+
+        let active = try volume.service.listTasks(options: .init(containerKind: "project", containerId: projectID, limit: 50))
+        let withCompleted = try volume.service.listTasks(options: .init(includeCompleted: true, containerKind: "project", containerId: projectID, limit: 50))
+        let explicitlyDone = try volume.service.listTasks(options: .init(statuses: ["done"], containerKind: "project", containerId: projectID, limit: 50))
+        let explicitlyCancelled = try volume.service.listTasks(options: .init(statuses: ["cancelled"], containerKind: "project", containerId: projectID, limit: 50))
+
+        #expect(active.totalCount == volume.activeProjectTaskCount)
+        #expect(withCompleted.totalCount == volume.activeProjectTaskCount + 1)
+        #expect(explicitlyDone.items.map(\.title) == ["Finished"])
+        // Cancelled is excluded even when asked for by name — the rule the whole-table filter had.
+        #expect(explicitlyCancelled.totalCount == 0)
+    }
+
+    @Test func anUnknownContainerIdStillPagesEmptyRatherThanThrowing() throws {
+        let volume = try VolumeFixture()
+        let absent = UUID().uuidString
+
+        let tasks = try volume.service.listTasks(options: .init(containerKind: "project", containerId: absent, limit: 50))
+        let notes = try volume.service.listNotes(options: .init(containerKind: "area", containerId: absent, limit: 50))
+        let links = try volume.service.listLinks(options: .init(containerKind: "project", containerId: absent, limit: 50))
+        let documents = try volume.service.listDocuments(containerKind: "project", containerID: absent, limit: 50)
+
+        #expect(tasks.totalCount == 0)
+        #expect(notes.totalCount == 0)
+        #expect(links.totalCount == 0)
+        #expect(documents.totalCount == 0)
+    }
+
+    // MARK: - T-388, own counts under names that say so
+
+    /// The assertion is on the **encoded keys**, not the Swift property names, because the wire
+    /// contract is what T-388 is about — and because a client that read `taskCount` gets a missing
+    /// key rather than a wrong shape, which is the quiet half of this break.
+    @Test func goalSummaryNamesItsOwnCountsAsOwnCountsOnTheWire() throws {
+        let fixture = try Fixture()
+        let direction = Goal(title: "Ship Cadence")
+        let milestone = Goal(title: "Ship MCP")
+        milestone.parentGoal = direction
+        let owned = AppTask(title: "Write the router")
+        owned.goal = milestone
+        fixture.modelContext.insert(direction)
+        fixture.modelContext.insert(milestone)
+        fixture.modelContext.insert(owned)
+        try fixture.modelContext.save()
+
+        let page = try fixture.service.listGoals(options: .init(limit: 50))
+        let row = try #require(page.items.first { $0.id == direction.id.uuidString })
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(row))
+        let keys = try #require(encoded as? [String: Any])
+
+        #expect(keys["ownTaskCount"] as? Int == 0)
+        #expect(keys["ownLinkedListCount"] as? Int == 0)
+        #expect(keys.keys.contains("taskCount") == false)
+        #expect(keys.keys.contains("linkedListCount") == false)
+
+        // The recursive answer still exists, under a name that has always said it recurses — and
+        // it disagrees with the own-only number, which is the whole reason the own-only one could
+        // not keep a generic name. Asserted through `contribution`, whose spelling is unchanged,
+        // so this whole test compiles against pre-T-388 source and fails on the keys.
+        let detail = try fixture.service.getGoal(goalID: direction.id.uuidString)
+        #expect(detail.contribution.directTaskCount == 1)
+    }
+
+    // MARK: - T-309, startup prepares the store once
+
+    @Test func servicesSkipStartupWorkTheContainerFactoryAlreadyDid() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let prepared = CadenceMCPStorePreparation.prepare(in: context, source: "test-container")
+
+        let read = CadenceReadService(context: context, performsMigrations: false)
+        let write = CadenceWriteService(context: context, preparesStore: false)
+
+        #expect(prepared == CadenceMCPStorePreparation.stepCount)
+        #expect(read.executedStartupStepCount == 0)
+        #expect(write.executedStartupStepCount == 0)
+    }
+
+    /// A write service that *does* own startup runs the four steps and no more. It used to run
+    /// them and then build a private `CadenceReadService` that migrated notes a second time.
+    @Test func aWriteServiceThatOwnsStartupRunsTheSequenceExactlyOnce() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let write = CadenceWriteService(context: context)
+
+        #expect(write.executedStartupStepCount == CadenceMCPStorePreparation.stepCount)
+    }
+
+    @Test func aReadServiceAskedToMigrateRunsOnlyTheMigration() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+
+        let migrating = CadenceReadService(container: container)
+        let quiet = CadenceReadService(container: container, performsMigrations: false)
+
+        #expect(migrating.executedStartupStepCount == 1)
+        #expect(quiet.executedStartupStepCount == 0)
+        #expect(CadenceMCPStorePreparation.stepCount > 1)
+    }
+
+    /// Enough rows that a whole-table fetch is unmistakable in `fetchedRowCount`, and one pinned
+    /// id per entity to look up.
+    @MainActor
+    private final class VolumeFixture {
+        static let dailyKey = "2026-04-28"
+        static let archivedContextCount = 3
+        /// One done plus one cancelled.
+        static let inactiveTaskCount = 2
+
+        let container: ModelContainer
+        let modelContext: ModelContext
+        let service: CadenceReadService
+        let contextID: UUID
+        let projectID: UUID
+        let targetTaskID: UUID
+        let targetGoalID: UUID
+        let targetDocumentID: UUID
+        let dailyNoteID: UUID
+        let taskCount = 24
+        let documentCount = 14
+        let activeProjectTaskCount = 24
+
+        init() throws {
+            let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            let modelContext = ModelContext(container)
+
+            let workContext = Context(name: "Work")
+            let project = Project(name: "Cadence MCP", context: workContext)
+            modelContext.insert(workContext)
+            modelContext.insert(project)
+            for index in 0..<Self.archivedContextCount {
+                let archived = Context(name: "Archived \(index)")
+                archived.isArchived = true
+                modelContext.insert(archived)
+            }
+
+            var firstTaskID = UUID()
+            for index in 0..<taskCount {
+                let task = AppTask(title: String(format: "Task %02d", index))
+                task.project = project
+                task.context = workContext
+                modelContext.insert(task)
+                if index == 0 { firstTaskID = task.id }
+            }
+            // One finished and one cancelled task, so the status rules stay observable.
+            let finished = AppTask(title: "Finished")
+            finished.project = project
+            finished.context = workContext
+            finished.status = .done
+            let dropped = AppTask(title: "Dropped")
+            dropped.project = project
+            dropped.context = workContext
+            dropped.status = .cancelled
+            modelContext.insert(finished)
+            modelContext.insert(dropped)
+
+            var firstDocumentID = UUID()
+            for index in 0..<documentCount {
+                let doc = Note(kind: .list, title: "Doc \(index)")
+                doc.project = project
+                modelContext.insert(doc)
+                if index == 0 { firstDocumentID = doc.id }
+            }
+            let daily = Note(kind: .daily, title: "Daily")
+            daily.dateKey = Self.dailyKey
+            let weekly = Note(kind: .weekly, title: "Weekly")
+            weekly.weekKey = try CadenceMCPServiceSupport.weekKey(for: Self.dailyKey)
+            modelContext.insert(daily)
+            modelContext.insert(weekly)
+
+            var firstGoalID = UUID()
+            for index in 0..<8 {
+                let goal = Goal(title: "Goal \(index)")
+                goal.context = workContext
+                modelContext.insert(goal)
+                if index == 0 { firstGoalID = goal.id }
+            }
+            try modelContext.save()
+
+            self.container = container
+            self.modelContext = modelContext
+            self.contextID = workContext.id
+            self.projectID = project.id
+            self.targetTaskID = firstTaskID
+            self.targetGoalID = firstGoalID
+            self.targetDocumentID = firstDocumentID
+            self.dailyNoteID = daily.id
+            // Migrations off: this fixture's notes are already canonical, and a migration pass
+            // would fetch rows that `fetchedRowCount` is trying to attribute to the call under
+            // test.
+            self.service = CadenceReadService(container: container, performsMigrations: false)
+        }
+    }
+
     @MainActor
     private final class Fixture {
         let container: ModelContainer

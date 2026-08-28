@@ -113,17 +113,38 @@ final class CadenceReadService {
     private let context: ModelContext
     private let encoderDateFormatter = ISO8601DateFormatter()
 
+    /// Startup steps executed by *this* instance. `0` when the caller said the store was already
+    /// prepared. T-309 is a counting bug, so it is asserted as a count.
+    private(set) var executedStartupStepCount = 0
+
+    /// Rows this service has materialised out of the store since it was created, through explicit
+    /// fetch descriptors. Relationship traversals are not counted — they are edges from a row that
+    /// is already in memory, which is the thing being switched *to*.
+    ///
+    /// **T-384 exists because nothing could see this number.** `limit` capped the response while
+    /// every read ran `context.fetch(FetchDescriptor<Model>())` — the whole table — and then
+    /// filtered, sorted and sliced in memory, so `list_tasks(limit: 1)` and `list_tasks(limit:
+    /// 5000)` did identical work and no test could tell them apart. Diagnostic only: nothing in a
+    /// response is derived from it and no behaviour branches on it.
+    private(set) var fetchedRowCount = 0
+
     init(container: ModelContainer, performsMigrations: Bool = true) {
         context = ModelContext(container)
         if performsMigrations {
-            NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-read-service-container")
+            executedStartupStepCount = CadenceMCPStorePreparation.migrateNotes(
+                in: context,
+                source: "mcp-read-service-container"
+            )
         }
     }
 
     init(context: ModelContext, performsMigrations: Bool = true) {
         self.context = context
         if performsMigrations {
-            NoteMigrationService.migrateAndRecordFailure(in: context, source: "mcp-read-service-context")
+            executedStartupStepCount = CadenceMCPStorePreparation.migrateNotes(
+                in: context,
+                source: "mcp-read-service-context"
+            )
         }
     }
 
@@ -139,15 +160,22 @@ final class CadenceReadService {
     /// `CadenceTodayBrief`.
     func todayBrief(dateKey: String? = nil, limit: Int = 50, offset: Int = 0) throws -> CadenceTodayBrief {
         let resolvedDateKey = try resolvedDateKey(dateKey)
-        let tasks = try fetchTasks()
-        let activeTasks = tasks.filter { !$0.isDone && !$0.isCancelled }
+        // Active-only at the store (T-384). Every section below is a subset of it, and the whole
+        // table was being read only to satisfy `taskSummary`'s dead `allTasks:` parameter — with
+        // that gone, nothing here wanted the finished work. The paging is untouched.
+        let done = Self.doneStatusRaw
+        let cancelled = Self.cancelledStatusRaw
+        let activeTasks = try fetchAll(
+            AppTask.self,
+            where: #Predicate { $0.statusRaw != done && $0.statusRaw != cancelled }
+        )
 
         func section(_ isIncluded: (AppTask) -> Bool) -> CadencePage<CadenceTaskSummary> {
             CadencePage.paging(
                 activeTasks.filter(isIncluded).sorted(by: taskSort),
                 offset: offset,
                 limit: limit
-            ) { taskSummary($0, allTasks: tasks) }
+            ) { taskSummary($0) }
         }
 
         let scheduled = section { $0.scheduledDate == resolvedDateKey && $0.scheduledStartMin >= 0 }
@@ -168,34 +196,69 @@ final class CadenceReadService {
         )
     }
 
+    /// **The candidate set is chosen before anything is filtered (T-384).**
+    ///
+    /// This used to open with `fetchTasks()` — every row in the store, unconditionally — and then
+    /// run seven `filter`s, a sort and a slice over the result, so `list_tasks(limit: 1)` did the
+    /// same work as `list_tasks(limit: 5000)`. Two things now happen at the store instead: a named
+    /// container answers from its own `tasks` edge, and everything else fetches under a status
+    /// predicate.
+    ///
+    /// **What deliberately stays in memory.** The explicit `statuses` filter, because it compares
+    /// `statusRaw.lowercased()` and SwiftData's predicate grammar has no `lowercased()` — pushing
+    /// it down would silently change which rows a mixed-case stored value matches. Tag membership
+    /// and `textQuery` scoring, because both are `CadenceSearchMatcher` work over related rows.
+    /// And the sort: `taskSort` ends on `id.uuidString`, which no `SortDescriptor` can express, so
+    /// the ordering — and therefore the offset/limit slice — cannot move to the store without
+    /// giving up the total order T-372 established ([[T-415]]). Narrowing the candidate set is the
+    /// part that was available; slicing at the store is not, and claiming otherwise would be worse
+    /// than leaving it.
     func listTasks(options: CadenceTaskListOptions) throws -> CadencePage<CadenceTaskSummary> {
-        let tasks = try fetchTasks()
-        var filtered = tasks.filter { !$0.isCancelled }
-
-        if let statuses = options.statuses, !statuses.isEmpty {
-            let allowed = try validateTaskStatuses(statuses)
-            filtered = filtered.filter { allowed.contains($0.statusRaw.lowercased()) }
-        } else if !options.includeCompleted {
-            filtered = filtered.filter { !$0.isDone }
-        }
+        let cancelled = Self.cancelledStatusRaw
+        let done = Self.doneStatusRaw
+        // `isCancelled` is `statusRaw == "cancelled"` exactly — `TaskStatus(rawValue:)` does not
+        // fold case — so this predicate keeps precisely the rows the old `filter` kept.
+        let excludesDone = (options.statuses?.isEmpty ?? true) && !options.includeCompleted
+        let statusPredicate: Predicate<AppTask> = excludesDone
+            ? #Predicate { $0.statusRaw != cancelled && $0.statusRaw != done }
+            : #Predicate { $0.statusRaw != cancelled }
 
         // Normalized rather than parsed-and-discarded: these three filters compare the caller's
         // string against stored keys, so a lenient spelling like `"2026-8-20"` used to validate and
         // then quietly match nothing at all (`>=`, `<=` and `==` all read it as a different day).
-        if let dueDateFrom = try normalizedDateKey(options.dueDateFrom) {
+        let dueDateFrom = try normalizedDateKey(options.dueDateFrom)
+        let dueDateTo = try normalizedDateKey(options.dueDateTo)
+        let scheduledDate = try normalizedDateKey(options.scheduledDate)
+        let containerFilter = try resolvedContainerFilter(kind: options.containerKind, id: options.containerId)
+
+        var filtered: [AppTask]
+        if let containerFilter {
+            // One `Area`/`Project` row plus its `tasks` edge. An unknown id yields an empty page,
+            // which is what the whole-table filter produced too.
+            filtered = try containerModel(kind: containerFilter.kind, id: containerFilter.id)?.tasks ?? []
+            filtered = filtered.filter { !$0.isCancelled }
+            if excludesDone {
+                filtered = filtered.filter { !$0.isDone }
+            }
+        } else {
+            filtered = try fetchAll(AppTask.self, where: statusPredicate)
+        }
+
+        if let statuses = options.statuses, !statuses.isEmpty {
+            let allowed = try validateTaskStatuses(statuses)
+            filtered = filtered.filter { allowed.contains($0.statusRaw.lowercased()) }
+        }
+
+        if let dueDateFrom {
             filtered = filtered.filter { !$0.dueDate.isEmpty && $0.dueDate >= dueDateFrom }
         }
 
-        if let dueDateTo = try normalizedDateKey(options.dueDateTo) {
+        if let dueDateTo {
             filtered = filtered.filter { !$0.dueDate.isEmpty && $0.dueDate <= dueDateTo }
         }
 
-        if let scheduledDate = try normalizedDateKey(options.scheduledDate) {
+        if let scheduledDate {
             filtered = filtered.filter { $0.scheduledDate == scheduledDate }
-        }
-
-        if let containerFilter = try resolvedContainerFilter(kind: options.containerKind, id: options.containerId) {
-            filtered = try filterTasks(filtered, containerKind: containerFilter.kind, containerID: containerFilter.id)
         }
 
         if let tagSlugs = options.tagSlugs, !tagSlugs.isEmpty {
@@ -227,13 +290,12 @@ final class CadenceReadService {
             filtered.sorted(by: taskSort),
             offset: options.offset,
             limit: options.limit
-        ) { taskSummary($0, allTasks: tasks) }
+        ) { taskSummary($0) }
     }
 
     func getTask(taskID: String) throws -> CadenceTaskDetail {
         let id = try uuid(from: taskID)
-        let tasks = try fetchTasks()
-        guard let task = tasks.first(where: { $0.id == id }) else {
+        guard let task = try fetchFirst(AppTask.self, where: #Predicate { $0.id == id }) else {
             throw CadenceReadError.taskNotFound(taskID)
         }
 
@@ -249,7 +311,7 @@ final class CadenceReadService {
             }
 
         return CadenceTaskDetail(
-            summary: taskSummary(task, allTasks: tasks),
+            summary: taskSummary(task),
             notes: task.notes,
             actualMinutes: task.actualMinutes,
             subtasks: subtasks,
@@ -259,11 +321,11 @@ final class CadenceReadService {
     }
 
     func listTaskBundles(options: CadenceTaskBundleListOptions) throws -> CadencePage<CadenceTaskBundleSummary> {
-        var bundles = try fetchTaskBundles()
-
-        if let dateKey = try normalizedDateKey(options.dateKey) {
-            bundles = bundles.filter { $0.dateKey == dateKey }
-        }
+        let dateKey = try normalizedDateKey(options.dateKey)
+        let bundles = try fetchAll(
+            TaskBundle.self,
+            where: dateKey.map { key in #Predicate<TaskBundle> { $0.dateKey == key } }
+        )
 
         let ordered = bundles.sorted {
             if $0.dateKey != $1.dateKey { return $0.dateKey < $1.dateKey }
@@ -277,13 +339,12 @@ final class CadenceReadService {
 
     func getTaskBundle(bundleID: String) throws -> CadenceTaskBundleDetail {
         let id = try uuid(from: bundleID)
-        guard let bundle = try fetchTaskBundles().first(where: { $0.id == id }) else {
+        guard let bundle = try fetchFirst(TaskBundle.self, where: #Predicate { $0.id == id }) else {
             throw CadenceReadError.taskBundleNotFound(bundleID)
         }
-        let tasks = try fetchTasks()
         return CadenceTaskBundleDetail(
             summary: taskBundleSummary(bundle),
-            tasks: bundle.sortedTasks.map { taskSummary($0, allTasks: tasks) }
+            tasks: bundle.sortedTasks.map { taskSummary($0) }
         )
     }
 
@@ -312,22 +373,28 @@ final class CadenceReadService {
         let normalizedKind = try kind.map(normalizeContainerKind)
         let normalizedStatus = try status.map { try validateContainerStatus($0, kind: normalizedKind) }
 
+        // A named context answers from its own `areas` / `projects` edges; otherwise the status
+        // filter — a plain string comparison — goes to the store as a predicate (T-384). An
+        // unknown context id yields no rows, matching the filter this replaces.
+        let scopedContext = try contextUUID.flatMap { try contextModel($0) }
+        let scopedToContext = contextUUID != nil
+
         var candidates: [(key: CadenceMCPOrdering.SortKey, container: CadenceResolvedContainer)] = []
         if normalizedKind == nil || normalizedKind == "area" {
-            candidates += try fetchAreas()
-                .filter { area in
-                    (normalizedStatus == nil || area.statusRaw == normalizedStatus) &&
-                    (contextUUID == nil || area.context?.id == contextUUID)
-                }
+            let areas: [Area] = scopedToContext
+                ? (scopedContext?.areas ?? [])
+                : try fetchAll(Area.self, where: normalizedStatus.map { s in #Predicate<Area> { $0.statusRaw == s } })
+            candidates += areas
+                .filter { normalizedStatus == nil || $0.statusRaw == normalizedStatus }
                 .map { (CadenceMCPOrdering.sortKey($0), CadenceResolvedContainer.area($0)) }
         }
 
         if normalizedKind == nil || normalizedKind == "project" {
-            candidates += try fetchProjects()
-                .filter { project in
-                    (normalizedStatus == nil || project.statusRaw == normalizedStatus) &&
-                    (contextUUID == nil || project.context?.id == contextUUID)
-                }
+            let projects: [Project] = scopedToContext
+                ? (scopedContext?.projects ?? [])
+                : try fetchAll(Project.self, where: normalizedStatus.map { s in #Predicate<Project> { $0.statusRaw == s } })
+            candidates += projects
+                .filter { normalizedStatus == nil || $0.statusRaw == normalizedStatus }
                 .map { (CadenceMCPOrdering.sortKey($0), CadenceResolvedContainer.project($0)) }
         }
 
@@ -344,10 +411,10 @@ final class CadenceReadService {
     }
 
     func listContexts(includeArchived: Bool = false, query: String? = nil, limit: Int = 50, offset: Int = 0) throws -> CadencePage<CadenceContextRef> {
-        var contexts = try fetchContexts()
-        if !includeArchived {
-            contexts = contexts.filter { !$0.isArchived }
-        }
+        var contexts = try fetchAll(
+            Context.self,
+            where: includeArchived ? nil : #Predicate<Context> { !$0.isArchived }
+        )
         if let query = query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
             contexts = contexts.filter { context in
                 CadenceSearchMatcher.matchScore(query: query, fields: [context.name, context.icon]) != nil
@@ -363,24 +430,31 @@ final class CadenceReadService {
 
     func containerSummary(kind: String, id: String) throws -> CadenceContainerSummary {
         let uuid = try uuid(from: id)
-        let tasks = try fetchTasks()
-        let containerTasks = try filterTasks(tasks, containerKind: kind, containerID: uuid)
+        // **One container row, resolved once** — this used to fetch the task, link and note tables
+        // whole and filter each down to this container, and then resolve the container itself
+        // twice more for the `container:` field and the section configs (T-384). The unknown-id
+        // error is unchanged: `containerRef(kind:id:)` used to raise `containerNotFound` a few
+        // lines below, and this guard raises the same case with the same payload.
+        guard let model = try containerModel(kind: kind, id: uuid) else {
+            throw CadenceReadError.containerNotFound(kind, uuid.uuidString)
+        }
+        let containerTasks = model.tasks
         let active = containerTasks.filter { !$0.isDone && !$0.isCancelled }
         let today = DateFormatters.todayKey()
         let overdue = active.filter { !$0.dueDate.isEmpty && $0.dueDate < today }
-        let links = try linksForContainer(kind: kind, id: uuid)
+        let links = model.links
             .sorted(by: CadenceMCPOrdering.precedes)
             .map(linkSummary)
-        let noteDocuments = try notesForContainer(kind: kind, id: uuid)
+        let noteDocuments = model.documents
             .sorted(by: CadenceMCPOrdering.precedes)
             .map(documentSummary)
 
         return CadenceContainerSummary(
-            container: try containerRef(kind: kind, id: uuid),
+            container: containerRef(model),
             activeTaskCount: active.count,
             completedTaskCount: containerTasks.filter(\.isDone).count,
             overdueTaskCount: overdue.count,
-            sections: try sectionSummaries(kind: kind, id: uuid, tasks: containerTasks),
+            sections: sectionSummaries(for: model, tasks: containerTasks),
             documents: noteDocuments,
             links: links
         )
@@ -388,27 +462,35 @@ final class CadenceReadService {
 
     func contextSummary(contextID: String) throws -> CadenceContextSummary {
         let id = try uuid(from: contextID)
-        guard let context = try fetchContexts().first(where: { $0.id == id }) else {
+        // Six whole-table fetches became one row and its edges (T-384). `Context` carries inverse
+        // relationships for areas, projects, goals and tasks, and the documents and links this
+        // reported were always "the ones on those areas and projects" — which is what the areas'
+        // and projects' own edges hold.
+        guard let context = try contextModel(id) else {
             throw CadenceReadError.contextNotFound(contextID)
         }
 
-        let areas = try fetchAreas()
-            .filter { $0.context?.id == id }
-            .sorted(by: CadenceMCPOrdering.precedes)
-        let projects = try fetchProjects()
-            .filter { $0.context?.id == id }
-            .sorted(by: CadenceMCPOrdering.precedes)
-        let goals = try fetchGoals().filter { $0.context?.id == id }
-        let tasks = try fetchTasks().filter { $0.context?.id == id }
+        let areas = (context.areas ?? []).sorted(by: CadenceMCPOrdering.precedes)
+        let projects = (context.projects ?? []).sorted(by: CadenceMCPOrdering.precedes)
+        let goals = context.goals ?? []
+        let tasks = context.tasks ?? []
         let activeTasks = tasks.filter { !$0.isDone && !$0.isCancelled }
-        let areaIDs = Set(areas.map(\.id))
-        let projectIDs = Set(projects.map(\.id))
-        let notes = try fetchNotes().filter { note in
-            note.kind == .list && (note.area.map { areaIDs.contains($0.id) } ?? false || note.project.map { projectIDs.contains($0.id) } ?? false)
+        // Deduped by id: a note or link carrying *both* an area and a project would be reached
+        // twice through the edges, where the old whole-table filter saw each row once. Spelled out
+        // in typed steps rather than one chained expression — the inferred version was an
+        // "unable to type-check in reasonable time" build failure, not a style preference.
+        var containerNotes: [Note] = []
+        var containerLinks: [SavedLink] = []
+        for area in areas {
+            containerNotes.append(contentsOf: area.notes ?? [])
+            containerLinks.append(contentsOf: area.links ?? [])
         }
-        let links = try fetchLinks().filter { link in
-            link.area.map { areaIDs.contains($0.id) } ?? false || link.project.map { projectIDs.contains($0.id) } ?? false
+        for project in projects {
+            containerNotes.append(contentsOf: project.notes ?? [])
+            containerLinks.append(contentsOf: project.links ?? [])
         }
+        let notes: [Note] = deduped(containerNotes, by: { $0.id }).filter { $0.kind == .list }
+        let links: [SavedLink] = deduped(containerLinks, by: { $0.id })
         let today = DateFormatters.todayKey()
 
         return CadenceContextSummary(
@@ -430,14 +512,26 @@ final class CadenceReadService {
         let resolvedDateKey = try resolvedDateKey(dateKey)
         let resolvedWeekKey = try weekKey(for: resolvedDateKey)
 
-        let notes = try fetchNotes()
-        let daily = notes.first { $0.kind == .daily && $0.dateKey == resolvedDateKey }
-        let weekly = notes.first { $0.kind == .weekly && $0.weekKey == resolvedWeekKey }
+        // Three narrow reads instead of one whole-`Note`-table scan (T-384). `first` over an
+        // unordered fetch and `fetchLimit = 1` over the same predicate pick equally arbitrarily
+        // when the store holds duplicates, which is the contract this already had.
+        let dailyKind = NoteKind.daily.rawValue
+        let weeklyKind = NoteKind.weekly.rawValue
+        let permanentKind = NoteKind.permanent.rawValue
+        let daily = try fetchFirst(
+            Note.self,
+            where: #Predicate { $0.kindRaw == dailyKind && $0.dateKey == resolvedDateKey }
+        )
+        let weekly = try fetchFirst(
+            Note.self,
+            where: #Predicate { $0.kindRaw == weeklyKind && $0.weekKey == resolvedWeekKey }
+        )
         // Oldest, matching `NoteMigrationService.permanentNote(in:)`. Notepad holds many notes
         // now, and a bare `first` over an unordered fetch would put a different one in the
-        // snapshot from one read to the next.
-        let permanent = notes
-            .filter { $0.kind == .permanent }
+        // snapshot from one read to the next. The tie-break is `id.uuidString`, which no
+        // `SortDescriptor` can express, so this still ranks in memory — over permanent notes
+        // only, not over every note in the store.
+        let permanent = try fetchAll(Note.self, where: #Predicate { $0.kindRaw == permanentKind })
             .min { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
 
         return CadenceCoreNotesSnapshot(
@@ -450,10 +544,13 @@ final class CadenceReadService {
     }
 
     func listDocuments(containerKind: String? = nil, containerID: String? = nil, query: String? = nil, limit: Int = 50, offset: Int = 0) throws -> CadencePage<CadenceDocumentSummary> {
-        var docs = try fetchNotes().filter { $0.kind == .list }
-
-        if let containerFilter = try resolvedContainerFilter(kind: containerKind, id: containerID) {
-            docs = try notesForContainer(kind: containerFilter.kind, id: containerFilter.id)
+        let listKind = Self.listNoteKindRaw
+        let containerFilter = try resolvedContainerFilter(kind: containerKind, id: containerID)
+        var docs: [Note]
+        if let containerFilter {
+            docs = try containerModel(kind: containerFilter.kind, id: containerFilter.id)?.documents ?? []
+        } else {
+            docs = try fetchAll(Note.self, where: #Predicate { $0.kindRaw == listKind })
         }
 
         if let query = query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
@@ -473,7 +570,8 @@ final class CadenceReadService {
 
     func getDocument(documentID: String) throws -> CadenceDocumentDetail {
         let id = try uuid(from: documentID)
-        if let doc = try fetchNotes().first(where: { $0.kind == .list && $0.id == id }) {
+        let listKind = Self.listNoteKindRaw
+        if let doc = try fetchFirst(Note.self, where: #Predicate { $0.id == id && $0.kindRaw == listKind }) {
             return CadenceDocumentDetail(
                 id: doc.id.uuidString,
                 title: doc.displayTitle,
@@ -490,10 +588,10 @@ final class CadenceReadService {
     }
 
     func listTags(includeArchived: Bool = false, query: String? = nil, limit: Int = 50, offset: Int = 0) throws -> CadencePage<CadenceTagDetail> {
-        var tags = try fetchTags()
-        if !includeArchived {
-            tags = tags.filter { !$0.isArchived }
-        }
+        var tags = try fetchAll(
+            Tag.self,
+            where: includeArchived ? nil : #Predicate<Tag> { !$0.isArchived }
+        )
         if let query = query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
             tags = tags.filter { tag in
                 CadenceSearchMatcher.matchScore(query: query, fields: [tag.name, tag.slug, tag.desc]) != nil
@@ -503,15 +601,20 @@ final class CadenceReadService {
     }
 
     func listNotes(options: CadenceNoteListOptions) throws -> CadencePage<CadenceNoteSummary> {
-        var notes = try fetchNotes()
+        let normalizedKind = try options.kind.map(validateNoteKind)
+        let containerFilter = try resolvedContainerFilter(kind: options.containerKind, id: options.containerId)
 
-        if let kind = options.kind {
-            let normalizedKind = try validateNoteKind(kind)
-            notes = notes.filter { $0.kindRaw == normalizedKind }
-        }
-
-        if let containerFilter = try resolvedContainerFilter(kind: options.containerKind, id: options.containerId) {
-            notes = try filterNotes(notes, containerKind: containerFilter.kind, containerID: containerFilter.id)
+        var notes: [Note]
+        if let containerFilter {
+            notes = try containerModel(kind: containerFilter.kind, id: containerFilter.id)?.allNotes ?? []
+            if let normalizedKind {
+                notes = notes.filter { $0.kindRaw == normalizedKind }
+            }
+        } else {
+            notes = try fetchAll(
+                Note.self,
+                where: normalizedKind.map { k in #Predicate<Note> { $0.kindRaw == k } }
+            )
         }
 
         if let tagSlugs = options.tagSlugs, !tagSlugs.isEmpty {
@@ -538,11 +641,14 @@ final class CadenceReadService {
 
     func getNote(noteID: String) throws -> CadenceNoteDetail {
         let id = try uuid(from: noteID)
-        let notes = try fetchNotes()
-        let tasks = try fetchTasks()
-        guard let note = notes.first(where: { $0.id == id }) else {
+        // The note itself is one row. The two whole-table fetches below are *not* removable —
+        // backlinks and `[[wiki]]` resolution are defined over every note, `linkedTasks` over every
+        // task — but they now happen only for an id that exists (T-384).
+        guard let note = try fetchFirst(Note.self, where: #Predicate { $0.id == id }) else {
             throw CadenceReadError.noteNotFound(noteID)
         }
+        let notes = try fetchNotes()
+        let tasks = try fetchTasks()
 
         return CadenceNoteDetail(
             summary: noteSummary(note),
@@ -552,20 +658,24 @@ final class CadenceReadService {
             updatedAt: format(note.updatedAt),
             linkedNotes: NoteReferenceResolver.linkedNotes(for: note, in: notes).map(noteSummary),
             backlinks: NoteReferenceResolver.backlinks(for: note, in: notes).map(noteSummary),
-            linkedTasks: NoteReferenceResolver.linkedTasks(for: note, in: tasks).map { taskSummary($0, allTasks: tasks) }
+            linkedTasks: NoteReferenceResolver.linkedTasks(for: note, in: tasks).map { taskSummary($0) }
         )
     }
 
     func listGoals(options: CadenceGoalListOptions) throws -> CadencePage<CadenceGoalSummary> {
         let contextUUID = try options.contextId.map(uuid)
         let normalizedStatus = try options.status.map(validateGoalStatus)
-        var goals = try fetchGoals()
-
+        var goals: [Goal]
+        if let contextUUID {
+            goals = try contextModel(contextUUID)?.goals ?? []
+        } else {
+            goals = try fetchAll(
+                Goal.self,
+                where: normalizedStatus.map { s in #Predicate<Goal> { $0.statusRaw == s } }
+            )
+        }
         if let normalizedStatus {
             goals = goals.filter { $0.statusRaw == normalizedStatus }
-        }
-        if let contextUUID {
-            goals = goals.filter { $0.context?.id == contextUUID }
         }
         if let query = options.query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
             goals = goals.filter { goal in
@@ -583,9 +693,7 @@ final class CadenceReadService {
 
     func getGoal(goalID: String) throws -> CadenceGoalDetail {
         let id = try uuid(from: goalID)
-        let goals = try fetchGoals()
-        let tasks = try fetchTasks()
-        guard let goal = goals.first(where: { $0.id == id }) else {
+        guard let goal = try fetchFirst(Goal.self, where: #Predicate { $0.id == id }) else {
             throw CadenceReadError.goalNotFound(goalID)
         }
         let contribution = GoalContributionResolver.summary(for: goal)
@@ -597,7 +705,7 @@ final class CadenceReadService {
         // constant `0` it replaced.
         let directTasks = GoalContributionResolver.directTasks(for: goal)
             .sorted(by: taskSort)
-            .map { taskSummary($0, allTasks: tasks) }
+            .map { taskSummary($0) }
 
         return CadenceGoalDetail(
             summary: goalSummary(goal),
@@ -633,8 +741,15 @@ final class CadenceReadService {
     func listHabits(options: CadenceHabitListOptions) throws -> CadencePage<CadenceHabitSummary> {
         let contextUUID = try options.contextId.map(uuid)
         let goalUUID = try options.goalId.map(uuid)
-        var habits = try fetchHabits()
-
+        // The narrower of the two edges wins: a goal owns fewer habits than a context does.
+        var habits: [Habit]
+        if let goalUUID {
+            habits = try fetchFirst(Goal.self, where: #Predicate { $0.id == goalUUID })?.habits ?? []
+        } else if let contextUUID {
+            habits = try contextModel(contextUUID)?.habits ?? []
+        } else {
+            habits = try fetchHabits()
+        }
         if let contextUUID {
             habits = habits.filter { $0.context?.id == contextUUID }
         }
@@ -656,10 +771,12 @@ final class CadenceReadService {
     }
 
     func listLinks(options: CadenceSavedLinkListOptions) throws -> CadencePage<CadenceSavedLinkSummary> {
-        var links = try fetchLinks()
-
-        if let containerFilter = try resolvedContainerFilter(kind: options.containerKind, id: options.containerId) {
-            links = try filterLinks(links, containerKind: containerFilter.kind, containerID: containerFilter.id)
+        let containerFilter = try resolvedContainerFilter(kind: options.containerKind, id: options.containerId)
+        var links: [SavedLink]
+        if let containerFilter {
+            links = try containerModel(kind: containerFilter.kind, id: containerFilter.id)?.links ?? []
+        } else {
+            links = try fetchLinks()
         }
 
         if let query = options.query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
@@ -854,47 +971,87 @@ final class CadenceReadService {
         try NoteMigrationService.healthCheck(in: context)
     }
 
+    /// Every read in this file goes through one of these two, so `fetchedRowCount` cannot drift
+    /// and a predicate cannot be quietly forgotten in a corner.
+    ///
+    /// `predicate: nil` is still a whole-table scan and several callers legitimately want one —
+    /// `search_cadence` scores free text over every row, `getNote` needs the full note set to
+    /// resolve backlinks. What T-384 removed is the *unnecessary* ones: a detail lookup that
+    /// fetched a table in order to run `first(where:)` on it, and a list filter the store could
+    /// have applied itself.
+    private func fetchAll<Model: PersistentModel>(
+        _ type: Model.Type = Model.self,
+        where predicate: Predicate<Model>? = nil
+    ) throws -> [Model] {
+        let results = try context.fetch(FetchDescriptor<Model>(predicate: predicate))
+        fetchedRowCount += results.count
+        return results
+    }
+
+    /// One row, or `nil` — predicate plus `fetchLimit = 1`, the shape
+    /// `CadenceDeepLinkResolutionSupport.task(with:in:)` has always used for the same job.
+    private func fetchFirst<Model: PersistentModel>(
+        _ type: Model.Type = Model.self,
+        where predicate: Predicate<Model>
+    ) throws -> Model? {
+        var descriptor = FetchDescriptor<Model>(predicate: predicate)
+        descriptor.fetchLimit = 1
+        let results = try context.fetch(descriptor)
+        fetchedRowCount += results.count
+        return results.first
+    }
+
     private func fetchTasks() throws -> [AppTask] {
-        try context.fetch(FetchDescriptor<AppTask>())
+        try fetchAll(AppTask.self)
     }
 
     private func fetchContexts() throws -> [Context] {
-        try context.fetch(FetchDescriptor<Context>())
+        try fetchAll(Context.self)
     }
 
     private func fetchAreas() throws -> [Area] {
-        try context.fetch(FetchDescriptor<Area>())
+        try fetchAll(Area.self)
     }
 
     private func fetchProjects() throws -> [Project] {
-        try context.fetch(FetchDescriptor<Project>())
+        try fetchAll(Project.self)
     }
 
     private func fetchNotes() throws -> [Note] {
-        try context.fetch(FetchDescriptor<Note>())
+        try fetchAll(Note.self)
     }
 
     private func fetchTags() throws -> [Tag] {
-        try context.fetch(FetchDescriptor<Tag>())
+        try fetchAll(Tag.self)
     }
 
     private func fetchGoals() throws -> [Goal] {
-        try context.fetch(FetchDescriptor<Goal>())
+        try fetchAll(Goal.self)
     }
 
     private func fetchHabits() throws -> [Habit] {
-        try context.fetch(FetchDescriptor<Habit>())
+        try fetchAll(Habit.self)
     }
 
     private func fetchLinks() throws -> [SavedLink] {
-        try context.fetch(FetchDescriptor<SavedLink>())
+        try fetchAll(SavedLink.self)
     }
 
     private func fetchTaskBundles() throws -> [TaskBundle] {
-        try context.fetch(FetchDescriptor<TaskBundle>())
+        try fetchAll(TaskBundle.self)
     }
 
-    private func taskSummary(_ task: AppTask, allTasks: [AppTask]) -> CadenceTaskSummary {
+    /// Raw values hoisted so a `#Predicate` captures a `String` rather than reaching through
+    /// `TaskStatus` / `NoteKind` — SwiftData compiles a narrow expression grammar and an enum
+    /// round-trip is not in it.
+    private static let doneStatusRaw = TaskStatus.done.rawValue
+    private static let cancelledStatusRaw = TaskStatus.cancelled.rawValue
+    private static let listNoteKindRaw = NoteKind.list.rawValue
+
+    /// The dead `allTasks:` parameter is gone, and removing it is most of T-384's win on the
+    /// detail lookups. It was **read by nothing** in this function, while `getTask`,
+    /// `getTaskBundle` and `getGoal` each fetched every task in the store purely to supply it.
+    private func taskSummary(_ task: AppTask) -> CadenceTaskSummary {
         CadenceTaskSummary(
             id: task.id.uuidString,
             title: resolvedTitle(task.title, fallback: "Untitled Task"),
@@ -971,8 +1128,8 @@ final class CadenceReadService {
             parentGoalId: goal.parentGoal?.id.uuidString,
             parentGoalTitle: goal.parentGoal?.title,
             isTopLevel: goal.isTopLevel,
-            linkedListCount: (goal.listLinks ?? []).filter { $0.area != nil || $0.project != nil }.count,
-            taskCount: (goal.tasks ?? []).filter { !$0.isCancelled }.count,
+            ownLinkedListCount: (goal.listLinks ?? []).filter { $0.area != nil || $0.project != nil }.count,
+            ownTaskCount: (goal.tasks ?? []).filter { !$0.isCancelled }.count,
             subGoalCount: (goal.subGoals ?? []).count,
             habitCount: (goal.habits ?? []).count,
             createdAt: format(goal.createdAt)
@@ -1067,20 +1224,12 @@ final class CadenceReadService {
         )
     }
 
-    private func containerRef(kind: String, id: UUID) throws -> CadenceContainerRef {
-        switch kind.lowercased() {
-        case "area":
-            guard let area = try fetchAreas().first(where: { $0.id == id }) else {
-                throw CadenceReadError.containerNotFound(kind, id.uuidString)
-            }
-            return containerRef(area)
-        case "project":
-            guard let project = try fetchProjects().first(where: { $0.id == id }) else {
-                throw CadenceReadError.containerNotFound(kind, id.uuidString)
-            }
-            return containerRef(project)
-        default:
-            throw CadenceReadError.invalidContainerKind(kind)
+    /// Replaced the `containerRef(kind:id:)` that re-fetched the row its only caller had already
+    /// resolved.
+    private func containerRef(_ model: ContainerModel) -> CadenceContainerRef {
+        switch model {
+        case .area(let area): return containerRef(area)
+        case .project(let project): return containerRef(project)
         }
     }
 
@@ -1139,66 +1288,75 @@ final class CadenceReadService {
         )
     }
 
-    private func notesForContainer(kind: String, id: UUID) throws -> [Note] {
-        switch try normalizeContainerKind(kind) {
-        case "area":
-            return try fetchNotes().filter { $0.kind == .list && $0.area?.id == id }
-        case "project":
-            return try fetchNotes().filter { $0.kind == .list && $0.project?.id == id }
-        default:
-            throw CadenceReadError.invalidContainerKind(kind)
-        }
-    }
+    /// One container, resolved once, so its own `tasks` / `notes` / `links` edges answer the
+    /// "in this list" question.
+    ///
+    /// **This is T-384 in miniature.** "Notes in project P" used to mean fetching every `Note` in
+    /// the store and keeping the ones whose `project?.id` matched — five near-identical copies of
+    /// that shape, one per entity pair. A to-many edge already holds exactly that answer, so the
+    /// whole-table fetch bought nothing. Deliberately *not* a `#Predicate` on `note.project?.id`
+    /// either: the edge is one traversal from a row already in memory and needs nothing from
+    /// SwiftData's predicate grammar to be correct.
+    private enum ContainerModel {
+        case area(Area)
+        case project(Project)
 
-    private func filterNotes(_ notes: [Note], containerKind: String, containerID: UUID) throws -> [Note] {
-        switch try normalizeContainerKind(containerKind) {
-        case "area":
-            return notes.filter { $0.area?.id == containerID }
-        case "project":
-            return notes.filter { $0.project?.id == containerID }
-        default:
-            throw CadenceReadError.invalidContainerKind(containerKind)
-        }
-    }
-
-    private func linksForContainer(kind: String, id: UUID) throws -> [SavedLink] {
-        switch try normalizeContainerKind(kind) {
-        case "area":
-            return try fetchLinks().filter { $0.area?.id == id }
-        case "project":
-            return try fetchLinks().filter { $0.project?.id == id }
-        default:
-            throw CadenceReadError.invalidContainerKind(kind)
-        }
-    }
-
-    private func filterLinks(_ links: [SavedLink], containerKind: String, containerID: UUID) throws -> [SavedLink] {
-        switch try normalizeContainerKind(containerKind) {
-        case "area":
-            return links.filter { $0.area?.id == containerID }
-        case "project":
-            return links.filter { $0.project?.id == containerID }
-        default:
-            throw CadenceReadError.invalidContainerKind(containerKind)
-        }
-    }
-
-    private func sectionSummaries(kind: String, id: UUID, tasks: [AppTask]) throws -> [CadenceSectionSummary] {
-        let configuredSections: [TaskSectionConfig]
-        switch try normalizeContainerKind(kind) {
-        case "area":
-            guard let area = try fetchAreas().first(where: { $0.id == id }) else {
-                throw CadenceReadError.containerNotFound(kind, id.uuidString)
+        var tasks: [AppTask] {
+            switch self {
+            case .area(let area): return area.tasks ?? []
+            case .project(let project): return project.tasks ?? []
             }
-            configuredSections = area.sectionConfigs
-        case "project":
-            guard let project = try fetchProjects().first(where: { $0.id == id }) else {
-                throw CadenceReadError.containerNotFound(kind, id.uuidString)
+        }
+
+        var links: [SavedLink] {
+            switch self {
+            case .area(let area): return area.links ?? []
+            case .project(let project): return project.links ?? []
             }
-            configuredSections = project.sectionConfigs
+        }
+
+        var sectionConfigs: [TaskSectionConfig] {
+            switch self {
+            case .area(let area): return area.sectionConfigs
+            case .project(let project): return project.sectionConfigs
+            }
+        }
+
+        /// `.list` notes only — the documents surface. `notesForContainer` filtered on the same
+        /// kind before this existed.
+        var documents: [Note] {
+            allNotes.filter { $0.kind == .list }
+        }
+
+        /// Every note filed under this container regardless of kind — what `list_notes` filters by
+        /// container, which is not restricted to documents.
+        var allNotes: [Note] {
+            switch self {
+            case .area(let area): return area.notes ?? []
+            case .project(let project): return project.notes ?? []
+            }
+        }
+    }
+
+    /// `nil` when no such container exists — which is what every list caller already did with an
+    /// unknown id: an empty page, not an error.
+    private func containerModel(kind: String, id: UUID) throws -> ContainerModel? {
+        switch try normalizeContainerKind(kind) {
+        case "area":
+            return try fetchFirst(Area.self, where: #Predicate { $0.id == id }).map(ContainerModel.area)
+        case "project":
+            return try fetchFirst(Project.self, where: #Predicate { $0.id == id }).map(ContainerModel.project)
         default:
             throw CadenceReadError.invalidContainerKind(kind)
         }
+    }
+
+    private func contextModel(_ id: UUID) throws -> Context? {
+        try fetchFirst(Context.self, where: #Predicate { $0.id == id })
+    }
+
+    private func sectionSummaries(for model: ContainerModel, tasks: [AppTask]) -> [CadenceSectionSummary] {
+        let configuredSections = model.sectionConfigs
 
         let sectionNames = Set(configuredSections.map { $0.name.lowercased() })
         let extraSections = Set(tasks.map(\.resolvedSectionName).filter { !sectionNames.contains($0.lowercased()) })
@@ -1278,15 +1436,12 @@ final class CadenceReadService {
         }
     }
 
-    private func filterTasks(_ tasks: [AppTask], containerKind: String, containerID: UUID) throws -> [AppTask] {
-        switch try normalizeContainerKind(containerKind) {
-        case "area":
-            return tasks.filter { $0.area?.id == containerID }
-        case "project":
-            return tasks.filter { $0.project?.id == containerID }
-        default:
-            throw CadenceReadError.invalidContainerKind(containerKind)
-        }
+    /// First occurrence wins, by `id`. Needed once edges replace whole-table filters: a row
+    /// reachable through two containers arrives twice. Takes the id explicitly because
+    /// `PersistentModel`'s `Identifiable.ID` is `PersistentIdentifier`, not the model's `UUID`.
+    private func deduped<Model: PersistentModel>(_ models: [Model], by identity: (Model) -> UUID) -> [Model] {
+        var seen = Set<UUID>()
+        return models.filter { seen.insert(identity($0)).inserted }
     }
 
     private func taskSort(_ lhs: AppTask, _ rhs: AppTask) -> Bool {

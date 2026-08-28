@@ -11,7 +11,13 @@ do {
         container = try CadenceModelContainerFactory.makeReadOnlyContainer()
     }
     let context = ModelContext(container)
-    let readService = CadenceReadService(context: context, performsMigrations: writesEnabled)
+    // `performsMigrations: false` / `preparesStore: false`, and neither is a decision to skip a
+    // migration (T-309). Read-only never migrated — the store is opened `allowsSave: false`, so a
+    // migration pass there could only fail. Read-write has already migrated:
+    // `makeReadWriteContainer()` ran `CadenceMCPStorePreparation.prepare` above, and these two
+    // services used to re-run it, giving one launch four note migrations, two tag seed/sync passes
+    // and two integrity repairs against a live store before the first tool call.
+    let readService = CadenceReadService(context: context, performsMigrations: false)
     let writeService: CadenceWriteService?
     if writesEnabled {
         // No `try` on the initializer itself: `CadenceWriteService.init(context:…)` is not
@@ -19,14 +25,15 @@ do {
         writeService = CadenceWriteService(
             context: context,
             notifiesExternalWrites: true,
-            auditLogger: try CadenceMCPAuditLogger.defaultLogger()
+            auditLogger: try CadenceMCPAuditLogger.defaultLogger(),
+            preparesStore: false
         )
     } else {
         writeService = nil
     }
     let server = Server(
         name: "cadence-mcp",
-        version: "0.4.0",
+        version: "0.5.0",
         capabilities: .init(tools: .init(listChanged: false))
     )
     let router = CadenceMCPToolRouter(readService: readService, writeService: writeService, writesEnabled: writesEnabled)

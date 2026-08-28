@@ -310,6 +310,50 @@ struct CadenceMCPToolContractTests {
         #expect(routedOffsets == routedLimits)
         #expect(routedOffsets == advertisedOffsets)
     }
+    // MARK: - T-309, read-write startup prepares the store once
+
+    /// **Nothing in `CadenceMCPServer/` is unit-executed, so this is a scan** — the same standing
+    /// constraint the tool-name contract above lives under. What it pins is a composition:
+    /// `makeReadWriteContainer()` runs the four-step sequence, and `main.swift` tells both
+    /// services it has already run. It used to run three times over one context on one launch —
+    /// the factory's four steps, a second note migration inside `CadenceReadService.init`, then
+    /// all four again inside `CadenceWriteService.init` plus a fourth migration from the private
+    /// read service it builds — every one of them against the live store the running app has
+    /// open, before a single tool call had arrived.
+    @Test func readWriteStartupRunsTheStorePreparationSequenceExactlyOnce() throws {
+        let main = strippingComments(try sourceFile(Self.mainPath))
+        let factory = strippingComments(try sourceFile(Self.containerFactoryPath))
+
+        // The factory owns the sequence, and owns it by calling the one type that spells it.
+        #expect(factory.contains("CadenceMCPStorePreparation.prepare(in: context, source: \"mcp-container\")"))
+        #expect(occurrences(of: "CadenceMCPStorePreparation.prepare(", in: factory) == 1)
+
+        // `main.swift` builds the container and then says, at both call sites, that the store is
+        // already prepared. `performsMigrations: writesEnabled` is the exact spelling that made
+        // the read service re-migrate whenever writes were on.
+        #expect(main.contains("CadenceReadService(context: context, performsMigrations: false)"))
+        #expect(main.contains("preparesStore: false"))
+        #expect(main.contains("performsMigrations: writesEnabled") == false)
+
+        // And nothing in the startup path open-codes a step beside the sequence.
+        #expect(occurrences(of: "NoteMigrationService.", in: main) == 0)
+        #expect(occurrences(of: "TagSupport.", in: main) == 0)
+        #expect(occurrences(of: "DataIntegrityRepairService.", in: main) == 0)
+    }
+
+    /// Most of the assertions above are zero-or-`false` counts, and all of those hold against an
+    /// empty string — which is what a wrong path produces on an isolated build tree.
+    @Test func storePreparationScanIsNotVacuous() throws {
+        let main = try sourceFile(Self.mainPath)
+        let factory = try sourceFile(Self.containerFactoryPath)
+
+        #expect(main.count > 500)
+        #expect(factory.count > 2_000)
+        #expect(main.contains("CadenceMCPToolRouter("))
+        #expect(main.contains("StdioTransport()"))
+        #expect(factory.contains("func makeReadWriteContainer()"))
+        #expect(factory.contains("enum CadenceMCPStorePreparation"))
+    }
 }
 
 // MARK: - Extraction
@@ -320,6 +364,8 @@ private extension CadenceMCPToolContractTests {
     static let smokeTestPath = "plugins/cadence-mcp/scripts/smoke-test.py"
     static let argumentParsingPath = "CadenceMCPServer/CadenceMCPArgumentParsing.swift"
     static let readDTOsPath = "Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift"
+    static let mainPath = "CadenceMCPServer/main.swift"
+    static let containerFactoryPath = "Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift"
 
     /// The six `list_*` result-element DTOs `CadenceReadService` returns that T-269 found with no
     /// runtime coverage: `listTaskBundles` -> `CadenceTaskBundleSummary`, `listGoals` ->
@@ -342,8 +388,8 @@ private extension CadenceMCPToolContractTests {
         DTOFieldSpec(structName: "CadenceGoalSummary", expectedFields: [
             "id", "title", "description", "startDate", "endDate", "progressType", "targetHours",
             "loggedHours", "colorHex", "icon", "kind", "status", "progress", "contextId",
-            "contextName", "parentGoalId", "parentGoalTitle", "isTopLevel", "linkedListCount",
-            "taskCount", "subGoalCount", "habitCount", "createdAt",
+            "contextName", "parentGoalId", "parentGoalTitle", "isTopLevel", "ownLinkedListCount",
+            "ownTaskCount", "subGoalCount", "habitCount", "createdAt",
         ]),
         DTOFieldSpec(structName: "CadenceHabitSummary", expectedFields: [
             "id", "title", "icon", "colorHex", "frequencyType", "frequencyDays", "targetCount",

@@ -43,6 +43,16 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-414] **`subGoalCount` and `habitCount` have the same naming defect [[T-388]] just fixed.**
+  They report own-only numbers under names that read like totals. Left alone deliberately so the
+  breaking wire change stayed one rename rather than three — but the DTO is now half-renamed, and a
+  half-applied convention is worse than either end state. Close it before it ossifies.
+
+- [T-415] **The MCP page slice still happens in memory.** From [[T-384]]: `taskSort` and
+  `CadenceMCPOrdering` both end on `id.uuidString`, `UUID` is not `Comparable`, and `isDone` is
+  computed — so `offset`/`limit` cannot be pushed into the store's sort descriptor and the rows are
+  still materialised before being sliced. Reads are far narrower now, but the last hop is unchanged.
+
 - [T-421] **Note template bodies live in `UserDefaults` and can hold image references the sweep
   cannot see.** Residue from [[T-411]]. `NoteTemplateLibrary.storageKey` stores template markdown
   outside SwiftData entirely, and the template editor has no flag to disable image insertion — so an
@@ -146,27 +156,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   archive import ([[T-274]]). If either turns out to exist, the collapse needs to be
   `max(count) per row-set` rather than plain `max`, or repair needs to fold split rows before
   collapsing.
-
-- [T-388] **`listGoals` reports a goal's own counts under names that read like totals, while
-  `getGoal` reports recursive ones.** Verified: `CadenceReadService.swift:929-930` computes
-  `linkedListCount` from `goal.listLinks` and `taskCount` from `goal.tasks` — flat, own-only —
-  while lines 551 and 558 in the same file use `GoalContributionResolver`, which deliberately walks
-  direct tasks, linked lists **and sub-goals**.
-  So a direction whose milestone owns a task reports one number in `listGoals` and a different one
-  in `getGoal.contribution`, with nothing in the field names to say why. The UI already treats
-  inherited linked lists as counting toward a direction, so own-only is the odd one out.
-  Decide the contract: use the resolver for summary counts, or rename to `ownTaskCount` /
-  `ownLinkedListCount`. Generic names on own-only numbers are the actual defect — an agent reading
-  `taskCount` has no reason to suspect it excludes sub-goals.
-
-- [T-384] **`limit` caps the response, not the work.** `list_tasks(limit: 1)` still fetches every
-  task with a bare `FetchDescriptor<AppTask>()`, filters and sorts in memory, then takes one. The
-  same shape repeats across notes, containers, contexts, tags, goals, habits, links, bundles and
-  search. A performance bug, not an output bug — the cap runs after the expensive part.
-  The correct pattern is already in the tree: `CadenceDeepLinkResolutionSupport` uses a predicate
-  plus `fetchLimit = 1`. Start with detail lookups and simple date/status/container filters, which
-  are straightforwardly predicate-backed; full-text note search may legitimately need in-memory
-  scoring and can stay.
 
 - [T-372a] **`CadenceSearchMatcher.rank` is the one ordering left partial after [[T-372]].** Found
   while fixing T-372 and deliberately not fixed there: `rank` ends at score-then-title
@@ -293,14 +282,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   [[T-296]] and [[T-292]], where one strict shared path exists beside looser open-coded copies.
   An App Intent-safe mutation service owning capture, complete and habit toggle would also give
   [[T-311]] and [[T-312]] one place to put the preflight and the reconcile marker.
-
-- [T-309] **Read-write MCP startup runs migration and repair more than once.** From the same audit.
-  `main.swift` builds a write container and then constructs read and write services that each do
-  further setup against the same context. Mostly overhead — but it widens the window in which a
-  **second process mutates the store before any tool call has been made**, and it is only safe
-  while every one of those operations stays perfectly idempotent, which nothing currently enforces.
-  Centralize the startup work, or let the service initializers skip what the container factory
-  already did.
 
 - [T-300] **The drag-and-drop date seed has the same lenient-parse bug.** From the same audit,
   premise verified verbatim: `CadenceTaskDropSupport.dateValue` does

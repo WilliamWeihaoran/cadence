@@ -143,6 +143,25 @@ than naming a build.
   separately, concatenate, and cap — which returned zero projects whenever areas outnumbered the
   limit (T-383), reproducibly so after T-372. `CadenceMCPOrdering.precedes` is total across kinds
   already; use it on one merged list rather than re-introducing a per-kind cap.
+- **Reads go through `fetchAll` / `fetchFirst`, never a bare `FetchDescriptor`** (T-384). `limit`
+  used to cap the response while every read fetched the whole table, filtered and sorted in memory,
+  and then sliced — so `list_tasks(limit: 1)` and `list_tasks(limit: 5000)` did identical work.
+  Detail lookups take a predicate and `fetchLimit = 1`; a container-scoped read resolves the
+  container and walks its `tasks` / `notes` / `links` edge rather than filtering a whole table by
+  `area?.id`; simple status, kind, archived and date filters go into the predicate.
+  `CadenceReadService.fetchedRowCount` is the instrument — it counts rows materialised through a
+  fetch descriptor, and `CadenceReadServiceTests` asserts bounded numbers against it. What is
+  *not* pushable: full-text scoring (`search_cadence`, and the `textQuery` arm of `list_tasks`),
+  the explicit `statuses` filter (it compares `statusRaw.lowercased()`, which the predicate grammar
+  has no equivalent for), and the **sort** — `taskSort` and `CadenceMCPOrdering` both end on
+  `id.uuidString`, and `UUID` is not `Comparable`, so `offset`/`limit` still slice in memory
+  ([[T-415]]).
+- **Read-write startup prepares the store exactly once** (T-309). The four-step sequence — note
+  migration, tag seeding, tag sync, integrity repair — lives in `CadenceMCPStorePreparation.prepare`
+  and is run by `makeReadWriteContainer()`. `main.swift` then passes `performsMigrations: false` and
+  `preparesStore: false`, because the services default to preparing and used to re-run the sequence
+  twice more over the same context, against a live store, before any tool call. Do not add a guard
+  inside `prepare` instead: the flag is readable at the call site, which is where the mistake was.
 - Keep MCP behavior read-oriented unless the requested change clearly adds write capability.
 - Prefer stable response schemas over exposing raw SwiftData models. If a model change forces a DTO
   change, make it deliberately and update the smoke test's expectations in the same commit.
