@@ -441,7 +441,7 @@ struct iOSTaskRow: View {
     private var visibleTagLimit: Int { CadenceTaskPresentationSupport.rowTagLimit }
 
     private func toggleCompletion() {
-        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
+        CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
     }
 
     /// Attempt, then decide — the shape `iOSNoteDeleteConfirmationSheet.confirm()` uses. The

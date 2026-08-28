@@ -429,6 +429,9 @@ struct DeleteConfirmationLayerView: View {
                 title: deleteRequest.title,
                 message: deleteRequest.message,
                 confirmLabel: deleteRequest.confirmLabel,
+                // T-376. A refused delete leaves the overlay standing and puts the reason here, so
+                // the reappearing row is explained rather than merely surprising.
+                failureNotice: deleteConfirmationManager.failureNotice,
                 onConfirm: { deleteConfirmationManager.confirm() },
                 onCancel: { deleteConfirmationManager.cancel() }
             )
@@ -607,6 +610,8 @@ struct DeleteConfirmationOverlay: View {
     let title: String
     let message: String
     let confirmLabel: String
+    /// Shown in place of nothing when the confirmed delete was refused and rolled back (T-376).
+    var failureNotice: String?
     let onConfirm: () -> Void
     let onCancel: () -> Void
 
@@ -637,6 +642,9 @@ struct DeleteConfirmationOverlay: View {
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
+                            if let failureNotice {
+                                CadenceInlineFailureNotice(text: failureNotice)
+                            }
                         }
                     }
                 }

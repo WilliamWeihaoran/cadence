@@ -338,12 +338,7 @@ struct TaskDetailActionsSection: View {
             }
 
             iconButton(systemImage: "trash", tint: Theme.red, help: "Delete task") {
-                deleteConfirmationManager.present(
-                    title: "Delete Task?",
-                    message: "This will permanently delete \"\(TaskTitleSupport.displayTitle(task.title, fallback: "Untitled"))\"."
-                ) {
-                    modelContext.deleteTask(task)
-                }
+                deleteConfirmationManager.presentTaskDelete(task, in: modelContext)
             }
         }
     }

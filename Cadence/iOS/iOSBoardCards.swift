@@ -446,7 +446,7 @@ struct iOSBoardTaskCard: View {
     }
 
     private func toggleCompletion() {
-        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
+        CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
     }
 }
 

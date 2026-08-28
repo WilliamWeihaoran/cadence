@@ -340,7 +340,7 @@ struct iOSMarkdownEditingSurface: View {
 
     private func toggleEmbeddedTask(id: UUID) -> MarkdownTaskEmbedRenderInfo? {
         guard let task = embeddedTask(id: id) else { return nil }
-        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
+        CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
         return MarkdownTaskEmbedRenderInfo.task(task)
     }
 
@@ -401,8 +401,16 @@ struct iOSMarkdownEditingSurface: View {
         )
     }
 
+    /// The live query first, then the creation-latency cache — re-verified against the store, so
+    /// a task deleted elsewhere stops being interactive in this note instead of living on in
+    /// `recentEmbeddedTasks` (T-349).
     private func embeddedTask(id: UUID) -> AppTask? {
-        referenceTasks.first(where: { $0.id == id }) ?? recentEmbeddedTasks[id]
+        MarkdownEmbeddedTaskLookup.resolve(
+            id: id,
+            liveTasks: referenceTasks,
+            cache: &recentEmbeddedTasks,
+            in: modelContext
+        )
     }
 
     private func openEmbeddedTask(id: UUID) {

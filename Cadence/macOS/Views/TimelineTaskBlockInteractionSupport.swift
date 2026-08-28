@@ -45,10 +45,7 @@ enum TimelineTaskBlockInteractionSupport {
             activeDragTaskID.wrappedValue = nil
             selectedTaskID.wrappedValue = task.id
         } onDelete: {
-            deleteConfirmationManager.present(
-                title: "Delete Task?",
-                message: "This will permanently delete \"\(task.title.isEmpty ? "Untitled" : task.title)\"."
-            ) {
+            deleteConfirmationManager.presentTaskDelete(task, in: modelContext) {
                 if hoveredTaskManager.hoveredTask?.id == task.id {
                     hoveredTaskManager.hoveredTask = nil
                 }
@@ -59,7 +56,6 @@ enum TimelineTaskBlockInteractionSupport {
                     activeDragTaskID.wrappedValue = nil
                 }
                 hoveredEditableManager.endHovering(id: "timeline-task-\(task.id.uuidString)")
-                modelContext.deleteTask(task)
             }
         }
     }

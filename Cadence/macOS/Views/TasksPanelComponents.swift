@@ -173,15 +173,11 @@ struct MacTaskRow: View {
         hoveredEditableManager.beginHovering(id: editableID) {
             showTaskInspector = true
         } onDelete: {
-            deleteConfirmationManager.present(
-                title: "Delete Task?",
-                message: "This will permanently delete \"\(task.title.isEmpty ? "Untitled" : task.title)\"."
-            ) {
+            deleteConfirmationManager.presentTaskDelete(task, in: modelContext) {
                 if hoveredTaskManager.hoveredTask?.id == task.id {
                     hoveredTaskManager.hoveredTask = nil
                 }
                 hoveredEditableManager.endHovering(id: editableID)
-                modelContext.deleteTask(task)
             }
         }
     }

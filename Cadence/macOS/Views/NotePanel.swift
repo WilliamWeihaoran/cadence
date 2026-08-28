@@ -387,8 +387,16 @@ struct NotePanel: View {
         linkedTaskForPopover = task
     }
 
+    /// The live query first, then the creation-latency cache — re-verified against the store, so
+    /// a task deleted elsewhere stops being interactive in this note instead of living on in
+    /// `recentEmbeddedTasks` (T-349).
     private func embeddedTask(id: UUID) -> AppTask? {
-        allTasks.first(where: { $0.id == id }) ?? recentEmbeddedTasks[id]
+        MarkdownEmbeddedTaskLookup.resolve(
+            id: id,
+            liveTasks: allTasks,
+            cache: &recentEmbeddedTasks,
+            in: modelContext
+        )
     }
 
     private func appendSummary(_ summary: String, to note: Note) {

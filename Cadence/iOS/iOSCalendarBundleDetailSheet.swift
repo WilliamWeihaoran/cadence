@@ -277,7 +277,7 @@ private struct iOSCalendarBundleTaskRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 11) {
             Button {
-                CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
+                CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
             } label: {
                 iOSTaskCompletionCircle(glyph: .resolve(task: task))
                     .frame(width: 18, height: 18)

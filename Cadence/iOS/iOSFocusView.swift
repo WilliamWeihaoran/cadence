@@ -621,7 +621,7 @@ struct iOSFocusView: View {
     }
 
     private func complete(_ task: AppTask) {
-        CadenceFocusSupport.complete(task, elapsedSeconds: elapsedSeconds, modelContext: modelContext)
+        CadenceTaskStatusEditing.completeFocusSession(task, elapsedSeconds: elapsedSeconds, in: modelContext)
         resetTimer()
         if let next = pickItems.first(where: { $0.target != .task(task.id) }) {
             adopt(next)

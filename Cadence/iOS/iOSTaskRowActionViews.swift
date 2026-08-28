@@ -51,7 +51,7 @@ enum iOSTaskRowSwipeActions {
                 systemImage: isFinished ? "circle" : "checkmark.circle.fill",
                 tint: isFinished ? Theme.blue : Theme.green
             ) {
-                CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
+                CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
             },
             CadenceSwipeAction(
                 id: "delete",

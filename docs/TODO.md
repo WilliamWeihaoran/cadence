@@ -168,16 +168,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   predicate. So the helper is right by caller shape rather than by construction, and nothing pins
   that. Either use `isFinishedTask` in the column, or add a test proving every caller pre-filters.
 
-- [T-376] **Five macOS surfaces can now read a failed delete and still say nothing.** Residue from
-  [[T-365]], recorded by that agent rather than absorbed. `TasksPanelComponents`,
-  `KanbanCardStateSupport`, `TaskInspectorContentSupportViews`, `TimelineTaskBlockInteractionSupport`
-  and `macOSRootCommandActionSupport` all call `ModelContext.deleteTask(_:)`, which now returns a
-  `Bool` — and discard it. Nothing is lost, because the rollback puts the row back on screen by
-  itself, but macOS stays silent where the iOS row now shows
-  `CadenceTaskMutationSupport.deleteFailureNotice`. `iOSTaskDetailSheet` has the same gap: it
-  dismisses on delete regardless. This is a product decision about where a desktop row may put a
-  notice, not a defect — the promise the code makes is already true.
-
 - [T-372a] **`CadenceSearchMatcher.rank` is the one ordering left partial after [[T-372]].** Found
   while fixing T-372 and deliberately not fixed there: `rank` ends at score-then-title
   (`Shared/CadenceSearchMatcher.swift` lines 27-30), so two hits with the same score and the same
@@ -252,30 +242,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   start with stable destinations only — Today, Inbox, All Tasks, Habits, Goals, Calendar. **Do not
   persist area or project ids until [[T-345]] lands**, or launch will restore a selection pointing
   at a deleted list, which is that ticket's bug made permanent.
-
-- [T-349] **A deleted embedded task stays interactive in an open editor.** From the same audit;
-  **inferred from a repeated pattern**, not measured at runtime, and the entry should keep that
-  distinction. Each editor caches newly embedded tasks in `recentEmbeddedTasks` to cover creation
-  latency, and lookup falls back to that cache when the live query no longer has the task. Delete
-  the task elsewhere and the card can still toggle, rename, open and hover against a cached object.
-  Four surfaces repeat it: `NotePanel`, `NoteEditorPane`, `ListNotesSupportViews`, and iOS's
-  editing surface.
-  The fix shape matters: the cache should serve **creation latency only**, so a fallback hit should
-  re-verify by fetching the id and drop the cached value when that misses. And the missing-card
-  behaviour must stay — the markdown reference remains, the actions stop working. Test the helper,
-  not the private SwiftUI methods.
-
-- [T-343] **Six iOS paths change a task's status without reconciling its notifications.** From the
-  same audit; **measured in source, runtime impact inferred.** The row actions, task views, board
-  cards, markdown surface, bundle sheet and focus view all complete or reopen through the pure
-  shared helper without the app-side reconcile that macOS's `TaskWorkflowService` performs.
-  **This is a latency bug, not a correctness one**, and the entry should say so: `iOSRootView`
-  reconciles on scene-phase changes — widened to *every* change in `75e36c4` — so a stale
-  notification survives only until the next lifecycle checkpoint. Related to [[T-306]] and
-  [[T-312]], which fixed the same gap for the out-of-process writers.
-  The audit's own constraint is the important half: **do not push the reconcile into the shared
-  helper**, because widgets and MCP use the same mutation paths and must not schedule app-side
-  notifications. An iOS-side wrapper, or explicit call sites.
 
 - [T-340] **Two more places a task keeps a context its owner no longer has.** Found while closing
   [[T-292]] and [[T-293]], and deliberately not folded in.

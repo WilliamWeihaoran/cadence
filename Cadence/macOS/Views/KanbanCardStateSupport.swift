@@ -35,15 +35,11 @@ enum KanbanCardStateSupport {
             hoveredEditableManager.beginHovering(id: editableID(for: task)) {
                 showTaskInspector.wrappedValue = true
             } onDelete: {
-                deleteConfirmationManager.present(
-                    title: "Delete Task?",
-                    message: "This will permanently delete \"\(task.title.isEmpty ? "Untitled" : task.title)\"."
-                ) {
+                deleteConfirmationManager.presentTaskDelete(task, in: modelContext) {
                     if hoveredTaskManager.hoveredTask?.id == task.id {
                         hoveredTaskManager.hoveredTask = nil
                     }
                     hoveredEditableManager.endHovering(id: editableID(for: task))
-                    modelContext.deleteTask(task)
                 }
             }
         } else {

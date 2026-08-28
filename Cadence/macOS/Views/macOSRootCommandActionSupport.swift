@@ -6,12 +6,8 @@ import EventKit
 
 enum RootCommandActionSupport {
     static func handleDeleteShortcut(task: AppTask, context: RootCommandContext) {
-        context.deleteConfirmationManager.present(
-            title: "Delete Task?",
-            message: "This will permanently delete \"\(task.title.isEmpty ? "Untitled" : task.title)\"."
-        ) {
+        context.deleteConfirmationManager.presentTaskDelete(task, in: context.modelContext) {
             context.hoveredTaskManager.hoveredTask = nil
-            context.modelContext.deleteTask(task)
         }
     }
 

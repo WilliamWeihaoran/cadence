@@ -394,3 +394,71 @@ nonisolated enum MarkdownTaskEmbedTitleCache {
         return (try? modelContext.fetch(descriptor)) ?? []
     }
 }
+
+/// Resolving an embedded task id to a live object, for the four editors that keep a
+/// `recentEmbeddedTasks` cache.
+///
+/// **What the cache is for.** Creating a task from inside a note inserts it into the store and
+/// writes a `[[task:UUID|Title]]` reference in the same gesture, but the editor's `@Query` has not
+/// necessarily produced the new row by the time the card next draws. Each editor therefore holds
+/// the freshly created object in a dictionary and falls back to it when the live query misses, so
+/// the card is interactive immediately instead of a frame or two later.
+///
+/// **What went wrong (T-349).** The fallback had no expiry. Delete that task anywhere else — a
+/// task row, the inspector, a kanban card, another device's sync — and the live query stops
+/// returning it, so the lookup falls through to the cache and hands back an object the store no
+/// longer holds. The card in the still-open note kept toggling, renaming, opening and hovering
+/// against a deleted task. Nothing in the note ever said the task was gone.
+///
+/// **The rule.** The cache serves *creation latency only*. A cache hit is provisional: it is
+/// re-verified against the store, and a value the store no longer holds is dropped from the cache
+/// and reported as missing. A live-query hit never touches the store — the whole point of the
+/// query is that it is authoritative — so the extra fetch is paid only on the rare frames the cache
+/// exists to cover.
+///
+/// **Missing means missing, not erased.** The markdown reference stays in the note text; only the
+/// actions stop working, and the card falls back to
+/// `MarkdownTaskEmbedRenderInfo.missing(reference:)` the way a reference to a task deleted before
+/// the note was opened already does. Callers guard on `nil` and return.
+nonisolated enum MarkdownEmbeddedTaskLookup {
+
+    /// The live query first, the creation-latency cache second — and the cache only if the store
+    /// agrees the task still exists.
+    ///
+    /// - Parameter cache: mutated in place. A verified-missing id is evicted, so the cost is paid
+    ///   once per deleted task rather than once per lookup.
+    /// - Returns: `nil` when neither the query nor the store has the task.
+    static func resolve(
+        id: UUID,
+        liveTasks: [AppTask],
+        cache: inout [UUID: AppTask],
+        in modelContext: ModelContext
+    ) -> AppTask? {
+        if let live = liveTasks.first(where: { $0.id == id }) { return live }
+        guard let cached = cache[id] else { return nil }
+
+        switch storeHoldsTask(id: id, in: modelContext) {
+        case .some(true), .none:
+            // Still there, or the store could not be read. Neither is evidence of a deletion, and
+            // treating an unreadable store as one would make an open note lose its live cards on a
+            // transient fetch failure.
+            return cached
+        case .some(false):
+            cache[id] = nil
+            return nil
+        }
+    }
+
+    /// Whether the store still holds a task with this id.
+    ///
+    /// `Bool?` rather than `Bool`, and the third case is the load-bearing one: `nil` means the fetch
+    /// itself failed, which is not the same fact as "no such task". Same distinction
+    /// `HabitNotificationReconcileSupport.reconcileInput` draws, and for the same reason — coercing
+    /// a failed read to the empty answer turns a store hiccup into a destructive conclusion.
+    static func storeHoldsTask(id: UUID, in modelContext: ModelContext) -> Bool? {
+        var descriptor = FetchDescriptor<AppTask>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        guard let matches = try? modelContext.fetch(descriptor) else { return nil }
+        return !matches.isEmpty
+    }
+}
