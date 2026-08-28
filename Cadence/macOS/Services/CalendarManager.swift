@@ -33,10 +33,19 @@ enum CalendarRecurrenceEditScope: String, CaseIterable, Hashable {
 /// a read-only calendar, a hidden-away last writable calendar, or access revoked mid-session all
 /// looked identical to success: the gesture completed, the popover dismissed, the ghost cleared,
 /// and nothing appeared.
-enum CalendarWriteFailure: Equatable {
+/// `nonisolated` for the reason `Cadence/Models/AGENTS.md` records for the data enums: the project
+/// sets `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which hands a bare value type a main-actor
+/// *synthesized* `Equatable`. Comparing two of these from a nonisolated context — which is what a
+/// `#expect` macro expansion is — then warns "main actor-isolated conformance ... cannot be used in
+/// nonisolated context; this is an error in the Swift 6 language mode". `CadenceEventNoteCommitOutcome`
+/// is spelled the same way. Nothing on this type is actor-affine.
+nonisolated enum CalendarWriteFailure: Equatable {
     case notAuthorized
     case noWritableCalendar
     case invalidRange
+    /// The stored EventKit identifier no longer resolves to an event, so there was nothing to
+    /// write to. Distinct from `saveFailed`: the store never refused anything, it was never asked.
+    case eventNotFound
     case saveFailed(String)
 
     var title: String {
@@ -44,6 +53,7 @@ enum CalendarWriteFailure: Equatable {
         case .notAuthorized:      return "No Calendar Access"
         case .noWritableCalendar: return "No Writable Calendar"
         case .invalidRange:       return "Invalid Event Time"
+        case .eventNotFound:      return "Event Not in Apple Calendar"
         case .saveFailed:         return "Calendar Change Not Saved"
         }
     }
@@ -56,6 +66,8 @@ enum CalendarWriteFailure: Equatable {
             return "No calendar is available to write to. The calendar may be read-only, or hidden in Settings → Calendar."
         case .invalidRange:
             return "The event needs to end after it starts."
+        case .eventNotFound:
+            return "The event this note is linked to is no longer in Apple Calendar, so the change stayed in Cadence."
         case .saveFailed(let reason):
             return "Your calendar rejected the change, so it was undone.\n\n\(reason)"
         }
@@ -365,10 +377,22 @@ final class CalendarManager {
         return save(event, span: .thisEvent, describing: "update event notes")
     }
 
+    /// **T-389.** The `guard` used to end in `return nil`, and on this API `nil` is what a
+    /// *completed* write returns — the same value the caller gets when Apple Calendar took the
+    /// change. So a note whose stored identifier no longer resolves (the event was deleted, or
+    /// EventKit reissued its id) reported success, and the desktop editor kept typing into a
+    /// mirror that had stopped existing. iOS's overload has always answered `false` here: "an
+    /// identifier that resolves to nothing is a sync that did not happen, not a no-op."
+    ///
+    /// Unlike every other failure on this type, this one is deliberately **not** `record`ed onto
+    /// `lastWriteFailure`. The one caller is the event-note editor's debounced content flush,
+    /// which fires every few seconds while someone types; routing this there would raise the modal
+    /// `calendarWriteFailureAlert` over the editor on a loop. The editor reports it inline
+    /// instead, which is also what iOS does.
     @discardableResult
     func updateEventNotes(calendarEventID: String, notes: String) -> CalendarWriteFailure? {
         let lookupID = CalendarEventIdentity.lookupIdentifier(from: calendarEventID)
-        guard let event = event(withIdentifier: lookupID) else { return nil }
+        guard let event = event(withIdentifier: lookupID) else { return .eventNotFound }
         return updateEventNotes(event, notes: notes)
     }
 

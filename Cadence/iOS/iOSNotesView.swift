@@ -39,9 +39,11 @@ let iOSNotesHeaderStandardHeight: CGFloat = 64
 /// `showsEventsTab` flag: a third knob spelling the same host difference the template gate already
 /// spelled twice.
 ///
-/// **The tab does not persist.** `@AppStorage` is gone; the key `ios.notes.activeCoreTab` is left
-/// orphaned in `UserDefaults` rather than migrated, because it named a three-case enum that no
-/// longer describes the strip. Which tab you are on is the same kind of state as `selectedDayKey`
+/// **The tab does not persist.** `@AppStorage` is gone, and the key `ios.notes.activeCoreTab` is
+/// not migrated, because it named a three-case enum that no longer describes the strip. It is
+/// cleared instead, at launch, by `CadenceNotesEditorPreferences.purgeRetiredKeys()` — the same
+/// place the retired editor-mode keys go, so no orphan is left for the next grep to mistake for
+/// live state. Which tab you are on is the same kind of state as `selectedDayKey`
 /// — "which note am I looking at" — and that one deliberately resets every launch, because a stored
 /// value is a trap. Persisting one and not the other gives you a relaunch that reopens on Weekly
 /// with the date snapped back to this week: the header disagreeing with itself. Both reset to

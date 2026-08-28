@@ -43,33 +43,20 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
-- [T-392] **Settings reads the calendar zoom as `Int` while the calendar writes it as `Double`.**
-  UserDefaults key lifecycle audit (Codex, read at `5b8d8bd`, clean tree). **Verified, including the
-  probe:** `iOSCalendarView.swift:18` binds `CadenceCalendarZoom.storageKey` as a `Double`, the
-  pinch gesture commits fractional values, and `iOSSettingsView.swift:17` declares
-  `@AppStorage("ios.calendar.zoomLevel") private var calendarZoomLevel = 1` — the same key, typed
-  `Int`, offering three density rows. Ran it: a stored `1.5` reads back as `double: 1.5` and
-  `int: 1`. So Settings shows the wrong density and, worse, writing from Settings overwrites a
-  continuous pinch zoom with a coarse integer.
-  Note the key is already centralised on `CadenceCalendarZoom.storageKey`; Settings re-spelled the
-  literal instead of using it, which is how the types drifted apart.
-  Fix: bind `Double` through the shared key, and decide whether the picker snaps to presets or
-  preserves fractional values until the user picks one.
+- [T-399] **A cancelled kanban card sits in the active half of its column and never reaches the
+  completed half.** Residue from [[T-342]]. `KanbanSectionColumnView.unfrozenActiveTasks` is
+  `filter { !$0.isDone }` and `completedTasks` beside it is `filter { $0.isDone }` — a cancelled task
+  satisfies neither, so it vanishes from both halves. `KanbanListColumnView` splits the same way.
+  This is T-147 reaching a surface T-147 did not: the column's **own** split, not the freeze. Note
+  the contrast — `TasksListView` and `ListDetailComponents` feed their frozen order from
+  `openTasks`, so only their freeze filter was wrong; the kanban columns open-code both halves.
 
-- [T-393] **A restored old backup can keep `Pursuit` rows forever, because the migration is gated on
-  a global flag rather than on content.** Inferred, not measured — the ticket keeps that.
-  `PursuitToGoalMigration.runIfNeeded` skips when `pursuitToGoalMigration.v1.completed` is true in
-  `UserDefaults`, and restore runs *before* startup maintenance. So a device that already migrated,
-  then restores a backup containing `Pursuit` rows, skips the migration and leaves them stranded —
-  and the privacy reset clears restore flags but not migration flags.
-  Fix: make the check content-aware. Either run the idempotent migration until `Pursuit` leaves the
-  schema, or, when the flag is set, still look for surviving rows.
-
-- [T-394] **`ios.notes.activeCoreTab` is documented as orphaned and never purged.** P3, cleanup only,
-  no live behaviour bug — no reader or writer remains. Verified: `retiredKeys` in
-  `CadenceNotesEditorPreferences` contains **zero** mentions of it, while the purge mechanism,
-  its startup call, and its tests already exist for exactly this. Add the key, update the doc
-  comment, extend the test.
+- [T-400] **A dead calendar link can be detected with no stored metadata at all.** Residue from
+  [[T-390]], which decided not to store calendar title/source because that needs stored properties
+  on two `@Model` types and this project has no `SchemaMigrationPlan`. Detection needs none of it: a
+  non-empty `linkedCalendarID` that no live `EKCalendar` carries is already enough to show a "linked
+  calendar is missing" row with a re-pick affordance. Still no auto-matching by title — the point is
+  to make the break visible, not to guess a replacement.
 
 - [T-391] **Habit day quantity split across rows now reads lower.** Residue from [[T-359]]'s
   `max`-not-`sum` decision. The old test `dailyStreakCountsSummedCompletionsAcrossMultipleRecordsForSameDay`
@@ -80,36 +67,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   archive import ([[T-274]]). If either turns out to exist, the collapse needs to be
   `max(count) per row-set` rather than plain `max`, or repair needs to fold split rows before
   collapsing.
-
-- [T-389] **macOS edits a meeting note, fails to mirror it to Apple Calendar, and says nothing.**
-  External ID stability audit (Codex, 2026-08-27, read at `84bc624`, clean tree).
-  **Verified:** `CadenceEventNoteSupport.commitNote` — which saves Cadence first, then reports
-  whether Apple Calendar accepted the mirror write — is called from exactly one place,
-  `iOS/iOSEventNoteEditorSheet.swift:181`. macOS goes through
-  `EventNoteSupportViews.syncNativeCalendarNotes` instead and **discards the return value**, while
-  `CalendarManager.updateEventNotes(calendarEventID:)` returns `nil` when the stored EventKit id no
-  longer resolves.
-  So on a Mac, editing a note whose `calendarEventID` is stale or replaced keeps editing locally,
-  never reaches Apple Calendar, and produces none of iOS's "saved but not synced" notice. The
-  shared helper is right and tested; macOS bypasses its outcome model. Extends the pattern already
-  closed as T-325 to the desktop surface.
-  Fix: route macOS through `commitNote`, or make `syncNativeCalendarNotes` return a typed result and
-  surface the miss.
-
-- [T-390] **A list's calendar link is a raw EventKit id with no recovery path, and nothing says
-  whether that is intentional.** P3, **inferred, not measured** — the ticket keeps that distinction.
-  Verified: `Area.swift:18` and `Project.swift:19` store `linkedCalendarID` as a bare
-  `EKCalendar` identifier, and **zero** title or source metadata is stored anywhere alongside it.
-  Event notes filter by exact stored calendar id, and hidden-calendar preferences use the same
-  id-only set.
-  If Apple Calendar deletes and recreates a calendar, or an import produces an equivalent calendar
-  under a new id, the link silently points at nothing — and relinking leaves old meeting notes
-  attached to the old id.
-  **This may be fine.** Raw id storage is acceptable if EventKit identifiers are treated as
-  permanent; the real gap is that the app never states that contract or tests it. So the decision
-  comes first: either document that these ids are opaque and unrecoverable, or store title and
-  source so a stale link can warn and offer rebinding. **Do not auto-match by title without a
-  conflict UI** — silently rebinding a calendar link is worse than leaving it broken.
 
 - [T-387] **Three subtask-creation paths set only one side of the relationship, and the house rule
   says not to.** SwiftData to-many traversal audit (Codex, 2026-08-27, read at `84bc624`, clean
@@ -281,18 +238,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   mutation, and delete commit — **after** each shared wrapper exists, not before, or the test
   becomes a brittle census of scattered call sites.
 
-- [T-357] **`TaskCompletionAnimationManager` bypasses the shared status path when it has no context
-  — and that is now the second bypass found in that one file.** From the same audit; **inferred, not
-  measured**, and the entry keeps that: the manager's context is set on root appear and it is
-  injected app-wide, so the contextless branch probably never runs in the shipping app. If it did,
-  a recurring task completed through it would not spawn its successor.
-  **Read it together with [[T-341]]**, which found the *same file* writing `task.status = .todo`
-  directly at line 102 while calling the correct helper at line 41. Two independent audits, two
-  different bypasses, one file. That is no longer a coincidence worth two tickets — whoever fixes
-  T-341 should route **every** status write in that manager through the shared helper and pin that
-  no direct `task.status =` assignment survives there.
-  Hardening, not a production bug. Say so in the commit rather than inflating it.
-
 - [T-354] **`review launch plan !!!` becomes a high-priority task in the app and a literal title in
   the widget.** From the same audit, premise verified: `TaskCreationService` resolves the shortcut
   through `TaskTitleSupport.priorityShortcut`, and `CadenceWidgetIntents` references it **zero**
@@ -319,25 +264,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Note the audit also reported [[T-301]] as looking already fixed. It is being fixed **right now**
   in uncommitted work — the audit ran against the dirty tree and read an agent's in-flight change.
   Not stale on `main`; do not close it on that basis until that work lands.
-
-- [T-351] **A list with an old remembered tab opens the global default instead of Tasks.** From the
-  navigation-persistence audit (Codex, 2026-08-27); **premise verified.**
-  `ListDetailView.restoreRememberedTab()` reads the per-list value through the *failable*
-  `ListDetailPage(rawValue:)` and, when that returns nil, falls back to
-  `resolved(defaultPageRawValue)` — the user's **global** default. The shared rule
-  `ListDetailPage.resolved(_:)` exists precisely to map a stale raw value to the canonical page, and
-  this path never calls it with the stale value.
-  So a list still holding a removed tab name like `Planning` opens **Links** if that is the global
-  default, rather than Tasks. And this is not hypothetical: `ListDetailPageTests` explicitly
-  documents that per-list remembered tabs can contain old `Planning` values.
-  One-line fix — resolve the remembered raw value itself rather than discarding it. Test with a
-  stored `Planning`, a global default of `Links`, and an expected `Tasks`.
-
-  **Extended by the UserDefaults lifecycle audit (2026-08-27):** the fix site is
-  `ListDetailView.restoreRememberedTab()`, which uses failable `ListDetailPage(rawValue:)` and, when
-  that returns nil, discards the stale per-list value and falls back to the **global** default —
-  rather than calling `ListDetailPage.resolved(_:)`, which exists to map stale raw values to
-  `.tasks`. Test: stored per-list `"Planning"`, global default `"Links"`, expect `.tasks`.
 
 - [T-352] **DECIDE: should the root destination persist? A comment already says it does.** From the
   same audit; **premise verified** — `macOSRootView` holds the selection in `@State` with **zero**
@@ -368,27 +294,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   behaviour must stay — the markdown reference remains, the actions stop working. Test the helper,
   not the private SwiftUI methods.
 
-- [T-341] **Restoring a cancelled task on macOS leaves its completion timestamp behind.** From the
-  status-lifecycle audit (Codex, 2026-08-27); **premise verified, and the framing is tighter than
-  reported.** `TaskCompletionAnimationManager` calls `TaskWorkflowService.markTodo(task)` at line
-  **41** — the correct path, which clears `completedAt` — and then at line **102**, in the same
-  file, the cancelled branch assigns `task.status = .todo` directly. So restoring a cancelled task
-  leaves a non-nil `completedAt` on an open task, violating the lifecycle invariant, and skips the
-  reconcile the wrapper performs.
-  Not two files disagreeing across a platform boundary: **one file disagreeing with itself, sixty
-  lines apart.** The existing test asserts the status and not the timestamp, which is why it
-  survived. Smallest live invariant bug on this list — fix it first, and extend the test to assert
-  `completedAt == nil`.
-
-- [T-342] **A frozen macOS surface drops tasks that became done, but keeps ones that became
-  cancelled.** From the same audit, premise verified: `TaskSurfaceFreezeModels` filters
-  `{ !$0.isDone }` in two places and never considers `isCancelled`. So a task cancelled while a
-  surface is frozen stays visible in an active frozen group until the freeze releases.
-  **The app already has the right predicate** — `CadenceTaskQuerySupport.isFinishedTask` defines
-  finished as done *or* cancelled, and the logbook and history already use it. The freeze filter
-  simply predates or ignores it. Existing tests pin the done case and not the cancelled one, which
-  is the same shape as [[T-341]]: half a rule tested, so half a rule implemented.
-
 - [T-343] **Six iOS paths change a task's status without reconciling its notifications.** From the
   same audit; **measured in source, runtime impact inferred.** The row actions, task views, board
   cards, markdown surface, bundle sheet and focus view all complete or reopen through the pure
@@ -400,15 +305,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   The audit's own constraint is the important half: **do not push the reconcile into the shared
   helper**, because widgets and MCP use the same mutation paths and must not schedule app-side
   notifications. An iOS-side wrapper, or explicit call sites.
-
-- [T-344] **DECISION NEEDED: what does the completion circle mean on a cancelled task?** From the
-  same audit, and filed as a question because the behaviour may be deliberate.
-  The shared toggle treats any non-done task as "mark done", cancelled included. The iOS detail
-  sheet's comments say that is intended — the circle owns done/todo, the cancel button owns
-  cancelled/restore. But the row's swipe label shows **"Done"** on a cancelled task rather than
-  "Restore", so the two surfaces describe the same gesture differently.
-  Either is defensible; the current state is that nothing pins which. Decide, then pin it with one
-  test or one comment — the audit's own recommendation, and the right one.
 
 - [T-340] **Two more places a task keeps a context its owner no longer has.** Found while closing
   [[T-292]] and [[T-293]], and deliberately not folded in.

@@ -33,6 +33,23 @@ enum ListDetailPage: String, CaseIterable, Identifiable, Hashable {
         ListDetailPage(rawValue: rawValue) ?? defaultPage
     }
 
+    /// The page a list opens on: its own remembered tab when it has one, the user's global
+    /// default when it does not.
+    ///
+    /// **The stale case belongs to the list, not to the default.** macOS's restore used to read
+    /// the per-list value through the failable `init(rawValue:)` and, when that returned `nil`,
+    /// throw the value away and fall back to `resolved(defaultPageRawValue)`. So a list still
+    /// holding `Planning` — the value `ListDetailPageTests` documents as live on disk — opened on
+    /// **Links** if that was the global default, rather than on Tasks. A stale remembered tab is
+    /// an unrecognised page name, which is exactly what `resolved(_:)` exists to map to Tasks;
+    /// it is not evidence that the user wanted their global default for this list. T-351.
+    static func rememberedPage(storedRawValue: String?, defaultPageRawValue: String) -> ListDetailPage {
+        guard let storedRawValue, !storedRawValue.isEmpty else {
+            return resolved(defaultPageRawValue)
+        }
+        return resolved(storedRawValue)
+    }
+
     /// The tab bars themselves are text-only; this is used by the Settings "default list page"
     /// picker.
     var icon: String {

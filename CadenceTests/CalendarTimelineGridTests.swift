@@ -101,6 +101,118 @@ struct CadenceCalendarZoomTests {
         #expect(zoomedIn == maximumOffset, "got \(zoomedIn), wanted \(maximumOffset)")
     }
 
+    /// Settings and the pinch are two ends of **one** preference, and they drifted because
+    /// Settings re-spelled the key as a literal and declared it `Int`. A stored `1.5` read back
+    /// there as `1`: the wrong density shown, and a coarse integer written over a continuous zoom
+    /// the moment the row was touched. So the literal may appear exactly once in shipping
+    /// source — on `CadenceCalendarZoom.storageKey` — and both readers go through it. T-392.
+    @Test
+    func theZoomKeyIsSpelledOnceInShippingSource() throws {
+        let sourceRoot = CadenceSourceScan.repositoryRoot().appendingPathComponent("Cadence")
+        let enumerator = try #require(
+            FileManager.default.enumerator(at: sourceRoot, includingPropertiesForKeys: nil)
+        )
+
+        // `matchCount` answers -1 for a pattern that does not compile, which a `== 0` assertion
+        // would sail straight past. Prove the pattern finds the literal before trusting a miss.
+        let pattern = "\"ios\\.calendar\\.zoomLevel\""
+        #expect(CadenceSourceScan.matchCount(pattern, in: "\"ios.calendar.zoomLevel\"") == 1)
+        #expect(CadenceSourceScan.matchCount(pattern, in: "CadenceCalendarZoom.storageKey") == 0)
+
+        var scannedFiles = 0
+        var strippedSomething = false
+        var keptItsLength = true
+        var spellings: [String] = []
+        for case let url as URL in enumerator where url.pathExtension == "swift" {
+            scannedFiles += 1
+            let raw = try String(contentsOf: url, encoding: .utf8)
+            let code = CadenceSourceScan.strippingComments(raw)
+            if code != raw { strippedSomething = true }
+            if code.count != raw.count { keptItsLength = false }
+            for _ in 0..<max(0, CadenceSourceScan.matchCount(pattern, in: code)) {
+                spellings.append(url.lastPathComponent)
+            }
+        }
+
+        // Non-vacuity: a scan that read nothing, or stripped nothing, proves nothing. The
+        // stripper blanks comments to spaces of equal length, so the pair is `!=` and `count ==`.
+        #expect(scannedFiles > 400, "the scan read only \(scannedFiles) Swift files")
+        #expect(strippedSomething, "the comment stripper never fired, so it read prose as code")
+        #expect(keptItsLength, "the comment stripper changed a file's length, so it is not blanking")
+        #expect(spellings == ["CadenceCalendarTimedGridSupport.swift"], "got \(spellings)")
+    }
+
+    /// The other half of the drift: the type. Settings' picker binding is a SwiftUI `@Binding`
+    /// inside an iOS-only view, which the macOS test target cannot reach, so this reads it.
+    @Test
+    func theSettingsDensityPickerIsBoundAsADouble() throws {
+        // Needle self-check: it must match the spelling being banned and must not match the one
+        // being required, or a `== 0` result says nothing about the file.
+        #expect(CadenceSourceScan.matchCount("calendarZoomLevel: Int\\b", in: "var calendarZoomLevel: Int") == 1)
+        #expect(CadenceSourceScan.matchCount("calendarZoomLevel: Int\\b", in: "var calendarZoomLevel: Double") == 0)
+        #expect(CadenceSourceScan.matchCount("calendarZoomLevel = 1\\b", in: "var calendarZoomLevel = 1") == 1)
+        #expect(
+            CadenceSourceScan.matchCount(
+                "calendarZoomLevel = 1\\b",
+                in: "var calendarZoomLevel = CadenceCalendarZoom.defaultZoom"
+            ) == 0
+        )
+
+        for path in [
+            "Cadence/iOS/iOSSettingsView.swift",
+            "Cadence/iOS/iOSSettingsOverviewSections.swift"
+        ] {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            let source = CadenceSourceScan.strippingComments(raw)
+            #expect(source != raw, "the comment stripper never fired on \(path)")
+            #expect(source.count == raw.count, "the comment stripper changed \(path)'s length")
+            #expect(source.contains("calendarZoomLevel"), "\(path) no longer mentions the zoom binding")
+            #expect(
+                CadenceSourceScan.matchCount("calendarZoomLevel: Int\\b", in: source) == 0,
+                "\(path) still types the shared zoom preference as an Int"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("calendarZoomLevel = 1\\b", in: source) == 0,
+                "\(path) still defaults the shared zoom preference to an Int literal"
+            )
+        }
+    }
+
+    /// **The decision, pinned:** the picker does not snap. A pinch writes a continuous multiplier,
+    /// and a value between two presets is preserved and reported as Custom — with no density row
+    /// checked — until the user picks one. Rounding it into the nearest density would be the same
+    /// lie the `Int` binding told, one step quieter.
+    @Test
+    func aPinchedZoomIsPreservedAndReadsAsCustomRatherThanSnapping() {
+        #expect(CadenceCalendarZoom.densityTitle(for: 1) == "Compact")
+        #expect(CadenceCalendarZoom.densityTitle(for: 2) == "Comfort")
+        #expect(CadenceCalendarZoom.densityTitle(for: 3) == "Spacious")
+
+        for pinched in [1.2, 1.5, 2.4, 2.99] {
+            #expect(
+                CadenceCalendarZoom.densityPreset(matching: pinched) == nil,
+                "\(pinched) was matched to a preset it is not at"
+            )
+            #expect(CadenceCalendarZoom.densityTitle(for: pinched) == CadenceCalendarZoom.customDensityTitle)
+            // Preserved, not snapped: nothing about naming it rewrites it.
+            #expect(CadenceCalendarZoom.clamp(pinched) == pinched)
+        }
+    }
+
+    /// Every preset the picker offers is a zoom the grid can actually be at, and picking one
+    /// writes a value that reads back as that same preset.
+    @Test
+    func everyDensityPresetIsALegalZoomThatRoundTrips() {
+        #expect(CadenceCalendarZoom.densityPresets.count == 3)
+        #expect(Set(CadenceCalendarZoom.densityPresets.map(\.title)).count == 3)
+        for preset in CadenceCalendarZoom.densityPresets {
+            #expect(CadenceCalendarZoom.clamp(preset.zoom) == preset.zoom)
+            #expect(CadenceCalendarZoom.densityPreset(matching: preset.zoom)?.title == preset.title)
+        }
+        #expect(CadenceCalendarZoom.densityPresets.first?.zoom == CadenceCalendarZoom.defaultZoom)
+        #expect(CadenceCalendarZoom.densityPresets.last?.zoom == CadenceCalendarZoom.maximum)
+    }
+
     /// The migration, **observed rather than assumed**.
     ///
     /// `ios.calendar.zoomLevel` held an `Int` written by the `− 1x +` control, and the property that

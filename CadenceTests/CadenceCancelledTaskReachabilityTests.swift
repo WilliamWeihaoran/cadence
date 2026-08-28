@@ -902,8 +902,11 @@ struct CadenceCancelledTaskReachabilityTests {
     /// its circle beside a full-contrast, un-struck title. It reads the shared settled state now —
     /// which is also what resolved that circle — and mentions `isCancelled` nowhere itself.
     ///
-    /// The three surviving `task.isDone` mentions are the accessibility label, the over-do test and
-    /// the due-urgency call, each of which correctly asks about *done* specifically.
+    /// The two surviving `task.isDone` mentions are the over-do test and the due-urgency call, each
+    /// of which correctly asks about *done* specifically. The accessibility label used to be a third
+    /// — T-344 moved it onto the shared finished predicate, because the label describes a gesture
+    /// that now restores a cancelled task as well as a done one, and a label that disagrees with the
+    /// gesture it names was the concrete complaint T-344 was filed about.
     @Test func theIOSRowAndTheInspectorTitleBothReadTheSharedSettledState() throws {
         try expectOccurrences(
             of: "isSettled",
@@ -929,7 +932,7 @@ struct CadenceCancelledTaskReachabilityTests {
         )
         try expectOccurrences(
             of: "task.isDone",
-            at: ["Cadence/iOS/iOSTaskViews.swift": 3]
+            at: ["Cadence/iOS/iOSTaskViews.swift": 2]
         )
     }
 

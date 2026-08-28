@@ -4,11 +4,14 @@ import SwiftUI
 
 /// The inspector's identity block: completion control + title + estimate on one row.
 ///
-/// **The control on the left completes the task**, and it is the only thing in the sheet that
-/// writes `.done`. macOS makes the equivalent tile its priority control and puts completion in the
-/// foot buttons; iOS goes the other way on purpose. Completing is the dominant touch action, and
-/// every task row on this platform already teaches "tinted circle, tap to complete" — the sheet
-/// having a *different* meaning for the same glyph would be the surprise. Priority is what the
+/// **The control on the left settles the task**, and it is the only thing in the sheet that
+/// writes `.done`. T-344 decided what it means on a *cancelled* task: it is a settled/open toggle,
+/// so it restores that task to todo rather than completing it — see
+/// `CadenceTaskMutationSupport.toggleCompletion` for why that way round. macOS makes the equivalent
+/// tile its priority control and puts completion in the foot buttons; iOS goes the other way on
+/// purpose. Completing is the dominant touch action, and every task row on this platform already
+/// teaches "tinted circle, tap to complete" — the sheet having a *different* meaning for the same
+/// glyph would be the surprise. Priority is what the
 /// circle is tinted by, exactly as in `iOSTaskRow`, and is edited in the one place it is editable:
 /// the Priority row below.
 ///
@@ -49,7 +52,7 @@ struct iOSTaskEditorTitleCard: View {
                 .iOSExpandedHitArea((44 - glyphSize) / 2)
             }
             .buttonStyle(.iosPressable)
-            .accessibilityLabel(task.isDone ? "Mark task todo" : "Complete task")
+            .accessibilityLabel(CadenceTaskQuerySupport.isFinishedTask(task) ? "Mark task todo" : "Complete task")
             // Aligns the circle with the first line of a title that may wrap to three — derived
             // from the circle and the title it sits beside, so it cannot fall out of step with
             // either.

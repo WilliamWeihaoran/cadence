@@ -163,7 +163,9 @@ struct iOSLocalDataSettingsSection: View {
 struct iOSNavigationSettingsSection: View {
     @Binding var calendarViewMode: CadenceCalendarViewMode
     @Binding var calendarPresentation: CadenceCalendarPresentation
-    @Binding var calendarZoomLevel: Int
+    /// The timed grid's zoom multiplier, the same `Double` the calendar's pinch writes. Typed
+    /// `Int` here until T-392, against a key the calendar had already made continuous.
+    @Binding var calendarZoomLevel: Double
     @State private var openPicker: DefaultsPicker?
 
     private enum DefaultsPicker: String, Identifiable {
@@ -173,12 +175,6 @@ struct iOSNavigationSettingsSection: View {
 
         var id: String { rawValue }
     }
-
-    private static let densityLabels: [(value: Int, title: String)] = [
-        (1, "Compact"),
-        (2, "Comfort"),
-        (3, "Spacious")
-    ]
 
     var body: some View {
         iOSEditorSection(title: "Defaults") {
@@ -244,10 +240,10 @@ struct iOSNavigationSettingsSection: View {
             valueButton(densityTitle, picker: .timelineDensity)
                 .popover(isPresented: isPresented(.timelineDensity)) {
                     iOSChoicePopoverList(
-                        rows: Self.densityLabels.map { option in
+                        rows: CadenceCalendarZoom.densityPresets.map { preset in
                             iOSChoiceRow(
-                                value: option.value,
-                                title: option.title,
+                                value: preset.zoom,
+                                title: preset.title,
                                 systemImage: "arrow.up.and.down",
                                 color: Theme.amber
                             )
@@ -259,8 +255,10 @@ struct iOSNavigationSettingsSection: View {
         }
     }
 
+    /// A pinch can leave the zoom between two presets. That reads as Custom rather than being
+    /// rounded into a density the grid is not at — see `CadenceCalendarZoom.customDensityTitle`.
     private var densityTitle: String {
-        Self.densityLabels.first { $0.value == calendarZoomLevel }?.title ?? Self.densityLabels[0].title
+        CadenceCalendarZoom.densityTitle(for: calendarZoomLevel)
     }
 
     /// The value half of a row. `minHeight` hands the row's own 44pt to the button, because here

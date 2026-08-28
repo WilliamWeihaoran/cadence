@@ -251,6 +251,156 @@ struct CadenceEventKitPlatformParityTests {
         #expect(code.contains("func updateEventNotes(calendarEventID: String, notes: String) -> Bool"))
     }
 
+    // MARK: - T-389: the desktop reports the same miss iOS does
+
+    /// The stale-id case, on the manager macOS actually calls.
+    ///
+    /// `updateEventNotes(calendarEventID:)` looks the id up and, when nothing comes back, used to
+    /// `return nil` — which in this API is the *success* value, the same thing a completed write
+    /// returns. So a note whose `calendarEventID` no longer resolves reported that Apple Calendar
+    /// had taken the change. iOS's overload has always answered `false` here for exactly this
+    /// reason ("an identifier that resolves to nothing is a sync that did not happen").
+    #if os(macOS)
+    @Test func aStoredEventIdThatResolvesToNothingIsAFailureAndNotASilentSuccess() {
+        // Nothing here forces `isAuthorized`, deliberately. A fabricated identifier resolves to
+        // nothing on an unauthorized machine *and* on an authorized one, so the test needs no
+        // seam — and `CalendarManagerScenarioTests` already toggles this singleton, which is not
+        // state two suites should be writing at once.
+        let manager = CalendarManager.shared
+
+        #expect(manager.event(withIdentifier: "cadence-tests-no-such-event") == nil)
+        let result = manager.updateEventNotes(calendarEventID: "cadence-tests-no-such-event", notes: "Body")
+        #expect(result != nil, "an unresolvable id reported success")
+        #expect(result == .eventNotFound)
+    }
+
+    /// The desktop mirror helper has to be able to answer, or `commitNote`'s second half is a
+    /// guess. This is the macOS counterpart of `theIOSNoteSyncReportsWhetherAppleCalendarTookIt`,
+    /// except that `EventNoteSupport` is compiled into this target, so it is checked by running it
+    /// rather than by reading it.
+    @Test func theMacNoteSyncReportsWhetherAppleCalendarTookIt() {
+        let manager = CalendarManager.shared
+
+        let stale = Note(kind: .meeting, title: "Standup", calendarEventID: "cadence-tests-no-such-event")
+        #expect(EventNoteSupport.syncNativeCalendarNotes(for: stale, content: "Body", calendarManager: manager) == false)
+
+        // A note with nothing to mirror into has nothing that can fail, so it is not a miss —
+        // otherwise every ordinary note would wear the "not synced" notice.
+        let notAnEventNote = Note(kind: .permanent, title: "Notepad")
+        #expect(EventNoteSupport.syncNativeCalendarNotes(for: notAnEventNote, content: "Body", calendarManager: manager) == true)
+        let meetingWithoutAnEvent = Note(kind: .meeting, title: "Orphan")
+        #expect(EventNoteSupport.syncNativeCalendarNotes(for: meetingWithoutAnEvent, content: "Body", calendarManager: manager) == true)
+    }
+    #endif
+
+    /// Both macOS editors of an event note must go through the shared outcome helper and show its
+    /// notice. Views cannot be driven from a unit test, so the wiring is pinned by reading it —
+    /// positively, and comment-stripped.
+    ///
+    /// `NotesView`'s Event Notes tab is here because it is the same defect one surface further on:
+    /// it edited meeting notes through a bare `NoteEditorPane` with no `onPersistContent` at all,
+    /// so that editor never reached Apple Calendar under any circumstances.
+    @Test func bothMacEventNoteEditorsCommitThroughTheSharedOutcomeHelper() throws {
+        for path in [
+            "Cadence/macOS/Views/EventNoteSupportViews.swift",
+            "Cadence/macOS/Views/NotesView.swift"
+        ] {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            let code = CadenceSourceScan.strippingComments(raw)
+            #expect(code.count == raw.count, "the stripper must blank, never shorten")
+
+            #expect(code.contains("CadenceEventNoteSupport.commitNote("), "\(path) does not commit through the helper")
+            #expect(code.contains("commitNotice = "), "\(path) never stores the outcome notice")
+            #expect(code.contains("EventNoteCommitNoticeBanner("), "\(path) never shows the outcome notice")
+        }
+
+        // The mirror helper must hand its answer back, and must not let a caller drop it — the
+        // whole of T-389 was one discarded return value.
+        let support = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/EventNoteSupportViews.swift")
+        )
+        #expect(support.contains("static func syncNativeCalendarNotes(for note: Note, content: String, calendarManager: CalendarManager) -> Bool"))
+        #expect(CadenceSourceScan.matchCount("@discardableResult\\s+static func syncNativeCalendarNotes", in: support) == 0)
+    }
+
+    // MARK: - T-390: a list's calendar link is the identifier and nothing else
+
+    /// The decision recorded for T-390: `linkedCalendarID` is an opaque, permanent EventKit
+    /// identifier, stored alone, and a link whose calendar was deleted and recreated stays visibly
+    /// dead rather than being re-matched.
+    ///
+    /// This is the half a test can hold on to. Storing a title and source beside the id is the
+    /// other branch of that decision and is **not** taken: it is a stored-property change to two
+    /// `@Model` types and this project has no `SchemaMigrationPlan`. So the contract is that the id
+    /// is the whole link, and this fails the moment someone adds companion metadata without doing
+    /// the migration work first.
+    @Test func aListsCalendarLinkStoresTheIdentifierAndNoCompanionMetadata() throws {
+        for path in ["Cadence/Models/Area.swift", "Cadence/Models/Project.swift"] {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            let code = CadenceSourceScan.strippingComments(raw)
+
+            #expect(code.contains("var linkedCalendarID: String = \"\""), "\(path) no longer stores the link as a bare id")
+            #expect(
+                CadenceSourceScan.matchCount("var +linkedCalendar[A-Za-z]*", in: code) == 1,
+                "\(path) grew a second linkedCalendar* stored property; that needs a SchemaMigrationPlan"
+            )
+            // The assumption has to be written down where a model edit will meet it, not merely
+            // be true. Comments are read from the raw source here, deliberately.
+            #expect(raw.contains("T-390"), "\(path) does not state the calendar-link contract")
+        }
+    }
+
+    /// The behavioural half: a calendar that Apple Calendar deleted and recreated comes back under
+    /// a new identifier, and the old link must not quietly adopt it.
+    ///
+    /// Event-note lookup has a date/title fallback for events whose *event* id churned, and that
+    /// fallback is the one place a recreated calendar could leak in. It requires an exact
+    /// `calendarID` match, so it does not. Auto-matching by title without a conflict UI is worse
+    /// than a visibly broken link, and this is what keeps it out.
+    @Test func aRecreatedCalendarNeverAdoptsTheOldLinksNotes() {
+        let note = Note(
+            kind: .meeting,
+            title: "Weekly Sync",
+            calendarEventID: "event-1",
+            calendarID: "calendar-before",
+            eventDateKey: "2026-06-01",
+            eventStartMin: 540,
+            eventEndMin: 600
+        )
+
+        // Same event, same day, same minutes, same title — only the calendar identifier moved.
+        #expect(
+            CadenceEventNoteSupport.note(
+                for: "event-2",
+                eventTitle: "Weekly Sync",
+                calendarID: "calendar-after",
+                eventDateKey: "2026-06-01",
+                eventStartMin: 540,
+                eventEndMin: 600,
+                in: [note]
+            ) == nil
+        )
+        // The identical call under the stored id still resolves, so the guard above is the
+        // calendar identifier and not the fallback being broken outright.
+        #expect(
+            CadenceEventNoteSupport.note(
+                for: "event-2",
+                eventTitle: "Weekly Sync",
+                calendarID: "calendar-before",
+                eventDateKey: "2026-06-01",
+                eventStartMin: 540,
+                eventEndMin: 600,
+                in: [note]
+            ) === note
+        )
+
+        // The list-scoped read is the same exact-id rule: a dead link shows nothing rather than
+        // showing someone else's notes.
+        #expect(CadenceEventNoteSupport.meetingNotes(forLinkedCalendarID: "calendar-after", in: [note]).isEmpty)
+        #expect(CadenceEventNoteSupport.meetingNotes(forLinkedCalendarID: "", in: [note]).isEmpty)
+        #expect(CadenceEventNoteSupport.meetingNotes(forLinkedCalendarID: "calendar-before", in: [note]).count == 1)
+    }
+
     // MARK: - Non-vacuity
 
     /// Every source-reading test above passes trivially if the read returns nothing, so prove the

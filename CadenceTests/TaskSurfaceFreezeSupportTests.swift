@@ -44,6 +44,43 @@ struct TaskSurfaceFreezeSupportTests {
         #expect(result.map(\.title) == ["a"])
     }
 
+    /// T-342. The done case above has been pinned since the freeze was written; this is its other
+    /// half. `applyFrozenTaskOrder` filtered on `!$0.isDone`, and a cancelled task is not `isDone`,
+    /// so cancelling a row while a surface was frozen left it pinned at the head of an *active*
+    /// list until the freeze released — while completing the row beside it removed it at once.
+    @Test func applyFrozenTaskOrderDropsTasksThatBecameCancelledWhileFrozen() {
+        let a = task(title: "a", order: 0)
+        let b = task(title: "b", order: 1)
+        b.status = .cancelled
+
+        let result = applyFrozenTaskOrder([a], frozen: [a, b])
+
+        #expect(result.map(\.title) == ["a"])
+    }
+
+    /// Says the rule rather than two of its cases: whatever `CadenceTaskQuerySupport.isFinishedTask`
+    /// calls finished leaves the frozen order, and whatever it calls open stays. Adding a fifth
+    /// `TaskStatus` cannot leave this test pinning only the statuses that existed when it was
+    /// written.
+    @Test func theFrozenOrderKeepsExactlyTheStatusesTheSharedPredicateCallsOpen() {
+        for status in TaskStatus.allCases {
+            let held = task(title: "held", order: 0)
+            held.status = status
+
+            let result = applyFrozenTaskOrder([], frozen: [held])
+            let isFinished = CadenceTaskQuerySupport.isFinishedTask(held)
+
+            #expect(
+                result.isEmpty == isFinished,
+                "\(status) is \(isFinished ? "finished" : "open") but the freeze \(result.isEmpty ? "dropped" : "kept") it"
+            )
+        }
+        // Non-vacuity: the loop must have seen both answers, not four of one.
+        #expect(TaskStatus.allCases.contains(.done))
+        #expect(TaskStatus.allCases.contains(.cancelled))
+        #expect(TaskStatus.allCases.contains(.todo))
+    }
+
     @Test func applyFrozenTaskOrderDoesNotDuplicateATaskPresentInBothLists() {
         let a = task(title: "a", order: 0)
         let b = task(title: "b", order: 1)
@@ -84,6 +121,38 @@ struct TaskSurfaceFreezeSupportTests {
         let resolved = resolveFrozenTaskGroups(snapshot, from: [a])
 
         #expect(resolved?.isEmpty == true)
+    }
+
+    /// The group resolver's half of T-342. A frozen group whose only task was cancelled used to
+    /// survive its own `isEmpty` check and keep rendering an empty-in-spirit section.
+    @Test func resolveFrozenTaskGroupsDropsGroupsHoldingOnlyCancelledTasks() {
+        let a = task(title: "a", order: 0)
+        a.status = .cancelled
+        let snapshot = [
+            FrozenTaskGroupSnapshot(id: "g1", title: "Group 1", accent: Theme.blue, taskIDs: [a.id])
+        ]
+
+        let resolved = resolveFrozenTaskGroups(snapshot, from: [a])
+
+        #expect(resolved?.isEmpty == true)
+    }
+
+    /// Done and cancelled, side by side in one group, must both go — the asymmetry T-342 reported
+    /// is only visible when the two are compared in the same call.
+    @Test func resolveFrozenTaskGroupsTreatsDoneAndCancelledAlike() {
+        let finishedDone = task(title: "done", order: 0)
+        finishedDone.status = .done
+        let finishedCancelled = task(title: "cancelled", order: 1)
+        finishedCancelled.status = .cancelled
+        let open = task(title: "open", order: 2)
+        let all = [finishedDone, finishedCancelled, open]
+        let snapshot = [
+            FrozenTaskGroupSnapshot(id: "g1", title: "Group 1", accent: Theme.blue, taskIDs: all.map(\.id))
+        ]
+
+        let resolved = resolveFrozenTaskGroups(snapshot, from: all)
+
+        #expect(resolved?.first?.tasks.map(\.title) == ["open"])
     }
 
     @Test func resolveFrozenTaskGroupsSkipsTaskIDsThatNoLongerExist() {

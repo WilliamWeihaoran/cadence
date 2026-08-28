@@ -24,6 +24,46 @@ enum CadenceCalendarZoom {
     /// above sits with the key it is about.
     static let storageKey = "ios.calendar.zoomLevel"
 
+    /// The densities Settings offers, and the labels it offers them under.
+    ///
+    /// Stated here rather than in the Settings section because the *values* belong to the zoom
+    /// rather than to the picker, and because of how T-392 happened: Settings re-spelled the key
+    /// as a literal and declared it `Int`, so a pinch that stored `1.5` read back there as `1`,
+    /// showed the wrong density, and overwrote the continuous zoom with a coarse integer the
+    /// moment the user touched the row. One key, one type, one list of presets.
+    struct DensityPreset: Identifiable, Hashable {
+        let zoom: Double
+        let title: String
+
+        var id: Double { zoom }
+    }
+
+    static let densityPresets: [DensityPreset] = [
+        DensityPreset(zoom: 1, title: "Compact"),
+        DensityPreset(zoom: 2, title: "Comfort"),
+        DensityPreset(zoom: 3, title: "Spacious")
+    ]
+
+    /// What a zoom between two presets is called.
+    ///
+    /// **The picker does not snap.** A pinch is the primary control here and it writes a
+    /// continuous multiplier; rounding that to the nearest density the moment Settings opens
+    /// would throw away a zoom the user set deliberately, and naming it after a preset the grid
+    /// is not actually at is the same lie the `Int` binding told. So a fractional zoom is
+    /// preserved and reported as Custom, with no density row checked, until the user picks one —
+    /// and picking one writes that preset's multiplier through this same key.
+    static let customDensityTitle = "Custom"
+
+    /// The preset a stored zoom *is*, or `nil` when it sits between two of them.
+    static func densityPreset(matching zoom: Double) -> DensityPreset? {
+        let clamped = clamp(zoom)
+        return densityPresets.first { abs($0.zoom - clamped) < 0.0001 }
+    }
+
+    static func densityTitle(for zoom: Double) -> String {
+        densityPreset(matching: zoom)?.title ?? customDensityTitle
+    }
+
     static func clamp(_ zoom: Double) -> Double {
         guard zoom.isFinite else { return defaultZoom }
         return min(max(zoom, minimum), maximum)

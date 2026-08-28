@@ -2,8 +2,33 @@ import Foundation
 import SwiftData
 
 enum CadenceTaskMutationSupport {
+    /// **T-344, decided: the completion circle toggles *settled*, not *done*.** Tapping it on a
+    /// cancelled task restores it to todo, exactly as tapping it on a done task does. It does not
+    /// convert an abandoned task into an accomplished one.
+    ///
+    /// The circle is already *painted* by that rule — `CadenceTaskCompletionGlyph` gives `.done`
+    /// and `.cancelled` a filled glyph, and `CadenceTaskCompletionState.isSettled` covers both, so
+    /// the row's strikethrough and dimming already treat the two alike. Deciding the *action* on
+    /// `isDone` while deciding the *appearance* on settled is one rule spelled two ways, which is
+    /// the exact shape of T-147, T-203 and T-342. `isFinishedTask` is the name this codebase
+    /// already gave that rule; reading it here makes the glyph and the gesture agree: a filled
+    /// circle un-settles, an empty circle settles as done.
+    ///
+    /// Two consequences worth stating rather than discovering:
+    ///
+    /// - **Cancelled → done is two taps now** (restore, then complete), which is also how you would
+    ///   say it out loud. That is the right direction for the asymmetry: `markDone` stamps
+    ///   `completedAt` and spawns the next occurrence of a recurring series, so a mis-tap under the
+    ///   old rule minted live work, and a mis-tap under this one costs a tap.
+    /// - **Restore is reachable from a list again.** The iOS row's trailing swipe offers exactly
+    ///   toggle-completion and delete; under the old rule a cancelled row's only un-cancel was the
+    ///   Status row inside the detail sheet, while a done row un-did itself in one swipe.
+    ///
+    /// The labels that describe this gesture read the same predicate — see `iOSTaskRowActions`,
+    /// `iOSTaskRow`, `iOSTaskEditorTitleCard` and `iOSBoardTaskCard` — and
+    /// `CadenceTaskStatusLifecycleSurfaceTests` pins that they do.
     static func toggleCompletion(_ task: AppTask, modelContext: ModelContext) {
-        if task.isDone {
+        if CadenceTaskQuerySupport.isFinishedTask(task) {
             CadenceTaskRecurrenceWorkflowSupport.markTodo(task)
         } else {
             CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)

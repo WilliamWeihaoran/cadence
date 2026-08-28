@@ -40,12 +40,16 @@ enum iOSTaskRowSwipeActions {
         modelContext: ModelContext,
         requestDelete: @escaping () -> Void
     ) -> [CadenceSwipeAction] {
-        [
+        // T-344: the swipe describes what `toggleCompletion` will do, so it reads the same
+        // predicate that decides it. On a cancelled row this used to promise "Done" and the tap
+        // delivered it; both halves say "Todo" now, because a cancelled task is already settled.
+        let isFinished = CadenceTaskQuerySupport.isFinishedTask(task)
+        return [
             CadenceSwipeAction(
                 id: "toggle-completion",
-                title: task.isDone ? "Todo" : "Done",
-                systemImage: task.isDone ? "circle" : "checkmark.circle.fill",
-                tint: task.isDone ? Theme.blue : Theme.green
+                title: isFinished ? "Todo" : "Done",
+                systemImage: isFinished ? "circle" : "checkmark.circle.fill",
+                tint: isFinished ? Theme.blue : Theme.green
             ) {
                 CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
             },

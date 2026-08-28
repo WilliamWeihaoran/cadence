@@ -398,6 +398,7 @@ private struct MeetingNotesPage: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
     @State private var selectedNoteID: UUID?
+    @State private var commitNotice: String?
 
     /// Filter *and* order both live in `NotesListVisibility` now, beside the other three tabs'
     /// rules, so iOS's Event Notes list is the same list in the same order rather than a second
@@ -450,20 +451,25 @@ private struct MeetingNotesPage: View {
             .background(Theme.surface)
 
             if let note = selectedNote {
-                NoteEditorPane(
-                    note: note,
-                    relatedNotes: notes,
-                    relatedTasks: allTasks,
-                    onOpenNote: { selectedNoteID = $0.id }
-                )
-                // Per-note editor, matching the Notepad tab. Without it the pane is reused
-                // across a note switch: `.onChange(of: note.id)` then cancels the pending
-                // 15-second content sync and overwrites the buffer, so up to fifteen seconds of
-                // typing is discarded silently. Tearing the pane down instead fires
-                // `.onDisappear` while `note` still points at the note being left, which flushes
-                // it. It also stops the NSTextView's undo stack and its hit-test caches from
-                // leaking into the next note.
-                .id(note.id)
+                VStack(spacing: 0) {
+                    NoteEditorPane(
+                        note: note,
+                        relatedNotes: notes,
+                        relatedTasks: allTasks,
+                        onOpenNote: { selectedNoteID = $0.id },
+                        onPersistContent: commitEventNote
+                    )
+                    // Per-note editor, matching the Notepad tab. Without it the pane is reused
+                    // across a note switch: `.onChange(of: note.id)` then cancels the pending
+                    // 15-second content sync and overwrites the buffer, so up to fifteen seconds of
+                    // typing is discarded silently. Tearing the pane down instead fires
+                    // `.onDisappear` while `note` still points at the note being left, which flushes
+                    // it. It also stops the NSTextView's undo stack and its hit-test caches from
+                    // leaking into the next note.
+                    .id(note.id)
+
+                    EventNoteCommitNoticeBanner(notice: commitNotice)
+                }
             } else {
                 NotesEditorPlaceholder(title: "Select a meeting note")
             }
@@ -475,6 +481,11 @@ private struct MeetingNotesPage: View {
         }
         .onChange(of: requestedNoteID) { _, _ in
             applyRequestedSelection()
+        }
+        .onChange(of: selectedNoteID) { _, _ in
+            // The notice describes one note's last commit; carrying it onto the next note would
+            // report a miss that never happened there.
+            commitNotice = nil
         }
         .onChange(of: notes.map(\.id)) { _, _ in
             backfillMetadata()
@@ -504,6 +515,21 @@ private struct MeetingNotesPage: View {
         if modelContext.hasChanges {
             try? modelContext.save()
         }
+    }
+
+    /// **T-389.** This tab is the second macOS editor of an event note, and it had no
+    /// `onPersistContent` at all — so unlike the timeline's sheet it never reached Apple Calendar
+    /// under any circumstances, and said nothing about that either. Both editors go through the
+    /// shared ordered commit now, and both show its notice.
+    private func commitEventNote(_ note: Note, content: String) {
+        let outcome = CadenceEventNoteSupport.commitNote(
+            syncToCalendar: true,
+            save: { try modelContext.save() },
+            syncToNativeEvent: {
+                EventNoteSupport.syncNativeCalendarNotes(for: note, content: content, calendarManager: calendarManager)
+            }
+        )
+        commitNotice = outcome.notice
     }
 }
 

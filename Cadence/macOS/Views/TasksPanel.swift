@@ -136,11 +136,19 @@ struct TasksPanel: View {
         )
     }
 
+    /// T-342 reached here too. These two resolvers are hand-rolled copies of
+    /// `resolveFrozenTaskGroups` — same snapshot-rehydration shape, different result type — and they
+    /// carried the same half-rule: a task **cancelled** while the panel was frozen is not `isDone`,
+    /// so it stayed pinned in an active frozen group until the freeze released, while a task
+    /// completed beside it left at once. `isFinishedTask` is the whole rule, and the audit's "two
+    /// places" was really four.
     private var resolvedFrozenListGroups: [TodayTaskGroup]? {
         guard let frozenListGroups else { return nil }
         let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
         return frozenListGroups.compactMap { group in
-            let resolvedTasks = group.taskIDs.compactMap { tasksByID[$0] }.filter { !$0.isDone }
+            let resolvedTasks = group.taskIDs
+                .compactMap { tasksByID[$0] }
+                .filter { !CadenceTaskQuerySupport.isFinishedTask($0) }
             guard !resolvedTasks.isEmpty else { return nil }
             return TodayTaskGroup(
                 id: group.id,
@@ -158,7 +166,9 @@ struct TasksPanel: View {
         guard let frozenFlatSections else { return nil }
         let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
         return frozenFlatSections.compactMap { section in
-            let resolvedTasks = section.taskIDs.compactMap { tasksByID[$0] }.filter { !$0.isDone }
+            let resolvedTasks = section.taskIDs
+                .compactMap { tasksByID[$0] }
+                .filter { !CadenceTaskQuerySupport.isFinishedTask($0) }
             guard !resolvedTasks.isEmpty else { return nil }
             return FrozenFlatTaskSection(
                 id: section.id,

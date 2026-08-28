@@ -65,6 +65,21 @@ this list omitted for a long time carry rules of their own:
   `UserDefaults` keys — renaming a case is fine, changing a raw value silently resets every saved
   sort preference.
 
+## The List Calendar Link Is An Identifier, And That Is A Decision
+
+`Area.linkedCalendarID` / `Project.linkedCalendarID` hold a bare `EKCalendar.calendarIdentifier`
+and nothing else — no title, no source, nowhere in the app. T-390 decided that deliberately:
+EventKit identifiers are treated as opaque and permanent, so a calendar Apple Calendar deleted and
+recreated leaves the link **visibly** dead (the list reads as unlinked) rather than being
+re-matched by name. Auto-rebinding on a title match, without a conflict UI, is worse than a broken
+link the user can see. Meeting notes stay filed under the old identifier; `CadenceEventNoteSupport`
+matches `calendarID` exactly, including in its date/title fallback.
+
+Adding `linkedCalendarTitle` / `linkedCalendarSource` so a stale link could warn and offer
+rebinding is the other branch. It is a stored-property change on two `@Model` types with no
+`SchemaMigrationPlan` behind it, so it is blocked until one exists — do not add it in passing.
+`CadenceEventKitPlatformParityTests` fails if a second `linkedCalendar*` property appears.
+
 ## Persisted Fields With No Readers
 
 There is no `SchemaMigrationPlan` in this project, so removing a stored property **drops the

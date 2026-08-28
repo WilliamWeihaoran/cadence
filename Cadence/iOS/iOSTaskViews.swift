@@ -179,7 +179,7 @@ struct iOSTaskRow: View {
             .iOSExpandedHitArea((44 - metrics.completionGlyphSize) / 2)
         }
         .buttonStyle(.iosPressable)
-        .accessibilityLabel(task.isDone ? "Mark task todo" : "Complete task")
+        .accessibilityLabel(CadenceTaskQuerySupport.isFinishedTask(task) ? "Mark task todo" : "Complete task")
     }
 
     private var taskSummary: some View {

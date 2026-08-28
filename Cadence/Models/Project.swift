@@ -16,7 +16,13 @@ import Foundation
     var icon: String = "checklist"
     var dueDate: String = ""        // YYYY-MM-DD or ""
     var order: Int = 0
-    var linkedCalendarID: String = ""   // EKCalendar identifier
+    /// The `EKCalendar.calendarIdentifier` this list mirrors, or `""` when unlinked.
+    ///
+    /// **T-390.** Identifier only, with no title or source beside it. See
+    /// `Area.linkedCalendarID` for the contract: why a recreated calendar leaves this link visibly
+    /// dead rather than being re-matched by name, and why storing metadata is blocked without a
+    /// `SchemaMigrationPlan`.
+    var linkedCalendarID: String = ""
     var loggedMinutes: Int = 0          // cumulative focus time logged to tasks in this project
     var hideDueDateIfEmpty: Bool = true
     var hideSectionDueDateIfEmpty: Bool = true

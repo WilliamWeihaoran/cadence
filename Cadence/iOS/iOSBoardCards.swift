@@ -297,7 +297,7 @@ struct iOSBoardTaskCard: View {
                         .iOSExpandedHitArea()
                 }
                 .buttonStyle(.iosPressable)
-                .accessibilityLabel(task.isDone ? "Mark not done" : "Mark done")
+                .accessibilityLabel(CadenceTaskQuerySupport.isFinishedTask(task) ? "Mark not done" : "Mark done")
 
                 Text(task.title.isEmpty ? "Untitled" : task.title)
                     .font(.system(size: isRegularWidth ? 15 : 14, weight: .medium))

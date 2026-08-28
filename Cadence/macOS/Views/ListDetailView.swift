@@ -149,12 +149,10 @@ private struct ListDetailView: View {
     }
 
     private func restoreRememberedTab() {
-        guard let rawValue = UserDefaults.standard.string(forKey: tabDefaultsKey),
-              let rememberedTab = ListDetailPage(rawValue: rawValue) else {
-            tab = ListDetailPage.resolved(defaultPageRawValue)
-            return
-        }
-        tab = rememberedTab
+        tab = ListDetailPage.rememberedPage(
+            storedRawValue: UserDefaults.standard.string(forKey: tabDefaultsKey),
+            defaultPageRawValue: defaultPageRawValue
+        )
     }
 
     private func applyPendingNavigationIfNeeded() {

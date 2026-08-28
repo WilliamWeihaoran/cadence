@@ -186,6 +186,67 @@ struct PursuitToGoalMigrationTests {
         #expect(try modelContext.fetch(FetchDescriptor<Goal>()).isEmpty)
     }
 
+    /// `PursuitToGoalMigration.completionKey` is private, so it is spelled here — which also pins
+    /// it: changing the key without bumping `v1` would silently re-run the migration everywhere.
+    private static let completionKey = "pursuitToGoalMigration.v1.completed"
+
+    /// A device that already migrated, then restores a backup that still has `Pursuit` rows in it.
+    ///
+    /// `PersistenceController.init` applies a pending restore before it opens the container and
+    /// calls `performStartupMaintenance`, so the store startup maintenance reads can be a backup
+    /// that predates the migration — while the flag, which lives in `UserDefaults` rather than in
+    /// the store, is still set. A flag-only guard skips the pass forever and the restored pursuits
+    /// are stranded with nothing showing them. T-393.
+    @Test func aRestoredBackupIsMigratedEvenThoughTheFlagIsAlreadySet() throws {
+        try withTemporaryDefaults("PursuitToGoalMigrationTests") { defaults in
+            let modelContext = try makeContext()
+            defaults.set(true, forKey: Self.completionKey)
+
+            let context = Context(name: "Personal")
+            let pursuit = Pursuit(title: "Restored from a backup", context: context)
+            let milestone = Goal(title: "Read 12 books", context: context)
+            milestone.pursuit = pursuit
+            modelContext.insert(context)
+            modelContext.insert(pursuit)
+            modelContext.insert(milestone)
+            try modelContext.save()
+
+            PursuitToGoalMigration.runIfNeeded(modelContext: modelContext, defaults: defaults)
+
+            #expect(try modelContext.fetch(FetchDescriptor<Pursuit>()).isEmpty)
+            let migrated = try #require(
+                try modelContext.fetch(FetchDescriptor<Goal>()).first { $0.title == "Restored from a backup" }
+            )
+            #expect(migrated.isTopLevel)
+            #expect(milestone.parentGoal?.id == migrated.id)
+        }
+    }
+
+    /// The flag still does its job on the ordinary launch: it latches after a clean pass, and a
+    /// store with nothing left to fold is not rewritten by the content probe that replaced it.
+    @Test func theFlagLatchesAndAStoreWithNoPursuitsIsLeftAlone() throws {
+        try withTemporaryDefaults("PursuitToGoalMigrationTests") { defaults in
+            let modelContext = try makeContext()
+
+            let context = Context(name: "Personal")
+            let pursuit = Pursuit(title: "Become more knowledgeable", context: context)
+            modelContext.insert(context)
+            modelContext.insert(pursuit)
+            try modelContext.save()
+
+            #expect(!defaults.bool(forKey: Self.completionKey))
+            PursuitToGoalMigration.runIfNeeded(modelContext: modelContext, defaults: defaults)
+            #expect(defaults.bool(forKey: Self.completionKey))
+            let afterFirstLaunch = Set(try modelContext.fetch(FetchDescriptor<Goal>()).map(\.id))
+            #expect(afterFirstLaunch.count == 1)
+
+            PursuitToGoalMigration.runIfNeeded(modelContext: modelContext, defaults: defaults)
+
+            #expect(Set(try modelContext.fetch(FetchDescriptor<Goal>()).map(\.id)) == afterFirstLaunch)
+            #expect(try modelContext.fetch(FetchDescriptor<Pursuit>()).isEmpty)
+        }
+    }
+
     private func makeContext() throws -> ModelContext {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         return ModelContext(container)

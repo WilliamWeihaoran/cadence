@@ -56,7 +56,10 @@ struct CalendarManagerScenarioTests {
         #expect(manager.updateEvent(scratchEvent, title: "Should not apply", startMin: 60, durationMinutes: 30, dateKey: "2026-06-01") == .notAuthorized)
         #expect(manager.updateEvent(scratchEvent, title: "Should not apply either", startDate: Date(), endDate: Date().addingTimeInterval(3600)) == .notAuthorized)
         #expect(manager.updateEventNotes(scratchEvent, notes: "Should not apply") == .notAuthorized)
-        #expect(manager.updateEventNotes(calendarEventID: "some-id", notes: "Should not apply") == nil)
+        // T-389: an id that resolves to nothing is a failure, not the success value. This line
+        // read `== nil` — which on this API is what a completed write returns — against a
+        // comment three lines up saying none of these may fail in silence.
+        #expect(manager.updateEventNotes(calendarEventID: "some-id", notes: "Should not apply") == .eventNotFound)
         #expect(manager.convertAllDayEventToTimed(scratchEvent, startMin: 120, dateKey: "2026-06-01") == .notAuthorized)
         #expect(manager.deleteEvent(scratchEvent) == .notAuthorized)
 

@@ -32,14 +32,25 @@ final class TaskCompletionAnimationManager {
         return min(max(elapsed / Self.animationDuration, 0), 1)
     }
 
+    /// **T-344, decided: the completion control toggles *settled*, not *done*.** A cancelled task is
+    /// settled, so tapping its circle restores it to todo — the same thing tapping a done task's
+    /// circle does — rather than converting an abandoned task into an accomplished one.
+    ///
+    /// The circle is already *drawn* by a settled/open decision: `CadenceTaskCompletionGlyph`
+    /// returns a filled glyph for `.cancelled` and `.done` alike, and `isSettled` covers both. A
+    /// control that looks up "settled" to paint itself and "isDone" to decide what a tap means is
+    /// the same rule spelled two ways, which is the defect T-147 and T-342 are both instances of.
+    /// Reading `isFinishedTask` here makes the appearance and the action one rule: a filled circle
+    /// un-settles, an empty circle settles as done.
+    ///
+    /// The cancelled → done transition survives as two taps (restore, then complete), which is also
+    /// how you would say it out loud. That is the right way round: `markDone` stamps `completedAt`
+    /// and spawns the next occurrence of a recurring series, so a mis-tap under the old rule minted
+    /// live work, and a mis-tap under this one costs a tap.
     func toggleCompletion(for task: AppTask) {
-        if task.isDone {
+        if CadenceTaskQuerySupport.isFinishedTask(task) {
             cancelPending(for: task.id)
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                TaskWorkflowService.markTodo(task)
-            }
+            write(.restored, to: task)
             return
         }
 
@@ -67,16 +78,7 @@ final class TaskCompletionAnimationManager {
                 guard let self, self.pendingStartTimes[id] != nil else { return }
                 self.pendingTasks[id] = nil
                 self.pendingStartTimes[id] = nil
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    if let context = self.modelContext {
-                        TaskWorkflowService.markDone(task, in: context)
-                    } else {
-                        task.completedAt = Date()
-                        task.status = .done
-                    }
-                }
+                self.write(.done, to: task)
             }
         }
     }
@@ -96,11 +98,7 @@ final class TaskCompletionAnimationManager {
     func toggleCancellation(for task: AppTask) {
         if task.isCancelled {
             cancelCancelPending(for: task.id)
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                task.status = .todo
-            }
+            write(.restored, to: task)
             return
         }
 
@@ -130,14 +128,56 @@ final class TaskCompletionAnimationManager {
                 guard let self, self.pendingCancelStartTimes[id] != nil else { return }
                 self.pendingCancelTasks[id] = nil
                 self.pendingCancelStartTimes[id] = nil
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    if let context = self.modelContext {
-                        TaskWorkflowService.markCancelled(task, in: context)
-                    } else {
-                        task.status = .cancelled
-                    }
+                self.write(.cancelled, to: task)
+            }
+        }
+    }
+
+    // MARK: - Status writes
+
+    /// The three transitions this manager performs. A closed set on purpose, so the funnel below
+    /// has no impossible case to answer for: the manager never writes `.inProgress`.
+    private enum StatusWrite {
+        case done
+        case cancelled
+        case restored
+    }
+
+    /// **Every** status write in this manager goes through here, and none of them spell
+    /// `task.status =`. Two independent audits found two different direct assignments in this one
+    /// file, sixty lines apart: T-341's restore branch wrote `task.status = .todo` and left behind
+    /// the `completedAt` the task was cancelled with, so an open task carried a completion
+    /// timestamp; T-357's contextless branches settled a task without asking the recurrence
+    /// workflow anything, so a recurring task finished through them never spawned its successor.
+    /// Fixing the two known ones invites a third. One funnel, plus
+    /// `CadenceTaskStatusLifecycleSurfaceTests.noStatusIsAssignedDirectlyInTheAnimationManager`, is what
+    /// stops it: a new call site cannot bypass the shared path without failing that scan.
+    ///
+    /// The context is `modelContext ?? task.modelContext`. The injected one is set on root appear
+    /// and the manager is injected app-wide, so the fallback is the branch that used to be
+    /// open-coded — and a task this manager can see was inserted by *some* context, so it is
+    /// almost never nil. When it genuinely is (an unpersisted task, which is what the unit tests
+    /// hold), `settleWithoutAdvancingSeries` still keeps the invariant T-341 is about: a settled
+    /// status carries a timestamp, an open one carries none. There is no store to spawn a successor
+    /// into in that case, and inventing one would be worse than not advancing the series.
+    private func write(_ transition: StatusWrite, to task: AppTask) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            switch transition {
+            case .restored:
+                TaskWorkflowService.markTodo(task)
+            case .done:
+                if let context = modelContext ?? task.modelContext {
+                    TaskWorkflowService.markDone(task, in: context)
+                } else {
+                    CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: .done)
+                }
+            case .cancelled:
+                if let context = modelContext ?? task.modelContext {
+                    TaskWorkflowService.markCancelled(task, in: context)
+                } else {
+                    CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: .cancelled)
                 }
             }
         }

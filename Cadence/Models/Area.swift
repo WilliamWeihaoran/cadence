@@ -15,7 +15,29 @@ import Foundation
     var colorHex: String = "#4a9eff"
     var icon: String = "folder.fill"
     var order: Int = 0
-    var linkedCalendarID: String = ""   // EKCalendar identifier for bidirectional sync
+    /// The `EKCalendar.calendarIdentifier` this list mirrors, or `""` when unlinked.
+    ///
+    /// **T-390 — this is a decision, not an oversight.** The identifier is stored alone: no title,
+    /// no source, no companion metadata anywhere in the app. Cadence treats an EventKit calendar
+    /// identifier as opaque and permanent, and that assumption has consequences worth stating
+    /// where a model edit will meet them.
+    ///
+    /// If Apple Calendar deletes and recreates a calendar — a resubscribed feed, an account
+    /// removed and re-added, a restore — the replacement arrives under a new identifier and this
+    /// link is dead. It stays dead **visibly**: the list reads as unlinked and the user re-picks
+    /// the calendar. Nothing re-matches by name. Silently rebinding someone's calendar on a title
+    /// match is worse than a link they can see is broken, and doing it safely needs a conflict UI
+    /// that does not exist.
+    ///
+    /// Meeting notes filed under the old identifier stay under it. `CadenceEventNoteSupport`
+    /// compares `calendarID` exactly, including inside its date/title fallback, so re-linking does
+    /// not drag old notes across. That is the accepted cost of an id-only link, and
+    /// `CadenceEventKitPlatformParityTests` pins both halves.
+    ///
+    /// The other branch — storing title and source so a stale link could warn and offer rebinding
+    /// — is a stored-property change on this `@Model`, and this project has no
+    /// `SchemaMigrationPlan`. It is blocked until one exists.
+    var linkedCalendarID: String = ""
     var loggedMinutes: Int = 0          // cumulative focus time logged to tasks in this area
     var hideDueDateIfEmpty: Bool = true
     var hideSectionDueDateIfEmpty: Bool = true
