@@ -44,8 +44,14 @@ struct ListSectionKanbanColumn: View {
     @State private var headerDueDate = Date()
     @State private var headerDueDateViewMonth = Date()
     @State private var isHovered = false
+    /// Both halves come from one call, so they cannot disagree about what "over" means. See
+    /// `KanbanBoardSupport.columnHalves` for why this is not `isDone` (T-381 / T-399).
+    private var columnHalves: (active: [AppTask], completed: [AppTask]) {
+        KanbanBoardSupport.columnHalves(from: tasks)
+    }
+
     private var unfrozenActiveTasks: [AppTask] {
-        tasks.filter { !$0.isDone }
+        columnHalves.active
     }
 
     private var activeTasks: [AppTask] {
@@ -53,7 +59,7 @@ struct ListSectionKanbanColumn: View {
     }
 
     private var completedTasks: [AppTask] {
-        tasks.filter { $0.isDone }
+        columnHalves.completed
     }
 
     private var columnColor: Color {

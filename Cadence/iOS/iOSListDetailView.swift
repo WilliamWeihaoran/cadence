@@ -345,7 +345,8 @@ struct iOSListDetailView: View {
                         tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
                         showsContainer: false,
                         opacity: 0.62,
-                        dropIdentity: .completion
+                        dropIdentity: .completion,
+                        hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch)
                     )
                 }
             }

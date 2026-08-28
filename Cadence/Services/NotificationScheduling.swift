@@ -168,7 +168,14 @@ nonisolated enum TaskNotificationPlanner {
 }
 
 nonisolated enum HabitNotificationPlanner {
-    /// Returns the next daily reminder occurrence for a habit, or nil if no reminder time is set.
+    /// The minutes-from-midnight a reminder time can name: `0` (00:00) through `1439` (23:59).
+    ///
+    /// The model stores `reminderMinuteOfDay` as a bare `Int?` and says in its own doc that it
+    /// validates nothing (`Habit.swift`), so this range is where the app's only check lives.
+    static let reminderMinuteRange = 0...1439
+
+    /// Returns the next daily reminder occurrence for a habit, or nil if no reminder time is set
+    /// or the stored time is not a real time of day.
     ///
     /// The returned `fireDate` names the next occurrence, but the reminder is a *standing* daily
     /// one: `NotificationKind.habitReminder.repeatsDaily` makes the trigger match time-of-day and
@@ -179,15 +186,29 @@ nonisolated enum HabitNotificationPlanner {
     /// habit's `frequencyType`/`frequencyDays` (e.g. a "3x/week" habit still gets a daily nudge
     /// on days it isn't due). That's a deliberate scope decision for a general daily reminder,
     /// not a bug — per-frequency-aware scheduling was explicitly out of scope for this pass.
+    ///
+    /// **An out-of-range minute schedules nothing, and the `?? now` it replaces is why (T-363).**
+    /// `Calendar.date(bySettingHour:minute:second:of:)` returns `nil` for -15, 1440 and 1500, and
+    /// falling back to `now` turned "this habit's reminder time is corrupt" into "remind me daily
+    /// at whatever o'clock reconcile happened to run" — a standing daily alarm at an arbitrary
+    /// time, which no picker could have set and no user could explain. The picker only ever emits
+    /// `0...1439`; imported, synced or hand-edited data need not. No reminder is the honest answer
+    /// to a time that is not a time.
+    ///
+    /// The guard is the range check rather than the `nil` result because the two are not the same
+    /// question: `date(bySettingHour:)` also returns `nil` for a perfectly valid minute that does
+    /// not exist on a given day (a spring-forward DST gap), and that is a reason to skip one
+    /// reconcile, not to treat the stored value as junk. Both end at `nil`; only one is a bug.
     static func reminder(for habit: Habit, now: Date) -> CadenceNotificationRequest? {
         guard let minuteOfDay = habit.reminderMinuteOfDay else { return nil }
+        guard reminderMinuteRange.contains(minuteOfDay) else { return nil }
         let calendar = Calendar.current
-        let todayAtReminderTime = calendar.date(
+        guard let todayAtReminderTime = calendar.date(
             bySettingHour: minuteOfDay / 60,
             minute: minuteOfDay % 60,
             second: 0,
             of: now
-        ) ?? now
+        ) else { return nil }
 
         let fireDate: Date
         if todayAtReminderTime > now {

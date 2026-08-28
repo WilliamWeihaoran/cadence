@@ -468,6 +468,147 @@ struct CadenceReadServiceTests {
         #expect(guardRail == 4)
     }
 
+    // MARK: - T-385, the brief's undisclosed inbox cap
+
+    /// **51 active inbox tasks used to become 50, with nothing in the response saying so.**
+    ///
+    /// The cap was a bare `.prefix(50)` on one of four sections; `CadenceTodayBrief` carried plain
+    /// arrays, so `inbox.count == 50` was both the response a store holding exactly 50 produces and
+    /// the response a store holding 5,000 produces. `totalCount` is what separates them, and it is
+    /// asserted against a store deliberately **one row over** the old cap — 51, not 200, because
+    /// the boundary is where a cap-shaped bug survives.
+    @Test func aTruncatedInboxSectionOfTheBriefReportsItsTrueTotal() throws {
+        let fixture = try PagingFixture(taskCount: 51)
+
+        // Non-vacuity: these are inbox tasks — no area, no project — and there really are 51.
+        #expect(try fixture.service.listTasks(options: .init(limit: 200)).totalCount == 51)
+
+        let brief = try fixture.service.todayBrief(dateKey: "2026-04-28")
+
+        #expect(brief.inbox.totalCount == 51)
+        #expect(brief.inbox.returnedCount == 50)
+        #expect(brief.inbox.items.count == 50)
+        #expect(brief.inbox.hasMore)
+        #expect(brief.inbox.nextOffset == 50)
+        #expect(brief.inbox.totalCount > brief.inbox.returnedCount)
+    }
+
+    /// A caller can now both raise the cap and page past it — the two things the old schema, which
+    /// took `date` and nothing else, made impossible.
+    @Test func theBriefsSectionsTakeALimitAndAnOffsetFromTheCaller() throws {
+        let fixture = try PagingFixture(taskCount: 51)
+
+        let raised = try fixture.service.todayBrief(dateKey: "2026-04-28", limit: 200)
+        #expect(raised.inbox.returnedCount == 51)
+        #expect(raised.inbox.hasMore == false)
+        #expect(raised.inbox.nextOffset == nil)
+
+        let secondPage = try fixture.service.todayBrief(dateKey: "2026-04-28", limit: 50, offset: 50)
+        #expect(secondPage.inbox.offset == 50)
+        #expect(secondPage.inbox.returnedCount == 1)
+        #expect(secondPage.inbox.totalCount == 51)
+        #expect(secondPage.inbox.hasMore == false)
+
+        // The two pages together are the whole section, each row once.
+        let firstPage = try fixture.service.todayBrief(dateKey: "2026-04-28")
+        let walked = firstPage.inbox.items.map(\.id) + secondPage.inbox.items.map(\.id)
+        #expect(walked.count == 51)
+        #expect(Set(walked).count == 51)
+
+        // `limit: 0` asks the totals question and nothing else.
+        let countOnly = try fixture.service.todayBrief(dateKey: "2026-04-28", limit: 0)
+        #expect(countOnly.inbox.items.isEmpty)
+        #expect(countOnly.inbox.totalCount == 51)
+        #expect(countOnly.inbox.hasMore)
+    }
+
+    /// **Every section is a page, not only the one that used to be capped.**
+    ///
+    /// The asymmetry was half the ticket: three unbounded sections beside one silently truncated
+    /// one, so no single section told a caller the shape of the response. Each section here is over
+    /// the default limit on its own, and each reports its own total.
+    @Test func everyTaskSectionOfTheBriefCarriesItsOwnTotal() throws {
+        let fixture = try SectionFixture(dateKey: "2026-04-28", perSectionCount: 51)
+
+        let brief = try fixture.service.todayBrief(dateKey: "2026-04-28")
+
+        for (name, section) in [
+            ("scheduledTasks", brief.scheduledTasks),
+            ("dueToday", brief.dueToday),
+            ("overdue", brief.overdue),
+            ("inbox", brief.inbox),
+        ] {
+            #expect(section.totalCount == 51, "\(name) lost its true total")
+            #expect(section.returnedCount == 50, "\(name) is not capped at the shared default")
+            #expect(section.hasMore, "\(name) does not admit it truncated")
+            #expect(section.nextOffset == 50, "\(name) strands the caller")
+        }
+    }
+
+    /// A brief that fits inside the limit says so, which is what makes `hasMore` worth reading.
+    /// Written beside the truncation test because a `hasMore` hardcoded `true` passes that one
+    /// alone.
+    @Test func aBriefThatFitsInsideTheLimitClaimsNoMore() throws {
+        let fixture = try SectionFixture(dateKey: "2026-04-28", perSectionCount: 2)
+
+        let brief = try fixture.service.todayBrief(dateKey: "2026-04-28")
+
+        for section in [brief.scheduledTasks, brief.dueToday, brief.overdue, brief.inbox] {
+            // Non-vacuity: every section really holds rows, so this is not four empties agreeing.
+            #expect(section.returnedCount == 2)
+            #expect(section.totalCount == 2)
+            #expect(section.hasMore == false)
+            #expect(section.nextOffset == nil)
+        }
+    }
+
+    /// A store with `perSectionCount` tasks in each of the brief's four task sections.
+    ///
+    /// The four predicates are not mutually exclusive in general — a task can be scheduled today
+    /// *and* due today — so each group here is built to land in exactly one, which is what lets a
+    /// per-section total be asserted as a number.
+    @MainActor
+    private final class SectionFixture {
+        let container: ModelContainer
+        let modelContext: ModelContext
+        let service: CadenceReadService
+
+        init(dateKey: String, perSectionCount: Int) throws {
+            container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            modelContext = ModelContext(container)
+
+            let context = Context(name: "Work")
+            let project = Project(name: "Filed", context: context)
+            modelContext.insert(context)
+            modelContext.insert(project)
+
+            for index in 0..<perSectionCount {
+                let scheduled = AppTask(title: String(format: "Scheduled %02d", index))
+                scheduled.project = project
+                scheduled.scheduledDate = dateKey
+                scheduled.scheduledStartMin = 540
+                modelContext.insert(scheduled)
+
+                let due = AppTask(title: String(format: "Due %02d", index))
+                due.project = project
+                due.dueDate = dateKey
+                modelContext.insert(due)
+
+                let overdue = AppTask(title: String(format: "Overdue %02d", index))
+                overdue.project = project
+                overdue.dueDate = "2026-01-01"
+                modelContext.insert(overdue)
+
+                // No container and no dates: the inbox section, and only that one.
+                let inbox = AppTask(title: String(format: "Inbox %02d", index))
+                modelContext.insert(inbox)
+            }
+            try modelContext.save()
+
+            service = CadenceReadService(container: container, performsMigrations: false)
+        }
+    }
+
     @MainActor
     private final class PagingFixture {
         let container: ModelContainer

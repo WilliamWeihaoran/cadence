@@ -181,6 +181,7 @@ struct iOSTaskCollectionSections: View {
     /// `isEmpty`, but is very much content. Without it a cleared Inbox with three open reminders
     /// under it announced "Inbox is clear" directly above them.
     var hidesEmptyState = false
+    @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
 
     private var isEmpty: Bool {
         guard !hidesEmptyState else { return false }
@@ -240,10 +241,21 @@ struct iOSTaskCollectionSections: View {
                 iOSTaskGroupSection(
                     title: "Completed",
                     color: Theme.green,
-                    tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
+                    // **T-375: the reveal has to survive the cap.** This tier stops at
+                    // `completedRowLimit`, newest-settled first, so the deep links most in need of
+                    // the reveal — work finished long enough ago that the user went looking for it
+                    // through a widget — are exactly the ones the cap would drop. Expanding a
+                    // section that still does not list the task is the original defect with an
+                    // animation in front of it.
+                    tasks: CadenceTaskSurfaceOptions.completedRows(
+                        from: completedTasks,
+                        tier: .touch,
+                        revealing: deepLinkManager.revealedCompletedTaskID
+                    ),
                     showsContainer: showsContainer,
                     opacity: 0.62,
-                    dropIdentity: .completion
+                    dropIdentity: .completion,
+                    hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch)
                 )
             }
         }

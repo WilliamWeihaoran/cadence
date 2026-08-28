@@ -130,6 +130,23 @@ extension CadenceFeatureDestination {
         case .lists, .search: return nil
         }
     }
+
+    /// The macOS selection a **deep link** resolving to this destination opens.
+    ///
+    /// **T-375(b): this used to walk `SidebarStaticDestination.allCases` and it silently narrowed
+    /// the answer.** That table is the set of rows Settings → Sidebar offers a handle for — six
+    /// cases — not the set of pages the app has. So `.notes`, `.inbox` and `.settings` found no
+    /// match and fell through the `?? .today` to Today: not a crash, not a log line, just a link
+    /// opening the wrong page. It was correct only because no resolver returned one of those three
+    /// yet, which is a fact about today's `resolvedDestination` rather than about this mapping.
+    ///
+    /// `macSidebarItem` is the sidebar's real feature-to-page table and answers all nine. The
+    /// fallback survives for the two destinations that genuinely are not pages — `.lists` is the
+    /// scrolling region and `.search` is the header button — and `CadenceDeepLinkTests` pins each
+    /// case by name, so widening the resolver can no longer route somewhere quiet by default.
+    var deepLinkSidebarItem: SidebarItem {
+        macSidebarItem ?? .today
+    }
 }
 
 /// Fixed geometry for the single sidebar column: app header, nav rows, the scrolling

@@ -217,12 +217,29 @@ nonisolated struct CadenceSearchHit: Codable, Sendable {
     let score: Int
 }
 
+/// The dashboard summary, with every task section as a page rather than a bare array.
+///
+/// **The brief used to cap `inbox` at 50 and say nothing (T-385).** Three of its four task sections
+/// were unbounded, the fourth was silently truncated, none of them carried a count, and the tool
+/// schema took only `date` — so a caller could neither raise the cap nor detect it, and 51 active
+/// inbox tasks became 50 with no signal at all. That is the exact failure `CadencePage` exists for
+/// (T-382), so the sections are pages: `totalCount` is the size of the section *before* the cut,
+/// and `hasMore`/`nextOffset` say whether one happened.
+///
+/// `limit` and `offset` apply **uniformly to all four sections**, which is what keeps one pair of
+/// numbers meaningful across a response holding four ordered lists: page 2 of the brief is rows
+/// 50–99 of each section, and each section's own `totalCount` and `hasMore` stay true of that
+/// section alone. A caller walking one section to its end is better served by `list_tasks`, which
+/// pages a single candidate list.
+///
+/// `noteSnippets` is not a page. It is the three core notes for the date, bounded by construction
+/// rather than by a cap, so an envelope would only add fields whose answer is always the same.
 nonisolated struct CadenceTodayBrief: Codable, Sendable {
     let dateKey: String
-    let scheduledTasks: [CadenceTaskSummary]
-    let dueToday: [CadenceTaskSummary]
-    let overdue: [CadenceTaskSummary]
-    let inbox: [CadenceTaskSummary]
+    let scheduledTasks: CadencePage<CadenceTaskSummary>
+    let dueToday: CadencePage<CadenceTaskSummary>
+    let overdue: CadencePage<CadenceTaskSummary>
+    let inbox: CadencePage<CadenceTaskSummary>
     let noteSnippets: [CadenceNotePayload]
 }
 

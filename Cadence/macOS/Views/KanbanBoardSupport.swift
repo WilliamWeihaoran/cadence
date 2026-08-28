@@ -49,6 +49,26 @@ struct KanbanListColumnModel: Identifiable {
 }
 
 enum KanbanBoardSupport {
+    /// The two halves a kanban column draws: the work you still intend to do, and the work that is
+    /// over however it ended. One call, read twice, so the halves cannot disagree.
+    ///
+    /// Splitting on `isDone` alone *does* partition — and puts the wrong card in the wrong half. A
+    /// cancelled task is not `isDone`, so `!$0.isDone` kept it among the work you still intend to
+    /// do and `$0.isDone` kept it out of the completed half it belongs in. That is the
+    /// T-147 / T-203 / T-342 shape arriving a fourth time, and
+    /// `CadenceTaskQuerySupport.isFinishedTask` is the predicate that settles it.
+    ///
+    /// No card proves it today: the section board's only caller, `ListSectionsKanbanView`, filters
+    /// cancelled work out before a column ever sees it (T-381 was right about that, and T-399 wrong
+    /// to call it live). The classification has to be right without depending on a caller's shape,
+    /// which is exactly what the calendar board's day columns decided under T-203.
+    static func columnHalves(from tasks: [AppTask]) -> (active: [AppTask], completed: [AppTask]) {
+        (
+            tasks.filter { !CadenceTaskQuerySupport.isFinishedTask($0) },
+            tasks.filter { CadenceTaskQuerySupport.isFinishedTask($0) }
+        )
+    }
+
     static func activeTasks(from allTasks: [AppTask]) -> [AppTask] {
         let tasksInActiveContainers = allTasks.filter(\.isInActiveContainer)
         return CadenceTaskQuerySupport.openTasks(from: tasksInActiveContainers)

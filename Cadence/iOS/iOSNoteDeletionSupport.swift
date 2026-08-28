@@ -130,6 +130,10 @@ struct iOSNoteDeleteConfirmationSheet: View {
 
                             lostLines
 
+                            if let unknownImpactLine = summary.unknownImpactLine {
+                                unknownImpactRow(unknownImpactLine)
+                            }
+
                             if summary.retainedLine != nil || summary.brokenLinkLine != nil {
                                 iOSRowDivider()
                                 keptLines
@@ -279,6 +283,32 @@ struct iOSNoteDeleteConfirmationSheet: View {
                     }
                 }
             }
+        }
+    }
+
+    /// The one-sided doubt, said out loud (T-298).
+    ///
+    /// **Not a second failure notice, and the distinction is the point.** `failureNotice` — the
+    /// red line this card already draws, in the spelling `CadenceInlineFailureNotice` documents
+    /// for plain surfaces — is for "the thing you just asked for did not happen", after a refused
+    /// delete. This line is the opposite tense: nothing has been attempted yet, and what it
+    /// qualifies is the *arithmetic*, not the outcome. Two red paragraphs in one card would read
+    /// as two failures, so this one is amber.
+    ///
+    /// It is above the kept-lines block, not among it: those lines say what this delete leaves
+    /// alone, which is exactly the reassurance this line is warning may be incomplete.
+    private func unknownImpactRow(_ line: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.amber)
+
+            Text(line)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.subdued)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
         }
     }
 

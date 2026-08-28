@@ -383,6 +383,158 @@ struct CadenceNoteDeletionSurfaceTests {
         #expect(raw.contains("leaks every image that note was the last"))
         #expect(!helper.contains("leaks every image"))
     }
+
+    // MARK: - T-298: a failed fetch is not an empty store
+
+    /// **The summary used to understate the damage on a store hiccup**, which is the one direction
+    /// a wrong number on a confirmation must not go. Both reads in `forNote(_:in:)` were
+    /// `(try? …) ?? []`, so a failed fetch produced "0 embedded images" and no broken-link line —
+    /// the smallest possible account of the delete, presented as fact, on the screen where the
+    /// user says yes.
+    ///
+    /// The rule followed here is already settled twice in this codebase:
+    /// `HabitNotificationReconcileSupport.reconcileInput` returns `nil` rather than `([], [])`
+    /// because reconcile reads an empty desired set as "cancel everything", and
+    /// `MarkdownTaskEmbedSupport.storeHoldsTask` returns `Bool?` so a failed read keeps the cached
+    /// task. Same distinction, third site.
+    @Test func aFailedStoreReadReportsUnknownImpactRatherThanZero() throws {
+        let asset = imageAsset(1)
+        let doomed = Note(kind: .list, title: "Doomed", content: imageLine(asset))
+        let backlink = Note(kind: .list, title: "Points here", content: "see [[Doomed]]")
+        let notes = [doomed, backlink]
+        let assetIDs: Set<UUID> = [asset.id]
+
+        // Both reads landed: the counts are a total, and the confirmation says nothing extra.
+        let known = CadenceNoteDeletionSummary.forNote(
+            doomed,
+            allNotes: notes,
+            existingImageAssetIDs: assetIDs
+        )
+        #expect(!known.hasUnknownImpact)
+        #expect(known.unknownImpactLine == nil)
+        #expect(known.images == 1)
+        #expect(known.backlinks == 1)
+
+        // The note table could not be read. The backlink count collapses to zero and the image
+        // count loses its survivor set — the summary has to say so rather than print the floor.
+        let noNotes = CadenceNoteDeletionSummary.forNote(
+            doomed,
+            allNotes: nil,
+            existingImageAssetIDs: assetIDs
+        )
+        #expect(noNotes.hasUnknownImpact)
+        #expect(noNotes.unknownImpactLine == CadenceNoteDeletionSummary.unknownImpactNotice)
+
+        // The asset table could not be read: `images` reads 0 for a note that embeds one.
+        let noAssets = CadenceNoteDeletionSummary.forNote(
+            doomed,
+            allNotes: notes,
+            existingImageAssetIDs: nil
+        )
+        #expect(noAssets.images == 0)
+        #expect(noAssets.hasUnknownImpact)
+
+        let neither = CadenceNoteDeletionSummary.forNote(
+            doomed,
+            allNotes: nil,
+            existingImageAssetIDs: nil
+        )
+        #expect(neither.hasUnknownImpact)
+
+        // The words, the tags and the folder are read off the note itself and stay exact through
+        // all of it — which is why this is a flag beside the counts rather than four `Int?`s.
+        #expect(noNotes.words == known.words)
+        #expect(noNotes.tags == known.tags)
+        #expect(noNotes.folder == known.folder)
+    }
+
+    /// **A genuinely empty store is still a known zero.** This is the half that makes the flag
+    /// worth having: if `[]` and `nil` both raised it, the notice would appear on the first note
+    /// in a new install and mean nothing by the second.
+    @Test func aGenuinelyEmptyStoreIsAKnownZeroAndNotAnUnknown() {
+        let lonely = Note(kind: .list, title: "Only note", content: "one two three")
+        let summary = CadenceNoteDeletionSummary.forNote(
+            lonely,
+            allNotes: [lonely],
+            existingImageAssetIDs: []
+        )
+
+        #expect(!summary.hasUnknownImpact)
+        #expect(summary.unknownImpactLine == nil)
+        #expect(summary.images == 0)
+        #expect(summary.backlinks == 0)
+        #expect(summary.words == 3)
+    }
+
+    /// "Nothing has been written in this note yet." is the strongest claim on that screen, and an
+    /// unread image table is exactly the case where it would be reassuring and false at once. So
+    /// `isEmpty` answers `false` while the impact is unknown, whatever the counts say.
+    @Test func anUnreadableStoreStopsTheConfirmationClaimingTheNoteIsEmpty() {
+        let blank = Note(kind: .list, title: "Untitled", content: "   \n\n  ")
+
+        let known = CadenceNoteDeletionSummary.forNote(
+            blank,
+            allNotes: [blank],
+            existingImageAssetIDs: []
+        )
+        #expect(known.isEmpty)
+        #expect(known.lostItemLines.isEmpty)
+
+        let unknown = CadenceNoteDeletionSummary.forNote(
+            blank,
+            allNotes: nil,
+            existingImageAssetIDs: []
+        )
+        #expect(!unknown.isEmpty)
+        #expect(unknown.unknownImpactLine != nil)
+    }
+
+    /// The notice names the direction of the doubt, because the doubt is one-sided: every count a
+    /// failed fetch can move, it moves down. "Something went wrong" would leave "0 embedded
+    /// images" on screen still reading as "no images".
+    @Test func theUnknownImpactNoticeSaysTheDeleteMayBeLargerNotJustUncertain() {
+        #expect(CadenceNoteDeletionSummary.unknownImpactNotice.contains("may remove more"))
+        #expect(CadenceNoteDeletionSummary.unknownImpactNotice
+                != CadenceNoteDeletionSummary.deleteFailureNotice)
+    }
+
+    /// The store-reading entry point may not coerce a failed fetch back to an empty one. A scan
+    /// because the two `try?`s are inside a static function whose only observable difference is
+    /// the flag the tests above already check — this pins the *shape*, so a well-meaning `?? []`
+    /// cannot come back and leave those tests passing on the hoisted overload alone.
+    @Test func theSummarysOwnFetchesKeepFailureDistinctFromEmptiness() throws {
+        let raw = try sourceFile("Cadence/Shared/CadenceNoteActionSupport.swift")
+        let source = try strippingComments(sourceFile("Cadence/Shared/CadenceNoteActionSupport.swift"))
+        #expect(source != raw)
+        #expect(source.count == raw.count)
+        #expect(source.contains("struct CadenceNoteDeletionSummary"))
+
+        let body = try #require(CadenceSourceScan.functionBody(named: "forNote", in: source))
+        // It is the store-reading overload that was read, not the hoisted arithmetic one.
+        #expect(body.contains("modelContext.fetch(FetchDescriptor<Note>())"))
+        #expect(body.contains("modelContext.fetch(FetchDescriptor<MarkdownImageAsset>())"))
+        // And neither read is flattened.
+        #expect(!body.contains("?? []"))
+        #expect(CadenceSourceScan.matchCount("\\?\\? \\[\\]", in: body) == 0)
+        // The needle compiles and discriminates; `matchCount` answers -1 for one that does not.
+        #expect(CadenceSourceScan.matchCount("\\?\\? \\[\\]", in: "let x = y ?? []") == 1)
+    }
+
+    /// The confirmation renders the line, once, off the summary — the same arrangement the folder
+    /// line uses, and for the same reason: `Cadence/iOS/` is invisible to this target.
+    @Test func theIOSConfirmationRendersTheUnknownImpactLineFromTheSummary() throws {
+        let raw = try sourceFile("Cadence/iOS/iOSNoteDeletionSupport.swift")
+        let sheet = try strippingComments(sourceFile("Cadence/iOS/iOSNoteDeletionSupport.swift"))
+        #expect(sheet != raw)
+        #expect(sheet.count == raw.count)
+        #expect(sheet.contains("struct iOSNoteDeleteConfirmationSheet: View"))
+
+        #expect(sheet.components(separatedBy: "summary.unknownImpactLine").count - 1 == 1)
+        #expect(sheet.contains("unknownImpactRow("))
+        // It is drawn beside the counts it qualifies, not as a second red failure line: the
+        // refused-delete notice keeps `Theme.red` and this keeps `Theme.amber`.
+        #expect(sheet.contains("Theme.amber"))
+    }
 }
 
 // MARK: - Source-reading helpers

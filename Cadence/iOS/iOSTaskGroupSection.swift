@@ -66,6 +66,21 @@ struct iOSTaskGroupSection: View {
     /// See `iOSTaskGroupHeader.dropIdentity`. It also decides whether an *empty* group renders at
     /// all — `CadenceTaskDropSupport.showsWhenEmpty(_:)`.
     var dropIdentity: CadenceTaskGroupDropIdentity?
+    /// Rows the caller capped away, from
+    /// `CadenceTaskSurfaceOptions.hiddenCompletedCount(from:tier:)`. `nil` is the ordinary case: a
+    /// group that lists everything it has.
+    ///
+    /// **The group counts what it has, not what it drew (T-386).** `tasks` arrives already capped,
+    /// so counting it made the header disagree with the options bar above it — "Completed 40" over
+    /// a header reading 24. Adding the remainder back gives the header the section's true size and
+    /// puts the difference in a caption under the rows, so the screen states all three numbers and
+    /// none of them contradicts another.
+    var hiddenCount: Int?
+
+    /// The section's true size: the rows drawn plus the rows the cap withheld.
+    private var totalCount: Int {
+        tasks.count + (hiddenCount ?? 0)
+    }
 
     /// **A group you can still add to does not vanish when it empties; a group you cannot does.**
     /// The call sites used to each guard `if !tasks.isEmpty` before drawing this, which is right for
@@ -83,7 +98,7 @@ struct iOSTaskGroupSection: View {
                 iOSTaskGroupHeader(
                     title: title,
                     color: color,
-                    count: tasks.count,
+                    count: totalCount,
                     dropIdentity: dropIdentity
                 )
 
@@ -92,6 +107,21 @@ struct iOSTaskGroupSection: View {
                         ForEach(tasks) { task in
                             iOSTaskRow(task: task, showsContainer: showsContainer)
                                 .opacity(opacity)
+                        }
+
+                        // The line that makes the cap disclosed rather than silent. Not a button:
+                        // there is nowhere for it to lead — see
+                        // `CadenceTaskSurfaceOptions.overflowCaption(shown:total:)`.
+                        if let caption = CadenceTaskSurfaceOptions.overflowCaption(
+                            shown: tasks.count,
+                            total: totalCount
+                        ) {
+                            Text(caption)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Theme.dim)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, 2)
+                                .accessibilityLabel("\(title): \(caption)")
                         }
                     }
                 }

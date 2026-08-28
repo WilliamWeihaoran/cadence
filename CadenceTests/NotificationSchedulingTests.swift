@@ -159,6 +159,75 @@ struct NotificationSchedulingTests {
         #expect(request.fireDate == date("2026-06-10", hour: 7))
     }
 
+    /// **An out-of-range reminder time schedules nothing (T-363).**
+    ///
+    /// `Calendar.date(bySettingHour:minute:second:of:)` returns `nil` for every one of these, and
+    /// the planner used to end that expression in `?? now` — so a habit carrying a junk minute got
+    /// a *standing daily* reminder at whatever o'clock reconcile happened to run. The assertion is
+    /// `== nil` rather than "not at `now`" on purpose: the values below are not times, and the
+    /// planner has no business inventing one for them.
+    ///
+    /// `Habit.reminderMinuteOfDay` is an unvalidated `Int?` by design — see
+    /// `HabitStreakTests.reminderMinuteOfDayHasNoRangeValidationTodayByDesignGap` — so these
+    /// values are reachable from imported, synced or hand-edited data even though no picker emits
+    /// them.
+    @Test func habitReminderSchedulesNothingForAnOutOfRangeMinute() {
+        let now = date("2026-06-09", hour: 8)
+
+        for minuteOfDay in [-1500, -15, -1, 1440, 1500, 100_000] {
+            let habit = Habit(title: "Corrupt reminder \(minuteOfDay)")
+            habit.reminderMinuteOfDay = minuteOfDay
+
+            // Non-vacuity: the fallback these used to take was `now` itself, so a planner that
+            // still fell back would return a request rather than nil here.
+            #expect(
+                HabitNotificationPlanner.reminder(for: habit, now: now) == nil,
+                "minuteOfDay \(minuteOfDay) still schedules a daily reminder"
+            )
+        }
+    }
+
+    /// The guard is a range, and both of its ends are inclusive: 00:00 and 23:59 are real reminder
+    /// times and a fix that clipped either would silently drop a user's actual setting.
+    @Test func habitReminderAcceptsBothEndsOfTheValidMinuteRange() throws {
+        #expect(HabitNotificationPlanner.reminderMinuteRange == 0...1439)
+
+        let midnight = Habit(title: "Midnight")
+        midnight.reminderMinuteOfDay = 0
+        let beforeMidnight = date("2026-06-09", hour: 0) // 00:00 exactly — today's slot has passed
+        let midnightRequest = try #require(HabitNotificationPlanner.reminder(for: midnight, now: beforeMidnight))
+        #expect(midnightRequest.fireDate == date("2026-06-10", hour: 0))
+
+        let lastMinute = Habit(title: "23:59")
+        lastMinute.reminderMinuteOfDay = 1439
+        let now = date("2026-06-09", hour: 8)
+        let lastMinuteRequest = try #require(HabitNotificationPlanner.reminder(for: lastMinute, now: now))
+        #expect(lastMinuteRequest.fireDate == date("2026-06-09", hour: 23, minute: 59))
+    }
+
+    /// The plan a reconcile actually installs contains no request for the corrupt habit — the level
+    /// the bug was observed at, rather than the planner call in isolation.
+    @Test func planBuildOmitsHabitsWithAnOutOfRangeReminderMinute() {
+        let now = date("2026-06-09", hour: 8)
+
+        let validHabit = Habit(title: "Meditate")
+        validHabit.reminderMinuteOfDay = 6 * 60
+
+        let corruptHabit = Habit(title: "Imported junk")
+        corruptHabit.reminderMinuteOfDay = 1440
+
+        let plan = NotificationPlan.build(
+            tasks: [],
+            habits: [validHabit, corruptHabit],
+            now: now,
+            dueReminderHour: 9,
+            dueReminderMinute: 0
+        )
+
+        #expect(plan.habitReminders.map(\.identifier) == [NotificationIdentifiers.habitReminder(habitID: validHabit.id)])
+        #expect(plan.habitReminders.contains { $0.identifier == NotificationIdentifiers.habitReminder(habitID: corruptHabit.id) } == false)
+    }
+
     // MARK: - NotificationPlan.build
 
     @Test func planBuildContainsExactlyExpectedIdentifiers() {

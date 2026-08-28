@@ -214,7 +214,8 @@ struct iOSTodayTaskSections: View {
                     tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
                     showsContainer: showsContainer,
                     opacity: 0.62,
-                    dropIdentity: .completion
+                    dropIdentity: .completion,
+                    hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch)
                 )
             }
         }

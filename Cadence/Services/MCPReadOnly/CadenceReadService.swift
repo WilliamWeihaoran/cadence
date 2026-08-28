@@ -127,31 +127,33 @@ final class CadenceReadService {
         }
     }
 
-    func todayBrief(dateKey: String? = nil) throws -> CadenceTodayBrief {
+    /// The dashboard summary for a date, with every task section paged.
+    ///
+    /// **All four sections go through the same slice, which is the fix (T-385).** The inbox alone
+    /// used to end in `.prefix(50)` while its three siblings were unbounded, so the one cap in the
+    /// response was both undisclosed and inconsistent with the rest of it. Sharing one
+    /// `CadencePage.paging` call means no section can acquire a private cap without the envelope
+    /// reporting it: whatever is cut, `totalCount` still names the whole section.
+    ///
+    /// `limit` and `offset` apply to each section separately but identically — see
+    /// `CadenceTodayBrief`.
+    func todayBrief(dateKey: String? = nil, limit: Int = 50, offset: Int = 0) throws -> CadenceTodayBrief {
         let resolvedDateKey = try resolvedDateKey(dateKey)
         let tasks = try fetchTasks()
         let activeTasks = tasks.filter { !$0.isDone && !$0.isCancelled }
 
-        let scheduled = activeTasks
-            .filter { $0.scheduledDate == resolvedDateKey && $0.scheduledStartMin >= 0 }
-            .sorted(by: taskSort)
-            .map { taskSummary($0, allTasks: tasks) }
+        func section(_ isIncluded: (AppTask) -> Bool) -> CadencePage<CadenceTaskSummary> {
+            CadencePage.paging(
+                activeTasks.filter(isIncluded).sorted(by: taskSort),
+                offset: offset,
+                limit: limit
+            ) { taskSummary($0, allTasks: tasks) }
+        }
 
-        let dueToday = activeTasks
-            .filter { $0.dueDate == resolvedDateKey }
-            .sorted(by: taskSort)
-            .map { taskSummary($0, allTasks: tasks) }
-
-        let overdue = activeTasks
-            .filter { !$0.dueDate.isEmpty && $0.dueDate < resolvedDateKey }
-            .sorted(by: taskSort)
-            .map { taskSummary($0, allTasks: tasks) }
-
-        let inbox = activeTasks
-            .filter { $0.area == nil && $0.project == nil }
-            .sorted(by: taskSort)
-            .prefix(50)
-            .map { taskSummary($0, allTasks: tasks) }
+        let scheduled = section { $0.scheduledDate == resolvedDateKey && $0.scheduledStartMin >= 0 }
+        let dueToday = section { $0.dueDate == resolvedDateKey }
+        let overdue = section { !$0.dueDate.isEmpty && $0.dueDate < resolvedDateKey }
+        let inbox = section { $0.area == nil && $0.project == nil }
 
         let notes = try coreNotes(dateKey: resolvedDateKey)
         let noteSnippets = [notes.dailyNote, notes.weeklyNote, notes.permanentNote].compactMap { $0 }
@@ -161,7 +163,7 @@ final class CadenceReadService {
             scheduledTasks: scheduled,
             dueToday: dueToday,
             overdue: overdue,
-            inbox: Array(inbox),
+            inbox: inbox,
             noteSnippets: noteSnippets
         )
     }

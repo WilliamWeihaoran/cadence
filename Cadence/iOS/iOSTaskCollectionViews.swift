@@ -15,6 +15,7 @@ struct iOSAllTasksView: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @AppStorage("ios.allTasks.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
     @AppStorage("ios.allTasks.showCompleted") private var showCompleted = false
+    @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
 
     private var sortMode: CadenceTaskSortMode {
         CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder
@@ -47,9 +48,35 @@ struct iOSAllTasksView: View {
             sortMode: sortModeBinding,
             showCompleted: $showCompleted
         )
+        // **T-375.** A deep link for work finished elsewhere routes to this page, and this page
+        // kept the row it named behind the Completed toggle — so the tap landed on the right
+        // screen with the task hidden on it. Opening the toggle is what makes the link's promise
+        // ("show me this task") true, and it is the precondition for every other answer: a
+        // collapsed section renders no row to select, scroll to or open.
+        //
+        // It **writes** the stored preference rather than overriding the read. An override would
+        // make the toggle read `true` while the user's setting stayed `false`, so their next tap
+        // on it would appear to do nothing. This way the disclosure is simply open, with the
+        // control that closes it in view — the state is visible and the user owns it again the
+        // moment they touch it.
+        .onAppear(perform: revealCompletedIfLinked)
+        .onChange(of: deepLinkManager.revealedCompletedTaskID) { _, _ in
+            revealCompletedIfLinked()
+        }
         // No seed. All Tasks is every list at once, so there is no list for it to prefer.
         .iOSFloatingCreateTaskButton()
         .iOSHidesCompactNavigationBar()
+    }
+
+    /// Membership-tested, not id-tested: `revealedCompletedTaskID` is one value on a manager every
+    /// task surface can read, so a page whose universe does not contain the task leaves its
+    /// logbook shut. See `CadenceDeepLinkResolutionSupport.revealsCompletedSection`.
+    private func revealCompletedIfLinked() {
+        guard CadenceDeepLinkResolutionSupport.revealsCompletedSection(
+            revealedTaskID: deepLinkManager.revealedCompletedTaskID,
+            completedTasks: completedTasks
+        ) else { return }
+        showCompleted = true
     }
 }
 #endif

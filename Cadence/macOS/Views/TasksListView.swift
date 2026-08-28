@@ -50,6 +50,7 @@ struct TasksListView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(RemindersManager.self) private var remindersManager
+    @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
@@ -99,7 +100,22 @@ struct TasksListView: View {
             from: visibleTaskUniverse
                 .filter { $0.isDone || $0.isCancelled }
                 .taskCompletionSorted(),
-            tier: .desktop
+            tier: .desktop,
+            // A no-op at this tier, which is uncapped. Asked anyway so the reveal has one spelling
+            // across the platforms rather than a touch-only special case that only iOS remembers.
+            revealing: deepLinkManager.revealedCompletedTaskID
+        )
+    }
+
+    /// Whether the deep link being applied names one of **this** page's completed rows (T-375).
+    ///
+    /// The membership test, not the id alone: `revealedCompletedTaskID` sits on a shared manager
+    /// that every task surface can read, and a scope whose universe excludes the task must leave
+    /// its logbook shut. See `CadenceDeepLinkResolutionSupport.revealsCompletedSection`.
+    private var revealsCompletedSection: Bool {
+        CadenceDeepLinkResolutionSupport.revealsCompletedSection(
+            revealedTaskID: deepLinkManager.revealedCompletedTaskID,
+            completedTasks: completedTasks
         )
     }
 
@@ -284,8 +300,19 @@ struct TasksListView: View {
         .background(Theme.bg)
         .animation(.easeOut(duration: 0.26), value: visibleTasks.map(\.id))
         .animation(.easeOut(duration: 0.26), value: remindersManager.reminders.map(\.id))
+        // Collapsed on every appearance **except** the one a deep link asked to open (T-375). A
+        // link for work finished elsewhere routes here, and this page kept the row it named behind
+        // the Completed toggle — so the tap landed on the right page with the task hidden on it,
+        // and the link still did nothing the user could see.
         .onAppear {
-            isCompletedCollapsed = true
+            isCompletedCollapsed = !revealsCompletedSection
+        }
+        // The route can land while this page is already on screen — the sidebar selection moves to
+        // All Tasks without the view reappearing — so the appearance hook alone would miss it.
+        .onChange(of: deepLinkManager.revealedCompletedTaskID) { _, _ in
+            if revealsCompletedSection {
+                isCompletedCollapsed = false
+            }
         }
         // **T-253.** Appearance *and* foreground return, through the one shared modifier the
         // other three reminders surfaces apply — this view carried its own hand-written pair.

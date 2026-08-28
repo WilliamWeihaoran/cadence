@@ -6,7 +6,12 @@ enum CadenceMCPToolDefinitions {
     // with a `CadencePage` object instead of a bare array (T-382). A client that indexes the
     // response breaks, so the advertised version has to say so — it is the only signal an already
     // installed client gets.
-    private static let serverVersion = "0.3.0"
+    //
+    // 0.4.0 for the same reason, one tool later: `get_today_brief`'s four task sections are page
+    // envelopes too (T-385), so `brief["inbox"][0]` breaks exactly as `list_tasks` did. It is a
+    // separate bump rather than a quiet ride on 0.3.0 because a client that already updated for
+    // 0.3.0 would otherwise have no signal that a second response shape moved.
+    private static let serverVersion = "0.4.0"
     private static let writeToolNames: Set<String> = [
         "create_task",
         "update_task",
@@ -36,8 +41,10 @@ enum CadenceMCPToolDefinitions {
     private static var allTools: [Tool] {
         [
             Tool(name: "mcp_diagnostics", description: "Return Cadence MCP server version, capabilities, and store metadata.", inputSchema: schema([:])),
-            Tool(name: "get_today_brief", description: "Return a read-only Cadence dashboard summary for a date.", inputSchema: schema([
+            Tool(name: "get_today_brief", description: "Return a read-only Cadence dashboard summary for a date. Every task section is a page envelope.", inputSchema: schema([
                 "date": dateProperty("Optional yyyy-MM-dd date key or natural day such as today, tomorrow, yesterday, in 3 days, or 2 days ago. Defaults to today."),
+                "limit": integerProperty("Optional page size, capped at 200, applied to each of scheduledTasks, dueToday, overdue and inbox. Each section is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for the section totals alone.", minimum: 0, maximum: 200),
+                "offset": integerProperty("Optional zero-based offset, applied to each task section. Pass the previous response's nextOffset for the section you are walking; hasMore says whether one exists.", minimum: 0),
             ])),
             Tool(name: "list_tasks", description: "List Cadence tasks with read-only filters.", inputSchema: schema([
                 "status": flexibleStringArrayProperty("Optional raw task statuses.", enumValues: TaskStatus.allCases.map(\.rawValue)),

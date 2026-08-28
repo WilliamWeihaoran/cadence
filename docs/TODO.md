@@ -115,14 +115,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   almost none of `Shared/`. A test pins the two spellings agreeing; the duplication is deliberate
   and the pin is what makes it safe.
 
-- [T-399] **A cancelled kanban card sits in the active half of its column and never reaches the
-  completed half.** Residue from [[T-342]]. `KanbanSectionColumnView.unfrozenActiveTasks` is
-  `filter { !$0.isDone }` and `completedTasks` beside it is `filter { $0.isDone }` — a cancelled task
-  satisfies neither, so it vanishes from both halves. `KanbanListColumnView` splits the same way.
-  This is T-147 reaching a surface T-147 did not: the column's **own** split, not the freeze. Note
-  the contrast — `TasksListView` and `ListDetailComponents` feed their frozen order from
-  `openTasks`, so only their freeze filter was wrong; the kanban columns open-code both halves.
-
 - [T-400] **A dead calendar link can be detected with no stored metadata at all.** Residue from
   [[T-390]], which decided not to store calendar title/source because that needs stored properties
   on two `@Model` types and this project has no `SchemaMigrationPlan`. Detection needs none of it: a
@@ -161,31 +153,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   are straightforwardly predicate-backed; full-text note search may legitimately need in-memory
   scoring and can stay.
 
-- [T-385] **`get_today_brief` caps Inbox at 50 while every other section is uncapped, and says
-  nothing.** Verified: `prefix(50)` appears exactly once in `CadenceReadService`, on the inbox
-  array; scheduled, due and overdue are unbounded. `CadenceTodayBrief` carries arrays with no
-  counts or overflow flags, and the tool schema takes only `date`, so a caller cannot raise it or
-  detect it. 51 active inbox tasks silently become 50.
-  The widget code already has the better pattern — visible rows beside true totals. Copy it.
-
-- [T-386] **iOS says "Completed 40" and draws 24 rows — and the comment explaining why points at the
-  wrong ticket.** Verified: the options bar receives the full `completedTasks.count` while the
-  rendered group receives rows capped at the touch tier's 24, and the group header then counts the
-  capped array. So two counts on one screen disagree, both derived from the same list.
-  The cap itself may well be right for a phone; what is missing is the remainder — a "+N more" or
-  wording that says it is showing the first 24.
-  Also: `CadenceTaskSurfaceOptions.swift:129` says the decision lives in "`docs/TODO.md` T-291".
-  **That pointer is stale** — T-291 is closed and archived, and was about ordering inside a list
-  cascade. Fix the reference while fixing the behaviour, or the next reader loses the same time.
-
-- [T-381] **The Kanban column splits on `isDone`, so a cancelled task would land in the active
-  column — and only the caller stops it.** P3, and the audit is careful to say why: this cannot
-  happen today, because the sole caller filters cancelled tasks before passing them in
-  (`KanbanListSectionSupportViews`). Verified: `KanbanSectionColumnView.swift:44` and `:52` split on
-  `!$0.isDone` / `$0.isDone`, while `CadenceTaskQuerySharedSupport.isFinishedTask` is the correct
-  predicate. So the helper is right by caller shape rather than by construction, and nothing pins
-  that. Either use `isFinishedTask` in the column, or add a test proving every caller pre-filters.
-
 - [T-372a] **`CadenceSearchMatcher.rank` is the one ordering left partial after [[T-372]].** Found
   while fixing T-372 and deliberately not fixed there: `rank` ends at score-then-title
   (`Shared/CadenceSearchMatcher.swift` lines 27-30), so two hits with the same score and the same
@@ -195,24 +162,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   site rather than the one-file change T-372 was. Scoped out to keep the MCP fix reviewable; the
   fix shape is the same `id` tail `CadenceMCPOrdering.precedes` now uses.
 
-- [T-375] **A completed task's deep link lands on All Tasks without opening the task, and the
-  macOS destination→sidebar mapping has an unpinned `?? .today` fallback.** Residue from [[T-368]],
-  filed rather than folded into it. (a) T-368 killed the lingering-arm bug — the dangerous half —
-  but tapping a widget link for a task you finished elsewhere still does not *show* you that task;
-  All Tasks keeps completed rows behind a collapsed toggle. Deciding to auto-expand or auto-select
-  there is a product call, not a bug fix. (b) `macOSRootView` now maps a resolved destination
-  through `SidebarStaticDestination.allCases.first { $0.feature == destination } ?? .today`. That
-  is correct today — every destination `resolvedDestination` can return is in that table, and
-  `allTasks` is a case — but nothing pins it, so a future resolver returning `.notes` or `.inbox`
-  would silently route to Today with the suite green.
-
-- [T-363] **An out-of-range `reminderMinuteOfDay` schedules a daily reminder at whatever time
-  reconcile happened to run.** Measured by probe: `Calendar.date(bySettingHour:minute:second:of:)`
-  returns `nil` for -15, 1440 and 1500, and `NotificationScheduling.swift:190` ends `?? now`. Not
-  reachable from the picker; reachable from existing or imported data. `Habit.swift` already
-  documents that the model does no range validation. Guard `0...1439` in the planner and return
-  `nil`.
-
 - [T-367] **Global Cmd+Z on the model context is either a feature or a hazard, and nothing says
   which.** P3, source measured, runtime behaviour not measured. The macOS root installs an
   `UndoManager` on the shared `ModelContext` and routes non-text Cmd+Z/Cmd+Shift+Z into it, while
@@ -220,14 +169,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   to the text view. **Decide:** if global model undo is real, pin what it may undo; if not, remove
   the root fallback. Do not leave it undecided — the current state means neither the code nor the
   copy can be trusted.
-
-- [T-370] **Deep-link root application is correct and unpinned; the parser's URL shape is
-  undecided.** Two P2/P3s. (a) `iOSRootView` correctly writes *both* the sidebar selection and the
-  compact tab route, and `macOSRootView` sets selection — no test guards either; the compact route
-  *table* is well pinned, the wiring that consumes it is not. Relates to [[T-334]]. (b) The parser
-  switches on `url.host`, so singleton routes silently ignore extra path components and
-  `cadence:///today` is rejected. Not reachable from app-owned widgets, which emit canonical URLs.
-  Pick strict or lenient and pin it.
 
 - [T-374] **The most common defect shape in 21 audits is "a correct shared helper exists and call
   sites don't use it" — enforce it mechanically.** Synthesis, not a new defect. [[T-359]] (four
@@ -415,15 +356,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the *impact* claim in the audit ("iOS can leave tasks pointing at an old calendar event") is only
   true of pre-existing data, and a ticket that overstates it will get someone chasing a live bug
   that is not live.
-
-- [T-298] **A failed fetch makes the note-delete summary understate the damage.** From the same
-  audit, premise verified at `CadenceNoteActionSupport.swift:130-131`: both the note fetch and the
-  image-asset fetch are `(try? …) ?? []`, so a store read failure reads as "nothing will be
-  affected" in the confirmation the user is about to accept. The actual cleanup in
-  `CadenceListDeleteHelpers` is more conservative, so this is a misleading-summary risk rather than
-  data loss — but it is misleading in the one direction that matters, telling the user a delete is
-  smaller than it is. Surface an unknown-impact state instead of collapsing a failure to zero.
-  Same shape as [[T-291]]: a failure treated as an ordinary empty result.
 
 - [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
   Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes

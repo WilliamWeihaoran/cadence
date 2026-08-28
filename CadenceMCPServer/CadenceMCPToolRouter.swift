@@ -44,7 +44,11 @@ struct CadenceMCPToolRouter {
             ))
 
         case "get_today_brief":
-            return try encode(readService.todayBrief(dateKey: try arguments.dateKey("date")))
+            return try encode(readService.todayBrief(
+                dateKey: try arguments.dateKey("date"),
+                limit: try arguments.strictInt("limit") ?? 50,
+                offset: try arguments.strictInt("offset") ?? 0
+            ))
 
         case "list_tasks":
             let options = CadenceTaskListOptions(

@@ -62,6 +62,14 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
     /// nothing has been lost while they decide whether to try again.
     static let deleteFailureNotice = "Couldn't delete this note. Nothing was removed."
 
+    /// Shown **before** the delete, when a store read behind the counts failed (T-298).
+    ///
+    /// It names the direction of the doubt rather than just admitting one, because the doubt is
+    /// one-sided: every count a failed fetch can move, it moves *down*. There is no wording of
+    /// "something went wrong" that stops a user reading "0 embedded images" as "no images".
+    static let unknownImpactNotice =
+        "Couldn't check everything this delete touches. It may remove more than the counts below show."
+
     /// Whitespace-separated tokens in the note's body — the typed content that is actually
     /// unrecoverable.
     var words = 0
@@ -90,11 +98,42 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
     /// user never made.
     var folder: String?
 
+    /// True when a store read behind `images` or `backlinks` failed, so those two counts are
+    /// floors rather than totals.
+    ///
+    /// **A failed fetch is not an empty store, and this summary used to say it was.** Both reads
+    /// in `forNote(_:in:)` were `(try? …) ?? []`, so a store hiccup produced a confirmation
+    /// reading "0 embedded images" and no broken-link line — the smallest possible account of the
+    /// delete, presented as fact, on the screen where the user says yes. That is the one direction
+    /// a wrong number must not go: `CadenceNoteDeletionSummary`'s standing rule is that it may not
+    /// *over*-promise what survives, and collapsing a failure to zero does exactly that.
+    ///
+    /// The rule is already settled twice in this codebase and is followed rather than re-argued.
+    /// `HabitNotificationReconcileSupport.reconcileInput` returns `nil` when either fetch failed
+    /// because reconcile reads an empty desired set as "cancel everything", and
+    /// `MarkdownTaskEmbedSupport.storeHoldsTask` returns `Bool?` so a failed read keeps the cached
+    /// task — a store hiccup is not evidence of a deletion. Same distinction, third site.
+    ///
+    /// It is a flag beside the counts rather than `Int?` counts because `words`, `tags` and
+    /// `folder` are read off the note itself and stay exact. Making all four optional to express
+    /// the uncertainty of two would lose that.
+    var hasUnknownImpact = false
+
+    /// The unknown-impact sentence, or `nil` when the counts are complete.
+    var unknownImpactLine: String? {
+        hasUnknownImpact ? Self.unknownImpactNotice : nil
+    }
+
     /// True when there is nothing to lose but the row itself — a note created and never written
     /// in. Published rather than inferred from `lostItemLines.isEmpty` for the reason
     /// `CadenceListDeletionSummary.isEmpty` is: the empty case gets a sentence, not an empty list.
+    ///
+    /// **Never true while the impact is unknown**, whatever the counts say. "Nothing has been
+    /// written in this note yet." is the strongest claim on this screen, and a note with no words
+    /// and an unread image table is exactly the case where it would be false and reassuring at the
+    /// same time.
     var isEmpty: Bool {
-        words == 0 && images == 0
+        words == 0 && images == 0 && !hasUnknownImpact
     }
 
     /// One line per non-zero loss. Zero-count kinds are omitted rather than shown as "0 images".
@@ -132,22 +171,36 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
     /// The call-site API: counts against the whole store, so `images` matches what the sweep in
     /// `deleteNote` will actually collect.
     static func forNote(_ note: Note, in modelContext: ModelContext) -> Self {
-        let allNotes = (try? modelContext.fetch(FetchDescriptor<Note>())) ?? []
-        let assetIDs = Set(((try? modelContext.fetch(FetchDescriptor<MarkdownImageAsset>())) ?? []).map(\.id))
+        // The `?? []` that used to be on both of these is the whole of T-298. `try?` already
+        // erases *why* the read failed; coercing the `nil` as well erases *that* it failed, and
+        // what is left is indistinguishable from an empty store.
+        let allNotes = try? modelContext.fetch(FetchDescriptor<Note>())
+        let assetIDs = (try? modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()))
+            .map { Set($0.map(\.id)) }
         return forNote(note, allNotes: allNotes, existingImageAssetIDs: assetIDs)
     }
 
     /// The same arithmetic with the store reads hoisted out, so it can be exercised directly.
-    static func forNote(_ note: Note, allNotes: [Note], existingImageAssetIDs: Set<UUID>) -> Self {
-        let survivors = allNotes.filter { $0.id != note.id }
+    ///
+    /// **`nil` means the fetch failed; `[]` means the store is empty.** The two produce the same
+    /// arithmetic — there is nothing else to compute from — and differ in `hasUnknownImpact`,
+    /// which is what the confirmation needs in order to stop presenting a floor as a total. Same
+    /// signature shape as `HabitNotificationReconcileSupport.reconcileInput`, for the same reason.
+    static func forNote(_ note: Note, allNotes: [Note]?, existingImageAssetIDs: Set<UUID>?) -> Self {
+        let survivors = (allNotes ?? []).filter { $0.id != note.id }
         let stillReferenced = survivors.reduce(into: Set<UUID>()) { result, other in
             result.formUnion(MarkdownImageAssetService.referencedIDs(in: other.content))
         }
         let reclaimed = MarkdownImageAssetService.referencedIDs(in: note.content)
-            .intersection(existingImageAssetIDs)
+            .intersection(existingImageAssetIDs ?? [])
             .subtracting(stillReferenced)
 
         var summary = Self()
+        // Either failure taints both derived counts, not one each. A missing note table drops the
+        // backlink count *and* leaves `stillReferenced` empty, which moves `images` in the other
+        // direction; a missing asset table empties the intersection. Naming which fetch failed
+        // would be a distinction the confirmation has no way to act on.
+        summary.hasUnknownImpact = allNotes == nil || existingImageAssetIDs == nil
         summary.words = wordCount(note.content)
         summary.images = reclaimed.count
         summary.tags = (note.tags ?? []).count

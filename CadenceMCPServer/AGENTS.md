@@ -127,9 +127,12 @@ than naming a build.
 
 ## Working Rules
 
-- **Every `list_*` tool, `search_cadence` and `get_recent_mcp_writes` answer with `CadencePage`,
-  not a bare array** (T-382). The envelope is `items`, `offset`, `returnedCount`, `totalCount`,
-  `hasMore`, `nextOffset`, declared once in `Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift`.
+- **Every `list_*` tool, `search_cadence`, `get_recent_mcp_writes` and each of `get_today_brief`'s
+  four task sections answer with `CadencePage`, not a bare array** (T-382; the brief followed in
+  T-385, where an undisclosed `prefix(50)` on `inbox` alone turned 51 tasks into 50 with no count
+  and no way for the caller to raise it). The envelope is `items`, `offset`, `returnedCount`,
+  `totalCount`, `hasMore`, `nextOffset`, declared once in
+  `Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift`.
   Add a new list tool through `CadencePage.paging` and give it an `offset` argument beside its
   `limit`; a `hasMore: true` that the caller cannot act on is worse than the silent truncation the
   envelope replaced. `CadenceTests` pins the schema/router halves of that pairing by scan

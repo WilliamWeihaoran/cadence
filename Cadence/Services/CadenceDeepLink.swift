@@ -17,24 +17,52 @@ nonisolated enum CadenceDeepLink: Equatable {
     init?(url: URL) {
         guard url.scheme?.caseInsensitiveCompare("cadence") == .orderedSame else { return nil }
 
-        let host = (url.host ?? "").lowercased()
-        let pathComponents = url.pathComponents.filter { $0 != "/" }
+        let segments = Self.segments(of: url)
+        guard let route = segments.first?.lowercased() else { return nil }
+        let payload = Array(segments.dropFirst())
 
-        switch host {
+        switch route {
         case "today":
             self = .today
         case "task":
-            guard let rawID = pathComponents.first, let id = UUID(uuidString: rawID) else { return nil }
+            guard let rawID = payload.first, let id = UUID(uuidString: rawID) else { return nil }
             self = .task(id)
         case "habits":
             self = .habits
         case "goals", "milestones":
             self = .goals
         case "calendar":
-            self = .calendar(dateKey: Self.calendarDateKey(fromPath: pathComponents))
+            self = .calendar(dateKey: Self.calendarDateKey(fromPath: payload))
         default:
             return nil
         }
+    }
+
+    /// The route name and its payload, in order, from **either** URL shape.
+    ///
+    /// **T-370: this is the lenient reading, and it is T-369's rule applied one level up.** The
+    /// parser used to switch on `url.host` alone, which made two arbitrary distinctions. It
+    /// rejected `cadence:///today` — an empty authority puts `today` in the *path*, so the host is
+    /// `nil` and a URL naming a route the app has landed in the `default` branch and did nothing.
+    /// And it silently ignored trailing components on singleton routes, so `cadence://today/junk`
+    /// was accepted while `cadence:///today` was not: the same slack, granted in one place and
+    /// refused in the other.
+    ///
+    /// Strict was the alternative and it loses on the same argument T-369 settled: a URL that
+    /// names a route the app has is a request to open that route, and refusing it leaves the tap
+    /// doing nothing at all — the worst outcome available, because there is no error surface
+    /// behind a deep link. T-369 chose to degrade a mangled `cadence://calendar/not-a-date` to the
+    /// bare calendar link rather than reject it; rejecting `cadence:///today` is that decision
+    /// made the other way for no reason. So both shapes parse, and extra components stay ignored
+    /// **by every** singleton route rather than by whichever ones happened to.
+    ///
+    /// A payload that is *required* is still required: `cadence://task` with no id is `nil`, and a
+    /// non-UUID id is `nil`, because there is no task to open and no bare "task" screen to degrade
+    /// to. `url` still emits the canonical `cadence://<route>` form — leniency is a property of
+    /// what the app accepts, not of what it produces.
+    private static func segments(of url: URL) -> [String] {
+        let host = url.host.map { [$0] } ?? []
+        return host + url.pathComponents.filter { $0 != "/" }
     }
 
     var url: URL {
@@ -87,11 +115,23 @@ final class CadenceDeepLinkManager {
     var route: Route?
     var pendingTaskID: UUID?
 
+    /// A finished task whose surface must open its collapsed Completed section before the row the
+    /// link names exists on the page (T-375). Written by
+    /// `resolvedDestination(for:modelContext:)`, which is the only thing that knows whether the
+    /// task is finished; see `CadenceDeepLinkResolutionSupport.TaskLinkResolution` for why this is
+    /// a reveal rather than a second `pendingTaskID`.
+    ///
+    /// Its lifetime is the route's. `handle(_:)` clears it for **every** link, so a singleton
+    /// route — which never reaches the resolver's task branch — cannot leave the previous link's
+    /// logbook standing open.
+    var revealedCompletedTaskID: UUID?
+
     private init() {}
 
     func handle(_ url: URL) {
         guard let deepLink = CadenceDeepLink(url: url) else { return }
         route = Route(deepLink: deepLink)
+        revealedCompletedTaskID = nil
         switch deepLink {
         case .today:
             pendingTaskID = nil

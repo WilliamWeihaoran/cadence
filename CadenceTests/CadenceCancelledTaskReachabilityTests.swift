@@ -998,6 +998,115 @@ struct CadenceCancelledTaskReachabilityTests {
         )
     }
 
+    // MARK: - T-381 / T-399: the kanban section column owns both halves
+
+    /// The kanban section column is the fourth arrival of the T-147 shape, and the first where the
+    /// view owns **both** halves rather than being handed `openTasks`. It split on
+    /// `!$0.isDone` / `$0.isDone`.
+    ///
+    /// **That pair partitions**, which is why the partition property alone does not catch it —
+    /// `theKanbanColumnHalvesPartitionEveryStatus` passes against the old split. What it gets wrong
+    /// is *which* half: a cancelled card is not `isDone`, so it sat among the work you still intend
+    /// to do and never reached the completed half. Both tickets describe it as vanishing from both
+    /// halves; that is the T-147 spelling — `!isDone && !isCancelled` against `isDone &&
+    /// !isCancelled` — and not this one. Measured, not reasoned: against the old split the cancelled
+    /// card came back in `active`.
+    ///
+    /// **Which ticket was right.** T-381 said it cannot happen today because the caller pre-filters
+    /// — verified, and true: `ListSectionsKanbanView.sortedTasksForSection` drops `isCancelled`
+    /// before any column sees it. T-399 said it *can* happen because the column open-codes both
+    /// halves — a claim about shape, not reachability, and its supporting claim that
+    /// `KanbanListColumnView` "splits the same way" is wrong: `TaskListKanbanColumn` does not split
+    /// at all. So this is a hardening, like T-203 before it, not a live bug.
+    ///
+    /// Asserting only that a cancelled card is **absent from the active half** would pass against a
+    /// version that drops it from both halves, so both halves are named below.
+    @Test func aCancelledKanbanCardIsInExactlyOneHalfOfItsColumn() {
+        let open = task("open")
+        let started = task("started", status: .inProgress)
+        let done = task("done", status: .done)
+        let cancelled = task("cancelled", status: .cancelled)
+
+        let halves = KanbanBoardSupport.columnHalves(from: [open, started, done, cancelled])
+
+        #expect(halves.active.map(\.title) == ["open", "started"])
+        #expect(halves.completed.map(\.title) == ["done", "cancelled"])
+        #expect(halves.completed.contains { $0.id == cancelled.id })
+        #expect(!halves.active.contains { $0.id == cancelled.id })
+    }
+
+    /// The two halves must cover the input exactly once each — no status in both, none in neither,
+    /// nothing invented. `.inProgress` is here for the same reason as in
+    /// `openAndFinishedPartitionEveryStatus`: the status set has grown before.
+    @Test func theKanbanColumnHalvesPartitionEveryStatus() {
+        let cards = TaskStatus.allCases.map { task($0.rawValue, status: $0) }
+        let halves = KanbanBoardSupport.columnHalves(from: cards)
+
+        #expect(halves.active.count + halves.completed.count == cards.count)
+        for card in cards {
+            let inActive = halves.active.contains { $0.id == card.id }
+            let inCompleted = halves.completed.contains { $0.id == card.id }
+            #expect(
+                inActive != inCompleted,
+                "\(card.status.rawValue) is in \(inActive && inCompleted ? "both" : "neither") half of the column"
+            )
+        }
+        #expect(Set((halves.active + halves.completed).map(\.id)) == Set(cards.map(\.id)))
+    }
+
+    /// A column's halves read the shared predicate rather than being a second spelling of it.
+    @Test func theKanbanColumnHalvesAgreeWithTheSharedFinishedPredicate() {
+        let cards = TaskStatus.allCases.map { task($0.rawValue, status: $0) }
+        let halves = KanbanBoardSupport.columnHalves(from: cards)
+
+        #expect(halves.completed.map(\.id) == CadenceTaskQuerySupport.finishedTasks(from: cards).map(\.id))
+        #expect(halves.active.map(\.id) == CadenceTaskQuerySupport.openTasks(from: cards).map(\.id))
+    }
+
+    /// The behavioural pins above run against the helper; this is what stops a *column* growing its
+    /// own copy of the split again, which is how T-342 turned out to be four places.
+    @Test func neitherKanbanColumnStillSplitsOnDoneAlone() throws {
+        let columns = [
+            "Cadence/macOS/Views/KanbanSectionColumnView.swift",
+            "Cadence/macOS/Views/KanbanListColumnView.swift"
+        ]
+        try expectPatternOccurrences(
+            of: activeHalfSplitOnDoneAlone,
+            at: Dictionary(uniqueKeysWithValues: columns.map { ($0, 0) })
+        )
+        // Neither column classifies a card by `isDone` at all now: the section column defers to the
+        // shared helper, and the list column does not split.
+        try expectOccurrences(
+            of: "$0.isDone",
+            at: Dictionary(uniqueKeysWithValues: columns.map { ($0, 0) })
+        )
+        // One `columnHalves` call, read twice, so the two halves cannot drift apart.
+        try expectOccurrences(
+            of: "KanbanBoardSupport.columnHalves(from: tasks)",
+            at: ["Cadence/macOS/Views/KanbanSectionColumnView.swift": 1]
+        )
+        // Two `isFinishedTask($0)` in the helper is one per half: lose either and the count drops.
+        try expectOccurrences(
+            of: "CadenceTaskQuerySupport.isFinishedTask($0)",
+            at: ["Cadence/macOS/Views/KanbanBoardSupport.swift": 2]
+        )
+    }
+
+    /// T-381's reading, pinned. The section board's sole caller still drops cancelled work upstream
+    /// and the All Tasks board is still fed `openTasks`, so the fix above moved nothing on screen.
+    /// If either of these goes, cancelled cards reach a column for real, and whoever changes it
+    /// should have to say so.
+    @Test func theKanbanBoardsStillKeepCancelledWorkOffTheColumnsUpstream() throws {
+        try expectOccurrences(
+            of: "!$0.isCancelled && $0.resolvedSectionName",
+            at: ["Cadence/macOS/Views/KanbanListSectionSupportViews.swift": 1]
+        )
+        try expectOccurrences(
+            of: "CadenceTaskQuerySupport.openTasks(from: tasksInActiveContainers)",
+            at: ["Cadence/macOS/Views/KanbanBoardSupport.swift": 1]
+        )
+    }
+
     /// Without this, every zero above could be a scan reading an empty string — the exact failure
     /// mode a `/tmp` against `/private/tmp` path mismatch produces on an isolated build tree.
     @Test func theSourceScanIsNotVacuous() throws {
@@ -1023,6 +1132,20 @@ struct CadenceCancelledTaskReachabilityTests {
 
         let iosColumn = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarBoardView.swift"))
         #expect(iosColumn.contains("struct iOSCalendarBoardDayColumn: View"))
+
+        #expect(files.contains("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
+        #expect(files.contains("Cadence/macOS/Views/KanbanListColumnView.swift"))
+        #expect(files.contains("Cadence/macOS/Views/KanbanBoardSupport.swift"))
+        #expect(files.contains("Cadence/macOS/Views/KanbanListSectionSupportViews.swift"))
+
+        let sectionColumn = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
+        #expect(sectionColumn.contains("struct ListSectionKanbanColumn: View"))
+        let listColumn = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanListColumnView.swift"))
+        #expect(listColumn.contains("struct TaskListKanbanColumn: View"))
+        let boardSupport = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanBoardSupport.swift"))
+        #expect(boardSupport.contains("static func columnHalves(from tasks: [AppTask])"))
+        let boardCaller = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanListSectionSupportViews.swift"))
+        #expect(boardCaller.contains("struct ListSectionsKanbanView: View"))
     }
 }
 

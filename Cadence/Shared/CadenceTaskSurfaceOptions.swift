@@ -123,10 +123,14 @@ enum CadenceTaskSurfaceOptions {
     /// scroll bar, a trackpad flick, and a disclosure that starts collapsed and has to be opened on
     /// purpose. Same rows, different cost to leave uncapped.
     ///
-    /// **What is genuinely unresolved is the touch tier's silence**, not macOS's absence of a cap:
-    /// iOS's options bar reads the true count while the section header under it reads the capped
-    /// one, so a phone with 40 finished tasks offers "Completed 40" and lists 24. That is
-    /// `docs/TODO.md` T-291 and wants a product decision, not a constant.
+    /// **The touch tier's silence was the other half of this, and it is fixed rather than open**
+    /// (T-386; the pointer here used to name a closed, archived ticket about ordering inside a list
+    /// cascade, which cost the next reader the same search). iOS's options bar read the true count
+    /// while the section header under it counted the capped array, so a phone with 40 finished
+    /// tasks offered "Completed 40" and drew 24 rows under a header that also said 24 — two counts
+    /// on one screen, both derived from the same list. The cap stays; what it now carries is
+    /// `hiddenCompletedCount(from:tier:)` and the caption below it, so the header counts the whole
+    /// section and the rows say how many of it they are.
     static func completedRowLimit(for tier: CadenceTaskSurfaceTier) -> Int? {
         switch tier {
         case .touch:
@@ -143,5 +147,56 @@ enum CadenceTaskSurfaceOptions {
     static func completedRows<Task>(from tasks: [Task], tier: CadenceTaskSurfaceTier) -> [Task] {
         guard let limit = completedRowLimit(for: tier) else { return tasks }
         return Array(tasks.prefix(limit))
+    }
+
+    /// The completed rows a surface lists, with one row guaranteed to be among them.
+    ///
+    /// **T-375: "expanded" has to mean "listed".** A deep link to finished work opens All Tasks'
+    /// Completed section so the task the URL names is on the page. On the touch tier that section
+    /// stops at `completedRowLimit`, and the rows are ordered newest-settled first — so the
+    /// links most in need of the reveal, the ones for work finished long enough ago that the user
+    /// went looking through a widget, are exactly the ones the cap would drop. Expanding a section
+    /// that still does not contain the task is the original defect with an extra animation.
+    ///
+    /// The revealed row is appended rather than promoted: its place in the logbook is a fact about
+    /// when it was settled, and reordering the list around a deep link would misdate it. It joins
+    /// the end only when the cap would otherwise have excluded it — inside the cap, this is
+    /// `completedRows(from:tier:)` exactly, and on `.desktop`, which has no cap, it always is.
+    static func completedRows<Task: Identifiable>(
+        from tasks: [Task],
+        tier: CadenceTaskSurfaceTier,
+        revealing revealedID: Task.ID?
+    ) -> [Task] {
+        let rows = completedRows(from: tasks, tier: tier)
+        guard let revealedID, !rows.contains(where: { $0.id == revealedID }) else { return rows }
+        guard let revealed = tasks.first(where: { $0.id == revealedID }) else { return rows }
+        return rows + [revealed]
+    }
+
+    /// How many completed rows the tier's cap is **not** drawing, or `nil` when it draws them all.
+    ///
+    /// The denominator half of `completedRows(from:tier:)`, deliberately taking the same uncapped
+    /// array so the two cannot disagree about what "more" means — the shape
+    /// `CadenceTaskPresentationSupport.hiddenSubtaskCount(for:)` already uses for the row's
+    /// "+N more". `nil` rather than `0` for the same reason it does: there is no "+0 more" line.
+    static func hiddenCompletedCount<Task>(from tasks: [Task], tier: CadenceTaskSurfaceTier) -> Int? {
+        let hidden = tasks.count - completedRows(from: tasks, tier: tier).count
+        return hidden > 0 ? hidden : nil
+    }
+
+    /// What a capped section says under its rows, or `nil` when it is drawing all of them.
+    ///
+    /// **It names both numbers rather than only the remainder.** "+16 more" is the right line for a
+    /// task row's subtasks, where tapping the row opens the rest; there is no "show more" anywhere
+    /// in this app, so on a completed section the same words would promise an affordance that does
+    /// not exist. "Showing 24 of 40" states what the screen *is* instead, and it is the line that
+    /// reconciles the two numbers T-386 found disagreeing: the options bar's 40 and the rows you
+    /// can count.
+    ///
+    /// Takes the two counts rather than the array so the caption cannot be computed from a
+    /// different list than the one that was capped.
+    static func overflowCaption(shown: Int, total: Int) -> String? {
+        guard total > shown else { return nil }
+        return "Showing \(shown) of \(total)"
     }
 }

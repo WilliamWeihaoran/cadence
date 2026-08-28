@@ -40,6 +40,29 @@ enum CadenceDeepLinkResolutionSupport {
         var destination: CadenceFeatureDestination
         /// What `pendingTaskID` should be after resolution. `nil` means disarm.
         var pendingTaskID: UUID?
+        /// A finished task the destination keeps behind a collapsed disclosure, which the
+        /// destination must open so the row the link names is actually on the page. `nil` for
+        /// every link that needs no reveal.
+        ///
+        /// **T-375(a), and the product call is auto-expand rather than auto-select.** T-368 sent a
+        /// link for work finished elsewhere to All Tasks and disarmed it; All Tasks keeps
+        /// completed rows behind a collapsed "Completed N" toggle, so the tap landed on a page
+        /// with the task hidden on it and the link still did nothing visible. Expanding is not one
+        /// option among several — it is the precondition for all of them, because a collapsed
+        /// section renders no row to select, scroll to or open.
+        ///
+        /// **Why not also re-arm `pendingTaskID` and open the inspector.** That was the tempting
+        /// second half, and it re-creates the exact defect this ticket is residue from. The arm is
+        /// consumed by a row's `onAppear`; both platforms build their completed list inside a
+        /// `LazyVStack`, so a task finished a year ago sits far enough down the logbook that its
+        /// row is never built, the arm is never consumed, and it fires later on whatever unrelated
+        /// screen next happens to draw that row — T-368's lingering arm, reintroduced. An
+        /// expansion cannot linger into a wrong screen: the worst it can do is leave a disclosure
+        /// open on the page the link asked for, with the toggle that closes it in view.
+        ///
+        /// So the link's promise is met at the level it can be met reliably: the task the URL
+        /// names is *listed* on the page the URL opens.
+        var revealedCompletedTaskID: UUID?
     }
 
     /// Whether Today would list this task, asked of the predicate Today actually runs rather than
@@ -69,9 +92,36 @@ enum CadenceDeepLinkResolutionSupport {
             return TaskLinkResolution(outcome: .missing, destination: .today, pendingTaskID: nil)
         }
         guard todayShows(task, todayKey: todayKey) else {
-            return TaskLinkResolution(outcome: .outsideToday, destination: .allTasks, pendingTaskID: nil)
+            return TaskLinkResolution(
+                outcome: .outsideToday,
+                destination: .allTasks,
+                pendingTaskID: nil,
+                // Only finished work needs the reveal. An open task dated for another day is in
+                // All Tasks' *active* list already, and expanding the logbook for it would open a
+                // section the link has nothing to do with. `isFinishedTask` is the shared
+                // completed/logbook predicate — done or cancelled — and is the same one
+                // `CadenceTaskQuerySupport.completedTasks(from:)` builds that section from, so the
+                // reveal cannot come to disagree with what the section contains.
+                revealedCompletedTaskID: CadenceTaskQuerySupport.isFinishedTask(task) ? id : nil
+            )
         }
         return TaskLinkResolution(outcome: .todayVisible, destination: .today, pendingTaskID: id)
+    }
+
+    /// Whether a task surface should open its Completed section for the link being applied.
+    ///
+    /// The membership test is the load-bearing half, not decoration. `revealedCompletedTaskID` is
+    /// one value on one shared manager and every task surface can see it, but only the surface the
+    /// link routed to lists the task: Today's Completed section is scoped to work settled *today*,
+    /// so a link for something finished in January would otherwise expand a section that cannot
+    /// contain it — a disclosure opening on an unrelated screen, which is the shape T-368 was
+    /// about. A surface expands only when the row is one of the rows it is about to draw.
+    static func revealsCompletedSection<Task: Identifiable>(
+        revealedTaskID: Task.ID?,
+        completedTasks: [Task]
+    ) -> Bool {
+        guard let revealedTaskID else { return false }
+        return completedTasks.contains { $0.id == revealedTaskID }
     }
 
     /// One row by id, or `nil`. A fetch rather than a `@Query`: `macOSRootView` deliberately keeps
@@ -107,6 +157,10 @@ extension CadenceDeepLinkManager {
         if pendingTaskID == id {
             pendingTaskID = resolution.pendingTaskID
         }
+        // Unconditional, including the `nil` case: this is the answer for the route being
+        // resolved, and a stale reveal left over from a previous link would expand a logbook for a
+        // task the user is no longer being sent to.
+        revealedCompletedTaskID = resolution.revealedCompletedTaskID
         return resolution.destination
     }
 }

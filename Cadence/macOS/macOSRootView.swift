@@ -286,10 +286,11 @@ struct macOSRootView: View {
         // restores wherever it was last scrolled, so without this the link lands on a remembered
         // date. `openCalendarLink` returns false for every other route and is a no-op for them.
         calendarNavigationManager.openCalendarLink(route)
-        // Mapped through `SidebarStaticDestination` rather than a second switch, so the sidebar's
-        // feature-to-item table stays the only one. Every destination a deep link can produce is
-        // in it; `.today` is the safety net, not a route.
-        selection = SidebarStaticDestination.allCases.first { $0.feature == destination }?.item ?? .today
+        // Mapped through the sidebar's own feature-to-page table rather than a second switch, so
+        // it stays the only one. It used to be `SidebarStaticDestination.allCases`, which is the
+        // *Settings customisation* table and holds six of the eleven destinations — see
+        // `deepLinkSidebarItem` for what that quietly did to `.notes` and `.inbox`.
+        selection = destination.deepLinkSidebarItem
     }
 }
 
