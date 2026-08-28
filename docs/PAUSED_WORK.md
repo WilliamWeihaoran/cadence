@@ -6,14 +6,9 @@ working tree holds the staged-but-uncommitted batches. `main` is green at `859e2
 ## Repo state
 
 - **`main` = `859e270`**, green (3106 tests, 274 suites, exit 0, 0 warnings).
-- The working tree has **uncommitted staged work** — see "Staged, unverified" below. It has not
-  passed an integration run yet, so do not assume it is green.
-
-## Staged in the working tree, verified by their own agents, NOT integration-tested
-
-| Tickets | Files |
-|---|---|
-| T-389, T-390 | `Area.swift`, `Project.swift`, `Models/AGENTS.md`, `CalendarManager.swift`, `EventNoteSupportViews.swift`, `NotesView.swift`, + 2 test files |
+- **The working tree is clean.** Everything unlanded lives in the agent trees below, not in the
+  repo. An earlier attempt to stage the EventKit work aborted because a test run was live, so
+  nothing was left half-applied.
 
 ## Agent trees on disk — complete, awaiting staging
 
@@ -21,7 +16,7 @@ working tree holds the staged-but-uncommitted batches. `main` is green at `859e2
 |---|---|---|
 | `/private/tmp/cadence-status` | T-341, T-342, T-344, T-357 | Done. 8/8 mutations killed, 37/37 green. Residue filed as T-398 → **renumber to T-399** (collides with prefs). |
 | `/private/tmp/cadence-prefs` | T-392, T-393, T-394, T-351 | Done. 7/7 mutations killed, 36/36 green. Keeps **T-398**. |
-| `/private/tmp/cadence-eventkit` | T-389, T-390 | Done, already staged. Stale-link residue still to file as **T-400**. |
+| `/private/tmp/cadence-eventkit` | T-389, T-390 | Done, 5/5 mutations killed, 32/32 green. **Not staged** — take its 8 source/test files, not `docs/TODO.md`. Stale-link residue still to file as **T-400**. |
 | `/private/tmp/cadence-search` | T-377, T-378 | All six mutations killed; was in final verification. Owns **T-395**, **T-396**. |
 | `/private/tmp/cadence-subtask` | T-387, T-338 | Green + failing-first + M1–M4 collected. M5/M6 supplementary, not run. |
 | `/private/tmp/cadence-caps` | T-363, T-385, T-386 | Green at 80 tests; mutations not run. |
