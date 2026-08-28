@@ -41,6 +41,36 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     }
 }
 
+/// **Scope: duplicate rows, and the references a merge invalidates. Not an orphan sweep** (T-328).
+///
+/// What this service repairs is one shape of damage — the *same* row present twice, which is what
+/// a restore, a CloudKit round trip or a pre-merge migration leaves behind. It merges duplicate
+/// `Context`, `Area`, `Project` and `Note` rows, collapses duplicate habit-days, and re-points the
+/// tasks, notes, documents, links and goal links each merge would otherwise strand. Every counter
+/// on `DataIntegrityRepairReport` is incremented inside one of those merges.
+///
+/// It deliberately does **not** collect orphans. It never asks whether a `Subtask` has a
+/// `parentTask`, whether a `TaskBundle` has members, whether a `HabitCompletion` has a `habit`, or
+/// whether a `MarkdownImageAsset` is referenced by anything. Those rows exist as states the schema
+/// permits, and the shared delete helpers — `CadenceListDeleteHelpers`, `ModelContext.deleteNote`,
+/// `CadenceTaskMutationSupport` — are what keep them from being produced.
+///
+/// **Why that boundary is deliberate rather than unfinished.** Every pass here is conservative
+/// against a partially-synced store, and that is the property that makes it safe to run unattended.
+/// A merge cannot fire unless it can see *both* rows, so a store that has only received half of
+/// CloudKit's records merges less; it never destroys something unique. An orphan sweep inverts
+/// exactly that. `PersistenceController.performStartupMaintenance` calls this immediately after the
+/// container opens, with no gate on sync state at all, so on a fresh device — or any launch that
+/// races the first sync — a `Subtask` with no `parentTask` is indistinguishable from one whose
+/// `AppTask` has not arrived yet. Deleting it is unrecoverable, and it is the *empty* store that
+/// would delete the most. "Repair found nothing to do" is the correct behaviour there; "repair
+/// deleted the rows whose owners were still in flight" is not.
+///
+/// So a future orphan sweep is not a matter of adding four fetches. It needs a reason to believe
+/// the store is complete — a sync-state gate, a user-initiated entry point instead of startup, or a
+/// report-only pass that counts without deleting. Until one of those exists, the honest position is
+/// that this covers duplicates and says so. `DataIntegrityRepairServiceTests` pins the boundary by
+/// value so it cannot be crossed by accident.
 nonisolated enum DataIntegrityRepairService {
     private struct RepairState {
         var deletedAreas = Set<ObjectIdentifier>()
@@ -319,6 +349,9 @@ nonisolated enum DataIntegrityRepairService {
             if let preferredArea, source.area !== preferredArea {
                 source.area = preferredArea
             }
+            // T-340. No duplicate to merge, but the list still moved: this project has just been
+            // adopted into the canonical context, and its tasks were never re-derived.
+            rePointTasksAlreadyIn(source, in: store, report: &report)
             return source
         }
 
@@ -332,6 +365,12 @@ nonisolated enum DataIntegrityRepairService {
             task.context = target.resolvedContext
             report.movedTasks += 1
         }
+        // T-340. The loop above walks only the tasks arriving from `source`; the ones already in
+        // `target` inherit from `target` too and nothing has ever re-derived them.
+        //
+        // Runs after the arrivals so it also covers them — the guard turns that into a no-op rather
+        // than a second `movedTasks` increment.
+        rePointTasksAlreadyIn(target, in: store, report: &report)
         for note in store.notes where note.project === source {
             note.project = target
             report.movedNotes += 1
@@ -353,6 +392,43 @@ nonisolated enum DataIntegrityRepairService {
         state.deletedProjects.insert(ObjectIdentifier(source))
         report.duplicateProjectsMerged += 1
         return target
+    }
+
+    /// Re-derives `AppTask.context` for every task filed in a project the merge has just moved.
+    ///
+    /// The shared rule for "what context does this list put its tasks in" is `resolvedContext`, and
+    /// this is `CadenceTaskMutationSupport.reassignInheritedContext` applied where repair, rather
+    /// than an editor, is the thing that moved the list. It is not spelled as a call to that helper
+    /// because this pass has to count what it changed.
+    ///
+    /// **Correcting [[T-340]]'s stated mechanism.** The ticket describes the gap as the merge
+    /// changing the surviving project's *area*, and so changing what it resolves to. That does not
+    /// happen on either branch. A merge target is only ever selected by
+    /// `project.context === canonicalContext`, and the no-duplicate branch assigns
+    /// `source.context = canonicalContext` outright — so in both cases the survivor's own `context`
+    /// is non-`nil` and dominates `resolvedContext` whatever happens to `area`, and
+    /// `mergeProjectFields` touches neither field. The area never gets to decide.
+    ///
+    /// The gap is real anyway, for a different reason: a task filed in the survivor whose `context`
+    /// is neither the duplicate nor the canonical one is re-pointed by nothing. `mergeContext`
+    /// sweeps `task.context === duplicate` and the loop above sweeps the arrivals; a resident task
+    /// carrying `nil`, or a third context left by an earlier state, falls between them. That is
+    /// pre-merge data of exactly the kind this service exists to find.
+    ///
+    /// The guard is what keeps this from reporting work it did not do: an already-correct task is
+    /// skipped, so a repair pass that changes nothing leaves `report.changed` false and
+    /// `performStartupMaintenance` does not save.
+    private static func rePointTasksAlreadyIn(
+        _ project: Project,
+        in store: RepairStore,
+        report: inout DataIntegrityRepairReport
+    ) {
+        let resolved = project.resolvedContext
+        for task in store.tasks where task.project === project {
+            guard task.context !== resolved else { continue }
+            task.context = resolved
+            report.movedTasks += 1
+        }
     }
 
     private static func contextScore(_ context: Context, in store: RepairStore) -> Int {

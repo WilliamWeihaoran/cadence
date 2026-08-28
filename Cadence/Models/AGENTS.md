@@ -157,3 +157,4 @@ context) and `PrivacyDataResetService` (wipes them). See the removal checklist i
   `Cadence/Services/MCPReadOnly/`'s DTOs and services. A model change that skips them compiles and
   ships a stale response schema; `CadenceMCPServer/AGENTS.md` has the procedure.
 - Add new `@Model` types to `PrivacyDataResetService` as well, or a data reset leaves orphans.
+- Classify any new stored `String`: a field that can hold markdown needs a `CadenceMarkdownSourceInventory.Source` case, and everything else goes in the plain list in `CadenceMarkdownSourceInventoryTests`. That inventory is the definition of "still referenced" for `MarkdownImageAsset`, so a markdown field it cannot see is a picture the next delete collects — T-411, where the sweep knew only `Note.content` and `AppTask.notes` was invisible to it. The test fails on anything unclassified, in both directions.

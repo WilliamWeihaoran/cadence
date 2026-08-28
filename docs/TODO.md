@@ -43,6 +43,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-421] **Note template bodies live in `UserDefaults` and can hold image references the sweep
+  cannot see.** Residue from [[T-411]]. `NoteTemplateLibrary.storageKey` stores template markdown
+  outside SwiftData entirely, and the template editor has no flag to disable image insertion — so an
+  image pasted into a template is unreachable by any store-based inventory.
+
+- [T-422] **Event notes bind the markdown editor to `EKEvent.notes`, outside the store.**
+  Residue from [[T-411]]. `iOSCalendarEventEditSheet` and `iOSCalendarQuickCreateSheet` in event mode
+  write into EventKit, so an image pasted there is invisible to the inventory for the same reason.
+
+- [T-423] **`CadenceNoteDeletionSummary.forNote` now over-promises.** Residue from [[T-411]]. Its doc
+  comment claims it names "the exact set `deleteUnreferencedMarkdownImageAssets` will collect", which
+  stopped being true when the sweep widened to seven markdown sources — the summary still counts
+  reclaimed images from surviving `Note.content` alone. Either widen it to the inventory or correct
+  the promise; the current state is a comment asserting a guarantee the code no longer keeps.
+
 - [T-409] **`CadenceMCPServer` broke for four commits and `-scheme Cadence` stayed green the whole
   time.** `aaa0064` routed `CadenceWriteService` through `CadenceTaskMutationSupport.insertSubtasks`,
   but that file is in **no** target's Sources phase — the app reaches it by folder membership and the
@@ -196,19 +211,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   persist area or project ids until [[T-345]] lands**, or launch will restore a selection pointing
   at a deleted list, which is that ticket's bug made permanent.
 
-- [T-340] **Two more places a task keeps a context its owner no longer has.** Found while closing
-  [[T-292]] and [[T-293]], and deliberately not folded in.
-  1. Editing an **area's** context re-points tasks filed directly in that area, but not tasks in
-     *projects* under it whose own `context` is `nil`. Those projects' `resolvedContext` changes and
-     their tasks are never walked — the same defect one level down.
-  2. `DataIntegrityRepairService.mergeProject` re-points tasks moved *from* the source project, but
-     tasks already in the **target** keep their old `task.context` even though the merge may have
-     changed the target's area.
-  Both are the T-292 rule applied at call shapes nobody walked. The rule itself already exists —
-  `Project.resolvedContext` — so this is finding the remaining walks, not deciding anything new.
-  Note why they cannot simply reuse `assignContainer`: that also rewrites `sectionName` and `order`,
-  and re-ordering every task in a list because its owner changed is the T-175 bug.
-
 - [T-339] **iOS has three failure vocabularies for EventKit; macOS has one.** Recommended by the
   agent that closed [[T-323]] and [[T-325]], which deliberately did **not** do it.
   macOS models a calendar write failure once, as `CalendarWriteFailure` with a `title` and a
@@ -262,18 +264,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   may differ across widths, capability may not — and a seed is arguably capability rather than
   placement. **Ask the user before touching it**, and if the answer is "leave it", record that here
   and close, because the test currently pins the opposite of what a reader might assume.
-
-- [T-328] **`DataIntegrityRepairService` cannot see four of the models that can be orphaned.**
-  From the same audit, premise verified by counting fetches: it fetches `Context`, `Area`,
-  `Project` and the rest, and fetches `Subtask`, `TaskBundle`, `HabitCompletion` and
-  `MarkdownImageAsset` **zero** times. The shared delete helpers prevent most of those orphans at
-  source, so this is not a live bug — but if one exists already, from legacy data, a CloudKit
-  oddity, a failed restore ([[T-326]]) or a delete that bypassed the helpers ([[T-296]]), repair
-  will not clean it up.
-  The decision is which thing this service is: either document it as duplicate-container-and-note
-  repair and stop implying more, or give it a real orphan sweep for targetless subtasks, empty
-  bundles, unowned habit completions and unreferenced image assets. **Do not leave it named like a
-  general repair while covering half the schema** — the name is what makes the gap invisible.
 
 - [T-322] **Decide the rule for `try? save()`, then sweep — there are 133 of them.** Measured, not
   estimated: `try? modelContext.save()` / `try? context.save()` appears **133 times** across
@@ -341,21 +331,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   that every one should live there. It is POSIX-pinned and works, so this is rule drift rather
   than a defect — but the rule exists so an agent can find every date format in one file, and this
   one is invisible to that search. Move it to `DateFormatters.backupFolderTimestamp`.
-
-- [T-295] **`deleteBundle` leaves `calendarEventID` set; its sibling twelve lines above clears it.**
-  From the second external audit (Codex, 2026-08-26); **premise verified, and the evidence is
-  stronger than the report's.** The audit said macOS clears the field elsewhere while the shared
-  helper does not. In fact `CadenceTaskMutationSupport.deleteBundleIfFullySettled` and
-  `deleteBundle` sit in the **same file, twelve lines apart**, unbundling members in near-identical
-  loops — and only the first sets `member.calendarEventID = ""`. That is a much easier
-  inconsistency to argue about than a cross-platform one.
-  **Read the "Calendar / Events" note in `CLAUDE.md` before assigning this any urgency.** Nothing in
-  the app writes that field a non-empty value — measured again here, every assignment is `""` and
-  the only non-empty reads are the exporter's. So a stale value can only come from a build that
-  shipped before that changed, or from CloudKit. The fix is one line and makes the two loops agree;
-  the *impact* claim in the audit ("iOS can leave tasks pointing at an old calendar event") is only
-  true of pre-existing data, and a ticket that overstates it will get someone chasing a live bug
-  that is not live.
 
 - [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
   Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes

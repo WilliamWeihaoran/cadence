@@ -219,18 +219,27 @@ extension ModelContext {
         dedupe(links, by: \GoalListLink.id)
     }
 
+    /// Collects the image assets nothing in the store references any more.
+    ///
+    /// **"Referenced" means every markdown-bearing field, not `Note.content` (T-411).** The
+    /// markdown editor is one component bound to several fields, and a paste into a *task's* notes
+    /// creates a real `MarkdownImageAsset` the same way a paste into a note does. Scanning notes
+    /// alone made that asset unreferenced by definition, so the next `deleteNote` or list cascade
+    /// took its `.externalStorage` bytes while the task kept a reference that no longer resolved.
+    /// `CadenceMarkdownSourceInventory` owns the field list and the rule for extending it.
     func deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: Set<UUID> = []) {
         guard let assets = try? fetch(FetchDescriptor<MarkdownImageAsset>()), !assets.isEmpty else { return }
-        // This fetch decides which images are still *referenced*, so `?? []` on a failed read did
+        // These fetches decide which images are still *referenced*, so `?? []` on a failed read did
         // not mean "collect nothing" — it meant "nothing in this store references any image", and
         // every asset the user had ever pasted into any note was deleted while the notes kept
         // their now-dangling references. One failed read during a single project delete could
         // take out the entire image library, unrecoverably. A failure must skip the collection;
-        // deferring garbage until the next delete costs nothing.
-        guard let allNotes = try? fetch(FetchDescriptor<Note>()) else { return }
-        let remainingMarkdown = allNotes
-            .filter { !excludingNoteIDs.contains($0.id) }
-            .map(\.content)
+        // deferring garbage until the next delete costs nothing. The inventory answers `nil` for
+        // exactly that case, and it answers `nil` if *any* field it reads is unreadable.
+        guard let remainingMarkdown = CadenceMarkdownSourceInventory.liveMarkdownTexts(
+            in: self,
+            excludingNoteIDs: excludingNoteIDs
+        ) else { return }
         let unreferenced = MarkdownImageAssetService.unreferencedAssets(
             allAssets: assets,
             markdownTexts: remainingMarkdown

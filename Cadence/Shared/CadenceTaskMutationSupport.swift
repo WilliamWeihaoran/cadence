@@ -293,10 +293,30 @@ enum CadenceTaskMutationSupport {
     /// stayed in the list and vanished from the context they now belong to (T-293). This is the
     /// same rule `assignContainer` applies to one arriving task, applied to every task already
     /// there.
+    ///
+    /// **An area owns two levels of tasks, not one** (T-340). `area.tasks` is only the tasks filed
+    /// directly in the area; a project under it whose own `context` is `nil` reads its context
+    /// through the area too, so changing the area's context changes `Project.resolvedContext` for
+    /// every such project and invalidates the copy on all of *their* tasks as well. Every caller
+    /// passes `area.tasks ?? []` and none of them walked the projects, which is the same defect one
+    /// level down. The cascade lives here rather than at the call sites so both list editors get it
+    /// from the one rule.
+    ///
+    /// Projects that name their own context are skipped: `resolvedContext` prefers it, so the
+    /// area's change does not reach them. Each cascaded task is re-derived from
+    /// `child.resolvedContext` rather than from the `context` computed above, so the fallback stays
+    /// spelled in exactly one place.
     static func reassignInheritedContext(in tasks: [AppTask], area: Area? = nil, project: Project? = nil) {
         let context = inheritedContext(area: area, project: project)
         for task in tasks {
             task.context = context
+        }
+
+        guard let area else { return }
+        for child in area.projects ?? [] where child.context == nil {
+            for task in child.tasks ?? [] {
+                task.context = child.resolvedContext
+            }
         }
     }
 
@@ -917,12 +937,21 @@ enum CadenceTaskMutationSupport {
         modelContext.delete(bundle)
     }
 
+    /// Unbundles every member and deletes the block.
+    ///
+    /// The member loop is deliberately the same one `deleteBundleIfFullySettled` runs twelve lines
+    /// above, `calendarEventID` included (T-295). Nothing in the app writes that field a non-empty
+    /// value — every assignment is `""` (see "Persisted Fields With No Readers" in
+    /// `Cadence/Models/AGENTS.md`) — so this is not a live bug being fixed. It is the two loops
+    /// agreeing: a value left on disk by an older build, or arriving from CloudKit, must not
+    /// survive one of the two ways a bundle can end and not the other.
     static func deleteBundle(_ bundle: TaskBundle, modelContext: ModelContext) {
         for task in bundle.tasks ?? [] {
             task.bundle = nil
             task.bundleOrder = 0
             task.scheduledDate = bundle.dateKey
             task.scheduledStartMin = -1
+            task.calendarEventID = ""
         }
 
         bundle.tasks = []

@@ -226,6 +226,66 @@ struct CadenceTaskContextInheritanceTests {
         #expect(task.context?.id == fixture.personal.id)
     }
 
+    // MARK: - T-340, the same defect one level down
+
+    /// **An area owns two levels of tasks.** `fixture.launch` names no context of its own, so it
+    /// reads `operations`'s. Re-pointing the area's context therefore invalidates `task.context`
+    /// on the tasks inside `launch` just as much as on the tasks filed directly in the area — but
+    /// every caller passes `area.tasks ?? []`, which does not contain them, and nothing walked the
+    /// projects.
+    ///
+    /// The direct task is asserted alongside so a fix that cascades and drops the original walk
+    /// cannot pass.
+    @Test func givingAnAreaANewContextRePointsTasksInItsAreaOwnedProjectsToo() throws {
+        let fixture = try makeFixture()
+
+        let direct = AppTask(title: "In the area")
+        direct.area = fixture.operations
+        direct.context = fixture.work
+        let nested = AppTask(title: "In the area's project")
+        nested.project = fixture.launch
+        nested.context = fixture.work
+        fixture.modelContext.insert(direct)
+        fixture.modelContext.insert(nested)
+        fixture.operations.tasks = [direct]
+        fixture.launch.tasks = [nested]
+        try fixture.modelContext.save()
+
+        fixture.operations.context = fixture.personal
+        CadenceTaskMutationSupport.reassignInheritedContext(
+            in: fixture.operations.tasks ?? [],
+            area: fixture.operations
+        )
+
+        #expect(direct.context?.id == fixture.personal.id)
+        #expect(nested.context?.id == fixture.personal.id)
+    }
+
+    /// The cascade stops where `resolvedContext` stops. A project under the area that names its
+    /// **own** context does not inherit, so the area's change must not reach its tasks — otherwise
+    /// the fix above trades one wrong context for another, and this is the assertion that tells a
+    /// rule-following cascade apart from a blanket overwrite of everything under the area.
+    @Test func theAreaContextCascadeSkipsProjectsThatNameTheirOwnContext() throws {
+        let fixture = try makeFixture()
+
+        let owned = Project(name: "Owned", context: fixture.work, area: fixture.operations)
+        fixture.modelContext.insert(owned)
+        let task = AppTask(title: "In a project with its own context")
+        task.project = owned
+        task.context = fixture.work
+        fixture.modelContext.insert(task)
+        owned.tasks = [task]
+        try fixture.modelContext.save()
+
+        fixture.operations.context = fixture.personal
+        CadenceTaskMutationSupport.reassignInheritedContext(
+            in: fixture.operations.tasks ?? [],
+            area: fixture.operations
+        )
+
+        #expect(task.context?.id == fixture.work.id)
+    }
+
     // MARK: - The rule is spelled once, and every surface calls it
 
     /// `Cadence/iOS/` is behind `#if os(iOS)` and is not compiled by this macOS test target, and

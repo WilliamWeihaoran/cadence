@@ -141,6 +141,38 @@ struct CadenceBundleInspectorHostTests {
         #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
     }
 
+    /// **T-295: the two ways a bundle ends must leave its members in the same state.**
+    ///
+    /// `deleteBundleIfFullySettled` and `deleteBundle` sit twelve lines apart in
+    /// `CadenceTaskMutationSupport`, unbundling members in near-identical loops, and only the first
+    /// cleared `calendarEventID`. Deliberately **not** a live-bug test: nothing in the app writes
+    /// that field a non-empty value, so the value below is seeded by hand to stand in for one an
+    /// older build or a CloudKit record left on disk. What is being pinned is that the two loops
+    /// agree — a stale identifier does not survive one ending and not the other.
+    @Test func deletingABundleClearsTheSameStaleCalendarLinkTheSettledPathClears() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let bundle = TaskBundle(title: "Batch", dateKey: "2026-08-21", startMin: 600, durationMinutes: 30)
+        let task = AppTask(title: "Pull report")
+        context.insert(bundle)
+        context.insert(task)
+        task.bundle = bundle
+        task.scheduledDate = bundle.dateKey
+        task.scheduledStartMin = -1
+        // The state only a pre-fix build or a synced record can produce.
+        task.calendarEventID = "legacy-event-identifier"
+        bundle.tasks = [task]
+        try context.save()
+
+        CadenceTaskMutationSupport.deleteBundle(bundle, modelContext: context)
+
+        let survivor = try #require(try context.fetch(FetchDescriptor<AppTask>()).first)
+        #expect(survivor.calendarEventID == "")
+        // The rest of the loop must be untouched by the fix.
+        #expect(survivor.bundle == nil)
+        #expect(survivor.scheduledDate == "2026-08-21")
+    }
+
     // MARK: - Ownership: no card presents the bundle panel
 
     /// The two surfaces that owned presentation from a card. Each carried exactly one
