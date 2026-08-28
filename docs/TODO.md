@@ -43,6 +43,13 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-407] **`iOSTaskDetailSheet` is the one task surface outside both wrappers.** Residue from
+  [[T-343]]. It calls `setStatus`/`toggleCompletion` without reconciling notifications, and
+  `dismiss()`es on delete regardless of the `Bool` that delete now returns. Both halves belong to
+  the sheet's own lifecycle rather than to a row action, which is why neither wrapper reached it.
+  **Warning for whoever takes it:** `normalizeCompletionState` must *not* be routed through the
+  status wrapper — opening the sheet would then reconcile every time.
+
 - [T-401] **`Cadence/Models/AGENTS.md` states the to-many rule without saying which half was
   measured.** From the T-387 work, and it is the reason two independent audits filed the same false
   finding. The guide says to append to an optional to-many by assigning a new array rather than
@@ -54,14 +61,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   T-387, with T-294 hitting the same thing and recording it only in a test comment. Mark the two
   halves apart in the guide.
 
-- [T-402] **`ModelContext.rollback()` un-deletes but does not un-edit.** Measured while fixing
-  T-321. Deleted rows come back to a fetch — which is why `commitDelete` and the cascade rollbacks
-  are correct — but field values assigned to an already-materialised `PersistentModel` survive it:
-  after `area.name = "New"; rollback()`, the store holds `"Old"` while the live `Area` every SwiftUI
-  view reads still answers `"New"`. An editor that rolls back and then says "Nothing was changed" is
-  therefore truthful about the store and lying about the screen — T-321's own defect wearing a fix's
-  clothes. `commitEdit` accordingly offers no rollback undo and snapshots fields instead. No other
-  `rollback()` caller exists in `Cadence/` today; if one is added, it needs this distinction.
+- [T-402] **`rollback()` undoes an edit in the store immediately, but a live `PersistentModel`
+  reference keeps the assigned value until something fetches.** Measured by a six-case probe while
+  fixing T-321: `area.name = "EDITED"; rollback(); area.name` reads `EDITED`; after any fetch it
+  reads `Work`. Identical with and without a delete in the change set, and identical whether
+  `rollback()` is called directly or from inside an undo closure. **The variable is the fetch.** The
+  delete half is undone unconditionally, which is why `commitDelete` and the cascades are correct.
+  Note the agent that found this corrected itself twice before measuring it — the first version of
+  the T-321 fix used `rollback()` by analogy with the cascades, and the first *test* of that fetched
+  before reading the field and so measured the opposite.
+  **The load-bearing reason `commitEdit` offers no rollback undo does not depend on this at all:**
+  this app has a single `ModelContext`, so a rollback discards unrelated pending work. That is
+  pinned by `arefusedListEditLeavesUnrelatedPendingWorkAlone`. The refresh-timing finding is the
+  secondary reason — real, but conditional.
+  Not a defect today: all three `rollback()` callers are deletes and all are correct. This is a note
+  for whoever adds the fourth.
 
 - [T-403] **`CadenceCalendarEventSearchSupport.identity(of:)` re-spells the first two lines of
   `CadenceEventNoteSupport.rawIdentifier`.** From the T-373 work, kept visible rather than hidden:
@@ -184,15 +198,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `allTasks` is a case — but nothing pins it, so a future resolver returning `.notes` or `.inbox`
   would silently route to Today with the suite green.
 
-- [T-359] **Two devices can create two `HabitCompletion` rows for the same habit and the same day, and
-  the count sums both.** Extends [[T-328]] — that ticket says the repair service cannot *see*
-  `HabitCompletion`; this says what it would need to repair. Measured: four files construct
-  `HabitCompletion(` with an insert-if-none-exists toggle —
-  `CadenceFocusPlanningSupport`, `CadenceWidgetIntents`, `CadenceWidgetRefreshCenter`,
-  `HabitsView`. Different UUIDs means both rows survive sync, and `completionCountsByDate()` adds
-  them, so one real check-in can satisfy a `targetCount` or `.timesPerWeek` habit. Decide collapse
-  semantics (`max` vs `sum`) before writing the repair.
-
 - [T-363] **An out-of-range `reminderMinuteOfDay` schedules a daily reminder at whatever time
   reconcile happened to run.** Measured by probe: `Calendar.date(bySettingHour:minute:second:of:)`
   returns `nil` for -15, 1440 and 1500, and `NotificationScheduling.swift:190` ends `?? now`. Not
@@ -298,38 +303,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   This is the fifth finding where **iOS lags a model macOS already grew** (see [[T-323]], [[T-324]],
   [[T-325]]). At five, the pattern is the work: port the model once rather than patch the sixth.
 
-- [T-337] **The `+` inherits context from what you drop it on, and from nothing else.** The user's
-  rule, 2026-08-26, and it supersedes [[T-336]] and reverses part of [[T-282]]:
-  - **Tap the button** → no context. Just a task.
-  - **Hold, then choose a palette segment** → no context either. Task / Event / Note, unseeded.
-  - **Drag it onto an existing list, group, section or grouped display** → it inherits *that*
-    target's context.
-  The principle is worth stating because it decides the edge cases: **context comes from where you
-  drop it, not from where you started.** A button standing on the Today page is not a statement
-  about what you are creating; dropping onto a list is.
-
-  **What already exists**, so this is smaller than it sounds: `CadenceCaptureDropHitTest` and
-  `seed(forTarget:)` are built and shipped — dropping onto a row already seeds from that row, on
-  both placements, through one hit-test.
-
-  **What changes:**
-  1. **The iPad's corner `+` must stop passing `baseSeed` on a tap.** It currently seeds the page —
-     Today seeds today's date, a list detail seeds its list. Under this rule that is wrong, and
-     `iOSCaptureRadialMenu.swift:295` documents the *opposite* reasoning ("a page's corner `+` is
-     already standing somewhere"), so that comment has to go with it. This also makes the two
-     placements behave identically, which retires the last real difference between them.
-  2. **Extend drop targets from rows to groups.** The hit test collects candidate frames; a section
-     header, a kanban column and a list group need to register as candidates and resolve to the
-     right seed. Decide what a *group* seeds — a section header should presumably seed its section
-     name and its container, not just the container.
-  3. **Decide what an empty group seeds**, since a group with no rows still has an identity, and it
-     is the case most likely to be missed.
-
-  Pin it by value: the seed a drop produces for a row, a section, a column and an empty group are
-  four assertions, and the two no-context paths are two more. Note the existing test asserting the
-  tab bar's button carries no `baseSeed` becomes the rule for *both* placements rather than the
-  difference between them.
-
 - [T-334] **Resizing an iPad window can land you on the wrong screen.** From the iPad/iPhone layout
   audit (Codex, 2026-08-26); **premise verified — there are zero `onChange(of: horizontalSizeClass)`
   handlers in `iOSRootView`.** The root keeps the sidebar's `selection` and the compact shell's
@@ -427,28 +400,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   while every one of those operations stays perfectly idempotent, which nothing currently enforces.
   Centralize the startup work, or let the service initializers skip what the container factory
   already did.
-
-- [T-305] **Today should group by list, not by date intent — on both platforms.** Reported by the
-  user 2026-08-26. Today currently groups into `CadenceTodayTaskGroupKind`: Overdue, Past Do, Due
-  Today, Planned Today. The user's decision, three parts:
-  1. **Drop "Planned Today" as a heading.** It restates the page — this is the Today view, so
-     everything in it is today. Same objection as the standing rule that a page header does not
-     describe the page you are already on; this is that rule applied one level down.
-  2. **Group the day's work by list instead**, the way the rest of the app groups tasks. The
-     `PAST DUE LISTS` block at the top is list-shaped already, so the page stops mixing two
-     different grouping axes.
-  3. **Keep Overdue at the top, and have a rolled-over task fall into its list's group** rather
-     than into a second date-shaped bucket. That is what makes the roll-over feel like it did
-     something: the task leaves the red section and joins its list.
-  Apply the same change to iOS, whose Today sections were unified onto the shared support in
-  `2dcc948` and `c6f7d61`.
-  Worth reading before designing: `CadenceTodayLayoutSupport` records that the split between
-  Overdue and Planned Today is deliberate and not width-driven, so this reverses a decision rather
-  than filling a gap — say so in the commit. `CadenceTaskPlanningSupport.CadenceTodayTaskGroupKind`
-  is the shared enum both platforms read, so the grouping decision has one home; the risk is the
-  **sort** inside each group and the rollover banner's interaction, not the enum.
-  Not decided, and worth asking the user once there is something to look at: what happens to a task
-  with no list — its own group, or the bottom of the page.
 
 - [T-300] **The drag-and-drop date seed has the same lenient-parse bug.** From the same audit,
   premise verified verbatim: `CadenceTaskDropSupport.dateValue` does

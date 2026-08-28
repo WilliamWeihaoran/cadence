@@ -9,6 +9,72 @@ week by audits that had only seen the open list.
 
 248 entries.
 
+- [T-305] **Today should group by list, not by date intent — on both platforms.** Reported by the
+  user 2026-08-26. Today currently groups into `CadenceTodayTaskGroupKind`: Overdue, Past Do, Due
+  Today, Planned Today. The user's decision, three parts:
+  1. **Drop "Planned Today" as a heading.** It restates the page — this is the Today view, so
+     everything in it is today. Same objection as the standing rule that a page header does not
+     describe the page you are already on; this is that rule applied one level down.
+  2. **Group the day's work by list instead**, the way the rest of the app groups tasks. The
+     `PAST DUE LISTS` block at the top is list-shaped already, so the page stops mixing two
+     different grouping axes.
+  3. **Keep Overdue at the top, and have a rolled-over task fall into its list's group** rather
+     than into a second date-shaped bucket. That is what makes the roll-over feel like it did
+     something: the task leaves the red section and joins its list.
+  Apply the same change to iOS, whose Today sections were unified onto the shared support in
+  `2dcc948` and `c6f7d61`.
+  Worth reading before designing: `CadenceTodayLayoutSupport` records that the split between
+  Overdue and Planned Today is deliberate and not width-driven, so this reverses a decision rather
+  than filling a gap — say so in the commit. `CadenceTaskPlanningSupport.CadenceTodayTaskGroupKind`
+  is the shared enum both platforms read, so the grouping decision has one home; the risk is the
+  **sort** inside each group and the rollover banner's interaction, not the enum.
+  Not decided, and worth asking the user once there is something to look at: what happens to a task
+  with no list — its own group, or the bottom of the page.
+  **Landed in `0e78c5b`.** Removed from Open on 2026-08-29 — the work shipped but the entry was never retired.
+
+- [T-337] **The `+` inherits context from what you drop it on, and from nothing else.** The user's
+  rule, 2026-08-26, and it supersedes [[T-336]] and reverses part of [[T-282]]:
+  - **Tap the button** → no context. Just a task.
+  - **Hold, then choose a palette segment** → no context either. Task / Event / Note, unseeded.
+  - **Drag it onto an existing list, group, section or grouped display** → it inherits *that*
+    target's context.
+  The principle is worth stating because it decides the edge cases: **context comes from where you
+  drop it, not from where you started.** A button standing on the Today page is not a statement
+  about what you are creating; dropping onto a list is.
+
+  **What already exists**, so this is smaller than it sounds: `CadenceCaptureDropHitTest` and
+  `seed(forTarget:)` are built and shipped — dropping onto a row already seeds from that row, on
+  both placements, through one hit-test.
+
+  **What changes:**
+  1. **The iPad's corner `+` must stop passing `baseSeed` on a tap.** It currently seeds the page —
+     Today seeds today's date, a list detail seeds its list. Under this rule that is wrong, and
+     `iOSCaptureRadialMenu.swift:295` documents the *opposite* reasoning ("a page's corner `+` is
+     already standing somewhere"), so that comment has to go with it. This also makes the two
+     placements behave identically, which retires the last real difference between them.
+  2. **Extend drop targets from rows to groups.** The hit test collects candidate frames; a section
+     header, a kanban column and a list group need to register as candidates and resolve to the
+     right seed. Decide what a *group* seeds — a section header should presumably seed its section
+     name and its container, not just the container.
+  3. **Decide what an empty group seeds**, since a group with no rows still has an identity, and it
+     is the case most likely to be missed.
+
+  Pin it by value: the seed a drop produces for a row, a section, a column and an empty group are
+  four assertions, and the two no-context paths are two more. Note the existing test asserting the
+  tab bar's button carries no `baseSeed` becomes the rule for *both* placements rather than the
+  difference between them.
+  **Landed in `0e78c5b`.** Removed from Open on 2026-08-29 — the work shipped but the entry was never retired.
+
+- [T-359] **Two devices can create two `HabitCompletion` rows for the same habit and the same day, and
+  the count sums both.** Extends [[T-328]] — that ticket says the repair service cannot *see*
+  `HabitCompletion`; this says what it would need to repair. Measured: four files construct
+  `HabitCompletion(` with an insert-if-none-exists toggle —
+  `CadenceFocusPlanningSupport`, `CadenceWidgetIntents`, `CadenceWidgetRefreshCenter`,
+  `HabitsView`. Different UUIDs means both rows survive sync, and `completionCountsByDate()` adds
+  them, so one real check-in can satisfy a `targetCount` or `.timesPerWeek` habit. Decide collapse
+  semantics (`max` vs `sum`) before writing the repair.
+  **Landed in `5b8d8bd`.** Removed from Open on 2026-08-29 — the work shipped but the entry was never retired.
+
 ## History corrections
 
 Found by an external commit-claim audit (Codex, 2026-08-28), not by the author. Recorded here
