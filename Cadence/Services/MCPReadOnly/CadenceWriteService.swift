@@ -164,7 +164,20 @@ final class CadenceWriteService {
         task.tags = tags
 
         context.insert(task)
-        CadenceTaskMutationSupport.insertSubtasks(titled: subtaskTitles, into: task, modelContext: context)
+        // NOT `CadenceTaskMutationSupport.insertSubtasks` — that file is not in this target's
+        // Sources phase and cannot be, because it reaches `NotificationManager`, which reads
+        // `UserDefaults.standard` and so cannot exist in a command-line target. Routing this call
+        // through it broke the `CadenceMCPServer` build in aaa0064 while `-scheme Cadence` stayed
+        // green, which is the silence `CadenceMCPServer/AGENTS.md` warns about. Both sides of the
+        // relationship are still written here by hand; see T-401 for why that is a convention
+        // rather than a repair.
+        for (index, subtaskTitle) in subtaskTitles.enumerated() {
+            let subtask = Subtask(title: subtaskTitle)
+            subtask.parentTask = task
+            subtask.order = index
+            context.insert(subtask)
+            task.subtasks = (task.subtasks ?? []) + [subtask]
+        }
 
         try saveNotifyAndAudit(.task(tool: "create_task", id: task.id, summary: "Created task: \(task.title)"))
         return try readService.getTask(taskID: task.id.uuidString)

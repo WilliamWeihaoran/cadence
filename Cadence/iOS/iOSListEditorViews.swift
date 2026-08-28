@@ -45,6 +45,8 @@ struct iOSListEditorSheet: View {
     /// Set only when `CadenceContainerWindDownSummary.requiresConfirmation` says the column has
     /// open work to settle. See `requestColumnWindDown`.
     @State private var pendingColumnWindDown: iOSColumnWindDownTarget?
+    /// Set when the commit was refused. The editor stays open holding it — see `save()`.
+    @State private var saveFailureNotice: String?
 
     private var isProjectMode: Bool {
         switch mode {
@@ -99,6 +101,13 @@ struct iOSListEditorSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                if let saveFailureNotice {
+                    Section {
+                        CadenceInlineFailureNotice(text: saveFailureNotice)
+                    }
+                    .iOSListEditorSectionChrome()
+                }
+
                 Section {
                     // Tile + name on one line, then the two strips that drive the tile — the same
                     // shape `ListEditorIdentityHeader` gives the macOS list editors.
@@ -382,55 +391,82 @@ struct iOSListEditorSheet: View {
         }
     }
 
+    /// T-321: every branch below wrote, ran `try? modelContext.save()` and dismissed, so the
+    /// editor closed the same way whether or not the store took the change — and the two edit
+    /// branches re-point tasks *before* that save, so a swallowed failure left the reassignment
+    /// half-applied with the editor closed over it.
+    ///
+    /// **The undo differs by branch, and neither of them is `rollback()`.** A creation deletes
+    /// what it inserted (`commitInsert`). An edit reaches further than its own fields —
+    /// `applySectionConfigEdits` rewrites the column blob and `reassignTasks` walks
+    /// `AppTask.sectionName` and `AppTask.context` across every task in the list — so it hands all
+    /// of that to `CadenceListEditSnapshot`, which is also where the reason a rollback would *not*
+    /// have worked is written down.
+    ///
+    /// The sheet's `@State` still holds everything the user typed either way, so a refused save
+    /// leaves the editor open and intact rather than empty.
     private func save() {
-        switch mode {
-        case .newArea:
-            let area = Area(name: trimmedName, context: selectedContext, colorHex: normalizedColor, icon: normalizedIcon)
-            area.desc = details
-            area.order = nextAreaOrder()
-            area.sectionConfigs = normalizedSectionConfigs
-            area.hideDueDateIfEmpty = hideEmptyDueDates
-            area.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
-            modelContext.insert(area)
-        case .newProject:
-            let project = Project(name: trimmedName, context: selectedContext, area: selectedArea, colorHex: normalizedColor)
-            project.desc = details
-            project.icon = normalizedIcon
-            project.order = nextProjectOrder()
-            project.sectionConfigs = normalizedSectionConfigs
-            project.hideDueDateIfEmpty = hideEmptyDueDates
-            project.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
-            project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
-            modelContext.insert(project)
-        case .editArea(let area):
-            area.name = trimmedName
-            area.desc = details
-            area.icon = normalizedIcon
-            area.colorHex = normalizedColor
-            area.context = selectedContext
-            // The columns are merged *before* the tasks are re-pointed, because the merge is what
-            // decides which columns actually survive — a column another device deleted while this
-            // sheet was open is gone from the result even though the drafts still list it, and its
-            // tasks have to follow (`docs/TODO.md` T-358).
-            area.applySectionConfigEdits(base: originalSectionConfigs, edited: normalizedSectionConfigs)
-            reassignTasks(in: area.tasks ?? [], area: area)
-            area.hideDueDateIfEmpty = hideEmptyDueDates
-            area.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
-        case .editProject(let project):
-            project.name = trimmedName
-            project.desc = details
-            project.icon = normalizedIcon
-            project.colorHex = normalizedColor
-            project.context = selectedContext
-            project.area = selectedArea
-            project.applySectionConfigEdits(base: originalSectionConfigs, edited: normalizedSectionConfigs)
-            reassignTasks(in: project.tasks ?? [], project: project)
-            project.hideDueDateIfEmpty = hideEmptyDueDates
-            project.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
-            project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
+        do {
+            switch mode {
+            case .newArea:
+                let area = Area(name: trimmedName, context: selectedContext, colorHex: normalizedColor, icon: normalizedIcon)
+                area.desc = details
+                area.order = nextAreaOrder()
+                area.sectionConfigs = normalizedSectionConfigs
+                area.hideDueDateIfEmpty = hideEmptyDueDates
+                area.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
+                modelContext.insert(area)
+                try CadencePendingChangePersistence.commitInsert(of: area, in: modelContext)
+            case .newProject:
+                let project = Project(name: trimmedName, context: selectedContext, area: selectedArea, colorHex: normalizedColor)
+                project.desc = details
+                project.icon = normalizedIcon
+                project.order = nextProjectOrder()
+                project.sectionConfigs = normalizedSectionConfigs
+                project.hideDueDateIfEmpty = hideEmptyDueDates
+                project.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
+                project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
+                modelContext.insert(project)
+                try CadencePendingChangePersistence.commitInsert(of: project, in: modelContext)
+            case .editArea(let area):
+                // Snapshotted before the first write, and it holds the tasks as well as the list:
+                // `reassignTasks` below re-points every one of them. See `CadenceListEditSnapshot`
+                // for why this is a snapshot rather than `modelContext.rollback()`.
+                let undo = CadenceListEditSnapshot(area, tasks: area.tasks ?? [])
+                area.name = trimmedName
+                area.desc = details
+                area.icon = normalizedIcon
+                area.colorHex = normalizedColor
+                area.context = selectedContext
+                // The columns are merged *before* the tasks are re-pointed, because the merge is what
+                // decides which columns actually survive — a column another device deleted while this
+                // sheet was open is gone from the result even though the drafts still list it, and its
+                // tasks have to follow (`docs/TODO.md` T-358).
+                area.applySectionConfigEdits(base: originalSectionConfigs, edited: normalizedSectionConfigs)
+                reassignTasks(in: area.tasks ?? [], area: area)
+                area.hideDueDateIfEmpty = hideEmptyDueDates
+                area.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
+                try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
+            case .editProject(let project):
+                let undo = CadenceListEditSnapshot(project, tasks: project.tasks ?? [])
+                project.name = trimmedName
+                project.desc = details
+                project.icon = normalizedIcon
+                project.colorHex = normalizedColor
+                project.context = selectedContext
+                project.area = selectedArea
+                project.applySectionConfigEdits(base: originalSectionConfigs, edited: normalizedSectionConfigs)
+                reassignTasks(in: project.tasks ?? [], project: project)
+                project.hideDueDateIfEmpty = hideEmptyDueDates
+                project.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
+                project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
+                try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
+            }
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
         }
-
-        try? modelContext.save()
+        saveFailureNotice = nil
         dismiss()
     }
 

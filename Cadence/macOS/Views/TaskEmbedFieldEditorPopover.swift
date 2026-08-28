@@ -23,33 +23,44 @@ struct TaskEmbedFieldEditorPopover: View {
     @State private var dateSelection = Date()
     @State private var dateViewMonth = Date()
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
+    /// Set when the commit was refused. The popover stays open holding it and the note editor is
+    /// never told to repaint the card — see `commit(alsoRestoring:_:)`.
+    @State private var failureNotice: String?
 
     var body: some View {
-        content
-            .padding(popoverPadding)
-            .frame(width: popoverWidth)
-            .background(Theme.surfaceElevated)
-            .onAppear { resetDateState() }
-            .confirmationDialog(
-                "Change repeating task?",
-                isPresented: Binding(
-                    get: { pendingRecurrenceRule != nil },
-                    set: { if !$0 { pendingRecurrenceRule = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                Button(CadenceTaskRecurrenceEditScope.thisTask.label) {
-                    applyPendingRecurrenceRule(scope: .thisTask)
-                }
-                Button(CadenceTaskRecurrenceEditScope.thisAndFuture.label) {
-                    applyPendingRecurrenceRule(scope: .thisAndFuture)
-                }
-                Button("Cancel", role: .cancel) {
-                    pendingRecurrenceRule = nil
-                }
-            } message: {
-                Text("Choose whether this repeat change applies only here or to this task and future instances.")
+        VStack(alignment: .leading, spacing: 0) {
+            content
+                .padding(popoverPadding)
+
+            if let failureNotice {
+                CadenceInlineFailureNotice(text: failureNotice)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
             }
+        }
+        .frame(width: popoverWidth)
+        .background(Theme.surfaceElevated)
+        .onAppear { resetDateState() }
+        .confirmationDialog(
+            "Change repeating task?",
+            isPresented: Binding(
+                get: { pendingRecurrenceRule != nil },
+                set: { if !$0 { pendingRecurrenceRule = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(CadenceTaskRecurrenceEditScope.thisTask.label) {
+                applyPendingRecurrenceRule(scope: .thisTask)
+            }
+            Button(CadenceTaskRecurrenceEditScope.thisAndFuture.label) {
+                applyPendingRecurrenceRule(scope: .thisAndFuture)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingRecurrenceRule = nil
+            }
+        } message: {
+            Text("Choose whether this repeat change applies only here or to this task and future instances.")
+        }
     }
 
     @ViewBuilder
@@ -77,9 +88,8 @@ struct TaskEmbedFieldEditorPopover: View {
             KanbanPriorityPickerPopover(
                 priority: Binding(
                     get: { task.priority },
-                    set: {
-                        task.priority = $0
-                        persist()
+                    set: { priority in
+                        commit { task.priority = priority }
                     }
                 ),
                 isPresented: Binding(
@@ -114,22 +124,22 @@ struct TaskEmbedFieldEditorPopover: View {
                 CadenceQuickDatePopover(
                     selection: Binding(
                         get: { dateSelection },
-                        set: {
-                            dateSelection = $0
-                            CadenceTaskDateEditing.setScheduledDate(
-                                DateFormatters.dateKey(from: $0),
-                                for: task,
-                                in: modelContext
-                            )
-                            onChanged()
+                        set: { date in
+                            dateSelection = date
+                            commit {
+                                CadenceTaskDateEditing.setScheduledDate(
+                                    DateFormatters.dateKey(from: date),
+                                    for: task,
+                                    in: modelContext
+                                )
+                            }
                         }
                     ),
                     viewMonth: $dateViewMonth,
                     isOpen: popoverOpenBinding,
                     showsClear: true,
                     onClear: {
-                        CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
-                        onChanged()
+                        commit { CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext) }
                     },
                     inlineStyle: true
                 )
@@ -142,22 +152,22 @@ struct TaskEmbedFieldEditorPopover: View {
             CadenceQuickDatePopover(
                 selection: Binding(
                     get: { dateSelection },
-                    set: {
-                        dateSelection = $0
-                        CadenceTaskDateEditing.setDueDate(
-                            DateFormatters.dateKey(from: $0),
-                            for: task,
-                            in: modelContext
-                        )
-                        onChanged()
+                    set: { date in
+                        dateSelection = date
+                        commit {
+                            CadenceTaskDateEditing.setDueDate(
+                                DateFormatters.dateKey(from: date),
+                                for: task,
+                                in: modelContext
+                            )
+                        }
                     }
                 ),
                 viewMonth: $dateViewMonth,
                 isOpen: popoverOpenBinding,
                 showsClear: true,
                 onClear: {
-                    CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
-                    onChanged()
+                    commit { CadenceTaskDateEditing.clearDueDate(task, in: modelContext) }
                 },
                 inlineStyle: true
             )
@@ -172,9 +182,8 @@ struct TaskEmbedFieldEditorPopover: View {
                 EstimatePickerPopoverContent(
                     value: Binding(
                         get: { task.estimatedMinutes },
-                        set: {
-                            task.estimatedMinutes = max(0, min($0, 1440))
-                            persist()
+                        set: { minutes in
+                            commit { task.estimatedMinutes = max(0, min(minutes, 1440)) }
                         }
                     ),
                     onClose: { dismiss() }
@@ -246,10 +255,11 @@ struct TaskEmbedFieldEditorPopover: View {
         Binding(
             get: { currentContainerSelection },
             set: { selection in
-                let resolver = TaskContainerResolver(areas: areas, projects: projects)
-                resolver.applyContainer(selection, to: task)
-                task.sectionName = resolver.normalizedSectionName(task.sectionName, for: selection)
-                persist()
+                commit {
+                    let resolver = TaskContainerResolver(areas: areas, projects: projects)
+                    resolver.applyContainer(selection, to: task)
+                    task.sectionName = resolver.normalizedSectionName(task.sectionName, for: selection)
+                }
             }
         )
     }
@@ -257,9 +267,8 @@ struct TaskEmbedFieldEditorPopover: View {
     private var sectionBinding: Binding<String> {
         Binding(
             get: { task.resolvedSectionName },
-            set: {
-                task.sectionName = $0
-                persist()
+            set: { sectionName in
+                commit { task.sectionName = sectionName }
             }
         )
     }
@@ -288,8 +297,7 @@ struct TaskEmbedFieldEditorPopover: View {
 
             if task.scheduledStartMin >= 0 {
                 Button {
-                    CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)
-                    onChanged()
+                    commit { CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext) }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 13, weight: .semibold))
@@ -305,19 +313,20 @@ struct TaskEmbedFieldEditorPopover: View {
         Binding(
             get: { task.scheduledStartMin >= 0 ? task.scheduledStartMin : defaultScheduledStartMin },
             set: { startMin in
-                // A time on no day is not a slot, so an untimed task materialises the day the
-                // popover is showing before it takes the minute — one edit, one reconcile.
-                if task.scheduledDate.isEmpty {
-                    CadenceTaskDateEditing.setScheduledSlot(
-                        dateKey: DateFormatters.dateKey(from: dateSelection),
-                        startMin: startMin,
-                        for: task,
-                        in: modelContext
-                    )
-                } else {
-                    CadenceTaskDateEditing.setScheduledTime(startMin, for: task, in: modelContext)
+                commit {
+                    // A time on no day is not a slot, so an untimed task materialises the day the
+                    // popover is showing before it takes the minute — one edit, one reconcile.
+                    if task.scheduledDate.isEmpty {
+                        CadenceTaskDateEditing.setScheduledSlot(
+                            dateKey: DateFormatters.dateKey(from: dateSelection),
+                            startMin: startMin,
+                            for: task,
+                            in: modelContext
+                        )
+                    } else {
+                        CadenceTaskDateEditing.setScheduledTime(startMin, for: task, in: modelContext)
+                    }
                 }
-                onChanged()
             }
         )
     }
@@ -337,7 +346,7 @@ struct TaskEmbedFieldEditorPopover: View {
     private func statusActionButton(_ action: CadenceTaskInspectorSupport.StatusAction) -> some View {
         let isActive = action.isActive(task.status)
         return Button {
-            setStatus(action.target(from: task.status))
+            guard setStatus(action.target(from: task.status)) else { return }
             dismiss()
         } label: {
             HStack(spacing: 8) {
@@ -361,19 +370,20 @@ struct TaskEmbedFieldEditorPopover: View {
         .modifier(TaskPickerRowHover())
     }
 
-    private func setStatus(_ status: TaskStatus) {
-        switch status {
-        case .todo:
-            TaskWorkflowService.markTodo(task)
-        case .done:
-            TaskWorkflowService.markDone(task, in: modelContext)
-        case .inProgress:
-            task.completedAt = nil
-            task.status = .inProgress
-        case .cancelled:
-            TaskWorkflowService.markCancelled(task, in: modelContext)
+    private func setStatus(_ status: TaskStatus) -> Bool {
+        commit {
+            switch status {
+            case .todo:
+                TaskWorkflowService.markTodo(task)
+            case .done:
+                TaskWorkflowService.markDone(task, in: modelContext)
+            case .inProgress:
+                task.completedAt = nil
+                task.status = .inProgress
+            case .cancelled:
+                TaskWorkflowService.markCancelled(task, in: modelContext)
+            }
         }
-        persist()
     }
 
     private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {
@@ -385,28 +395,52 @@ struct TaskEmbedFieldEditorPopover: View {
         if task.isRecurrenceSeriesMember {
             pendingRecurrenceRule = rule
         } else {
-            TaskWorkflowService.applyRecurrenceRule(rule, to: task, allTasks: allTasks, scope: .thisTask)
-            persist()
+            guard applyRecurrenceRule(rule, scope: .thisTask) else { return }
             dismiss()
         }
     }
 
     private func applyPendingRecurrenceRule(scope: CadenceTaskRecurrenceEditScope) {
         guard let pendingRecurrenceRule else { return }
-        TaskWorkflowService.applyRecurrenceRule(
-            pendingRecurrenceRule,
-            to: task,
-            allTasks: allTasks,
-            scope: scope
-        )
+        guard applyRecurrenceRule(pendingRecurrenceRule, scope: scope) else { return }
         self.pendingRecurrenceRule = nil
-        persist()
         dismiss()
     }
 
-    private func persist() {
-        try? modelContext.save()
+    /// `.thisAndFuture` writes the rule to every later occurrence in the series, so those tasks
+    /// are handed to the commit as well — the same list the edit itself walks, asked for once.
+    private func applyRecurrenceRule(_ rule: TaskRecurrenceRule, scope: CadenceTaskRecurrenceEditScope) -> Bool {
+        let targets = CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets(
+            from: task,
+            allTasks: allTasks,
+            scope: scope
+        )
+        return commit(alsoRestoring: targets) {
+            TaskWorkflowService.applyRecurrenceRule(rule, to: task, allTasks: allTasks, scope: scope)
+        }
+    }
+
+    /// The one write path out of this popover.
+    ///
+    /// T-366: this was `try? modelContext.save(); onChanged()`, and `onChanged()` is what repaints
+    /// the note's rendered task card. A refused save therefore drew the card with values the store
+    /// does not hold, and the repaint was the only thing telling the user it worked. Now the card
+    /// is refreshed exactly when the change is in the store, and a refusal leaves the task as it
+    /// was found with the popover open holding the reason.
+    @discardableResult
+    private func commit(alsoRestoring others: [AppTask] = [], _ apply: () -> Void) -> Bool {
+        guard CadenceTaskFieldEditCommit.commit(
+            task,
+            alsoRestoring: others,
+            in: modelContext,
+            apply: apply
+        ) else {
+            failureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return false
+        }
+        failureNotice = nil
         onChanged()
+        return true
     }
 
     private func durationLabel(_ minutes: Int) -> String {

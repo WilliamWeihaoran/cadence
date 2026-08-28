@@ -25,6 +25,8 @@ struct iOSContextEditorSheet: View {
     @State private var icon = Self.defaultIcon
     @State private var colorHex = Theme.blueHex
     @State private var hasLoaded = false
+    /// Set when the commit was refused. The editor stays open holding it — see `save()`.
+    @State private var saveFailureNotice: String?
 
     private static let defaultIcon = "square.stack.fill"
 
@@ -64,6 +66,10 @@ struct iOSContextEditorSheet: View {
                                     .autocorrectionDisabled()
                             }
                         }
+                    }
+
+                    if let saveFailureNotice {
+                        CadenceInlineFailureNotice(text: saveFailureNotice)
                     }
 
                     CadenceSettingsSectionLabel(text: "Preview")
@@ -127,19 +133,41 @@ struct iOSContextEditorSheet: View {
         }
     }
 
+    /// T-321: this wrote the context, ran `try? modelContext.save()` and dismissed, so the editor
+    /// closed identically whether or not the store took the change. A context scopes task
+    /// grouping app-wide, so a rename that did not land is not a cosmetic loss — and the only
+    /// thing that ever reported success was the sheet closing.
+    ///
+    /// The two modes undo differently for the reason
+    /// `CadencePendingChangePersistence.commitEdit` gives: a creation deletes what it inserted, an
+    /// edit puts back the three fields it wrote. Neither rolls the context back, because this
+    /// context is the whole app's.
     private func save() {
-        switch mode {
-        case .new:
-            let context = Context(name: trimmedName, colorHex: normalizedColor, icon: normalizedIcon)
-            context.order = nextContextOrder()
-            modelContext.insert(context)
-        case .edit(let context):
-            context.name = trimmedName
-            context.icon = normalizedIcon
-            context.colorHex = normalizedColor
+        do {
+            switch mode {
+            case .new:
+                let context = Context(name: trimmedName, colorHex: normalizedColor, icon: normalizedIcon)
+                context.order = nextContextOrder()
+                modelContext.insert(context)
+                try CadencePendingChangePersistence.commitInsert(of: context, in: modelContext)
+            case .edit(let context):
+                let previousName = context.name
+                let previousIcon = context.icon
+                let previousColorHex = context.colorHex
+                context.name = trimmedName
+                context.icon = normalizedIcon
+                context.colorHex = normalizedColor
+                try CadencePendingChangePersistence.commitEdit(in: modelContext) {
+                    context.name = previousName
+                    context.icon = previousIcon
+                    context.colorHex = previousColorHex
+                }
+            }
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
         }
-
-        try? modelContext.save()
+        saveFailureNotice = nil
         dismiss()
     }
 

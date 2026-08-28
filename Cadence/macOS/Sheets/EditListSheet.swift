@@ -21,6 +21,9 @@ struct EditAreaSheet: View {
     @State private var showDeleteConfirmation = false
     /// Set when the delete failed. The sheet stays open holding it — see `deleteArea()`.
     @State private var deleteFailureNotice: String?
+    /// Set when the *save* failed, which is a different event with the same rule: the sheet stays
+    /// open, and nothing was changed. See `saveEdits()`.
+    @State private var saveFailureNotice: String?
 
     init(area: Area) {
         self.area = area
@@ -44,10 +47,7 @@ struct EditAreaSheet: View {
             title: "Edit Area",
             confirmTitle: "Save",
             isConfirmDisabled: CadenceTitleNormalization.isBlank(name),
-            onConfirm: {
-                applyEdits()
-                dismiss()
-            }
+            onConfirm: saveEdits
         ) {
             ListEditorIdentityHeader(
                 name: $name,
@@ -88,6 +88,10 @@ struct EditAreaSheet: View {
             if let deleteFailureNotice {
                 CadenceInlineFailureNotice(text: deleteFailureNotice)
             }
+
+            if let saveFailureNotice {
+                CadenceInlineFailureNotice(text: saveFailureNotice)
+            }
         } footerLeading: {
             ListEditorArchiveButton(isArchived: area.isArchived, noun: "Area") {
                 apply(area.isArchived ? .active : .archived)
@@ -120,9 +124,38 @@ struct EditAreaSheet: View {
         area.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
     }
 
+    /// The Save button (T-321).
+    ///
+    /// It used to write the fields and dismiss with no commit at all, so the sheet closed without
+    /// anyone — the sheet included — knowing whether the edit had reached the store. The
+    /// dismissal *is* the report of success here, exactly as it is for `deleteArea()` below, so it
+    /// has to sit under a commit that can fail.
+    ///
+    /// The undo is a field snapshot, never `modelContext.rollback()` — `CadenceListEditSnapshot`
+    /// holds the measurement that rules the rollback out. No tasks are passed: `applyEdits()`
+    /// writes the area's own fields and nothing else.
+    private func saveEdits() {
+        let undo = CadenceListEditSnapshot(area)
+        applyEdits()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        saveFailureNotice = nil
+        dismiss()
+    }
+
     /// A lifecycle change still closes the sheet, so the pending field edits are written first
     /// rather than thrown away by the dismissal.
     private func apply(_ choice: ListEditorLifecycleChoice) {
+        // The settle below writes every task still open in the area, so the snapshot is handed the
+        // same set the service is about to walk rather than guessing at it.
+        let undo = CadenceListEditSnapshot(
+            area,
+            tasks: TaskContainerLifecycleService.remainingActiveTasks(in: area, includingChildProjects: true)
+        )
         applyEdits()
         switch choice {
         case .active: area.status = .active
@@ -139,7 +172,13 @@ struct EditAreaSheet: View {
                 in: modelContext
             )
         }
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        saveFailureNotice = nil
         dismiss()
     }
 
@@ -182,6 +221,8 @@ struct EditProjectSheet: View {
     @State private var showDeleteConfirmation = false
     /// Same contract as `EditAreaSheet`'s — see `deleteProject()`.
     @State private var deleteFailureNotice: String?
+    /// Same contract as `EditAreaSheet`'s — see `saveEdits()`.
+    @State private var saveFailureNotice: String?
 
     init(project: Project) {
         self.project = project
@@ -218,10 +259,7 @@ struct EditProjectSheet: View {
             title: "Edit Project",
             confirmTitle: "Save",
             isConfirmDisabled: CadenceTitleNormalization.isBlank(name),
-            onConfirm: {
-                applyEdits()
-                dismiss()
-            }
+            onConfirm: saveEdits
         ) {
             ListEditorIdentityHeader(
                 name: $name,
@@ -270,6 +308,10 @@ struct EditProjectSheet: View {
             if let deleteFailureNotice {
                 CadenceInlineFailureNotice(text: deleteFailureNotice)
             }
+
+            if let saveFailureNotice {
+                CadenceInlineFailureNotice(text: saveFailureNotice)
+            }
         } footerLeading: {
             ListEditorArchiveButton(isArchived: project.isArchived, noun: "Project") {
                 apply(project.isArchived ? .active : .archived)
@@ -300,7 +342,29 @@ struct EditProjectSheet: View {
         project.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
     }
 
+
+    /// Same as `EditAreaSheet.saveEdits()`, same reason. The project's due date is one of the
+    /// fields `applyEdits()` writes, and the snapshot holds it for the same reason it holds the
+    /// rest.
+    private func saveEdits() {
+        let undo = CadenceListEditSnapshot(project)
+        applyEdits()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        saveFailureNotice = nil
+        dismiss()
+    }
+
     private func apply(_ choice: ListEditorLifecycleChoice) {
+        // Same set the settle walks, for the same reason as `EditAreaSheet.apply(_:)`.
+        let undo = CadenceListEditSnapshot(
+            project,
+            tasks: TaskContainerLifecycleService.remainingActiveTasks(in: project)
+        )
         applyEdits()
         switch choice {
         case .active: project.status = .active
@@ -315,7 +379,13 @@ struct EditProjectSheet: View {
                 in: modelContext
             )
         }
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        saveFailureNotice = nil
         dismiss()
     }
 

@@ -407,7 +407,6 @@ struct CadenceSubtaskInverseParityTests {
                 "func insertTask(from draft: TaskCreationDraft, into modelContext: ModelContext) -> AppTask? {"
             ),
             (
-                "Cadence/Services/MCPReadOnly/CadenceWriteService.swift",
                 "CadenceTaskMutationSupport.insertSubtasks(",
                 "func createTask(options: CadenceCreateTaskOptions) throws -> CadenceTaskDetail {"
             ),

@@ -60,6 +60,56 @@ enum CadencePendingChangePersistence {
         try commitInsert(of: [model], in: modelContext, commit: commit)
     }
 
+    /// The sentence a structural editor shows when its save is refused.
+    ///
+    /// It says "Nothing was changed" for the same reason
+    /// `CadenceListDeletionKind.deleteFailureNotice` says "Nothing was removed": it is only true
+    /// because `commitEdit(in:commit:undo:)` below guarantees the undo ran before the caller was
+    /// told. A caller that reports this sentence without an undo is lying, and the source scans in
+    /// `CadenceEditorSaveCommitSurfaceTests` are what keep the two together.
+    static let editFailureNotice = "Couldn't save these changes. Nothing was changed."
+
+    /// Commits a pending **in-place edit**, undoing it with `undo` when the commit throws.
+    ///
+    /// The third case, after insert and delete (T-321, T-366). An edit differs from both: there is
+    /// no object to delete and no row to un-hide, only fields that now hold values the store never
+    /// took. So the undo is the caller's — it is the only party that knows how far the edit
+    /// reached — and it is always the same shape: **capture the fields before the write and put
+    /// them back here.** `CadenceAINoteSummary.append` writes it inline for two fields;
+    /// `CadenceTaskFieldSnapshot` and `CadenceListEditSnapshot` are it for the two editors that
+    /// reach further.
+    ///
+    /// **`{ modelContext.rollback() }` is not offered, for two reasons in this order.**
+    ///
+    /// 1. **It discards unrelated pending work.** This is the app's single `ModelContext`. A
+    ///    refused rename must not take the note someone is typing behind the popover with it —
+    ///    `arefusedListEditLeavesUnrelatedPendingWorkAlone` is that assertion, and it does not
+    ///    depend on any SwiftData timing.
+    /// 2. **Its edit undo is not visible until something refreshes the object.** Measured:
+    ///    `rollback()` un-*deletes* unconditionally — which is what makes it right for
+    ///    `commitDelete`, and what `CadenceListCascadeRollbackTests` pins — but after
+    ///    `area.name = "New"; rollback()` the live `Area` still answers `"New"` and only a *fetch*
+    ///    brings it back to `"Old"`. The store is correct throughout. So an editor that rolled back
+    ///    and then reported `editFailureNotice` would be relying on a fetch nobody scheduled, and
+    ///    `EditAreaSheet` binds straight to the model rather than through a `@Query`.
+    ///    `CadenceEditorSaveCommitSurfaceTests.rollbackRestoresAnEditOnlyOnceSomethingRefreshesTheObject`
+    ///    pins both halves — including the assertion order, because a fetch placed before the read
+    ///    hides the whole effect.
+    ///
+    /// - Parameter commit: See `commitInsert(of:in:commit:)`.
+    static func commitEdit(
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        undo: () -> Void
+    ) throws {
+        do {
+            try commit(modelContext)
+        } catch {
+            undo()
+            throw error
+        }
+    }
+
     /// Commits a pending delete. If the commit throws, the delete is rolled back, which puts the
     /// rows back where the user can see them rather than leaving them hidden and undeleted.
     ///

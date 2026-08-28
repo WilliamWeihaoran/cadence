@@ -43,6 +43,24 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-409] **`CadenceMCPServer` broke for four commits and `-scheme Cadence` stayed green the whole
+  time.** `aaa0064` routed `CadenceWriteService` through `CadenceTaskMutationSupport.insertSubtasks`,
+  but that file is in **no** target's Sources phase — the app reaches it by folder membership and the
+  MCP command-line target cannot. Fixed by reverting that one call site, because adding the file to
+  the target would cascade in `CadencePendingChangePersistence`, `CadenceTitleNormalization`,
+  `CadenceTaskQuerySupport` and `NotificationManager` — and `NotificationManager` reads
+  `UserDefaults.standard`, which is exactly why it cannot live in a command-line target.
+  **The remaining work is the process half:** the app scheme cannot see this class of break, so
+  anything that only runs `-scheme Cadence` will keep missing it. The coordinator's integration run
+  now builds `CadenceMCPServer` too, but that is a habit, not a guard. A CI-side or test-side check
+  would be better.
+
+- [T-410] **The two habit editors disagree about what a corrupt reminder time looks like.** Found
+  while fixing T-363: macOS renders an out-of-range `reminderMinuteOfDay` as *the current time*,
+  iOS wraps 1440 to "12 AM". Neither is wrong about the data — there is no right answer for a value
+  the model never validated — but they should agree, and probably both should say the time is unset
+  rather than invent one.
+
 - [T-407] **`iOSTaskDetailSheet` is the one task surface outside both wrappers.** Residue from
   [[T-343]]. It calls `setStatus`/`toggleCompletion` without reconciling notifications, and
   `dismiss()`es on delete regardless of the `Bool` that delete now returns. Both halves belong to
@@ -195,12 +213,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   documents that the model does no range validation. Guard `0...1439` in the planner and return
   `nil`.
 
-- [T-366] **The embed field popover calls `onChanged()` whether or not the write landed.** Measured.
-  `TaskEmbedFieldEditorPopover` mutates the live task, swallows the save, then unconditionally tells
-  the note editor to refresh its rendered task card — so the card repaints with values the store may
-  not hold. Narrower [[T-322]] case. `AINoteActionSupport` shows the right shape: snapshot the
-  fields, restore them on failure, rather than rolling back unrelated pending work.
-
 - [T-367] **Global Cmd+Z on the model context is either a feature or a hazard, and nothing says
   which.** P3, source measured, runtime behaviour not measured. The macOS root installs an
   `UndoManager` on the shared `ModelContext` and routes non-text Cmd+Z/Cmd+Shift+Z into it, while
@@ -321,14 +333,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   repair and stop implying more, or give it a real orphan sweep for targetless subtasks, empty
   bundles, unowned habit completions and unreferenced image assets. **Do not leave it named like a
   general repair while covering half the schema** — the name is what makes the gap invisible.
-
-- [T-321] **Structural editors close without knowing whether the change persisted.** From the same
-  audit; premise verified. The iOS context editor, the iOS list editor and macOS's `EditListSheet`
-  all mutate, `try? modelContext.save()`, and dismiss. These objects drive task grouping, context
-  scoping and list visibility, and the list editor also reassigns tasks first — so a swallowed
-  failure can leave the reassignment half-applied with the editor closed over it. The audit's
-  lower-priority sibling belongs here: iOS event-note creation opens the note editor after a
-  swallowed save.
 
 - [T-322] **Decide the rule for `try? save()`, then sweep — there are 133 of them.** Measured, not
   estimated: `try? modelContext.save()` / `try? context.save()` appears **133 times** across
