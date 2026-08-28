@@ -136,7 +136,16 @@ nonisolated enum MarkdownImageAssetService {
     /// slightly wrong is survivable, deleting the image is not.
     static let altTextPattern = #"(?:[^\]\n\\]|\\.)*\\?"#
 
-    private static let imageReferenceRegex = try! NSRegularExpression(pattern: #"(?m)^!\[("# + altTextPattern + #")\]\(cadence-image://([0-9A-Fa-f-]{36})\)\s*$"#)
+    /// One `![alt](cadence-image://<uuid>)`, **wherever it sits**: group 1 is the alt text, group 2
+    /// the id. `MarkdownInlineMarkerRanges.inlineImageReferencePattern` is this same string rather
+    /// than a second spelling of it — the styler and the lifecycle sweep have to agree on what a
+    /// reference *is*, even though they disagree about which ones become blocks.
+    static let referencePattern = #"!\[("# + altTextPattern + #")\]\(cadence-image://([0-9A-Fa-f-]{36})\)"#
+
+    private static let anyReferenceRegex = try! NSRegularExpression(pattern: referencePattern)
+
+    /// The same reference, alone on its line — the block form, and nothing else.
+    private static let standaloneReferenceRegex = try! NSRegularExpression(pattern: #"(?m)^"# + referencePattern + #"\s*$"#)
 
     static let urlScheme = "cadence-image"
     static let maxLongEdge: CGFloat = 2400
@@ -243,11 +252,37 @@ nonisolated enum MarkdownImageAssetService {
         "![\(escapedAltText(asset.altText))](\(urlScheme)://\(asset.id.uuidString))"
     }
 
-    static func references(in text: String) -> [MarkdownImageReference] {
+    // MARK: - Two questions, two predicates
+    //
+    // T-350: rendering and lifecycle used to share one predicate, and it was the rendering one.
+    //
+    // `standaloneReferences` answers *does this render as an image block* — a reference alone on
+    // its line. Deliberately narrow: an inline `![x](cadence-image://…)` inside a sentence stays
+    // paragraph text, and widening this would turn a word into a card.
+    //
+    // `allReferences` answers *does this text reference this asset at all*, which is the only safe
+    // question for asset lifecycle and export. Asking the rendering question there let a note or
+    // list delete collect an asset a surviving note still showed: the note displayed the image
+    // inline, the sweep did not count it, and the bytes went. Only reachable by hand-editing an
+    // image into a sentence — paste and photo insertion both write standalone blocks — but the
+    // loss is permanent and unrecoverable, so the lifecycle side errs toward keeping. Over-counting
+    // a reference defers garbage; under-counting one deletes a picture.
+
+    /// The references that render as image blocks.
+    static func standaloneReferences(in text: String) -> [MarkdownImageReference] {
+        references(in: text, matching: standaloneReferenceRegex)
+    }
+
+    /// Every image reference in the text, inline ones included.
+    static func allReferences(in text: String) -> [MarkdownImageReference] {
+        references(in: text, matching: anyReferenceRegex)
+    }
+
+    private static func references(in text: String, matching regex: NSRegularExpression) -> [MarkdownImageReference] {
         let nsText = text as NSString
         guard nsText.length > 0 else { return [] }
 
-        return imageReferenceRegex.matches(in: text, range: NSRange(location: 0, length: nsText.length)).compactMap { match in
+        return regex.matches(in: text, range: NSRange(location: 0, length: nsText.length)).compactMap { match in
             guard match.numberOfRanges >= 3,
                   let id = UUID(uuidString: nsText.substring(with: match.range(at: 2)))
             else { return nil }
@@ -259,8 +294,14 @@ nonisolated enum MarkdownImageAssetService {
         }
     }
 
+    /// The assets a renderer has to decode: block references only. Not a lifecycle answer.
+    static func standaloneReferencedIDs(in text: String) -> Set<UUID> {
+        Set(standaloneReferences(in: text).map(\.id))
+    }
+
+    /// The assets this text keeps alive. Every reference form counts.
     static func referencedIDs(in text: String) -> Set<UUID> {
-        Set(references(in: text).map(\.id))
+        Set(allReferences(in: text).map(\.id))
     }
 
     static func unreferencedAssets(allAssets: [MarkdownImageAsset], markdownTexts: [String]) -> [MarkdownImageAsset] {

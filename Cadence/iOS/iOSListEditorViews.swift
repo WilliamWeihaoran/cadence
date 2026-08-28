@@ -408,8 +408,12 @@ struct iOSListEditorSheet: View {
             area.icon = normalizedIcon
             area.colorHex = normalizedColor
             area.context = selectedContext
+            // The columns are merged *before* the tasks are re-pointed, because the merge is what
+            // decides which columns actually survive — a column another device deleted while this
+            // sheet was open is gone from the result even though the drafts still list it, and its
+            // tasks have to follow (`docs/TODO.md` T-358).
+            area.applySectionConfigEdits(base: originalSectionConfigs, edited: normalizedSectionConfigs)
             reassignTasks(in: area.tasks ?? [], area: area)
-            area.sectionConfigs = normalizedSectionConfigs
             area.hideDueDateIfEmpty = hideEmptyDueDates
             area.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
         case .editProject(let project):
@@ -419,8 +423,8 @@ struct iOSListEditorSheet: View {
             project.colorHex = normalizedColor
             project.context = selectedContext
             project.area = selectedArea
+            project.applySectionConfigEdits(base: originalSectionConfigs, edited: normalizedSectionConfigs)
             reassignTasks(in: project.tasks ?? [], project: project)
-            project.sectionConfigs = normalizedSectionConfigs
             project.hideDueDateIfEmpty = hideEmptyDueDates
             project.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
             project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
@@ -444,12 +448,11 @@ struct iOSListEditorSheet: View {
     /// stayed in the list and dropped out of the context (T-293). Pass the list back in so the
     /// shared rule can re-derive it; omitting it silently restores that bug.
     private func reassignTasks(in tasks: [AppTask], area: Area? = nil, project: Project? = nil) {
+        let surviving = area?.sectionConfigs ?? project?.sectionConfigs ?? normalizedSectionConfigs
+        let moves = CadenceSectionConfigMerge.sectionNameMoves(base: originalSectionConfigs, merged: surviving)
         CadenceSectionEditingSupport.applySectionNameChanges(
-            renames: CadenceSectionEditingSupport.renames(in: sectionDrafts),
-            removedNames: CadenceSectionEditingSupport.removedNames(
-                original: originalSectionConfigs,
-                drafts: sectionDrafts
-            ),
+            renames: moves.renames,
+            removedNames: moves.removedNames,
             to: tasks
         )
         CadenceTaskMutationSupport.reassignInheritedContext(in: tasks, area: area, project: project)

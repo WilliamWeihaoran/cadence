@@ -93,8 +93,8 @@ struct LinksView: View {
     }
 
     private func addLink() {
-        let title = newTitle.trimmingCharacters(in: .whitespaces)
-        var urlStr = newURL.trimmingCharacters(in: .whitespaces)
+        let title = CadenceTitleNormalization.normalized(newTitle)
+        var urlStr = CadenceTitleNormalization.normalized(newURL)
         guard !urlStr.isEmpty else { return }
         if !urlStr.hasPrefix("http://") && !urlStr.hasPrefix("https://") {
             urlStr = "https://" + urlStr
@@ -171,7 +171,7 @@ private struct AddLinkBar: View {
                     title: "Save",
                     role: .secondary,
                     size: .compact,
-                    isDisabled: url.trimmingCharacters(in: .whitespaces).isEmpty
+                    isDisabled: CadenceTitleNormalization.isBlank(url)
                 ) {
                     onSave()
                 }

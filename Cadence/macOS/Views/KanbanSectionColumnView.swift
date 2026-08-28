@@ -36,6 +36,10 @@ struct ListSectionKanbanColumn: View {
     @State private var editorColorHex = TaskSectionDefaults.defaultColorHex
     @State private var editorDueDate = Date()
     @State private var editorHasDueDate = false
+    /// The column as it stood when the popover opened. The save diffs against this, not against
+    /// the live `section`, so a rename that arrived from another device while the popover was open
+    /// does not read as "the user changed the name back".
+    @State private var editorBase: TaskSectionConfig?
     @State private var showHeaderDueDatePicker = false
     @State private var headerDueDate = Date()
     @State private var headerDueDateViewMonth = Date()
@@ -317,6 +321,7 @@ struct ListSectionKanbanColumn: View {
     }
 
     private func openSectionEditor() {
+        editorBase = section
         editorName = section.name
         editorColorHex = section.colorHex
         editorDueDate = DateFormatters.date(from: section.dueDate) ?? Date()
@@ -412,35 +417,35 @@ struct ListSectionKanbanColumn: View {
         KanbanSectionStateSupport.updateSection(sectionID: section.id, area: area, project: project, mutate: mutate)
     }
 
+    /// The popover snapshots name, colour and due date when it opens and writes all three on save,
+    /// so it is a stale-snapshot writer even though it is only open for a few seconds: a colour
+    /// change here would otherwise write the *old* name back over a rename that landed from another
+    /// device in the meantime. `editorBase` is the column as the popover opened, and the merge
+    /// applies only the fields that differ from it (`docs/TODO.md` T-358).
     private func saveSectionChanges() {
-        let trimmed = section.isDefault ? section.name : editorName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = editorBase ?? section
+        let trimmed = base.isDefault ? base.name : editorName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        guard let container = CadenceSectionConfigMerge.container(area: area, project: project) else { return }
 
-        if let area {
-            var configs = area.sectionConfigs
-            guard let idx = configs.firstIndex(where: { $0.id == section.id }) else { return }
-            if trimmed.caseInsensitiveCompare(section.name) != .orderedSame,
-               configs.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
-                return
-            }
-            configs[idx].name = trimmed
-            configs[idx].colorHex = editorColorHex
-            configs[idx].dueDate = editorHasDueDate ? DateFormatters.dateKey(from: editorDueDate) : ""
-            area.sectionConfigs = configs
-        } else if let project {
-            var configs = project.sectionConfigs
-            guard let idx = configs.firstIndex(where: { $0.id == section.id }) else { return }
-            if trimmed.caseInsensitiveCompare(section.name) != .orderedSame,
-               configs.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
-                return
-            }
-            configs[idx].name = trimmed
-            configs[idx].colorHex = editorColorHex
-            configs[idx].dueDate = editorHasDueDate ? DateFormatters.dateKey(from: editorDueDate) : ""
-            project.sectionConfigs = configs
+        let current = container.sectionConfigs
+        guard current.contains(where: { $0.uuid == base.uuid }) else { return }
+        if trimmed.caseInsensitiveCompare(base.name) != .orderedSame,
+           current.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return
         }
-        if trimmed.caseInsensitiveCompare(section.name) != .orderedSame {
-            moveTasks(from: section.name, to: trimmed)
+
+        var edited = base
+        edited.name = trimmed
+        edited.colorHex = editorColorHex
+        edited.dueDate = editorHasDueDate ? DateFormatters.dateKey(from: editorDueDate) : ""
+        container.applySectionConfigEdits(
+            base: current.map { $0.uuid == base.uuid ? base : $0 },
+            edited: current.map { $0.uuid == base.uuid ? edited : $0 }
+        )
+
+        if trimmed.caseInsensitiveCompare(base.name) != .orderedSame {
+            moveTasks(from: base.name, to: trimmed)
         }
     }
 

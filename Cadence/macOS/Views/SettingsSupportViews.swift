@@ -95,7 +95,7 @@ struct ContextSettingsRow: View {
                             title: "Save",
                             role: .primary,
                             size: .compact,
-                            isDisabled: editName.trimmingCharacters(in: .whitespaces).isEmpty
+                            isDisabled: CadenceTitleNormalization.isBlank(editName)
                         ) {
                             saveEdit()
                         }
@@ -140,7 +140,7 @@ struct ContextSettingsRow: View {
     }
 
     private func saveEdit() {
-        let trimmed = editName.trimmingCharacters(in: .whitespaces)
+        let trimmed = CadenceTitleNormalization.normalized(editName)
         guard !trimmed.isEmpty else { return }
         context.name = trimmed
         context.colorHex = editColor

@@ -69,7 +69,7 @@ nonisolated enum MarkdownBlockSupport {
 
     static func standaloneImageReference(in line: String) -> MarkdownImageReference? {
         let nsLine = line as NSString
-        guard let reference = MarkdownImageAssetService.references(in: line).first,
+        guard let reference = MarkdownImageAssetService.standaloneReferences(in: line).first,
               reference.range.location == 0,
               reference.range.length == nsLine.length else {
             return nil

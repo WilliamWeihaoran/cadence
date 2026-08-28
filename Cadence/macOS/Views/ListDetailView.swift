@@ -4,6 +4,17 @@ import SwiftData
 
 // MARK: - Loaders
 
+// **The `else` on each of these loaders is T-345's second half, and it is not decoration.**
+//
+// `SidebarSelectionNormalizer` retargets a selection whose list has been deleted, but it runs on a
+// query change, which means there is a render — and after a CloudKit delete, potentially several —
+// in which the selection still names the missing id. Without an `else` the detail pane draws
+// *nothing at all* in that window: not an explanation, not an empty state, blank content, which
+// reads as the app having lost the page rather than as the list having been deleted.
+//
+// Both halves are needed. The normalizer alone leaves a blank frame reachable; this state alone
+// leaves the user parked on a tombstone with no way back except clicking another list.
+
 struct AreaDetailLoader: View {
     let id: UUID
     @Query private var areas: [Area]
@@ -11,6 +22,8 @@ struct AreaDetailLoader: View {
     var body: some View {
         if let area = areas.first(where: { $0.id == id }) {
             ListDetailView(area: area, project: nil)
+        } else {
+            MissingListDetailView()
         }
     }
 }
@@ -22,7 +35,30 @@ struct ProjectDetailLoader: View {
     var body: some View {
         if let project = projects.first(where: { $0.id == id }) {
             ListDetailView(area: nil, project: project)
+        } else {
+            MissingListDetailView()
         }
+    }
+}
+
+/// One state for both loaders rather than a near-copy each — and **iOS's wording, not a second
+/// one.** `iOSMissingListView` has shipped this exact sentence since iOS grew the same `else` on the
+/// same `if let area = areas.first(where:)`, so the only thing macOS was missing here was the
+/// branch. Two platforms explaining one situation in two different sentences is the drift the
+/// root guide's "one style, differing by layout" rule is about.
+///
+/// The panel component differs because it has to: `iOSEmptyPanel` is inside `#if os(iOS)` and
+/// `EmptyStateView` is the shared one macOS pages already use. The glyph and both strings are
+/// `iOSMissingListView`'s.
+struct MissingListDetailView: View {
+    var body: some View {
+        EmptyStateView(
+            message: "List not found",
+            subtitle: "This list may have been archived, deleted, or changed on another device.",
+            icon: "questionmark.folder"
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bg)
     }
 }
 

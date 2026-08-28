@@ -18,7 +18,7 @@ struct MarkdownImageAssetServiceTests {
         ![](cadence-image://\(secondID.uuidString))
         """
 
-        let references = MarkdownImageAssetService.references(in: markdown)
+        let references = MarkdownImageAssetService.standaloneReferences(in: markdown)
 
         #expect(references.map(\.id) == [firstID, secondID])
         #expect(references.map(\.altText) == ["Diagram", ""])
@@ -31,7 +31,7 @@ struct MarkdownImageAssetServiceTests {
         let id = UUID()
         for label in [#"photo\"#, #"C:\path\"#, #"a\"#, #"\"#] {
             let text = "![\(label)](cadence-image://\(id.uuidString))"
-            let references = MarkdownImageAssetService.references(in: text)
+            let references = MarkdownImageAssetService.standaloneReferences(in: text)
             #expect(references.count == 1, "alt text \(label) must still resolve its asset")
             #expect(references.first?.id == id)
         }
@@ -52,7 +52,7 @@ struct MarkdownImageAssetServiceTests {
         )
         let markdown = MarkdownImageAssetService.markdown(for: asset)
 
-        let references = MarkdownImageAssetService.references(in: markdown)
+        let references = MarkdownImageAssetService.standaloneReferences(in: markdown)
 
         #expect(references.map(\.id) == [asset.id])
         #expect(references.first?.altText == "chart [v2]")
@@ -63,8 +63,8 @@ struct MarkdownImageAssetServiceTests {
         let id = UUID()
         let markdown = "![chart [v2\\]](cadence-image://\(id.uuidString))"
 
-        #expect(MarkdownImageAssetService.references(in: markdown).map(\.id) == [id])
-        #expect(MarkdownImageAssetService.references(in: markdown).first?.altText == "chart [v2]")
+        #expect(MarkdownImageAssetService.standaloneReferences(in: markdown).map(\.id) == [id])
+        #expect(MarkdownImageAssetService.standaloneReferences(in: markdown).first?.altText == "chart [v2]")
     }
 
     @Test func findsUnreferencedAssetsAcrossMarkdownFields() {
@@ -93,6 +93,59 @@ struct MarkdownImageAssetServiceTests {
         )
 
         #expect(unused.map(\.id) == [orphanID])
+    }
+
+    /// **T-350, at the predicate.** `unreferencedAssets` is the lifecycle question, and an image
+    /// written inside a sentence is a reference to it. It used to reuse the rendering predicate —
+    /// standalone lines only — so this asset read as garbage while a note was still showing it.
+    @Test func inlineImageReferenceKeepsItsAssetOutOfTheUnreferencedSweep() {
+        let inlineID = UUID()
+        let orphanID = UUID()
+        let inlineAsset = MarkdownImageAsset(
+            data: Data([1]),
+            mimeType: "image/png",
+            pixelWidth: 100,
+            pixelHeight: 80,
+            displayWidth: 100
+        )
+        inlineAsset.id = inlineID
+        let orphanAsset = MarkdownImageAsset(
+            data: Data([2]),
+            mimeType: "image/png",
+            pixelWidth: 100,
+            pixelHeight: 80,
+            displayWidth: 100
+        )
+        orphanAsset.id = orphanID
+        let survivingNote = "See ![the chart](cadence-image://\(inlineID.uuidString)) before Friday."
+
+        let collected = MarkdownImageAssetService.unreferencedAssets(
+            allAssets: [inlineAsset, orphanAsset],
+            markdownTexts: [survivingNote]
+        )
+
+        #expect(!collected.contains { $0.id == inlineID })
+        #expect(collected.map(\.id) == [orphanID])
+        #expect(MarkdownImageAssetService.referencedIDs(in: survivingNote).contains(inlineID))
+    }
+
+    /// The other half of the split, and the reason the shared predicate was **not** widened: an
+    /// inline reference is paragraph text. It must not become an image block, must not be a
+    /// deletable rendered block, and must not reach the renderer's asset table. This passes before
+    /// the T-350 fix as well as after — it is what keeps the fix from being made by widening.
+    @Test func inlineImageReferenceStillDoesNotRenderAsABlock() {
+        let id = UUID()
+        let line = "See ![the chart](cadence-image://\(id.uuidString)) before Friday."
+
+        #expect(MarkdownBlockSupport.standaloneImageReference(in: line) == nil)
+        #expect(MarkdownRenderedBlockDeletionSupport.renderedBlockRanges(in: line).isEmpty)
+        #expect(!MarkdownImageAssetService.standaloneReferencedIDs(in: line).contains(id))
+
+        // ... while the block form still is one, on both counts.
+        let block = "![the chart](cadence-image://\(id.uuidString))"
+        #expect(MarkdownBlockSupport.standaloneImageReference(in: block)?.id == id)
+        #expect(MarkdownImageAssetService.standaloneReferencedIDs(in: block) == [id])
+        #expect(MarkdownImageAssetService.referencedIDs(in: block) == [id])
     }
 
     @Test func createsImageAssetWithMetadataAndDisplayWidth() throws {

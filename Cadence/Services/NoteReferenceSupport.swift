@@ -1,26 +1,88 @@
 import Foundation
 
+/// **What a `[[…]]` reference names, and therefore how it is allowed to resolve.**
+///
+/// T-348: the parsed types carried a bare `UUID?`, so a *stale* id and *no* id were the same value
+/// — `nil` — by the time a resolver looked. Both then fell through to the title, and
+/// `[[note:<deleted-id>|Budget]]` silently started pointing at whichever other note happened to be
+/// called Budget. The user wrote a precise reference and got an imprecise one back, on every
+/// surface: linked notes, linked tasks, backlinks, iOS tap navigation and MCP note reads.
+///
+/// So the two cases are separate values, and resolvers switch on them rather than testing an
+/// optional:
+///
+/// - `.identified` — the markdown named a specific row. It resolves to that row or to **nothing**.
+///   A title is still carried for *display*, and is never a resolution target.
+/// - `.titleOnly` — the markdown named only a title, which is the whole `[[Budget]]` form and also
+///   `[[note:Budget]]`. Title matching is correct here and stays.
+///
+/// Note what is *not* a case: an id slot holding something that is not a UUID (`[[note:x|Budget]]`)
+/// parses as `.titleOnly`, because there is no id there to be stale about.
+nonisolated enum NoteReferenceTarget: Hashable {
+    case identified(UUID)
+    case titleOnly
+
+    nonisolated var id: UUID? {
+        guard case .identified(let id) = self else { return nil }
+        return id
+    }
+
+    /// Parses one id slot. The single place the "valid id form" question is answered.
+    nonisolated static func parsing(_ idText: String) -> NoteReferenceTarget {
+        guard let id = UUID(uuidString: idText.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return .titleOnly
+        }
+        return .identified(id)
+    }
+}
+
 nonisolated struct NoteLinkReference: Hashable {
     let rawValue: String
-    let noteID: UUID?
+    let target: NoteReferenceTarget
     let title: String
+
+    /// The id the markdown named, or `nil` when it named only a title.
+    ///
+    /// For readers that want the id and have no interest in resolution — the unlinked-mention
+    /// suppressor, the embed reconciler. A resolver must switch on `target` instead: reading this
+    /// as an optional is exactly the shape that let a stale id fall through to a title.
+    nonisolated var noteID: UUID? { target.id }
+
+    /// The reference's label as written. **Display text, not a resolution key** — see
+    /// `resolvableTitle` for the half that is allowed to match a row.
+    nonisolated var fallbackTitle: String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+        return rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The title a resolver may match on, and `nil` when the markdown named an id.
+    nonisolated var resolvableTitle: String? {
+        guard case .titleOnly = target else { return nil }
+        let trimmed = fallbackTitle
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+nonisolated struct NoteTaskReference: Hashable {
+    let rawValue: String
+    let target: NoteReferenceTarget
+    let title: String
+
+    /// See `NoteLinkReference.noteID`.
+    nonisolated var taskID: UUID? { target.id }
 
     nonisolated var fallbackTitle: String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { return trimmed }
         return rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-}
 
-nonisolated struct NoteTaskReference: Hashable {
-    let rawValue: String
-    let taskID: UUID?
-    let title: String
-
-    nonisolated var fallbackTitle: String {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty { return trimmed }
-        return rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// The title a resolver may match on, and `nil` when the markdown named an id.
+    nonisolated var resolvableTitle: String? {
+        guard case .titleOnly = target else { return nil }
+        let trimmed = fallbackTitle
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
@@ -70,16 +132,16 @@ nonisolated enum NoteReferenceParser {
         if trimmed.lowercased().hasPrefix("note:") {
             payload = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespacesAndNewlines)
         } else {
-            return NoteLinkReference(rawValue: trimmed, noteID: UUID(uuidString: trimmed), title: trimmed)
+            return NoteLinkReference(rawValue: trimmed, target: .parsing(trimmed), title: trimmed)
         }
 
         let parts = payload.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
         if parts.count == 2 {
             let idText = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
             let title = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
-            return NoteLinkReference(rawValue: trimmed, noteID: UUID(uuidString: idText), title: title)
+            return NoteLinkReference(rawValue: trimmed, target: .parsing(idText), title: title)
         }
-        return NoteLinkReference(rawValue: trimmed, noteID: UUID(uuidString: payload), title: payload)
+        return NoteLinkReference(rawValue: trimmed, target: .parsing(payload), title: payload)
     }
 
     nonisolated private static func parseTaskReference(_ raw: String) -> NoteTaskReference {
@@ -88,9 +150,9 @@ nonisolated enum NoteReferenceParser {
         if parts.count == 2 {
             let idText = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
             let title = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
-            return NoteTaskReference(rawValue: trimmed, taskID: UUID(uuidString: idText), title: title)
+            return NoteTaskReference(rawValue: trimmed, target: .parsing(idText), title: title)
         }
-        return NoteTaskReference(rawValue: trimmed, taskID: UUID(uuidString: trimmed), title: trimmed)
+        return NoteTaskReference(rawValue: trimmed, target: .parsing(trimmed), title: trimmed)
     }
 
     nonisolated private static func isTaskReferencePayload(_ payload: String) -> Bool {
@@ -121,6 +183,9 @@ nonisolated enum NoteReferenceParser {
     }
 }
 
+/// **An explicit id resolves to its row or to nothing.** Never to a title match — see
+/// `NoteReferenceTarget`. Each of the three functions below switches on the parsed target rather
+/// than unwrapping an optional, so the stale-id case cannot silently reach the fallback branch.
 nonisolated enum NoteReferenceResolver {
     static func linkedNotes(for note: Note, in notes: [Note]) -> [Note] {
         linkedNotes(noteID: note.id, content: note.content, in: notes)
@@ -128,15 +193,18 @@ nonisolated enum NoteReferenceResolver {
 
     static func linkedNotes(noteID currentNoteID: UUID, content: String, in notes: [Note]) -> [Note] {
         let references = NoteReferenceParser.noteReferences(in: content)
-        return references.compactMap { reference in
-            if let noteID = reference.noteID,
-               noteID != currentNoteID,
-               let exact = notes.first(where: { $0.id == noteID }) {
-                return exact
-            }
-            let title = reference.fallbackTitle
-            return notes.first {
-                $0.id != currentNoteID && noteTitle($0).caseInsensitiveCompare(title) == .orderedSame
+        return references.compactMap { reference -> Note? in
+            switch reference.target {
+            case .identified(let id):
+                // A reference to a note that has been deleted resolves to nothing. It must not
+                // fall through to the label: the user named one note, and that note is gone.
+                guard id != currentNoteID else { return nil }
+                return notes.first { $0.id == id }
+            case .titleOnly:
+                guard let title = reference.resolvableTitle else { return nil }
+                return notes.first {
+                    $0.id != currentNoteID && noteTitle($0).caseInsensitiveCompare(title) == .orderedSame
+                }
             }
         }
     }
@@ -147,15 +215,16 @@ nonisolated enum NoteReferenceResolver {
 
     static func linkedTasks(in content: String, tasks: [AppTask]) -> [AppTask] {
         let references = NoteReferenceParser.taskReferences(in: content)
-        return references.compactMap { reference in
-            if let taskID = reference.taskID,
-               let exact = tasks.first(where: { $0.id == taskID }) {
-                return exact
-            }
-            let title = reference.fallbackTitle
-            return tasks.first {
-                $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .caseInsensitiveCompare(title) == .orderedSame
+        return references.compactMap { reference -> AppTask? in
+            switch reference.target {
+            case .identified(let id):
+                return tasks.first { $0.id == id }
+            case .titleOnly:
+                guard let title = reference.resolvableTitle else { return nil }
+                return tasks.first {
+                    $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .caseInsensitiveCompare(title) == .orderedSame
+                }
             }
         }
     }
@@ -169,9 +238,15 @@ nonisolated enum NoteReferenceResolver {
         return notes.filter { other in
             guard other.id != noteID else { return false }
             return NoteReferenceParser.noteReferences(in: other.content).contains { reference in
-                if reference.noteID == noteID { return true }
-                guard !currentTitle.isEmpty else { return false }
-                return reference.fallbackTitle.caseInsensitiveCompare(currentTitle) == .orderedSame
+                switch reference.target {
+                case .identified(let id):
+                    // Symmetric with `linkedNotes`: a reference that named some *other* note is not
+                    // a backlink to this one just because the two share a title.
+                    return id == noteID
+                case .titleOnly:
+                    guard !currentTitle.isEmpty, let title = reference.resolvableTitle else { return false }
+                    return title.caseInsensitiveCompare(currentTitle) == .orderedSame
+                }
             }
         }
     }

@@ -127,6 +127,44 @@ struct ListDeleteHelpersTests {
         #expect(remainingAssets.map(\.id) == [retainedAsset.id])
     }
 
+    /// **T-350.** The surviving note writes its image *inside a sentence*, which is what
+    /// hand-editing a reference into prose produces. The note displays it; the sweep used to ask
+    /// the rendering question — "is this reference alone on its line?" — decide "no", and collect
+    /// the asset's `.externalStorage` bytes out from under a live picture. Unrecoverable.
+    ///
+    /// Asserted by identity: the asset is still in the store, not merely "the count changed".
+    @Test func deleteSweepKeepsAnAssetASurvivingNoteShowsInline() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let inlineAsset = MarkdownImageAsset(data: Data([7]), mimeType: "image/png", pixelWidth: 20, pixelHeight: 20, displayWidth: 20)
+        let orphanAsset = MarkdownImageAsset(data: Data([8]), mimeType: "image/png", pixelWidth: 20, pixelHeight: 20, displayWidth: 20)
+        let deletedNote = Note(
+            kind: .list,
+            title: "Deleted",
+            content: "![gone](cadence-image://\(orphanAsset.id.uuidString))"
+        )
+        let survivingNote = Note(
+            kind: .permanent,
+            title: "Retained",
+            content: "See ![the chart](cadence-image://\(inlineAsset.id.uuidString)) before Friday."
+        )
+
+        modelContext.insert(inlineAsset)
+        modelContext.insert(orphanAsset)
+        modelContext.insert(deletedNote)
+        modelContext.insert(survivingNote)
+        try modelContext.save()
+
+        modelContext.delete(deletedNote)
+        modelContext.deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: [deletedNote.id])
+        try modelContext.save()
+
+        let remaining = try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>())
+        #expect(remaining.contains { $0.id == inlineAsset.id })
+        #expect(!remaining.contains { $0.id == orphanAsset.id })
+    }
+
     /// The area cascade's own coverage, filling what `TaskDeleteHelpersScenarioTests` test 4 leaves
     /// out. That test pins tasks, subtasks, legacy `Document`s, `SavedLink`s and the nested project;
     /// it inserts no `Note`, no `GoalListLink` and no `MarkdownImageAsset`, so the three parts of

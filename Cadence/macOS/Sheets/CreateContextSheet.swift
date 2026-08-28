@@ -18,7 +18,7 @@ struct CreateContextSheet: View {
         ListEditorSheetShell(
             title: "New Context",
             confirmTitle: "Create",
-            isConfirmDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty,
+            isConfirmDisabled: CadenceTitleNormalization.isBlank(name),
             onConfirm: create
         ) {
             ListEditorIdentityHeader(
@@ -32,7 +32,7 @@ struct CreateContextSheet: View {
 
     private func create() {
         let ctx = Context(
-            name: name.trimmingCharacters(in: .whitespaces),
+            name: CadenceTitleNormalization.normalized(name),
             colorHex: selectedColor,
             icon: selectedIcon
         )

@@ -181,6 +181,72 @@ struct NoteReferenceSupportTests {
         #expect(linkedNotes.map(\.id) == [noteID])
     }
 
+    /// **T-348.** `[[note:<id>|Budget]]` names one note. When that note is deleted the resolver
+    /// used to fall through to the label and hand back *a different note called Budget* — a
+    /// precise reference quietly retargeted, on linked notes, backlinks and MCP note reads alike.
+    /// A stale explicit id resolves to nothing.
+    ///
+    /// The near-miss is in the same test on purpose: title fallback is correct for a title-only
+    /// reference and must survive the fix, so `[[Budget]]` still finds the same impostor.
+    @Test func aStaleExplicitNoteIDDoesNotRetargetToANoteSharingItsTitle() throws {
+        let deletedID = try #require(UUID(uuidString: "66666666-6666-6666-6666-666666666666"))
+        let impostor = Note(kind: .list, title: "Budget", content: "")
+        let staleReference = Note(
+            kind: .list,
+            title: "Source",
+            content: "See [[note:\(deletedID.uuidString)|Budget]]."
+        )
+        let titleOnlyReference = Note(kind: .list, title: "Other source", content: "See [[Budget]].")
+
+        #expect(deletedID != impostor.id)
+
+        let stale = NoteReferenceResolver.linkedNotes(for: staleReference, in: [impostor, staleReference])
+        #expect(stale.isEmpty)
+
+        let titleOnly = NoteReferenceResolver.linkedNotes(
+            for: titleOnlyReference,
+            in: [impostor, titleOnlyReference]
+        )
+        #expect(titleOnly.map(\.id) == [impostor.id])
+    }
+
+    /// The same split for `[[task:<id>|Title]]`, which shares the resolver's shape.
+    @Test func aStaleExplicitTaskIDDoesNotRetargetToATaskSharingItsTitle() throws {
+        let deletedID = try #require(UUID(uuidString: "77777777-7777-7777-7777-777777777777"))
+        let impostor = AppTask(title: "Send invoice")
+        let staleReference = Note(
+            kind: .list,
+            title: "Source",
+            content: "Blocked on [[task:\(deletedID.uuidString)|Send invoice]]."
+        )
+        let titleOnlyReference = Note(kind: .list, title: "Other", content: "Blocked on [[task:Send invoice]].")
+
+        #expect(deletedID != impostor.id)
+
+        #expect(NoteReferenceResolver.linkedTasks(for: staleReference, in: [impostor]).isEmpty)
+        #expect(NoteReferenceResolver.linkedTasks(for: titleOnlyReference, in: [impostor]).map(\.id) == [impostor.id])
+    }
+
+    /// Backlinks read the same references from the other end and had the same fall-through: a note
+    /// whose only reference names some *deleted* note was listed as linking here purely because the
+    /// two share a title.
+    @Test func backlinksIgnoreAStaleExplicitIDThatMatchesThisNotesTitle() throws {
+        let deletedID = try #require(UUID(uuidString: "88888888-8888-8888-8888-888888888888"))
+        let target = Note(kind: .list, title: "Budget", content: "")
+        let staleSource = Note(
+            kind: .list,
+            title: "Stale",
+            content: "See [[note:\(deletedID.uuidString)|Budget]]."
+        )
+        let titleOnlySource = Note(kind: .list, title: "Title only", content: "See [[Budget]].")
+
+        #expect(deletedID != target.id)
+
+        let backlinks = NoteReferenceResolver.backlinks(for: target, in: [staleSource, titleOnlySource, target])
+
+        #expect(backlinks.map(\.id) == [titleOnlySource.id])
+    }
+
     @Test func backlinksMatchNoteLinksByTitle() {
         let source = Note(kind: .list, title: "Source", content: "See [[Target Note]].")
         let target = Note(kind: .list, title: "target note", content: "")

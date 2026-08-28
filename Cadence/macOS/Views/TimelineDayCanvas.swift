@@ -259,7 +259,7 @@ struct TimelineDayCanvas: View {
                     finishDraftCreation()
                 },
                 onCreateEvent: onCreateEvent == nil ? nil : { title, calendarID, notes in
-                    onCreateEvent?(title.isEmpty ? "New Event" : title, start, end, calendarID, notes)
+                    onCreateEvent?(CadenceEventTitleSupport.storedTitle(title), start, end, calendarID, notes)
                     finishDraftCreation()
                 },
                 onCancel: finishDraftCreation,

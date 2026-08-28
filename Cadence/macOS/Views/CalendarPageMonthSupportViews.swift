@@ -510,7 +510,7 @@ struct AllDayEventChip: View {
     }
 
     var body: some View {
-        Text(event.title ?? "Untitled")
+        Text(CadenceEventTitleSupport.displayTitle(event.title))
             .font(.system(size: 10))
             .foregroundStyle(Theme.onColor)
             .lineLimit(1)

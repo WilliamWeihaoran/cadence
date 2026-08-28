@@ -43,7 +43,7 @@ struct EditAreaSheet: View {
         ListEditorSheetShell(
             title: "Edit Area",
             confirmTitle: "Save",
-            isConfirmDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty,
+            isConfirmDisabled: CadenceTitleNormalization.isBlank(name),
             onConfirm: {
                 applyEdits()
                 dismiss()
@@ -111,7 +111,7 @@ struct EditAreaSheet: View {
     /// platforms round-trip a description byte for byte; T-332's `.whitespaces` /
     /// `.whitespacesAndNewlines` split is about the *name* fields and is left alone here.
     private func applyEdits() {
-        area.name = name
+        area.name = CadenceTitleNormalization.normalized(name)
         area.desc = details
         area.colorHex = selectedColor
         area.icon = selectedIcon
@@ -217,7 +217,7 @@ struct EditProjectSheet: View {
         ListEditorSheetShell(
             title: "Edit Project",
             confirmTitle: "Save",
-            isConfirmDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty,
+            isConfirmDisabled: CadenceTitleNormalization.isBlank(name),
             onConfirm: {
                 applyEdits()
                 dismiss()
@@ -290,7 +290,7 @@ struct EditProjectSheet: View {
     }
 
     private func applyEdits() {
-        project.name = name
+        project.name = CadenceTitleNormalization.normalized(name)
         project.desc = details
         project.colorHex = selectedColor
         project.icon = selectedIcon

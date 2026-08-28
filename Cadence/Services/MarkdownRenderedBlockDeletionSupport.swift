@@ -117,7 +117,7 @@ nonisolated enum MarkdownRenderedBlockDeletionSupport {
     }
 
     static func renderedBlockRanges(in markdown: String) -> [MarkdownRenderedBlock] {
-        var ranges = MarkdownImageAssetService.references(in: markdown).map { reference in
+        var ranges = MarkdownImageAssetService.standaloneReferences(in: markdown).map { reference in
             MarkdownRenderedBlock(
                 kind: .image,
                 storageRange: reference.range,

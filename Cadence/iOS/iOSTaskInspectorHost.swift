@@ -79,7 +79,15 @@ private struct iOSTaskInspectorHostModifier: ViewModifier {
 /// target can reach it — is where that decision lives, and since T-217 the bundle panel's host reads
 /// the same instance of it rather than a second copy: a task that has merely left the page's query
 /// keeps its panel, a deleted one closes it.
-private struct iOSTaskInspectorSheet: View {
+/// T-347 made this non-private. Four other surfaces present the panel from a `.sheet(item:)` they
+/// own — `iOSSearchView`, `iOSMarkdownEditingSurface`, `iOSMarkdownReferenceSupport` and
+/// `iOSCalendarBundleDetailSheet` — and each of them presented `iOSTaskDetailSheet` *directly*, so
+/// none of them had the deleted-model guard at all. Those four keep their own presentation, which is
+/// correct for them (three present from inside a sheet, where a host above the sheet is already
+/// presenting and could do nothing); what they gain is this wrapper between the binding and the
+/// panel. One guarded wrapper reused beats four `if !task.isDeleted` checks, and it means
+/// `iOSTaskDetailSheet(` now appears in exactly one place in the app.
+struct iOSTaskInspectorSheet: View {
     @Bindable var task: AppTask
     let close: () -> Void
 

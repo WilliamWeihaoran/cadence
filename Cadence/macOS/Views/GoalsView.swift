@@ -52,6 +52,48 @@ struct GoalsView: View {
         }
     }
 
+    /// T-346. **Which goal to hold, once "deleted" and "filtered out" stop being one question.**
+    ///
+    /// This used to read
+    /// `visibleGoals.contains(where: { $0.id == selectedGoalID }) || trimmedQuery.isEmpty`, and that
+    /// `||` is the whole bug. It answers "does this goal still exist?" and "is it hidden by the
+    /// search I typed?" with a single condition, and the condition's escape hatch — an empty search
+    /// box — is the state the page is in almost all the time. So the guard retargeted correctly
+    /// while you were searching and left a *deleted* goal selected the moment you cleared the box,
+    /// which is the one case it was there for.
+    ///
+    /// Split, per `CadenceSelectionNormalization`: missing from `allGoalIDs` always retargets,
+    /// whatever the search box says; hidden-by-search keeps the previous product behaviour and only
+    /// retargets while a search is actually active.
+    ///
+    /// Static and non-private so the rule can be measured against a real store rather than argued
+    /// about — the view itself cannot be instantiated in a test.
+    static func normalizedSelection(
+        selectedGoalID: UUID?,
+        allGoalIDs: [UUID],
+        visibleGoalIDs: [UUID],
+        searchIsActive: Bool
+    ) -> UUID? {
+        let fallback = visibleGoalIDs.first ?? allGoalIDs.first
+        guard selectedGoalID != nil else { return fallback }
+        return CadenceSelectionNormalization.normalized(
+            selectedGoalID,
+            existingIDs: Set(allGoalIDs),
+            visibleIDs: Set(visibleGoalIDs),
+            filterIsActive: searchIsActive,
+            fallback: fallback
+        )
+    }
+
+    private func normalizeSelection(visible: [Goal]) {
+        selectedGoalID = Self.normalizedSelection(
+            selectedGoalID: selectedGoalID,
+            allGoalIDs: allGoals.map(\.id),
+            visibleGoalIDs: visible.map(\.id),
+            searchIsActive: !trimmedQuery.isEmpty
+        )
+    }
+
     private var selectedGoal: Goal? {
         if let selectedGoalID {
             return allGoals.first { $0.id == selectedGoalID }
@@ -101,13 +143,15 @@ struct GoalsView: View {
                     selectedGoalID = visibleGoals.first?.id ?? allGoals.first?.id
                 }
             }
+            // Two triggers, because the two questions below have two different causes. A search
+            // narrowing changes the visible set; a *delete* changes `allGoals` and need not change
+            // the visible set at all — a goal filtered out by `statusFilter` and then deleted moves
+            // neither list, and the selection would sit on it forever.
             .onChange(of: Self.visibleGoals(in: groups).map(\.id)) {
-                guard let selectedGoalID,
-                      visibleGoals.contains(where: { $0.id == selectedGoalID }) || trimmedQuery.isEmpty
-                else {
-                    self.selectedGoalID = visibleGoals.first?.id ?? allGoals.first?.id
-                    return
-                }
+                normalizeSelection(visible: visibleGoals)
+            }
+            .onChange(of: allGoals.map(\.id)) {
+                normalizeSelection(visible: visibleGoals)
             }
     }
 

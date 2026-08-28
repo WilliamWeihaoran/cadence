@@ -183,24 +183,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   one shared place and let both surfaces render their own rows. Do not "fix" it by making iOS match
   macOS without answering the question first.
 
-- [T-379] **The same calendar list sorts differently on the two platforms, and neither order is
-  stable.** Verified: `CalendarManager.swift:187` and `:199` use raw `$0.title < $1.title`;
-  `iOSCalendarManager.swift:27` uses `localizedCaseInsensitiveCompare`. So calendars differing only
-  by case or by locale-sensitive collation appear in different orders in Settings and in the
-  calendar pickers. **Beyond what the audit noted:** neither spelling ends on a stable identity, so
-  two calendars with equal titles are unordered *within* a platform as well. Fix is one shared
-  sorter ending on `calendarIdentifier` — the same total-order shape [[T-372]] just applied at the
-  MCP boundary.
-
-- [T-380] **You can create an event named `" "` on macOS, and the same empty event is labelled two
-  different things.** Verified: `CalendarManager.swift:223` is `title.isEmpty ? "New Event"` and
-  `TimelineDayCanvas.swift:262` checks exact emptiness the same way — so a whitespace-only title is
-  not empty, passes the guard, and becomes a real event title. iOS trims
-  `.whitespacesAndNewlines` first, gates creation on the trimmed value, and falls back to
-  **`"Untitled Event"`**. Two defects in one place: macOS accepts a blank-looking title, and the
-  fallback label disagrees across surfaces. Related to [[T-332]]. Fix: one shared event-title
-  normalizer, or generalise the existing task-title support.
-
 - [T-381] **The Kanban column splits on `isDone`, so a cancelled task would land in the active
   column — and only the caller stops it.** P3, and the audit is careful to say why: this cannot
   happen today, because the sole caller filters cancelled tasks before passing them in
@@ -238,15 +220,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   is correct today — every destination `resolvedDestination` can return is in that table, and
   `allTasks` is a case — but nothing pins it, so a future resolver returning `.notes` or `.inbox`
   would silently route to Today with the suite green.
-
-- [T-358] **Section state is one JSON blob, so two devices editing different sections clobber each
-  other.** CloudKit audit (Codex, 2026-08-27); shape measured, cross-device outcome inferred.
-  `Area.sectionConfigsRaw` (and Project's) holds the whole section array as one string, and ~20 call
-  sites read the array, change one section, and write the array back. The iOS list editor snapshots
-  configs on appear and writes the snapshot on save, so a Mac-side edit to a *different* section is
-  overwritten with no per-section merge point. `TaskSectionConfig` already has a stable `uuid`; the
-  identity exists and persistence throws it away. Fix: one merge helper that reloads by `uuid` before
-  save and applies only changed fields. Keep `sectionNamesRaw` compatibility.
 
 - [T-359] **Two devices can create two `HabitCompletion` rows for the same habit and the same day, and
   the count sums both.** Extends [[T-328]] — that ticket says the repair service cannot *see*
@@ -383,21 +356,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   persist area or project ids until [[T-345]] lands**, or launch will restore a selection pointing
   at a deleted list, which is that ticket's bug made permanent.
 
-- [T-348] **A reference to a deleted note silently retargets to a different note with the same
-  title.** From the markdown-reference audit (Codex, 2026-08-27); **premise verified at
-  `NoteReferenceSupport.linkedNotes`**: the resolver tries `reference.noteID` in an `if let` chain,
-  and when that fails it **falls through** to matching on `fallbackTitle`. `linkedTasks` and the
-  backlink count do the same, and iOS's tap navigation duplicates the resolver.
-  **The root is that the parsed type cannot tell a stale ID from no ID.** `[[note:<deleted-id>|Budget]]`
-  and `[[Budget]]` reach the same code path, so a reference that named a *specific* note by id
-  quietly starts pointing at whichever other note is called Budget. The user wrote a precise
-  reference and gets an imprecise one back.
-  It reaches MCP reads too, so an agent asking about a note is told about the wrong one.
-  Fix by splitting the parsed reference: title-fallback only when the markdown had no valid id form.
-  The existing tests pin the safe half — a stable id beats a stale title, and a title-only
-  reference that resolves to nothing disappears. **Nothing pins that an explicit id must not
-  retarget**, which is why this survived.
-
 - [T-349] **A deleted embedded task stays interactive in an open editor.** From the same audit;
   **inferred from a repeated pattern**, not measured at runtime, and the entry should keep that
   distinction. Each editor caches newly embedded tasks in `recentEmbeddedTasks` to cover creation
@@ -409,60 +367,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   re-verify by fetching the id and drop the cached value when that misses. And the missing-card
   behaviour must stay — the markdown reference remains, the actions stop working. Test the helper,
   not the private SwiftUI methods.
-
-- [T-350] **An image can be garbage-collected out of a note that still references it.** From the
-  same audit, premise verified — `MarkdownImageAssetServiceTests` contains a fixture line
-  `Inline ![ignored](cadence-image://…)` and asserts it **is** ignored.
-  That is correct for **rendering**: an inline image stays paragraph text rather than becoming a
-  block. The bug is that **asset lifecycle and export reuse the rendering predicate**, so
-  `referencedIDs` counts only standalone references — and a list or note delete can collect an
-  asset that a surviving note still shows inline. That is data loss, narrow but real.
-  Reachable mainly by hand-editing an image into a sentence, since paste and photo insertion both
-  create standalone blocks — so **low frequency, permanent consequence**.
-  **Do not widen the shared predicate**, which would change what renders as a block. Split the API:
-  standalone references for rendering and block deletion, all references for lifecycle and export.
-  The inline-capable pattern already exists in `MarkdownStyleRangeSupport`.
-
-- [T-345] **The macOS sidebar can stay selected on a list that no longer exists.** From the
-  selection-after-mutation audit (Codex, 2026-08-27); premise verified — `iOSListViews` has
-  `effectiveSelectedRoute` and retargets when the active route disappears, and the macOS root has
-  **no** selection normalizer at all.
-  Delete an area or project from its edit sheet or Settings and the root `selection` can stay
-  pointing at the deleted id. The detail loaders then render **nothing** — not an explanation, not
-  an empty state, just blank content — which reads as the app having lost the page rather than the
-  list having been deleted.
-  Two halves worth fixing together: normalize the selection, **and** give the loaders an explicit
-  missing-list state. Either alone leaves a blank pane reachable.
-
-- [T-346] **macOS Goals keeps a deleted goal selected whenever the search box is empty.** From the
-  same audit, premise verified at `GoalsView.swift:106`:
-  `visibleGoals.contains(where: { $0.id == selectedGoalID }) || trimmedQuery.isEmpty`.
-  **That condition conflates two different questions** — "does this goal still exist?" and "is it
-  hidden by the current search?" — and answers both with "assume it is fine when search is empty".
-  Empty search is exactly the state in which a *deleted* goal is most likely still selected, so the
-  guard is weakest precisely where it is needed.
-  Fix by separating them: missing from `allGoals` should **always** retarget; hidden by search may
-  keep the current product behaviour. Both correct patterns already exist — iOS clears the selected
-  goal before deleting, and macOS Habits retargets when its selection leaves the visible set.
-
-- [T-347] **Six local iOS sheets present a detail view without the deleted-model guard.** From the
-  same audit; measured in source, runtime impact inferred.
-  The root task and bundle hosts route through `CadenceDetailPanelPresentation.resolveHeldSubject`,
-  which closes a sheet when the held model is genuinely deleted. Four task sheets and two bundle
-  sheets present the detail view directly and skip it, so an external deletion while the sheet is
-  open leaves it holding a dead model.
-  **Preserve the distinction the shared rule already makes**, which is the subtle part: leaving the
-  page's query must *not* close the sheet; only actual deletion should. That difference is why the
-  guard exists rather than a simple existence check.
-  The audit's fourth step is the one that keeps this closed: a source scan so a direct detail sheet
-  cannot bypass the guard again. Note the shape that has failed here repeatedly — scope it to a
-  function body and count call sites, do not `range(of:)` for the first match.
-
-  **These three reverse the direction of a pattern worth not over-fitting.** Five findings this week
-  had iOS lagging a model macOS already grew ([[T-323]], [[T-324]], [[T-325]], [[T-339]]). Here
-  macOS lags iOS twice over — iOS normalizes both the list route and the goal selection, macOS
-  neither. The drift is not one-directional, and a sweep that only ports macOS to iOS would miss
-  half of it.
 
 - [T-341] **Restoring a cancelled task on macOS leaves its completion timestamp behind.** From the
   status-lifecycle audit (Codex, 2026-08-27); **premise verified, and the framing is tighter than
@@ -615,14 +519,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   may differ across widths, capability may not — and a seed is arguably capability rather than
   placement. **Ask the user before touching it**, and if the answer is "leave it", record that here
   and close, because the test currently pins the opposite of what a reader might assume.
-
-- [T-332] **macOS trims whitespace, iOS trims whitespace and newlines.** From the same audit;
-  measured in source, the user path inferred — it depends on whether paste can introduce a newline,
-  which neither of us drove. Several macOS forms trim `.whitespaces` only or save the raw name;
-  the iOS siblings use `.whitespacesAndNewlines`. Verified the difference is real:
-  `"Name\n"` trims to `"Name\n"` and `"Name"` respectively.
-  Route both through one shared normalizer rather than fixing four call sites, since the next form
-  will otherwise pick whichever it copies from.
 
 - [T-333] **The macOS sidebar keeps a private copy of list ordering that iOS routes through the
   shared one.** From the same audit, premise verified — including that `iOSRootSidebar`'s own

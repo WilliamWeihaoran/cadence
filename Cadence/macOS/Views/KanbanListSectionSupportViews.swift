@@ -140,33 +140,22 @@ struct ListSectionsKanbanView: View {
     }
 
     private func addSection() {
+        guard let container = CadenceSectionConfigMerge.container(area: area, project: project) else { return }
         let trimmed = KanbanBoardSupport.nextSectionName(from: baseSectionConfigs)
-        if let area {
-            var configs = area.sectionConfigs
-            guard !configs.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) else { return }
-            configs.append(TaskSectionConfig(name: trimmed, colorHex: area.colorHex))
-            area.sectionConfigs = configs
-        } else if let project {
-            var configs = project.sectionConfigs
-            guard !configs.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) else { return }
-            configs.append(TaskSectionConfig(name: trimmed, colorHex: project.colorHex))
-            project.sectionConfigs = configs
-        }
+        let tint = area?.colorHex ?? project?.colorHex ?? TaskSectionDefaults.defaultColorHex
+        container.addSectionConfig(TaskSectionConfig(name: trimmed, colorHex: tint))
     }
 
+    /// Column order is one array with no per-column position field, so two devices reordering the
+    /// same board cannot both win: this is last-writer-wins, deliberately (`docs/TODO.md` T-358).
+    /// What the merge does buy is that a *non*-reordering save from the other device — a rename, a
+    /// colour, a wind-down — no longer clobbers an order this one just set.
     private func reorderSection(named movingName: String, before targetName: String) {
-        if let area {
-            withAnimation(kanbanColumnReorderAnimation) {
-                area.sectionConfigs = KanbanBoardSupport.reorderedSectionConfigs(
-                    area.sectionConfigs,
-                    movingName: movingName,
-                    targetName: targetName
-                )
-            }
-        } else if let project {
-            withAnimation(kanbanColumnReorderAnimation) {
-                project.sectionConfigs = KanbanBoardSupport.reorderedSectionConfigs(
-                    project.sectionConfigs,
+        guard let container = CadenceSectionConfigMerge.container(area: area, project: project) else { return }
+        withAnimation(kanbanColumnReorderAnimation) {
+            container.reorderSectionConfigs {
+                KanbanBoardSupport.reorderedSectionConfigs(
+                    $0,
                     movingName: movingName,
                     targetName: targetName
                 )

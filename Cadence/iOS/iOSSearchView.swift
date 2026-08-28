@@ -385,7 +385,7 @@ struct iOSSearchView: View {
             }
         }
         .sheet(item: $selectedTask) { task in
-            iOSTaskDetailSheet(task: task)
+            iOSTaskInspectorSheet(task: task) { selectedTask = nil }
         }
         .sheet(item: $selectedNote) { note in
             noteSheet(for: note)

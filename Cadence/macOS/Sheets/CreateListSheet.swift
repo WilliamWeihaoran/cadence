@@ -55,7 +55,7 @@ struct CreateListSheet: View {
             title: "New List",
             titleTrailing: "in \(context.name)",
             confirmTitle: "Create",
-            isConfirmDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty,
+            isConfirmDisabled: CadenceTitleNormalization.isBlank(name),
             onConfirm: create
         ) {
             HStack(spacing: 8) {
@@ -101,13 +101,12 @@ struct CreateListSheet: View {
         }
     }
 
-    /// The name keeps this sheet's existing `.whitespaces` trim — T-332 owns the fact that iOS
-    /// spells the same trim `.whitespacesAndNewlines`, and fixing it here would have made three
-    /// spellings instead of two. `details` is deliberately trimmed by *neither* platform: iOS
-    /// assigns `area.desc = details` raw, so macOS assigns raw too and the two round-trip a
-    /// description identically.
+    /// The name goes through `CadenceTitleNormalization`, which is the `.whitespacesAndNewlines`
+    /// spelling iOS already used (T-332). `details` is deliberately trimmed by *neither*
+    /// platform: iOS assigns `area.desc = details` raw, so macOS assigns raw too and the two
+    /// round-trip a description identically.
     private func create() {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        let trimmed = CadenceTitleNormalization.normalized(name)
         guard !trimmed.isEmpty else { return }
         switch listType {
         case .area:

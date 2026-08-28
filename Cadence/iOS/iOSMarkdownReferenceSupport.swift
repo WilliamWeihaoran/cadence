@@ -18,7 +18,7 @@ struct iOSMarkdownReferenceSheetModifier: ViewModifier {
                 )
             }
             .sheet(item: $selectedReferenceTask) { task in
-                iOSTaskDetailSheet(task: task)
+                iOSTaskInspectorSheet(task: task) { selectedReferenceTask = nil }
             }
     }
 }
@@ -158,32 +158,38 @@ struct iOSLinkedNoteEditorSheet: View {
     }
 }
 
+/// Tap navigation for a `[[…]]` reference the user touched.
+///
+/// It answers the same question `NoteReferenceResolver` does and must answer it the same way, so it
+/// switches on `MarkdownReferenceDisplayTarget.resolution`: a tap on a reference whose note was
+/// deleted opens **nothing**, rather than opening a different note that happens to share the
+/// label (T-348). A title-only reference still resolves by title.
 enum iOSMarkdownReferenceResolver {
     static func note(for target: MarkdownReferenceDisplayTarget, in notes: [Note]) -> Note? {
-        if let id = target.referenceID,
-           let exact = notes.first(where: { $0.id == id }) {
-            return exact
-        }
-
-        let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return nil }
-        return notes.first {
-            $0.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                .caseInsensitiveCompare(title) == .orderedSame
+        switch target.resolution {
+        case .identified(let id):
+            return notes.first { $0.id == id }
+        case .titleOnly:
+            let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { return nil }
+            return notes.first {
+                $0.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .caseInsensitiveCompare(title) == .orderedSame
+            }
         }
     }
 
     static func task(for target: MarkdownReferenceDisplayTarget, in tasks: [AppTask]) -> AppTask? {
-        if let id = target.referenceID,
-           let exact = tasks.first(where: { $0.id == id }) {
-            return exact
-        }
-
-        let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return nil }
-        return tasks.first {
-            $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                .caseInsensitiveCompare(title) == .orderedSame
+        switch target.resolution {
+        case .identified(let id):
+            return tasks.first { $0.id == id }
+        case .titleOnly:
+            let title = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { return nil }
+            return tasks.first {
+                $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .caseInsensitiveCompare(title) == .orderedSame
+            }
         }
     }
 }

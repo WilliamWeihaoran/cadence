@@ -4,17 +4,20 @@ nonisolated enum TaskTitleSupport {
     static let defaultDisplayTitle = "Untitled Task"
     static let defaultCompactDisplayTitle = "Untitled"
 
+    // The trim rule itself lives in `CadenceTitleNormalization`, shared with event titles and
+    // the list/context/habit name forms. Task titles are not a special case of it; they are the
+    // same case, plus the shortcut parsing below.
+
     static func normalized(_ title: String) -> String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines)
+        CadenceTitleNormalization.normalized(title)
     }
 
     static func isEmpty(_ title: String) -> Bool {
-        normalized(title).isEmpty
+        CadenceTitleNormalization.isBlank(title)
     }
 
     static func displayTitle(_ title: String, fallback: String = defaultDisplayTitle) -> String {
-        let trimmed = normalized(title)
-        return trimmed.isEmpty ? fallback : trimmed
+        CadenceTitleNormalization.display(title, fallback: fallback)
     }
 
     static func containerShortcut(in title: String) -> TaskTitleInlineShortcut? {

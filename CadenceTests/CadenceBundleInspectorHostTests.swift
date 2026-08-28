@@ -181,16 +181,22 @@ struct CadenceBundleInspectorHostTests {
         )
     }
 
-    /// **Every presenter of the bundle panel, counted.** Three, and only three: the host, plus the
-    /// two panes that already own their presentation on a view which does not re-filter under it.
-    /// `iOSCalendarDayInspector` and `iOSCalendarMonthAgendaList` each hold the selection on the pane
-    /// and attach `.sheet(item:)` above the conditional deciding whether the pane lists anything, so
-    /// a bundle edited out of that day or month empties a section rather than removing the presenter.
+    /// **Every presenter of the bundle panel, counted — and since T-347 there is exactly one.**
     ///
-    /// This is the assertion that catches a *fourth* one appearing. A new card-owned
-    /// `.sheet { iOSCalendarBundleDetailSheet(...) }` is the exact regression fixed here, and it
-    /// would otherwise be invisible to a test suite that cannot build this folder.
-    @Test func theBundlePanelIsPresentedFromExactlyThreePlacesInTheWholeApp() throws {
+    /// This read *three* until T-347: the host, plus `iOSCalendarDayInspector` and
+    /// `iOSCalendarMonthAgendaList`, which each hold the selection on the pane and attach
+    /// `.sheet(item:)` above the conditional deciding whether the pane lists anything, so a bundle
+    /// edited out of that day or month empties a section rather than removing the presenter. That
+    /// ownership argument is unchanged and still correct — but both panes reached
+    /// `iOSCalendarBundleDetailSheet` directly, so neither consulted
+    /// `CadenceDetailPanelPresentation`, and a delete arriving while one was open left it bound to a
+    /// dead bundle.
+    ///
+    /// Both keep their presentation and borrow the guard. What is left is the stronger invariant:
+    /// **the bundle panel is drawn only behind the wrapper that has just asked whether the bundle
+    /// still exists.** A new direct `.sheet { iOSCalendarBundleDetailSheet(...) }` anywhere fails
+    /// here, and would otherwise be invisible to a test suite that cannot build this folder.
+    @Test func theBundlePanelIsDrawnOnlyBehindTheGuardedWrapper() throws {
         var presenters: [String: Int] = [:]
         for path in try swiftFiles(under: "Cadence") {
             let count = try strippingComments(sourceFile(path))
@@ -202,13 +208,34 @@ struct CadenceBundleInspectorHostTests {
 
         #expect(
             presenters == [
+                // The wrapper's `.stay` branch, and nowhere else at all.
+                "Cadence/iOS/iOSBundleInspectorHost.swift": 1
+            ],
+            "presenters of iOSCalendarBundleDetailSheet changed: \(presenters)"
+        )
+    }
+
+    /// The other side of that count: the three places that present, all now through the guard.
+    /// Without this, deleting a `.sheet` outright would leave the panel count at one and read green.
+    @Test func everyPaneThatPresentsTheBundlePanelGoesThroughTheGuardedWrapper() throws {
+        var presenters: [String: Int] = [:]
+        for path in try swiftFiles(under: "Cadence") {
+            let count = try strippingComments(sourceFile(path))
+                .components(separatedBy: "iOSBundleInspectorSheet(").count - 1
+            if count > 0 {
+                presenters[path] = count
+            }
+        }
+
+        #expect(
+            presenters == [
                 // The host. The only one reached from a card.
                 "Cadence/iOS/iOSBundleInspectorHost.swift": 1,
-                // Pane-owned `.sheet(item:)`, already immune.
+                // Pane-owned `.sheet(item:)`, immune to re-filtering, guarded since T-347.
                 "Cadence/iOS/iOSCalendarInspectorView.swift": 1,
                 "Cadence/iOS/iOSCalendarMonthAgendaViews.swift": 1
             ],
-            "presenters of iOSCalendarBundleDetailSheet changed: \(presenters)"
+            "presenters of iOSBundleInspectorSheet changed: \(presenters)"
         )
     }
 

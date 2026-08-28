@@ -24,7 +24,7 @@ final class iOSCalendarManager {
 
     var allCalendars: [EKCalendar] {
         guard isAuthorized else { return [] }
-        return store.calendars(for: .event).sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        return CadenceCalendarSorting.sorted(store.calendars(for: .event))
     }
 
     var availableCalendars: [EKCalendar] {
@@ -119,7 +119,7 @@ final class iOSCalendarManager {
         guard let calendar = writableCalendar(with: calendarID) ?? writableCalendars.first else { return false }
 
         let event = EKEvent(eventStore: store)
-        event.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Event" : title
+        event.title = CadenceEventTitleSupport.storedTitle(title)
         event.isAllDay = isAllDay
         event.startDate = startDate
         event.endDate = endDate
@@ -151,7 +151,7 @@ final class iOSCalendarManager {
         isAllDay: Bool = false
     ) -> Bool {
         guard isAuthorized, endDate > startDate, canModify(event) else { return false }
-        event.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Event" : title
+        event.title = CadenceEventTitleSupport.storedTitle(title)
         event.isAllDay = isAllDay
         event.startDate = startDate
         event.endDate = endDate

@@ -483,7 +483,7 @@ struct MarkdownEditorView: NSViewRepresentable {
 
     @discardableResult
     private func configure(_ textView: CadenceTextView, context: NSViewRepresentableContext<MarkdownEditorView>) -> Bool {
-        let referencedImageIDs = MarkdownImageAssetService.referencedIDs(in: text)
+        let referencedImageIDs = MarkdownImageAssetService.standaloneReferencedIDs(in: text)
         let referencedAssets = imageAssets.filter { referencedImageIDs.contains($0.id) }
         let imageAssetVersions = Dictionary(uniqueKeysWithValues: referencedAssets.map { ($0.id, $0.updatedAt) })
         var didUpdateRenderedContent = false

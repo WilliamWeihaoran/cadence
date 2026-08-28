@@ -90,6 +90,10 @@ struct macOSRootView: View {
         // Attached *after* `.modelContext(...)` on purpose: like the `@Query`s it replaces, the
         // observer must resolve against the inherited context, not `currentModelContext`.
         .background { NotificationReconcileObserver() }
+        // T-345, attached here for the same reason and after the same `.modelContext(...)`: the
+        // root selection can name an area or project that has since been deleted, and nothing else
+        // in this view watches for that.
+        .background { SidebarSelectionNormalizer(selection: $selection) }
         .ignoresSafeArea(.container, edges: .top)
         .onOpenURL { url in
             CadenceDeepLinkManager.shared.handle(url)

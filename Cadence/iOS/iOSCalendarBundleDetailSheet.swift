@@ -71,7 +71,7 @@ struct iOSCalendarBundleDetailSheet: View {
                 }
             }
             .sheet(item: $selectedTask) { task in
-                iOSTaskDetailSheet(task: task)
+                iOSTaskInspectorSheet(task: task) { selectedTask = nil }
             }
             .confirmationDialog("Delete this block?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
                 Button("Delete Block", role: .destructive) {

@@ -1,6 +1,10 @@
 #if os(macOS)
 import SwiftUI
 
+/// The macOS column's section writes. Every one of them goes through
+/// `CadenceSectionConfigMerge` rather than reading the whole array, changing one entry and writing
+/// the whole array back — see that type for what the merge keeps and what it still loses
+/// (`docs/TODO.md` T-358).
 enum KanbanSectionStateSupport {
     static func updateSection(
         sectionID: UUID,
@@ -8,17 +12,8 @@ enum KanbanSectionStateSupport {
         project: Project?,
         mutate: (inout TaskSectionConfig) -> Void
     ) {
-        if let area {
-            var configs = area.sectionConfigs
-            guard let idx = configs.firstIndex(where: { $0.id == sectionID }) else { return }
-            mutate(&configs[idx])
-            area.sectionConfigs = configs
-        } else if let project {
-            var configs = project.sectionConfigs
-            guard let idx = configs.firstIndex(where: { $0.id == sectionID }) else { return }
-            mutate(&configs[idx])
-            project.sectionConfigs = configs
-        }
+        CadenceSectionConfigMerge.container(area: area, project: project)?
+            .updateSectionConfig(uuid: sectionID, mutate: mutate)
     }
 
     static func moveTasks(
@@ -36,25 +31,28 @@ enum KanbanSectionStateSupport {
     }
 
     static func removeSection(sectionID: UUID, area: Area?, project: Project?) {
-        if let area {
-            area.sectionConfigs = area.sectionConfigs.filter { $0.id != sectionID }
-        } else if let project {
-            project.sectionConfigs = project.sectionConfigs.filter { $0.id != sectionID }
-        }
+        CadenceSectionConfigMerge.container(area: area, project: project)?
+            .removeSectionConfig(uuid: sectionID)
     }
 
-    static func saveSection(updatedSection: TaskSectionConfig, area: Area?, project: Project?) {
-        if let area {
-            var configs = area.sectionConfigs
-            guard let index = configs.firstIndex(where: { $0.id == updatedSection.id }) else { return }
-            configs[index] = updatedSection
-            area.sectionConfigs = configs
-        } else if let project {
-            var configs = project.sectionConfigs
-            guard let index = configs.firstIndex(where: { $0.id == updatedSection.id }) else { return }
-            configs[index] = updatedSection
-            project.sectionConfigs = configs
-        }
+    /// `base` is the column **as the caller last saw it**. Pass it whenever the caller has been
+    /// holding the value for a while — only the fields that differ from it are written, so a
+    /// concurrent edit to a different field of the same column survives. Omitting it diffs against
+    /// what the model has now, which is the right base for a value read moments ago.
+    static func saveSection(
+        updatedSection: TaskSectionConfig,
+        area: Area?,
+        project: Project?,
+        base: TaskSectionConfig? = nil
+    ) {
+        guard let container = CadenceSectionConfigMerge.container(area: area, project: project) else { return }
+        let current = container.sectionConfigs
+        guard let currentConfig = current.first(where: { $0.uuid == updatedSection.uuid }) else { return }
+        let baseConfig = base ?? currentConfig
+        container.applySectionConfigEdits(
+            base: current.map { $0.uuid == updatedSection.uuid ? baseConfig : $0 },
+            edited: current.map { $0.uuid == updatedSection.uuid ? updatedSection : $0 }
+        )
     }
 }
 #endif

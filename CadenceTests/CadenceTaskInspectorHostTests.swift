@@ -212,15 +212,24 @@ struct CadenceTaskInspectorHostTests {
         )
     }
 
-    /// **Every presenter of the inspector, counted.** Five, and only five: the host, plus the four
-    /// surfaces that were left alone on purpose because each already owns its presentation on a view
-    /// that does not re-filter under it — and three of those present from *inside* a sheet, where a
-    /// host above the sheet is the wrong owner because it is already presenting.
+    /// **Every presenter of the inspector, counted — and since T-347 there is exactly one.**
     ///
-    /// This is the assertion that catches a *sixth* one appearing. A new row-owned
-    /// `.sheet { iOSTaskDetailSheet(...) }` is the exact regression T-201 fixed, and it would
-    /// otherwise be invisible to a test suite that cannot build this folder.
-    @Test func theInspectorIsPresentedFromExactlyFivePlacesInTheWholeApp() throws {
+    /// This read *five* until T-347: the host, plus four surfaces left alone because each already
+    /// owns its presentation on a view that does not re-filter under it. That reasoning was about
+    /// **ownership**, and it is still right — three of the four present from inside a sheet, where a
+    /// host above the sheet is already presenting and a request to it would do nothing. But those
+    /// four reached `iOSTaskDetailSheet` *directly*, which meant they also skipped
+    /// `CadenceDetailPanelPresentation`, and an external delete arriving while one of them was open
+    /// left it bound to a dead model.
+    ///
+    /// So the four keep their presentation and gain the guard, by presenting the same
+    /// `iOSTaskInspectorSheet` wrapper the host does. The invariant that leaves is strictly stronger
+    /// than the one it replaces and is the fourth step T-347 asked for: **nothing in this app draws
+    /// `iOSTaskDetailSheet` except the wrapper that has just asked whether the task still exists.**
+    /// A new direct `.sheet { iOSTaskDetailSheet(...) }` anywhere — row-owned (the T-201 regression)
+    /// or page-owned (the T-347 one) — fails here, and it is otherwise invisible to a test suite
+    /// that cannot build this folder.
+    @Test func theInspectorPanelIsDrawnOnlyBehindTheGuardedWrapper() throws {
         var presenters: [String: Int] = [:]
         for path in try swiftFiles(under: "Cadence") {
             let count = try strippingComments(sourceFile(path))
@@ -232,16 +241,38 @@ struct CadenceTaskInspectorHostTests {
 
         #expect(
             presenters == [
+                // The wrapper's `.stay` branch, and nowhere else at all.
+                "Cadence/iOS/iOSTaskInspectorHost.swift": 1
+            ],
+            "presenters of iOSTaskDetailSheet changed: \(presenters)"
+        )
+    }
+
+    /// The other side of the same count: the five places that *present*, all now through the guard.
+    /// Counting the wrapper as well as the panel is what stops the fix being undone by deletion —
+    /// dropping a `.sheet` entirely would leave the panel count at one and read as green.
+    @Test func everySurfaceThatPresentsTheInspectorGoesThroughTheGuardedWrapper() throws {
+        var presenters: [String: Int] = [:]
+        for path in try swiftFiles(under: "Cadence") {
+            let count = try strippingComments(sourceFile(path))
+                .components(separatedBy: "iOSTaskInspectorSheet(").count - 1
+            if count > 0 {
+                presenters[path] = count
+            }
+        }
+
+        #expect(
+            presenters == [
                 // The host. The only one reached from a row.
                 "Cadence/iOS/iOSTaskInspectorHost.swift": 1,
-                // Page-owned `.sheet(item:)`, already immune.
+                // Page-owned `.sheet(item:)`, immune to re-filtering, guarded since T-347.
                 "Cadence/iOS/iOSSearchView.swift": 1,
                 // Sheet-owned `.sheet(item:)` — a nearer host would have to live inside the sheet.
                 "Cadence/iOS/iOSMarkdownEditingSurface.swift": 1,
                 "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 1,
                 "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 1
             ],
-            "presenters of iOSTaskDetailSheet changed: \(presenters)"
+            "presenters of iOSTaskInspectorSheet changed: \(presenters)"
         )
     }
 

@@ -184,7 +184,7 @@ final class CalendarManager {
 
     var allCalendars: [EKCalendar] {
         guard isAuthorized else { return [] }
-        return store.calendars(for: .event).sorted { $0.title < $1.title }
+        return CadenceCalendarSorting.sorted(store.calendars(for: .event))
     }
 
     var availableCalendars: [EKCalendar] {
@@ -194,9 +194,10 @@ final class CalendarManager {
     /// Calendars the user can write to (excludes read-only subscribed calendars).
     var writableCalendars: [EKCalendar] {
         guard isAuthorized else { return [] }
-        return activeCalendars(from: store.calendars(for: .event))
-            .filter { $0.allowsContentModifications }
-            .sorted { $0.title < $1.title }
+        return CadenceCalendarSorting.sorted(
+            activeCalendars(from: store.calendars(for: .event))
+                .filter { $0.allowsContentModifications }
+        )
     }
 
     var defaultWritableCalendar: EKCalendar? {
@@ -220,7 +221,7 @@ final class CalendarManager {
               isActiveCalendar(calendar)
         else { return record(.noWritableCalendar) }
         let event = EKEvent(eventStore: store)
-        event.title = title.isEmpty ? "New Event" : title
+        event.title = CadenceEventTitleSupport.storedTitle(title)
         let startOfDay = Calendar.current.startOfDay(for: date)
         event.startDate = startOfDay.addingTimeInterval(TimeInterval(startMin * 60))
         event.endDate = startOfDay.addingTimeInterval(TimeInterval((startMin + max(5, durationMinutes)) * 60))
@@ -340,7 +341,7 @@ final class CalendarManager {
     ) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
         guard endDate > startDate else { return record(.invalidRange) }
-        event.title = title.isEmpty ? "Untitled" : title
+        event.title = CadenceEventTitleSupport.storedTitle(title)
         event.startDate = startDate
         event.endDate = endDate
         if let notes {

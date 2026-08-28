@@ -127,8 +127,11 @@ nonisolated enum MarkdownInlineMarkerRanges {
 
     /// The unanchored form of `MarkdownImageAssetService`'s reference pattern — the anchored one
     /// there matches only a line that is *nothing but* an image, which is the standalone-block case.
-    static let inlineImageReferencePattern =
-        #"!\[("# + MarkdownImageAssetService.altTextPattern + #")\]\(cadence-image://([0-9A-Fa-f-]{36})\)"#
+    ///
+    /// It **is** `MarkdownImageAssetService.referencePattern`, not a copy of it: that service now
+    /// runs the unanchored form itself for asset lifecycle (T-350), and two spellings of the same
+    /// regex is how the styler and the sweep would come to disagree about what a reference is.
+    static let inlineImageReferencePattern = MarkdownImageAssetService.referencePattern
 
     static func hashtagRanges(in markdown: String) -> [NSRange] {
         matchRanges(of: hashtagPattern, in: markdown).map { $0.range }

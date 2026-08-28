@@ -76,7 +76,7 @@ struct CreateHabitSheet: View {
     }
 
     private func create() {
-        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        let trimmed = CadenceTitleNormalization.normalized(title)
         guard !trimmed.isEmpty else { return }
 
         let habit = Habit(title: trimmed)
@@ -210,7 +210,7 @@ struct EditHabitSheet: View {
     }
 
     private func save() {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = CadenceTitleNormalization.normalized(title)
         guard !trimmed.isEmpty else { return }
 
         habit.title = trimmed

@@ -10,6 +10,17 @@ nonisolated struct MarkdownReferenceDisplayTarget: Hashable, Identifiable {
     let referenceID: UUID?
     let title: String
 
+    /// What this target names, in the shared vocabulary — see `NoteReferenceTarget`.
+    ///
+    /// The tap-navigation resolvers switch on this rather than unwrapping `referenceID`, so they
+    /// reach the same answer as `NoteReferenceResolver` does for the same markdown: a target that
+    /// named a row resolves to that row or to nothing, and only a title-only target may match on
+    /// its title (T-348).
+    var resolution: NoteReferenceTarget {
+        guard let referenceID else { return .titleOnly }
+        return .identified(referenceID)
+    }
+
     var identity: String {
         "\(kind.rawValue):\(referenceID?.uuidString ?? title)"
     }

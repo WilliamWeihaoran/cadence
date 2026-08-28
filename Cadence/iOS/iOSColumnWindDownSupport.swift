@@ -135,24 +135,17 @@ extension ModelContext {
     }
 
     /// Read-modify-write through `sectionConfigs`, never `sectionConfigsRaw`: the raw string is
-    /// JSON and hand-editing it is how a column loses its `uuid`.
+    /// JSON and hand-editing it is how a column loses its `uuid`. The merge helper is what makes
+    /// that read-modify-write a *per-column* write, so winding one column down does not carry the
+    /// rest of the array along with it (`docs/TODO.md` T-358).
     private func updateColumn(
         uuid: UUID,
         area: Area?,
         project: Project?,
         mutate: (inout TaskSectionConfig) -> Void
     ) {
-        if let area {
-            var configs = area.sectionConfigs
-            guard let index = configs.firstIndex(where: { $0.uuid == uuid }) else { return }
-            mutate(&configs[index])
-            area.sectionConfigs = configs
-        } else if let project {
-            var configs = project.sectionConfigs
-            guard let index = configs.firstIndex(where: { $0.uuid == uuid }) else { return }
-            mutate(&configs[index])
-            project.sectionConfigs = configs
-        }
+        CadenceSectionConfigMerge.container(area: area, project: project)?
+            .updateSectionConfig(uuid: uuid, mutate: mutate)
     }
 }
 

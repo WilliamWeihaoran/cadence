@@ -4,10 +4,7 @@ import SwiftUI
 
 enum iOSCalendarEventSupport {
     static func title(for event: EKEvent) -> String {
-        guard let title = event.title, !title.isEmpty else {
-            return "Untitled Event"
-        }
-        return title
+        CadenceEventTitleSupport.displayTitle(event.title)
     }
 
     static func color(for calendar: EKCalendar?) -> Color {

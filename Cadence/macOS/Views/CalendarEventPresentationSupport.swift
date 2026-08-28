@@ -54,7 +54,7 @@ struct CalendarEventItem: Identifiable {
         let eventEnd = max(event.endDate ?? fallbackEventEnd, fallbackEventEnd)
         self.eventIdentifier = CalendarEventIdentity.rawIdentifier(for: event)
         self.id = CalendarEventIdentity.identifier(for: event)
-        self.title = event.title ?? "Untitled"
+        self.title = CadenceEventTitleSupport.displayTitle(event.title)
         let dayStart = calendar.startOfDay(for: day)
         self.dateKey = DateFormatters.dateKey(from: dayStart)
         let comps = calendar.dateComponents([.hour, .minute], from: segmentStart)
@@ -189,7 +189,7 @@ struct CalendarBoardEventDisplayItem: Identifiable {
 
     init(allDay event: EKEvent, date: Date, calendar: Calendar = .current) {
         id = CalendarEventIdentity.identifier(for: event)
-        title = event.title ?? "Untitled"
+        title = CadenceEventTitleSupport.displayTitle(event.title)
         dateKey = DateFormatters.dateKey(from: calendar.startOfDay(for: date))
         startMin = CalendarBoardPlannerSupport.allDaySortMinute
         durationMinutes = 24 * 60

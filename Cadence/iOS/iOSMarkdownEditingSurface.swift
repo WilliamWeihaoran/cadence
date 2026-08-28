@@ -89,7 +89,7 @@ struct iOSMarkdownEditingSurface: View {
             }
         }
         .sheet(item: $selectedEmbeddedTask, onDismiss: reconcileEmbeddedTaskReferenceTitles) { task in
-            iOSTaskDetailSheet(task: task)
+            iOSTaskInspectorSheet(task: task) { selectedEmbeddedTask = nil }
         }
         .photosPicker(
             isPresented: $isImagePickerPresented,

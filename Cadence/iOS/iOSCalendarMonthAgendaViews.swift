@@ -195,7 +195,7 @@ struct iOSCalendarMonthAgendaList: View {
         content
             .background(Theme.bg)
             .sheet(item: $selectedBundle) { bundle in
-                iOSCalendarBundleDetailSheet(bundle: bundle)
+                iOSBundleInspectorSheet(bundle: bundle) { selectedBundle = nil }
             }
             .sheet(item: $selectedEvent) { selection in
                 iOSCalendarEventEditSheet(event: selection.event)

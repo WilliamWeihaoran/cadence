@@ -80,7 +80,11 @@ private struct iOSBundleInspectorHostModifier: ViewModifier {
 /// target can reach it — is where that decision lives, and it is the same instance of it the task
 /// inspector reads rather than a second copy: a bundle that has merely left the day's query keeps its
 /// panel, a deleted one closes it.
-private struct iOSBundleInspectorSheet: View {
+/// T-347 made this non-private, for the reason `iOSTaskInspectorSheet` was: the two panes that own
+/// their own bundle presentation — `iOSCalendarInspectorView` and `iOSCalendarMonthAgendaViews` —
+/// presented `iOSCalendarBundleDetailSheet` directly and so skipped the guard entirely. They keep
+/// the presentation and borrow the guard.
+struct iOSBundleInspectorSheet: View {
     @Bindable var bundle: TaskBundle
     let close: () -> Void
 
