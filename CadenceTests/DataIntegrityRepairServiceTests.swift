@@ -296,4 +296,172 @@ struct DataIntegrityRepairServiceTests {
         #expect(try modelContext.fetch(FetchDescriptor<HabitCompletion>()).count == 1)
         #expect(try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).count == 1)
     }
+
+    // MARK: - T-428, a reminder minute that is not a time of day
+
+    /// A `Habit.reminderMinuteOfDay` outside `0...1439` is invisible **and** inert: the planner
+    /// refuses to schedule it (T-363) and both editors open it as unset (T-410), so the habit has
+    /// no reminder while the field claims one and the user has nothing to look at or fix. Repair
+    /// clears it, and clearing is the whole fix — the assertion that it is `nil` rather than
+    /// `1439` or `0` is the decision, not a detail.
+    @Test func repairClearsAHabitReminderMinuteThatIsNotATimeOfDay() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let overflow = Habit(title: "Wraps to midnight on iOS")
+        overflow.reminderMinuteOfDay = 1440
+        let negative = Habit(title: "Negative")
+        negative.reminderMinuteOfDay = -15
+        let wild = Habit(title: "Far out")
+        wild.reminderMinuteOfDay = 100_000
+
+        for habit in [overflow, negative, wild] { modelContext.insert(habit) }
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.habitRemindersCleared == 3)
+        #expect(report.changed, "the report does not report the repair it made")
+
+        for habit in [overflow, negative, wild] {
+            #expect(habit.reminderMinuteOfDay == nil, "\(habit.title) was not cleared")
+        }
+        // Clearing, not clamping: neither end of the range is an answer the user chose.
+        #expect(!([0, 1439] as [Int?]).contains(overflow.reminderMinuteOfDay))
+        #expect(!([0, 1439] as [Int?]).contains(negative.reminderMinuteOfDay))
+
+        // A second context on the same container: the repair saved, it did not merely mutate.
+        let stored = try ModelContext(container).fetch(FetchDescriptor<Habit>())
+        #expect(stored.count == 3)
+        #expect(stored.allSatisfy { $0.reminderMinuteOfDay == nil })
+    }
+
+    /// Every value the pickers can emit survives, including both ends of the range and the `nil`
+    /// that means "no reminder" — otherwise the test above would pass on a pass that cleared
+    /// every reminder in the store.
+    @Test func repairLeavesEveryRealReminderTimeAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let midnight = Habit(title: "Midnight")
+        midnight.reminderMinuteOfDay = 0
+        let morning = Habit(title: "Morning")
+        morning.reminderMinuteOfDay = 9 * 60
+        let lastMinute = Habit(title: "23:59")
+        lastMinute.reminderMinuteOfDay = 1439
+        let unset = Habit(title: "No reminder")
+        unset.reminderMinuteOfDay = nil
+
+        for habit in [midnight, morning, lastMinute, unset] { modelContext.insert(habit) }
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.habitRemindersCleared == 0)
+        #expect(report.changed == false, "a store with nothing wrong reported a repair")
+        #expect(midnight.reminderMinuteOfDay == 0, "midnight was mistaken for unset")
+        #expect(morning.reminderMinuteOfDay == 9 * 60)
+        #expect(lastMinute.reminderMinuteOfDay == 1439)
+        #expect(unset.reminderMinuteOfDay == nil)
+    }
+
+    /// The cleared habit reads as unset to the one caller that consumes the field, so the repair
+    /// and the planner agree rather than merely both declining.
+    @Test func aClearedReminderPlansNothingAndReadsAsUnsetAfterwards() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let habit = Habit(title: "Corrupt")
+        habit.reminderMinuteOfDay = 1440
+        modelContext.insert(habit)
+        try modelContext.save()
+
+        let now = Date(timeIntervalSince1970: 1_772_000_000)
+        #expect(HabitNotificationPlanner.reminder(for: habit, now: now) == nil, "premise")
+
+        _ = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(habit.reminderMinuteOfDay == nil)
+        #expect(HabitNotificationPlanner.reminder(for: habit, now: now) == nil)
+
+        // The user can now set a real one, and it survives a second repair.
+        habit.reminderMinuteOfDay = 7 * 60
+        let second = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+        #expect(second.habitRemindersCleared == 0)
+        #expect(HabitNotificationPlanner.reminder(for: habit, now: now) != nil)
+    }
+
+    /// The counter has to be wired into `changed`, because `performStartupMaintenance` gates its
+    /// save on `repairReport?.changed` — a repair that mutates and reports `changed == false` is
+    /// rolled back at the next fetch. Asserted on the value type so it fails for the right reason.
+    @Test func theClearedReminderCounterCountsAsAChange() {
+        var report = DataIntegrityRepairReport(
+            source: "test",
+            startedAt: Date(timeIntervalSince1970: 0),
+            finishedAt: Date(timeIntervalSince1970: 0),
+            success: true
+        )
+        #expect(report.changed == false)
+        report.habitRemindersCleared = 1
+        #expect(report.changed, "habitRemindersCleared is not wired into DataIntegrityRepairReport.changed")
+    }
+
+    /// **The T-328 boundary, re-asserted with the new pass in the store.** Clearing a reminder is
+    /// not a sweep: it reads one scalar on a row that is present, so a half-synced store cannot
+    /// make its predicate wrong. This pins that the pass did not widen the service's licence —
+    /// the same four orphan rows survive, and a habit whose reminder is fine keeps `changed`
+    /// `false` alongside them.
+    @Test func clearingAReminderDidNotGiveRepairALicenceToCollectOrphans() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let subtask = Subtask(title: "Targetless")
+        let bundle = TaskBundle(title: "Empty", dateKey: "2026-08-21", startMin: 600, durationMinutes: 30)
+        let completion = HabitCompletion(date: "2026-08-21")
+        let asset = MarkdownImageAsset(
+            data: Data([0x01, 0x02]),
+            mimeType: "image/png",
+            pixelWidth: 2,
+            pixelHeight: 2,
+            displayWidth: 100
+        )
+        let habit = Habit(title: "Reminds at 9")
+        habit.reminderMinuteOfDay = 9 * 60
+
+        modelContext.insert(subtask)
+        modelContext.insert(bundle)
+        modelContext.insert(completion)
+        modelContext.insert(asset)
+        modelContext.insert(habit)
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.changed == false)
+        #expect(report.habitRemindersCleared == 0)
+        #expect(try modelContext.fetch(FetchDescriptor<Subtask>()).count == 1)
+        #expect(try modelContext.fetch(FetchDescriptor<TaskBundle>()).count == 1)
+        #expect(try modelContext.fetch(FetchDescriptor<HabitCompletion>()).count == 1)
+        #expect(try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).count == 1)
+        #expect(try modelContext.fetch(FetchDescriptor<Habit>()).count == 1)
+        #expect(habit.reminderMinuteOfDay == 9 * 60)
+    }
+
+    /// One spelling of the range, reachable from both targets that ask. `HabitReminderTime` lives
+    /// in `Models/` because `NotificationScheduling.swift` is not in `CadenceMCPServer`'s source
+    /// list and `DataIntegrityRepairService.swift` is — the [[T-409]] shape.
+    @Test func theReminderMinuteRangeHasOneSpelling() {
+        #expect(HabitReminderTime.minuteRange == 0...1439)
+        #expect(HabitNotificationPlanner.reminderMinuteRange == HabitReminderTime.minuteRange)
+        // The third reader, from T-410: the editors decide "unset" with the same range the repair
+        // decides "corrupt" with, so a value one of them acts on is never one the other keeps.
+        #expect(CadenceHabitReminderEditing.editorState(for: 1440).isOn == false)
+        #expect(CadenceHabitReminderEditing.editorState(for: 1439).isOn)
+        #expect(CadenceHabitReminderEditing.editorState(for: 0).isOn, "midnight is a reminder, not an unset one")
+        #expect(HabitReminderTime.namesATimeOfDay(nil), "nil is no reminder, not a corrupt one")
+        #expect(HabitReminderTime.namesATimeOfDay(0))
+        #expect(HabitReminderTime.namesATimeOfDay(1439))
+        #expect(!HabitReminderTime.namesATimeOfDay(1440))
+        #expect(!HabitReminderTime.namesATimeOfDay(-1))
+    }
 }

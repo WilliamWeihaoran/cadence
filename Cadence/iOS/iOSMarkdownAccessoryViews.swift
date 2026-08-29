@@ -471,7 +471,12 @@ struct iOSMarkdownSlashCommandStrip: View {
 
 struct iOSMarkdownFormatToolbar: View {
     let apply: (MarkdownFormatCommand) -> Void
-    let chooseImages: () -> Void
+    /// `nil` hides the photo button outright rather than dimming it.
+    ///
+    /// **T-421/T-422.** A host whose text is not a row in the store cannot let an image in — see
+    /// `iOSMarkdownEditingSurface.allowsImageInsertion`. A disabled-looking button that refuses the
+    /// tap would advertise a capability this row does not have.
+    let chooseImages: (() -> Void)?
     /// Set to put the note's template menu in this row rather than in the page header.
     ///
     /// Applying a template inserts markdown into the note, which is what every other control here
@@ -556,16 +561,23 @@ struct iOSMarkdownFormatToolbar: View {
                     }
                 }
 
-                separator
-
-                Button(action: chooseImages) {
-                    Image(systemName: "photo")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .modifier(iOSMarkdownChromePlate(width: iOSMarkdownChromeMetrics.buttonPlate))
+                // The rule closes the format items off from whatever follows. With no image
+                // button, no template menu and no overflow, nothing follows and a trailing hairline
+                // would rule off empty space.
+                if chooseImages != nil || (templateKind != nil && applyTemplate != nil) || isCompact {
+                    separator
                 }
-                .buttonStyle(.iosPressable)
-                .accessibilityLabel("Image")
+
+                if let chooseImages {
+                    Button(action: chooseImages) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.text)
+                            .modifier(iOSMarkdownChromePlate(width: iOSMarkdownChromeMetrics.buttonPlate))
+                    }
+                    .buttonStyle(.iosPressable)
+                    .accessibilityLabel("Image")
+                }
 
                 if let templateKind, let applyTemplate {
                     iOSNoteTemplateMenu(kind: templateKind, compact: true, apply: applyTemplate)

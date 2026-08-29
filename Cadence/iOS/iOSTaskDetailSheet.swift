@@ -21,6 +21,9 @@ struct iOSTaskDetailSheet: View {
     @State private var hasDueDate = false
     @State private var containerSelection = "inbox"
     @State private var showDeleteConfirmation = false
+    /// Set when the delete's commit was refused and rolled back. Same flag, same sentence and the
+    /// same second alert `iOSTaskRow` carries — see `deleteTask()`.
+    @State private var deleteFailed = false
     @State private var isNotesFocused = false
     @State private var pendingRecurrenceChange: PendingRecurrenceChange?
     @State private var selectedReferenceNote: Note?
@@ -77,7 +80,52 @@ struct iOSTaskDetailSheet: View {
         horizontalSizeClass == .regular
     }
 
+    /// **Split from `editorSurface` (T-407).** The sheet observes eleven fields and presents a
+    /// dialog and two alerts, and the moment the second alert joined the chain the whole of `body`
+    /// stopped type-checking: `error: the compiler is unable to type-check this expression in
+    /// reasonable time`, on the iOS-simulator build and nowhere else. Two expressions rather than
+    /// one is the whole fix — nothing here is conditional and no modifier changed.
     var body: some View {
+        editorSurface
+            .alert("Delete Task?", isPresented: $showDeleteConfirmation) {
+                Button("Delete", role: .destructive, action: deleteTask)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the task and its subtasks.")
+            }
+            .alert("Couldn't Delete Task", isPresented: $deleteFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(CadenceTaskMutationSupport.deleteFailureNotice)
+            }
+            .confirmationDialog(
+                "Change repeating task?",
+                isPresented: recurrenceScopeDialogPresentation,
+                titleVisibility: .visible
+            ) {
+                Button(CadenceTaskRecurrenceEditScope.thisTask.label) {
+                    applyPendingRecurrenceChange(scope: .thisTask)
+                }
+                Button(CadenceTaskRecurrenceEditScope.thisAndFuture.label) {
+                    applyPendingRecurrenceChange(scope: .thisAndFuture)
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingRecurrenceChange = nil
+                }
+            } message: {
+                Text("Choose whether this repeat change applies only here or to this task and future instances.")
+            }
+            .iOSMarkdownReferenceSheets(
+                selectedNote: $selectedReferenceNote,
+                selectedTask: $selectedReferenceTask,
+                referenceNotes: allNotes,
+                referenceTasks: allTasks
+            )
+    }
+
+    /// The scroll view and everything that watches a field on it. Unchanged from what `body`
+    /// carried inline; see `body` for why it is a separate expression.
+    private var editorSurface: some View {
         NavigationStack {
             editorScrollView
         }
@@ -99,38 +147,6 @@ struct iOSTaskDetailSheet: View {
         .onChange(of: task.estimatedMinutes) { _, _ in saveTask() }
         .onChange(of: task.actualMinutes) { _, _ in saveTask() }
         .onChange(of: task.sectionName) { _, _ in saveTask() }
-        .alert("Delete Task?", isPresented: $showDeleteConfirmation) {
-            Button("Delete", role: .destructive) {
-                CadenceTaskMutationSupport.delete(task, modelContext: modelContext)
-                dismiss()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This removes the task and its subtasks.")
-        }
-        .confirmationDialog(
-            "Change repeating task?",
-            isPresented: recurrenceScopeDialogPresentation,
-            titleVisibility: .visible
-        ) {
-            Button(CadenceTaskRecurrenceEditScope.thisTask.label) {
-                applyPendingRecurrenceChange(scope: .thisTask)
-            }
-            Button(CadenceTaskRecurrenceEditScope.thisAndFuture.label) {
-                applyPendingRecurrenceChange(scope: .thisAndFuture)
-            }
-            Button("Cancel", role: .cancel) {
-                pendingRecurrenceChange = nil
-            }
-        } message: {
-            Text("Choose whether this repeat change applies only here or to this task and future instances.")
-        }
-        .iOSMarkdownReferenceSheets(
-            selectedNote: $selectedReferenceNote,
-            selectedTask: $selectedReferenceTask,
-            referenceNotes: allNotes,
-            referenceTasks: allTasks
-        )
     }
 
     private var editorScrollView: some View {
@@ -226,7 +242,7 @@ struct iOSTaskDetailSheet: View {
 
     private var statusActionsSection: some View {
         iOSTaskStatusActionsSection(task: task) { status in
-            CadenceTaskMutationSupport.setStatus(status, for: task, modelContext: modelContext)
+            CadenceTaskStatusEditing.setStatus(status, for: task, in: modelContext)
         }
     }
 
@@ -404,6 +420,15 @@ struct iOSTaskDetailSheet: View {
         )
     }
 
+    /// **Deliberately not routed through `CadenceTaskStatusEditing` (T-407).**
+    ///
+    /// `normalizeCompletionState` is not a user's status change: it is the repair every one of the
+    /// field observers above fires through, including the ones that run when the sheet merely
+    /// opens and loads its dates. Routing it would reconcile notifications on every appearance and
+    /// every keystroke in the title, which is a store-wide fetch per edit for a status that in the
+    /// overwhelming majority of calls did not move. The two real transitions this sheet offers —
+    /// `statusActionsSection` and `toggleCompletion()` — are routed, and each of them lands its
+    /// write *before* this observer sees it.
     private func saveTask() {
         CadenceTaskMutationSupport.normalizeCompletionState(for: task, modelContext: modelContext)
         HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
@@ -453,7 +478,28 @@ struct iOSTaskDetailSheet: View {
     }
 
     private func toggleCompletion() {
-        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: modelContext)
+        CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
+    }
+
+    /// Attempt, then decide — the shape `iOSTaskRow.deleteTask()` and
+    /// `iOSNoteDeleteConfirmationSheet.confirm()` use.
+    ///
+    /// **T-407.** This sheet dismissed on the button tap regardless of what the delete returned.
+    /// Since T-365 `delete` answers `false` when its commit was refused, having rolled the whole
+    /// pending delete back — so the sheet closed announcing a removal the store never took, and
+    /// the task was still in the list behind it with nothing to say why.
+    ///
+    /// The `dismiss()` is inside the success branch rather than after the call, because a sheet
+    /// that stays open is the *point*: the user is looking at the task that did not go away. The
+    /// notice is `CadenceTaskMutationSupport.deleteFailureNotice`, the shared sentence, on a second
+    /// alert — [[T-376]]'s answer for a confirmation that dismisses itself on the tap, rather than
+    /// a third pattern.
+    private func deleteTask() {
+        guard CadenceTaskMutationSupport.delete(task, modelContext: modelContext) else {
+            deleteFailed = true
+            return
+        }
+        dismiss()
     }
 
     private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {

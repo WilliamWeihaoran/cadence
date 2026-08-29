@@ -13,6 +13,7 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     var duplicateProjectsMerged: Int = 0
     var duplicateNotesMerged: Int = 0
     var duplicateHabitCompletionsRemoved: Int = 0
+    var habitRemindersCleared: Int = 0
     var movedAreas: Int = 0
     var movedProjects: Int = 0
     var movedTasks: Int = 0
@@ -29,6 +30,7 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
             duplicateProjectsMerged > 0 ||
             duplicateNotesMerged > 0 ||
             duplicateHabitCompletionsRemoved > 0 ||
+            habitRemindersCleared > 0 ||
             movedAreas > 0 ||
             movedProjects > 0 ||
             movedTasks > 0 ||
@@ -41,13 +43,18 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     }
 }
 
-/// **Scope: duplicate rows, and the references a merge invalidates. Not an orphan sweep** (T-328).
+/// **Scope: duplicate rows, the references a merge invalidates, and single-row fields that name
+/// something impossible. Not an orphan sweep** (T-328).
 ///
-/// What this service repairs is one shape of damage — the *same* row present twice, which is what
-/// a restore, a CloudKit round trip or a pre-merge migration leaves behind. It merges duplicate
-/// `Context`, `Area`, `Project` and `Note` rows, collapses duplicate habit-days, and re-points the
-/// tasks, notes, documents, links and goal links each merge would otherwise strand. Every counter
-/// on `DataIntegrityRepairReport` is incremented inside one of those merges.
+/// The main shape it repairs is the *same* row present twice, which is what a restore, a CloudKit
+/// round trip or a pre-merge migration leaves behind. It merges duplicate `Context`, `Area`,
+/// `Project` and `Note` rows, collapses duplicate habit-days, and re-points the tasks, notes,
+/// documents, links and goal links each merge would otherwise strand.
+///
+/// One counter is not a merge: `habitRemindersCleared` (T-428) clears a `Habit.reminderMinuteOfDay`
+/// outside `0...1439`. It is here rather than beside the sweeps because its predicate reads a
+/// single scalar on a row that is present, so unlike an orphan check it cannot be made false by a
+/// record that has not synced yet — the argument is spelled out on the method.
 ///
 /// It deliberately does **not** collect orphans. It never asks whether a `Subtask` has a
 /// `parentTask`, whether a `TaskBundle` has members, whether a `HabitCompletion` has a `habit`, or
@@ -178,6 +185,49 @@ nonisolated enum DataIntegrityRepairService {
 
         repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
         repairDuplicateHabitCompletions(in: store, modelContext: context, report: &report)
+        repairOutOfRangeHabitReminders(in: store, report: &report)
+    }
+
+    /// T-428: a `Habit.reminderMinuteOfDay` already on disk outside `0...1439` is invisible **and**
+    /// inert, and until this pass nothing moved it. `HabitNotificationPlanner.reminder(for:now:)`
+    /// skips it (T-363), so it schedules nothing; both editors open it as no reminder (T-410), so
+    /// it shows nothing. The user cannot see the value, cannot act on it, and the habit quietly
+    /// has no reminder while the field says otherwise. Clearing it to `nil` is the app agreeing
+    /// with itself: `nil` is what every reader already behaves as if it read.
+    ///
+    /// **Cleared, not clamped.** `1440` is not 23:59 and `-15` is not 00:00; a clamp invents a
+    /// time the user never chose and then schedules a real daily alarm at it, which is the
+    /// `?? now` failure T-363 removed from the planner wearing a tidier number. `nil` says "no
+    /// reminder", which is both true and repairable — the pickers can set a real one.
+    ///
+    /// **Why this is allowed where an orphan sweep is not ([[T-328]]).** The boundary above is not
+    /// "repair never deletes"; it is that repair must stay *conservative under partial CloudKit
+    /// sync*, because `PersistenceController.performStartupMaintenance` runs it the instant the
+    /// container opens with no gate on sync state. What makes an orphan sweep unsafe there is that
+    /// its predicate is a claim about a **second row**: "this `Subtask` has no `parentTask`" is
+    /// indistinguishable from "its `AppTask` has not arrived yet", so the emptier the store the
+    /// more it destroys. This predicate reads **one scalar on the row in front of it**. No record
+    /// arriving later can make `1440` a minute of the day, so a half-synced store cannot produce a
+    /// false positive here — it simply sees fewer `Habit` rows and repairs fewer of them, which is
+    /// the same monotonicity the merges have. It also clears a field rather than deleting a row,
+    /// and the field it clears is one no surface can render and no reconcile can schedule.
+    ///
+    /// The pass is idempotent and order-independent across devices, so a device that has not run
+    /// it yet re-syncing the corrupt value is not a loop: every device writes the same `nil`.
+    ///
+    /// `DataIntegrityRepairServiceTests.repairLeavesOrphanedRowsAloneRatherThanCollectingThemAtStartup`
+    /// still holds — that store has no `Habit` in it at all, and a habit whose reminder is `nil`
+    /// or in range is left alone here, so `changed` stays `false` for a store with nothing wrong.
+    private static func repairOutOfRangeHabitReminders(
+        in store: RepairStore,
+        report: inout DataIntegrityRepairReport
+    ) {
+        for habit in store.habits {
+            guard let minuteOfDay = habit.reminderMinuteOfDay else { continue }
+            guard !HabitReminderTime.namesATimeOfDay(minuteOfDay) else { continue }
+            habit.reminderMinuteOfDay = nil
+            report.habitRemindersCleared += 1
+        }
     }
 
     /// T-359: two devices can each mint a `HabitCompletion` for the same habit and the same day.
@@ -625,7 +675,7 @@ nonisolated enum DataIntegrityRepairService {
     private static func log(_ report: DataIntegrityRepairReport) {
         guard report.changed else { return }
         logger.info(
-            "Data integrity repair merged contexts=\(report.duplicateContextsMerged, privacy: .public), areas=\(report.duplicateAreasMerged, privacy: .public), projects=\(report.duplicateProjectsMerged, privacy: .public), notes=\(report.duplicateNotesMerged, privacy: .public), habitCompletions=\(report.duplicateHabitCompletionsRemoved, privacy: .public), movedTasks=\(report.movedTasks, privacy: .public) from \(report.source, privacy: .public)"
+            "Data integrity repair merged contexts=\(report.duplicateContextsMerged, privacy: .public), areas=\(report.duplicateAreasMerged, privacy: .public), projects=\(report.duplicateProjectsMerged, privacy: .public), notes=\(report.duplicateNotesMerged, privacy: .public), habitCompletions=\(report.duplicateHabitCompletionsRemoved, privacy: .public), habitReminders=\(report.habitRemindersCleared, privacy: .public), movedTasks=\(report.movedTasks, privacy: .public) from \(report.source, privacy: .public)"
         )
     }
 }

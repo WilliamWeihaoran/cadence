@@ -31,6 +31,14 @@ import Foundation
     /// there is no `SchemaMigrationPlan` in `CadenceSchema.swift`, so that rename would silently
     /// drop any reminder time already stored in a user's existing CloudKit data. That's out of
     /// scope for a targeted bug-hunt pass; flagging here rather than fixing blind.
+    ///
+    /// **Still unvalidated at write time, but no longer silently kept (T-428.)** The range this
+    /// field is supposed to hold is `HabitReminderTime.minuteRange`, at the bottom of this file.
+    /// `HabitNotificationPlanner` refuses to schedule anything for a value outside it (T-363),
+    /// both editors open such a value as no reminder (T-410), and `DataIntegrityRepairService`
+    /// now clears it to `nil` — cleared rather than clamped, because a clamp would invent a time
+    /// the user never chose. So a stored out-of-range minute is transient rather than a permanent
+    /// invisible reminder; the model layer still accepts one on assignment.
     var reminderMinuteOfDay: Int? = nil
 
     var context: Context? = nil
@@ -440,5 +448,33 @@ nonisolated enum HabitStreakUnit {
         case .days: return "\(count) day streak"
         case .weeks: return "\(count) week streak"
         }
+    }
+}
+
+/// What `Habit.reminderMinuteOfDay` is allowed to say, in the one place both readers of that
+/// question can see it.
+///
+/// Lives in `Habit.swift` for the same reason `HabitStreakUnit` does: the two callers are
+/// `HabitNotificationPlanner` (`Services/NotificationScheduling.swift`, app target only) and
+/// `DataIntegrityRepairService` (app **and** `CadenceMCPServer`), and only `Models/` is compiled
+/// into both. Declaring the range on the planner and reaching for it from the repair service is
+/// the [[T-409]] break — green under `-scheme Cadence`, a missing symbol in the MCP target.
+///
+/// `nonisolated` because the repair service is a `nonisolated enum` and the MCP target is on
+/// Swift 6, where reading a main-actor-isolated `static let` from it is an error rather than a
+/// warning (`Models/AGENTS.md`).
+nonisolated enum HabitReminderTime {
+    /// The minutes-from-midnight a reminder time can name: `0` (00:00) through `1439` (23:59).
+    ///
+    /// The model stores `reminderMinuteOfDay` as a bare `Int?` and validates nothing — see the
+    /// note on the property, and the `SchemaMigrationPlan` that does not exist and is why it is
+    /// still a bare `Int?`. This range is the whole of the app's definition of a real time of day.
+    static let minuteRange: ClosedRange<Int> = 0...1439
+
+    /// Whether a stored minute-of-day names a time. `nil` is "no reminder", which is a valid
+    /// state and not a corrupt one, so it answers `true`.
+    static func namesATimeOfDay(_ minuteOfDay: Int?) -> Bool {
+        guard let minuteOfDay else { return true }
+        return minuteRange.contains(minuteOfDay)
     }
 }

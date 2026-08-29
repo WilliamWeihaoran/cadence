@@ -184,6 +184,186 @@ struct CalendarDateMemoryTests {
     }
 }
 
+/// **T-405.** The restore ordering `iOSCalendarView` used to spell inline.
+///
+/// [[T-369]] is entirely an ordering claim — *a dated calendar link outranks where the calendar was
+/// left* — and it was verified on iOS by an simulator build and nothing else, because `CadenceTests`
+/// cannot see `Cadence/iOS/`. `CadenceCalendarDateMemory.restoredPosition` is that decision lifted
+/// out of the view, so it can be called here; the view is a thin caller and is pinned as one below.
+@Suite("Calendar restore ordering")
+struct CalendarRestoredPositionTests {
+
+    private let calendar = Calendar.current
+
+    private func day(_ key: String) throws -> Date {
+        calendar.startOfDay(for: try #require(DateFormatters.date(from: key, in: calendar)))
+    }
+
+    private func restored(
+        fallback: String = "2026-08-29",
+        selection: String? = nil,
+        anchor: String? = nil,
+        link: String? = nil
+    ) throws -> CadenceCalendarRestoredPosition {
+        CadenceCalendarDateMemory.restoredPosition(
+            fallback: try day(fallback),
+            storedSelection: selection,
+            storedAnchor: anchor,
+            deepLinkDateKey: link,
+            calendar: calendar
+        )
+    }
+
+    /// Nothing remembered and no link: the page's own default, both days.
+    @Test func afreshInstallOpensOnTheCallersFallbackDay() throws {
+        let position = try restored()
+        #expect(position.selectedDate == (try day("2026-08-29")))
+        #expect(position.anchorDate == position.selectedDate)
+    }
+
+    @Test func theRememberedPositionIsRestoredWhenNoLinkNamesADay() throws {
+        let position = try restored(selection: "2026-03-06", anchor: "2026-03-02")
+        #expect(position.selectedDate == (try day("2026-03-06")))
+        #expect(position.anchorDate == (try day("2026-03-02")))
+    }
+
+    /// A remembered selection with no anchor beside it leads with the selected day rather than
+    /// with the fallback — otherwise a restore would open the remembered day off-screen.
+    @Test func arememberedSelectionWithNoAnchorLeadsWithItself() throws {
+        let position = try restored(selection: "2026-03-06")
+        #expect(position.anchorDate == (try day("2026-03-06")))
+    }
+
+    /// **The whole of T-369.** The link wins over the remembered position — and it is the case the
+    /// iOS build could only compile-check.
+    @Test func adatedLinkOutranksTheRememberedPosition() throws {
+        let position = try restored(selection: "2026-03-06", anchor: "2026-03-02", link: "2026-07-04")
+        #expect(position.selectedDate == (try day("2026-07-04")))
+    }
+
+    /// And it takes the anchor with it. Applying only the selection would open the linked day
+    /// scrolled out of the grid's leading column, which is the same complaint T-369 started from.
+    @Test func adatedLinkMovesTheAnchorAndNotOnlyTheSelection() throws {
+        let position = try restored(selection: "2026-03-06", anchor: "2026-03-02", link: "2026-07-04")
+        #expect(position.anchorDate == (try day("2026-07-04")))
+        #expect(position.anchorDate == position.selectedDate)
+    }
+
+    /// The link wins from a fresh install too — there is nothing remembered for it to outrank, and
+    /// falling back to today would be the pre-T-369 behaviour with extra steps.
+    @Test func adatedLinkAlsoWinsWhenNothingIsRemembered() throws {
+        let position = try restored(link: "2026-07-04")
+        #expect(position.selectedDate == (try day("2026-07-04")))
+        #expect(position.anchorDate == (try day("2026-07-04")))
+    }
+
+    /// A garbage link is not a day, so it outranks nothing. `DateComponents(month: 13)` *rolls
+    /// over* rather than failing, which is why `date(fromStored:)` normalises first — a link
+    /// reading `2026-13-01` must not silently mean January 2027.
+    @Test func anunparseableLinkLeavesTheRememberedPositionAlone() throws {
+        for junk in ["", "tomorrow", "2026-13-01", "26-03-06"] {
+            let position = try restored(selection: "2026-03-06", anchor: "2026-03-02", link: junk)
+            #expect(position.selectedDate == (try day("2026-03-06")), "\(junk) was read as a day")
+            #expect(position.anchorDate == (try day("2026-03-02")), "\(junk) moved the anchor")
+        }
+    }
+
+    /// `2026-3-6` is **not** in the list above, and finding that out is why this test exists.
+    /// `DateFormatters.normalizedDateKey` parses with the `ymd` formatter, which is lenient about
+    /// single-digit months and days, and then only insists on a four-digit *year* — so an
+    /// unpadded key is a real day and normalises to the padded spelling. The first draft of the
+    /// junk list assumed the opposite and went red on the anchor.
+    ///
+    /// It matters beyond the test: `CadenceDeepLink.calendarDateKey` hands this whatever the URL
+    /// carried, so `cadence://calendar/2026-3-6` opens on 6 March rather than being ignored.
+    @Test func anunpaddedLinkIsARealDayAndNotGarbage() throws {
+        let position = try restored(selection: "2026-03-06", anchor: "2026-03-02", link: "2026-3-6")
+        #expect(position.selectedDate == (try day("2026-03-06")))
+        #expect(position.anchorDate == (try day("2026-03-06")), "the unpadded link did not move the anchor")
+        #expect(DateFormatters.normalizedDateKey("2026-3-6") == "2026-03-06")
+        #expect(DateFormatters.normalizedDateKey("26-03-06") == nil, "a two-digit year is still rejected")
+    }
+
+    /// Garbage in the *stored* keys falls back the same way, rather than landing on a day nobody
+    /// picked. A downgrade or a hand-edited plist is where these come from.
+    @Test func garbageInTheStoredKeysFallsBackRatherThanInventingADay() throws {
+        let position = try restored(selection: "2026-13-01", anchor: "nonsense")
+        #expect(position.selectedDate == (try day("2026-08-29")))
+        #expect(position.anchorDate == (try day("2026-08-29")))
+    }
+
+    /// The raw accessors `restoredPosition` is fed from read the same two keys the parsed ones do.
+    /// Without this the pure decision above could be pinned perfectly while the caller handed it
+    /// the wrong strings.
+    @Test func therawStoredAccessorsReadTheSameKeysTheParsedOnesDo() throws {
+        let suite = UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let memory = CadenceCalendarDateMemory(defaults: defaults)
+
+        #expect(memory.storedSelectionKey == nil)
+        #expect(memory.storedAnchorKey == nil)
+
+        memory.setSelectedDate(try day("2026-03-06"), calendar: calendar)
+        memory.setAnchorDate(try day("2026-03-02"), calendar: calendar)
+
+        #expect(memory.storedSelectionKey == "2026-03-06")
+        #expect(memory.storedAnchorKey == "2026-03-02")
+        #expect(defaults.string(forKey: CadenceCalendarDateMemory.selectionKey) == memory.storedSelectionKey)
+        #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == memory.storedAnchorKey)
+
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    /// And the view is a thin caller of it. A source scan, because `Cadence/iOS/iOSCalendarView.swift`
+    /// is behind `#if os(iOS)` and this target builds for macOS — so this is the half of T-405 that
+    /// stays a scan, and the eight tests above are the half that is now behaviour.
+    @Test func theIOSCalendarPageDefersTheOrderingRatherThanRespellingIt() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarView.swift")
+        #expect(raw.count > 400, "iOSCalendarView.swift read as \(raw.count) characters")
+        let page = CadenceSourceScan.strippingComments(raw)
+        #expect(page != raw, "the comment stripper removed nothing")
+        #expect(page.count == raw.count, "the stripper changed the length")
+        #expect(page.contains("struct iOSCalendarView: View"), "the scan read the wrong file")
+
+        let restore = try #require(
+            CadenceSourceScan.functionBody(named: "restorePersistedCalendarDates", in: page),
+            "iOSCalendarView has no restorePersistedCalendarDates()"
+        )
+        #expect(restore.contains("CadenceCalendarDateMemory.restoredPosition("),
+                "the page still spells the restore ordering inline (T-405)")
+        #expect(restore.contains("selectedDate = restored.selectedDate"))
+        #expect(restore.contains("anchorDate = restored.anchorDate"))
+        // The inline ordering, gone: no branch on the remembered days and no second applier call
+        // left inside the restore for a later edit to reorder.
+        #expect(CadenceSourceScan.matchCount(#"dateMemory\.selectedDate\("#, in: restore) == 0)
+        #expect(CadenceSourceScan.matchCount(#"dateMemory\.anchorDate\("#, in: restore) == 0)
+        #expect(CadenceSourceScan.matchCount(#"applyCalendarDeepLinkDate\(\)"#, in: restore) == 0)
+
+        // The warm path — a link arriving while the page already stands — is still there, and reads
+        // the same one definition of "the day this link names".
+        #expect(page.contains("applyCalendarDeepLinkDate()"), "the warm deep-link path went away")
+        let apply = try #require(
+            CadenceSourceScan.functionBody(named: "applyCalendarDeepLinkDate", in: page),
+            "iOSCalendarView has no applyCalendarDeepLinkDate()"
+        )
+        #expect(apply.contains("CadenceCalendarDateMemory.date("),
+                "the warm path parses the link its own way (T-405)")
+    }
+
+    /// The scan's needles, and its reader. Without these the `== 0` assertions above hold of any
+    /// text at all.
+    @Test func therestoreScanNeedlesAreNotVacuous() {
+        #expect(CadenceSourceScan.matchCount(#"dateMemory\.selectedDate\("#,
+                                             in: "if let x = dateMemory.selectedDate(calendar: calendar) {") == 1)
+        #expect(CadenceSourceScan.matchCount(#"dateMemory\.selectedDate\("#,
+                                             in: "storedSelection: dateMemory.storedSelectionKey,") == 0)
+        #expect(CadenceSourceScan.matchCount(#"applyCalendarDeepLinkDate\(\)"#,
+                                             in: "applyCalendarDeepLinkDate()") == 1)
+        #expect(CadenceSourceScan.matchCount(#"applyCalendarDeepLinkDate\(\)"#,
+                                             in: "perform: applyCalendarDeepLinkDate") == 0)
+    }
+}
+
 /// `CadenceCalendarDateMemoryWriter` — the coalescing half.
 ///
 /// The whole of T-152 is that a horizontal fling used to write user defaults once per column

@@ -31,7 +31,24 @@ import SwiftData
 /// **Not covered, and out of reach from a `ModelContext`:** note templates live in `UserDefaults`
 /// under `NoteTemplateLibrary.storageKey`, and the calendar sheets' notes editors write
 /// `EKEvent.notes` in EventKit. Both are markdown surfaces that can hold an image reference and
-/// neither is a row in this store. See `docs/TODO.md` T-421 and T-422.
+/// neither is a row in this store.
+///
+/// **Neither was closed by widening this scan.** For the template body it could have been —
+/// `UserDefaults` is one synchronous read — but the sweep's failure mode decided it: an asset this
+/// inventory cannot see is *deleted*, so the door that must shut is the one that lets the asset in.
+/// `EKEvent.notes` had no second option at all: EventKit has no unbounded "every event" query, so
+/// reading the calendar store to answer a synchronous delete was never available.
+///
+/// Both are closed by `iOSMarkdownEditingSurface.allowsImageInsertion`, which is `false` at the
+/// three hosts whose text is not a row here — the note-template editor (T-421), and the two
+/// calendar sheets' Apple Calendar note (T-422). So this list is not "the fields we manage to
+/// read"; it is every field an image reference can reach. `CadenceMarkdownImageInsertionScopeTests`
+/// pins that relation from the other side.
+///
+/// **The asymmetry that picked the door over the scan.** Over-counting a reference leaves garbage
+/// for the next delete; under-counting one destroys `.externalStorage` bytes. A `UserDefaults` read
+/// bolted into a type whose contract is "every stored field in `CadenceSchema`" would have bought
+/// a rarely-wanted capability with a second way to get that answer wrong.
 nonisolated enum CadenceMarkdownSourceInventory {
 
     /// One markdown-bearing stored property.

@@ -504,7 +504,15 @@ struct iOSCalendarQuickCreateSheet: View {
                     referenceNotes: allNotes,
                     referenceTasks: allTasks,
                     onOpenReference: openMarkdownReference,
-                    allowsEmbeddedTaskCreation: false
+                    allowsEmbeddedTaskCreation: false,
+                    // **T-422, and not the flat `false` its sibling sheet takes.** This one `notes`
+                    // state has two destinations: `calendarManager.createEvent(notes:)` in event
+                    // mode, which is `EKEvent.notes` and outside the store, and `task.notes` in
+                    // `configureTask(_:)` otherwise — and `AppTask.notes` *is* in the inventory,
+                    // because widening the scan to reach it was the whole of [[T-411]]. Refusing
+                    // images in both modes would take a working capability off task capture to fix
+                    // a hazard task capture does not have.
+                    allowsImageInsertion: kind != .event
                 )
                 .iOSMarkdownWell()
             }

@@ -36,10 +36,16 @@ import SwiftData
 /// notification reconcile, injectable, live in the app and inert in a test host". Call sites never
 /// name it; they pass nothing and get `.default`.
 ///
-/// **What is not routed here yet.** `iOSTaskDetailSheet` still calls `setStatus` and
-/// `toggleCompletion` directly (`Cadence/iOS/iOSTaskDetailSheet.swift`). That file is owned by
-/// another change in flight, so it is recorded as residue on T-343 rather than edited here —
-/// `setStatus` below exists so that routing it is a one-line change and not a new entry point.
+/// **What is deliberately not routed here.** `iOSTaskDetailSheet` was the seventh surface, left as
+/// residue on T-343 because the file was owned by another change in flight; **T-407** routed its
+/// two real transitions — the status well and the completion circle — through `setStatus` and
+/// `toggleCompletion` below, which is what those entry points were shaped for.
+///
+/// Its `CadenceTaskMutationSupport.normalizeCompletionState` stays outside. That is not a user's
+/// status change but the repair every field observer on the sheet fires through, including the
+/// ones that run when the sheet merely opens — so routing it would reconcile the whole store on
+/// every appearance and every keystroke in a title, for a status that did not move.
+/// `IOSTaskDetailSheetResidueTests` pins the carve-out from both ends.
 @MainActor
 enum CadenceTaskStatusEditing {
 

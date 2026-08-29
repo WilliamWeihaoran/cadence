@@ -88,7 +88,55 @@ struct CadenceCalendarDateMemory {
         return calendar.startOfDay(for: parsed)
     }
 
+    /// Where the calendar page opens: the remembered position, with a dated link laid over it.
+    ///
+    /// **T-405.** `iOSCalendarView.restorePersistedCalendarDates()` used to spell this ordering
+    /// inline — restore the two remembered days, then call the deep-link applier — and
+    /// `CadenceTests` cannot see `Cadence/iOS/`, so the ordering that is the *whole* of [[T-369]]
+    /// was verified by an iOS-simulator build and nothing else. It is a decision over four
+    /// optionals, none of them a view, so it belongs where a test can call it and the view can be a
+    /// thin caller.
+    ///
+    /// The ordering it encodes: **a link that names a day outranks where the calendar was left.**
+    /// The Calendar widget's "Open Calendar" link carries the day it is drawing, and a tap that
+    /// landed on last week's remembered scroll position instead was T-369's bug. A link with no
+    /// day of its own already means today by the time it reaches here — `calendarDateKey(todayKey:)`
+    /// is where that is decided, once, for both shells.
+    ///
+    /// The link sets **both** days, not just the selection. `anchorDate` is the leading column of
+    /// the grid, so restoring last week's anchor beside the link's selection would open on the
+    /// linked day scrolled off-screen.
+    ///
+    /// Everything is taken as raw stored strings rather than as `Date`s so the whole decision is
+    /// pure: garbage in either key, or in the link, falls back exactly the way `date(fromStored:)`
+    /// says it does rather than landing on a day the caller invented.
+    ///
+    /// - Parameter fallback: The page's own default when nothing is remembered — today.
+    static func restoredPosition(
+        fallback: Date,
+        storedSelection: String?,
+        storedAnchor: String?,
+        deepLinkDateKey: String?,
+        calendar: Calendar = .current
+    ) -> CadenceCalendarRestoredPosition {
+        if let linked = date(fromStored: deepLinkDateKey, calendar: calendar) {
+            return CadenceCalendarRestoredPosition(selectedDate: linked, anchorDate: linked)
+        }
+        let selection = date(fromStored: storedSelection, calendar: calendar)
+            ?? calendar.startOfDay(for: fallback)
+        return CadenceCalendarRestoredPosition(
+            selectedDate: selection,
+            anchorDate: date(fromStored: storedAnchor, calendar: calendar) ?? selection
+        )
+    }
+
     // MARK: Reading and writing
+
+    /// The raw stored keys, for `restoredPosition` — which takes strings so that it stays pure.
+    /// `anchorDate()` / `selectedDate()` below are the same reads already parsed.
+    var storedAnchorKey: String? { defaults.string(forKey: Self.anchorKey) }
+
+    var storedSelectionKey: String? { defaults.string(forKey: Self.selectionKey) }
 
     func anchorDate(calendar: Calendar = .current) -> Date? {
         Self.date(fromStored: defaults.string(forKey: Self.anchorKey), calendar: calendar)
@@ -114,6 +162,15 @@ struct CadenceCalendarDateMemory {
         ) else { return }
         defaults.set(value, forKey: key)
     }
+}
+
+/// The two days `CadenceCalendarDateMemory.restoredPosition` hands back: what is selected, and
+/// which column the grid leads with. A pair rather than two returns because the deep-link branch
+/// sets them together and a caller that applied one without the other would open on a day it had
+/// scrolled out of view.
+struct CadenceCalendarRestoredPosition: Equatable {
+    var selectedDate: Date
+    var anchorDate: Date
 }
 
 /// One write per settle, instead of one per column.

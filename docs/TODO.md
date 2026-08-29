@@ -43,6 +43,24 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-445] **`DataIntegrityRepairReport` is a synthesized `Codable`, so adding a counter makes the
+  stored report undecodable.** Synthesized decoding does not apply property defaults for missing
+  keys, so `lastReport.v1` written before a new field cannot be read after. `lastReport()` swallows
+  it with `try?`, so nothing breaks — but the diagnostic is lost, and `repairAndRecordFailure`
+  returns `nil` on exactly the launch that meant to hand back the last good report. **Second
+  occurrence** — T-359 added the first counter, T-428 the second. One `init(from:)` using
+  `decodeIfPresent` closes it. Not data loss; no user data lives in that key.
+
+- [T-441] **`ListEditorCalendarRow` renders unlinked, gone, and merely-hidden as one string.**
+  Residue from [[T-400]]. It shows `selectedTitle ?? "None"` sourced from `availableCalendars`, so a
+  link whose calendar was deleted looks identical to one that was never set — and the row is a live
+  binding that writes back on save, so opening the editor can quietly clear a link the user still
+  wants. The new health check knows the difference; this row does not ask it.
+
+- [T-442] **The macOS note-template editor is a bare `TextEditor` while iOS gets the full markdown
+  surface.** An unrecorded parity gap, and the reason T-421's fix is iOS-only: macOS never had an
+  image door to close.
+
 - [T-414] **`subGoalCount` and `habitCount` have the same naming defect [[T-388]] just fixed.**
   They report own-only numbers under names that read like totals. Left alone deliberately so the
   breaking wire change stayed one rename rather than three — but the DTO is now half-renamed, and a
@@ -52,15 +70,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `CadenceMCPOrdering` both end on `id.uuidString`, `UUID` is not `Comparable`, and `isDone` is
   computed — so `offset`/`limit` cannot be pushed into the store's sort descriptor and the rows are
   still materialised before being sliced. Reads are far narrower now, but the last hop is unchanged.
-
-- [T-421] **Note template bodies live in `UserDefaults` and can hold image references the sweep
-  cannot see.** Residue from [[T-411]]. `NoteTemplateLibrary.storageKey` stores template markdown
-  outside SwiftData entirely, and the template editor has no flag to disable image insertion — so an
-  image pasted into a template is unreachable by any store-based inventory.
-
-- [T-422] **Event notes bind the markdown editor to `EKEvent.notes`, outside the store.**
-  Residue from [[T-411]]. `iOSCalendarEventEditSheet` and `iOSCalendarQuickCreateSheet` in event mode
-  write into EventKit, so an image pasted there is invisible to the inventory for the same reason.
 
 - [T-433] **`CadenceListDeletionSummary` says its counts "mirror
   `ModelContext.deleteArea/deleteProject/deleteContext` exactly" and omits the image sweep all
@@ -103,40 +112,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   anything that only runs `-scheme Cadence` will keep missing it. The coordinator's integration run
   now builds `CadenceMCPServer` too, but that is a habit, not a guard. A CI-side or test-side check
   would be better.
-
-- [T-407] **`iOSTaskDetailSheet` is the one task surface outside both wrappers.** Residue from
-  [[T-343]]. It calls `setStatus`/`toggleCompletion` without reconciling notifications, and
-  `dismiss()`es on delete regardless of the `Bool` that delete now returns. Both halves belong to
-  the sheet's own lifecycle rather than to a row action, which is why neither wrapper reached it.
-  **Warning for whoever takes it:** `normalizeCompletionState` must *not* be routed through the
-  status wrapper — opening the sheet would then reconcile every time.
-
-- [T-403] **`CadenceCalendarEventSearchSupport.identity(of:)` re-spells the first two lines of
-  `CadenceEventNoteSupport.rawIdentifier`.** From the T-373 work, kept visible rather than hidden:
-  `rawIdentifier` is main-actor isolated and `precedes` must stay `nonisolated` because
-  `iOSCalendarManager.fetchEvents` passes it to `sorted(by:)` as a plain function value. The fix is
-  one `nonisolated` keyword on `rawIdentifier`; that file was off-limits to the batch that found it.
-
-- [T-405] **The iOS half of T-369 is compile-checked only.** `iOSCalendarView` applies a dated
-  calendar link after `CadenceCalendarDateMemory` restores, but `CadenceTests` cannot see
-  `Cadence/iOS/`, so that ordering is verified by an iOS-simulator build rather than by a test.
-
-- [T-400] **A dead calendar link can be detected with no stored metadata at all.** Residue from
-  [[T-390]], which decided not to store calendar title/source because that needs stored properties
-  on two `@Model` types and this project has no `SchemaMigrationPlan`. Detection needs none of it: a
-  non-empty `linkedCalendarID` that no live `EKCalendar` carries is already enough to show a "linked
-  calendar is missing" row with a re-pick affordance. Still no auto-matching by title — the point is
-  to make the break visible, not to guess a replacement.
-
-- [T-391] **Habit day quantity split across rows now reads lower.** Residue from [[T-359]]'s
-  `max`-not-`sum` decision. The old test `dailyStreakCountsSummedCompletionsAcrossMultipleRecordsForSameDay`
-  pinned that a target-3 habit satisfied by rows of `count: 2` + `count: 1` counts as done; under
-  `max` that day reads 2 and breaks the streak. Verified this cannot arise from the app: every
-  `HabitCompletion(...)` construction omits `count`, which defaults to 1, and no writer sets it
-  higher. So the only source would be a legacy store from a build that did write counts, or a future
-  archive import ([[T-274]]). If either turns out to exist, the collapse needs to be
-  `max(count) per row-set` rather than plain `max`, or repair needs to fold split rows before
-  collapsing.
 
 - [T-372a] **`CadenceSearchMatcher.rank` is the one ordering left partial after [[T-372]].** Found
   while fixing T-372 and deliberately not fixed there: `rank` ends at score-then-title

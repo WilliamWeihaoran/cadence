@@ -597,7 +597,14 @@ private struct iOSTemplateBodyEditor: View {
                 text: $text,
                 isFocused: $isFocused,
                 placeholder: "Write the reusable note template...",
-                allowsEmbeddedTaskCreation: false
+                allowsEmbeddedTaskCreation: false,
+                // **T-421.** This body is a `UserDefaults` string under
+                // `NoteTemplateLibrary.storageKey`, not a row in the store, so an image pasted here
+                // would be referenced by nothing `CadenceMarkdownSourceInventory` can read and the
+                // next sweep would delete it. The other two doors — teach the inventory to read
+                // `UserDefaults`, or accept the loss — buy a rarely-wanted capability with a
+                // silently destroyed picture.
+                allowsImageInsertion: false
             )
             .iOSMarkdownWell()
         }

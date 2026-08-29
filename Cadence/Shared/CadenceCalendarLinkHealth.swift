@@ -1,0 +1,129 @@
+import Foundation
+
+/// One list whose `linkedCalendarID` names a calendar EventKit no longer has.
+///
+/// A value, not a model reference: the row that renders it needs a name, an icon and a colour, and
+/// the write-back needs the list's `id`. Keeping the model out of the value means the detection
+/// rule can be tested without a `ModelContext`.
+nonisolated struct CadenceMissingCalendarLink: Identifiable, Hashable, Sendable {
+    enum ListKind: String, Sendable {
+        case area
+        case project
+    }
+
+    /// The `Area.id` or `Project.id`, which is what the re-pick writes back through.
+    let id: UUID
+    let kind: ListKind
+    let name: String
+    let icon: String
+    let colorHex: String
+    /// The dead identifier, kept so the row can say which link is broken when a list is renamed
+    /// between the break and the repair.
+    let calendarID: String
+}
+
+/// **T-400.** Whether a list's calendar link still points at a calendar that exists.
+///
+/// `Area.linkedCalendarID` and `Project.linkedCalendarID` store an `EKCalendar.calendarIdentifier`
+/// and nothing else — see the T-390 contract on `Area.linkedCalendarID` for why no title or source
+/// sits beside it, and why a calendar that Apple Calendar deleted and recreated must *not* be
+/// re-adopted on a name match. That decision left the link dead but said nothing about it being
+/// visible, and it was not: every calendar surface in Settings is a list of *live* `EKCalendar`s
+/// with the connected lists hanging off them, so a link whose calendar is gone renders nowhere at
+/// all. The list simply stopped mirroring, silently.
+///
+/// Detection needs none of the metadata T-390 declined to store. A non-empty identifier that no
+/// live calendar carries is already the whole test, and it is exact in both directions: EventKit
+/// identifiers are opaque, so "not in this set" cannot be a near miss.
+///
+/// **Still no auto-matching.** This type reports the break and hands back the list; it never
+/// proposes a replacement, and it deliberately does not look at a calendar's name. The re-pick is
+/// the user's, from the same menu they linked with in the first place.
+nonisolated enum CadenceCalendarLinkHealth {
+
+    /// The row title. One spelling, so the two platform surfaces cannot drift.
+    static let missingLinkTitle = "Linked calendar is missing"
+
+    /// Every active list whose calendar link is dead, areas first, each group in the order given.
+    ///
+    /// - Parameter liveCalendarIDs: identifiers of **every** calendar EventKit has, including the
+    ///   ones hidden from Cadence by `CalendarVisibilityPreferences`. Hidden is not missing: pass
+    ///   the visible subset and every hidden calendar's links are reported dead, which is a false
+    ///   alarm inviting the user to overwrite a link that was fine.
+    /// - Parameter isCalendarAccessAuthorized: the guard against the loudest false positive there
+    ///   is. Without authorization `allCalendars` is empty, so *every* link in the app looks dead
+    ///   at once. It is a parameter rather than a call-site `if` because both platform surfaces
+    ///   have to honour it and only one of them is compiled by the test target.
+    ///
+    /// Archived and finished lists are excluded, matching every other calendar-link affordance in
+    /// Settings: the connect menu offers active lists only, so a row here for a list the menu
+    /// cannot reach would be a break with no repair beside it.
+    static func missingLinks(
+        areas: [Area],
+        projects: [Project],
+        liveCalendarIDs: Set<String>,
+        isCalendarAccessAuthorized: Bool
+    ) -> [CadenceMissingCalendarLink] {
+        guard isCalendarAccessAuthorized else { return [] }
+
+        let areaLinks = areas.filter(\.isActive).compactMap { area in
+            missingLink(
+                id: area.id,
+                kind: .area,
+                name: area.name,
+                icon: area.icon,
+                colorHex: area.colorHex,
+                linkedCalendarID: area.linkedCalendarID,
+                liveCalendarIDs: liveCalendarIDs
+            )
+        }
+        let projectLinks = projects.filter(\.isActive).compactMap { project in
+            missingLink(
+                id: project.id,
+                kind: .project,
+                name: project.name,
+                icon: project.icon,
+                colorHex: project.colorHex,
+                linkedCalendarID: project.linkedCalendarID,
+                liveCalendarIDs: liveCalendarIDs
+            )
+        }
+        return areaLinks + projectLinks
+    }
+
+    /// What the row says under the list's name.
+    ///
+    /// Names the calendar as gone and the consequence, and stops there. It does not name a
+    /// candidate replacement, because proposing one is the auto-match T-390 refused wearing a
+    /// question mark.
+    static func missingLinkSummary(for link: CadenceMissingCalendarLink) -> String {
+        switch link.kind {
+        case .area:
+            "This area's Apple calendar no longer exists. Pick a calendar to link it again, or remove the link."
+        case .project:
+            "This project's Apple calendar no longer exists. Pick a calendar to link it again, or remove the link."
+        }
+    }
+
+    private static func missingLink(
+        id: UUID,
+        kind: CadenceMissingCalendarLink.ListKind,
+        name: String,
+        icon: String,
+        colorHex: String,
+        linkedCalendarID: String,
+        liveCalendarIDs: Set<String>
+    ) -> CadenceMissingCalendarLink? {
+        guard !linkedCalendarID.isEmpty, !liveCalendarIDs.contains(linkedCalendarID) else {
+            return nil
+        }
+        return CadenceMissingCalendarLink(
+            id: id,
+            kind: kind,
+            name: name,
+            icon: icon,
+            colorHex: colorHex,
+            calendarID: linkedCalendarID
+        )
+    }
+}

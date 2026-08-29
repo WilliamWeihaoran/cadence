@@ -45,7 +45,21 @@ nonisolated enum CadenceEventNoteCommitOutcome: Equatable {
 enum CadenceEventNoteSupport {
     private static let occurrenceSeparator = "#occurrence="
 
-    static func rawIdentifier(for event: EKEvent) -> String {
+    /// What an event's identifier *is*, before any occurrence scoping.
+    ///
+    /// **`nonisolated` (T-403).** This is the identity rule the whole app reads, and one caller
+    /// cannot pay for main-actor isolation: `CadenceCalendarEventSearchSupport.precedes` is handed
+    /// to `sorted(by:)` from `iOSCalendarManager.fetchEvents` as a plain function value, so its
+    /// identity leg has to be callable from anywhere. It used to re-spell the two lines below
+    /// rather than call them, which is a fourth copy of an identity predicate in a file whose
+    /// header already argues against the third.
+    ///
+    /// The keyword is on three functions rather than one, and not on the enum: `fallbackIdentifier`
+    /// and `startMinute` are what this reaches, so leaving either main-actor makes the keyword here
+    /// fail to compile. The enum as a whole cannot take it — `note(for:in:)` and the rest work on
+    /// `Note`, a `@Model` type that is main-actor isolated under the app's
+    /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.
+    nonisolated static func rawIdentifier(for event: EKEvent) -> String {
         if let eventIdentifier = event.eventIdentifier, !eventIdentifier.isEmpty {
             return eventIdentifier
         }
@@ -284,7 +298,7 @@ enum CadenceEventNoteSupport {
             }
     }
 
-    static func startMinute(for date: Date, calendar: Calendar = .current) -> Int {
+    nonisolated static func startMinute(for date: Date, calendar: Calendar = .current) -> Int {
         let components = calendar.dateComponents([.hour, .minute], from: date)
         return ((components.hour ?? 0) * 60) + (components.minute ?? 0)
     }
@@ -329,7 +343,7 @@ enum CadenceEventNoteSupport {
         return event.occurrenceDate
     }
 
-    private static func fallbackIdentifier(for event: EKEvent) -> String {
+    nonisolated private static func fallbackIdentifier(for event: EKEvent) -> String {
         let start = event.startDate ?? event.occurrenceDate ?? Date.distantPast
         let startMinute = startMinute(for: start)
         let calendarID = event.calendar?.calendarIdentifier ?? "calendar"

@@ -31,6 +31,21 @@ struct iOSMarkdownEditingSurface: View {
     var editingNote: Note? = nil
     var onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)? = nil
     var allowsEmbeddedTaskCreation = true
+    /// Whether this host may mint `MarkdownImageAsset` rows from a paste, the toolbar's photo
+    /// button, or the `/image` slash command.
+    ///
+    /// **T-421/T-422 — off means the text this editor writes lives outside SwiftData.** Every
+    /// image path here inserts a store row and writes a `cadence-image://` token into the text; the
+    /// row survives only while `CadenceMarkdownSourceInventory` can still find that token in some
+    /// stored field. A host binding this editor to a note, a task's notes, or any other row in the
+    /// store is fine — the inventory reads those. A host binding it to a `UserDefaults` template
+    /// body or an `EKEvent.notes` is not: the token is somewhere the inventory cannot look, so the
+    /// next note delete or list cascade sweeps the asset and the picture is gone for good.
+    ///
+    /// That is a *deletion*, not a leak, which is why this is a closed door rather than a widened
+    /// scan. `allowsEmbeddedTaskCreation` above is already off at exactly these hosts for the
+    /// neighbouring reason.
+    var allowsImageInsertion = true
     var embeddedTaskArea: Area? = nil
     var embeddedTaskProject: Project? = nil
     /// Passed straight through to `iOSMarkdownFormatToolbar`; see the note there for why the
@@ -109,6 +124,12 @@ struct iOSMarkdownEditingSurface: View {
         let createEmbeddedTask: ((String) -> String?)? = allowsEmbeddedTaskCreation
             ? { title in createEmbeddedTaskReference(title: title) }
             : nil
+        // Bound here rather than written inline in `iOSMarkdownFormatToolbar(...)` below, for the
+        // reason the line above is: a ternary producing an optional closure inside one of these
+        // view expressions is where the type checker gives up. The sibling paste door is guarded
+        // inside `createPastedImageAssets` instead — same expression problem, and a guard on the
+        // function is the sturdier half of the pair anyway.
+        let chooseImagesAction: (() -> Void)? = allowsImageInsertion ? { chooseImages() } : nil
 
         return VStack(spacing: 0) {
             // Above the format toolbar, which is where macOS puts it: header, then what the note is
@@ -129,7 +150,7 @@ struct iOSMarkdownEditingSurface: View {
 
             iOSMarkdownFormatToolbar(
                 apply: { command in applyToolbarCommand(command) },
-                chooseImages: { chooseImages() },
+                chooseImages: chooseImagesAction,
                 templateKind: templateKind,
                 applyTemplate: applyTemplate
             )
@@ -261,6 +282,9 @@ struct iOSMarkdownEditingSurface: View {
     private func slashCommandChoices(for context: MarkdownSlashCommandContext) -> [MarkdownSlashCommand] {
         MarkdownSlashCommand.all
             .filter { command in
+                // A command whose follow-up this host refuses is not offered. Leaving it in the
+                // strip and swallowing the tap is the worse half of a disabled feature.
+                if !allowsImageInsertion, case .chooseImage = command.action { return false }
                 return context.query.isEmpty ||
                     command.id.localizedCaseInsensitiveContains(context.query) ||
                     command.title.localizedCaseInsensitiveContains(context.query)
@@ -287,7 +311,11 @@ struct iOSMarkdownEditingSurface: View {
         }
     }
 
+    /// The last of the four image doors, and the one a caller cannot see: the `/image` slash
+    /// command reaches this directly through `.chooseImage`, not through the toolbar. Guarded here
+    /// rather than only at the two visible entry points so adding a fifth caller cannot reopen it.
     private func chooseImages() {
+        guard allowsImageInsertion else { return }
         commitDraftImmediately()
         isFocused = false
         selectedImageItems = []
@@ -322,7 +350,11 @@ struct iOSMarkdownEditingSurface: View {
         try? modelContext.save()
     }
 
+    /// The paste door. Returning `[]` is how the refusal reaches UIKit: `insertPastedImages`
+    /// declines on an empty result and `iOSMarkdownTextView.paste(_:)` falls through to
+    /// `super.paste`, so a refused image paste is an ordinary paste rather than a swallowed one.
     private func createPastedImageAssets(_ images: [UIImage]) -> [MarkdownImageAsset] {
+        guard allowsImageInsertion else { return [] }
         let assets = images.compactMap { image in
             MarkdownImageAssetService.createAsset(from: image, in: modelContext)
         }

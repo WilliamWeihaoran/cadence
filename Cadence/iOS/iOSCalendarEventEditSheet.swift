@@ -487,7 +487,14 @@ struct iOSCalendarEventEditSheet: View {
                     referenceNotes: allNotes,
                     referenceTasks: allTasks,
                     onOpenReference: openMarkdownReference,
-                    allowsEmbeddedTaskCreation: false
+                    allowsEmbeddedTaskCreation: false,
+                    // **T-422.** This binding is `EKEvent.notes` in EventKit, not a row in the
+                    // store, so an image pasted here would be referenced by nothing
+                    // `CadenceMarkdownSourceInventory` can read and the next sweep would collect
+                    // its `.externalStorage` bytes. Widening the inventory was never an option:
+                    // EventKit has no unbounded "every event" query, so there is no way to ask the
+                    // calendar store the question the sweep asks the model store.
+                    allowsImageInsertion: false
                 )
                 .iOSMarkdownWell()
             }

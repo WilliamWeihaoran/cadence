@@ -170,9 +170,10 @@ nonisolated enum TaskNotificationPlanner {
 nonisolated enum HabitNotificationPlanner {
     /// The minutes-from-midnight a reminder time can name: `0` (00:00) through `1439` (23:59).
     ///
-    /// The model stores `reminderMinuteOfDay` as a bare `Int?` and says in its own doc that it
-    /// validates nothing (`Habit.swift`), so this range is where the app's only check lives.
-    static let reminderMinuteRange = 0...1439
+    /// One spelling, in `Models/Habit.swift`, because `DataIntegrityRepairService` asks the same
+    /// question and this file is not in the `CadenceMCPServer` target while `Models/` is — see
+    /// `HabitReminderTime`. Kept as a name here so the planner still reads as owning its guard.
+    static let reminderMinuteRange = HabitReminderTime.minuteRange
 
     /// Returns the next daily reminder occurrence for a habit, or nil if no reminder time is set
     /// or the stored time is not a real time of day.

@@ -463,23 +463,29 @@ struct iOSCalendarView: View {
     // `Today` row in the toolbar title's popover (`iOSDateJumpTitle`) — see
     // `CadenceCalendarDateTitleSupport`.
 
+    /// **T-405.** A thin caller. The ordering — remembered position first, then a dated link over
+    /// the top of it — is `CadenceCalendarDateMemory.restoredPosition`, because it is the whole of
+    /// T-369 and `CadenceTests` cannot see this file to pin it here.
     private func restorePersistedCalendarDates() {
         guard !didRestorePersistedDates else { return }
         didRestorePersistedDates = true
 
-        if let restoredSelectedDate = dateMemory.selectedDate(calendar: calendar) {
-            selectedDate = restoredSelectedDate
-        }
+        let restored = CadenceCalendarDateMemory.restoredPosition(
+            fallback: selectedDate,
+            storedSelection: dateMemory.storedSelectionKey,
+            storedAnchor: dateMemory.storedAnchorKey,
+            deepLinkDateKey: standingCalendarDeepLinkDateKey,
+            calendar: calendar
+        )
+        selectedDate = restored.selectedDate
+        anchorDate = restored.anchorDate
+    }
 
-        if let restoredAnchorDate = dateMemory.anchorDate(calendar: calendar) {
-            anchorDate = restoredAnchorDate
-        } else {
-            anchorDate = selectedDate
-        }
-
-        // After the restore, deliberately: a link that names a day outranks where the calendar was
-        // left, which is the whole of T-369.
-        applyCalendarDeepLinkDate()
+    /// The day the standing route names, if it is a calendar link. `nil` for every other route —
+    /// including no route at all. A bare `cadence://calendar` means today, and
+    /// `calendarDateKey(todayKey:)` is where that is decided for both shells.
+    private var standingCalendarDeepLinkDateKey: String? {
+        deepLinkManager.route?.deepLink.calendarDateKey()
     }
 
     /// Moves to the day a `cadence://calendar` link names, if the standing route is one.
@@ -490,11 +496,11 @@ struct iOSCalendarView: View {
     /// bare one means today; `CadenceDeepLink.calendarDateKey(todayKey:)` is that single answer,
     /// shared with the macOS root so the two shells cannot read one URL two ways.
     private func applyCalendarDeepLinkDate() {
-        guard let deepLink = deepLinkManager.route?.deepLink,
-              let dateKey = deepLink.calendarDateKey(),
-              let date = DateFormatters.date(from: dateKey, in: calendar) else { return }
+        guard let day = CadenceCalendarDateMemory.date(
+            fromStored: standingCalendarDeepLinkDateKey,
+            calendar: calendar
+        ) else { return }
 
-        let day = calendar.startOfDay(for: date)
         selectedDate = day
         anchorDate = day
     }

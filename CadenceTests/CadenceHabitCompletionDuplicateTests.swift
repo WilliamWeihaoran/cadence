@@ -373,4 +373,121 @@ struct CadenceHabitCompletionDuplicateTests {
         #expect(CadenceSourceScan.matchCount(needle, in: "FetchDescriptor<HabitCompletion>()") == 0)
         #expect(CadenceSourceScan.matchCount(needle, in: "deleteAll(HabitCompletion.self, in: c)") == 0)
     }
+
+    // MARK: - T-391, the split day, and why nothing repairs it
+
+    /// **The premise, checked mechanically rather than remembered.** `max` only reads a day lower
+    /// than `sum` would when that day's quantity was *split* across rows — 2 + 1 for a target of
+    /// 3. Nothing in the app can produce that split, and this is the assertion that says so: the
+    /// initializer has no `count` parameter, so every construction gets the model default of `1`,
+    /// and the only assignment to a row's `count` anywhere under `Cadence/` is the one in
+    /// `CadenceHabitCompletionStore.collapseDuplicates`, which writes `collapsedCount` — a `max`
+    /// over rows that are all already `1`, so it cannot raise anything either.
+    ///
+    /// If this test goes red, T-391 has stopped being hypothetical and the decision below has to
+    /// be revisited.
+    @Test func nothingUnderCadenceEverWritesAHabitDayQuantityAboveOne() throws {
+        let model = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Models/HabitCompletion.swift")
+        )
+        #expect(model.count > 400, "HabitCompletion.swift read as \(model.count) characters")
+        #expect(CadenceSourceScan.matchCount(#"init\("#, in: model) == 1, "a second initializer appeared")
+        #expect(CadenceSourceScan.matchCount(#"init\(date: String, habit: Habit\? = nil\)"#, in: model) == 1)
+        #expect(CadenceSourceScan.matchCount(#"count: Int"#, in: model) == 1, "count is a stored property and not also a parameter")
+        #expect(HabitCompletion(date: "2026-03-09").count == 1, "the model default is no longer 1")
+
+        let root = CadenceSourceScan.repositoryRoot().appendingPathComponent("Cadence")
+        let enumerator = try #require(
+            FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil),
+            "could not enumerate \(root.path)"
+        )
+
+        var scanned: Set<String> = []
+        var assigning: Set<String> = []
+        for case let url as URL in enumerator where url.pathExtension == "swift" {
+            let raw = try String(contentsOf: url, encoding: .utf8)
+            scanned.insert(url.lastPathComponent)
+            let stripped = CadenceSourceScan.strippingComments(raw)
+            if CadenceSourceScan.matchCount(Self.countAssignmentNeedle, in: stripped) > 0 {
+                assigning.insert(url.lastPathComponent)
+            }
+        }
+
+        // Non-vacuity: the same shape the constructor scan above uses.
+        #expect(scanned.count > 150, "the scan read only \(scanned.count) Swift files under Cadence/")
+        for reached in ["Habit.swift", "HabitCompletion.swift", "CadenceHabitCompletionStore.swift", "DataIntegrityRepairService.swift"] {
+            #expect(scanned.contains(reached), "the scan never reached \(reached)")
+        }
+
+        #expect(assigning == ["CadenceHabitCompletionStore.swift"])
+        let store = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/CadenceHabitCompletionStore.swift")
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"survivor\.count = collapsed"#, in: store) == 1,
+            "the one write to a row's count is no longer the collapsed (max) value"
+        )
+    }
+
+    /// The needle matches an assignment to some row's `count` and misses the two `self.count =`
+    /// lines in view initializers it sits beside — otherwise the set comparison above is a claim
+    /// about a pattern that never matches anything.
+    @Test func theCountAssignmentNeedleMatchesRowWritesAndNotInitializerSelfAssignment() {
+        let needle = Self.countAssignmentNeedle
+        #expect(CadenceSourceScan.matchCount(needle, in: "survivor.count = collapsed") == 1)
+        #expect(CadenceSourceScan.matchCount(needle, in: "        completion.count = 3") == 1)
+        #expect(CadenceSourceScan.matchCount(needle, in: "self.count = count") == 0)
+        #expect(CadenceSourceScan.matchCount(needle, in: "if rows.count == 1 { return }") == 0)
+        #expect(CadenceSourceScan.matchCount(needle, in: "let n = habit.completions?.count ?? 0") == 0)
+        #expect(CadenceSourceScan.matchCount(needle, in: "count: habits.count,") == 0)
+    }
+
+    /// **The limit, stated as behaviour: a split habit-day reads low, and startup repair makes
+    /// that permanent.**
+    ///
+    /// The decision on [[T-391]] is to document rather than repair, and this is the documentation
+    /// that executes. There is no rule that can fold `[2, 1]` back to 3 without also folding
+    /// `[1, 1]` to 2, which is exactly the [[T-359]] bug — `HabitCompletion` carries no provenance
+    /// that separates "one day's quantity written across two rows" from "one check-in synced
+    /// twice", so a repair here would have to guess. The place that *does* know is an importer,
+    /// which sees a whole archive's rows for a day at once.
+    ///
+    /// So this is the warning for whoever builds [[T-274]]'s archive import: **fold split rows
+    /// into one row's `count` before inserting them.** `performStartupMaintenance` runs repair the
+    /// instant the container opens, and the collapse deletes the smaller rows — so an import that
+    /// writes a split day loses the remainder before anyone can look at it, and the day reads low
+    /// forever rather than only until the next repair.
+    @Test func aSplitHabitDayReadsLowAndTheStartupRepairMakesThatPermanent() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let habit = Habit(title: "Drink water 3x")
+        habit.targetCount = 3
+        context.insert(habit)
+        // What an importer or a legacy store could hold and the app cannot write: one day's
+        // quantity of 3, split across two rows.
+        Self.syncedRow(habit, on: "2026-03-09", count: 2, context: context)
+        Self.syncedRow(habit, on: "2026-03-09", count: 1, context: context)
+        try context.save()
+
+        let calendar = Self.gregorian()
+        #expect(habit.completionCountsByDate()["2026-03-09"] == 2, "max, not the 3 sum would report")
+        // The visible consequence: a target of 3 that the rows add up to is not credited.
+        #expect(
+            habit.currentStreak(asOf: Self.day(2026, 3, 9, calendar: calendar), calendar: calendar) == 0,
+            "a split day was credited against targetCount"
+        )
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
+        #expect(report.duplicateHabitCompletionsRemoved == 1)
+
+        // The remainder is gone from the store, not merely ignored by the read.
+        let stored = try ModelContext(container).fetch(FetchDescriptor<HabitCompletion>())
+        #expect(stored.count == 1)
+        #expect(stored.first?.count == 2, "repair kept the larger row and dropped the remainder")
+        #expect(habit.completionCountsByDate()["2026-03-09"] == 2)
+    }
+
+    /// The needle for "something assigns a row's `count`", shared by the scan and its self-test.
+    private static let countAssignmentNeedle = #"(?<![A-Za-z0-9_.])(?!self\b)[A-Za-z_][A-Za-z0-9_]*\.count\s*=(?!=)"#
 }

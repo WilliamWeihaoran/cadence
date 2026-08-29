@@ -14,7 +14,7 @@ import Testing
 ///   already visible to the reconciler. Injecting a recorder is the only way to see this: the live
 ///   reconcile bottoms out in `NotificationManager`, which early-returns in a test host, so a real
 ///   call and no call look identical from outside.
-/// - **Shape.** A source scan that the six status surfaces actually call the wrapper. All six live
+/// - **Shape.** A source scan that the seven status surfaces actually call the wrapper. All seven live
 ///   under `Cadence/iOS/`, which is behind `#if os(iOS)` while this target builds for macOS, so for
 ///   these files a scan is the only tool there is. It proves nobody re-typed a raw
 ///   `CadenceTaskMutationSupport.toggleCompletion`, not that the wrapper does anything.
@@ -134,14 +134,22 @@ struct CadenceTaskStatusEditingSurfaceTests {
 
     // MARK: - Shape: the surfaces route through it
 
-    /// Every routed status surface. All six are iOS, which is why this is a scan.
+    /// Every routed status surface. All seven are iOS, which is why this is a scan.
+    ///
+    /// `iOSTaskDetailSheet.swift` joined the list with **T-407**. It was the residue T-343 recorded
+    /// rather than fixed — the file was owned by another change in flight — and it is the one
+    /// surface whose status changes belong to a sheet's lifecycle rather than to a row action,
+    /// which is why neither wrapper reached it. Its `normalizeCompletionState` is deliberately
+    /// *not* routed and deliberately not matched by `unwrappedStatusMutation`; see
+    /// `IOSTaskDetailSheetResidueTests` for why routing it would reconcile on every appearance.
     private static let routedStatusSurfaces = [
         "Cadence/iOS/iOSTaskRowActionViews.swift",
         "Cadence/iOS/iOSTaskViews.swift",
         "Cadence/iOS/iOSBoardCards.swift",
         "Cadence/iOS/iOSMarkdownEditingSurface.swift",
         "Cadence/iOS/iOSCalendarBundleDetailSheet.swift",
-        "Cadence/iOS/iOSFocusView.swift"
+        "Cadence/iOS/iOSFocusView.swift",
+        "Cadence/iOS/iOSTaskDetailSheet.swift"
     ]
 
     /// The pure mutation layer's status entry points, called directly. Correct for a service or an
@@ -160,7 +168,7 @@ struct CadenceTaskStatusEditingSurfaceTests {
     /// A raw assignment to `task.status`. `[^=]` keeps `if task.status == .inProgress` out of it.
     private static let rawStatusWrite = #"\btask\.status\s*=[^=]"#
 
-    @Test func theSixStatusSurfacesRouteEveryTransitionThroughTheSharedWrapper() throws {
+    @Test func theSevenStatusSurfacesRouteEveryTransitionThroughTheSharedWrapper() throws {
         var filesRead = 0
 
         for path in Self.routedStatusSurfaces {
@@ -193,7 +201,7 @@ struct CadenceTaskStatusEditingSurfaceTests {
             filesRead += 1
         }
 
-        #expect(filesRead == 6, "the scan read \(filesRead) of 6 routed status surfaces")
+        #expect(filesRead == 7, "the scan read \(filesRead) of 7 routed status surfaces")
     }
 
     /// Every entry point on the wrapper ends in the one private reconcile. Stated as a relation

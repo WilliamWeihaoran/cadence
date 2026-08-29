@@ -46,26 +46,30 @@ nonisolated enum CadenceCalendarEventSearchSupport {
         event.startDate ?? event.occurrenceDate ?? Date.distantFuture
     }
 
-    /// The identity leg of `precedes`, and the reason it is spelled here rather than borrowed.
+    /// The identity leg of `precedes` — **`CadenceEventNoteSupport.rawIdentifier`**, not a second
+    /// spelling of it.
     ///
-    /// `CadenceEventNoteSupport` owns what an event identifier *is*, and `event(from:identifier:)`
-    /// below pays main-actor isolation to use it. `precedes` cannot: it is handed to `sorted(by:)`
-    /// from `iOSCalendarManager.fetchEvents` as a plain function value, so it has to stay
-    /// `nonisolated`. What it reads is the same pair of EventKit fields
-    /// `CadenceEventNoteSupport.rawIdentifier` reads, in the same order, and it deliberately does
-    /// **not** reach for that function's `#occurrence=` suffix: occurrences of one series differ in
-    /// `startInstant`, which is compared first, so the suffix could never break a tie this leg is
-    /// asked to break.
+    /// It was two re-typed lines until T-403. `CadenceEventNoteSupport` owns what an event
+    /// identifier *is*, and the reason this could not simply call it was isolation, not intent:
+    /// `precedes` is handed to `sorted(by:)` from `iOSCalendarManager.fetchEvents` as a plain
+    /// function value, so it must stay `nonisolated`, and `rawIdentifier` was main-actor isolated
+    /// under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. The fix is on the owner: `rawIdentifier`
+    /// is `nonisolated` now, so the borrow is free and the copy is gone. That file's header argues
+    /// against a *third* copy of an identity predicate; this was the fourth.
     ///
-    /// Measured rather than assumed: EventKit gives even a never-saved `EKEvent` a distinct
-    /// `calendarItemIdentifier`, so this leg separates two such events too. The comparator is still
-    /// exposed field-by-field below, so the leg can be pinned against chosen identities rather than
-    /// against whatever EventKit happens to mint.
+    /// The one behavioural difference the borrow brings is the case a re-spelling could not reach:
+    /// an event with neither an `eventIdentifier` nor a `calendarItemIdentifier` used to sort under
+    /// the empty string, and now gets `rawIdentifier`'s deterministic fallback. EventKit mints a
+    /// `calendarItemIdentifier` for even a never-saved `EKEvent`, so this is a hole being closed
+    /// rather than a case being changed.
+    ///
+    /// Still **not** `identifier(for:)`: that appends an `#occurrence=` suffix, and occurrences of
+    /// one series differ in `startInstant`, which is compared first — so the suffix could never
+    /// break a tie this leg is asked to break. The comparator stays exposed field-by-field below,
+    /// so the leg can be pinned against chosen identities rather than against whatever EventKit
+    /// happens to mint.
     static func identity(of event: EKEvent) -> String {
-        if let eventIdentifier = event.eventIdentifier, !eventIdentifier.isEmpty {
-            return eventIdentifier
-        }
-        return event.calendarItemIdentifier
+        CadenceEventNoteSupport.rawIdentifier(for: event)
     }
 
     /// **T-373.** A **total** order: start, then title, then identity.

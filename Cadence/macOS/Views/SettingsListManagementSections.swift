@@ -17,6 +17,13 @@ struct SettingsCalendarSection: View {
             SettingsCalendarWorkHoursSection()
 
             if calendarManager.isAuthorized {
+                // Above the calendar list, not inside it: these lists have no live calendar to
+                // hang off, which is exactly why they were invisible before T-400.
+                if !missingLinks.isEmpty {
+                    SettingsSectionLabel(text: "Broken Calendar Links")
+                    missingLinksCard
+                }
+
                 SettingsSectionLabel(text: "Apple Calendars")
                 calendarsCard
             } else {
@@ -40,6 +47,41 @@ struct SettingsCalendarSection: View {
 
     private var hiddenCalendarIDs: Set<String> {
         CalendarVisibilityPreferences.hiddenCalendarIDs(from: hiddenCalendarIDsRaw)
+    }
+
+    /// **T-400.** Lists whose `linkedCalendarID` names a calendar EventKit no longer has.
+    ///
+    /// `calendars` is `allCalendars`, so a calendar merely switched off with the Active toggle is
+    /// not reported dead — hidden is not missing.
+    private var missingLinks: [CadenceMissingCalendarLink] {
+        CadenceCalendarLinkHealth.missingLinks(
+            areas: areas,
+            projects: projects,
+            liveCalendarIDs: Set(calendars.map(\.calendarIdentifier)),
+            isCalendarAccessAuthorized: calendarManager.isAuthorized
+        )
+    }
+
+    private var missingLinksCard: some View {
+        SettingsCard {
+            VStack(spacing: 0) {
+                let links = missingLinks
+                ForEach(Array(links.enumerated()), id: \.element.id) { index, link in
+                    SettingsMissingCalendarLinkRow(
+                        link: link,
+                        calendars: calendars,
+                        onRelink: { relink(link, to: $0) },
+                        onUnlink: { relink(link, to: "") }
+                    )
+
+                    if index < links.count - 1 {
+                        Divider()
+                            .background(Theme.borderSubtle)
+                            .padding(.leading, 44)
+                    }
+                }
+            }
+        }
     }
 
     private var calendarsCard: some View {
@@ -139,12 +181,100 @@ struct SettingsCalendarSection: View {
         saveCalendarLinks()
     }
 
+    /// Writes the user's re-pick, or `""` for Remove Link.
+    ///
+    /// Deliberately the same assignment the connect menu makes. There is no repair path here that
+    /// the user did not choose: nothing infers a calendar from the old identifier or from the
+    /// list's name.
+    private func relink(_ link: CadenceMissingCalendarLink, to calendarID: String) {
+        switch link.kind {
+        case .area:
+            areas.first { $0.id == link.id }?.linkedCalendarID = calendarID
+        case .project:
+            projects.first { $0.id == link.id }?.linkedCalendarID = calendarID
+        }
+        saveCalendarLinks()
+    }
+
     private func saveCalendarLinks() {
         do {
             try modelContext.save()
         } catch {
             print("SettingsCalendarSection: failed to save calendar links: \(error)")
         }
+    }
+}
+
+/// One dead list-to-calendar link, with the two ways out of it.
+private struct SettingsMissingCalendarLinkRow: View {
+    let link: CadenceMissingCalendarLink
+    let calendars: [EKCalendar]
+    let onRelink: (String) -> Void
+    let onUnlink: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: link.icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color(hex: link.colorHex))
+                .frame(width: 20)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(link.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+
+                    Text(CadenceCalendarLinkHealth.missingLinkTitle)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.amber)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Theme.surfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+
+                Text(CadenceCalendarLinkHealth.missingLinkSummary(for: link))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            repickMenu
+                .padding(.top, 1)
+        }
+        .padding(.vertical, 10)
+    }
+
+    /// The re-pick. It lists the calendars that exist and nothing else — no suggested match, no
+    /// pre-selection, no ordering that puts a same-named calendar first.
+    private var repickMenu: some View {
+        Menu {
+            if calendars.isEmpty {
+                Text("No Apple calendars available")
+            } else {
+                ForEach(calendars, id: \.calendarIdentifier) { calendar in
+                    Button(calendar.title) {
+                        onRelink(calendar.calendarIdentifier)
+                    }
+                }
+            }
+
+            Divider()
+
+            Button("Remove Link", role: .destructive, action: onUnlink)
+        } label: {
+            Text("Fix")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.text)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Link this list to a calendar that exists, or remove the link")
     }
 }
 
