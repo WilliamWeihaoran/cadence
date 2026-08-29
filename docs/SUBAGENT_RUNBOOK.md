@@ -37,6 +37,16 @@ per-agent boilerplate.
   duplicating the whole file, 34 ids over). It is also why your new-ticket ids are **suggestions**:
   the coordinator allocates the real ones, because ids you pick in isolation collide with ids
   another agent picked in parallel.
+- **Do not wait on a backgrounded `xcodebuild` by polling and idling.** The harness reaps an agent that
+  has no live children it can see, and a detached `nohup` runner is not one — three agents were reaped
+  mid-batch this way, each costing a resume. Batch every run you need (failing-first, green, all
+  mutations, restore) into **one** script that acquires the lock once and exits when the last one lands,
+  and wait on that single harness-managed task. Related: `acquire` waits with `sleep`, which this harness
+  blocks, so a *contended* acquire burns its whole timeout and returns 1 — do the waiting yourself in
+  that same background task.
+- **The coordinator stages finished trees into the user's repo while the batch is still running.** So the
+  repo going dirty mid-run is expected and is not another agent editing it in place. Diff against **your
+  own base commit**, not against the repo's current state, and do not "restore" files you did not touch.
 - **Never** launch or build the Cadence app, kill a process named `Cadence`, use a simulator, touch
   the real app-group store, or set `CADENCE_MCP_ENABLE_WRITES`.
 - **Delete your DerivedData when you finish** (~1.7 GB) and release the lock.
