@@ -9,6 +9,9 @@ struct iOSTagsSettingsSection: View {
     @State private var newName = ""
     @State private var newDescription = ""
     @State private var newColorHex = TagSupport.colorOptions[2]
+    /// T-497: the creator's one failure, said under the fields that still hold the draft — macOS's
+    /// `SettingsTagsSection.createTag` is the same function and carries the same notice.
+    @State private var createFailureNotice: String?
 
     private var activeTags: [Tag] {
         TagSupport.sorted(tags.filter { !$0.isArchived })
@@ -81,6 +84,10 @@ struct iOSTagsSettingsSection: View {
                         )
                     }
 
+                    if let createFailureNotice {
+                        CadenceInlineFailureNotice(text: createFailureNotice)
+                    }
+
                     HStack(spacing: 10) {
                         Spacer(minLength: 0)
 
@@ -126,6 +133,10 @@ struct iOSTagsSettingsSection: View {
         }
     }
 
+    /// T-497, the existence half of the `try? save()` rule. The macOS twin is
+    /// `SettingsTagsSection.createTag` and the two are fixed as one: clearing the draft is the only
+    /// report that the tag was made, so it runs on the committed path alone, and a refused insert
+    /// is un-inserted by `commitInsert` rather than left pending for another screen's save.
     private func createTag() {
         guard canCreate else { return }
         let displayName = TagSupport.displayName(for: newName)
@@ -137,7 +148,13 @@ struct iOSTagsSettingsSection: View {
             order: (tags.map(\.order).max() ?? -1) + 1
         )
         modelContext.insert(tag)
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: tag, in: modelContext)
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        createFailureNotice = nil
         clearDraft()
     }
 

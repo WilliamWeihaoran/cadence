@@ -9,6 +9,8 @@ struct SettingsTagsSection: View {
     @State private var newTagName = ""
     @State private var newTagDescription = ""
     @State private var newTagColorHex = TagSupport.colorOptions[2]
+    /// T-497: the creator's one failure, said under the fields that still hold the draft.
+    @State private var createFailureNotice: String?
 
     private var activeTags: [Tag] {
         TagSupport.uniqueBySlug(tags.filter { !$0.isArchived })
@@ -89,6 +91,10 @@ struct SettingsTagsSection: View {
                             action: {}
                         )
                     }
+
+                    if let createFailureNotice {
+                        CadenceInlineFailureNotice(text: createFailureNotice)
+                    }
                 }
             }
 
@@ -149,6 +155,12 @@ struct SettingsTagsSection: View {
             .cadenceSettingsWell()
     }
 
+    /// T-497, the existence half of the `try? save()` rule — and the same function on iOS, in
+    /// `iOSSettingsTagsSection.createTag`. It inserted a tag, swallowed the save and cleared the
+    /// fields, so the draft was gone whether or not the store took the tag. Clearing the fields is
+    /// this screen's only report of success, so it now happens on the committed path alone; a
+    /// refused insert is un-inserted by `commitInsert` and the draft stays where the user can
+    /// press Create Tag again.
     private func createTag() {
         guard canCreateTag else { return }
         let name = TagSupport.displayName(for: newTagName)
@@ -160,7 +172,13 @@ struct SettingsTagsSection: View {
             order: (tags.map(\.order).max() ?? -1) + 1
         )
         modelContext.insert(tag)
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: tag, in: modelContext)
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        createFailureNotice = nil
         clearCreateFields()
     }
 
@@ -199,6 +217,8 @@ private struct SettingsTagRow: View {
     @State private var draftName = ""
     @State private var draftDescription = ""
     @State private var draftColorHex = ""
+    /// T-497: the row's own failure line, which is why the row can stay open over a refused save.
+    @State private var saveFailureNotice: String?
 
     private var taskCount: Int {
         tag.tasks?.count ?? 0
@@ -328,6 +348,11 @@ private struct SettingsTagRow: View {
                     .padding(.leading, 24)
             }
 
+            if let saveFailureNotice {
+                CadenceInlineFailureNotice(text: saveFailureNotice)
+                    .padding(.leading, 24)
+            }
+
             HStack {
                 Spacer()
                 SettingsActionButton(tone: .tinted(Theme.dim), action: cancelEditing) {
@@ -364,6 +389,7 @@ private struct SettingsTagRow: View {
     }
 
     private func startEditing() {
+        saveFailureNotice = nil
         draftName = tag.name
         draftDescription = tag.desc
         draftColorHex = tag.colorHex
@@ -373,20 +399,48 @@ private struct SettingsTagRow: View {
     }
 
     private func cancelEditing() {
+        saveFailureNotice = nil
         withAnimation(.easeInOut(duration: 0.15)) {
             isEditing = false
         }
     }
 
+    /// T-497, the report half of the `try? save()` rule. An inline row editor collapsing back to
+    /// its display row is a dismissal — it just has no sheet to say so with — and this one
+    /// collapsed over a name the store may not hold, leaving the catalog reading one thing and the
+    /// store another with nothing on screen disagreeing.
+    ///
+    /// The undo restores the five fields written above rather than rolling the context back: this
+    /// is the app's single `ModelContext`, and a rollback here would discard whatever unrelated
+    /// work another screen has pending. See `CadencePendingChangePersistence.commitEdit`.
     private func saveEdits() {
         guard canSave else { return }
+        let previousName = tag.name
+        let previousSlug = tag.slug
+        let previousDesc = tag.desc
+        let previousColorHex = tag.colorHex
+        let previousUpdatedAt = tag.updatedAt
+
         let name = TagSupport.displayName(for: draftName)
         tag.name = name
         tag.slug = TagSupport.slug(for: name)
         tag.desc = draftDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         tag.colorHex = TagSupport.normalizedColorHex(draftColorHex, fallback: tag.colorHex)
         tag.updatedAt = Date()
-        try? modelContext.save()
+
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext) {
+                tag.name = previousName
+                tag.slug = previousSlug
+                tag.desc = previousDesc
+                tag.colorHex = previousColorHex
+                tag.updatedAt = previousUpdatedAt
+            }
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        saveFailureNotice = nil
         withAnimation(.easeInOut(duration: 0.15)) {
             isEditing = false
         }

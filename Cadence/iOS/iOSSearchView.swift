@@ -112,14 +112,19 @@ struct iOSSearchView: View {
             return rankedTaskResults
         }
 
+        // Due date, then the user's manual order, then identity (T-498). `order` is per-list, so
+        // two tasks due the same day in two different lists tie on both legs routinely — and a tie
+        // at the eighth row decides *membership*, not only arrangement.
         let today = DateFormatters.todayKey()
-        let suggested = searchableTasks
-            .filter {
+        let suggested = CadenceSearchSuggestionWindow.take(
+            searchableTasks.filter {
                 !$0.isCancelled &&
                 !$0.isDone &&
                 ($0.scheduledDate == today || $0.dueDate <= today && !$0.dueDate.isEmpty)
-            }
-            .sorted { lhs, rhs in
+            },
+            limit: 8,
+            identity: { CadenceSearchIdentity.task($0.id) },
+            orderedBefore: { lhs, rhs in
                 if lhs.dueDate != rhs.dueDate {
                     if lhs.dueDate.isEmpty { return false }
                     if rhs.dueDate.isEmpty { return true }
@@ -127,7 +132,7 @@ struct iOSSearchView: View {
                 }
                 return lhs.order < rhs.order
             }
-            .prefix(8)
+        )
 
         return suggested.map { taskResult($0, score: 0) }
     }
@@ -146,6 +151,7 @@ struct iOSSearchView: View {
                 icon: area.icon,
                 color: Color(hex: area.colorHex),
                 route: .area(area.id),
+                suggestionOrder: area.order,
                 fields: CadenceListSearchSupport.searchFields(for: area)
             )
         } + projects.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }.map { project in
@@ -157,6 +163,7 @@ struct iOSSearchView: View {
                 icon: project.icon,
                 color: Color(hex: project.colorHex),
                 route: .project(project.id),
+                suggestionOrder: project.order,
                 fields: CadenceListSearchSupport.searchFields(for: project)
             )
         }
@@ -170,7 +177,15 @@ struct iOSSearchView: View {
             })
         }
 
-        return Array(listItems.prefix(8)).map { $0.result(score: 0) }
+        // Areas then projects, each in the user's arrangement, ties broken by identity (T-498).
+        // `Area.order` and `Project.order` both default to 0, so the `@Query` sort this used to
+        // prefix straight off is partial for every list made outside the reorder UI.
+        return CadenceSearchSuggestionWindow.take(
+            listItems,
+            limit: 8,
+            identity: \.identity,
+            orderedBefore: { $0.suggestionRank < $1.suggestionRank }
+        ).map { $0.result(score: 0) }
     }
 
     private var noteResults: [iOSSearchResult] {
@@ -196,45 +211,66 @@ struct iOSSearchView: View {
             })
         }
 
-        return searchableNotes.prefix(8).map { noteResult($0, score: 0, taskTitles: taskTitles) }
+        // Most recently edited first, ties broken by identity (T-498). Two notes share an
+        // `updatedAt` whenever one write touched both — a migration pass, an import, a bulk tag
+        // edit — which is exactly when eight suggestions get cut out of a partial order.
+        return CadenceSearchSuggestionWindow.take(
+            searchableNotes,
+            limit: 8,
+            identity: { CadenceSearchIdentity.note($0.id) },
+            orderedBefore: { $0.updatedAt > $1.updatedAt }
+        ).map { noteResult($0, score: 0, taskTitles: taskTitles) }
     }
 
     private var progressResults: [iOSSearchResult] {
         let candidates = goals.filter { $0.status != .done }.map { goal in
             let summary = GoalContributionResolver.summary(for: goal)
-            return iOSSearchResult(
-                // The destination is the Goals *page* — this row navigates there rather than to
-                // the goal — so it cannot supply the identity, and neither can `.feature(.habits)`
-                // below. That is the whole reason `iOSSearchResult.id` is stored rather than
-                // derived from `destination`: this one section merges two tables behind one
-                // destination apiece, so deriving would give every goal `page-goals`.
-                id: CadenceSearchIdentity.goal(goal.id),
-                destination: .feature(.goals),
-                title: goal.title.isEmpty ? "Untitled Goal" : goal.title,
-                subtitle: goal.parentGoal?.title ?? goal.context?.name ?? goal.kind.label,
-                detail: summary.percentLabel,
-                icon: goal.icon,
-                color: Color(hex: goal.colorHex),
-                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [goal.title, goal.desc, goal.parentGoal?.title ?? "", goal.context?.name ?? ""]) ?? 0
+            return iOSSearchProgressCandidate(
+                result: iOSSearchResult(
+                    // The destination is the Goals *page* — this row navigates there rather than
+                    // to the goal — so it cannot supply the identity, and neither can
+                    // `.feature(.habits)` below. That is the whole reason `iOSSearchResult.id` is
+                    // stored rather than derived from `destination`: this one section merges two
+                    // tables behind one destination apiece, so deriving would give every goal
+                    // `page-goals`.
+                    id: CadenceSearchIdentity.goal(goal.id),
+                    destination: .feature(.goals),
+                    title: goal.title.isEmpty ? "Untitled Goal" : goal.title,
+                    subtitle: goal.parentGoal?.title ?? goal.context?.name ?? goal.kind.label,
+                    detail: summary.percentLabel,
+                    icon: goal.icon,
+                    color: Color(hex: goal.colorHex),
+                    score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [goal.title, goal.desc, goal.parentGoal?.title ?? "", goal.context?.name ?? ""]) ?? 0
+                ),
+                suggestionRank: CadenceSearchSuggestionRank(table: 0, order: goal.order)
             )
         } + habits.map { habit in
-            iOSSearchResult(
-                id: CadenceSearchIdentity.habit(habit.id),
-                destination: .feature(.habits),
-                title: habit.title.isEmpty ? "Untitled Habit" : habit.title,
-                subtitle: habit.goal?.title ?? habit.context?.name ?? habit.frequencySummary,
-                detail: habit.isDueToday ? "Due today" : habit.frequencySummary,
-                icon: "flame.fill",
-                color: Color(hex: habit.colorHex),
-                score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [habit.title, habit.goal?.title ?? "", habit.context?.name ?? "", habit.frequencySummary]) ?? 0
+            iOSSearchProgressCandidate(
+                result: iOSSearchResult(
+                    id: CadenceSearchIdentity.habit(habit.id),
+                    destination: .feature(.habits),
+                    title: habit.title.isEmpty ? "Untitled Habit" : habit.title,
+                    subtitle: habit.goal?.title ?? habit.context?.name ?? habit.frequencySummary,
+                    detail: habit.isDueToday ? "Due today" : habit.frequencySummary,
+                    icon: "flame.fill",
+                    color: Color(hex: habit.colorHex),
+                    score: CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: [habit.title, habit.goal?.title ?? "", habit.context?.name ?? "", habit.frequencySummary]) ?? 0
+                ),
+                suggestionRank: CadenceSearchSuggestionRank(table: 1, order: habit.order)
             )
         }
 
         if isSearching {
-            return iOSSearchIndexSupport.rankedResults(candidates.filter { $0.score > 0 })
+            return iOSSearchIndexSupport.rankedResults(candidates.map(\.result).filter { $0.score > 0 })
         }
 
-        return Array(candidates.prefix(8))
+        // Goals then habits, each in the user's arrangement, ties broken by identity (T-498).
+        return CadenceSearchSuggestionWindow.take(
+            candidates,
+            limit: 8,
+            identity: { $0.result.id },
+            orderedBefore: { $0.suggestionRank < $1.suggestionRank }
+        ).map(\.result)
     }
 
     private var eventResults: [iOSSearchResult] {

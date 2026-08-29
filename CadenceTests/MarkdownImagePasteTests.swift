@@ -245,5 +245,192 @@ struct MarkdownImagePasteTests {
         #expect(textView.insertMarkdownImages(from: screenshotPasteboard("noassets")) == false)
         #expect(textView.string == "Hello")
     }
+
+    // MARK: - T-280: the iOS half of the same fix, taken as far off-device as it goes
+
+    private func strippedSource(_ path: String) throws -> String {
+        CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+    }
+
+    /// `count` distinct assets, minted the way a paste mints them.
+    private func pastedAssets(_ count: Int, in context: ModelContext) -> [MarkdownImageAsset] {
+        let assets = (0..<count).compactMap { _ in
+            MarkdownImageAssetService.createAsset(from: makeImage(), in: context)
+        }
+        #expect(Set(assets.map(\.id)).count == count, "minted \(assets.count) distinct assets, wanted \(count)")
+        return assets
+    }
+
+    /// The text `iOSMarkdownEditor.Coordinator.insertPastedImages` leaves behind, evaluated here.
+    ///
+    /// Every call it makes is shared code this target compiles: the markdown for each asset joined
+    /// by a blank line, `MarkdownInsertionSupport.paddedBlockInsertion`, and
+    /// `MarkdownFormatCommandSupport.apply(.insertMarkdown(_:))` — whose `insertSnippet` is a plain
+    /// replacement of the selection that adds no padding of its own, which is why two different
+    /// text systems can land on one string.
+    private func mobilePasteResult(_ assets: [MarkdownImageAsset], into text: String) -> String {
+        let selection = NSRange(location: (text as NSString).length, length: 0)
+        let markdown = assets
+            .map { MarkdownImageAssetService.markdown(for: $0) }
+            .joined(separator: "\n\n")
+        let insertion = MarkdownInsertionSupport.paddedBlockInsertion(markdown, in: text, selection: selection)
+        return MarkdownFormatCommandSupport.apply(.insertMarkdown(insertion), text: text, selection: selection).text
+    }
+
+    /// **The iOS paste writes the same text the measured macOS paste writes.**
+    ///
+    /// `Cadence/iOS/` is inside `#if os(iOS)` and invisible to this macOS-built target, so the iOS
+    /// path cannot be *run* here — but it is not a second implementation either. It composes the
+    /// same shared calls `CadenceTextView.insertMarkdownImages(_:)` does, so its outcome is
+    /// arithmetic over code this target compiles, and this pins it against the one platform that
+    /// was measured against a real clipboard.
+    ///
+    /// `theMobilePasteChainIsWiredEndToEnd` below is what holds the iOS source to that composition.
+    /// Without it, this compares macOS to a formula nobody is keeping true.
+    @Test func theMobilePasteWritesTheSameTextTheMeasuredMacOSPasteDoes() throws {
+        let context = try makeContext()
+        for count in [1, 2, 3] {
+            let assets = pastedAssets(count, in: context)
+            let desktop = makeTextView("Hello")
+            desktop.insertMarkdownImages(assets)
+
+            #expect(mobilePasteResult(assets, into: "Hello") == desktop.string)
+        }
+    }
+
+    /// The multi-image paste, which is iOS's case rather than a shared one: `UIPasteboard.images`
+    /// is plural where `NSPasteboard` hands over a single bitmap, so on the phone a two-image
+    /// clipboard arrives as one call.
+    ///
+    /// Both references have to survive the join as *standalone* lines. A separator that merged them
+    /// into one paragraph would render as a line of literal markdown, which from the outside looks
+    /// exactly like the paste having done nothing.
+    @Test func aTwoImageMobilePasteInsertsTwoStandaloneReferencesTheRendererResolves() throws {
+        let context = try makeContext()
+        let assets = pastedAssets(2, in: context)
+
+        let text = mobilePasteResult(assets, into: "Hello")
+
+        #expect(text.hasPrefix("Hello"), "the paste replaced the note instead of inserting into it")
+        #expect(MarkdownImageAssetService.referencedIDs(in: text) == Set(assets.map(\.id)))
+
+        let lines = text.components(separatedBy: "\n").filter { $0.contains("cadence-image://") }
+        #expect(lines.count == 2)
+        for (line, asset) in zip(lines, assets) {
+            #expect(
+                MarkdownBlockSupport.standaloneImageReference(in: line)?.id == asset.id,
+                "\(line) is not a standalone image reference; it renders as literal markdown"
+            )
+            #expect(
+                MarkdownImageAssetService.renderAsset(for: asset.id, in: assets)?.pixelSize
+                    == CGSize(width: 40, height: 20)
+            )
+        }
+    }
+
+    /// **The four links between the edit menu and the composition above.**
+    ///
+    /// T-280's risk was never the composition — it is that the command never arrives. That is
+    /// precisely how the macOS half of this bug survived: a correct `paste(_:)` AppKit refused to
+    /// dispatch. So the chain is read link by link: the gate offers Paste for an image-only
+    /// pasteboard, the override dispatches to a handler, `makeUIView` assigns that handler
+    /// unconditionally, and the coordinator it lands in composes what the tests above evaluated.
+    ///
+    /// What is left device-only after this is one value — whether UIKit consults the override when
+    /// it builds the menu — and that is on `docs/device-checks.md`.
+    @Test func theMobilePasteChainIsWiredEndToEnd() throws {
+        let view = try strippedSource("Cadence/iOS/iOSMarkdownTextView.swift")
+        let editor = try strippedSource("Cadence/iOS/iOSMarkdownEditor.swift")
+        let desktop = try strippedSource("Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift")
+
+        // Link 1 — the gate. `hasImages` and not `.images`: reading the pasteboard's contents to
+        // answer a menu-enablement question raises the system's "pasted from" banner.
+        let gate = try #require(
+            CadenceSourceScan.functionBody(named: "canPerformAction", in: view),
+            "canPerformAction() could not be read; the assertions below would measure nothing"
+        )
+        #expect(gate.contains("#selector(UIResponderStandardEditActions.paste(_:))"))
+        #expect(gate.contains("isEditable"), "a read-only note offers Paste")
+        #expect(gate.contains("UIPasteboard.general.hasImages"))
+        #expect(
+            CadenceSourceScan.matchCount("UIPasteboard\\.general\\.images", in: gate) == 0,
+            "the enablement check reads the pasteboard's contents and raises the paste banner"
+        )
+        #expect(
+            gate.contains("return super.canPerformAction(action, withSender: sender)"),
+            "the override answers for every action rather than deferring the ones it does not widen"
+        )
+
+        // Link 2 — the dispatch, and its fall-through. A refused image paste stays an ordinary text
+        // paste rather than becoming a swallowed one, exactly as macOS's does.
+        let paste = try #require(
+            CadenceSourceScan.functionBody(named: "paste", in: view),
+            "paste(_:) could not be read; the assertions below would measure nothing"
+        )
+        #expect(paste.contains("imagePasteHandler?(images) == true"))
+        #expect(paste.contains("super.paste(sender)"), "a host that mints no asset swallows the paste")
+
+        // Link 3 — the handler. Written in exactly one place, and that place is `makeUIView`, so it
+        // cannot become conditional on a host: a `nil` there would leave the widened gate offering
+        // an enabled Paste that does nothing, which is worse than the bug it fixes.
+        let made = try #require(
+            CadenceSourceScan.functionBody(named: "makeUIView", in: editor),
+            "makeUIView() could not be read; the assertions below would measure nothing"
+        )
+        #expect(made.contains("textView.imagePasteHandler = "))
+        #expect(made.contains("coordinator?.insertPastedImages(images, in: textView)"))
+        #expect(
+            CadenceSourceScan.matchCount("imagePasteHandler", in: editor) == 1,
+            "the handler is written somewhere other than makeUIView; check that path assigns it too"
+        )
+
+        // Link 4 — the composition both platforms' paste reaches. Two needles rather than one line
+        // because macOS writes it on one line and iOS across three.
+        let mobileInsert = try #require(
+            CadenceSourceScan.functionBody(named: "insertPastedImages", in: editor),
+            "insertPastedImages() could not be read; the assertions below would measure nothing"
+        )
+        let desktopInsert = try #require(
+            CadenceSourceScan.functionBody(named: "insertMarkdownImages", in: desktop),
+            "insertMarkdownImages() could not be read; the assertions below would measure nothing"
+        )
+        for body in [mobileInsert, desktopInsert] {
+            #expect(body.contains("MarkdownImageAssetService.markdown(for: $0)"))
+            #expect(body.contains(".joined(separator: \"\\n\\n\")"))
+            #expect(body.contains("MarkdownInsertionSupport.paddedBlockInsertion("))
+        }
+        #expect(
+            mobileInsert.contains("apply(.insertMarkdown(insertion), to: textView)"),
+            "the mobile insertion no longer goes through MarkdownFormatCommandSupport"
+        )
+    }
+
+    /// Two of the three files above are never compiled by this target, and all three are read as
+    /// text. A reader that returned an empty string would satisfy every `matchCount(…) == 0` here,
+    /// so the reads are pinned rather than assumed.
+    @Test func theMobilePasteScanReachesTheFilesItClaimsTo() throws {
+        for path in [
+            "Cadence/iOS/iOSMarkdownTextView.swift",
+            "Cadence/iOS/iOSMarkdownEditor.swift",
+            "Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift"
+        ] {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            #expect(raw.count > 1_000, "\(path) read as \(raw.count) characters; that is not the file")
+
+            let stripped = CadenceSourceScan.strippingComments(raw)
+            #expect(stripped != raw, "\(path) lost no comment text; the stripper did not run")
+            #expect(stripped.count == raw.count)
+        }
+
+        // `strippingComments` and not `codeOnly`, pinned because the choice is load-bearing: link 4
+        // above asserts on a *string literal* in the source, and `codeOnly` blanks literals along
+        // with comments, so that assertion would be permanently and silently green there.
+        let literal = "let separator = \"\\n\\n\""
+        #expect(CadenceSourceScan.strippingComments(literal).contains("\"\\n\\n\""))
+        #expect(
+            CadenceSourceScan.codeOnly(literal).contains("\"\\n\\n\"") == false,
+            "codeOnly no longer blanks string literals; the two readers have collapsed into one"
+        )
+    }
 }
 #endif

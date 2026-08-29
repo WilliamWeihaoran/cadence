@@ -75,6 +75,29 @@ nonisolated enum TaskPriority: String, Codable, CaseIterable, Hashable {
 /// single-line value, so a trailing newline is never content, and the weaker spelling can only
 /// ever let one through.
 nonisolated enum CadenceTitleNormalization {
+    /// The three placeholder labels a *shared* surface shows for an untitled thing, declared here
+    /// rather than in `Shared/` for the mechanical reason at the top of this section — and, this
+    /// time, because the reason had already bitten (T-499).
+    ///
+    /// `TaskTitleSupport.defaultDisplayTitle` and `CadenceContextPickerSupport.untitledName` are
+    /// in `Shared/`, which `CadenceMCPServer` does not compile, so `CadenceReadService` and
+    /// `NoteReferenceParser` — both of which that target *does* compile — could not read them and
+    /// spelled `"Untitled Task"`, `"Untitled Context"` and `"Untitled"` inline at five call sites
+    /// instead. That is not a style problem: the MCP `search()`/`list_*` responses and the app's
+    /// own rows are the same user-visible copy, and two declarations of it can be renamed apart
+    /// without anything going red.
+    ///
+    /// The `Shared/` names stay; they are what the app's own call sites already read, and they
+    /// forward here. This is the shape `TaskTitleSupport.normalized` →
+    /// `TaskTitleShortcutParsing.normalized` already has.
+    static let defaultTaskTitle = "Untitled Task"
+
+    /// The short spelling, for a row with no width for the noun — a `[[note:…|…]]` reference
+    /// label, a board card.
+    static let defaultCompactTitle = "Untitled"
+
+    static let defaultContextName = "Untitled Context"
+
     /// The stored form of a user-entered title: trimmed at both ends, newlines included.
     static func normalized(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -92,6 +115,33 @@ nonisolated enum CadenceTitleNormalization {
     static func display(_ raw: String, fallback: String) -> String {
         let trimmed = normalized(raw)
         return trimmed.isEmpty ? fallback : trimmed
+    }
+
+    /// `display`, for a title about to be written **inside** a `[[task:UUID|Title]]` or
+    /// `[[note:UUID|Title]]` reference.
+    ///
+    /// `]`, `|` and a newline each end the reference early, so a task renamed to "Read [ch. 3]"
+    /// would otherwise turn the embed into a broken half-reference the parser no longer
+    /// recognises — the card would vanish and leave raw brackets behind. Substituted rather than
+    /// stripped, so the title still reads as what the user typed.
+    ///
+    /// **T-500.** This was two byte-identical private copies — `MarkdownTaskEmbedParser`'s and
+    /// `NoteReferenceParser`'s — and it is the one of that ticket's four helpers that is *not* a
+    /// re-implementation of `display`: it is `display` composed with the escape above, so
+    /// collapsing it into `display` would silently drop the escaping. It lives here rather than
+    /// beside either parser because `CadenceMCPServer` compiles `NoteReferenceSupport.swift` and
+    /// **not** `MarkdownTaskEmbedSupport.swift`, so the two copies had no shared file to meet in
+    /// outside `Models/`.
+    static func referenceDisplay(_ title: String, fallback: String) -> String {
+        display(
+            title
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " ")
+                .replacingOccurrences(of: "|", with: "-")
+                .replacingOccurrences(of: "[", with: "(")
+                .replacingOccurrences(of: "]", with: ")"),
+            fallback: fallback
+        )
     }
 }
 

@@ -46,6 +46,9 @@ struct iOSListNotesView: View {
     @State private var isEditorFocused = false
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
+    /// T-497: the one thing `addNote` can fail at, said above the column the row would have
+    /// appeared in — macOS's `ListNotesView` puts it in the same place.
+    @State private var createFailureNotice: String?
 
     /// The size class only. Every *layout* question goes through `layout`.
     private var isCompactWidth: Bool {
@@ -183,6 +186,21 @@ struct iOSListNotesView: View {
 
     @ViewBuilder
     private var notesColumn: some View {
+        VStack(spacing: 0) {
+            if let createFailureNotice {
+                CadenceInlineFailureNotice(text: createFailureNotice)
+                    .padding(.horizontal, metrics.columnHorizontalPadding)
+                    .padding(.vertical, metrics.columnVerticalPadding)
+            }
+
+            notesColumnContent
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.surface)
+    }
+
+    @ViewBuilder
+    private var notesColumnContent: some View {
         Group {
             if groups.isEmpty {
                 iOSEmptyPanel(
@@ -202,7 +220,6 @@ struct iOSListNotesView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.surface)
     }
 
     private func noteRow(_ note: Note) -> some View {
@@ -272,14 +289,23 @@ struct iOSListNotesView: View {
 
     // MARK: - Creating and filing
 
+    /// T-497: selecting the note — and, at compact width, *presenting* it — is the report that it
+    /// exists, so both only run on a committed insert.
     private func addNote(folderPath: String = CadenceNoteFolderPath.root) {
-        let note = CadenceListNoteFiling.createNote(
-            in: modelContext,
-            area: area,
-            project: project,
-            folderPath: folderPath,
-            order: listNotes.count
-        )
+        let note: Note
+        do {
+            note = try CadenceListNoteFiling.createNote(
+                in: modelContext,
+                area: area,
+                project: project,
+                folderPath: folderPath,
+                order: listNotes.count
+            )
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        createFailureNotice = nil
         selectedNoteID = note.id
         guard layout == .oneColumn else { return }
         presentedNote = note

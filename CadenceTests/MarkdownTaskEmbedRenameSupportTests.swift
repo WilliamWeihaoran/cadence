@@ -22,20 +22,20 @@ struct MarkdownTaskEmbedRenameSupportTests {
 
     @Test func keepsAnOrdinaryTitleAsTyped() {
         #expect(
-            MarkdownTaskEmbedParser.sanitizedReferenceTitle("Buy milk", fallback: Self.fallback) == "Buy milk"
+            CadenceTitleNormalization.referenceDisplay("Buy milk", fallback: Self.fallback) == "Buy milk"
         )
     }
 
     @Test func trimsSurroundingWhitespace() {
         #expect(
-            MarkdownTaskEmbedParser.sanitizedReferenceTitle("   Buy milk \t", fallback: Self.fallback) == "Buy milk"
+            CadenceTitleNormalization.referenceDisplay("   Buy milk \t", fallback: Self.fallback) == "Buy milk"
         )
     }
 
     /// `]`, `|` and a newline each terminate the reference early, which would turn the embed into
     /// text the parser no longer recognises — the card disappears and raw brackets are left behind.
     @Test func substitutesCharactersThatWouldBreakTheReference() {
-        let sanitized = MarkdownTaskEmbedParser.sanitizedReferenceTitle(
+        let sanitized = CadenceTitleNormalization.referenceDisplay(
             "Read [ch. 3]\nthen | rest",
             fallback: Self.fallback
         )
@@ -44,7 +44,56 @@ struct MarkdownTaskEmbedRenameSupportTests {
     }
 
     @Test func fallsBackWhenTheTitleIsEmpty() {
-        #expect(MarkdownTaskEmbedParser.sanitizedReferenceTitle("   ", fallback: Self.fallback) == Self.fallback)
+        #expect(CadenceTitleNormalization.referenceDisplay("   ", fallback: Self.fallback) == Self.fallback)
+    }
+
+    /// **T-500, and the finding rather than the tidy-up.**
+    ///
+    /// Four helpers were filed as four re-implementations of
+    /// `CadenceTitleNormalization.display(_:fallback:)`. Two of them —
+    /// `CadenceMCPServiceSupport.resolvedTitle` and the private `CadenceReadService.resolvedTitle`
+    /// that forwarded to it — were exactly that. The other two, `MarkdownTaskEmbedParser`'s and
+    /// `NoteReferenceParser`'s `sanitizedReferenceTitle`, were **byte-identical to each other and
+    /// different from `display`**: `display` composed with a five-character escape. Collapsing all
+    /// four into `display` would have silently dropped that escape, which is what keeps
+    /// `[[task:UUID|Read [ch. 3]]]` from ending the reference two characters early.
+    ///
+    /// So the assertion is an *inequality*, not an equality.
+    @Test func theReferenceEscapeIsMoreThanTheSharedTrimItWasFiledAsACopyOf() {
+        let hostile = "Read [ch. 3]\nthen | rest"
+
+        #expect(CadenceTitleNormalization.referenceDisplay(hostile, fallback: Self.fallback) == "Read (ch. 3) then - rest")
+        #expect(CadenceTitleNormalization.display(hostile, fallback: Self.fallback) == hostile)
+        #expect(
+            CadenceTitleNormalization.display(hostile, fallback: Self.fallback)
+                != CadenceTitleNormalization.referenceDisplay(hostile, fallback: Self.fallback)
+        )
+    }
+
+    /// **T-500.** Both writers of a `[[…|…]]` reference escape through the one rule.
+    ///
+    /// Stated over the two *call sites* rather than over the shared function, for the T-161
+    /// reason: a test that still passes when a call site is reverted to its own copy has pinned
+    /// the helper and not the consolidation. `NoteReferenceParser.taskReferenceMarkdown` is the
+    /// half `CadenceMCPServer` compiles, and it is the half that had no test at all.
+    @Test @MainActor func bothReferenceWritersEscapeAHostileTitleIdentically() {
+        let task = AppTask(title: "Read [ch. 3]\nthen | rest")
+        let expected = "[[task:\(task.id.uuidString)|Read (ch. 3) then - rest]]"
+
+        #expect(NoteReferenceParser.taskReferenceMarkdown(for: task) == expected)
+        #expect(
+            MarkdownTaskEmbedParser.replacingReferenceTitles(
+                of: task.id,
+                in: "[[task:\(task.id.uuidString)|Buy milk]]",
+                with: task.title,
+                fallback: Self.fallback
+            ) == expected
+        )
+
+        // Non-vacuity: the escaped form is a reference both parsers still recognise, which is the
+        // whole reason the escape exists.
+        #expect(MarkdownTaskEmbedParser.standaloneTaskReference(in: expected) != nil)
+        #expect(NoteReferenceParser.taskReferences(in: expected).count == 1)
     }
 
     // MARK: - Finding the title runs

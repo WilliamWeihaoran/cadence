@@ -89,11 +89,6 @@ nonisolated enum CadenceMCPServiceSupport {
         return String(cleaned.prefix(maxLength)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func resolvedTitle(_ value: String, fallback: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? fallback : trimmed
-    }
-
     /// The container's own spelling of a requested section, or `sectionNotFound`.
     ///
     /// **An absent section name and a wrong one are two different requests, and the first-section

@@ -587,4 +587,125 @@ struct CadenceSearchCandidateSupportTests {
         #expect(view.contains("CadenceSearchIdentity.habit(habit.id)"))
         #expect(view.contains("CadenceSearchIdentity.event(CadenceEventNoteSupport.identifier(for: event))"))
     }
+
+    // MARK: - T-498: the idle window
+
+    /// **Behavioural, and about *membership* rather than arrangement.**
+    ///
+    /// T-479 fixed the scored branches. The idle ones cut `prefix(8)` out of a partial order, and
+    /// on a partial order the window is not merely arranged unpredictably — rows tied with the last
+    /// one that fits are *dropped* by fetch order, so which suggestions the screen offers changes
+    /// between two identical reads.
+    ///
+    /// The fixture is the smallest shape that shows it: three rows, a limit of two, and a tie
+    /// spanning the cut. Handed over in both directions on purpose — with the identity leg removed
+    /// the answer is whichever of the tied rows the input happened to list first, so a single
+    /// direction would pass either way.
+    @Test func anIdleSuggestionWindowKeepsTheSameRowsWhicheverOrderTheStoreHandsThemOver() {
+        struct Row: Equatable { let key: Int; let identity: String }
+        let rows = [
+            Row(key: 0, identity: "task-b"),
+            Row(key: 1, identity: "task-c"),
+            Row(key: 1, identity: "task-a")
+        ]
+
+        func window(_ input: [Row]) -> [String] {
+            CadenceSearchSuggestionWindow.take(
+                input,
+                limit: 2,
+                identity: \.identity,
+                orderedBefore: { $0.key < $1.key }
+            ).map(\.identity)
+        }
+
+        #expect(window(rows) == ["task-b", "task-a"])
+        #expect(window(rows.reversed()) == ["task-b", "task-a"])
+
+        // The claim the ticket is actually about: a bare `prefix` off the same partial order
+        // answers with a *different set* depending on which way the rows arrived. Both of these
+        // are what the four idle sections used to return.
+        #expect(Array(rows.prefix(2)).map(\.identity) == ["task-b", "task-c"])
+        #expect(Array(rows.reversed().prefix(2)).map(\.identity) == ["task-a", "task-c"])
+    }
+
+    /// The caller's comparator still decides, and the identity leg is strictly last: a row that
+    /// sorts first by identity and last by key stays last.
+    @Test func theIdleWindowBreaksTiesWithoutOverridingTheOrderTheSectionAskedFor() {
+        struct Row { let key: Int; let identity: String }
+        let rows = [Row(key: 9, identity: "aaa"), Row(key: 1, identity: "zzz")]
+
+        let ordered = CadenceSearchSuggestionWindow.take(
+            rows,
+            limit: 2,
+            identity: \.identity,
+            orderedBefore: { $0.key < $1.key }
+        )
+        #expect(ordered.map(\.identity) == ["zzz", "aaa"])
+
+        // A shorter limit is a window, not a sort: it must cut *after* ordering.
+        #expect(
+            CadenceSearchSuggestionWindow.take(rows, limit: 1, identity: \.identity, orderedBefore: { $0.key < $1.key })
+                .map(\.identity) == ["zzz"]
+        )
+    }
+
+    /// The two-table rank the Lists and Goals-and-Habits sections merge on: table first, then the
+    /// user's manual order. Both legs, because a rank that compared only `order` would interleave
+    /// projects into the areas and a rank that compared only `table` would be no order at all.
+    @Test func theTwoTableSuggestionRankPutsTheTableBeforeTheManualOrder() {
+        let firstArea = CadenceSearchSuggestionRank(table: 0, order: 0)
+        let lastArea = CadenceSearchSuggestionRank(table: 0, order: 99)
+        let firstProject = CadenceSearchSuggestionRank(table: 1, order: 0)
+
+        #expect(firstArea < lastArea)
+        #expect(lastArea < firstProject)
+        #expect((firstProject < firstArea) == false)
+        // Equal ranks are equal, which is what leaves the identity leg something to decide.
+        #expect((firstArea < CadenceSearchSuggestionRank(table: 0, order: 0)) == false)
+        #expect(firstArea == CadenceSearchSuggestionRank(table: 0, order: 0))
+    }
+
+    /// **Source-shape.** `Cadence/iOS/` is behind `#if os(iOS)`, so this bundle cannot call the
+    /// four idle branches; the claim is that each of them cuts its window through the shared
+    /// helper and that the two sections the ticket exempts are untouched.
+    @Test func everyIdleIOSSearchSectionCutsItsWindowFromATotalOrder() throws {
+        let raw = try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath)
+        let stripped = CadenceSourceScan.strippingComments(raw)
+
+        // Non-vacuity: the file was read, the stripper ran, and the sections are still here.
+        #expect(raw.contains("struct iOSSearchView"))
+        #expect(stripped != raw)
+        #expect(stripped.count == raw.count)
+        for section in ["taskResults", "listResults", "noteResults", "progressResults", "eventResults", "pageResults"] {
+            #expect(stripped.contains("private var \(section)"), "\(section) is no longer a section on this screen")
+        }
+
+        // Four idle branches, four windows.
+        #expect(CadenceSourceScan.matchCount("CadenceSearchSuggestionWindow\\.take\\(", in: stripped) == 4)
+
+        // And the bare cuts they replaced are gone. `pageResults` takes its five off a static
+        // catalog and `eventResults` its eight off `CadenceCalendarEventSearchSupport.precedes`,
+        // which has been total since T-373 — so exactly one `.prefix(8)` is correct here, and it
+        // is the events one.
+        #expect(CadenceSourceScan.matchCount("\\.prefix\\(8\\)", in: stripped) == 1)
+        #expect(stripped.contains("calendarSearchEvents.prefix(8)"))
+        #expect(stripped.contains("candidates.prefix(5)"))
+        // Self-check for the regex above: it matches the shape it is looking for.
+        #expect(CadenceSourceScan.matchCount("\\.prefix\\(8\\)", in: "  return notes.prefix(8)\n") == 1)
+
+        // Each window's identity leg is the shared spelling, not a tenth inline one.
+        for identity in [
+            "identity: { CadenceSearchIdentity.task($0.id) }",
+            "identity: { CadenceSearchIdentity.note($0.id) }",
+            "identity: \\.identity",
+            "identity: { $0.result.id }"
+        ] {
+            #expect(stripped.contains(identity), "an idle window ties on something else: \(identity)")
+        }
+
+        // The score funnel is still the *searching* branches' and only theirs: six sections, six
+        // calls. An idle list is chronological or manual on purpose, and routing it through the
+        // funnel would re-sort all four to alphabetical, since with no query every row scores 0.
+        #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedResults\\(", in: stripped) == 6)
+    }
 }

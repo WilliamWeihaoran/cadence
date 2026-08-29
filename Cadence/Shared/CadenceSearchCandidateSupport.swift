@@ -282,3 +282,70 @@ nonisolated enum CadenceSearchIdentity {
 
     static func command(_ rawValue: String) -> String { "command-\(rawValue)" }
 }
+
+// MARK: - Idle suggestion windows
+
+/// Where a row sits in an idle suggestion list that **merges two tables** — iOS Search's Lists
+/// section (areas then projects) and its Goals and Habits section (goals then habits).
+///
+/// `table` is the concatenation order the section was already built in; `order` is the user's own
+/// manual ordering inside that table. Deliberately **partial**: `Area.order`, `Project.order`,
+/// `Goal.order` and `Habit.order` all default to `0`, so anything created outside a reorder UI
+/// ties, and two rows with the same rank are genuinely equally-ranked. Completing it is
+/// `CadenceSearchSuggestionWindow`'s job, once, rather than each section's.
+nonisolated struct CadenceSearchSuggestionRank: Comparable {
+    let table: Int
+    let order: Int
+
+    init(table: Int, order: Int) {
+        self.table = table
+        self.order = order
+    }
+
+    static func < (lhs: Self, rhs: Self) -> Bool {
+        lhs.table == rhs.table ? lhs.order < rhs.order : lhs.table < rhs.table
+    }
+}
+
+/// The **idle** half of search: the handful of rows a section suggests before anything is typed.
+///
+/// **T-498, and the bug is sharper than an ordering bug.** T-479 gave the *scored* branches a total
+/// order through `CadenceSearchMatcher.rank`'s identity leg. The idle branches took `prefix(8)`
+/// straight off a partial order in four of six sections — tasks sorted on due date then a per-list
+/// `order` (so cross-list ties are routine), and lists, notes and progress prefixed straight off
+/// `@Query` order. On a partial order the *window itself* is nondeterministic, not just its
+/// arrangement: rows tied with the last one that fits are dropped by fetch order, so **which eight**
+/// suggestions the screen offers changes between two identical reads.
+///
+/// Deliberately **not** routed through `iOSSearchIndexSupport.rankedResults`. An idle list is
+/// chronological or manual on purpose — "what is due next", "your lists in the order you arranged
+/// them" — and the score funnel would re-sort every one of them to alphabetical, since with no query
+/// every row scores 0 and the title leg decides. What the two halves share is the *identity* leg,
+/// spelled by `CadenceSearchIdentity` in both.
+nonisolated enum CadenceSearchSuggestionWindow {
+    /// The first `limit` rows of `items` under `orderedBefore` **completed by `identity`**.
+    ///
+    /// `orderedBefore` stays the caller's, because each section orders on something different and
+    /// none of it belongs here. Its ties are detected rather than declared: under a strict weak
+    /// ordering `lhs` and `rhs` are equivalent exactly when neither precedes the other, so this
+    /// needs no `Key` type, no `Comparable` conformance, and no second closure that a call site
+    /// could forget to keep in step with the first.
+    static func take<Item>(
+        _ items: [Item],
+        limit: Int,
+        identity: (Item) -> String,
+        orderedBefore: (Item, Item) -> Bool
+    ) -> [Item] {
+        items
+            // `identity` once per item rather than once per comparison, for the reason
+            // `CadenceSearchMatcher.rank` decorates: these are interpolated UUID strings.
+            .map { (item: $0, identity: identity($0)) }
+            .sorted { lhs, rhs in
+                if orderedBefore(lhs.item, rhs.item) { return true }
+                if orderedBefore(rhs.item, lhs.item) { return false }
+                return lhs.identity < rhs.identity
+            }
+            .prefix(limit)
+            .map(\.item)
+    }
+}

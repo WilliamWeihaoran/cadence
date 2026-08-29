@@ -29,6 +29,8 @@ struct ListNotesView: View {
     @State private var isListNotesCollapsed = false
     @State private var isEventNotesCollapsed = false
     @State private var isTaskNotesCollapsed = false
+    /// T-497: the one thing `addNote` can fail at, said where the new row would have appeared.
+    @State private var createFailureNotice: String?
     @Query(sort: \Note.order) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Tag.order) private var allTags: [Tag]
@@ -212,6 +214,12 @@ struct ListNotesView: View {
             ListNotesSearchField(searchText: $searchText, hasTagFilters: !filterableTags.isEmpty)
             TagFilterBar(tags: filterableTags, selectedSlugs: $selectedTagFilterSlugs)
 
+            if let createFailureNotice {
+                CadenceInlineFailureNotice(text: createFailureNotice)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+            }
+
             Divider().background(Theme.borderSubtle)
 
             notesScroll
@@ -299,14 +307,23 @@ struct ListNotesView: View {
         ListNotesEditorPlaceholder()
     }
 
+    /// T-497: the selection below *is* the report that the note exists, so it only runs on a
+    /// committed insert. A refused one leaves the column exactly as it was and says so.
     private func addNote(folderPath: String = CadenceNoteFolderPath.root) {
-        let note = CadenceListNoteFiling.createNote(
-            in: modelContext,
-            area: area,
-            project: project,
-            folderPath: folderPath,
-            order: listNotes.count
-        )
+        let note: Note
+        do {
+            note = try CadenceListNoteFiling.createNote(
+                in: modelContext,
+                area: area,
+                project: project,
+                folderPath: folderPath,
+                order: listNotes.count
+            )
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        createFailureNotice = nil
         select(.list(note.id), clearsRequestedEventNote: false)
     }
 

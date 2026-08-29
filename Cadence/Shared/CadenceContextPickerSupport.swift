@@ -35,8 +35,11 @@ import SwiftUI
 /// of them is what `CadenceContextPickerConsolidationTests` is red on.
 enum CadenceContextPickerSupport {
 
-    /// What a context with no name is called. One spelling, because it was previously two.
-    static let untitledName = "Untitled Context"
+    /// What a context with no name is called. One spelling, because it was previously two — and
+    /// declared in `CadenceTitleNormalization`, in `Models/`, because it was previously *three*:
+    /// `CadenceReadService` answers MCP with the same label and could not read this one from
+    /// `Shared/` (T-499).
+    static let untitledName = CadenceTitleNormalization.defaultContextName
 
     /// One row of a context picker, in either presentation. `id == nil` is the "none" row, whose
     /// title is the caller's — "No context", "None", "Use Parent Context" and "Use Goal Context" all

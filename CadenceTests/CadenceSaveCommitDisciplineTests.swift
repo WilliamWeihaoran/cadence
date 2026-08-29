@@ -239,13 +239,11 @@ enum CadenceSaveCommitRule {
         // UI-test scaffolding. It runs only under `CadenceUITestSupport`'s launch argument, and
         // there is no user to tell.
         "Cadence/Services/CadenceUITestSupport.swift": ["seedDataIfNeeded"],
-        // Real instances of the rule, kept as a delta rather than fixed in the same pass that
-        // wrote the rule. Each needs a failure surface designed for its screen, which is work the
-        // rule does not decide. See the T-322 follow-up ticket.
-        "Cadence/Shared/CadenceNoteFolderSupport.swift": ["createNote"],
-        "Cadence/macOS/Views/SettingsTagsSection.swift": ["createTag"],
-        "Cadence/iOS/iOSSettingsTagsSection.swift": ["createTag"],
-        "Cadence/iOS/iOSCalendarEventEditSheet.swift": ["openEventNote"],
+        // T-497 emptied the rest of this list: `CadenceNoteFolderSupport.createNote`,
+        // `SettingsTagsSection.createTag`, `iOSSettingsTagsSection.createTag` and
+        // `iOSCalendarEventEditSheet.openEventNote` all commit through `commitInsert` now, and are
+        // pinned by `CadenceTagAndNoteCommitSurfaceTests`. What is left is the two genuine
+        // non-defects above.
     ]
 
     /// The two live instances of half 2, both of them "flush an in-place edit, then close".
@@ -254,14 +252,16 @@ enum CadenceSaveCommitRule {
     /// settle: what an *undo* means for an editor whose field is bound live to the model and is
     /// still on screen. Restoring it under the user's cursor is not obviously better than leaving
     /// it. See the T-322 follow-up ticket.
+    ///
+    /// The three inline tag editors that used to sit below them — `SettingsTagsSection.saveEdits`
+    /// and `TagPickerPopoverViews.saveEdits`/`archive` — are fixed (T-497) and pinned by
+    /// `CadenceTagAndNoteCommitSurfaceTests`. They were the easier half of the same sentence: an
+    /// inline row editor collapsing is a dismissal, but its fields are drafts held in `@State`
+    /// rather than bindings onto the model, so restoring the model does not fight the caret.
     static let reportExemptions: [String: [String]] = [
         // "Flush an in-place edit, then close." Both are live instances of half 2.
         "Cadence/iOS/iOSSearchSupportViews.swift": ["body"],
         "Cadence/iOS/iOSTaskDetailSheet.swift": ["finishEditingAndDismiss"],
-        // The inline tag editors: the row collapses back to display mode over a name the store may
-        // not hold. Same class, and the reason `isEditing = false` is in the vocabulary at all.
-        "Cadence/macOS/Views/SettingsTagsSection.swift": ["saveEdits"],
-        "Cadence/macOS/Views/TagPickerPopoverViews.swift": ["saveEdits", "archive"],
     ]
 
     static func existenceInstrument() throws -> CadenceScanInstrument {

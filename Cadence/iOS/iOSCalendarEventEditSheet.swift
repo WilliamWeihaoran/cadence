@@ -268,6 +268,11 @@ struct iOSCalendarEventEditSheet: View {
         HStack(alignment: .top, spacing: iOSEditorSheetMetrics.groupSpacing) {
             VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
                 readOnlyNotice
+                // T-497: the two-column layout carried `readOnlyNotice` and not
+                // `actionErrorNotice`, so every failure this sheet reports — a refused EventKit
+                // save, a refused delete, and now a refused event-note commit — was invisible at
+                // regular width. Both notices sit in both layouts now.
+                actionErrorNotice
                 titleCard
                 scheduleCard
                 calendarCard
@@ -504,7 +509,19 @@ struct iOSCalendarEventEditSheet: View {
         .disabled(!isEditable)
     }
 
+    /// T-497, the existence half of the `try? save()` rule — and the sharpest instance of it,
+    /// because **opening the editor is itself the report of success**. This inserted a note,
+    /// swallowed the save and presented the note anyway, so on a refused commit the user landed in
+    /// an editor over a row the store never took.
+    ///
+    /// `noteForEditing` either returns an existing note or creates one, and only the second case
+    /// has anything to un-insert — which is why the insert closure records what it inserted rather
+    /// than assuming. When it inserted nothing the commit is a plain flush of the metadata
+    /// reconciliation `noteForEditing` performs on the existing note; that is an in-place field
+    /// edit the next open recomputes, so it needs no undo, but its failure still stops the sheet
+    /// from opening on it.
     private func openEventNote() {
+        var inserted: [any PersistentModel] = []
         guard let note = CadenceEventNoteSupport.noteForEditing(
             calendarEventID: eventNoteID,
             eventTitle: title,
@@ -514,10 +531,19 @@ struct iOSCalendarEventEditSheet: View {
             eventEndMin: eventMetadata.endMin,
             nativeNotes: event.notes,
             notes: allNotes,
-            insert: { modelContext.insert($0) }
+            insert: {
+                modelContext.insert($0)
+                inserted.append($0)
+            }
         ) else { return }
 
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: inserted, in: modelContext)
+        } catch {
+            actionError = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        actionError = nil
         presentedEventNote = note
     }
 

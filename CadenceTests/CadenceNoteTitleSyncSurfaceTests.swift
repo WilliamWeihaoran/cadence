@@ -158,7 +158,7 @@ struct CadenceNoteTitleSyncSurfaceTests {
         let context = try makeContext()
         let project = Project(name: "Launch")
         context.insert(project)
-        let note = CadenceListNoteFiling.createNote(
+        let note = try CadenceListNoteFiling.createNote(
             in: context,
             area: nil,
             project: project,

@@ -811,7 +811,7 @@ final class CadenceReadService {
                 return CadenceSearchHit(
                     entityType: "task",
                     entityId: task.id.uuidString,
-                    title: resolvedTitle(task.title, fallback: "Untitled Task"),
+                    title: CadenceTitleNormalization.display(task.title, fallback: CadenceTitleNormalization.defaultTaskTitle),
                     subtitle: [task.project?.name ?? task.area?.name ?? "Inbox", task.statusRaw].joined(separator: " - "),
                     excerpt: excerpt(task.notes.isEmpty ? task.title : task.notes),
                     score: score
@@ -840,7 +840,7 @@ final class CadenceReadService {
                 return CadenceSearchHit(
                     entityType: "context",
                     entityId: context.id.uuidString,
-                    title: resolvedTitle(context.name, fallback: "Untitled Context"),
+                    title: CadenceTitleNormalization.display(context.name, fallback: CadenceTitleNormalization.defaultContextName),
                     subtitle: context.isArchived ? "Archived context" : "Context",
                     excerpt: "\(areaCount) areas - \(projectCount) projects - \(goalCount) goals - \(habitCount) habits",
                     score: score
@@ -898,7 +898,7 @@ final class CadenceReadService {
                 return CadenceSearchHit(
                     entityType: "goal",
                     entityId: goal.id.uuidString,
-                    title: resolvedTitle(goal.title, fallback: "Untitled Goal"),
+                    title: CadenceTitleNormalization.display(goal.title, fallback: "Untitled Goal"),
                     subtitle: [goal.context?.name ?? "No context", goal.statusRaw].joined(separator: " - "),
                     excerpt: excerpt(goal.desc),
                     score: score
@@ -912,7 +912,7 @@ final class CadenceReadService {
                 return CadenceSearchHit(
                     entityType: "habit",
                     entityId: habit.id.uuidString,
-                    title: resolvedTitle(habit.title, fallback: "Untitled Habit"),
+                    title: CadenceTitleNormalization.display(habit.title, fallback: "Untitled Habit"),
                     // The unit comes from the frequency, not from the sentence: `currentStreak`
                     // counts *weeks* for `.timesPerWeek`, so a hardcoded "day" turned eight kept
                     // weeks into "8 day streak" — a number an MCP client would then repeat back to
@@ -931,7 +931,7 @@ final class CadenceReadService {
                 return CadenceSearchHit(
                     entityType: "saved_link",
                     entityId: link.id.uuidString,
-                    title: resolvedTitle(link.title, fallback: link.url),
+                    title: CadenceTitleNormalization.display(link.title, fallback: link.url),
                     subtitle: linkContainer(link)?.name ?? "No container",
                     excerpt: excerpt(link.url),
                     score: score
@@ -946,7 +946,7 @@ final class CadenceReadService {
                 return CadenceSearchHit(
                     entityType: "tag",
                     entityId: tag.id.uuidString,
-                    title: resolvedTitle(tag.name, fallback: tag.slug),
+                    title: CadenceTitleNormalization.display(tag.name, fallback: tag.slug),
                     subtitle: tag.slug,
                     excerpt: excerpt(tag.desc),
                     score: score
@@ -1066,7 +1066,7 @@ final class CadenceReadService {
     private func taskSummary(_ task: AppTask) -> CadenceTaskSummary {
         CadenceTaskSummary(
             id: task.id.uuidString,
-            title: resolvedTitle(task.title, fallback: "Untitled Task"),
+            title: CadenceTitleNormalization.display(task.title, fallback: CadenceTitleNormalization.defaultTaskTitle),
             status: task.statusRaw,
             priority: task.priorityRaw,
             dueDate: task.dueDate,
@@ -1123,7 +1123,7 @@ final class CadenceReadService {
     private func goalSummary(_ goal: Goal) -> CadenceGoalSummary {
         CadenceGoalSummary(
             id: goal.id.uuidString,
-            title: resolvedTitle(goal.title, fallback: "Untitled Goal"),
+            title: CadenceTitleNormalization.display(goal.title, fallback: "Untitled Goal"),
             description: goal.desc,
             startDate: goal.startDate,
             endDate: goal.endDate,
@@ -1152,7 +1152,7 @@ final class CadenceReadService {
         let today = DateFormatters.todayKey()
         return CadenceHabitSummary(
             id: habit.id.uuidString,
-            title: resolvedTitle(habit.title, fallback: "Untitled Habit"),
+            title: CadenceTitleNormalization.display(habit.title, fallback: "Untitled Habit"),
             icon: habit.icon,
             colorHex: habit.colorHex,
             frequencyType: habit.frequencyTypeRaw,
@@ -1172,7 +1172,7 @@ final class CadenceReadService {
     private func linkSummary(_ link: SavedLink) -> CadenceSavedLinkSummary {
         CadenceSavedLinkSummary(
             id: link.id.uuidString,
-            title: resolvedTitle(link.title, fallback: link.url),
+            title: CadenceTitleNormalization.display(link.title, fallback: link.url),
             url: link.url,
             container: linkContainer(link),
             order: link.order,
@@ -1248,7 +1248,7 @@ final class CadenceReadService {
     private func contextRef(_ context: Context) -> CadenceContextRef {
         CadenceContextRef(
             id: context.id.uuidString,
-            name: resolvedTitle(context.name, fallback: "Untitled Context"),
+            name: CadenceTitleNormalization.display(context.name, fallback: CadenceTitleNormalization.defaultContextName),
             colorHex: context.colorHex,
             icon: context.icon,
             order: context.order,
@@ -1554,9 +1554,5 @@ final class CadenceReadService {
 
     private func excerpt(_ text: String, maxLength: Int = 240) -> String {
         CadenceMCPServiceSupport.excerpt(text, maxLength: maxLength)
-    }
-
-    private func resolvedTitle(_ value: String, fallback: String) -> String {
-        CadenceMCPServiceSupport.resolvedTitle(value, fallback: fallback)
     }
 }

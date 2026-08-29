@@ -193,21 +193,31 @@ enum CadenceListNoteFiling {
     /// `order` is the list's current note count, which is what macOS passed — it puts a new note at
     /// the end of whichever folder it lands in, because `CadenceNoteFolderGrouping.precedes` sorts
     /// on `order` inside a group.
+    ///
+    /// **T-497, the existence half of the `try? save()` rule.** This inserted a note, swallowed the
+    /// save and handed the note back, and both callers then *selected* it — so the editor opened on
+    /// a note the store may never have taken. There is no halfway reading of that: the note either
+    /// exists or it does not, and a re-render cannot repair the difference the way it repairs a
+    /// field edit. `commitInsert` deletes the note again when the commit is refused, so the caller
+    /// gets an error instead of a selection pointing at nothing.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult
     static func createNote(
         in modelContext: ModelContext,
         area: Area?,
         project: Project?,
         folderPath: String = CadenceNoteFolderPath.root,
-        order: Int
-    ) -> Note {
+        order: Int,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> Note {
         let note = Note(kind: .list)
         CadenceListNoteSupport.attach(note, to: area, project: project)
         note.order = order
         note.folderPath = CadenceNoteFolderPath.normalized(folderPath)
         note.content = seededContent(for: note.title)
         modelContext.insert(note)
-        try? modelContext.save()
+        try CadencePendingChangePersistence.commitInsert(of: note, in: modelContext, commit: commit)
         return note
     }
 

@@ -109,22 +109,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   persist area or project ids until [[T-345]] lands**, or launch will restore a selection pointing
   at a deleted list, which is that ticket's bug made permanent.
 
-- [T-336] **DECISION NEEDED: should the iPhone `+` inherit the page you are on?** From the same
-  **ANSWERED 2026-08-26 by the user, and superseded by [[T-337]].** The question was whether the
-  iPhone `+` should inherit the page. The answer is **neither button should** — context comes from
-  the *drop target*, not from the page you happen to be standing on. That resolves this ticket and
-  reverses the iPad's current page-seed at the same time. Keep this entry only as the record of how
-  the question was framed; the work is T-337.
-  audit, and filed as a question rather than a defect because **the current behaviour is deliberate
-  and test-pinned**, which the audit established rather than assumed.
-  The iPad's page-corner `+` passes a seed — Today seeds today's date, a list detail seeds that
-  list. The iPhone's centre `+` is deliberately unscoped, and `CadenceCapturePaletteTests` asserts
-  it carries no `baseSeed`.
-  So this is only a ticket if the wanted behaviour is: tapping `+` from iPhone Today or a list
-  should inherit that context. Note it sits beside the rule the user set for [[T-282]] — placement
-  may differ across widths, capability may not — and a seed is arguably capability rather than
-  placement. **Ask the user before touching it**, and if the answer is "leave it", record that here
-  and close, because the test currently pins the opposite of what a reader might assume.
 
 
 - [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
@@ -245,18 +229,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   app target alone until both platforms can move together.
 
 
-- [T-119] **Not reproduced — and the obvious fix breaks scrolling.** Reported by the drag sweep as a
-  Week-view task block opening the Edit Task sheet after a 700ms press and 250pt of travel. Five
-  gesture variants on HEAD — vertical both ways, horizontal, single-jump, diagonal — all scrolled the
-  grid and opened nothing. That matches the construction: the block is a plain `Button`, which does
-  not fire when released outside its bounds, and the grid's scroll views claim the pan first.
-  The fix was built anyway and **regressed scrolling**: a `simultaneousGesture(DragGesture(minimumDistance: 0))`
-  on scroll content claims the touch, so a plain swipe starting on a block stopped scrolling where
-  HEAD scrolls. Reverted, helper and tests deleted.
-  Most likely the original observation was the grid scrolling 1:1 under the finger — 250pt relative
-  to the screen, none relative to the control. **Left open only as a warning**, not as work: it joins
-  T-89 and T-14 as an observation whose mechanism was misattributed, and it should not be "fixed"
-  without a fresh reproduction.
 - [T-117] **A project-file lock is a new disguise in the T-86 family — now confirmed twice.** Builds
   deadlock in `NSFileCoordinator` reading `Cadence.xcodeproj`, 20+ minutes at 0% CPU, with an empty
   derivedDataPath. A `sample` of a stalled process caught it in `_blockOnAccessClaim` on the project
@@ -351,7 +323,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   standing rule now says an unexplained build failure is a private-path re-run before it is a
   finding. Close this only if the contention itself is removed.
 
-- [T-55] **Three things need a real phone, not a simulator** — written up as a checklist in
+- [T-55] *(rewritten 2026-08-30 as `docs/device-checks.md`, 5 items, ~5 minutes. **Two of the three original items were materially stale**: the drag-to-create item claimed no simulator API can lift a `UIDragInteraction`, which was already wrong when written and is now moot since neither `+` uses system drag; and the double-tap item told you to double-tap a table expecting source, when since [[T-221]] a table is not revealable that way — so following the old checklist would report a pass as a failure. Now includes the [[T-447]] size-class residue with a **binary tell** rather than a pixel judgement: if the class fails to propagate, the rail's `Theme.surface` stops under the title instead of filling the sheet.)* **Three things need a real phone, not a simulator** — written up as a checklist in
   `docs/device-checks.md` (keyboard dismissal, double-tap, and drag-to-create per [T-89]).
   Original note:
   1. **Can a phone still dismiss the keyboard in the Notes tab?** The Done bar was the dedicated
@@ -465,7 +437,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Do **not** ship this behind a confirmation and call it verified. The bar is a test that imports an
   archive into a container and asserts the graph came back — every foreign key resolved, counts
   equal, and a second import of the same file changing nothing.
-- [T-280] **The iOS half of T-279 is fixed by construction and unverified on a device.**
+- [T-280] *(narrowed 2026-08-30: the iOS paste is **not** a second implementation — it composes the same two shared calls, and its extra hop adds no padding, so the text it writes is computable on macOS and equals a path measured against a real clipboard. Four tests, four mutations, all killed. **What is left is one value**: whether UIKit consults `canPerformAction` for `paste:` when it builds the edit menu. That is item 1 of `docs/device-checks.md`. Do not close until someone taps it.)* **The iOS half of T-279 is fixed by construction and unverified on a device.**
   `iOSMarkdownTextView.canPerformAction` now returns `true` for `paste:` when
   `UIPasteboard.general.hasImages`, mirroring the macOS `readablePasteboardTypes` widening. The
   macOS half was measured before *and* after against a real clipboard holding a real PNG; the iOS
@@ -591,48 +563,9 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the same screenshot pass, then a ratio.
 
 
-- [T-497] **The 12 condemned `try? save()` sites [[T-322]] did not fix.** Tiered, and each is already an
-  entry in `CadenceSaveCommitDisciplineTests`' exemption lists — **delete the entry with the fix, a stale
-  one fails the suite.**
-  **Tier 1 (existence, 4):** `CadenceNoteFolderSupport.createNote`; `SettingsTagsSection.createTag` +
-  `iOSSettingsTagsSection.createTag` (one pair); `iOSCalendarEventEditSheet.openEventNote` — which
-  inserts a note *and opens it*, so the screen the user lands on is itself the report of success. Route
-  through `commitInsert`, take `commit:`, throw.
-  **Tier 2 (report, 3 inline row editors):** `SettingsTagsSection.saveEdits`,
-  `TagPickerPopoverViews.saveEdits`/`archive` — `commitEdit(in:undo:)` plus
-  `CadencePendingChangePersistence.editFailureNotice`, which already says the right sentence.
-  **Tier 3 (needs a design answer first, 2):** `iOSSearchSupportViews` (note editor Done) and
-  `iOSTaskDetailSheet.finishEditingAndDismiss`. Both are "flush an in-place edit, then close"; the open
-  question is what *undo* means for a field the user is still looking at and still has focus in. Answer
-  it once and both fall out.
-  **Not defects, and the exemptions say so:** `TagSupport.seedDefaultTags`/`deduplicateTags` (launch-time,
-  idempotent, both already take a save flag) and `CadenceUITestSupport.seedDataIfNeeded` (no user).
 
-- [T-498] **iOS search's *idle* suggestion windows are cut from a partial order.** [[T-479]] fixed the
-  `isSearching` branches; the idle ones take `prefix` straight off a partial order in four of six
-  sections — `taskResults` sorts dueDate then `order` (per-list, so cross-list ties are routine) then
-  `.prefix(8)`; `listResults`, `noteResults`, `progressResults` prefix straight off `@Query` order. On a
-  partial order the **window itself** is nondeterministic, not just its arrangement: tied rows past the
-  cut are dropped by fetch order, so *which eight* suggestions appear changes between reads. `pageResults`
-  (catalog order) and `eventResults` (already total, [[T-373]]) are fine. The fix is a final identity leg
-  on each idle comparator, **not** the score funnel — an idle list is deliberately chronological/manual
-  rather than scored.
 
-- [T-499] **The MCP server target re-types three user-facing fallbacks it cannot read.**
-  `CadenceReadService.swift:814,843,1069,1251` and `NoteReferenceSupport.swift:113` spell
-  `"Untitled Task"`/`"Untitled Context"` because `Cadence/Shared/` is not in the `CadenceMCPServer`
-  source list. Real duplication, not reachable duplication — **the app and the MCP surface can drift on
-  user-visible copy.** Fix by moving `TaskTitleSupport.defaultDisplayTitle` and
-  `CadenceContextPickerSupport.untitledName` to `Models/` (the [[T-354]] boundary), or give the MCP target
-  its own named constant. Currently subtracted by [[T-374]]'s sweep and pinned by
-  `theSweepSkipsTheFilesTheMCPServerTargetCompiles`, which **fails when this is fixed**, so the
-  subtraction gets deleted along with it.
 
-- [T-500] **Four near-duplicate title-fallback helpers.** `CadenceMCPServiceSupport.resolvedTitle`,
-  `CadenceReadService.resolvedTitle`, `MarkdownTaskEmbedSupport.sanitizedReferenceTitle` and
-  `NoteReferenceSupport.sanitizedReferenceTitle` are four re-implementations of
-  `CadenceTitleNormalization.display(_:fallback:)`. A [[T-374]] instance its string sweep **structurally
-  cannot see**: that sweep detects a duplicated literal, not a duplicated function.
 
 - [T-501] **`docs/TODO_DONE.md`'s "Landed in" SHAs record where a ticket was *removed*, not where it
   shipped.** Found while applying [[T-462]]'s title recovery: T-285's entry reads "Landed in `0dd7258`",
@@ -641,6 +574,45 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   touched only `docs/TODO.md`.** So an unknown share of the 177 existing entries attribute a fix to a
   commit that did not contain it, which is worse than a missing SHA because it reads as authoritative.
   Establish how many are wrong before deciding whether to re-derive them.
+
+
+- [T-503] **The `try? save()` rule is blind to "insert and never commit at all."** Found by [[T-497]]
+  while applying the rule. **Both halves key on the *presence* of a `try? ...save()`**, so a function
+  that inserts and never commits passes both sweeps. Measured over 552 files: **21 declarations call
+  `modelContext.insert(...)` and reach neither `save()` nor any `commit*`. Four of those also report
+  success in the same function** — [[T-471]]'s defect with the save missing entirely rather than
+  swallowed:
+  `CreateContextSheet.create` (`insert; dismiss()`), `CreateListSheet.create` (same),
+  `HabitsFormSheets.create` (`insert; scheduleReconcile; dismiss()`), and
+  `TimelineEventBlockSupportViews.openEventNote` — **the exact macOS twin of the site T-497 just fixed
+  on iOS, one platform behind, and worse: iOS at least attempted a save.** Cost is the one [[T-322]]
+  measured: the row stays *pending* in the single `ModelContext`, committed by the next unrelated save
+  from any screen or discarded by the next unrelated `rollback()`. Fix: route the four through
+  `commitInsert`, then add a **third half** to the rule (a declaration that inserts must reach a
+  commit), subtracting the 17 helper cases **by rule** — those are inserts whose *caller* owns the unit
+  of work. Also add `presented[A-Z]\w* =` to half 2's vocabulary.
+
+- [T-504] **An enabled Paste that does nothing, at the four hosts that refuse images.** Symmetric on
+  both platforms, confirmed by construction. iOS: `canPerformAction` returns `true` for any image-only
+  pasteboard, but `createPastedImageAssets` returns `[]` when `allowsImageInsertion` is false, so
+  `paste(_:)` falls through to `super.paste`, which does nothing on a view with
+  `allowsEditingTextAttributes = false`. macOS: `readablePasteboardTypes`
+  (`MarkdownEditorInteractionSupport.swift:101`) widens **unconditionally**, even though the same class
+  already carries `allowsMarkdownImageInsertion` — `registerMarkdownDraggedTypes` and
+  `markdownImageDropOperation` both consult it and this one does not. Affects the note-template editor
+  on both platforms, the calendar event-edit sheet, and quick-create in event mode. One clause on
+  macOS; thread the flag onto `iOSMarkdownTextView` for iOS.
+
+- [T-505] **Four "Untitled ..." labels have no declaration anywhere.** Found while closing [[T-499]].
+  Unlike the three labels that one moved, `"Untitled Goal"`, `"Untitled Habit"`,
+  `"Untitled Milestone"` and `"Untitled Note"` are re-typed with nowhere to read them from —
+  `CadenceReadService.swift:901,915,1126,1155`, `CadenceHabitWidgetSupport.swift:200`,
+  `CadenceMilestoneWidgetSupport.swift:284`, `CadenceNoteExportSupport.swift:107`,
+  `AIActionService.swift:86`, plus ~a dozen iOS sites. **The sweep structurally cannot see them**: it
+  reports a *shared constant* re-typed, and with no declaration there is nothing to compare against.
+  T-499 makes the fix cheap — declare them beside the other three in `CadenceTitleNormalization` and the
+  sweep picks them up automatically, since the harvest now reads `Cadence/Models/`. Spans all three
+  targets.
 
 
 ## Done
@@ -1176,6 +1148,85 @@ before filing**: this list has had the same ticket re-reported more than once.
   [[T-283]]'s retired-name sweep covers `Cadence/**/*.swift` only, so these are unguarded and **will send
   the next agent to files that do not exist**. Widen that sweep to `docs/`.
   **Closed 2026-08-30, **and the free answer is "nothing else"**. Three names fixed across the two references; the retired-name list is now one constant read by both the code sweep and a new doc sweep, so a fifth name cannot be added to one copy only. The widened sweep walks the root guides, every scoped `AGENTS.md` and `docs/`, minus the two ticket ledgers — excluded **by rule**, because an archive entry describing a rename has to spell the old name. Checked both failure shapes repo-wide: the only absent identifiers left are four **tombstones** — sentences that exist to say a type never existed — which must stay, and one frozen audit snapshot whose citations were deliberately not rewritten, since that would make the snapshot describe a tree it was not taken from.**
+
+- [T-119] **Not reproduced — and the obvious fix breaks scrolling.** Reported by the drag sweep as a
+  Week-view task block opening the Edit Task sheet after a 700ms press and 250pt of travel. Five
+  gesture variants on HEAD — vertical both ways, horizontal, single-jump, diagonal — all scrolled the
+  grid and opened nothing. That matches the construction: the block is a plain `Button`, which does
+  not fire when released outside its bounds, and the grid's scroll views claim the pan first.
+  The fix was built anyway and **regressed scrolling**: a `simultaneousGesture(DragGesture(minimumDistance: 0))`
+  on scroll content claims the touch, so a plain swipe starting on a block stopped scrolling where
+  HEAD scrolls. Reverted, helper and tests deleted.
+  Most likely the original observation was the grid scrolling 1:1 under the finger — 250pt relative
+  to the screen, none relative to the control. **Left open only as a warning**, not as work: it joins
+  T-89 and T-14 as an observation whose mechanism was misattributed, and it should not be "fixed"
+  without a fresh reproduction.
+  **Closed 2026-08-30 **as unreproducible, with the argument made exhaustive**. There are exactly five `taskInspector(` call sites in `Cadence/iOS/` and only two on a Week surface: a stock SwiftUI `Button` (`.iosPressable` is a bare `ButtonStyle` over `configuration.isPressed`, installing no recogniser) and an `onTapGesture`. **`onLongPressGesture` does not appear anywhere in `Cadence/iOS/`.** A better-fitting explanation than the ticket's own: the two **bundle** blocks carry a `.contextMenu` whose single item is "Edit Block", and press-drag-release onto it is the documented way to invoke a context menu — bundle blocks sit beside task blocks in the same column at the same title size. Under that reading the reverted fix was suppressing correct system behaviour, which is consistent with it having broken scrolling. **No test added**: pinning an absence for an unreproduced observation is the shape this ticket warns against.**
+
+- [T-336] **DECISION NEEDED: should the iPhone `+` inherit the page you are on?** From the same
+  **ANSWERED 2026-08-26 by the user, and superseded by [[T-337]].** The question was whether the
+  iPhone `+` should inherit the page. The answer is **neither button should** — context comes from
+  the *drop target*, not from the page you happen to be standing on. That resolves this ticket and
+  reverses the iPad's current page-seed at the same time. Keep this entry only as the record of how
+  the question was framed; the work is T-337.
+  audit, and filed as a question rather than a defect because **the current behaviour is deliberate
+  and test-pinned**, which the audit established rather than assumed.
+  The iPad's page-corner `+` passes a seed — Today seeds today's date, a list detail seeds that
+  list. The iPhone's centre `+` is deliberately unscoped, and `CadenceCapturePaletteTests` asserts
+  it carries no `baseSeed`.
+  So this is only a ticket if the wanted behaviour is: tapping `+` from iPhone Today or a list
+  should inherit that context. Note it sits beside the rule the user set for [[T-282]] — placement
+  may differ across widths, capability may not — and a seed is arguably capability rather than
+  placement. **Ask the user before touching it**, and if the answer is "leave it", record that here
+  and close, because the test currently pins the opposite of what a reader might assume.
+  **Closed 2026-08-30 as **stale bookkeeping — it was already answered, shipped and pinned.** The user answered on 2026-08-26: neither button inherits; context comes from the drop target, not the page you are standing on. [[T-337]] shipped it. `iOSCaptureRadialMenuButton` has **no `baseSeed` property at all**, so filling it back in from a call site is a compile error rather than a convention, and three tests in `CadenceCapturePaletteTests` pin it — including that the only route from page to new task is `CadenceCaptureSeedResolver.seed(...)` reading the drop target.**
+
+- [T-497] **The 12 condemned `try? save()` sites [[T-322]] did not fix.** Tiered, and each is already an
+  entry in `CadenceSaveCommitDisciplineTests`' exemption lists — **delete the entry with the fix, a stale
+  one fails the suite.**
+  **Tier 1 (existence, 4):** `CadenceNoteFolderSupport.createNote`; `SettingsTagsSection.createTag` +
+  `iOSSettingsTagsSection.createTag` (one pair); `iOSCalendarEventEditSheet.openEventNote` — which
+  inserts a note *and opens it*, so the screen the user lands on is itself the report of success. Route
+  through `commitInsert`, take `commit:`, throw.
+  **Tier 2 (report, 3 inline row editors):** `SettingsTagsSection.saveEdits`,
+  `TagPickerPopoverViews.saveEdits`/`archive` — `commitEdit(in:undo:)` plus
+  `CadencePendingChangePersistence.editFailureNotice`, which already says the right sentence.
+  **Tier 3 (needs a design answer first, 2):** `iOSSearchSupportViews` (note editor Done) and
+  `iOSTaskDetailSheet.finishEditingAndDismiss`. Both are "flush an in-place edit, then close"; the open
+  question is what *undo* means for a field the user is still looking at and still has focus in. Answer
+  it once and both fall out.
+  **Not defects, and the exemptions say so:** `TagSupport.seedDefaultTags`/`deduplicateTags` (launch-time,
+  idempotent, both already take a save flag) and `CadenceUITestSupport.seedDataIfNeeded` (no user).
+  **Closed 2026-08-30 for **Tier 1 and Tier 2 — 7 of 12 sites**, each exemption entry deleted with its fix. Two things the tiering did not predict. **`openEventNote` could not un-insert blindly**: `noteForEditing` returns an *existing* note as often as it creates one, so a naive `commitInsert(of:)` would have **deleted a note the user already had** on a refused commit; the insert closure records what it actually inserted. **And the failure surface it reports through did not exist at regular width** — `iOSCalendarEventEditSheet.regularFormLayout` carried `readOnlyNotice` but not `actionErrorNotice`, so on iPad *every* failure that sheet reports was invisible, including refused EventKit saves and deletes predating this work. Tier 3 (2 sites) stays open pending the undo-with-focus decision; the three genuine non-defects keep their exemptions. See [[T-503]] for the hole this work found in the rule itself.**
+
+- [T-498] **iOS search's *idle* suggestion windows are cut from a partial order.** [[T-479]] fixed the
+  `isSearching` branches; the idle ones take `prefix` straight off a partial order in four of six
+  sections — `taskResults` sorts dueDate then `order` (per-list, so cross-list ties are routine) then
+  `.prefix(8)`; `listResults`, `noteResults`, `progressResults` prefix straight off `@Query` order. On a
+  partial order the **window itself** is nondeterministic, not just its arrangement: tied rows past the
+  cut are dropped by fetch order, so *which eight* suggestions appear changes between reads. `pageResults`
+  (catalog order) and `eventResults` (already total, [[T-373]]) are fine. The fix is a final identity leg
+  on each idle comparator, **not** the score funnel — an idle list is deliberately chronological/manual
+  rather than scored.
+  **Closed 2026-08-30. Four idle sections cut their window through `CadenceSearchSuggestionWindow.take`, which completes each section's **own** comparator with a `CadenceSearchIdentity` leg and **detects** ties rather than declaring them — under a strict weak ordering two rows are equivalent exactly when neither precedes the other, so there is no `Key` type and no second closure a call site could let drift. Deliberately **not** the score funnel, and the reason is written down: with no query every row scores 0, so ranking would re-sort all four idle lists to alphabetical and destroy the chronological/manual order they exist to show. `pageResults`/`eventResults` untouched — exactly one `.prefix(8)` survives in the file and it is the events one. The membership mutation is the load-bearing one: a bare `prefix` over the same fixture returns two different **sets** depending on input direction.**
+
+- [T-499] **The MCP server target re-types three user-facing fallbacks it cannot read.**
+  `CadenceReadService.swift:814,843,1069,1251` and `NoteReferenceSupport.swift:113` spell
+  `"Untitled Task"`/`"Untitled Context"` because `Cadence/Shared/` is not in the `CadenceMCPServer`
+  source list. Real duplication, not reachable duplication — **the app and the MCP surface can drift on
+  user-visible copy.** Fix by moving `TaskTitleSupport.defaultDisplayTitle` and
+  `CadenceContextPickerSupport.untitledName` to `Models/` (the [[T-354]] boundary), or give the MCP target
+  its own named constant. Currently subtracted by [[T-374]]'s sweep and pinned by
+  `theSweepSkipsTheFilesTheMCPServerTargetCompiles`, which **fails when this is fixed**, so the
+  subtraction gets deleted along with it.
+  **Closed 2026-08-30 **by moving to `Models/`, not by an MCP-local constant** — that would be the drift relocated rather than removed. `Models/ModelEnums.swift` already hosts `CadenceTitleNormalization` and `TaskTitleShortcutParsing` for exactly this reason ([[T-354]]/[[T-406]]). Three labels moved, including `"Untitled"` at `NoteReferenceSupport.swift:122`, which the sweep could not see at 8 characters; the `Shared/` names stay as forwarders so no app call site changed. **The [[T-374]] subtraction was narrowed to a predicate rather than deleted** — its premise still holds for `Shared/`-only constants, so a flat deletion would re-arm a false positive nobody could fix; as a predicate it retires itself when a declaration moves, which it then did, and the five hits it had been hiding became ordinary offenders and were fixed. The harvest now walks `Cadence/Models/` too, or this move would have **silently dropped `"Untitled Task"` out of the sweep**; measured 0 pre-existing qualifying constants there, so no added noise.**
+
+- [T-500] **Four near-duplicate title-fallback helpers.** `CadenceMCPServiceSupport.resolvedTitle`,
+  `CadenceReadService.resolvedTitle`, `MarkdownTaskEmbedSupport.sanitizedReferenceTitle` and
+  `NoteReferenceSupport.sanitizedReferenceTitle` are four re-implementations of
+  `CadenceTitleNormalization.display(_:fallback:)`. A [[T-374]] instance its string sweep **structurally
+  cannot see**: that sweep detects a duplicated literal, not a duplicated function.
+  **Closed 2026-08-30, **and the divergence check changed the answer: the four are two.** `CadenceMCPServiceSupport.resolvedTitle` is character-for-character `CadenceTitleNormalization.display`, and `CadenceReadService.resolvedTitle` was already a private *forwarder* to it, not a fourth implementation — both deleted, 11 call sites now call `display`. The two `sanitizedReferenceTitle`s are byte-identical to each other and **not** re-implementations of `display`: they are `display` composed with a five-character markdown escape. **Collapsing all four as the ticket asked would have dropped the escaping that keeps `[[task:UUID|Read [ch. 3]]]` from ending two characters early.** Consolidated as `CadenceTitleNormalization.referenceDisplay`, which had to live in `Models/`: the MCP target compiles `NoteReferenceSupport.swift` and not `MarkdownTaskEmbedSupport.swift`, so the two halves had no other file they could both reach.**
 
 ## Cancelled
 

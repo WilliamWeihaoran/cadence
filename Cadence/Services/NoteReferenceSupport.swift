@@ -110,7 +110,10 @@ nonisolated enum NoteReferenceParser {
     }
 
     static func taskReferenceMarkdown(for task: AppTask) -> String {
-        let displayTitle = sanitizedReferenceTitle(task.title, fallback: "Untitled Task")
+        let displayTitle = CadenceTitleNormalization.referenceDisplay(
+            task.title,
+            fallback: CadenceTitleNormalization.defaultTaskTitle
+        )
         return "[[task:\(task.id.uuidString)|\(displayTitle)]]"
     }
 
@@ -119,7 +122,7 @@ nonisolated enum NoteReferenceParser {
     }
 
     static func noteReferenceMarkdown(for note: Note) -> String {
-        "[[note:\(note.id.uuidString)|\(sanitizedReferenceTitle(note.displayTitle, fallback: "Untitled"))]]"
+        "[[note:\(note.id.uuidString)|\(CadenceTitleNormalization.referenceDisplay(note.displayTitle, fallback: CadenceTitleNormalization.defaultCompactTitle))]]"
     }
 
     nonisolated static func noteReferenceMarkdown(title: String) -> String {
@@ -159,17 +162,6 @@ nonisolated enum NoteReferenceParser {
         payload.trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .hasPrefix("task:")
-    }
-
-    nonisolated private static func sanitizedReferenceTitle(_ title: String, fallback: String) -> String {
-        let sanitized = title
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\r", with: " ")
-            .replacingOccurrences(of: "|", with: "-")
-            .replacingOccurrences(of: "[", with: "(")
-            .replacingOccurrences(of: "]", with: ")")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return sanitized.isEmpty ? fallback : sanitized
     }
 
     nonisolated private static func matches(in content: String, pattern: String) -> [String] {

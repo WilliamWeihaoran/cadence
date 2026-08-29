@@ -43,6 +43,9 @@ struct iOSSearchListCandidate {
     let icon: String
     let color: Color
     let route: iOSListRoute
+    /// The row's `Area.order` / `Project.order` — the user's own arrangement, which is what the
+    /// **idle** suggestion list is cut from. See `suggestionRank`.
+    let suggestionOrder: Int
     let fields: [String]
 
     /// Areas and projects are one section here, so the identity has to carry which table the row
@@ -51,6 +54,16 @@ struct iOSSearchListCandidate {
         switch route {
         case .area(let id): CadenceSearchIdentity.area(id)
         case .project(let id): CadenceSearchIdentity.project(id)
+        }
+    }
+
+    /// Areas before projects, then the user's manual order. Derived from `route` rather than
+    /// passed in for the same reason `identity` is: a table half that disagrees with the row's
+    /// destination is not representable.
+    var suggestionRank: CadenceSearchSuggestionRank {
+        switch route {
+        case .area: CadenceSearchSuggestionRank(table: 0, order: suggestionOrder)
+        case .project: CadenceSearchSuggestionRank(table: 1, order: suggestionOrder)
         }
     }
 
@@ -66,6 +79,18 @@ struct iOSSearchListCandidate {
             score: score
         )
     }
+}
+
+/// A Goals-and-Habits row plus the key its **idle** window is cut on.
+///
+/// That section merges two tables behind one destination apiece, so — unlike the other four — its
+/// candidates are already finished `iOSSearchResult`s by the time they are concatenated, and the
+/// `Goal.order` / `Habit.order` they were drawn in is gone. This carries it the two lines to the
+/// cut. The searching branch reads `result` alone and ignores the rank, which is correct: a typed
+/// query is scored, not arranged.
+struct iOSSearchProgressCandidate {
+    let result: iOSSearchResult
+    let suggestionRank: CadenceSearchSuggestionRank
 }
 
 struct iOSSearchFeatureCandidate {

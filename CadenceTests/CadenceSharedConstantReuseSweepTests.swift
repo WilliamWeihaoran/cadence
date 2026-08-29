@@ -32,13 +32,20 @@ import Testing
 ///   capitals (`calendar.workHours.endMinute.v1`), which is pinned below rather than assumed.
 ///
 /// **Two target boundaries are subtracted, not exempted.** `CadenceWidgets/` is outside the walk,
-/// and every file `CadenceMCPServer` compiles is subtracted from the hits, because `Cadence/Shared/`
-/// is in neither target: a literal in one of those files is not a call site that *could* read the
+/// and a file `CadenceMCPServer` compiles is subtracted from the hits of any constant *that target
+/// cannot compile the declaration of* -- a literal there is not a call site that could read the
 /// constant. That is [[T-354]]'s boundary, and it was measured rather than assumed -- three of this
 /// sweep's first hits were "fixed" by reading the shared constant, which turned
 /// `CadenceTargetSourceMembershipTests.mcpServerSourcesOnlyReferenceTypesThatTargetCompiles` red on
-/// the very next run. The duplication in those files is real, and is filed as its own ticket; it is
-/// not something this sweep can ask anyone to fix in one line.
+/// the very next run.
+///
+/// **The second clause of that sentence is [[T-499]]'s.** The subtraction used to be a flat file
+/// set, so it hid every literal in an MCP file regardless of where the constant lived. It is a
+/// predicate now, and the difference is that it retires itself: T-499 moved the three "Untitled …"
+/// labels into `Cadence/Models/ModelEnums.swift`, which that target *does* compile, so the five
+/// hits it had been hiding became ordinary offenders and were fixed rather than forgiven. The
+/// remaining subtraction still covers constants declared only in `Shared/` -- `"Untitled Event"`,
+/// say -- which an MCP file genuinely has no way to read.
 struct CadenceSharedLiteralExemption {
     let literal: String
     let path: String
@@ -97,7 +104,7 @@ struct CadenceSharedConstantReuseSweepTests {
         let constants = try cadenceSharedStringConstants()
         let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
         let read = CadenceSourceScan.strippedSourceReader()
-        let outsideTheAppTarget = try cadenceMCPServerMemberFiles()
+        let mcpMembers = try cadenceMCPServerMemberFiles()
 
         for constant in constants {
             let hits = try sharedLiteralInstrument(for: constant).sweep(
@@ -110,9 +117,16 @@ struct CadenceSharedConstantReuseSweepTests {
                 including: "Cadence/iOS/iOSFocusView.swift",
                 read: read
             )
+            // The target boundary, stated as the rule it always meant (T-499): a file cannot read
+            // a constant declared in a file its own target does not compile. So the subtraction
+            // applies only while the *declaration* is out of `CadenceMCPServer`'s reach — a
+            // constant in `Models/` is reachable from every target, and an MCP file re-typing one
+            // of those is an ordinary offender. This is what makes the boundary self-retiring:
+            // moving a declaration into `Models/` deletes its subtraction with no edit here.
+            let unreachableFromMCP = !mcpMembers.contains(constant.declaredIn)
             let offenders = hits.filter { path in
                 path != constant.declaredIn
-                    && !outsideTheAppTarget.contains(path)
+                    && !(unreachableFromMCP && mcpMembers.contains(path))
                     && !cadenceSharedLiteralExemptions.contains {
                         $0.literal == constant.literal && $0.path == path
                     }
@@ -166,12 +180,21 @@ struct CadenceSharedConstantReuseSweepTests {
         for literal in ["Untitled Task", "Untitled Context", "Linked calendar is missing"] {
             #expect(byLiteral[literal] != nil, "\"\(literal)\" is no longer harvested")
         }
+        // `Models/`, not `Shared/`, since T-499 — and that is the assertion, not an incidental
+        // path: the whole point of the move is that `CadenceMCPServer` compiles this file.
         #expect(
-            byLiteral["Untitled Task"]?.first?.declaredIn == "Cadence/Shared/TaskTitleSupport.swift",
+            byLiteral["Untitled Task"]?.first?.declaredIn == "Cadence/Models/ModelEnums.swift",
             "the harvest lost track of where a constant is declared"
         )
+        #expect(
+            byLiteral["Linked calendar is missing"]?.first?.declaredIn.hasPrefix("Cadence/Shared/") == true,
+            "the harvest stopped reading Shared/ when Models/ was added to it"
+        )
         #expect(constants.allSatisfy { $0.literal.count >= 12 }, "a short word reached the sweep")
-        #expect(constants.allSatisfy { !$0.name.isEmpty && $0.declaredIn.hasPrefix("Cadence/Shared/") })
+        #expect(constants.allSatisfy {
+            !$0.name.isEmpty
+                && ($0.declaredIn.hasPrefix("Cadence/Shared/") || $0.declaredIn.hasPrefix("Cadence/Models/"))
+        })
     }
 
     /// The two exclusions, checked as rules on real values rather than trusted as prose.
@@ -200,6 +223,12 @@ struct CadenceSharedConstantReuseSweepTests {
     /// Both halves matter: it has to cover the files that actually broke, and it must not quietly
     /// swallow the app tree -- a boundary that returned every path would turn the sweep green over
     /// nothing while reading like a principled exclusion.
+    ///
+    /// **T-499 narrowed it from a file set to a rule.** It used to subtract every MCP member file
+    /// from every constant's hits; it now subtracts them only for a constant whose *declaration*
+    /// that target does not compile. The five hits it was hiding are fixed rather than forgiven:
+    /// the labels moved to `Models/ModelEnums.swift`, which `CadenceMCPServer` does compile, so the
+    /// subtraction no longer applies to them and `CadenceReadService` is swept like any other file.
     @Test func theSweepSkipsTheFilesTheMCPServerTargetCompiles() throws {
         let members = try cadenceMCPServerMemberFiles()
         #expect(members.count >= 40, "the MCP source list parsed as \(members.count) files")
@@ -209,13 +238,23 @@ struct CadenceSharedConstantReuseSweepTests {
                 "the boundary swallowed an app-only file, which would blind the sweep to it")
         #expect(members.contains("Cadence/macOS/Views/SchedulePanel.swift") == false)
 
-        // And what it hides is real duplication rather than a clean tree. When this stops being
-        // true the subtraction has done its job and the ticket that owns it can be closed.
+        // The rule has to have both answers on today's tree, or it is a constant dressed as a
+        // predicate. `Models/ModelEnums.swift` is compiled by that target -- so nothing is
+        // subtracted for the labels declared there -- and `Shared/CadenceEventTitleSupport.swift`
+        // is not, so "Untitled Event" keeps its subtraction and an MCP file typing it is still not
+        // an offender it could fix.
+        #expect(members.contains("Cadence/Models/ModelEnums.swift"),
+                "the labels T-499 moved are out of the MCP target's reach again")
+        #expect(members.contains("Cadence/Shared/CadenceEventTitleSupport.swift") == false)
+
+        // And the fix itself: the read service reads the labels rather than re-typing them.
         let mcp = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Services/MCPReadOnly/CadenceReadService.swift")
         )
-        #expect(mcp.contains("\"Untitled Task\""),
-                "the MCP read service no longer re-types the task-title fallback: drop this subtraction")
+        #expect(mcp.contains("CadenceTitleNormalization.defaultTaskTitle"), "non-vacuity: file unread")
+        #expect(mcp.contains("\"Untitled Task\"") == false,
+                "the MCP read service re-types the task-title fallback again")
+        #expect(mcp.contains("\"Untitled Context\"") == false)
     }
 
     // MARK: - The detector
@@ -266,8 +305,10 @@ struct CadenceSharedConstantReuseSweepTests {
 
     /// **The precision claim, written down.** A sweep whose numbers nobody measured is a sweep
     /// nobody can argue with. Over the tree as it stood when this shipped the raw rule produced
-    /// **28 hits**. Five were in files `CadenceMCPServer` compiles and are subtracted by the target
-    /// boundary above -- real duplication, but not reachable duplication. Of the **23 that reached a
+    /// **28 hits**. Five were in files `CadenceMCPServer` compiles and were subtracted by the
+    /// target boundary above -- real duplication, but not reachable duplication. ([[T-499]] made
+    /// them reachable and fixed all five; the boundary now subtracts nothing on this tree, which is
+    /// what `theSweepSkipsTheFilesTheMCPServerTargetCompiles` states.) Of the **23 that reached a
     /// verdict**: 16 re-typings of `TaskTitleSupport.defaultDisplayTitle`, 2 of
     /// `CadenceContextPickerSupport.untitledName`, 4 preference keys re-typed inside
     /// `CadenceUITestSupport`'s defaults reset, and 1 collision of ordinary English -- **22 true
@@ -329,8 +370,14 @@ private func sharedLiteralInstrument(for constant: CadenceSharedStringConstant) 
     )
 }
 
-/// Every `static let`/`static var` in `Cadence/Shared/` whose value is a plain string literal of at
-/// least 12 characters and is not a glyph name.
+/// Every `static let`/`static var` in `Cadence/Shared/` **or `Cadence/Models/`** whose value is a
+/// plain string literal of at least 12 characters and is not a glyph name.
+///
+/// `Models/` is in the harvest for the reason [[T-499]] moved two constants there: it is the tree
+/// every target compiles, so it is where a label the app *and* `CadenceMCPServer` both show has to
+/// be declared. Harvesting only `Shared/` would have made that move silently *reduce* coverage —
+/// the constant leaves the harvest, and the sixteen call sites already reading it stop being
+/// guarded against a seventeenth typing it out again.
 ///
 /// Interpolated and escaped literals are excluded by the pattern itself: `"\(title) (Hidden)"` is
 /// not something a call site could re-type verbatim, so a hit on one would be noise by construction
@@ -340,7 +387,9 @@ func cadenceSharedStringConstants() throws -> [CadenceSharedStringConstant] {
         pattern: #"static\s+(?:let|var)\s+(\w+)\s*(?::\s*String\s*)?=\s*"([^"\\]{12,})""#
     )
     var found: [CadenceSharedStringConstant] = []
-    for path in try CadenceSourceScan.swiftFiles(under: "Cadence/Shared") {
+    let roots = try CadenceSourceScan.swiftFiles(under: "Cadence/Shared")
+        + CadenceSourceScan.swiftFiles(under: "Cadence/Models")
+    for path in roots {
         let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
         let range = NSRange(source.startIndex..., in: source)
         for match in pattern.matches(in: source, range: range) {

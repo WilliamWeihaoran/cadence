@@ -13,6 +13,9 @@ struct TagPickerPopover: View {
     @State private var editName = ""
     @State private var editDescription = ""
     @State private var editColorHex = ""
+    /// T-497: the edit sheet's own failure line. `editingTag = nil` is this popover's dismissal,
+    /// so it only runs on a committed change and the sheet stays open over a refused one.
+    @State private var editFailureNotice: String?
     @FocusState private var isSearchFocused: Bool
 
     private var activeTags: [Tag] {
@@ -127,7 +130,11 @@ struct TagPickerPopover: View {
                 name: $editName,
                 description: $editDescription,
                 colorHex: $editColorHex,
-                onCancel: { editingTag = nil },
+                failureNotice: editFailureNotice,
+                onCancel: {
+                    editFailureNotice = nil
+                    editingTag = nil
+                },
                 onSave: { saveEdits(to: tag) },
                 onArchive: { archive(tag) }
             )
@@ -200,28 +207,70 @@ struct TagPickerPopover: View {
     }
 
     private func beginEditing(_ tag: Tag) {
+        editFailureNotice = nil
         editName = tag.name
         editDescription = tag.desc
         editColorHex = tag.colorHex
         editingTag = tag
     }
 
+    /// T-497, the report half of the `try? save()` rule. `editingTag = nil` closes the sheet, and
+    /// it closed whether or not the store took the rename — the chip behind the popover then read
+    /// the new name from the live object while the store held the old one.
+    ///
+    /// The undo restores the five fields rather than rolling the context back: this is the app's
+    /// single `ModelContext` and the popover is opened from a task inspector that routinely has
+    /// unrelated edits pending behind it. See `CadencePendingChangePersistence.commitEdit`.
     private func saveEdits(to tag: Tag) {
         let name = TagSupport.displayName(for: editName)
         guard !name.isEmpty else { return }
+        let previousName = tag.name
+        let previousSlug = tag.slug
+        let previousDesc = tag.desc
+        let previousColorHex = tag.colorHex
+        let previousUpdatedAt = tag.updatedAt
+
         tag.name = name
         tag.slug = TagSupport.slug(for: name)
         tag.desc = editDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         tag.colorHex = TagSupport.normalizedColorHex(editColorHex)
         tag.updatedAt = Date()
-        try? modelContext.save()
+
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext) {
+                tag.name = previousName
+                tag.slug = previousSlug
+                tag.desc = previousDesc
+                tag.colorHex = previousColorHex
+                tag.updatedAt = previousUpdatedAt
+            }
+        } catch {
+            editFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        editFailureNotice = nil
         editingTag = nil
     }
 
+    /// The same shape as `saveEdits(to:)`: archiving takes the tag out of every picker in the app,
+    /// so a sheet that closed over a refused archive left the tag visible everywhere with no sign
+    /// that anything had failed.
     private func archive(_ tag: Tag) {
+        let previousIsArchived = tag.isArchived
+        let previousUpdatedAt = tag.updatedAt
         tag.isArchived = true
         tag.updatedAt = Date()
-        try? modelContext.save()
+
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext) {
+                tag.isArchived = previousIsArchived
+                tag.updatedAt = previousUpdatedAt
+            }
+        } catch {
+            editFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        editFailureNotice = nil
         editingTag = nil
     }
 }
@@ -232,6 +281,7 @@ private struct TagEditSheet: View {
     @Binding var name: String
     @Binding var description: String
     @Binding var colorHex: String
+    let failureNotice: String?
     let onCancel: () -> Void
     let onSave: () -> Void
     let onArchive: () -> Void
@@ -286,6 +336,10 @@ private struct TagEditSheet: View {
                 Text("A tag with this name already exists.")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.red)
+            }
+
+            if let failureNotice {
+                CadenceInlineFailureNotice(text: failureNotice)
             }
 
             HStack {

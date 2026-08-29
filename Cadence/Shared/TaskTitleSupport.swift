@@ -1,8 +1,11 @@
 import Foundation
 
 nonisolated enum TaskTitleSupport {
-    static let defaultDisplayTitle = "Untitled Task"
-    static let defaultCompactDisplayTitle = "Untitled"
+    // The labels themselves live in `CadenceTitleNormalization`, in `Models/`, because that is the
+    // only place `CadenceMCPServer` can see them — see T-499. What is left here is the app-facing
+    // name, which every macOS and iOS call site already reads.
+    static let defaultDisplayTitle = CadenceTitleNormalization.defaultTaskTitle
+    static let defaultCompactDisplayTitle = CadenceTitleNormalization.defaultCompactTitle
 
     // The trim rule itself lives in `CadenceTitleNormalization`, shared with event titles and
     // the list/context/habit name forms. Task titles are not a special case of it; they are the

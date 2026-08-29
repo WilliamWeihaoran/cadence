@@ -1242,6 +1242,38 @@ struct CadenceReadServiceTests {
         #expect(hits.map(\.entityType) == ["saved_link", "task"])
     }
 
+    /// **T-499.** MCP and the app show *one* label for an untitled thing.
+    ///
+    /// `CadenceReadService` is compiled by `CadenceMCPServer`, which does not compile
+    /// `Cadence/Shared/` — so it could not read `TaskTitleSupport.defaultDisplayTitle` or
+    /// `CadenceContextPickerSupport.untitledName` and spelled both inline instead. Nothing was red
+    /// while they agreed, and nothing would have gone red when they stopped: renaming the app's
+    /// placeholder leaves the API answering the old one.
+    ///
+    /// The expectation is deliberately written against the **app-side** names. Reading the moved
+    /// `CadenceTitleNormalization` constants on both sides would assert that a value equals itself.
+    @Test func mcpLabelsAnUntitledTaskAndAnUnnamedContextTheWayTheAppDoes() throws {
+        let fixture = try Fixture()
+        let untitled = AppTask(title: "   ")
+        fixture.modelContext.insert(untitled)
+        let unnamed = Context(name: "")
+        fixture.modelContext.insert(unnamed)
+        try fixture.modelContext.save()
+
+        let tasks = try fixture.service.listTasks(options: .init(limit: 50)).items
+        let contexts = try fixture.service.listContexts(limit: 50).items
+
+        #expect(tasks.map(\.title) == [TaskTitleSupport.defaultDisplayTitle])
+        #expect(
+            contexts.first { $0.id == unnamed.id.uuidString }?.name
+                == CadenceContextPickerSupport.untitledName
+        )
+
+        // Non-vacuity: a named row is still its own name, so the two expectations above are about
+        // the fallback rather than about everything collapsing to one string.
+        #expect(contexts.contains { $0.name == "Work" })
+    }
+
     @MainActor
     private final class Fixture {
         let container: ModelContainer

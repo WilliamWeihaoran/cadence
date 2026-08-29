@@ -226,7 +226,7 @@ struct CadenceNoteFolderSurfaceTests {
         let area = Area(name: "Documents")
         context.insert(area)
 
-        let filed = CadenceListNoteFiling.createNote(
+        let filed = try CadenceListNoteFiling.createNote(
             in: context,
             area: area,
             project: nil,
@@ -250,8 +250,8 @@ struct CadenceNoteFolderSurfaceTests {
         let project = Project(name: "Launch")
         context.insert(project)
 
-        let plain = CadenceListNoteFiling.createNote(in: context, area: nil, project: project, order: 0)
-        let whitespace = CadenceListNoteFiling.createNote(
+        let plain = try CadenceListNoteFiling.createNote(in: context, area: nil, project: project, order: 0)
+        let whitespace = try CadenceListNoteFiling.createNote(
             in: context,
             area: nil,
             project: project,

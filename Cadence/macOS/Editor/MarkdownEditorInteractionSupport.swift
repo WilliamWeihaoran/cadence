@@ -348,7 +348,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     /// `NSTextStorage` mutation half of it.
     func replaceEmbeddedTaskReferenceTitle(id: UUID, title: String) {
         guard let textStorage else { return }
-        let displayTitle = MarkdownTaskEmbedParser.sanitizedReferenceTitle(
+        let displayTitle = CadenceTitleNormalization.referenceDisplay(
             title,
             fallback: MarkdownTaskEmbedRenderInfo.untitledTaskTitle
         )

@@ -206,23 +206,6 @@ nonisolated enum MarkdownTaskEmbedParser {
         )
     }
 
-    /// What a task title may look like once it is written back into `[[task:UUID|Title]]`.
-    ///
-    /// `]`, `|` and a newline each end the reference early, so a task renamed to "Read [ch. 3]"
-    /// would otherwise turn the embed into a broken half-reference the parser no longer recognises
-    /// — the card would vanish and leave raw brackets behind. Substituted rather than stripped, so
-    /// the title still reads as what the user typed.
-    nonisolated static func sanitizedReferenceTitle(_ title: String, fallback: String) -> String {
-        let sanitized = title
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\r", with: " ")
-            .replacingOccurrences(of: "|", with: "-")
-            .replacingOccurrences(of: "[", with: "(")
-            .replacingOccurrences(of: "]", with: ")")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return sanitized.isEmpty ? fallback : sanitized
-    }
-
     /// The title runs of every `[[task:UUID|Title]]` reference to one task, in source order.
     ///
     /// Ranges rather than a rewritten string because the macOS editor mutates an `NSTextStorage`
@@ -256,7 +239,7 @@ nonisolated enum MarkdownTaskEmbedParser {
         with title: String,
         fallback: String
     ) -> String? {
-        let displayTitle = sanitizedReferenceTitle(title, fallback: fallback)
+        let displayTitle = CadenceTitleNormalization.referenceDisplay(title, fallback: fallback)
         let nsMarkdown = markdown as NSString
         let result = NSMutableString(string: markdown)
         var didReplace = false
