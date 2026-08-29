@@ -615,6 +615,28 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   targets.
 
 
+- [T-497] **Tier 3 of the condemned `try? save()` sites — 2 left of the original 12.**
+  **Tier 1 and Tier 2 closed 2026-08-30** (7 sites, each exemption entry deleted with its fix, pinned by
+  `CadenceTagAndNoteCommitSurfaceTests` — 3 behavioural, 5 source-shape, 10 mutations all killed by
+  named tests). Two things that tiering did not predict: `openEventNote` **could not un-insert blindly**,
+  because `noteForEditing` returns an existing note as often as it creates one, so a naive
+  `commitInsert(of:)` would have deleted a note the user already had; and the notice it reports through
+  **did not exist at regular width** — `iOSCalendarEventEditSheet.regularFormLayout` carried
+  `readOnlyNotice` but not `actionErrorNotice`, so on iPad *every* failure that sheet reports was
+  invisible, including refused EventKit saves and deletes predating that work. Both fixed.
+
+  **Remaining: `iOSSearchSupportViews` (note editor Done) and `iOSTaskDetailSheet.finishEditingAndDismiss`.**
+  Both are "flush an in-place edit, then close", and both are **blocked on a decision**, not on work:
+  what does undo mean for a field the user is still looking at and still has focus in? Tier 2's inline
+  row editors were the easy half — they hold their drafts in `@State`, so restoring the model does not
+  fight a caret. These two do. Answer it once and both fall out. Written up in
+  `docs/DECISIONS_PENDING.md`.
+
+  The three genuine non-defects keep their exemptions: `TagSupport.seedDefaultTags`/`deduplicateTags`
+  (launch-time, idempotent, both already take a save flag) and `CadenceUITestSupport.seedDataIfNeeded`
+  (no user). See [[T-503]] for the hole this work found in the rule itself.
+
+
 ## Done
 
 Moved to [`TODO_DONE.md`](TODO_DONE.md) on 2026-08-26 — 220 entries, with their reasoning and shipping SHAs intact.
@@ -1181,23 +1203,6 @@ before filing**: this list has had the same ticket re-reported more than once.
   and close, because the test currently pins the opposite of what a reader might assume.
   **Closed 2026-08-30 as **stale bookkeeping — it was already answered, shipped and pinned.** The user answered on 2026-08-26: neither button inherits; context comes from the drop target, not the page you are standing on. [[T-337]] shipped it. `iOSCaptureRadialMenuButton` has **no `baseSeed` property at all**, so filling it back in from a call site is a compile error rather than a convention, and three tests in `CadenceCapturePaletteTests` pin it — including that the only route from page to new task is `CadenceCaptureSeedResolver.seed(...)` reading the drop target.**
 
-- [T-497] **The 12 condemned `try? save()` sites [[T-322]] did not fix.** Tiered, and each is already an
-  entry in `CadenceSaveCommitDisciplineTests`' exemption lists — **delete the entry with the fix, a stale
-  one fails the suite.**
-  **Tier 1 (existence, 4):** `CadenceNoteFolderSupport.createNote`; `SettingsTagsSection.createTag` +
-  `iOSSettingsTagsSection.createTag` (one pair); `iOSCalendarEventEditSheet.openEventNote` — which
-  inserts a note *and opens it*, so the screen the user lands on is itself the report of success. Route
-  through `commitInsert`, take `commit:`, throw.
-  **Tier 2 (report, 3 inline row editors):** `SettingsTagsSection.saveEdits`,
-  `TagPickerPopoverViews.saveEdits`/`archive` — `commitEdit(in:undo:)` plus
-  `CadencePendingChangePersistence.editFailureNotice`, which already says the right sentence.
-  **Tier 3 (needs a design answer first, 2):** `iOSSearchSupportViews` (note editor Done) and
-  `iOSTaskDetailSheet.finishEditingAndDismiss`. Both are "flush an in-place edit, then close"; the open
-  question is what *undo* means for a field the user is still looking at and still has focus in. Answer
-  it once and both fall out.
-  **Not defects, and the exemptions say so:** `TagSupport.seedDefaultTags`/`deduplicateTags` (launch-time,
-  idempotent, both already take a save flag) and `CadenceUITestSupport.seedDataIfNeeded` (no user).
-  **Closed 2026-08-30 for **Tier 1 and Tier 2 — 7 of 12 sites**, each exemption entry deleted with its fix. Two things the tiering did not predict. **`openEventNote` could not un-insert blindly**: `noteForEditing` returns an *existing* note as often as it creates one, so a naive `commitInsert(of:)` would have **deleted a note the user already had** on a refused commit; the insert closure records what it actually inserted. **And the failure surface it reports through did not exist at regular width** — `iOSCalendarEventEditSheet.regularFormLayout` carried `readOnlyNotice` but not `actionErrorNotice`, so on iPad *every* failure that sheet reports was invisible, including refused EventKit saves and deletes predating this work. Tier 3 (2 sites) stays open pending the undo-with-focus decision; the three genuine non-defects keep their exemptions. See [[T-503]] for the hole this work found in the rule itself.**
 
 - [T-498] **iOS search's *idle* suggestion windows are cut from a partial order.** [[T-479]] fixed the
   `isSearching` branches; the idle ones take `prefix` straight off a partial order in four of six
