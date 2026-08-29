@@ -212,7 +212,7 @@ struct CadencePageHeaderMetricsTests {
     /// the stroke is *there*, not that some rendered pixel is 0.20.
     @Test func bothTilesStrokeThatBorderAndNeitherRestatesTheNumbers() throws {
         let tiles = [
-            ("CommitmentIconTile", "Cadence/Shared/Components/CommitmentSharedViews.swift"),
+            ("CommitmentIconTile", "Cadence/macOS/Views/CommitmentSharedViews.swift"),
             ("iOSIconTile", "Cadence/iOS/iOSDesignSystem.swift"),
         ]
 
@@ -255,7 +255,7 @@ struct CadencePageHeaderMetricsTests {
     /// formula on macOS and the restated token plus literal curve on iOS.
     @Test func bothTilesReadThatCornerAndNeitherKeepsItsOldGeometry() throws {
         let tiles = [
-            ("CommitmentIconTile", "Cadence/Shared/Components/CommitmentSharedViews.swift"),
+            ("CommitmentIconTile", "Cadence/macOS/Views/CommitmentSharedViews.swift"),
             ("iOSIconTile", "Cadence/iOS/iOSDesignSystem.swift"),
         ]
 

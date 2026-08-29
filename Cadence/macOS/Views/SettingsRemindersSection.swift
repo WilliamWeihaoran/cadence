@@ -21,8 +21,9 @@ struct SettingsRemindersSection: View {
             accessCard
 
             if state.isConnected {
-                SettingsSectionLabel(text: "Reminder Lists")
-                listsCard
+                CadenceFieldSection(title: "Reminder Lists") {
+                    listsContent
+                }
             }
         }
         // **T-253.** This page's own **Open Reminders Settings** button sends the user to
@@ -32,25 +33,15 @@ struct SettingsRemindersSection: View {
         .remindersAuthorizationLifecycle(remindersManager)
     }
 
+    /// The access verdict, on the row Notifications and Sync also draw (T-286).
     private var accessCard: some View {
-        SettingsCard {
-            HStack(spacing: 12) {
-                Image(systemName: state.isConnected ? "checklist" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(state.isConnected ? Theme.purple : Theme.amber)
-                    .font(.system(size: 14))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(state.accessTitle)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text(state.accessMessage)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer()
-
+        CadenceFieldSection(title: nil) {
+            CadenceSettingsNoticeRow(
+                systemImage: state.isConnected ? "checklist" : "exclamationmark.triangle.fill",
+                tint: state.isConnected ? Theme.purple : Theme.amber,
+                title: state.accessTitle,
+                detail: state.accessMessage
+            ) {
                 if let action = state.accessAction {
                     SettingsActionButton(
                         tone: action == .requestAccess ? .filled(Theme.blue) : .filled(Theme.dim),
@@ -70,38 +61,35 @@ struct SettingsRemindersSection: View {
         }
     }
 
-    private var listsCard: some View {
-        SettingsCard {
-            VStack(spacing: 0) {
-                if remindersManager.isLoading && remindersManager.reminders.isEmpty {
-                    summaryRow {
-                        ProgressView().controlSize(.small)
-                        Text("Loading reminders...")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.dim)
-                        Spacer()
-                    }
-                } else if remindersManager.reminders.isEmpty {
-                    summaryRow {
-                        Image(systemName: "checklist")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-                        Text("No open reminders.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.dim)
-                        Spacer()
-                    }
-                } else {
-                    let rows = RemindersSyncSummary.listRows(from: remindersManager.reminders)
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                        SettingsRemindersListRow(row: row)
+    @ViewBuilder
+    private var listsContent: some View {
+        if remindersManager.isLoading && remindersManager.reminders.isEmpty {
+            summaryRow {
+                ProgressView().controlSize(.small)
+                Text("Loading reminders...")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.dim)
+                Spacer()
+            }
+        } else if remindersManager.reminders.isEmpty {
+            summaryRow {
+                Image(systemName: "checklist")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                Text("No open reminders.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.dim)
+                Spacer()
+            }
+        } else {
+            let rows = RemindersSyncSummary.listRows(from: remindersManager.reminders)
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                SettingsRemindersListRow(row: row)
 
-                        if index < rows.count - 1 {
-                            Divider()
-                                .background(Theme.borderSubtle)
-                                .padding(.leading, 24)
-                        }
-                    }
+                // Was a two-line `Divider().background(Theme.borderSubtle)`, which is how it
+                // outlived the sweep written for the one-line spelling (T-286).
+                if index < rows.count - 1 {
+                    CadenceRowDivider(leadingInset: 24)
                 }
             }
         }
@@ -111,7 +99,7 @@ struct SettingsRemindersSection: View {
         HStack(spacing: 12) {
             content()
         }
-        .padding(.vertical, 10)
+        .frame(minHeight: CadenceSettingsRowMetrics.rowHeight)
     }
 
     private func perform(_ action: RemindersAccessAction) {
@@ -145,7 +133,7 @@ private struct SettingsRemindersListRow: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
         }
-        .padding(.vertical, 10)
+        .frame(minHeight: CadenceSettingsRowMetrics.rowHeight)
     }
 }
 #endif

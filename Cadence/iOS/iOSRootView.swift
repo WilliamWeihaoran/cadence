@@ -165,7 +165,7 @@ struct iOSRootView: View {
     private func detailView(for item: iOSSidebarItem) -> some View {
         switch item {
         case .today:
-            iPadTodayView()
+            iOSTodayView()
         // One branch, one view: All Tasks and Inbox are two views of one page now, and separate
         // `switch` arms would give SwiftUI two identities and reset the page every time something
         // navigated between them.

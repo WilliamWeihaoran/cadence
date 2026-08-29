@@ -411,7 +411,7 @@ struct CadenceBundleInspectorHostTests {
             "Cadence/iOS/iOSCalendarInspectorView.swift",
             "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
             "Cadence/iOS/iOSCalendarBundleDetailSheet.swift",
-            "Cadence/iOS/iPadTodayScheduleViews.swift",
+            "Cadence/iOS/iOSTodaySchedulePanel.swift",
             "Cadence/Shared/CadenceDetailPanelPresentation.swift"
         ] {
             #expect(files.contains(path))

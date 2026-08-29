@@ -468,14 +468,20 @@ struct CadenceSectionEyebrowConvergenceTests {
             "Cadence/macOS/Views/ListNotesViewSupportViews.swift": 1,
             "Cadence/macOS/Views/NoteReferenceSupportViews.swift": 1,
             "Cadence/macOS/Views/SchedulePanelShellViews.swift": 1,
-            "Cadence/macOS/Views/SettingsTemplatesSection.swift": 1,
+            // Zero since T-286, and still a count rather than a deletion. This pane drew an
+            // eyebrow because it declared `TemplateEditorField`, a private copy of
+            // `CadenceSettingsField`; the eyebrow moved *into* the shared component along with the
+            // well. Its three fields are pinned as `CadenceSettingsField` call sites by
+            // `SettingsSevenPaneVocabularyTests.theSevenPanesReadTheSharedFieldVocabulary`, so a
+            // pane that stops drawing labelled fields altogether still fails something.
+            "Cadence/macOS/Views/SettingsTemplatesSection.swift": 0,
             "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift": 1,
             "Cadence/Shared/CadenceSettingsSharedViews.swift": 1,
             "Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift": 1,
-            "Cadence/Shared/Components/CommitmentSharedViews.swift": 1,
+            "Cadence/macOS/Views/CommitmentSharedViews.swift": 1,
             "Cadence/Shared/Components/HabitProgressViews.swift": 1,
             "Cadence/iOS/iOSFeatureDetailViews.swift": 1,
-            "Cadence/iOS/iPadTodayScheduleViews.swift": 1
+            "Cadence/iOS/iOSTodaySchedulePanel.swift": 1
         ])
     }
 

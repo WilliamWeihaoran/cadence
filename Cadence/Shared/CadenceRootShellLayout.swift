@@ -5,7 +5,7 @@ import CoreGraphics
 /// The shell is an `HStack` of a **fixed-width** sidebar and the detail beside it. An `HStack` does
 /// not shrink a fixed `.frame(width:)`, and it does not shrink a child below the minimum its own
 /// content declares either — it overflows. The detail pane's content routinely declares minimums
-/// (`iPadTodayView`'s two panes, `iOSCalendarView`'s inspector, and — until it was deleted — the
+/// (`iOSTodayView`'s two panes, `iOSCalendarView`'s inspector, and — until it was deleted — the
 /// Inbox's second column at `440 + 1 + 280`). When those minimums exceed what is left after the
 /// sidebar, the row lays out wider than the window, and because the shell then pinned that row into
 /// a `.frame(width: proxy.size.width, ...)` with the **default `.center` alignment**, half of the

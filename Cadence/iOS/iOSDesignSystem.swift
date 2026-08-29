@@ -3,8 +3,10 @@ import SwiftUI
 
 // The iOS half of Cadence's design language.
 //
-// macOS carries its vocabulary in `Shared/Components/CadenceButtons.swift` and
-// `CommitmentSharedViews.swift`, both of which are `#if os(macOS)` because they are built out of
+// macOS carries its vocabulary in `macOS/Views/CadenceButtons.swift` and
+// `macOS/Views/CommitmentSharedViews.swift` — they sat under `Shared/Components/` until T-283/T-288
+// moved them, which is where a reader looking for a shared control would have found them and been
+// wrong. Both are `#if os(macOS)` because they are built out of
 // `CadenceDesktopMetrics` — 30pt control heights, hover states, `.help(_:)` tooltips. None of that
 // translates: a 30pt tap target is half of what a finger needs, and a hover state never fires.
 //

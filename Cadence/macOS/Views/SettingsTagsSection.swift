@@ -42,8 +42,7 @@ struct SettingsTagsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionLabel(text: "Create Tag")
-            SettingsCard {
+            CadenceFieldSection(title: "Create Tag") {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 12) {
                         Circle()
@@ -93,18 +92,23 @@ struct SettingsTagsSection: View {
                 }
             }
 
-            SettingsSectionLabel(text: "Active Tags")
             if activeTags.isEmpty {
-                SettingsCard {
+                CadenceFieldSection(title: "Active Tags") {
                     EmptyTagCatalogRow(title: "No active tags.", subtitle: "Create a tag or add the default set.")
                 }
             } else {
-                tagCatalog(activeTags, isArchivedList: false)
+                // The catalog is a grid of cards, not rows in a card, so it keeps the eyebrow
+                // without the section's own card behind it — `CadenceFieldSection(style: .ruled)`
+                // is the spelling for a group whose content supplies its own surfaces.
+                CadenceFieldSection(title: "Active Tags", style: .ruled) {
+                    tagCatalog(activeTags, isArchivedList: false)
+                }
             }
 
             if !archivedTags.isEmpty {
-                SettingsSectionLabel(text: "Archived Tags")
-                tagCatalog(archivedTags, isArchivedList: true)
+                CadenceFieldSection(title: "Archived Tags", style: .ruled) {
+                    tagCatalog(archivedTags, isArchivedList: true)
+                }
             }
         }
         .onAppear {
@@ -132,19 +136,17 @@ struct SettingsTagsSection: View {
         }
     }
 
+    /// The creator's two fields and `SettingsTagRow.editField` were byte-identical private wells —
+    /// radius 8, `.stroke` rather than `.strokeBorder`, their own padding — beside the one the
+    /// shared `CadenceSettingsField` draws. They are the shared well now (T-286). It stays a helper
+    /// only because these fields are placeholder-only and so have no eyebrow for the titled
+    /// component to draw.
     private func tagTextField(_ placeholder: String, text: Binding<String>) -> some View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain)
             .font(.system(size: 13))
             .foregroundStyle(Theme.text)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Theme.borderSubtle, lineWidth: 1)
-            }
+            .cadenceSettingsWell()
     }
 
     private func createTag() {
@@ -345,14 +347,7 @@ private struct SettingsTagRow: View {
             .textFieldStyle(.plain)
             .font(.system(size: 13))
             .foregroundStyle(Theme.text)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .background(Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Theme.borderSubtle, lineWidth: 1)
-            }
+            .cadenceSettingsWell()
     }
 
     private func rowButton(icon: String, color: Color = Theme.dim, help: String, action: @escaping () -> Void) -> some View {
@@ -472,22 +467,14 @@ private struct EmptyTagCatalogRow: View {
     let subtitle: String
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "tag")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-            }
-            Spacer()
+        CadenceSettingsNoticeRow(
+            systemImage: "tag",
+            tint: Theme.dim,
+            title: title,
+            detail: subtitle
+        ) {
+            EmptyView()
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 2)
     }
 }
 #endif

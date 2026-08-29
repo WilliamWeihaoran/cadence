@@ -9,9 +9,9 @@ import SwiftUI
 ///
 /// **It had a compact ramp, and the compact half of it could not be reached.** `rowHeight` was
 /// `regular ? 58 : 48` and the grid's trailing gutter `regular ? 12 : 8`, but this pane is only ever
-/// built by `iPadTodayView.inspectorPanelContent`, which only `twoPaneTodayLayout` reaches, which
+/// built by `iOSTodayView.inspectorPanelContent`, which only `twoPaneTodayLayout` reaches, which
 /// `CadenceTodayLayoutSupport.layout` only returns at regular width. Two dead branches carrying two
-/// numbers nobody had ever seen — the same defect `iPadTodayView`'s deleted `todayRowDensity`
+/// numbers nobody had ever seen — the same defect `iOSTodayView`'s deleted `todayRowDensity`
 /// had, in the same file family. The regular figures are the only ones that ever drew, so they are
 /// the ones that stay.
 struct iOSSchedulePanel: View {

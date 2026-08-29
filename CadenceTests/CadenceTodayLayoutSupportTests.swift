@@ -118,7 +118,7 @@ struct CadenceTodayInspectorNotesWidthTests {
     private static let sidebarWidth: CGFloat = 188
 
     /// What the inspector is actually handed at a given pane width — the pane, less the task column,
-    /// less the divider. The same subtraction `iPadTodayView.twoPaneTodayLayout` performs by putting
+    /// less the divider. The same subtraction `iOSTodayView.twoPaneTodayLayout` performs by putting
     /// a fixed-width column and a flexible one in an `HStack`.
     private func inspectorWidth(paneWidth: CGFloat) -> CGFloat {
         paneWidth

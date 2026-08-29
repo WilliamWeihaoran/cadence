@@ -51,7 +51,7 @@ struct CadenceTodayUnificationTests {
             of: "CadenceTaskQuerySupport.todayGroups",
             at: [
                 "Cadence/macOS/Views/TasksPanel.swift": 2,
-                "Cadence/iOS/iPadTodayView.swift": 1,
+                "Cadence/iOS/iOSTodayView.swift": 1,
             ]
         )
         // And both hand it the contexts the sidebar order is derived from. A host that passed `[]`
@@ -64,7 +64,7 @@ struct CadenceTodayUnificationTests {
         )
         try expectCallSites(
             of: "contexts: contexts",
-            at: ["Cadence/iOS/iPadTodayView.swift": 1]
+            at: ["Cadence/iOS/iOSTodayView.swift": 1]
         )
     }
 
@@ -137,14 +137,14 @@ struct CadenceTodayUnificationTests {
             of: "CadenceTodayPresentationSupport.emptyTitle",
             at: [
                 "Cadence/macOS/Views/TasksPanel.swift": 1,
-                "Cadence/iOS/iPadTodayCompactViews.swift": 1,
+                "Cadence/iOS/iOSTodayCompactViews.swift": 1,
             ]
         )
         try expectCallSites(
             of: "CadenceTodayPresentationSupport.emptySubtitle",
             at: [
                 "Cadence/macOS/Views/TasksPanel.swift": 1,
-                "Cadence/iOS/iPadTodayCompactViews.swift": 1,
+                "Cadence/iOS/iOSTodayCompactViews.swift": 1,
             ]
         )
     }
@@ -277,7 +277,7 @@ struct CadenceTodayUnificationTests {
     @Test func noPageHeaderWrapperReintroducesTheTile() throws {
         let wrappers: [(String, String)] = [
             ("PanelHeader", "Cadence/macOS/Views/TodaySupportViews.swift"),
-            ("CommitmentPageHeader", "Cadence/Shared/Components/CommitmentSharedViews.swift"),
+            ("CommitmentPageHeader", "Cadence/macOS/Views/CommitmentSharedViews.swift"),
             ("CadenceSettingsHeader", "Cadence/Shared/CadenceSettingsSharedViews.swift"),
             ("iOSPanelHeader", "Cadence/iOS/iOSTaskViews.swift"),
             ("iOSCompactPageHeader", "Cadence/iOS/iOSFeatureComponents.swift"),
@@ -322,15 +322,15 @@ struct CadenceTodayUnificationTests {
             at: [
                 "Cadence/macOS/Views/TasksPanelSupportViews.swift": 1,
                 "Cadence/iOS/iPadTodaySupportViews.swift": 1,
-                "Cadence/iOS/iPadTodayCompactViews.swift": 1,
+                "Cadence/iOS/iOSTodayCompactViews.swift": 1,
             ]
         )
         try expectCallSites(
             of: "DateFormatters.longDate.string",
             at: [
                 "Cadence/macOS/Views/TasksPanelSupportViews.swift": 1,
-                "Cadence/iOS/iPadTodayView.swift": 1,
-                "Cadence/iOS/iPadTodayCompactViews.swift": 1,
+                "Cadence/iOS/iOSTodayView.swift": 1,
+                "Cadence/iOS/iOSTodayCompactViews.swift": 1,
             ]
         )
     }
@@ -342,7 +342,7 @@ struct CadenceTodayUnificationTests {
             of: "CadenceTodayPresentationSupport.summary",
             at: [
                 "Cadence/macOS/Views/TasksPanel.swift": 1,
-                "Cadence/iOS/iPadTodayView.swift": 1,
+                "Cadence/iOS/iOSTodayView.swift": 1,
             ]
         )
     }

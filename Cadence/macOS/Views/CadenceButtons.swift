@@ -1,6 +1,19 @@
 #if os(macOS)
 import SwiftUI
 
+// Moved out of `Shared/Components/` by T-288. It was a whole-file `#if os(macOS)` sitting in the
+// folder `CLAUDE.md` tells an agent to read *before* writing a new shared view — so it read as
+// available to iOS and was not, which is the `CompactTagStrip` failure mode with a platform fence
+// supplying the misdirection.
+//
+// It imports SwiftUI and nothing else, so nothing *stops* it compiling on iOS; the reason it does
+// not is `CadenceDesktopMetrics`. These controls are built out of 30pt heights, hover washes and
+// `.help(_:)` tooltips, none of which translate — a 30pt tap target is half of what a finger needs
+// and a hover state never fires. `iOSDesignSystem.swift` already says exactly this, and already
+// carries the counterparts (`iOSActionButton`, `iOSIconTile`, `iOSSegmentedPillGroup`) under the
+// same role names. Unfencing this file would put a second, wrong-geometry answer in front of the
+// next iOS reader; moving it removes the question.
+
 enum CadenceDesktopMetrics {
     /// The four page-header figures read back from `CadencePageHeaderMetrics` rather than being
     /// restated here. They are the same numbers they have always been; the point is that the page

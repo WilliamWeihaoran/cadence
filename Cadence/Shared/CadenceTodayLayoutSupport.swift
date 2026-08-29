@@ -8,7 +8,7 @@ nonisolated enum CadenceTodayLayout: Equatable {
     case twoPane
 }
 
-/// The width arithmetic behind `iPadTodayView`'s layout choice.
+/// The width arithmetic behind `iOSTodayView`'s layout choice.
 ///
 /// **There is one iPad Today layout with a choice in it, and this is not it.** Today is task column
 /// plus inspector, or one column when even that does not fit; the inspector's Notes/Timeline
@@ -67,7 +67,7 @@ nonisolated enum CadenceTodayLayoutSupport {
 
     // MARK: - Two-pane widths
     //
-    // These three lived on `iPadTodayView` as `private` methods, which put them behind
+    // These three lived on `iOSTodayView` as `private` methods, which put them behind
     // `#if os(iOS)` where the macOS test target cannot see them — so `iPadTodayPaneWidthTests`
     // re-implemented them instead of calling them. A test that owns a *copy* of the rule cannot
     // fail when the rule changes, and this one did not: the copy carried the same divider bug the

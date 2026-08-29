@@ -274,7 +274,7 @@ struct CadenceTodayRolloverSurfaceTests {
     // MARK: - Call-site wiring (source-scanned; `Cadence/iOS/` is invisible to this target)
 
     @Test func iOSTodayReadsTheSharedRolloverDecision() throws {
-        let host = try strippingComments(sourceFile("Cadence/iOS/iPadTodayView.swift"))
+        let host = try strippingComments(sourceFile("Cadence/iOS/iOSTodayView.swift"))
         #expect(host.contains("CadenceTodayRolloverSupport.pastDoTasks("))
         #expect(host.contains("CadenceTodayRolloverSupport.isNoticeVisible("))
         #expect(host.contains("CadenceTodayRolloverSupport.groupedTasks("))
@@ -290,7 +290,7 @@ struct CadenceTodayRolloverSurfaceTests {
         #expect(list.contains("CadenceTodayRolloverBanner("))
         #expect(list.contains("rolloverNotice"))
 
-        for host in ["Cadence/iOS/iPadTodayView.swift", "Cadence/iOS/iPadTodayCompactViews.swift"] {
+        for host in ["Cadence/iOS/iOSTodayView.swift", "Cadence/iOS/iOSTodayCompactViews.swift"] {
             let source = try strippingComments(sourceFile(host))
             #expect(source.contains("rolloverNotice"), "\(host) does not pass the notice through")
             #expect(

@@ -413,7 +413,7 @@ struct iOSSettingsMetricTile: View {
 ///
 /// This used to be a second card struct, and its comment explained the split: "The shared
 /// component keeps its original hard-border, radius-12 treatment because macOS settings and
-/// `iPadInboxView` still rely on it as-is." Half of that had stopped being true — `iPadInboxView`
+/// `iOSInboxView` still rely on it as-is." Half of that had stopped being true — `iOSInboxView`
 /// does not mention the type — and the other half was the bug T-20 was filed about: macOS Settings
 /// was the *only* thing left holding the shared card at the older treatment. The shared card is the
 /// soft-elevation one now, and the 16pt inset is the only thing left here.

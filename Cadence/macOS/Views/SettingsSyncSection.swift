@@ -37,47 +37,32 @@ struct SettingsSyncSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            statusCard
-        }
-    }
-
-    private var statusCard: some View {
-        SettingsCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
-                    Image(systemName: health.iconName)
-                        .foregroundStyle(health.tone.tint)
-                        .font(.system(size: 14))
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(health.title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                        Text(health.detail)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.dim)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer()
-
-                    if probe.isChecking {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-
-                    SettingsActionButton(tone: .tinted(Theme.blue), action: probe.refresh) {
-                        Text("Check iCloud Status")
-                    }
-                    .disabled(probe.isChecking)
+        CadenceFieldSection(title: nil, contentSpacing: 14) {
+            // The verdict row is the shared one (T-286) — the same line Notifications draws twice
+            // and Reminders draws for calendar access. What is specific to sync is the trailing
+            // pair (a spinner beside the button while the probe runs) and the footer below it,
+            // both of which the shared row leaves to the caller.
+            CadenceSettingsNoticeRow(
+                systemImage: health.iconName,
+                tint: health.tone.tint,
+                title: health.title,
+                detail: health.detail
+            ) {
+                if probe.isChecking {
+                    ProgressView()
+                        .controlSize(.small)
                 }
 
-                if let lastChecked = probe.lastChecked {
-                    Text("Last checked \(lastChecked.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
+                SettingsActionButton(tone: .tinted(Theme.blue), action: probe.refresh) {
+                    Text("Check iCloud Status")
                 }
+                .disabled(probe.isChecking)
+            }
+
+            if let lastChecked = probe.lastChecked {
+                Text("Last checked \(lastChecked.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
             }
         }
     }

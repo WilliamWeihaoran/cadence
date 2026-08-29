@@ -76,7 +76,7 @@ struct iOSTasksPageView: View {
         case .all:
             iOSAllTasksView(showsCompactHeader: false)
         case .inbox:
-            iPadInboxView(showsCompactHeader: false)
+            iOSInboxView(showsCompactHeader: false)
         }
     }
 }

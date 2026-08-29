@@ -35,11 +35,11 @@ struct iOSTasksTabView: View {
     private var content: some View {
         switch section {
         case .today:
-            iPadTodayView(showsCompactHeader: false)
+            iOSTodayView(showsCompactHeader: false)
         case .all:
             iOSAllTasksView(showsCompactHeader: false)
         case .inbox:
-            iPadInboxView(showsCompactHeader: false)
+            iOSInboxView(showsCompactHeader: false)
         }
     }
 }

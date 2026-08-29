@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// It replaces four views: `iOSCompactAllTasksView` and `iOSCompactInboxView`, which drew
 /// `ScrollView` + `LazyVStack` + `iOSTaskGroupSection`, and `iOSAllTasksView.allTasksPanel` and
-/// `iPadInboxView.inboxColumn`, which drew `List` + `Section` + `iOSTaskGroupHeader` +
+/// `iOSInboxView.inboxColumn`, which drew `List` + `Section` + `iOSTaskGroupHeader` +
 /// `iOSTaskListRow`. Two scroll containers, two separator treatments and two sets of row insets,
 /// for one screen — and the copies had drifted in every dimension nobody had decided: the group
 /// stack was carded on the phone's Inbox and bare on its All Tasks, the empty state's card was
@@ -35,7 +35,7 @@ import SwiftUI
 /// `if !activeTasks.isEmpty`, Inbox guarded nothing.
 struct iOSTaskCollectionPage: View {
     let collection: CadenceTaskCollection
-    /// Off when the Tasks tab hosts this as one of its segments — see `iPadTodayView.showsCompactHeader`.
+    /// Off when the Tasks tab hosts this as one of its segments — see `iOSTodayView.showsCompactHeader`.
     var showsHeader = true
     let activeTasks: [AppTask]
     let completedTasks: [AppTask]
@@ -56,7 +56,7 @@ struct iOSTaskCollectionPage: View {
     /// appears.
     ///
     /// It reaches every route into the Inbox because it is on the *page*: the iPhone's Tasks tab,
-    /// the iPad shell's Tasks destination, the More tab and Search all render `iPadInboxView`,
+    /// the iPad shell's Tasks destination, the More tab and Search all render `iOSInboxView`,
     /// which is this page. All Tasks answers `false` and is untouched.
     private var showsRemindersSection: Bool {
         CadenceTasksPageScope.showsRemindersStrip(
@@ -123,7 +123,7 @@ struct iOSTaskCollectionPage: View {
     /// **The header scrolls with the content, at both widths.** The `List` hosts pinned it — header,
     /// divider, options bar, then a scrolling list — and that is what a header does when it is the
     /// top of one *column* beside a sibling pane, which is why Today's two-pane task column keeps
-    /// its own. Neither of these is that: `iPadInboxView` documents itself as "one full-width
+    /// its own. Neither of these is that: `iOSInboxView` documents itself as "one full-width
     /// column", the whole page, exactly the page the phone draws. So the divider under it goes with
     /// the pinning; there is nothing left for it to separate.
     ///

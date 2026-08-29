@@ -287,35 +287,15 @@ private struct AppleRemindersAccessRow: View {
 }
 
 
-/// The Inbox scope's empty state. Carries no button of its own: the floating "+" is on screen
-/// behind it, so a second create control here would be a third shape for the same action. The copy
-/// still says what the screen is for, which the page header deliberately does not — and it says
-/// "Apple Reminders" too, which the All Tasks scope's empty state must not.
-struct InboxEmptyStateView: View {
-    var body: some View {
-        ZStack {
-            Theme.bg
-            VStack(spacing: 20) {
-                ZStack {
-                    Circle()
-                        .fill(Theme.blue.opacity(0.08))
-                        .frame(width: 72, height: 72)
-                    Image(systemName: "tray")
-                        .font(.system(size: 30, weight: .light))
-                        .foregroundStyle(Theme.blue.opacity(0.6))
-                }
-                VStack(spacing: 6) {
-                    Text("Inbox is empty")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("Unsorted tasks and Apple Reminders appear here.\nCreate something to get started.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.dim)
-                        .multilineTextAlignment(.center)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
+// `InboxEmptyStateView` used to sit here: a hand-rolled second `EmptyStateView` for the Inbox
+// scope, with its own 72pt tinted circle, its own 30pt light glyph and its own 16/13pt type ramp,
+// while the shared component was already drawn by eleven other macOS files — one of them
+// `TasksListView`, which drew both of them a dozen lines apart. Its copy was macOS's own too, so
+// the same screen said "Inbox is empty" on the Mac and "Inbox is clear" on the phone. Both are gone
+// (T-285): `TasksListView.emptyState` is one `EmptyStateView` for both scopes, and the words come
+// from `CadenceEmptyStateCopy` by way of `CadenceTasksPageScope.collection`.
+//
+// It carried one argument worth keeping, which is why it is recorded rather than just deleted: the
+// Inbox empty state carries no button, because the floating "+" is on screen behind it and a second
+// create control would be a third shape for one action. `EmptyStateView` has no button either.
 #endif

@@ -9,7 +9,7 @@ import SwiftUI
 /// two scroll containers, two separator treatments and two sets of row insets. Both are gone; see
 /// `iOSTaskCollectionPage` for which container won and what the `List` was providing.
 struct iOSAllTasksView: View {
-    /// Off when the Tasks tab hosts this as its All segment — see `iPadTodayView.showsCompactHeader`
+    /// Off when the Tasks tab hosts this as its All segment — see `iOSTodayView.showsCompactHeader`
     /// for the reasoning. Still on when All Tasks is reached as a pushed screen.
     var showsCompactHeader = true
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]

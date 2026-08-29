@@ -2,6 +2,30 @@
 import SwiftUI
 import SwiftData
 
+// **T-286: this file is the one of the seven that mostly resists the shared row vocabulary, and
+// that is a finding rather than an omission.**
+//
+// `CadenceFieldRow` models a *field*: a glyph in a fixed 22pt slot, a quiet 13pt label, and a
+// control on the trailing edge. Nothing declared below is one. `ContextSettingsRow` and
+// `SidebarTabSettingsRow` are drag sources and drop targets that expand into an inline editor;
+// `ArchivedContextRow` and `ListLifecycleRow` carry a status pill and two destructive buttons; all
+// four lead with a 28–30pt tinted identity tile, which is the opposite of the fixed-slot bare glyph
+// the field row exists to impose. Rebuilding them on `CadenceFieldRow` would mean either losing the
+// drag affordance and the tile or passing them through as `content`, which is the shared component
+// in name only — and the standing rule is that forcing a row that does not fit is worse than
+// leaving it.
+//
+// What did convert is the chrome that is genuinely shared and was re-typed anyway: the context
+// rename field now draws the one settings well (it was radius 7, `.stroke`, 8pt padding — a third
+// private spelling of the same rectangle), and the sidebar-tab editor's "Color" heading is
+// `SectionEyebrowLabel`, which `ContextSettingsRow` two hundred lines above was already using for
+// the identical label in the identical role.
+//
+// Left deliberately: `SidebarTabEditorSheet.settingsPanelRow` — a title/subtitle/accessory line on
+// its own card. It is close to `CadenceSettingsNoticeRow` and differs by having no state glyph, and
+// inventing one to reach the shared component would be adding a verdict where the sheet reports
+// none. Recorded as residue rather than bent.
+
 struct ContextSettingsRow: View {
     @Bindable var context: Context
     /// Hands back the id of the context that was **dragged onto this row** — not this row's own
@@ -70,10 +94,7 @@ struct ContextSettingsRow: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.text)
-                        .padding(8)
-                        .background(Theme.surfaceElevated)
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.borderSubtle))
+                        .cadenceSettingsWell()
 
                     SectionEyebrowLabel(text: "Color")
                     ColorGrid(selected: $editColor)
@@ -295,9 +316,7 @@ struct SidebarTabEditorSheet: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Color")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
+                SectionEyebrowLabel(text: "Color")
 
                 // `destinationTints`, not the list palette: this edits a destination's glyph tint,
                 // whose default is a `Theme` accent, and the twelve-hue list palette does not

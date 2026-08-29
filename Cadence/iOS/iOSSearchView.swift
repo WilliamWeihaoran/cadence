@@ -374,13 +374,13 @@ struct iOSSearchView: View {
         .navigationDestination(item: $pushedDestination) { destination in
             switch destination {
             case .today:
-                iPadTodayView()
+                iOSTodayView()
             case .allTasks:
                 iOSAllTasksView()
             case .focus:
                 iOSFocusView()
             case .inbox:
-                iPadInboxView()
+                iOSInboxView()
             case .calendar:
                 iOSCalendarView()
             case .notes:

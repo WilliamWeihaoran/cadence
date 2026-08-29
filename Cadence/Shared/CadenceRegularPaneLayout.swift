@@ -291,7 +291,7 @@ enum CadenceCalendarWeekGridLayout {
 ///
 /// `iOSCalendarView.regularInspectorWidth(for:)` was `min(max(width * 0.30, 340), 430)` — a floor
 /// treated as a guarantee, and the same mistake `CadenceTodayLayoutSupport.taskPaneWidth` (then
-/// spelled on `iPadTodayView`) was carrying.
+/// spelled on `iOSTodayView`) was carrying.
 /// On an 11" iPad in portrait the pane is 632pt: 30% of it is 190, the `max` raised that to 340, and
 /// the inspector took **54% of the pane** away from the surface it annotates. What was left ran the
 /// week grid at its 112pt minimum column width behind a horizontal scroller, so a week view showed

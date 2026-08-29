@@ -279,7 +279,7 @@ struct CadenceBundleCreationParityTests {
     /// `false`: `isTargeted` fires whether or not the closure accepts a drop, so an always-attached
     /// version would light up blocks on a pane with nothing to bundle them with.
     @Test func todaysSchedulePaneInstallsNoDragMeshOfItsOwn() throws {
-        let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iPadTodayScheduleViews.swift"))
+        let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift"))
 
         #expect(occurrences(of: "bundleFormingDrop", in: source) == 0)
         #expect(occurrences(of: ".draggable(", in: source) == 0)
@@ -310,7 +310,7 @@ struct CadenceBundleCreationParityTests {
             "Cadence/iOS/iOSCalendarBoardView.swift",
             "Cadence/iOS/iOSBoardCards.swift",
             "Cadence/iOS/iOSCalendarTimelineViews.swift",
-            "Cadence/iOS/iPadTodayScheduleViews.swift"
+            "Cadence/iOS/iOSTodaySchedulePanel.swift"
         ] {
             let source = try strippingBundleTestComments(sourceFile(path))
             #expect(source.count > 2_000)

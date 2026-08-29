@@ -169,7 +169,7 @@ struct CadenceTaskDateEditingSurfaceTests {
         "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift",
         "Cadence/macOS/Views/TasksPanelSupport.swift",
         "Cadence/iOS/iOSTaskRowActionViews.swift",
-        "Cadence/iOS/iPadTodayScheduleViews.swift",
+        "Cadence/iOS/iOSTodaySchedulePanel.swift",
         "Cadence/iOS/iOSTaskDetailSheet.swift",
         "Cadence/iOS/iOSCalendarBoardView.swift"
     ]

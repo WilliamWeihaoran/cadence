@@ -89,6 +89,24 @@ extension CadenceTasksPageScope {
         }
     }
 
+    /// The collection this view of the Tasks page is showing — the inverse of the initialiser
+    /// above, and the reason macOS no longer writes its own empty-state words (T-285).
+    ///
+    /// `CadenceEmptyStateCopy` exists because three pairs of screens said the same thing in
+    /// different words, and it had **eight iOS references and none on macOS**: the desktop Inbox
+    /// read "Inbox is empty / Unsorted tasks and Apple Reminders appear here. Create something to
+    /// get started." while the phone read "Inbox is clear / Capture tasks here before scheduling or
+    /// filing them." for the same page in the same app. Routing through the collection rather than
+    /// reading the copy enum directly is what keeps the *choice* — which of the two collections
+    /// this is — in one place too, so the glyph and the words cannot be answered by different
+    /// files.
+    var collection: CadenceTaskCollection {
+        switch self {
+        case .all: return .allTasks
+        case .inbox: return .inbox
+        }
+    }
+
     /// Whether the Apple Reminders strip belongs on this view of the Tasks page.
     ///
     /// **This is the highest-risk line in the All Tasks / Inbox merge.** The strip is what makes

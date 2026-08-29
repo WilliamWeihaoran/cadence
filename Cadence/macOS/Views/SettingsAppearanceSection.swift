@@ -11,13 +11,15 @@ import SwiftUI
 ///
 /// Filed under **Interface** beside Navigation and Sidebar rather than in the "App" group of one
 /// that holds About: this configures how the app looks, which is what that group is for.
+///
+/// The card chrome is `CadenceFieldSection` (T-286), not a `SettingsSectionLabel` stacked over a
+/// `SettingsCard` at 16pt. That pair is the sixth spelling of the titled group `CadenceFieldSection`
+/// was built to end — the shared type's own comment says so — and this file was three lines long,
+/// which is exactly the size at which re-spelling it looks harmless.
 struct SettingsAppearanceSection: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionLabel(text: CadenceAccentPalettePresentation.sectionTitle)
-            SettingsCard {
-                CadenceAccentPalettePicker()
-            }
+        CadenceFieldSection(title: CadenceAccentPalettePresentation.sectionTitle) {
+            CadenceAccentPalettePicker()
         }
     }
 }

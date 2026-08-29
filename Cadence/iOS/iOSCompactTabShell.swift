@@ -167,13 +167,13 @@ struct iOSCompactFeatureDestinationView: View {
     var body: some View {
         switch destination {
         case .today:
-            iPadTodayView()
+            iOSTodayView()
         case .allTasks:
             iOSAllTasksView()
         case .focus:
             iOSFocusView()
         case .inbox:
-            iPadInboxView()
+            iOSInboxView()
         case .calendar:
             iOSCalendarView()
         case .notes:

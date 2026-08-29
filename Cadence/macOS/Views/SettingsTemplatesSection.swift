@@ -37,9 +37,7 @@ struct SettingsTemplatesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionLabel(text: "Note Templates")
-
-            SettingsCard {
+            CadenceFieldSection(title: "Note Templates") {
                 templateCardContent
                     // Measured, not wrapped — the same call the iOS card and `iOSNotesView` make,
                     // and for the same reason: a `GeometryReader` here would become the layout
@@ -52,7 +50,7 @@ struct SettingsTemplatesSection: View {
                     }
             }
 
-            SettingsCard {
+            CadenceFieldSection(title: nil) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "info.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
@@ -82,8 +80,7 @@ struct SettingsTemplatesSection: View {
                 templateList
                     .frame(width: CadenceSettingsTemplatesCardLayout.chooserWidth(isDesktop: true))
 
-                Divider()
-                    .background(Theme.borderSubtle)
+                CadenceRowDivider(axis: .vertical)
 
                 templateEditor
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -92,8 +89,7 @@ struct SettingsTemplatesSection: View {
             VStack(alignment: .leading, spacing: 16) {
                 templateList
 
-                Divider()
-                    .background(Theme.borderSubtle)
+                CadenceRowDivider()
 
                 templateEditor
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -144,22 +140,30 @@ struct SettingsTemplatesSection: View {
                     .opacity(NoteTemplateLibrary.isCustomized(selectedTemplate, overridesRaw: templateOverridesRaw) ? 1 : 0.45)
                 }
 
+                // `TemplateEditorField` used to sit at the bottom of this file: an eyebrow over an
+                // inset well at radius 10, with `.stroke` (which straddles the edge) and
+                // `Theme.bg.opacity(0.55)` behind it — the fourth private spelling of
+                // `CadenceSettingsField` on this platform, after `SettingsAISection.settingsField`
+                // and `SettingsTagsSection`'s two. It is the shared component now (T-286).
+                //
+                // The three fields keep their own fonts: the shared well sets 14pt medium as a
+                // default and each `content` overrides it closer to the leaf, which is the point of
+                // the well being chrome rather than a text style. The body editor keeps its 280pt
+                // floor for the same reason — `rowHeight` is a minimum, not a height.
                 VStack(alignment: .leading, spacing: 8) {
-                    TemplateEditorField(title: "Title") {
+                    CadenceSettingsField(title: "Title") {
                         TextField("Template title", text: titleBinding)
-                            .textFieldStyle(.plain)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Theme.text)
                     }
 
-                    TemplateEditorField(title: "Description") {
+                    CadenceSettingsField(title: "Description") {
                         TextField("Short sidebar description", text: subtitleBinding)
-                            .textFieldStyle(.plain)
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.muted)
                     }
 
-                    TemplateEditorField(title: "Body") {
+                    CadenceSettingsField(title: "Body") {
                         TextEditor(text: bodyBinding(for: selectedTemplate))
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(Theme.text)
@@ -294,30 +298,6 @@ private struct TemplateSettingsRow: View {
             }
         }
         .buttonStyle(.cadencePlain)
-    }
-}
-
-private struct TemplateEditorField<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    init(title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SectionEyebrowLabel(text: title)
-            content
-                .padding(10)
-                .background(Theme.bg.opacity(0.55))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Theme.borderSubtle.opacity(0.75), lineWidth: 1)
-                }
-        }
     }
 }
 #endif

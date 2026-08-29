@@ -154,7 +154,7 @@ struct CadenceTaskInspectorHostTests {
                 "Cadence/iOS/iOSTaskViews.swift": 0,
                 "Cadence/iOS/iOSBoardCards.swift": 0,
                 "Cadence/iOS/iOSCalendarTimelineViews.swift": 0,
-                "Cadence/iOS/iPadTodayScheduleViews.swift": 0
+                "Cadence/iOS/iOSTodaySchedulePanel.swift": 0
             ]
         )
         // …and each asks the host instead. `iOSScheduleReadyTaskRow` asks twice: the title button
@@ -165,7 +165,7 @@ struct CadenceTaskInspectorHostTests {
                 "Cadence/iOS/iOSTaskViews.swift": 1,
                 "Cadence/iOS/iOSBoardCards.swift": 1,
                 "Cadence/iOS/iOSCalendarTimelineViews.swift": 1,
-                "Cadence/iOS/iPadTodayScheduleViews.swift": 2
+                "Cadence/iOS/iOSTodaySchedulePanel.swift": 2
             ]
         )
         try expectOccurrences(
@@ -174,7 +174,7 @@ struct CadenceTaskInspectorHostTests {
                 "Cadence/iOS/iOSTaskViews.swift": 1,
                 "Cadence/iOS/iOSBoardCards.swift": 1,
                 "Cadence/iOS/iOSCalendarTimelineViews.swift": 1,
-                "Cadence/iOS/iPadTodayScheduleViews.swift": 1
+                "Cadence/iOS/iOSTodaySchedulePanel.swift": 1
             ]
         )
     }
@@ -187,7 +187,7 @@ struct CadenceTaskInspectorHostTests {
             of: "@State private var showDetail",
             at: [
                 "Cadence/iOS/iOSTaskViews.swift": 0,
-                "Cadence/iOS/iPadTodayScheduleViews.swift": 0,
+                "Cadence/iOS/iOSTodaySchedulePanel.swift": 0,
                 // These two read `1` until T-217, and the survivor in each was the bundle card /
                 // bundle block presenting `iOSCalendarBundleDetailSheet` from inside a filtered
                 // `ForEach` — the same defect on a different sheet, pinned here rather than fixed
@@ -435,7 +435,7 @@ struct CadenceTaskInspectorHostTests {
             "Cadence/iOS/iOSTaskRowActionViews.swift",
             "Cadence/iOS/iOSBoardCards.swift",
             "Cadence/iOS/iOSCalendarTimelineViews.swift",
-            "Cadence/iOS/iPadTodayScheduleViews.swift",
+            "Cadence/iOS/iOSTodaySchedulePanel.swift",
             "Cadence/Shared/CadenceDetailPanelPresentation.swift"
         ] {
             #expect(files.contains(path))

@@ -1,6 +1,12 @@
 #if os(macOS)
 import SwiftUI
 
+// Moved out of `Shared/Components/` by T-288, for the reason recorded on `CadenceButtons.swift`.
+// Goals and Habits are the only callers, `CommitmentPageHeader` wraps `DesktopPageHeader`, and the
+// chrome below it is sized to `CadenceDesktopMetrics`. iOS's counterparts — `iOSIconTile`,
+// `iOSSegmentedPillGroup`, `iOSMetaChip` — are named against these types on purpose and live in
+// `iOSDesignSystem.swift`.
+
 /// A `.page`-role `DesktopPageHeader` with a controls row under it. Goals and Habits are the two
 /// callers; the search field and status filter below the title are what earns the second row.
 ///

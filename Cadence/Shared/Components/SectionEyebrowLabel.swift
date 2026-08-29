@@ -54,6 +54,20 @@ struct SectionEyebrowLabel: View {
     /// compact tier `0.72` — which is what the six hand-rolled 9pt labels were each guessing at,
     /// one of them with a comment computing "~0.05em at 9pt" and another "~0.06em at 9pt". A ratio
     /// is the reason there is nothing left to guess.
+    ///
+    /// **Why the ratio and not the majority (T-284, the judgement the conversion never recorded).**
+    /// Counting the six hand-rolled spellings gives the wrong answer: 0.6 appeared twice and 0.54
+    /// twice, so a vote elects ~0.057em — a number nobody chose, arrived at by two independent
+    /// guesses each landing near it. Tracking is optical, and optical tracking scales with the
+    /// type: the same *visual* letterspacing at 9pt as the 19 correct 10pt sites is 0.08 × 9, and
+    /// nothing else is. So the minority spelling is the correct one and the plurality is the
+    /// accident — which is also why the two sites that carried *no* tracking were the plainest
+    /// defects rather than a third opinion: an uppercase run set solid is the condition an eyebrow
+    /// style exists to prevent, not a tighter setting of it.
+    ///
+    /// Derived rather than switched, and `theCompactKerningIsDerivedRatherThanASecondLiteral`
+    /// pins that: a per-case literal satisfies every value assertion in this repo while putting the
+    /// two tiers back on two independently editable numbers, which is the whole defect.
     nonisolated static let kerningRatio: CGFloat = 0.08
 
     let text: String

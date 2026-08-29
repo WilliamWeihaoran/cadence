@@ -112,23 +112,12 @@ struct iOSLinkedNoteEditorSheet: View {
         }
     }
 
+    // The eyebrow carries the note's kind, which is worth a row here because this sheet is reached
+    // from a `[[link]]` inside some other note and the kind is something the screen does not
+    // otherwise say. Everything else about the block is `iOSNoteEditorSheetHeader`'s, shared with
+    // `iOSEventNoteEditorSheet` (T-281).
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // The note's kind, in the shared eyebrow style rather than a fourth hand-rolled
-            // uppercase caption. It stays because this sheet is reached from a `[[link]]` in some
-            // other note — the kind is something the screen does not otherwise say.
-            SectionEyebrowLabel(text: subtitle)
-
-            Text(note.displayTitle)
-                .font(.system(size: isRegularWidth ? 24 : 22, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(maxHeight: isRegularWidth ? .infinity : nil, alignment: .topLeading)
-        .padding(.horizontal, isRegularWidth ? 20 : 18)
-        .padding(.vertical, isRegularWidth ? 20 : 14)
-        .background(Theme.surface)
+        iOSNoteEditorSheetHeader(eyebrow: subtitle, title: note.displayTitle)
     }
 
     private var editorSurface: some View {

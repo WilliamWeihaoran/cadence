@@ -38,8 +38,11 @@ struct SettingsView: View {
         HStack(spacing: 0) {
             SettingsRail(selectedCategory: $selectedCategory)
 
-            Divider()
-                .background(Theme.borderSubtle)
+            // The rail's edge, on the shared hairline (T-286). It was a two-line
+            // `Divider().background(Theme.borderSubtle)` — the palette colour painted *under* the
+            // system separator, so the rule is neither — and the two-line spelling is why the sweep
+            // written for the one-line form never saw it.
+            CadenceRowDivider(axis: .vertical)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {

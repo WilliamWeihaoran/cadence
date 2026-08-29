@@ -2,6 +2,12 @@
 import SwiftUI
 import AppKit
 
+// Moved out of `Shared/Components/` by T-288. This one was never arguably shared: it is an
+// `NSViewRepresentable` reaching for `NSScrollView.Elasticity`, and all four callers
+// (`SettingsView`, `ListDetailComponents`, `TasksListView`, `TasksPanel`) are macOS pages. It sits
+// beside `macOSRootView.swift` rather than under `Views/` because it is a view *modifier* on the
+// AppKit boundary, not a screen.
+
 @MainActor
 private struct CadenceScrollElasticityConfigurator: NSViewRepresentable {
     typealias NSViewType = NSView

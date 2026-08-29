@@ -123,18 +123,22 @@ struct CadencePressFeedbackSurfaceTests {
     /// than the callers. Pinned so a later "cleanup" that fences these individually has to argue
     /// with a test rather than quietly reintroduce nine spellings of one platform check.
     @Test func theSharedPickersKeepOneUnfencedStyle() throws {
-        // All five shared files that spell the style, not the two the ticket happened to name.
-        // `CadenceDatePicker` and `EstimatePickerControl` are the two that genuinely reach iOS;
-        // `CadenceButtons` and `CadenceContextPicker` are whole-file `#if os(macOS)` today, which
-        // is T-288's business and not this one. What is pinned for all four is the same: the style
-        // is applied straight, and no caller re-spells the platform split the style now handles.
-        let straight = [
-            "Cadence/Shared/Components/CadenceButtons.swift",
-            "Cadence/Shared/Components/CadenceContextPicker.swift",
+        // All five files that spell the style, not the two the ticket happened to name.
+        // `CadenceDatePicker` and `EstimatePickerControl` are the two shared ones that genuinely
+        // reach iOS. `CadenceButtons` and `CadenceContextPicker` were whole-file `#if os(macOS)`
+        // under `Shared/Components/` when this was written; T-288 moved them to `macOS/Views/`,
+        // which is why they are listed apart from the sweep below rather than inside it. What is
+        // pinned for all four is the same: the style is applied straight, and no caller re-spells
+        // the platform split the style now handles.
+        let sharedStraight = [
             "Cadence/Shared/Components/CadenceDatePicker.swift",
             "Cadence/Shared/Components/EstimatePickerControl.swift"
         ]
-        for path in straight {
+        let desktopStraight = [
+            "Cadence/macOS/Views/CadenceButtons.swift",
+            "Cadence/macOS/Views/CadenceContextPicker.swift"
+        ]
+        for path in sharedStraight + desktopStraight {
             let code = try pressFeedbackStrippingComments(pressFeedbackSourceFile(path))
             #expect(code.contains(".buttonStyle(.cadencePlain)"), "\(path)")
             #expect(!code.contains("iosPressable"), "\(path) re-spells the platform split")
@@ -148,8 +152,8 @@ struct CadencePressFeedbackSurfaceTests {
         #expect(chip.components(separatedBy: ".buttonStyle(.iosPressable)").count - 1 == 1, "\(chipPath)")
 
         // And the sweep, so the list above cannot silently stop being all of them. A sixth file
-        // spelling the style is fine; one of these five *losing* it is a caller being fenced by
-        // hand, which is the thing this pins.
+        // spelling the style is fine; one of these *losing* it is a caller being fenced by hand,
+        // which is the thing this pins.
         var scanned = 0
         var spelling: Set<String> = []
         for path in try pressFeedbackSwiftFiles(under: "Cadence/Shared") {
@@ -159,7 +163,12 @@ struct CadencePressFeedbackSurfaceTests {
         }
         // Non-vacuity: the folder held 117 files when this was written.
         #expect(scanned > 90, "scanned only \(scanned) files under Cadence/Shared")
-        #expect(spelling.isSuperset(of: Set(straight + [chipPath])), "missing: \(Set(straight + [chipPath]).subtracting(spelling).sorted())")
+        let expected = Set(sharedStraight + [chipPath])
+        #expect(spelling.isSuperset(of: expected), "missing: \(expected.subtracting(spelling).sorted())")
+
+        // The other half of T-288's move: the two desktop files are no longer under
+        // `Cadence/Shared`, so putting either of them back has to argue with this line.
+        #expect(spelling.isDisjoint(with: Set(desktopStraight)))
     }
 }
 

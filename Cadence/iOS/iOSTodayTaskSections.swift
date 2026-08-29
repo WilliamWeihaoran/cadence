@@ -16,7 +16,7 @@ struct iOSTodayRolloverNotice {
 /// **The action is a closure, and that is the whole platform-shaped half of T-195's second
 /// piece.** macOS's cards hop `ListNavigationManager`, a shell-level router that exists because the
 /// Mac's sidebar is always on screen: opening a list there is a change of pane, and Today is one
-/// click back. iOS has no equivalent and does not grow one here. See `iPadTodayView`, which
+/// click back. iOS has no equivalent and does not grow one here. See `iOSTodayView`, which
 /// presents rather than navigates, and says why.
 struct iOSTodayOverdueSummaries {
     let listSummaries: [CadenceTodayOverdueListSummary]

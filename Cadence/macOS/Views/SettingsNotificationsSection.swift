@@ -2,62 +2,48 @@
 import SwiftUI
 import AppKit
 
+/// Settings → Notifications: one status row, in the state the system has left it in.
+///
+/// **The two cards are one row (T-286).** This pane wrote the same glyph/title/sentence/action line
+/// out twice — once authorized with a toggle on the end, once not with a button — and Reminders and
+/// Sync each wrote a third and fourth. They are `CadenceSettingsNoticeRow` now, so the four of them
+/// are one height and one type ramp rather than four that happened to agree.
 struct SettingsNotificationsSection: View {
     let notificationManager: NotificationManager
     @Binding var notificationsEnabled: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        CadenceFieldSection(title: nil) {
             if notificationManager.isAuthorized {
-                enabledCard
+                enabledRow
             } else {
-                notAuthorizedCard
+                notAuthorizedRow
             }
         }
     }
 
-    private var enabledCard: some View {
-        SettingsCard {
-            HStack(spacing: 12) {
-                Image(systemName: "bell.fill")
-                    .foregroundStyle(Theme.amber)
-                    .font(.system(size: 14))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Enable reminders")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("A task's scheduled start and due date, and a habit's reminder time, notify you locally.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                Toggle("", isOn: $notificationsEnabled)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-            }
+    private var enabledRow: some View {
+        CadenceSettingsNoticeRow(
+            systemImage: "bell.fill",
+            tint: Theme.amber,
+            title: "Enable reminders",
+            detail: "A task's scheduled start and due date, and a habit's reminder time, notify you locally."
+        ) {
+            Toggle("", isOn: $notificationsEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
         }
     }
 
-    private var notAuthorizedCard: some View {
-        SettingsCard {
-            HStack(spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.amber)
-                    .font(.system(size: 14))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Notification access required")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("Allow Cadence to notify you about scheduled tasks, due dates, and habit reminders.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                SettingsActionButton(tone: .filled(Theme.blue), action: requestAuthorization) {
-                    Text("Enable Notifications")
-                }
+    private var notAuthorizedRow: some View {
+        CadenceSettingsNoticeRow(
+            systemImage: "exclamationmark.triangle.fill",
+            tint: Theme.amber,
+            title: "Notification access required",
+            detail: "Allow Cadence to notify you about scheduled tasks, due dates, and habit reminders."
+        ) {
+            SettingsActionButton(tone: .filled(Theme.blue), action: requestAuthorization) {
+                Text("Enable Notifications")
             }
         }
     }

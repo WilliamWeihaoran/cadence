@@ -118,27 +118,14 @@ struct iOSEventNoteEditorSheet: View {
         )
     }
 
-    // This header is the same shape as `iOSLinkedNoteEditorSheet`'s (T-73 sweep) — same title +
-    // eyebrow block, same regular-width rail — and had drifted from it in three ways nothing
-    // recorded: a hand-rolled uppercase caption at 12pt where that sheet uses the shared
-    // `SectionEyebrowLabel` (10pt, kerned 0.8), a title fixed at 24pt on every width against that
-    // sheet's `isRegularWidth ? 24 : 22` ramp, and 4pt of block spacing against its 8. All three are
-    // now the same note-editor-header spelling; no behavior changes on regular width, where the
-    // title was already 24.
+    // The same header `iOSLinkedNoteEditorSheet` draws, and now literally the same view rather than
+    // a second copy of it (T-281). The eyebrow, the title ramp and the block's padding live on
+    // `iOSNoteEditorSheetHeader`; the commit notice is this sheet's own and rides in as the
+    // accessory.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionEyebrowLabel(text: subtitle)
-            Text(title)
-                .font(.system(size: isRegularWidth ? 24 : 22, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(2)
+        iOSNoteEditorSheetHeader(eyebrow: subtitle, title: title) {
             commitNoticeBanner
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(maxHeight: isRegularWidth ? .infinity : nil, alignment: .topLeading)
-        .padding(.horizontal, isRegularWidth ? 20 : 18)
-        .padding(.vertical, isRegularWidth ? 20 : 14)
-        .background(Theme.surface)
     }
 
     /// Says which of the note's two writes did not happen, in the one place on this sheet where

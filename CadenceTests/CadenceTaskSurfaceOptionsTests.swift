@@ -508,3 +508,147 @@ struct CadenceTouchCompletedSectionTests {
         #expect(raw.contains("T-386"), "the cap does not name the ticket that decided it")
     }
 }
+
+// MARK: - T-285: the Mac stops writing its own empty-state words
+
+/// **`CadenceEmptyStateCopy` had eight iOS readers and none on macOS.**
+///
+/// It exists because three pairs of screens said the same thing in different words, and the pair it
+/// was least able to help was the one that never read it: the Inbox said "Inbox is clear / Capture
+/// tasks here before scheduling or filing them." on the phone and "Inbox is empty / Unsorted tasks
+/// and Apple Reminders appear here.\nCreate something to get started." on the Mac, and All Tasks
+/// said "No active tasks / Tasks you create on iPhone, iPad, or Mac will collect here." against
+/// "No tasks yet / Create a task to get started". One screen, four spellings, in an app whose two
+/// surfaces sync to each other.
+///
+/// Worse than the words: `InboxEmptyStateView` was a **second `EmptyStateView`** — its own 72pt
+/// tinted circle, its own 30pt light glyph, its own 16/13pt ramp — declared in a file whose only
+/// caller, `TasksListView`, drew the shared component a dozen lines away in the same `switch`.
+///
+/// **Deliberately not in scope:** `FocusPickerSupportViews.emptyState`. A popover that is empty
+/// *because the search matched nothing* is a different statement from a page that is empty because
+/// there is no work, and `CadenceEmptyStateCopy.focusSubtitle` — "Schedule a task for today to
+/// focus it here" — would be wrong advice under a filtered list.
+@MainActor
+struct CadenceDesktopEmptyStateConvergenceTests {
+
+    /// The hand-rolled second empty state is **gone**, not merely unused. A `struct` that still
+    /// compiles and nothing draws is how the page-header `subtitle` survived three deletions, and
+    /// it is the failure mode a call-site count alone cannot see.
+    @Test func theMacsSecondEmptyStateViewIsDeleted() throws {
+        try t285ExpectNoLiveMention(of: "InboxEmptyStateView")
+
+        // The tombstone stays: comments are stripped before the sweep, so the paragraph in
+        // `InboxSupportViews.swift` recording what was there and why is exempt by construction.
+        let inbox = try desktopSurfaceSourceFile("Cadence/macOS/Views/InboxSupportViews.swift")
+        #expect(inbox.contains("InboxEmptyStateView"), "non-vacuity: the tombstone is unreadable")
+        #expect(inbox.contains("T-285"), "the tombstone does not say which decision removed it")
+    }
+
+    /// One empty state for both scopes, drawn by the shared component, with its words and its glyph
+    /// asked of the collection rather than decided here.
+    ///
+    /// The count is exact and it is **one**: two `EmptyStateView(` calls in this file is the shape
+    /// the page had before — a shared one for All Tasks and a bespoke one for Inbox — re-created
+    /// with the shared name on both.
+    @Test func theMacsTaskPageDrawsOneEmptyStateFromTheSharedCopy() throws {
+        let page = try desktopSurfaceStrippingComments(
+            desktopSurfaceSourceFile("Cadence/macOS/Views/TasksListView.swift")
+        )
+        #expect(page.contains("struct TasksListView"), "non-vacuity: still the task page's file")
+
+        #expect(
+            page.components(separatedBy: "EmptyStateView(").count - 1 == 1,
+            "the task page draws its empty state more than once"
+        )
+        for read in ["scope.collection.emptyTitle", "scope.collection.emptySubtitle", "scope.collection.emptyIcon"] {
+            #expect(page.contains(read), "the empty state stopped reading \(read)")
+        }
+
+        // None of the four retired strings comes back at this call site, including as a fallback.
+        for retired in ["No tasks yet", "Create a task to get started", "Inbox is empty"] {
+            #expect(!page.contains(retired), "the desktop spelling \"\(retired)\" is back")
+        }
+    }
+
+    /// The mapping the page reads exists on the scope, in both directions.
+    ///
+    /// Asserted through the source rather than as a value only because the *inverse* is what is
+    /// new; `init(collection:)` has been there since T-163 and is checked as a value below.
+    @Test func theScopeAndTheCollectionMapBothWays() throws {
+        #expect(CadenceTasksPageScope(collection: .inbox) == .inbox)
+        #expect(CadenceTasksPageScope(collection: .allTasks) == .all)
+
+        let scope = try desktopSurfaceStrippingComments(
+            desktopSurfaceSourceFile("Cadence/Shared/CadenceTasksPageScope.swift")
+        )
+        #expect(scope.contains("enum CadenceTasksPageScope"), "non-vacuity: still the scope's file")
+        #expect(
+            scope.contains("var collection: CadenceTaskCollection"),
+            "the scope cannot name the collection it is showing"
+        )
+    }
+
+    /// The words themselves, so a "convergence" that quietly rewrote the shared constants to the
+    /// desktop's spelling still fails. The Inbox line says what to *do*; the desktop one described
+    /// what the screen contains and then told the reader to create something, which is the floating
+    /// "+" already on screen behind it.
+    @Test func theSharedInboxCopyIsTheCaptureSentenceRatherThanTheDesktopParagraph() {
+        #expect(CadenceEmptyStateCopy.inboxTitle == "Inbox is clear")
+        #expect(CadenceEmptyStateCopy.inboxSubtitle == "Capture tasks here before scheduling or filing them.")
+        #expect(!CadenceEmptyStateCopy.inboxSubtitle.contains("\n"), "an empty state's line is one line")
+
+        // The collection is what the desktop page reads, so its answers are the ones that matter.
+        #expect(CadenceTaskCollection.inbox.emptyTitle == CadenceEmptyStateCopy.inboxTitle)
+        #expect(CadenceTaskCollection.inbox.emptySubtitle == CadenceEmptyStateCopy.inboxSubtitle)
+        #expect(CadenceTaskCollection.allTasks.emptyTitle == CadenceEmptyStateCopy.allTasksTitle)
+        #expect(CadenceTaskCollection.allTasks.emptySubtitle == CadenceEmptyStateCopy.allTasksSubtitle)
+
+        // The glyph is the hollow twin of the header's, and both platforms now draw it.
+        #expect(CadenceTaskCollection.inbox.emptyIcon == "tray")
+        #expect(CadenceTaskCollection.allTasks.emptyIcon == "checklist")
+    }
+
+    /// The sweep behind `theMacsSecondEmptyStateViewIsDeleted` actually walks the tree.
+    @Test func theEmptyStateSweepReachesTheFilesItClaimsTo() throws {
+        let files = try t285SwiftFiles(under: "Cadence")
+        #expect(files.count > 400, "walked \(files.count) files")
+        #expect(files.contains("Cadence/macOS/Views/InboxSupportViews.swift"))
+        #expect(files.contains("Cadence/Shared/Components/EmptyStateView.swift"))
+
+        // A name that is definitely live must be found by the same sweep the absence assertion
+        // uses, or that assertion is a statement about the enumerator.
+        var liveHits = 0
+        for path in files {
+            let code = try desktopSurfaceStrippingComments(desktopSurfaceSourceFile(path))
+            if code.range(of: "(?<![A-Za-z0-9_])EmptyStateView(?![A-Za-z0-9_])", options: .regularExpression) != nil {
+                liveHits += 1
+            }
+        }
+        #expect(liveHits >= 10, "the sweep found EmptyStateView in only \(liveHits) files")
+    }
+}
+
+private func t285SwiftFiles(under relativeDirectory: String) throws -> [String] {
+    let directory = desktopSurfaceRepositoryRoot().appendingPathComponent(relativeDirectory)
+    guard let enumerator = FileManager.default.enumerator(atPath: directory.path) else { return [] }
+    return enumerator.compactMap { element in
+        guard let relativePath = element as? String, relativePath.hasSuffix(".swift") else { return nil }
+        return "\(relativeDirectory)/\(relativePath)"
+    }
+}
+
+private func t285ExpectNoLiveMention(
+    of name: String,
+    sourceLocation: SourceLocation = #_sourceLocation
+) throws {
+    let pattern = "(?<![A-Za-z0-9_])\(name)(?![A-Za-z0-9_])"
+    for path in try t285SwiftFiles(under: "Cadence") {
+        let code = try desktopSurfaceStrippingComments(desktopSurfaceSourceFile(path))
+        #expect(
+            code.range(of: pattern, options: .regularExpression) == nil,
+            "\(path) still refers to the retired \(name)",
+            sourceLocation: sourceLocation
+        )
+    }
+}

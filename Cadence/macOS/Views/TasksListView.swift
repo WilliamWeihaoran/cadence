@@ -335,23 +335,32 @@ struct TasksListView: View {
         }
     }
 
+    /// **One empty state for both scopes, and its words are not this platform's (T-285).**
+    ///
+    /// There were two of everything here. All Tasks said "No tasks yet / Create a task to get
+    /// started" while iOS said "No active tasks / Tasks you create on iPhone, iPad, or Mac will
+    /// collect here"; Inbox said "Inbox is empty / Unsorted tasks and Apple Reminders appear here.
+    /// Create something to get started." while iOS said "Inbox is clear / Capture tasks here before
+    /// scheduling or filing them." One screen, four spellings, and the enum that exists to stop
+    /// exactly that — `CadenceEmptyStateCopy` — had no macOS reader at all.
+    ///
+    /// The Apple Reminders sentence went with the desktop copy, and losing it is the right
+    /// outcome rather than an acceptable cost: the strip is on the iOS Inbox too
+    /// (`showsRemindersStrip` has one caller per platform), so the fact was never desktop-specific
+    /// — only the sentence was. An empty state states the one thing to do, which is capture.
+    ///
+    /// `InboxEmptyStateView` is deleted rather than left unread. It was a second `EmptyStateView`
+    /// — its own 72pt tinted circle, its own 30pt light glyph, its own 16/13pt ramp — beside the
+    /// shared component this same file was already calling twelve lines up.
     @ViewBuilder
     private var emptyState: some View {
-        switch scope {
-        case .all:
-            EmptyStateView(
-                message: "No tasks yet",
-                // Not "above": the header pill this pointed at is gone, and the page's
-                // create control is the floating "+" below.
-                subtitle: "Create a task to get started",
-                icon: "checkmark.circle"
-            )
-            .padding(.top, 40)
-            .frame(maxWidth: .infinity)
-        case .inbox:
-            InboxEmptyStateView()
-                .frame(minHeight: 320)
-        }
+        EmptyStateView(
+            message: scope.collection.emptyTitle,
+            subtitle: scope.collection.emptySubtitle,
+            icon: scope.collection.emptyIcon
+        )
+        .padding(.top, 40)
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Actions

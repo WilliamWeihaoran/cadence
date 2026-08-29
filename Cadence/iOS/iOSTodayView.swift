@@ -2,7 +2,7 @@
 import SwiftData
 import SwiftUI
 
-struct iPadTodayView: View {
+struct iOSTodayView: View {
     /// Off when the Tasks tab is hosting this as its Today segment: the tab's own header already
     /// carries the date, the greeting and the switcher that says which slice you are on, so the
     /// page heading below it would be the second title on one screen. Still on when Today is a
@@ -209,7 +209,7 @@ struct iPadTodayView: View {
         // "the task inspector is presented by a host, never by a row" — is about a presenter that
         // its own query can remove out from under the sheet. A card here sits in a `ForEach` over
         // summaries that a write inside the list *can* empty, which is exactly why the presenter is
-        // `iPadTodayView` and not `CadenceTodayOverdueListCard`.
+        // `iOSTodayView` and not `CadenceTodayOverdueListCard`.
         .sheet(item: $pendingListOpen) { request in
             iOSTodayOverdueListSheet(request: request)
         }

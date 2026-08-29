@@ -876,7 +876,7 @@ private struct iOSCalendarEventBlock: View {
 /// pane. Neutral plate, a wash of the list's colour, and a square-edged strip of that colour on the
 /// leading edge — the same vocabulary `iOSBoardTaskCard` speaks on the boards.
 ///
-/// It replaced a second block in `iPadTodayScheduleViews` that was a tint-washed, fully-rounded,
+/// It replaced a second block in `iOSTodaySchedulePanel` that was a tint-washed, fully-rounded,
 /// shadowed card with a pill strip and no completion circle, so the same scheduled task changed
 /// species between two screens that both exist to show its schedule.
 struct iOSTimelineTaskBlock: View {

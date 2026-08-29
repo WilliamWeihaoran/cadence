@@ -5,8 +5,8 @@ import SwiftUI
 /// **It was a hard-bordered radius-12 rectangle here and a soft-elevation `Theme.radiusCard` one
 /// on iOS (`iOSSettingsCard`), and the iOS file said so in as many words** — "Local stand-in for
 /// the shared `CadenceSettingsCard` … the shared component keeps its original hard-border,
-/// radius-12 treatment because macOS settings and `iPadInboxView` still rely on it as-is". Half of
-/// that had already stopped being true: `iPadInboxView` does not mention this type, and macOS
+/// radius-12 treatment because macOS settings and `iOSInboxView` still rely on it as-is". Half of
+/// that had already stopped being true: `iOSInboxView` does not mention this type, and macOS
 /// Settings was the only caller left. T-20 gave the shared card the soft treatment and made the
 /// iOS spelling a wrapper, so there is one rectangle rather than two.
 ///

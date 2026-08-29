@@ -553,7 +553,7 @@ struct CadenceTodayOverdueSummarySurfaceTests {
 
     /// `Cadence/iOS/` is invisible to this target, so the iOS half is pinned by reading it.
     @Test func iOSTodayDerivesTheSameSummariesAndDrawsTheSameCards() throws {
-        let host = try strippingComments(sourceFile("Cadence/iOS/iPadTodayView.swift"))
+        let host = try strippingComments(sourceFile("Cadence/iOS/iOSTodayView.swift"))
         #expect(host.contains("CadenceTodayOverdueSummarySupport.listSummaries("))
         #expect(host.contains("CadenceTodayOverdueSummarySupport.sectionSummaries("))
         #expect(host.contains("iOSTodayOverdueSummaries("))
@@ -568,7 +568,7 @@ struct CadenceTodayOverdueSummarySurfaceTests {
     /// Both widths draw the cards because both draw `iOSTodayTaskSections` — the one list. A second
     /// `CadenceTodayOverdue*Card(` under this folder is the near-copy this whole ticket is about.
     @Test func bothIOSWidthsDrawTheCardsFromTheOneList() throws {
-        for host in ["Cadence/iOS/iPadTodayView.swift", "Cadence/iOS/iPadTodayCompactViews.swift"] {
+        for host in ["Cadence/iOS/iOSTodayView.swift", "Cadence/iOS/iOSTodayCompactViews.swift"] {
             let source = try strippingComments(sourceFile(host))
             #expect(source.contains("overdueSummaries"), "\(host) does not pass the summaries through")
             #expect(
@@ -594,7 +594,7 @@ struct CadenceTodayOverdueSummarySurfaceTests {
     /// The tap target is the one genuinely platform-shaped piece, and iOS must not have grown a
     /// second copy of the Mac's router to serve it.
     @Test func theIOSTapTargetPresentsRatherThanReachingForANavigationManager() throws {
-        let host = try strippingComments(sourceFile("Cadence/iOS/iPadTodayView.swift"))
+        let host = try strippingComments(sourceFile("Cadence/iOS/iOSTodayView.swift"))
         #expect(host.contains("iOSTodayOverdueListSheet(request: request)"))
         #expect(!host.contains("ListNavigationManager"))
 

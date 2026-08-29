@@ -1,6 +1,13 @@
 #if os(iOS)
 import SwiftUI
 
+// The three types here keep their `iPad` prefix on purpose. T-283 renamed `iPadInboxView`,
+// `iPadTodayView` and two file names because those render at every width and the prefix was a
+// claim about a device that was not true. These are the exception it left standing: the task
+// header, the inspector switcher and the side-panel selector are all built only by
+// `iOSTodayView.twoPaneTodayLayout`, which `CadenceTodayLayoutSupport.layout(...)` returns only at
+// regular width. A compact width cannot reach any of them, so here the prefix is information.
+
 /// Today's page header — and, since the layout picker left it, Today's *only* chrome row.
 ///
 /// Two things moved onto this row rather than keeping a band each below it:

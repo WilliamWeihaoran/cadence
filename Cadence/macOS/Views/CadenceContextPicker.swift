@@ -1,6 +1,20 @@
 #if os(macOS)
 import SwiftUI
 
+// Moved out of `Shared/Components/` by T-288 rather than unfenced, and that was the live choice:
+// T-288 named this file as "the one with a counterpart to converge on", because iOS spells a
+// "pick a context" control twice more (`iOSListEditorViews`, `iOSTrackingEditorSheets`).
+//
+// It is not convergeable as written. `CadenceContextPickerList` is keyboard-first — `onMoveCommand`
+// (macOS/tvOS only), a focused search field that takes focus on appear, a highlight index driven by
+// arrow keys, an `onSubmit` that commits it — and `ContextPickerRowHover` is a hover wash. On iOS
+// none of that fires, and what would be left is a list with a keyboard permanently up. The two iOS
+// call sites already route through the shared `iOSChoiceRow` / `iOSChoicePopoverList` idiom, which
+// is the touch answer to the same question.
+//
+// Converging them means a shared *item model and filter* under two presentations, not one view.
+// Filed as T-446 rather than smuggled into a file move.
+
 struct CadenceContextPickerButton: View {
     let contexts: [Context]
     @Binding var selectedID: UUID?

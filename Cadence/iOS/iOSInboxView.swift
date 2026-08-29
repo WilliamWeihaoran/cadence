@@ -11,12 +11,12 @@ import SwiftUI
 /// `LazyVStack` in its container, its row insets and its separators; that is gone too, and the
 /// `horizontalSizeClass` branch with it. See `iOSTaskCollectionPage`.
 ///
-/// The type name is the last trace of the split. It is kept because its remaining callers —
-/// `iOSRootView`, `iOSCompactTabShell`, `iOSSearchView` and `iOSTasksTabView` — are outside this
-/// change's reach, and the name is now simply wrong: this is the Inbox on every device.
-struct iPadInboxView: View {
+/// The type was called `iPadInboxView` for one release after that, and its own doc comment said the
+/// name was wrong. T-283 renamed it and its file: a name that claims a device is the thing that
+/// makes the next reader write a second copy for the other one.
+struct iOSInboxView: View {
     /// Off when the Tasks tab hosts this as its Inbox segment — see
-    /// `iPadTodayView.showsCompactHeader`. Still on when Inbox is reached as a pushed screen.
+    /// `iOSTodayView.showsCompactHeader`. Still on when Inbox is reached as a pushed screen.
     var showsCompactHeader = true
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @AppStorage("ios.inbox.sortMode") private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue

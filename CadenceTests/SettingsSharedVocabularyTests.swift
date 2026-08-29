@@ -38,11 +38,14 @@ struct SettingsSharedVocabularyTests {
         let metrics = try t20StrippingComments(t20SourceFile("Cadence/Shared/Components/CadenceFieldRows.swift"))
         #expect(metrics.contains("#if os(macOS)"), "the row height stopped being a per-platform answer")
 
-        // The three components that draw a row read the property; none of them types a number.
+        // The components that draw a row read the property; none of them types a number. Four in
+        // the shared file since T-286: the field row, the info row, the inset well the titled
+        // field now delegates to, and the notice row three Settings panes were each drawing by
+        // hand.
         try t20ExpectOccurrences(
             of: "CadenceSettingsRowMetrics.rowHeight",
             at: [
-                "Cadence/Shared/Components/CadenceFieldRows.swift": 3,
+                "Cadence/Shared/Components/CadenceFieldRows.swift": 4,
                 "Cadence/Shared/Components/CadenceChoicePicker.swift": 1,
                 "Cadence/iOS/iOSSettingsComponents.swift": 1
             ]
@@ -386,4 +389,236 @@ private func t20StrippingComments(_ source: String) throws -> String {
         }
     }
     return result
+}
+
+// MARK: - T-286: the seven panes T-20 left outside the vocabulary
+
+/// **T-20 converted four macOS Settings panes and gave five others the hairline only.** Seven were
+/// left entirely outside the shared row vocabulary, and the remaining work was recorded *inside the
+/// Done entry for T-20* — which is where remaining work goes to be forgotten. It was: Tags (493
+/// lines, carrying its own two spellings of the inset well), Templates (323, carrying a third),
+/// Support Views (427), Reminders (151), Sync (85), Notifications (78) and Appearance (24). None of
+/// them mentioned `CadenceFieldSection`, `CadenceFieldRow` or `CadenceSettingsField` at all, so a
+/// settings row was still two heights and two spellings depending on which category you opened.
+///
+/// **Two of the seven did not fit the field row, and were not made to.**
+///
+/// - `SettingsSupportViews.swift` is a row *library*, not a pane: drag sources, drop targets,
+///   inline editors, 28–30pt tinted identity tiles and paired destructive buttons. `CadenceFieldRow`
+///   models a glyph in a fixed 22pt slot, a quiet label and one trailing control; passing those rows
+///   through it as `content` would be the shared component in name only. What converted there is
+///   the chrome that really was re-typed — the rename field's private well, and a "Color" heading
+///   spelled two ways in one file.
+/// - Notifications and Sync have no fields and no headings; they are single *status* cards. Rather
+///   than bend them into a field row, the row they were each hand-drawing became one:
+///   `CadenceSettingsNoticeRow`, which Reminders' access card and the tag catalog's empty row also
+///   read. Four hand-written copies of one line, now five call sites of one component.
+///
+/// **Not in scope:** `SettingsListManagementSections.swift`. It is not one of the seven — T-20 gave
+/// it the hairline, and it is the pane with five `CadenceRowDivider` call sites already.
+@MainActor
+struct SettingsSevenPaneVocabularyTests {
+
+    /// Every one of the seven now reads the shared titled group, the shared status row, the shared
+    /// inset well, or — for the row library — is recorded above as resisting on purpose.
+    ///
+    /// Exact counts, not "contains": the failure this guards is one call site of several reverting,
+    /// which a presence check cannot see. It is the same lesson `expectCallSites` in
+    /// `CadenceSharedBoardChromeTests` was written for.
+    @Test func theSevenPanesReadTheSharedFieldVocabulary() throws {
+        try t20ExpectCallSites(
+            of: "CadenceFieldSection",
+            at: [
+                "Cadence/macOS/Views/SettingsAppearanceSection.swift": 1,
+                "Cadence/macOS/Views/SettingsNotificationsSection.swift": 1,
+                "Cadence/macOS/Views/SettingsSyncSection.swift": 1,
+                "Cadence/macOS/Views/SettingsRemindersSection.swift": 2,
+                "Cadence/macOS/Views/SettingsTemplatesSection.swift": 2,
+                "Cadence/macOS/Views/SettingsTagsSection.swift": 4
+            ]
+        )
+
+        try t20ExpectCallSites(
+            of: "CadenceSettingsNoticeRow",
+            at: [
+                "Cadence/macOS/Views/SettingsNotificationsSection.swift": 2,
+                "Cadence/macOS/Views/SettingsRemindersSection.swift": 1,
+                "Cadence/macOS/Views/SettingsSyncSection.swift": 1,
+                "Cadence/macOS/Views/SettingsTagsSection.swift": 1,
+                // The row lives in the shared file; the declaration is not a call site.
+                "Cadence/Shared/Components/CadenceFieldRows.swift": 0
+            ]
+        )
+
+        try t20ExpectCallSites(
+            of: "CadenceSettingsField",
+            at: ["Cadence/macOS/Views/SettingsTemplatesSection.swift": 3]
+        )
+    }
+
+    /// **The four private inset wells are deleted, not merely unused.**
+    ///
+    /// `SettingsAISection.settingsField` went in T-20 and its two `SettingsTagsSection` siblings did
+    /// not, which is how the count in `CadenceSettingsField`'s own comment ("replaces six
+    /// near-copies") came to describe a tree with three still in it — plus a fourth,
+    /// `TemplateEditorField`, that comment never counted.
+    @Test func noSettingsPaneKeepsAPrivateInsetWell() throws {
+        try t20ExpectNoLiveMention(of: "TemplateEditorField")
+
+        // The wells that stayed are helpers over the shared modifier rather than second
+        // rectangles: placeholder-only fields have no eyebrow for the titled component to draw.
+        try t20ExpectOccurrences(
+            of: "cadenceSettingsWell()",
+            at: [
+                "Cadence/macOS/Views/SettingsTagsSection.swift": 2,
+                "Cadence/macOS/Views/SettingsSupportViews.swift": 1,
+                // The titled field draws the same rectangle by delegating to it, which is what
+                // makes a bare well and a labelled one one component rather than two.
+                "Cadence/Shared/Components/CadenceFieldRows.swift": 2
+            ]
+        )
+
+        // And the rectangle itself is gone, not just its call sites. The tell the three wells
+        // shared was `.stroke` rather than `.strokeBorder` — it straddles the edge, so a well is a
+        // point wider than it measures, which is how three "identical" wells were three different
+        // widths — over a radius each had chosen for itself: 8, 8 and 7 against the shared
+        // `Theme.radiusControl`.
+        let tags = t286RemovingWhitespace(
+            try t20StrippingComments(t20SourceFile("Cadence/macOS/Views/SettingsTagsSection.swift"))
+        )
+        #expect(tags.contains("structSettingsTagsSection"), "non-vacuity: still the tags pane")
+        #expect(
+            !tags.contains("RoundedRectangle(cornerRadius:8)"),
+            "the tags pane draws its own radius-8 well again"
+        )
+
+        let context = t286RemovingWhitespace(
+            try t20StrippingComments(t20SourceFile("Cadence/macOS/Views/SettingsSupportViews.swift"))
+        )
+        #expect(context.contains("structContextSettingsRow"), "non-vacuity: still the row library")
+        #expect(
+            !context.contains("RoundedRectangle(cornerRadius:7).stroke(Theme.borderSubtle)"),
+            "the context row draws its own radius-7 well again"
+        )
+    }
+
+    /// **The hairline sweep, this time at any line break.**
+    ///
+    /// `noSettingsPaneStillPaintsUnderTheSystemSeparator` above looks for the literal one-line
+    /// `Divider().background(Theme.borderSubtle)`, and three call sites walked straight past it by
+    /// being spelled across two lines — one of them a *vertical* column separator in the note
+    /// templates card, which is the same painted-under hairline turned ninety degrees. Removing
+    /// whitespace before the check is what makes the two spellings one.
+    @Test func noSettingsPanePaintsUnderTheSystemSeparatorAtAnyLineBreak() throws {
+        var scanned = 0
+        var offenders: [String] = []
+
+        for path in try t20SwiftFiles(under: "Cadence/macOS/Views") where path.contains("/Settings") {
+            // `SettingsListManagementSections.swift` is outside this batch and carries the last
+            // two-line survivor; it is filed as residue rather than silently allowed here, and the
+            // named exclusion is what keeps this a sweep with one hole rather than an allowlist
+            // that can grow.
+            if path.hasSuffix("SettingsListManagementSections.swift") { continue }
+            scanned += 1
+            let code = t286RemovingWhitespace(try t20StrippingComments(t20SourceFile(path)))
+            if code.contains("Divider().background(Theme.borderSubtle") {
+                offenders.append(path)
+            }
+        }
+
+        #expect(scanned >= 11, "scanned only \(scanned) settings panes")
+        #expect(offenders.isEmpty, "painted-under hairline(s) in: \(offenders.sorted().joined(separator: ", "))")
+    }
+
+    /// The detector against text that is not the repository, so the sweep above is not one typo
+    /// away from matching nothing. Both spellings must be caught and the shared component must not.
+    @Test func theHairlineDetectorCatchesBothSpellingsAndNotTheSharedOne() {
+        #expect(t286RemovingWhitespace("""
+        Divider()
+            .background(Theme.borderSubtle)
+            .padding(.leading, 24)
+        """).contains("Divider().background(Theme.borderSubtle"))
+
+        #expect(t286RemovingWhitespace("Divider().background(Theme.borderSubtle)")
+            .contains("Divider().background(Theme.borderSubtle"))
+
+        #expect(!t286RemovingWhitespace("CadenceRowDivider(leadingInset: 24)")
+            .contains("Divider().background(Theme.borderSubtle"))
+
+        // A bare `Divider()` is not the bug — the bug is painting the palette colour under the
+        // system separator, which leaves the line neither colour.
+        #expect(!t286RemovingWhitespace("Divider()\n    .padding(.vertical, 2)")
+            .contains("Divider().background(Theme.borderSubtle"))
+    }
+
+    /// The shared divider gained an axis rather than the vertical call site keeping `Divider()`.
+    @Test func theSharedHairlineDrawsBothAxes() throws {
+        let rows = try t20StrippingComments(t20SourceFile("Cadence/Shared/Components/CadenceFieldRows.swift"))
+        #expect(rows.contains("struct CadenceRowDivider"), "non-vacuity: still the divider's file")
+        #expect(rows.contains("var axis: Axis = .horizontal"), "the hairline lost its axis")
+        #expect(rows.contains("case .vertical"), "the hairline draws only one axis again")
+
+        try t20ExpectCallSites(
+            of: "CadenceRowDivider",
+            at: [
+                "Cadence/macOS/Views/SettingsTemplatesSection.swift": 2,
+                "Cadence/macOS/Views/SettingsRemindersSection.swift": 1
+            ]
+        )
+        #expect(
+            try t20StrippingComments(t20SourceFile("Cadence/macOS/Views/SettingsTemplatesSection.swift"))
+                .contains("CadenceRowDivider(axis: .vertical)"),
+            "the templates card's column separator is back to a system Divider"
+        )
+    }
+
+    /// **The `SettingsSectionLabel` + `SettingsCard` pair is the sixth spelling of the titled
+    /// group**, and none of the seven writes it any more. The pair itself stays: three panes T-20
+    /// converted for other reasons still use it, and this ticket is about the seven.
+    @Test func noneOfTheSevenStacksTheOlderTitledGroupSpelling() throws {
+        let seven = [
+            "Cadence/macOS/Views/SettingsTagsSection.swift",
+            "Cadence/macOS/Views/SettingsTemplatesSection.swift",
+            "Cadence/macOS/Views/SettingsSupportViews.swift",
+            "Cadence/macOS/Views/SettingsRemindersSection.swift",
+            "Cadence/macOS/Views/SettingsSyncSection.swift",
+            "Cadence/macOS/Views/SettingsNotificationsSection.swift",
+            "Cadence/macOS/Views/SettingsAppearanceSection.swift"
+        ]
+
+        for path in seven {
+            let code = try t20StrippingComments(t20SourceFile(path))
+            #expect(code.count > 400, "non-vacuity: \(path) read as \(code.count) characters")
+            #expect(!code.contains("SettingsSectionLabel("), "\(path) still stacks its own eyebrow")
+            #expect(!code.contains("SettingsCard {"), "\(path) still stacks its own card")
+        }
+
+        // Still live where T-20 left it, so the assertions above are about these seven files and
+        // not about the component having quietly disappeared.
+        try t20ExpectCallSites(
+            of: "SettingsSectionLabel",
+            at: ["Cadence/macOS/Views/SettingsAboutSection.swift": 2]
+        )
+    }
+
+    /// The row library that resisted says so in its own file, so the next reader does not re-file
+    /// it as an oversight. Recorded in the source rather than only in `docs/TODO.md`, because the
+    /// argument is about the rows declared here and belongs beside them.
+    @Test func theRowLibraryRecordsWhyItStaysOutsideTheFieldRow() throws {
+        let raw = try t20SourceFile("Cadence/macOS/Views/SettingsSupportViews.swift")
+        #expect(raw.contains("struct ContextSettingsRow"), "non-vacuity: still the row library")
+        #expect(raw.contains("T-286"), "the row library does not say which decision left it alone")
+        #expect(raw.contains("CadenceFieldRow"), "the note does not name the component it declines")
+
+        // The two things there that were genuinely re-typed did convert.
+        try t20ExpectCallSites(
+            of: "SectionEyebrowLabel",
+            at: ["Cadence/macOS/Views/SettingsSupportViews.swift": 3]
+        )
+    }
+}
+
+/// Removes every whitespace character, so a modifier chain reads the same however it is wrapped.
+private func t286RemovingWhitespace(_ source: String) -> String {
+    source.filter { !$0.isWhitespace }
 }

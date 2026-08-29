@@ -136,14 +136,104 @@ struct CadenceFieldDivider: View {
 /// Settings still used in five places — leaves the system separator colour painted on top of the
 /// palette colour, so the line is neither `borderSubtle` nor predictable across sections. This
 /// draws the palette colour and nothing else.
+///
+/// **The axis is a parameter because the bug is not (T-286).** Four surviving
+/// `Divider().background(Theme.borderSubtle)` call sites were spelled across two lines, which is
+/// how they walked past a sweep written for the one-line form; two of them — the note-template
+/// card's column separator and the Settings rail's edge — were *vertical*, and a horizontal-only
+/// replacement is precisely the excuse that would have left them there. A `Divider()` in an
+/// `HStack` is the same painted-under hairline turned ninety degrees, not a different component.
 struct CadenceRowDivider: View {
+    /// Ignored on the vertical axis, where there is no leading glyph to clear.
     var leadingInset: CGFloat = 0
+    var axis: Axis = .horizontal
 
     var body: some View {
-        Rectangle()
-            .fill(Theme.borderSubtle)
-            .frame(height: 1)
-            .padding(.leading, leadingInset)
+        switch axis {
+        case .horizontal:
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(height: 1)
+                .padding(.leading, leadingInset)
+        case .vertical:
+            Rectangle()
+                .fill(Theme.borderSubtle)
+                .frame(width: 1)
+        }
+    }
+}
+
+/// The **one** inset well a typed value sits in: 12pt of leading air, a row-height floor, the
+/// elevated surface, and a `strokeBorder` at the control radius.
+///
+/// Split out of `CadenceSettingsField` (T-286) because half the wells in Settings have no eyebrow
+/// over them and so could not read the titled component: the tag creator's two fields are
+/// placeholder-only, and so is the context row's rename field. Those three were the last private
+/// spellings of this chrome on macOS — two of them byte-identical to each other at radius 8 with a
+/// `.stroke` (which straddles the edge, so the well is 1pt wider than it measures) and the third at
+/// radius 7 with 8pt of padding. A modifier is what lets the titled field and the bare field be one
+/// rectangle rather than two that agree by hand.
+struct CadenceSettingsWell: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 12)
+            .frame(minHeight: CadenceSettingsRowMetrics.rowHeight)
+            .background(Theme.surfaceElevated)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                    .strokeBorder(Theme.borderSubtle, lineWidth: 1)
+            }
+    }
+}
+
+extension View {
+    /// Draws this control inside the shared settings inset well. See `CadenceSettingsWell`.
+    func cadenceSettingsWell() -> some View {
+        modifier(CadenceSettingsWell())
+    }
+}
+
+/// A settings card's **status line**: a state glyph, what the state is, one sentence of why, and
+/// the action that changes it.
+///
+/// **Four call sites in three panes wrote this out (T-286).** Notifications drew it twice
+/// (authorized, and not), Reminders drew it for calendar access, and Sync drew it for the iCloud
+/// account — each with the same 14pt glyph, the same 13pt semibold `Theme.text` title, the same
+/// 12pt `Theme.dim` paragraph under `fixedSize`, and the same trailing `SettingsActionButton`.
+/// They are the same row, and the only reason they were not already one component is that a
+/// *permission* row is not what `CadenceFieldRow` models: it carries a sentence, its glyph is a
+/// verdict rather than a field's name, and its trailing control acts rather than edits. So this is
+/// a second member of the row vocabulary rather than a bent copy of the first — and it reads the
+/// same `rowHeight`, which is the number that made those panes two heights.
+struct CadenceSettingsNoticeRow<Trailing: View>: View {
+    let systemImage: String
+    let tint: Color
+    let title: String
+    let detail: String
+    @ViewBuilder let trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14))
+                .foregroundStyle(tint)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            trailing()
+        }
+        .frame(minHeight: CadenceSettingsRowMetrics.rowHeight)
     }
 }
 
@@ -218,14 +308,7 @@ struct CadenceSettingsField<Content: View>: View {
                 .textFieldStyle(.plain)
                 .foregroundStyle(Theme.text)
                 .tint(Theme.blue)
-                .padding(.horizontal, 12)
-                .frame(minHeight: CadenceSettingsRowMetrics.rowHeight)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                        .strokeBorder(Theme.borderSubtle, lineWidth: 1)
-                }
+                .cadenceSettingsWell()
         }
     }
 }
