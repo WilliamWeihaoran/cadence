@@ -99,6 +99,12 @@ compiles in a view is not evidence it compiles here.
 Build **this** scheme. The old advice here was "build the app target if shared model code changed",
 which is exactly backwards — the `Cadence` scheme staying green is the thing that hides the break.
 
+`CadenceTests/CadenceTargetSourceMembershipTests.swift` now catches the commonest shape of that
+break from inside the app scheme (T-409): it reads this target's Sources phase and fails when a
+listed file references a type declared only in a file the target does not compile — `aaa0064`,
+mechanised. It sees types, not free functions or extension members, so it narrows the window rather
+than closing it. Building this scheme is still the check.
+
 ```sh
 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
   -project Cadence.xcodeproj -scheme CadenceMCPServer -destination 'platform=macOS' \

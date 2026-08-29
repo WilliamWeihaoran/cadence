@@ -43,6 +43,19 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-435] **The target-membership guard matches capitalised identifiers, so a top-level `func` still
+  slips through.** From [[T-409]]. It catches a type referenced across a target boundary, which is
+  the shape `aaa0064` had, but a free function or an extension method declared in a non-member file
+  is invisible to it. The honest close is building `-scheme CadenceMCPServer` in CI; the test is the
+  cheap half.
+
+- [T-436] **Two membership guards overlap and neither is redundant — say so before someone deletes
+  one.** T-406's pins one symbol's build-phase membership *and* that the trim rule is spelled exactly
+  once; T-409's covers every symbol across both explicit-list targets but does not check spelling
+  counts. The widget half of T-409's guard is also a coverage demonstration rather than a kill: a
+  real widget membership violation is a compile error under `-scheme Cadence`, so no compiling
+  mutation can make that assertion fire.
+
 - [T-445] **`DataIntegrityRepairReport` is a synthesized `Codable`, so adding a counter makes the
   stored report undecodable.** Synthesized decoding does not apply property defaults for missing
   keys, so `lastReport.v1` written before a new field cannot be read after. `lastReport()` swallows
@@ -88,30 +101,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   today, so adding a count that can be a floor means porting `hasUnknownImpact` across too, or the
   new number silently breaks the "may not over-promise" rule the whole file is built on.
   Fix the doc comment's "exactly" in the same pass either way.
-
-- [T-434] **The compactness test pins three `AGENTS.md` files and misses the two that are
-  actually near the limit.** Found while fixing [[T-401]].
-  `AgentContextBudgetTests.activeAgentGuidesStayCompactAndRouteToReferences` caps the root guide at
-  180 lines and `Cadence/Shared/` and `Cadence/iOS/` at 160. Measured today: root 176,
-  **`Cadence/Models/` 175**, **`CadenceMCPServer/` 170**, Shared 151, iOS 110. So the two files
-  closest to overflowing are the two the test cannot see, and one of them is the file whose
-  unmarked claim caused [[T-338]] and [[T-387]] — the guide most worth keeping readable is the one
-  with no ceiling. Nine of the twelve `AGENTS.md` files are unpinned.
-  Prefer enumerating every `AGENTS.md` under a single cap over adding two more literals, so a new
-  scoped guide is covered on the day it is created. Pick the cap deliberately: 180 leaves Models
-  five lines of headroom, which will read as a wall to the next editor rather than as a budget.
-
-- [T-409] **`CadenceMCPServer` broke for four commits and `-scheme Cadence` stayed green the whole
-  time.** `aaa0064` routed `CadenceWriteService` through `CadenceTaskMutationSupport.insertSubtasks`,
-  but that file is in **no** target's Sources phase — the app reaches it by folder membership and the
-  MCP command-line target cannot. Fixed by reverting that one call site, because adding the file to
-  the target would cascade in `CadencePendingChangePersistence`, `CadenceTitleNormalization`,
-  `CadenceTaskQuerySupport` and `NotificationManager` — and `NotificationManager` reads
-  `UserDefaults.standard`, which is exactly why it cannot live in a command-line target.
-  **The remaining work is the process half:** the app scheme cannot see this class of break, so
-  anything that only runs `-scheme Cadence` will keep missing it. The coordinator's integration run
-  now builds `CadenceMCPServer` too, but that is a habit, not a guard. A CI-side or test-side check
-  would be better.
 
 - [T-372a] **`CadenceSearchMatcher.rank` is the one ordering left partial after [[T-372]].** Found
   while fixing T-372 and deliberately not fixed there: `rank` ends at score-then-title
