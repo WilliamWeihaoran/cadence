@@ -25,6 +25,14 @@ per-agent boilerplate.
   and any *sweep* goes through `CadenceScanInstrument` — its initializer runs the detector against a
   positive and a negative fixture, so a blinded detector cannot reach a sweep at all, and its
   `atLeast:`/`including:` arguments make the walk's non-vacuity a compile requirement.
+- **Never hand back a rewritten `docs/TODO.md` or `docs/TODO_DONE.md`.** Report your ticket changes
+  as a **delta** in your final message -- which ids you closed, with the closure text, and which you
+  filed -- and leave both files at the revision you started from. These two files append quietly
+  instead of conflicting loudly: two agents each rsync a copy, each edits its own, and whichever
+  lands second silently reverts the first. That has cost real time three separate times (once
+  duplicating the whole file, 34 ids over). It is also why your new-ticket ids are **suggestions**:
+  the coordinator allocates the real ones, because ids you pick in isolation collide with ids
+  another agent picked in parallel.
 - **Never** launch or build the Cadence app, kill a process named `Cadence`, use a simulator, touch
   the real app-group store, or set `CADENCE_MCP_ENABLE_WRITES`.
 - **Delete your DerivedData when you finish** (~1.7 GB) and release the lock.
