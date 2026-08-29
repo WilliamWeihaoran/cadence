@@ -690,6 +690,38 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   happen only after the `try` succeeds. Instance of [[T-322]].
 
 
+- [T-472] **The markdown toolbar has tooltips but no accessibility labels** (Codex, P2; source shape
+  measured, the VoiceOver announcement itself inferred — the app was not launched). Every icon-only
+  button in `macOS/Editor/MarkdownEditorView.swift` (`:203`, `:210`, `:333`, `:354`, `:375`) passes a
+  good semantic string — "Bold", "Inline code", "Note link", "Task reference" — to `.help(...)` and
+  nothing else, so assistive tech falls back to a symbol-ish or generic description. **The correct
+  pattern already exists**: `macOS/Views/CadenceButtons.swift:109`, where `CadenceIconButton` applies
+  `.accessibilityLabel(...)` *and* `.help(...)` from one string. Instance of [[T-374]]. Add the label
+  to `MarkdownReferenceMenuButton`, `MarkdownToolbarButton`, and also `MarkdownToolbarTextButton` —
+  the last one has visible `H1`/`H2` text, but the accessible name should be "Heading 1"/"Heading 2".
+  Pin it with a source scan so a tooltip-only regression fails.
+
+- [T-473] **The macOS list-detail Tasks tab still ships copy [[T-285]] retired** (Codex, P3, measured).
+  `macOS/Views/ListDetailComponents.swift:68,103` says "Create a task to get started" while the actual
+  affordance on that screen is the floating `+` bottom-right. T-285 removed exactly this wording from
+  the macOS Tasks page and pinned it — but **the existing test only covers `TasksListView.swift`**,
+  which is why this copy survived. Same family as [[T-469]] on iOS. Replace the subtitle with copy that
+  names the reachable control, and widen the scan to `ListDetailComponents.swift`.
+
+- [T-474] **The iOS reset says the account was deleted, and iOS has no account** (Codex, P2; measured
+  source plus a contradiction with a shipped doc). `iOS/iOSDataResetSettingsSection.swift:15,89`
+  correctly explains that Sign in with Apple is macOS-only and "there is no account profile to clear
+  here" — then, on success, prints the shared
+  `PrivacyDataResetOutcome.statusMessage`: *"Cadence account and data were deleted."* The success
+  message claims more than the action performed. The pre-action button on the same screen is already
+  right ("Delete Cadence Data", not "Delete Account & Data"), and `docs/app-review-notes.md:23,36`
+  distinguishes macOS account deletion from iOS data deletion — so the shipped notes and the shipped
+  UI disagree. Keep one deletion sequence; split only the presentation sentence
+  (`dataOnlyStatusMessage` / `accountAndDataStatusMessage`). Pin both, and assert the iOS success state
+  does not contain "account". This is the error-message-accuracy class that
+  [[T-374]]'s brief called out: a notice promising something the code did not do.
+
+
 ## Done
 
 Moved to [`TODO_DONE.md`](TODO_DONE.md) on 2026-08-26 — 220 entries, with their reasoning and shipping SHAs intact.
