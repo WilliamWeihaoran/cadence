@@ -597,9 +597,13 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   fetched from `availableCalendars`, which does not filter by writability, so an event on a subscribed
   read-only calendar should reach the timeline and print its calendar name in `calendarLabel` while the
   Calendar row directly beneath says "No calendar" — two contradictory readings in one card. Route it
-  through `CadenceCalendarLink` ([[T-464]]), which now exists for exactly this. **Confirm first that a
-  read-only event actually opens that card** — the agent that found this flagged the reachability as
-  inferred, not measured, and it is the one link in the chain nobody has read. The QuickCreate call
+  through `CadenceCalendarLink` ([[T-464]]), which now exists for exactly this. **Reachability narrowed by a second audit (Codex, 2026-08-29, measured source flow):** the *hidden*
+  case is **not** reachable — the timeline fetch uses `availableCalendars`, which already excludes hidden
+  calendars. The reachable case is an **active read-only / subscribed** calendar: the timeline shows its
+  events, the detail picker is handed `writableCalendars` (`TimelineEventBlockSupportViews.swift:195`),
+  `selected` comes back nil and the row renders "No calendar"
+  (`CadenceCalendarPicker.swift:230,248`; `CalendarManager.swift:159,164`). So fix the read-only case and
+  drop the hidden framing. The QuickCreate call
   site (`QuickCreateChoiceSupportViews.swift:203`) is a create flow with `allowNone: false` and is not
   affected.
 
@@ -722,6 +726,18 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   false positives — but it imposes a new authoring rule that **32 existing files already break**, so it
   is a decision, not a fix. Options: adopt with those 32 allowlisted; adopt and split them; decline and
   keep the periodic `scripts/test-suite-index.sh` read that T-465 settled on.
+
+
+- [T-484] **Visible settings toggles carry no accessible label** (Codex, P3; source measured, VoiceOver
+  behaviour inferred). The visible row text says what the switch controls, but the control is
+  `Toggle("", ...)` plus `.labelsHidden()`, so the switch's own semantic label is disconnected from the
+  title beside it — `iOS/iOSNotificationsSettingsSection.swift:38,49`,
+  `macOS/Views/SettingsNotificationsSection.swift:29,32`, `macOS/Views/SettingsSupportViews.swift:329`.
+  **The correct pattern is already in the repo**: `iOS/iOSCalendarSettingsSection.swift:457` and
+  `macOS/Views/SettingsListManagementSections.swift:332` pass a real label, e.g. `Toggle("Active", ...)`.
+  Instance of [[T-374]]; same family as [[T-472]]. Do Settings > Notifications on both platforms first,
+  then sweep. **Leave zero-size hidden keyboard-shortcut buttons alone** — different mechanism, not a
+  defect. Pin with a source scan for a visible `Toggle("", ...)` not paired with an accessibility label.
 
 
 ## Done
