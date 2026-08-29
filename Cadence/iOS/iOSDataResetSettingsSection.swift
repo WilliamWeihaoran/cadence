@@ -2,7 +2,7 @@
 import SwiftData
 import SwiftUI
 
-/// Settings > Data Safety on iPhone and iPad: the in-app "delete my account and data" route.
+/// Settings > Data Safety on iPhone and iPad: the in-app "delete my Cadence data" route.
 ///
 /// **Why this exists.** `docs/privacy.html` and `docs/app-review-notes.md` both promised the user
 /// could delete their Cadence account and data from Settings > Account or Settings > Data Safety.
@@ -25,7 +25,9 @@ struct iOSDataResetSettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            CadenceSettingsSectionLabel(text: "Delete Account & Data")
+            // "Delete Account & Data" on macOS, where an account profile exists to delete.
+            // Not here.
+            CadenceSettingsSectionLabel(text: "Delete Cadence Data")
 
             iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 12) {
@@ -86,7 +88,10 @@ struct iOSDataResetSettingsSection: View {
                     in: modelContext,
                     aiSettingsManager: aiSettingsManager
                 )
-                statusMessage = outcome.statusMessage
+                // `dataOnlyStatusMessage`, not the account one: this screen has already told
+                // the reader that Sign in with Apple is macOS-only, and the shared sentence used
+                // to contradict that on the way out (T-474).
+                statusMessage = outcome.dataOnlyStatusMessage
             } catch {
                 statusMessage = "Could not delete Cadence data: \(error.localizedDescription)"
             }

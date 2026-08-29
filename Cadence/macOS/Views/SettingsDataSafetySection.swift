@@ -237,7 +237,7 @@ struct SettingsDataSafetySection: View {
                 // Sign in with Apple is entitlement-gated and macOS-only (`AppleAccountManager` is
                 // inside `#if os(macOS)`), so this is the one step the shared sweep cannot take.
                 appleAccountManager.signOut()
-                statusMessage = outcome.statusMessage
+                statusMessage = outcome.accountAndDataStatusMessage
                 refreshBackups()
             } catch {
                 statusMessage = "Could not delete Cadence account and data: \(error.localizedDescription)"

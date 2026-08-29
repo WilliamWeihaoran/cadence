@@ -75,6 +75,103 @@ nonisolated struct TaskSectionConfig: Codable, Hashable, Identifiable {
     }
 }
 
+/// Reading a list's stored column blob **without letting one unreadable column destroy the rest**
+/// (T-475).
+///
+/// `Area.sectionConfigsRaw` / `Project.sectionConfigsRaw` hold the whole column array as one JSON
+/// string, and the `sectionConfigs` getter used to read it with a single
+/// `try? JSONDecoder().decode([TaskSectionConfig].self, …)`. `Array`'s synthesized decoding is
+/// all-or-nothing: one element the current build cannot read throws, the `try?` swallows it, and
+/// the getter falls through to `sectionNamesRaw` — which stores **names only**. Every column's
+/// `uuid`, `colorHex`, `dueDate`, `isCompleted` and `isArchived` is gone from the value the app
+/// then renders, and because the setter rewrites `sectionConfigsRaw` from whatever it is handed,
+/// the next save writes that degraded list back over the good blob and the loss is permanent.
+///
+/// The decoder above already applies `decodeIfPresent(…) ?? <default>` per field, so a *field*
+/// added later cannot cause this. What can is anything the decoder is entitled to reject — a
+/// column with no `name`, a `null` or a number where an object belongs, a value of the wrong JSON
+/// type — plus whatever a future build writes that this one has no rule for. Those are element
+/// failures, and this reads them element by element so they cost one column instead of all of them.
+///
+/// The three outcomes are distinguished rather than collapsed because the name list is only safe
+/// to consult in two of them:
+///
+/// - `.clean` — the blob decoded whole. `sectionNamesRaw` is a *mirror* the setter rewrites on
+///   every save, so it can add nothing here, and consulting it would let a stale mirror
+///   (two devices, one CloudKit merge) resurrect a column the user deleted.
+/// - `.salvaged` — some columns were read and some were not. The mirror is the only surviving
+///   record of the unreadable ones, so their names are recovered from it and everything the
+///   readable columns carry is kept.
+/// - `.empty` — nothing to read at all: no blob, or a blob that is not a JSON array. The legacy
+///   name list is the whole answer, which is what a pre-config list has always done.
+nonisolated extension TaskSectionConfig {
+    enum StoredList {
+        /// Decoded whole. An explicitly stored empty array is `.clean([])`, **not** `.empty`: a
+        /// list whose columns were all deleted is not a list that never had any, and reading it as
+        /// the latter would re-import the legacy name list the setter left behind.
+        case clean([TaskSectionConfig])
+        /// At least one element was unreadable. The payload is the columns that were readable, in
+        /// stored order.
+        case salvaged([TaskSectionConfig])
+        /// No stored array at all.
+        case empty
+    }
+
+    static func storedList(fromRaw raw: String) -> StoredList {
+        guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let data = raw.data(using: .utf8) else {
+            return .empty
+        }
+        let decoder = JSONDecoder()
+        if let decoded = try? decoder.decode([TaskSectionConfig].self, from: data) {
+            return .clean(decoded)
+        }
+        guard let elements = try? decoder.decode([SalvagedSectionConfig].self, from: data) else {
+            return .empty
+        }
+        return .salvaged(elements.compactMap(\.config))
+    }
+
+    /// The pre-config `sectionNamesRaw` list, as configs, minus any name `known` already accounts
+    /// for. Matched case-insensitively, because section matching is case-insensitive everywhere
+    /// else.
+    static func legacyConfigs(fromRaw raw: String, excluding known: [TaskSectionConfig]) -> [TaskSectionConfig] {
+        let taken = Set(known.map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+        return raw
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !taken.contains($0.lowercased()) }
+            .map { TaskSectionConfig(name: $0) }
+    }
+}
+
+/// One array element, decoded to `nil` rather than to a throw. `JSONDecoder`'s unkeyed container
+/// advances past an element whose decoding failed, so the remaining columns are still read.
+///
+/// **`nonisolated` here is deliberate but, unlike T-445's, *not* load-bearing — measured both
+/// ways rather than assumed.** Dropping it and rebuilding gives zero warnings and zero errors on
+/// all three schemes that compile this file: `Cadence`, `CadenceWidgets`, and `CadenceMCPServer`,
+/// which is on the Swift 6 language mode and would turn a real isolation mistake into an error.
+/// Each of those builds recompiled this file, so the counts are not vacuous.
+///
+/// That is the opposite of `DataIntegrityRepairReport` and `NoteMigrationReport`, where the same
+/// word *is* required, and the difference is **where the conformance is declared**. Those two add
+/// `Decodable` in an `extension`, so under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` the witness
+/// is main-actor isolated while the conformance is not — the crossing the compiler complains
+/// about. This one declares the conformance on the type itself, so the type's isolation and its
+/// witness's agree and there is nothing to cross.
+///
+/// It stays because `Models/` is read off the main actor by both extension targets and every other
+/// value type in this file is marked the same way — not because the build would break without it.
+/// Do not copy T-445's rationale onto a conformance of this shape without re-measuring it.
+private nonisolated struct SalvagedSectionConfig: Decodable {
+    let config: TaskSectionConfig?
+
+    init(from decoder: Decoder) throws {
+        config = try? TaskSectionConfig(from: decoder)
+    }
+}
+
 /// The four ways a task's dates can make it **today's** work, in the order Today sorts them.
 ///
 /// **This lives in `Models/` for a build reason, not a taxonomy one.** `Cadence/Shared/` — where

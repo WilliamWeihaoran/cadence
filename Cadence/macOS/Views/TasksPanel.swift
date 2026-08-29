@@ -482,8 +482,13 @@ struct TasksPanel: View {
             // "Due-today and do-today tasks will appear here" — a restatement of the page's scope
             // where the shared subtitle names the next thing to do.
             EmptyStateView(
-                message: mode == .byDoDate ? "No tasks yet" : CadenceTodayPresentationSupport.emptyTitle,
-                subtitle: mode == .byDoDate ? "Add a task above to get started" : CadenceTodayPresentationSupport.emptySubtitle,
+                // `.byDoDate` is the All Tasks shape of this panel, so it says what the All Tasks
+                // page says. It used to spell "No tasks yet" / "Add a task above to get started"
+                // inline: the first is a string T-285 retired, and the second names a field that
+                // does not exist — this panel's affordance is the `+` glyph on its own header
+                // (`TasksPanelSupportViews`).
+                message: mode == .byDoDate ? CadenceEmptyStateCopy.allTasksTitle : CadenceTodayPresentationSupport.emptyTitle,
+                subtitle: mode == .byDoDate ? CadenceEmptyStateCopy.allTasksSubtitle : CadenceTodayPresentationSupport.emptySubtitle,
                 icon: "checkmark.circle"
             )
             .padding(.top, 40)

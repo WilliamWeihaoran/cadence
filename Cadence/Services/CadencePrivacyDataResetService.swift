@@ -1,19 +1,44 @@
 import Foundation
 import SwiftData
 
-/// What a completed reset removed, and the one sentence both platforms show afterwards.
+/// What a completed reset removed, and the sentence each platform shows afterwards.
 ///
 /// A value type rather than a formatted string handed back from the view, because
 /// `Cadence/iOS/` is inside `#if os(iOS)` and invisible to the macOS-built test target: the
 /// wording is the part worth pinning, and this is where a test can reach it.
+///
+/// **Two sentences, one deletion (T-474).** There was one `statusMessage` and it said "Cadence
+/// account and data were deleted." on both platforms. Sign in with Apple is macOS-only, so on
+/// iPhone and iPad there is no account profile to clear — the iOS screen says so in its own
+/// header text and its own button, and then printed a success notice claiming otherwise.
+/// `docs/app-review-notes.md` already draws the line the UI was crossing.
+///
+/// The split is **presentational only**: `deleteCadenceDataAndLocalArtifacts` is still one
+/// sequence called from both panes, which is what keeps "delete my data" from coming to mean two
+/// different things. What differs is the sentence, and it differs because the platforms differ.
 struct PrivacyDataResetOutcome: Equatable, Sendable {
     /// Local Cadence store backups deleted along with the store's contents.
     let removedBackupCount: Int
 
-    var statusMessage: String {
+    /// macOS, where the reset also clears the local Sign in with Apple profile.
+    var accountAndDataStatusMessage: String {
         removedBackupCount == 0
             ? "Cadence account and data were deleted."
-            : "Cadence account, data, and \(removedBackupCount) backup\(removedBackupCount == 1 ? "" : "s") were deleted."
+            : "Cadence account, data, and \(backupPhrase) were deleted."
+    }
+
+    /// iOS and iPadOS, where there is no account profile to clear.
+    ///
+    /// It must not contain the word "account" in any casing — that is the whole ticket, and it is
+    /// asserted rather than left to review.
+    var dataOnlyStatusMessage: String {
+        removedBackupCount == 0
+            ? "Cadence data was deleted."
+            : "Cadence data and \(backupPhrase) were deleted."
+    }
+
+    private var backupPhrase: String {
+        "\(removedBackupCount) backup\(removedBackupCount == 1 ? "" : "s")"
     }
 }
 

@@ -108,18 +108,23 @@ import Foundation
     }
 
     var sectionConfigs: [TaskSectionConfig] {
+        // Element by element, because this getter's fallback is destructive: `sectionNamesRaw`
+        // keeps names only, and the setter below rewrites `sectionConfigsRaw` from whatever it is
+        // handed — so one unreadable column used to cost every column its colour, due date and
+        // lifecycle flags, permanently, on the next save. `TaskSectionConfig.storedList` carries
+        // the reasoning (T-475).
         get {
-            if let data = sectionConfigsRaw.data(using: .utf8),
-               let decoded = try? JSONDecoder().decode([TaskSectionConfig].self, from: data) {
+            switch TaskSectionConfig.storedList(fromRaw: sectionConfigsRaw) {
+            case .clean(let decoded):
                 return normalizedSectionConfigs(decoded)
+            case .salvaged(let decoded):
+                let recovered = TaskSectionConfig.legacyConfigs(fromRaw: sectionNamesRaw, excluding: decoded)
+                return normalizedSectionConfigs(decoded + recovered)
+            case .empty:
+                return normalizedSectionConfigs(
+                    TaskSectionConfig.legacyConfigs(fromRaw: sectionNamesRaw, excluding: [])
+                )
             }
-
-            let parsed = sectionNamesRaw
-                .split(separator: "\n")
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .map { TaskSectionConfig(name: $0) }
-            return normalizedSectionConfigs(parsed)
         }
         set {
             let normalized = normalizedSectionConfigs(newValue)

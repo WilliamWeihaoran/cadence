@@ -797,6 +797,21 @@ struct WidgetSupportTests {
 
     /// One declaration of `CadenceTitleNormalization`, in a file `CadenceWidgets` compiles.
     ///
+    /// **Not a duplicate of `CadenceTargetSourceMembershipTests` (T-436).** That suite sweeps every
+    /// symbol across both explicit-list targets and looks like a generalisation of this test, so
+    /// this one reads as the redundant special case. It is not. The sweep asks only
+    /// *reachability* — is this symbol declared in some file the target compiles — and has no
+    /// vocabulary for **how many times** a rule is spelled or **which** file a reachable
+    /// declaration sits in. Re-fork the trim (give `TaskTitleShortcutParsing.normalized` its own
+    /// `trimmingCharacters(in: .whitespacesAndNewlines)` instead of delegating) and nothing becomes
+    /// unreachable — the copy is more reachable than the call it replaced — so the whole membership
+    /// suite stays green, and so does `taskTitleShortcutTrimAgreesWithTheSharedTitleTrim` below,
+    /// because two correct copies of a trim agree on every sample. **Only the spelling count here
+    /// goes red.** Conversely, any *other* symbol routed across a target boundary is invisible to
+    /// this test, which names one type and one target. Delete either and a real defect class stops
+    /// being caught; the long form of the argument is in the header comment of
+    /// `CadenceTests/CadenceTargetSourceMembershipTests.swift`.
+    ///
     /// Both halves matter and they are the same fact. `TaskTitleShortcutParsing` re-spelled the
     /// trim only because the declaration sat in `Shared/`, which the widget's **explicit** source
     /// list barely reaches; moving it is what removes the copy, and it is only a fix for as long as

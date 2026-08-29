@@ -3,8 +3,48 @@ import SwiftData
 import Testing
 @testable import Cadence
 
+@Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct NoteMigrationServiceTests {
+    /// The guard itself, both ways round, on every key it claims to cover: a key that was there
+    /// goes back with its original bytes, and a key that was absent goes back to absent rather
+    /// than to whatever the body wrote.
+    ///
+    /// This test runs inside the guard too, so the sentinels it writes are themselves cleaned up.
+    @Test func theStoredLaunchReportGuardPutsEveryKeyBackBothWaysRound() throws {
+        #expect(
+            StoredLaunchReports.keys.count == 2,
+            "the key list changed; this test covers whatever is in it, but say so out loud"
+        )
+        let fabricated = Data("a report a test wrote".utf8)
+
+        for key in StoredLaunchReports.keys {
+            let sentinel = Data("a report the app wrote for \(key)".utf8)
+
+            UserDefaults.standard.set(sentinel, forKey: key)
+            withStoredLaunchReportsPreserved {
+                UserDefaults.standard.set(fabricated, forKey: key)
+                #expect(
+                    UserDefaults.standard.data(forKey: key) == fabricated,
+                    "the guard blocked the body's write to \(key)"
+                )
+            }
+            #expect(
+                UserDefaults.standard.data(forKey: key) == sentinel,
+                "a fabricated report outlived the guard on \(key)"
+            )
+
+            UserDefaults.standard.removeObject(forKey: key)
+            withStoredLaunchReportsPreserved {
+                UserDefaults.standard.set(fabricated, forKey: key)
+            }
+            #expect(
+                UserDefaults.standard.data(forKey: key) == nil,
+                "the guard invented a stored report on \(key) for an app that had none"
+            )
+        }
+    }
+
     @Test func migrationCopiesLegacyNotesOnceAndPreservesMetadata() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
@@ -559,18 +599,13 @@ struct NoteMigrationServiceTests {
 
     /// The other half of the same failure: `lastReport()` is the reader that swallows it, and it is
     /// the value `migrateAndRecordFailure` falls back to on a throw. Asserted through the real
-    /// `UserDefaults` key so the archive round trip — encoder, key, decoder — is what is measured,
-    /// and restored afterwards so a test run cannot leave a fabricated report behind for the app.
+    /// `UserDefaults` key so the archive round trip — encoder, key, decoder — is what is measured.
+    ///
+    /// The save-and-restore this test used to carry itself is now
+    /// `.preservesTheStoredLaunchReports` on the suite: it was never only this test that
+    /// wrote the key (T-480).
     @Test func noteMigrationLastReportReadsBackAReportStoredWithoutTheNewestCounter() throws {
         let key = "noteMigration.lastReport.v1"
-        let saved = UserDefaults.standard.data(forKey: key)
-        defer {
-            if let saved {
-                UserDefaults.standard.set(saved, forKey: key)
-            } else {
-                UserDefaults.standard.removeObject(forKey: key)
-            }
-        }
 
         var report = NoteMigrationReport(
             source: "previous-launch",

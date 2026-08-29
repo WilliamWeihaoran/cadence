@@ -261,10 +261,14 @@ struct iOSListDetailView: View {
                 // The list itself is the only placement left when the page has neither rows nor
                 // columns drawn to point at — the `.list` half of `groupIdentity`, and the same
                 // move the Inbox's empty panel already makes. See `iOSTaskCollectionSections`.
+                // Words shared with the Mac's `ListTasksView`. The subtitle used to say "Add a
+                // task above", naming an inline field this page has never had — the affordance is
+                // the floating `+` applied above — which is the exact mistake
+                // `CadenceTodayPresentationSupport.emptySubtitle` already records having made.
                 iOSEmptyPanel(
                     systemImage: "checklist",
-                    title: "No tasks here yet",
-                    subtitle: "Add a task above or move one here from Inbox."
+                    title: CadenceEmptyStateCopy.listDetailTitle,
+                    subtitle: CadenceEmptyStateCopy.listDetailSubtitle
                 )
                 .iOSNewTaskDropTarget(
                     group: CadenceTaskDropSupport.groupIdentity(

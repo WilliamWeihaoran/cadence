@@ -116,18 +116,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   pinned against being re-flattened into two literals, but nobody has seen the six tightened labels
   or the two that gained tracking rendered. One pass by whoever can run the app closes it.
 
-- [T-435] **The target-membership guard matches capitalised identifiers, so a top-level `func` still
-  slips through.** From [[T-409]]. It catches a type referenced across a target boundary, which is
-  the shape `aaa0064` had, but a free function or an extension method declared in a non-member file
-  is invisible to it. The honest close is building `-scheme CadenceMCPServer` in CI; the test is the
-  cheap half.
 
-- [T-436] **Two membership guards overlap and neither is redundant — say so before someone deletes
-  one.** T-406's pins one symbol's build-phase membership *and* that the trim rule is spelled exactly
-  once; T-409's covers every symbol across both explicit-list targets but does not check spelling
-  counts. The widget half of T-409's guard is also a coverage demonstration rather than a kill: a
-  real widget membership violation is a compile error under `-scheme Cadence`, so no compiling
-  mutation can make that assertion fire.
 
 
 
@@ -618,30 +607,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   call, and pin **exactly one production caller** with a source scan. Confirm:
   `rg -n "registerIfNeeded\(|registerForRemoteNotifications\(" Cadence/CadenceApp.swift Cadence/macOS/Services/CadenceAppDelegate.swift`
 
-- [T-469] **The iOS empty list detail names a control that is not on the screen** (Codex, P3, measured).
-  `iOS/iOSListDetailView.swift:260` says "Add a task above or move one here from Inbox." There is no
-  inline field above; the page uses the floating `+`. This repo has already made and fixed this exact
-  mistake — `CadenceTodayPresentationSupport.emptySubtitle` says "Add a task with +..." and its comment
-  records the retired "Add a task above" wording as the failure. Copy naming a control that does not
-  exist is worse than no subtitle, and this is a *first* empty list. Fix the wording, consider one
-  shared list-detail empty-state constant if the two surfaces should stay pinned, and add a source scan
-  for the retired phrase.
 
-- [T-470] **iOS calendar quick-create swallows task-save failures and the button looks inert** (Codex,
-  P2, measured). `iOS/iOSCalendarQuickCreateSheet.swift:542` guards on
-  `try? CadenceTaskMutationSupport.insertScheduledTask(...)` and just returns, never writing the
-  visible `actionError` notice — while the *same sheet* has a working red `actionErrorNotice` that its
-  Event branch uses correctly (`:312`). The right pattern is already in
-  `iOSCreateTaskSheet.create()`: catch, set `actionError = TaskCreationService.saveFailureNotice`,
-  return before dismissing. Instance of [[T-322]]. Extend `CadenceCreateTaskCommitSurfaceTests` to
-  cover this file.
 
-- [T-471] **iOS calendar quick-create dismisses as success when a bundle insert fails** (Codex, P2,
-  measured). Worse than [[T-470]]: `iOSCalendarQuickCreateSheet.swift:595` does
-  `_ = try? CadenceTaskMutationSupport.insertBundle(...)` and dismisses regardless, so the sheet closes
-  as though a block was created. `CadenceTaskMutationSupport.swift:798` already does the right thing —
-  it deletes the pending bundle and rethrows — and the caller throws that signal away. `dismiss()` must
-  happen only after the `try` succeeds. Instance of [[T-322]].
 
 
 - [T-472] **The markdown toolbar has tooltips but no accessibility labels** (Codex, P2; source shape
@@ -655,37 +622,9 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the last one has visible `H1`/`H2` text, but the accessible name should be "Heading 1"/"Heading 2".
   Pin it with a source scan so a tooltip-only regression fails.
 
-- [T-473] **The macOS list-detail Tasks tab still ships copy [[T-285]] retired** (Codex, P3, measured).
-  `macOS/Views/ListDetailComponents.swift:68,103` says "Create a task to get started" while the actual
-  affordance on that screen is the floating `+` bottom-right. T-285 removed exactly this wording from
-  the macOS Tasks page and pinned it — but **the existing test only covers `TasksListView.swift`**,
-  which is why this copy survived. Same family as [[T-469]] on iOS. Replace the subtitle with copy that
-  names the reachable control, and widen the scan to `ListDetailComponents.swift`.
-
-- [T-474] **The iOS reset says the account was deleted, and iOS has no account** (Codex, P2; measured
-  source plus a contradiction with a shipped doc). `iOS/iOSDataResetSettingsSection.swift:15,89`
-  correctly explains that Sign in with Apple is macOS-only and "there is no account profile to clear
-  here" — then, on success, prints the shared
-  `PrivacyDataResetOutcome.statusMessage`: *"Cadence account and data were deleted."* The success
-  message claims more than the action performed. The pre-action button on the same screen is already
-  right ("Delete Cadence Data", not "Delete Account & Data"), and `docs/app-review-notes.md:23,36`
-  distinguishes macOS account deletion from iOS data deletion — so the shipped notes and the shipped
-  UI disagree. Keep one deletion sequence; split only the presentation sentence
-  (`dataOnlyStatusMessage` / `accountAndDataStatusMessage`). Pin both, and assert the iOS success state
-  does not contain "account". This is the error-message-accuracy class that
-  [[T-374]]'s brief called out: a notice promising something the code did not do.
 
 
-- [T-475] **`TaskSectionConfig` is the third [[T-445]] shape and the first that loses real user data.**
-  `Cadence/Models/AppTask.swift:9` — five defaulted properties (`uuid`, `colorHex`, `dueDate`,
-  `isCompleted`, `isArchived`), persisted as JSON in `Project.sectionConfigsRaw` /
-  `Area.sectionConfigsRaw`, decoded with `try?` at `Models/Project.swift:113` and
-  `Models/Area.swift:112`. Adding a sixth property makes every stored section list undecodable; the
-  getter then falls back to `sectionNamesRaw`, which keeps only the **names** — colour, due date,
-  completion and archive state are silently dropped — and the setter rewrites `sectionConfigsRaw` from
-  that degraded list on the next write, **making the loss permanent**. Unlike T-445 and [[T-466]] this
-  is user data, and it is in `Models/`, which compiles into every target. Wants the `init(from:)`
-  treatment plus a round-trip test *before* anyone adds a field. **Highest-priority open ticket.**
+
 
 - [T-476] **The iOS template editor's `BODY` label is the last hand-typed letterspacing in the app.**
   `iOS/iOSSettingsTemplateAndListSections.swift:594` — a hand-rolled `SectionEyebrowLabel`, so the fix
@@ -715,11 +654,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   because they never call `rank`. The shape is `GlobalSearchIndexSupport.rankedResults` — one funnel per
   surface passing `title:` and `identity:` — not seven threaded closures.
 
-- [T-480] **`NoteMigrationServiceTests` leaves a fabricated migration report in the test host's
-  `UserDefaults`.** 20 call sites reach `migrateIfNeeded` / `migrateAndRecordFailure`, each calling
-  `record(...)` which writes `noteMigration.lastReport.v1`; only one test saves and restores it.
-  `DataIntegrityRepairServiceTests` already guards this ("so a test run cannot leave a fabricated report
-  behind for the app to read"), so the convention exists and this suite predates it.
 
 - [T-481] **DECIDE: one top-level suite per test file?** Raised and deliberately *not* landed while
   closing [[T-465]]. It would provably stop the sibling-suite risk surface from growing and has zero
@@ -738,6 +672,31 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Instance of [[T-374]]; same family as [[T-472]]. Do Settings > Notifications on both platforms first,
   then sweep. **Leave zero-size hidden keyboard-shortcut buttons alone** — different mechanism, not a
   defect. Pin with a source scan for a visible `Toggle("", ...)` not paired with an accessibility label.
+
+
+- [T-485] **Three sibling suites still leave fabricated launch reports in the test host's `UserDefaults`.**
+  Demonstrated live by [[T-480]]'s own final run, which left `dataIntegrityRepair.lastReport.v1` =
+  `{"source":"test"}` behind. `DataIntegrityRepairServiceTests` (11 call sites, 1 guarded test),
+  `CadenceHabitCompletionDuplicateTests` (3, 0), `CadenceNoteFolderSurfaceTests` (1, 0). Each needs a
+  one-line `@Suite(.preservesTheStoredLaunchReports)`. To make it durable rather than a one-off cleanup,
+  a `CadenceScanInstrument` sweep asserting every suite that reaches `migrateIfNeeded`/`repairIfNeeded`
+  carries the trait.
+
+- [T-486] **Extension methods declared in non-member files are invisible to the membership guard.**
+  [[T-435]]'s own text named this alongside free functions; only the free-function half is closed.
+  Measured: **117** extension-method names are declared in files the MCP target does not compile. A crude
+  dot-qualified probe surfaced 2 candidates and **both are false positives** — one resolves to a member
+  file, one is inside a doc comment — so there is no live violation. A real check needs receiver-type
+  resolution, a different instrument from the two in that file, which is why this is separate rather than
+  a widening.
+
+- [T-487] **DECIDE: `TasksPanel`'s `.byDoDate` mode is unreachable.** No caller constructs it —
+  `TodayView.swift:29` is the only construction and takes the `.todayOverview` default; the only
+  `.byDoDate` panel in the repo is in a test. The mode still costs branches in `TasksPanel.swift`
+  (`:246,339,514,679`), `TasksPanelDerivedState.swift:87` and `TasksPanelSupportViews.swift:37,46,73`.
+  **Its empty state held two retired strings for the entire time nobody could see it**, which is how dead
+  UI decays. Either it is a planned All Tasks panel and something should draw it, or it and its branches
+  should go.
 
 
 ## Done
@@ -983,6 +942,90 @@ before filing**: this list has had the same ticket re-reported more than once.
   exactly 1 desynced, because the desync needs a backslash immediately before the closing quote.
   **Did not affect** needle-counting scans, which is every existing scan — no shipped assertion changed
   verdict, and `scripts/test-suite-index.sh` output after both fixes is byte-identical to HEAD's.
+
+- [T-435] **The target-membership guard matches capitalised identifiers, so a top-level `func` still
+  slips through.** From [[T-409]]. It catches a type referenced across a target boundary, which is
+  the shape `aaa0064` had, but a free function or an extension method declared in a non-member file
+  is invisible to it. The honest close is building `-scheme CadenceMCPServer` in CI; the test is the
+  cheap half.
+  **Closed 2026-08-30. The hole was wider than filed: the declaration side matched only types and the reference side only capitalised identifiers, so a call like `monthStart(for:calendar:)` produces **no capitalised token at all** — the sweep read the line and saw nothing. The repo has 16 top-level `func`s, 14 non-private, none in either explicit-list target: every one invisible. Blindness proved directly rather than asserted — the same compiling mutation (an MCP file calling a free function it cannot compile) passes HEAD's guard at `EXIT=0`/0 errors and kills the widened one at `EXIT=65`/0 errors, naming the offending path. Driven through `CadenceScanInstrument` with a real unreachable free function as the positive witness. **Still open:** the ticket's own "honest close", building `-scheme CadenceMCPServer` in CI. Extension methods remain uncovered — see [[T-486]].**
+
+- [T-436] **Two membership guards overlap and neither is redundant — say so before someone deletes
+  one.** T-406's pins one symbol's build-phase membership *and* that the trim rule is spelled exactly
+  once; T-409's covers every symbol across both explicit-list targets but does not check spelling
+  counts. The widget half of T-409's guard is also a coverage demonstration rather than a kill: a
+  real widget membership violation is a compile error under `-scheme Cadence`, so no compiling
+  mutation can make that assertion fire.
+  **Closed 2026-08-30 as documentation, both guards kept. They ask different *questions*, not different scopes: [[T-409]]'s asks reachability over the whole graph, [[T-406]]'s asks singularity and placement. Counting is outside T-409's vocabulary — a second declaration in a non-member file leaves the type reachable, so that sweep stays silent by design. Measured: re-forking the trim kills only `theTitleTrimRuleIsDeclaredOnceInAFileTheWidgetTargetCompiles` while all 6 membership tests and the behavioural trim pin stay green (two correct copies of a trim agree on every sample). Also recorded: `-scheme Cadence` builds `CadenceWidgets`, so a real widget violation is a compile failure before any test runs — that half is coverage, not a kill.**
+
+- [T-469] **The iOS empty list detail names a control that is not on the screen** (Codex, P3, measured).
+  `iOS/iOSListDetailView.swift:260` says "Add a task above or move one here from Inbox." There is no
+  inline field above; the page uses the floating `+`. This repo has already made and fixed this exact
+  mistake — `CadenceTodayPresentationSupport.emptySubtitle` says "Add a task with +..." and its comment
+  records the retired "Add a task above" wording as the failure. Copy naming a control that does not
+  exist is worse than no subtitle, and this is a *first* empty list. Fix the wording, consider one
+  shared list-detail empty-state constant if the two surfaces should stay pinned, and add a source scan
+  for the retired phrase.
+  **Closed 2026-08-30. Same shared constants as [[T-473]]. The title deliberately avoids "yet" so it does not contain the retired "No tasks yet" as a substring.**
+
+- [T-470] **iOS calendar quick-create swallows task-save failures and the button looks inert** (Codex,
+  P2, measured). `iOS/iOSCalendarQuickCreateSheet.swift:542` guards on
+  `try? CadenceTaskMutationSupport.insertScheduledTask(...)` and just returns, never writing the
+  visible `actionError` notice — while the *same sheet* has a working red `actionErrorNotice` that its
+  Event branch uses correctly (`:312`). The right pattern is already in
+  `iOSCreateTaskSheet.create()`: catch, set `actionError = TaskCreationService.saveFailureNotice`,
+  return before dismissing. Instance of [[T-322]]. Extend `CadenceCreateTaskCommitSurfaceTests` to
+  cover this file.
+  **Closed 2026-08-30. `createTask()` uses `do`/`catch` in the shape of `iOSCreateTaskSheet.create()`: a refused insert sets `actionError = TaskCreationService.saveFailureNotice` and returns before the reconcile and `dismiss()`. The `nil` answer — a title with nothing to make a task from, unreachable because `canCreate` requires a non-empty title — stays a silent return but no longer dismisses. That separation of *throw* from *nil* was not in the ticket.**
+
+- [T-471] **iOS calendar quick-create dismisses as success when a bundle insert fails** (Codex, P2,
+  measured). Worse than [[T-470]]: `iOSCalendarQuickCreateSheet.swift:595` does
+  `_ = try? CadenceTaskMutationSupport.insertBundle(...)` and dismisses regardless, so the sheet closes
+  as though a block was created. `CadenceTaskMutationSupport.swift:798` already does the right thing —
+  it deletes the pending bundle and rethrows — and the caller throws that signal away. `dismiss()` must
+  happen only after the `try` succeeds. Instance of [[T-322]].
+  **Closed 2026-08-30. `dismiss()` is reachable only through the `try` succeeding; a throw sets the new shared `CadenceTaskMutationSupport.bundleSaveFailureNotice` ("Couldn't save this block.") and returns. The Block branch needed its own sentence — all five existing failure constants name an object this branch was not making, and a `TaskBundle` is a *block* in every user-facing string. Held beside the mutation that throws it, not spelled at the sheet, per that sheet's own rule against "a third spelling of 'that didn't work'". No "Nothing was created." clause: the create family does not carry one and the delete family does, and that asymmetry is now pinned.**
+
+- [T-473] **The macOS list-detail Tasks tab still ships copy [[T-285]] retired** (Codex, P3, measured).
+  `macOS/Views/ListDetailComponents.swift:68,103` says "Create a task to get started" while the actual
+  affordance on that screen is the floating `+` bottom-right. T-285 removed exactly this wording from
+  the macOS Tasks page and pinned it — but **the existing test only covers `TasksListView.swift`**,
+  which is why this copy survived. Same family as [[T-469]] on iOS. Replace the subtitle with copy that
+  names the reachable control, and widen the scan to `ListDetailComponents.swift`.
+  **Closed 2026-08-30 by the repo-wide sweep rather than a second per-screen assertion. Reads `CadenceEmptyStateCopy.listDetail*`, shared with [[T-469]] so the two surfaces stay pinned to one sentence.**
+
+- [T-474] **The iOS reset says the account was deleted, and iOS has no account** (Codex, P2; measured
+  source plus a contradiction with a shipped doc). `iOS/iOSDataResetSettingsSection.swift:15,89`
+  correctly explains that Sign in with Apple is macOS-only and "there is no account profile to clear
+  here" — then, on success, prints the shared
+  `PrivacyDataResetOutcome.statusMessage`: *"Cadence account and data were deleted."* The success
+  message claims more than the action performed. The pre-action button on the same screen is already
+  right ("Delete Cadence Data", not "Delete Account & Data"), and `docs/app-review-notes.md:23,36`
+  distinguishes macOS account deletion from iOS data deletion — so the shipped notes and the shipped
+  UI disagree. Keep one deletion sequence; split only the presentation sentence
+  (`dataOnlyStatusMessage` / `accountAndDataStatusMessage`). Pin both, and assert the iOS success state
+  does not contain "account". This is the error-message-accuracy class that
+  [[T-374]]'s brief called out: a notice promising something the code did not do.
+  **Closed 2026-08-30. `PrivacyDataResetOutcome` splits into `dataOnlyStatusMessage` (iOS) and `accountAndDataStatusMessage` (macOS); one deletion sequence, two presentation sentences. **The ticket found one instance and there were two** — the iOS *section label* was also "Delete Account & Data", the same claim one control earlier on the same screen, now "Delete Cadence Data". No live drawn string in that file names an account in any casing. No conflict with `AppStoreReviewReadinessTests` — its assertion reads the macOS pane, which keeps the wording — and `docs/app-review-notes.md` needed no edit: the shipped UI now agrees with it.**
+
+- [T-475] **`TaskSectionConfig` is the third [[T-445]] shape and the first that loses real user data.**
+  `Cadence/Models/AppTask.swift:9` — five defaulted properties (`uuid`, `colorHex`, `dueDate`,
+  `isCompleted`, `isArchived`), persisted as JSON in `Project.sectionConfigsRaw` /
+  `Area.sectionConfigsRaw`, decoded with `try?` at `Models/Project.swift:113` and
+  `Models/Area.swift:112`. Adding a sixth property makes every stored section list undecodable; the
+  getter then falls back to `sectionNamesRaw`, which keeps only the **names** — colour, due date,
+  completion and archive state are silently dropped — and the setter rewrites `sectionConfigsRaw` from
+  that degraded list on the next write, **making the loss permanent**. Unlike T-445 and [[T-466]] this
+  is user data, and it is in `Models/`, which compiles into every target. Wants the `init(from:)`
+  treatment plus a round-trip test *before* anyone adds a field. **Highest-priority open ticket.**
+  **Closed 2026-08-30, **and the ticket's stated cause was already fixed**. `TaskSectionConfig.init(from:)` with `decodeIfPresent(...) ?? default` per field exists at HEAD, added by `7dddba8` — so "adding a sixth property makes every stored section list undecodable" was false when filed. The *second* half was real and is the half that loses data: `[TaskSectionConfig]` decoding is all-or-nothing, so one column with no `name`, a `null`, or a wrong JSON type drops the whole array to `sectionNamesRaw` — names only — and the setter writes that back permanently. Fixed with element-wise salvage (`StoredList` `.clean`/`.salvaged`/`.empty`): readable columns keep `uuid`/`colorHex`/`dueDate`/flags, unreadable ones recover by name. **No stored property added, removed or retyped** — the only model-file changes are an extension on the non-`@Model` `TaskSectionConfig` and two computed-property bodies.**
+
+- [T-480] **`NoteMigrationServiceTests` leaves a fabricated migration report in the test host's
+  `UserDefaults`.** 20 call sites reach `migrateIfNeeded` / `migrateAndRecordFailure`, each calling
+  `record(...)` which writes `noteMigration.lastReport.v1`; only one test saves and restores it.
+  `DataIntegrityRepairServiceTests` already guards this ("so a test run cannot leave a fabricated report
+  behind for the app to read"), so the convention exists and this suite predates it.
+  **Closed 2026-08-30, wider than filed: the suite pollutes **two** keys, not one — `noteMigration.lastReport.v1` and `dataIntegrityRepair.lastReport.v1`, measured before any change. The guard is a recursive `@Suite(.preservesTheStoredLaunchReports)` trait in the existing `TemporaryDefaultsSupport.swift`, and the one hand-rolled guard it made redundant is gone. Proved by hashing the whole stored value out of the test host's plist either side of a scoped run: guard removed → CHANGED, `isRecursive` false → CHANGED, as written → unchanged. See [[T-485]] for the three sibling suites that still leak.**
 
 ## Cancelled
 

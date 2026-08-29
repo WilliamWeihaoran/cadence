@@ -65,10 +65,18 @@ struct ListTasksView: View {
     var body: some View {
         List {
             if activeTasks.isEmpty && doneTasks.isEmpty {
-                EmptyStateView(message: "No tasks", subtitle: "Create a task to get started", icon: "checkmark.circle")
-                    .padding(.top, 40)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                // The subtitle is the shared one because this page and `iOSListDetailView` are one
+                // page at two widths, and because the copy that was here — "Create a task to get
+                // started" — is a string T-285 retired from the Mac's task page and pinned only
+                // against `TasksListView.swift`, which is how it survived in this file.
+                EmptyStateView(
+                    message: CadenceEmptyStateCopy.listDetailTitle,
+                    subtitle: CadenceEmptyStateCopy.listDetailSubtitle,
+                    icon: "checkmark.circle"
+                )
+                .padding(.top, 40)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
             ForEach(groupedActiveTasks) { group in
                 ListTasksGroupSectionView(

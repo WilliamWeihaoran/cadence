@@ -27,4 +27,18 @@ nonisolated enum CadenceEmptyStateCopy {
     static let focusTitle = "No focus tasks"
     /// The shorter of the two that shipped: an empty state states the one thing to do.
     static let focusSubtitle = "Schedule a task for today to focus it here."
+
+    /// A list, project or area detail page with nothing in it — the Mac's `ListTasksView` and the
+    /// phone's `iOSListDetailView`, which are the same page at two widths.
+    ///
+    /// Deliberately avoids the word "yet": the retired desktop title was "No tasks yet", and a new
+    /// spelling that contains the old one as a substring is indistinguishable from a revert to any
+    /// guard reading source text.
+    static let listDetailTitle = "No tasks here"
+    /// **Names a control that is actually on the screen.** Both surfaces put a floating `+` on this
+    /// page — `floatingNewTaskButton` on the Mac, `iOSFloatingCreateTaskButton` on the phone — and
+    /// both subtitles pointed somewhere else: the Mac said "Create a task to get started", the
+    /// phone said "Add a task above" beside a page with no field above it. Same failure, and the
+    /// same one `CadenceTodayPresentationSupport.emptySubtitle` already records.
+    static let listDetailSubtitle = "Add a task with +, or move one here from Inbox."
 }

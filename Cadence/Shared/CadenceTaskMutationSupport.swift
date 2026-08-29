@@ -397,6 +397,22 @@ enum CadenceTaskMutationSupport {
     /// (`DeleteConfirmationManager.failureNotice`), which has a title already.
     static let deleteFailureAlertTitle = "Couldn't Delete Task"
 
+    /// Shown when a block the user asked for could not be committed (T-471).
+    ///
+    /// "Block" rather than "task": a `TaskBundle` is a *block* everywhere the user meets one — the
+    /// quick-create sheet's own segmented control, `iOSCalendarBundleDetailSheet`'s "Delete this
+    /// block?" — so `TaskCreationService.saveFailureNotice` would name an object the sheet was not
+    /// making. It is held here, beside the `insertBundle(title:…)` that throws, for the same reason
+    /// the other notices sit beside their mutations: the next surface that creates a block reads
+    /// this sentence instead of inventing a third spelling of "that didn't work".
+    ///
+    /// No "Nothing was created." clause, even though `insertBundle` earns one — it deletes the
+    /// pending bundle before it rethrows. The *create* family does not carry that clause
+    /// (`TaskCreationService.saveFailureNotice`, `CadenceSavedLinkPersistence.saveFailureNotice`):
+    /// a refused creation has nothing the user could fear losing, which is exactly what the delete
+    /// family's second sentence exists to deny.
+    static let bundleSaveFailureNotice = "Couldn't save this block."
+
     /// - Parameter commit: See `deleteTasks(withIDs:modelContext:commitsImmediately:commit:…)`.
     @discardableResult
     static func delete(

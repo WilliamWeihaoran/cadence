@@ -539,17 +539,36 @@ struct iOSCalendarQuickCreateSheet: View {
         }
     }
 
+    /// T-470. This used to be one `guard (try? …) != nil else { return }`, which collapsed the two
+    /// answers `insertScheduledTask` can give into the same silent exit: a title with nothing in it
+    /// to make a task out of (`nil`), and a store that refused the write (a throw). The second one
+    /// left the sheet open, unchanged and wordless, so the create button read as inert — the very
+    /// complaint `actionErrorNotice` above was added to answer, and which this sheet's own Event
+    /// branch has answered since T-324.
+    ///
+    /// The shape is `iOSCreateTaskSheet.create()`'s: catch, name the failure where the user is
+    /// already looking, and return *before* anything that reports success. The `nil` answer stays a
+    /// silent return, because "you typed nothing" is not a failure to report — but it must not
+    /// dismiss either, which is the whole of T-471 in the branch below.
     private func createTask() {
         let startMin = hasTime ? minuteOfDay(from: startTime) : -1
-        guard (try? CadenceTaskMutationSupport.insertScheduledTask(
-            title: title,
-            allTasks: allTasks,
-            modelContext: modelContext,
-            scheduledDate: dateKey,
-            scheduledStartMin: startMin,
-            estimatedMinutes: estimatedMinutes,
-            configure: configureTask
-        )) != nil else { return }
+        let created: AppTask?
+        do {
+            created = try CadenceTaskMutationSupport.insertScheduledTask(
+                title: title,
+                allTasks: allTasks,
+                modelContext: modelContext,
+                scheduledDate: dateKey,
+                scheduledStartMin: startMin,
+                estimatedMinutes: estimatedMinutes,
+                configure: configureTask
+            )
+        } catch {
+            actionError = TaskCreationService.saveFailureNotice
+            return
+        }
+        guard created != nil else { return }
+        actionError = nil
         HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
         dismiss()
     }
@@ -592,15 +611,28 @@ struct iOSCalendarQuickCreateSheet: View {
         dismiss()
     }
 
+    /// T-471, and the worse of the pair. `_ = try? insertBundle(…)` followed by an unconditional
+    /// `dismiss()` meant a refused write closed the sheet exactly as a successful one does: the
+    /// user watched a block get made and then could not find it.
+    ///
+    /// `insertBundle(title:…)` already does its half — it deletes the pending bundle and rethrows,
+    /// so there is no half-made block anywhere — and the only thing missing was a caller that
+    /// listened. `dismiss()` is now reachable only through the `try` succeeding.
     private func createBundle() {
         let startMin = minuteOfDay(from: startTime)
-        _ = try? CadenceTaskMutationSupport.insertBundle(
-            title: title,
-            dateKey: dateKey,
-            startMin: startMin,
-            durationMinutes: estimatedMinutes,
-            modelContext: modelContext
-        )
+        do {
+            try CadenceTaskMutationSupport.insertBundle(
+                title: title,
+                dateKey: dateKey,
+                startMin: startMin,
+                durationMinutes: estimatedMinutes,
+                modelContext: modelContext
+            )
+        } catch {
+            actionError = CadenceTaskMutationSupport.bundleSaveFailureNotice
+            return
+        }
+        actionError = nil
         dismiss()
     }
 

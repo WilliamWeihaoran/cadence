@@ -273,15 +273,106 @@ struct CadencePrivacyDataResetSurfaceTests {
 
     // MARK: - The wording both platforms show
 
-    /// macOS's two status strings were inline in the view. They are the outcome's now, so iOS says
-    /// the same thing rather than inventing a third sentence.
+    /// macOS's two status strings were inline in the view. They are the outcome's now, so neither
+    /// platform invents a sentence — but there are **two** sentences, because the two platforms do
+    /// not delete the same things.
+    ///
+    /// Both are pinned verbatim, plural included, so a "cleanup" that collapsed them back into one
+    /// shared string fails here instead of shipping.
     @Test func theOutcomeSentenceIsSharedAndCountsCorrectlyInPrivacyDataResetSurface() {
-        #expect(PrivacyDataResetOutcome(removedBackupCount: 0).statusMessage
+        #expect(PrivacyDataResetOutcome(removedBackupCount: 0).accountAndDataStatusMessage
             == "Cadence account and data were deleted.")
-        #expect(PrivacyDataResetOutcome(removedBackupCount: 1).statusMessage
+        #expect(PrivacyDataResetOutcome(removedBackupCount: 1).accountAndDataStatusMessage
             == "Cadence account, data, and 1 backup were deleted.")
-        #expect(PrivacyDataResetOutcome(removedBackupCount: 4).statusMessage
+        #expect(PrivacyDataResetOutcome(removedBackupCount: 4).accountAndDataStatusMessage
             == "Cadence account, data, and 4 backups were deleted.")
+
+        #expect(PrivacyDataResetOutcome(removedBackupCount: 0).dataOnlyStatusMessage
+            == "Cadence data was deleted.")
+        #expect(PrivacyDataResetOutcome(removedBackupCount: 1).dataOnlyStatusMessage
+            == "Cadence data and 1 backup were deleted.")
+        #expect(PrivacyDataResetOutcome(removedBackupCount: 4).dataOnlyStatusMessage
+            == "Cadence data and 4 backups were deleted.")
+    }
+
+    /// **T-474, as the property rather than as three string comparisons.**
+    ///
+    /// The iOS screen explains that Sign in with Apple is macOS-only and that there is no account
+    /// profile to clear here — and then printed "Cadence account and data were deleted." on the way
+    /// out. The sentence iOS shows must not contain the word "account" in any casing, at any backup
+    /// count, including counts nobody wrote a literal for above.
+    @Test func theSentenceIOSShowsNeverClaimsAnAccountWasDeleted() {
+        for count in [0, 1, 2, 4, 11] {
+            let outcome = PrivacyDataResetOutcome(removedBackupCount: count)
+
+            #expect(
+                !outcome.dataOnlyStatusMessage.lowercased().contains("account"),
+                "the iOS success notice claims an account was deleted: \(outcome.dataOnlyStatusMessage)"
+            )
+            // Non-vacuity in both directions. An outcome whose two messages were both the empty
+            // string would satisfy the assertion above: the iOS sentence has to be a sentence, and
+            // the macOS one — the sentence this must *not* be — still says "account".
+            #expect(outcome.dataOnlyStatusMessage.hasPrefix("Cadence data"))
+            #expect(outcome.dataOnlyStatusMessage.hasSuffix("deleted."))
+            #expect(outcome.accountAndDataStatusMessage.lowercased().contains("account"))
+        }
+    }
+
+    /// The property above is worth nothing if the iOS view reads the other sentence. Exact per-file
+    /// counts, in both directions, for the reason `expectCallSites` records: a "contains" check
+    /// stays green when one of two call sites reverts.
+    @Test func eachPlatformPrintsTheSentenceThatMatchesWhatItDeleted() throws {
+        let expectations: [String: [String: Int]] = [
+            "Cadence/iOS/iOSDataResetSettingsSection.swift": [
+                "outcome.dataOnlyStatusMessage": 1,
+                "outcome.accountAndDataStatusMessage": 0,
+            ],
+            "Cadence/macOS/Views/SettingsDataSafetySection.swift": [
+                "outcome.dataOnlyStatusMessage": 0,
+                "outcome.accountAndDataStatusMessage": 1,
+            ],
+        ]
+
+        for (path, needles) in expectations {
+            let code = try strippingComments(sourceFile(path))
+            #expect(code.contains("PrivacyDataResetService"), "non-vacuity: \(path) is not a caller of the reset")
+            for (needle, expected) in needles {
+                let actual = code.components(separatedBy: needle).count - 1
+                #expect(actual == expected, "\(path) reads \(needle) \(actual) times, expected \(expected)")
+            }
+        }
+
+        // And the undivided sentence is gone rather than merely unread, so a third caller cannot
+        // pick it back up. Both views keep a `statusMessage` of their own `@State`, so the needle
+        // has to be the *outcome's* declaration.
+        let service = try strippingComments(sourceFile("Cadence/Services/CadencePrivacyDataResetService.swift"))
+        #expect(service.contains("struct PrivacyDataResetOutcome"), "non-vacuity: the outcome moved or was renamed")
+        #expect(
+            !service.contains("var statusMessage"),
+            "PrivacyDataResetOutcome has one undivided status sentence again (T-474)"
+        )
+    }
+
+    /// The rest of the iOS screen, which was already right about the account — which is why the
+    /// success notice read as a contradiction rather than as a slip.
+    ///
+    /// Stated as an absence over the whole file's live code, so it covers the button, the card
+    /// title *and* the section label. The label said "Delete Account & Data" — macOS's words on the
+    /// platform with no account — which is the notice's claim again, one control earlier.
+    @Test func theIOSResetScreenNeverNamesAnAccountInAnythingItDraws() throws {
+        let code = try strippingComments(sourceFile("Cadence/iOS/iOSDataResetSettingsSection.swift"))
+
+        #expect(code.contains("struct iOSDataResetSettingsSection"), "non-vacuity: wrong file")
+        #expect(code.contains("Delete Cadence Data"), "non-vacuity: the screen draws no delete control")
+        #expect(
+            !code.lowercased().contains("account"),
+            "the iOS reset screen names an account in something it draws (T-474)"
+        )
+
+        // macOS keeps the word, because macOS keeps the account. Without this the assertion above
+        // is satisfiable by deleting the concept from both platforms, which is the opposite fix.
+        let desktop = try strippingComments(sourceFile("Cadence/macOS/Views/SettingsDataSafetySection.swift"))
+        #expect(desktop.contains("Delete Account & Data"))
     }
 
     // MARK: - The shipped documents
