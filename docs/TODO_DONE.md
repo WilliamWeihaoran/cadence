@@ -7,7 +7,64 @@ read. Nothing was trimmed: each entry keeps its prose and the SHA that shipped i
 Search here before filing anything that sounds familiar — several tickets were re-reported this
 week by audits that had only seen the open list.
 
-248 entries.
+255 entries.
+
+- [T-300] **The drag-and-drop date seed has the same lenient-parse bug.** From the same audit,
+  premise verified verbatim: `CadenceTaskDropSupport.dateValue` does
+  `guard DateFormatters.date(from: value) != nil` and then `return value`. Same class as [[T-299]],
+  lower risk because drop keys are internally generated and therefore already fixed-width in
+  practice — but the helper accepts arbitrary strings and can seed a composer with a
+  non-canonical key. One-line fix: return `DateFormatters.dateKey(from: parsed)`.
+  **Landed in `0e78c5b`.** Verified at `b8794b4` before retiring: `dateValue` reads
+  `guard let key = DateFormatters.normalizedDateKey(value), key >= todayKey`. Removed from Open on
+  2026-08-29 — the work shipped but the entry was never retired. Pinned by
+  `CadenceTaskDropSupportTests.aLenientlySpelledDayIsSeededInItsFixedWidthSpelling`,
+  `aLenientlySpelledPastDayIsStillDropped` and `aTwoDigitYearSeedsNoDateAtAll`; restoring the
+  parse-then-return-raw form fails all three.
+
+- [T-301] **Widget date labels bypass the app's English-pinned formatters.** From the same audit.
+  `CadenceTodayWidgetSupport` builds its weekday, day-number and due-day labels with
+  `date.formatted(...)`, which is locale-sensitive, while `DateFormatters` deliberately pins the
+  app's display formats to `en_US_POSIX`. On a non-English host a widget can render localized
+  month and weekday text beside English app chrome, on the same home screen.
+  The widget target compiles its own subset, so the fix is nonisolated widget-safe helpers
+  mirroring `shortDate` / `dayOfWeek` / `dayNumber` rather than a cross-target import.
+  Related to the localisation work already done under [[T-18]], which pinned exactly these
+  formatters for exactly this reason and did not reach the widget target.
+  **Landed in `0e78c5b`.** Verified at `b8794b4`: every member of `CadenceWidgetDateSupport`
+  forwards to `DateFormatters`, and `rg '\.formatted\('` over `CadenceWidgets/` and the four widget
+  support files returns nothing. `DateFormatters.swift` is in the `CadenceWidgets` sources phase, so
+  the forward is a real reference rather than a cross-target one. Removed from Open on 2026-08-29.
+  Pinned by `CrossPlatformParityTests.theWidgetsSpellDatesInEnglishTheWayTheAppDoes` and
+  `theWidgetsDeriveTheSameStorageKeyAsTheApp`; re-pointing `DateFormatters.dayOfWeek` at `fr_FR` —
+  what an unpinned formatter does on a French host — fails the first with `"SAM." == "SAT"`.
+
+- [T-302] **`CadenceCalendarDateMemory` accepts a calendar and then ignores it.** From the same
+  audit. `storageKey(for:calendar:)` snaps to `calendar.startOfDay` and then calls
+  `DateFormatters.dateKey(from:)` — the default-timezone spelling — rather than the calendar-aware
+  overload. Every current call site passes `Calendar.current`, so this is not a shipping bug today;
+  it is an API promising something it does not keep, with tests covering only the current-calendar
+  case. Either honour the parameter on both the write and the parse, or remove it.
+  **Landed in `0e78c5b`.** Verified at `b8794b4`: `storageKey(for:calendar:)` spells the key with
+  the calendar-aware `DateFormatters.dateKey(from:calendar:)`, `date(fromStored:calendar:)` parses
+  with `date(from:in:)`, and `restoredPosition` (added later for [[T-405]]) threads the same
+  calendar through every branch — so the parameter is honoured on both the write and the parse, and
+  no member of the type accepts a calendar it drops. Removed from Open on 2026-08-29. Pinned by
+  `CalendarDateMemoryTests.theStoredKeyNamesTheDayTheGivenCalendarIsOn` and
+  `aStoredKeyIsReadBackAtMidnightInTheGivenCalendarsZone`, which measure Honolulu against
+  Kiritimati; dropping the calendar from the spelling half fails the first.
+
+- [T-303] **The backup timestamp formatter lives outside the formatter layer.** From the same
+  audit. `PersistenceController` declares its own `DateFormatter` while `DateFormatters` states
+  that every one should live there. It is POSIX-pinned and works, so this is rule drift rather
+  than a defect — but the rule exists so an agent can find every date format in one file, and this
+  one is invisible to that search. Move it to `DateFormatters.backupFolderTimestamp`.
+  **Landed in `0e78c5b`.** Verified at `b8794b4`: `DateFormatters.backupFolderTimestamp` exists and
+  `PersistenceController.uniqueBackupDirectory` calls it. Removed from Open on 2026-08-29. Pinned by
+  `DateFormatterSupportTests.everyDateFormatterInTheAppIsDeclaredInTheFormatterFile`, which walks
+  `Cadence/`, `CadenceWidgets/` and `CadenceMCPServer/` and names any file outside
+  `DateFormatters.swift` that builds a `DateFormatter()`; putting a private stamp formatter back in
+  `PersistenceController` fails it by name.
 
 - [T-305] **Today should group by list, not by date intent — on both platforms.** Reported by the
   user 2026-08-26. Today currently groups into `CadenceTodayTaskGroupKind`: Overdue, Past Do, Due

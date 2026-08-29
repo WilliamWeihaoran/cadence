@@ -45,6 +45,13 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
+- [T-453] **`CadenceWidgetDateSupport.storageCalendar(inheritingTimeZoneFrom:)` has no callers.**
+  Found by a mutation that **survived**: re-pointing it to return the caller's calendar changed
+  nothing, because nothing calls it. Its sibling forwards to `DateFormatters.dateKey(from:calendar:)`,
+  which forces Gregorian itself — so the widget is correct and this is a dead pass-through left
+  behind when [[T-301]] collapsed the hand-rolled copies. Delete it or give it the one caller it was
+  written for.
+
 - [T-446] **Two "pick a context" controls with nothing shared underneath.** Residue from [[T-288]],
   which named `CadenceContextPicker` "the one with a live counterpart to converge on" and then had
   to move it instead. The move is correct and the convergence is still owed.
@@ -239,36 +246,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   must throw and be handled. Then triage the 133 against that rule rather than converting them all.
   Write the rule into `AGENTS.md` when it is decided — a rule an agent reads before writing the
   134th is worth more than fixing the first 133.
-
-- [T-300] **The drag-and-drop date seed has the same lenient-parse bug.** From the same audit,
-  premise verified verbatim: `CadenceTaskDropSupport.dateValue` does
-  `guard DateFormatters.date(from: value) != nil` and then `return value`. Same class as [[T-299]],
-  lower risk because drop keys are internally generated and therefore already fixed-width in
-  practice — but the helper accepts arbitrary strings and can seed a composer with a
-  non-canonical key. One-line fix: return `DateFormatters.dateKey(from: parsed)`.
-
-- [T-301] **Widget date labels bypass the app's English-pinned formatters.** From the same audit.
-  `CadenceTodayWidgetSupport` builds its weekday, day-number and due-day labels with
-  `date.formatted(...)`, which is locale-sensitive, while `DateFormatters` deliberately pins the
-  app's display formats to `en_US_POSIX`. On a non-English host a widget can render localized
-  month and weekday text beside English app chrome, on the same home screen.
-  The widget target compiles its own subset, so the fix is nonisolated widget-safe helpers
-  mirroring `shortDate` / `dayOfWeek` / `dayNumber` rather than a cross-target import.
-  Related to the localisation work already done under [[T-18]], which pinned exactly these
-  formatters for exactly this reason and did not reach the widget target.
-
-- [T-302] **`CadenceCalendarDateMemory` accepts a calendar and then ignores it.** From the same
-  audit. `storageKey(for:calendar:)` snaps to `calendar.startOfDay` and then calls
-  `DateFormatters.dateKey(from:)` — the default-timezone spelling — rather than the calendar-aware
-  overload. Every current call site passes `Calendar.current`, so this is not a shipping bug today;
-  it is an API promising something it does not keep, with tests covering only the current-calendar
-  case. Either honour the parameter on both the write and the parse, or remove it.
-
-- [T-303] **The backup timestamp formatter lives outside the formatter layer.** From the same
-  audit. `PersistenceController` declares its own `DateFormatter` while `DateFormatters` states
-  that every one should live there. It is POSIX-pinned and works, so this is rule drift rather
-  than a defect — but the rule exists so an agent can find every date format in one file, and this
-  one is invisible to that search. Move it to `DateFormatters.backupFolderTimestamp`.
 
 - [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
   Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes
@@ -780,36 +757,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Done: one panel — the container list, the highlight arithmetic, the selection and the section
   normalisation — read by both the title field and the drag-create popover, one item type, and a
   test that fails if either file re-declares `tildeFlatContainers`.
-
-# Cadence — task list
-
-The running record of work: open, in progress, done, cancelled. Started 2026-08-16.
-
-**Format.** One line per item: `- [id] Title — note`. Ids are stable and never reused, so a
-cancelled or done item can still be referenced later. Done items keep their commit sha, because the
-commit message is where the *reasoning* lives; this file is only the index.
-
-**Rule (set 2026-08-17).** *Every* request the user makes lands here the moment it is made, whether
-or not work starts on it — under **In progress** if it is being worked now, otherwise under the
-right Open section. An item moves to **Done** only when the code behind it is committed (or
-otherwise verified), not when it is written.
-
-**Target devices** (set 2026-08-16). Build and verify for these three only; anything that exists
-solely to serve other hardware is dead weight and should be removed rather than maintained:
-
-| Device | Points | Notes |
-|---|---|---|
-| iPhone 15 (base) | 393 × 852 | compact width, the only phone shape that matters |
-| iPad Pro 11" | 834 × 1210 portrait · 1210 × 834 landscape | pane = window − 188pt sidebar → **646** portrait, **1022** landscape |
-| MacBook Pro 14" | 1512 × 982 | the macOS surface |
-
-Both iPad panes matter to Today's layout: 646pt portrait falls **below**
-`CadenceTodayLayoutSupport.twoPaneMinimumWidth` (761), so portrait is one column and landscape is
-two. The three-pane floor of 1022pt that this note used to cite is gone with the layout itself
-(T-06).
-
----
-
 ## Done
 
 Moved to [`TODO_DONE.md`](TODO_DONE.md) on 2026-08-26 — 220 entries, with their reasoning and shipping SHAs intact.
