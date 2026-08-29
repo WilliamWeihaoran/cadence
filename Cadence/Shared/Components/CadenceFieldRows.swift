@@ -218,18 +218,29 @@ extension View {
 /// verdict rather than a field's name, and its trailing control acts rather than edits. So this is
 /// a second member of the row vocabulary rather than a bent copy of the first — and it reads the
 /// same `rowHeight`, which is the number that made those panes two heights.
+///
+/// **The glyph is optional, and that is the T-450 decision.** T-286 left
+/// `SidebarTabEditorSheet.settingsPanelRow` behind as a fifth private spelling because reaching this
+/// component would have meant inventing a state glyph for a sheet that reports no state. The two
+/// ways out were "grow an optional glyph" and "keep the private row on purpose"; the private row
+/// lost, because it had already drifted — its subtitle was 11pt where every other copy of this line
+/// is 12pt, including the one twenty lines above it in its own sheet. A row with no verdict draws no
+/// glyph and the title takes the leading edge; nothing here fabricates one.
 struct CadenceSettingsNoticeRow<Trailing: View>: View {
-    let systemImage: String
-    let tint: Color
+    /// `nil` on a row that states a setting rather than a verdict. See the type's doc.
+    var systemImage: String? = nil
+    var tint: Color = Theme.dim
     let title: String
     let detail: String
     @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 14))
-                .foregroundStyle(tint)
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 14))
+                    .foregroundStyle(tint)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)

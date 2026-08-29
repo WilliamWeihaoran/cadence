@@ -66,20 +66,19 @@ struct iOSListEditorSheet: View {
         }
     }
 
-    private var activeContexts: [Context] {
-        contexts.filter { !$0.isArchived }
-    }
-
     private var activeAreas: [Area] {
         areas.filter(\.isActive)
     }
 
+    /// Read out of the same list the popover offers, which is the point: this used to resolve
+    /// against `activeContexts` while `save()` resolved against the unfiltered query, so a project
+    /// whose context had been archived showed "None" here and kept the archived context on save.
     private var contextTitle: String {
-        guard selectedContextID != "none",
-              let context = activeContexts.first(where: { $0.id.uuidString == selectedContextID }),
-              !context.name.isEmpty
-        else { return "None" }
-        return context.name
+        CadenceContextPickerSupport.selectionTitle(
+            from: contexts,
+            selectedID: selectedContext?.id,
+            noneTitle: "None"
+        )
     }
 
     private var areaTitle: String {
@@ -140,10 +139,19 @@ struct iOSListEditorSheet: View {
                         }
                         .popover(isPresented: $showContextPicker) {
                             iOSChoicePopoverList(
-                                rows: [iOSChoiceRow(value: "none", title: "None", color: Theme.dim)]
-                                    + activeContexts.map { context in
-                                        iOSChoiceRow(value: context.id.uuidString, title: context.name.isEmpty ? "Untitled Context" : context.name, color: Color(hex: context.colorHex))
-                                    },
+                                rows: CadenceContextPickerSupport.items(
+                                    from: contexts,
+                                    selectedID: selectedContext?.id,
+                                    noneTitle: "None"
+                                ).map { item in
+                                    iOSChoiceRow(
+                                        value: item.id?.uuidString ?? "none",
+                                        title: item.title,
+                                        systemImage: item.icon,
+                                        color: item.tint,
+                                        id: AnyHashable(item.id)
+                                    )
+                                },
                                 selection: $selectedContextID,
                                 isPresented: $showContextPicker
                             )

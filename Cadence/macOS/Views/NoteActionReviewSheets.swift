@@ -204,7 +204,9 @@ private struct AITaskDraftRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Toggle("", isOn: $isSelected)
+                // The row has no static title to borrow — the text beside this checkbox is an
+                // editable `TextField` — so the name is stated here rather than inherited.
+                Toggle("Include this task", isOn: $isSelected)
                     .toggleStyle(.checkbox)
                     .labelsHidden()
                 TextField("Task title", text: $draft.title)

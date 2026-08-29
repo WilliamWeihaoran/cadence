@@ -75,9 +75,7 @@ struct SettingsCalendarSection: View {
                     )
 
                     if index < links.count - 1 {
-                        Divider()
-                            .background(Theme.borderSubtle)
-                            .padding(.leading, 44)
+                        CadenceRowDivider(leadingInset: 44)
                     }
                 }
             }
@@ -111,9 +109,7 @@ struct SettingsCalendarSection: View {
                         )
 
                         if index < calendars.count - 1 {
-                            Divider()
-                                .background(Theme.borderSubtle)
-                                .padding(.leading, 44)
+                            CadenceRowDivider(leadingInset: 44)
                         }
                     }
                 }

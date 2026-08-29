@@ -210,6 +210,84 @@ struct TodayAndInboxNamingTests {
             #expect(compact.contains(name) == false, "the compact host reaches \(name)")
         }
     }
+
+    /// **The reachability claim, over the whole surface rather than over one file.**
+    ///
+    /// `theTwoPaneOnlyTypesKeepTheirIPadPrefix` above checks that the *compact Today host* does not
+    /// name the two kept views. That is one file out of ninety-odd, and the claim the prefix rests
+    /// on is about all of them: nothing a compact width can reach may build these. This sweeps
+    /// `Cadence/iOS/` and pins the exact set of files whose **code** names either view — prose is
+    /// stripped first, because this file family records its own history in doc comments and three
+    /// other files mention these names while building neither.
+    ///
+    /// Two files, each for its own reason: the one that declares them, and `iOSTodayView`, which
+    /// builds them from `twoPaneTodayLayout` — the branch `CadenceTodayLayoutSupport.layout(...)`
+    /// returns only at regular width. The chain from that branch to each call is walked below
+    /// rather than inferred from the member names.
+    @Test func nothingOutsideTheTwoPaneTodayHostBuildsATwoPaneOnlyView() throws {
+        let instrument = try misfiledTwoPaneOnlyViewInstrument()
+        let namers = try instrument.sweep(
+            try misfiledSwiftFiles(under: "Cadence/iOS"),
+            // 93 files at the time of writing; the floor sits well under it so an added file is
+            // not a failure and a collapsed walk is.
+            atLeast: 80,
+            including: "Cadence/iOS/iOSTodayCompactViews.swift",
+            read: misfiledSourceFile
+        )
+        #expect(
+            namers == ["Cadence/iOS/iOSTodayView.swift", "Cadence/iOS/iPadTodaySupportViews.swift"],
+            "a two-pane-only view is built outside Today's two-pane layout: \(namers)"
+        )
+
+        // The chain, inside the one host allowed to name them. `iPadTodayInspectorSwitcher` is
+        // built in `twoPaneTodayLayout`'s own body; `iPadTodayTaskHeader` is built by
+        // `todayTaskColumn`, whose only other mention is that same body. Counted over a scoped
+        // body rather than asserted with a file-wide `contains`, which is what makes a second call
+        // site fail here instead of passing on the first one.
+        let host = CadenceSourceScan.codeOnly(try misfiledSourceFile("Cadence/iOS/iOSTodayView.swift"))
+        #expect(host.contains("struct iOSTodayView: View {"), "non-vacuity: wrong file read")
+        let twoPane = try #require(CadenceSourceScan.functionBody(named: "twoPaneTodayLayout", in: host))
+        #expect(CadenceSourceScan.matchCount("iPadTodayInspectorSwitcher\\(", in: twoPane) == 1)
+        #expect(CadenceSourceScan.matchCount("iPadTodayInspectorSwitcher\\(", in: host) == 1)
+        #expect(CadenceSourceScan.matchCount("todayTaskColumn", in: twoPane) == 1)
+        // The declaration plus that one use, and nothing else.
+        #expect(CadenceSourceScan.matchCount("todayTaskColumn", in: host) == 2)
+        #expect(CadenceSourceScan.matchCount("iPadTodayTaskHeader\\(", in: host) == 1)
+    }
+
+    /// **The third kept name does not pass the test the other two do, and this is where that is
+    /// written down.**
+    ///
+    /// `iPadTodaySupportViews.swift` says all three types are "built only by
+    /// `iOSTodayView.twoPaneTodayLayout`" and that "a compact width cannot reach any of them". For
+    /// the two views that is true and the sweep above holds it. For `iPadTodaySidePanel` it is
+    /// false: `iOSTodayView` names it in the **default value of a stored property**
+    /// (`@AppStorage("ios.today.sidePanel")`), which every construction of that view evaluates —
+    /// and `iOSCompactTabShell`, `iOSTasksTabView` and `iOSSearchView` all construct it at compact
+    /// width. So the enum is reached on an iPhone, and by T-283's own rule the prefix there is a
+    /// claim the code does not keep.
+    ///
+    /// Excluded from the sweep **by name** rather than quietly, on the T-449 pattern: the hole is
+    /// one line of test source, and whether the enum is renamed or the file's comment is corrected
+    /// is a decision that belongs to a ticket rather than to this file.
+    @Test func theSidePanelEnumIsReachedFromAWidthIndependentStoredProperty() throws {
+        let host = CadenceSourceScan.strippingComments(
+            try misfiledSourceFile("Cadence/iOS/iOSTodayView.swift")
+        )
+        #expect(host.contains("struct iOSTodayView: View {"), "non-vacuity: wrong file read")
+        #expect(
+            CadenceSourceScan.matchCount(
+                "@AppStorage\\(\"ios.today.sidePanel\"\\) private var sidePanelRaw = iPadTodaySidePanel",
+                in: host
+            ) == 1,
+            "the recorded exception no longer describes the source"
+        )
+        // A stored property's initialiser runs in `init`, not in a layout branch. That is the
+        // difference from the two views, and it is what this asserts rather than assumes.
+        let code = CadenceSourceScan.codeOnly(try misfiledSourceFile("Cadence/iOS/iOSTodayView.swift"))
+        let twoPane = try #require(CadenceSourceScan.functionBody(named: "twoPaneTodayLayout", in: code))
+        #expect(twoPane.contains("iPadTodaySidePanel") == false)
+    }
 }
 
 // MARK: - T-281
@@ -311,6 +389,128 @@ struct NoteEditorSheetHeaderTests {
             ) == 0
         )
     }
+
+    /// **The gutter the extraction did not take with it.**
+    ///
+    /// `iOSEditorSheetMetrics.gutter(isRegularWidth:)` is where "the margin between an editor
+    /// sheet's content and the edge of its host" is decided — 20 regular, 18 compact — and its own
+    /// comment says it exists so that figure is "stated once instead of being a
+    /// `isRegularWidth ? 20 : 18` in each of them". Five surfaces read it, one of them
+    /// (`iOSAINoteActionsViews`) a note surface. `iOSNoteEditorSheetHeader` spells the ternary.
+    ///
+    /// The sweep is the instrument that was missing: nothing in this target looked for a
+    /// hand-rolled copy of that ramp, which is how T-281 could close one duplication by opening an
+    /// instance of another — and how its own sibling test came to assert the copy is there
+    /// (`oneSharedViewOwnsTheNoteEditorHeaderRamp`). The offender is excluded **by name**, on the
+    /// T-449 pattern, so the hole is one line of test source and one line of view source.
+    @Test func noEditorSheetSurfaceSpellsTheHostGutterRampItself() throws {
+        let instrument = try misfiledGutterRampInstrument()
+        let offenders = try instrument.sweep(
+            try misfiledSwiftFiles(under: "Cadence/iOS"),
+            atLeast: 80,
+            including: "Cadence/iOS/iOSEditorSheetMetrics.swift",
+            read: misfiledSourceFile
+        ).filter { !misfiledGutterRampAllowed.contains($0) }
+        #expect(offenders.isEmpty, "hand-rolled editor-sheet gutter ramp: \(offenders)")
+
+        // Both exclusions must still be what they are excused for being — the definition, and the
+        // open copy. An allowlist entry that has stopped spelling the ramp is one to delete, not
+        // one to keep carrying.
+        for path in misfiledGutterRampAllowed.sorted() {
+            #expect(
+                instrument.fires(on: try misfiledSourceFile(path)),
+                "\(path) is allowlisted but no longer spells the ramp"
+            )
+        }
+        let metrics = CadenceSourceScan.codeOnly(
+            try misfiledSourceFile("Cadence/iOS/iOSEditorSheetMetrics.swift")
+        )
+        #expect(
+            metrics.contains("static func gutter(isRegularWidth: Bool) -> CGFloat"),
+            "the allowlisted definition is no longer a definition"
+        )
+    }
+
+    /// **No call site hands the shared header a width**, which is the shape the extraction would
+    /// come apart in. Threading `isRegularWidth:` back in from either sheet would compile, would
+    /// look like an answer to "does the trait reach the 320pt rail", and would put the ramp's
+    /// *input* back in two places while leaving the ramp itself in one — the drift T-281 closed,
+    /// one level down.
+    ///
+    /// Source-shape, and it can only be: `Cadence/iOS/` is fenced out of this target, so the header
+    /// cannot be named here, never mind rendered. See the suite comment.
+    @Test func noCallSiteHandsTheSharedHeaderAWidth() throws {
+        var callSites = 0
+        for path in try misfiledSwiftFiles(under: "Cadence/iOS") {
+            let code = CadenceSourceScan.codeOnly(try misfiledSourceFile(path))
+            callSites += CadenceSourceScan.matchCount("iOSNoteEditorSheetHeader\\(", in: code)
+            #expect(
+                CadenceSourceScan.matchCount(
+                    "iOSNoteEditorSheetHeader\\([^)]*(isRegular|SizeClass|width:)",
+                    in: code
+                ) == 0,
+                "\(path) parameterises the shared header by width"
+            )
+        }
+        // Non-vacuity for the walk: the two sheets call it, and nothing else does. The declaring
+        // file is deliberately not one of them — its convenience initialiser delegates to
+        // `self.init`, so a count of two here is also the statement that there is no third sheet.
+        #expect(callSites == 2, "found \(callSites) calls to the shared header")
+
+        // And the view takes three things, none of them a width. It reads the trait itself, which
+        // is the whole reason neither sheet names those numbers any more.
+        let header = CadenceSourceScan.codeOnly(
+            try misfiledSourceFile("Cadence/iOS/iOSNoteEditorSheetHeader.swift")
+        )
+        for declaration in [
+            "let eyebrow: String",
+            "let title: String",
+            "@ViewBuilder let accessory: Accessory"
+        ] {
+            #expect(header.contains(declaration), "the shared header no longer declares \(declaration)")
+        }
+        #expect(
+            CadenceSourceScan.matchCount("let (isRegular|isCompact|horizontalSizeClass)", in: header) == 0,
+            "the shared header stores a width"
+        )
+    }
+
+    /// **The trait cannot be rewritten between the sheet and the rail, because nothing in this tree
+    /// rewrites it.**
+    ///
+    /// T-447's first predicate is that `iOSNoteEditorSheetHeader` reading
+    /// `@Environment(\.horizontalSizeClass)` itself sees the same value the sheet around it
+    /// branches on — "the same trait either way *in theory*", since a `.frame(width: 320)` is not a
+    /// scene trait. Whether SwiftUI re-derives it somewhere inside `NavigationStack` → `HStack` →
+    /// `.frame` is a device question and stays one. The other half is not, and it is the half an
+    /// *edit* could break: if no view in `Cadence/` writes that key into the environment, there is
+    /// nothing between the two readers that could hand them different answers.
+    ///
+    /// Swept over the whole app rather than over the two sheets, because the modifier that would
+    /// break it could be applied by any ancestor — a shell, a root view, a presenter.
+    @Test func nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader() throws {
+        let offenders = try misfiledSizeClassOverrideInstrument().sweep(
+            try misfiledSwiftFiles(under: "Cadence"),
+            atLeast: 400,
+            including: "Cadence/iOS/iOSNoteEditorSheetHeader.swift",
+            read: misfiledSourceFile
+        )
+        #expect(offenders.isEmpty, "the horizontal size class is written in: \(offenders)")
+
+        // Non-vacuity for the claim this supports: all three files still *read* the trait whose
+        // agreement is being argued for.
+        for path in [
+            "Cadence/iOS/iOSNoteEditorSheetHeader.swift",
+            "Cadence/iOS/iOSEventNoteEditorSheet.swift",
+            "Cadence/iOS/iOSMarkdownReferenceSupport.swift"
+        ] {
+            let code = CadenceSourceScan.codeOnly(try misfiledSourceFile(path))
+            #expect(
+                code.contains("@Environment(\\.horizontalSizeClass)"),
+                "\(path) no longer reads the trait it is asserted to share"
+            )
+        }
+    }
 }
 
 // MARK: - Scan helpers
@@ -405,4 +605,97 @@ private func misfiledIsWholeFilePlatformFence(_ source: String) -> Bool {
 /// matters here — `iPadTodayCompactViews` does not fire on `iPadTodayCompactViewsSomething`.
 private func misfiledSpellsWord(_ word: String, in source: String) -> Bool {
     CadenceSourceScan.matchCount("\\b\(word)\\b(?![A-Za-z0-9_])", in: source) > 0
+}
+
+/// The two files allowed to spell the editor-sheet gutter ramp: the one that defines it, and the
+/// one that copied it. See `noEditorSheetSurfaceSpellsTheHostGutterRampItself`.
+private let misfiledGutterRampAllowed: Set<String> = [
+    "Cadence/iOS/iOSEditorSheetMetrics.swift",
+    "Cadence/iOS/iOSNoteEditorSheetHeader.swift"
+]
+
+private func misfiledGutterRampInstrument() throws -> CadenceScanInstrument {
+    try CadenceScanInstrument(
+        "hand-rolled editor-sheet gutter ramp",
+        fires: """
+        struct Sheet: View {
+            var body: some View {
+                content.padding(.horizontal, isRegularWidth ? 20 : 18)
+            }
+        }
+        """,
+        // The nearest miss, not a distant one: the same padding on the same sheet, taken from the
+        // one place that decides it. A detector keyed on "20" or on ".padding(.horizontal" would
+        // fire on this.
+        andNotOn: """
+        struct Sheet: View {
+            var body: some View {
+                content.padding(.horizontal, iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))
+            }
+        }
+        """,
+        by: misfiledSpellsItsOwnGutterRamp
+    )
+}
+
+private func misfiledSpellsItsOwnGutterRamp(_ source: String) -> Bool {
+    CadenceSourceScan.matchCount("isRegularWidth \\? 20 : 18", in: CadenceSourceScan.codeOnly(source)) > 0
+}
+
+private func misfiledTwoPaneOnlyViewInstrument() throws -> CadenceScanInstrument {
+    try CadenceScanInstrument(
+        "names a two-pane-only Today view",
+        fires: """
+        struct Elsewhere: View {
+            var body: some View { iPadTodayTaskHeader(eyebrow: "", title: "") }
+        }
+        """,
+        // The nearest miss: prose naming the view, which is how this file family records its own
+        // history, plus the *third* `iPad` name — the one that is genuinely reached at both widths
+        // and must not be swept up with the two that are not.
+        andNotOn: """
+        /// `iPadTodayTaskHeader` is the row this one replaced on macOS.
+        struct Elsewhere: View {
+            @AppStorage("k") private var raw = iPadTodaySidePanel.notes.rawValue
+            var body: some View { Text("iPadTodayInspectorSwitcher") }
+        }
+        """,
+        by: misfiledNamesATwoPaneOnlyView
+    )
+}
+
+private func misfiledNamesATwoPaneOnlyView(_ source: String) -> Bool {
+    let code = CadenceSourceScan.codeOnly(source)
+    return ["iPadTodayTaskHeader", "iPadTodayInspectorSwitcher"].contains {
+        misfiledSpellsWord($0, in: code)
+    }
+}
+
+private func misfiledSizeClassOverrideInstrument() throws -> CadenceScanInstrument {
+    try CadenceScanInstrument(
+        "writes the horizontal size class into the environment",
+        fires: """
+        struct Rail: View {
+            var body: some View {
+                content.environment(\\.horizontalSizeClass, .compact)
+            }
+        }
+        """,
+        // The nearest miss: *reading* the same key, which is what all three files in question do
+        // and is exactly what this rule must leave alone.
+        andNotOn: """
+        struct Rail: View {
+            @Environment(\\.horizontalSizeClass) private var horizontalSizeClass
+            var body: some View { content.frame(width: 320) }
+        }
+        """,
+        by: misfiledWritesTheHorizontalSizeClass
+    )
+}
+
+private func misfiledWritesTheHorizontalSizeClass(_ source: String) -> Bool {
+    CadenceSourceScan.matchCount(
+        "\\.environment\\(\\s*\\\\\\.horizontalSizeClass",
+        in: CadenceSourceScan.codeOnly(source)
+    ) > 0
 }

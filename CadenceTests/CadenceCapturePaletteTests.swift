@@ -358,6 +358,61 @@ struct CadenceCapturePaletteTests {
         }
     }
 
+    /// **T-282's "the arc opens up-and-left so it probably clears", as arithmetic.**
+    ///
+    /// The ticket's one outstanding risk is that the corner palette is drawn outside something
+    /// that clips it. `iOSCaptureRadialMenuOverlay`'s own comment says it sits at the *shell's*
+    /// level so a 46pt tab-bar row cannot cut it off — and on iPad `iOSFloatingCreateTaskLayer`
+    /// applies `.iOSCaptureHost(_:)` to the **page's** content instead. Whether some ancestor of
+    /// that page clips is a device question and stays one. Whether the arc needs room outside the
+    /// page in the first place is not, and this settles that half.
+    ///
+    /// The corner button's centre sits `edgeInset + floatingDiameter / 2` from the page's trailing
+    /// and bottom edges. Every tile, at its full published width, has to fall inside that: if it
+    /// does, the palette never asks to be drawn outside the page's own bounds, so clipping by the
+    /// page cannot be what hides it and only an ancestor could.
+    ///
+    /// The two insets are **read from source**, because `iOSCircularAddButton` is inside
+    /// `#if os(iOS)` and cannot be named from this target. The arithmetic on top of them is not
+    /// source-shape: it runs on `CadenceCapturePaletteMetricsValues.corner`, which is shared, real,
+    /// and the value the view actually draws from.
+    ///
+    /// **Not pinned: the caption under each tile.** Its height is a font metric nobody publishes,
+    /// so the bound below is the tiles' and stops there — the labels hang lower than this proves.
+    @Test func theCornerPalettesTilesFitInsideTheButtonsOwnCornerInset() throws {
+        let button = try strippingComments(sourceFile("Cadence/iOS/iOSFloatingCreateTaskButton.swift"))
+        #expect(button.contains("struct iOSCircularAddButton"), "non-vacuity: wrong file read")
+        let edgeInset = try #require(capturePaletteConstant("edgeInset", in: button))
+        let diameter = try #require(capturePaletteConstant("floatingDiameter", in: button))
+        #expect(edgeInset == 22)
+        #expect(diameter == 56)
+
+        let clearance = edgeInset + diameter / 2
+        let tileRadius = CadenceCapturePaletteMetrics.segmentTileDiameter / 2
+        let corner = CadenceCapturePalettePlacement.bottomTrailing.metrics
+
+        for index in 0..<CadenceCapturePaletteGeometry.segmentCount {
+            let offset = CadenceCapturePaletteGeometry.offset(forSegment: index, metrics: corner)
+            #expect(
+                offset.width + tileRadius <= clearance,
+                "corner tile \(index) is drawn past the page's trailing edge"
+            )
+            #expect(
+                offset.height + tileRadius <= clearance,
+                "corner tile \(index) is drawn past the page's bottom edge"
+            )
+        }
+
+        // The negative, so this is not arithmetic that would be true of any palette: the tab bar's
+        // semicircle does **not** fit in that box. That is the whole reason the corner folds, and
+        // a "unification" that gave the corner the bar's sweep fails here as well as above.
+        let bar = CadenceCapturePalettePlacement.bottomCentre.metrics
+        let widest = (0..<CadenceCapturePaletteGeometry.segmentCount)
+            .map { CadenceCapturePaletteGeometry.offset(forSegment: $0, metrics: bar).width }
+            .max() ?? 0
+        #expect(widest + tileRadius > clearance, "the semicircle would have fitted in the corner")
+    }
+
     /// A drag off the corner `+` that fizzles over blank space still opens the composer that
     /// button's page would have opened — it does not fall back to a bare Inbox one. The tab bar's
     /// `+` is unscoped, so for it the same rule resolves to the same empty seed it always had.
@@ -896,4 +951,17 @@ private func strippingComments(_ source: String) throws -> String {
         }
     }
     return result
+}
+
+/// `static let <name>: CGFloat = <number>`, as a number. `nil` when the declaration is absent or has
+/// stopped being a plain literal — either of which has to read as a failure at the call site rather
+/// than fall back to a default that would make the bound above trivially true.
+private func capturePaletteConstant(_ name: String, in source: String) -> CGFloat? {
+    let pattern = "static let \(name): CGFloat = ([0-9]+(?:\\.[0-9]+)?)"
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+          let match = regex.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)),
+          let range = Range(match.range(at: 1), in: source),
+          let value = Double(source[range])
+    else { return nil }
+    return CGFloat(value)
 }

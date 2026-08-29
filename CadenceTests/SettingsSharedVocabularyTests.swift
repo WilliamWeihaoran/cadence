@@ -265,7 +265,9 @@ struct SettingsSharedVocabularyTests {
             of: "CadenceRowDivider",
             at: [
                 "Cadence/macOS/Views/SettingsAboutSection.swift": 2,
-                "Cadence/macOS/Views/SettingsListManagementSections.swift": 5,
+                // 5 before T-449; the two calendar-row hairlines that were a two-line
+                // `Divider().background(Theme.borderSubtle)` are the other two.
+                "Cadence/macOS/Views/SettingsListManagementSections.swift": 7,
                 "Cadence/macOS/Views/SettingsDataSafetySection.swift": 1,
                 "Cadence/macOS/Views/SettingsSectionViews.swift": 4
             ]
@@ -415,7 +417,9 @@ private func t20StrippingComments(_ source: String) throws -> String {
 ///   read. Four hand-written copies of one line, now five call sites of one component.
 ///
 /// **Not in scope:** `SettingsListManagementSections.swift`. It is not one of the seven — T-20 gave
-/// it the hairline, and it is the pane with five `CadenceRowDivider` call sites already.
+/// it the hairline, and it is the pane with the most `CadenceRowDivider` call sites already. Its two
+/// stragglers, spelled across two lines and so invisible to T-20's one-line check, went in T-449;
+/// the count `noSettingsPaneStillPaintsUnderTheSystemSeparator` pins for it is seven, not five.
 @MainActor
 struct SettingsSevenPaneVocabularyTests {
 
@@ -445,6 +449,8 @@ struct SettingsSevenPaneVocabularyTests {
                 "Cadence/macOS/Views/SettingsRemindersSection.swift": 1,
                 "Cadence/macOS/Views/SettingsSyncSection.swift": 1,
                 "Cadence/macOS/Views/SettingsTagsSection.swift": 1,
+                // T-450: the sidebar-tab editor's row, which T-286 left private.
+                "Cadence/macOS/Views/SettingsSupportViews.swift": 1,
                 // The row lives in the shared file; the declaration is not a call site.
                 "Cadence/Shared/Components/CadenceFieldRows.swift": 0
             ]
@@ -453,6 +459,62 @@ struct SettingsSevenPaneVocabularyTests {
         try t20ExpectCallSites(
             of: "CadenceSettingsField",
             at: ["Cadence/macOS/Views/SettingsTemplatesSection.swift": 3]
+        )
+    }
+
+    /// **T-450: the fifth private settings row is gone, and the shared one grew an optional glyph.**
+    ///
+    /// T-286 left `SidebarTabEditorSheet.settingsPanelRow` alone on the argument that reaching
+    /// `CadenceSettingsNoticeRow` meant inventing a state glyph for a sheet that reports no state.
+    /// That argument was sound about the glyph and wrong about the outcome: the private row had
+    /// already drifted off the shared spelling in the way copies do, carrying an 11pt subtitle where
+    /// the other four say 12 — and where the identity block twenty lines above it in the same sheet
+    /// says 12. So the glyph became optional and the copy went.
+    ///
+    /// The sweep is over every Swift file in the app, not just this pane: the failure it guards is
+    /// the helper being moved rather than removed.
+    @Test func theFifthPrivateSettingsRowIsRetiredRatherThanRelocated() throws {
+        let privateRow = try CadenceScanInstrument(
+            "private settings panel row helper",
+            fires: "private func settingsPanelRow<A: View>(title: String, subtitle: String) -> some View { EmptyView() }",
+            andNotOn: "CadenceSettingsNoticeRow(title: title, detail: subtitle) { accessory() }",
+            by: { source in
+                CadenceSourceScan.matchCount(
+                    "(?<![A-Za-z0-9_])settingsPanelRow(?![A-Za-z0-9_])",
+                    in: source
+                ) > 0
+            }
+        )
+
+        let hits = try privateRow.sweep(
+            try t20SwiftFiles(under: "Cadence"),
+            atLeast: 400,
+            including: "Cadence/macOS/Views/SettingsSupportViews.swift",
+            read: { CadenceSourceScan.codeOnly(try t20SourceFile($0)) }
+        )
+
+        #expect(hits.isEmpty, "settingsPanelRow still declared in \(hits)")
+    }
+
+    /// The glyph is **absent** on a row that reports no verdict, not blank.
+    ///
+    /// `systemImage: String = ""` would have satisfied the call-site count above while drawing an
+    /// empty `Image` in the leading slot and pushing the title off the edge every other row starts
+    /// on. So the declaration has to be optional and the body has to branch on it — the two facts a
+    /// call-site count cannot see, and the only two the sheet's appearance depends on.
+    @Test func theSharedNoticeRowDrawsNoGlyphWhenItIsGivenNone() throws {
+        let code = CadenceSourceScan.codeOnly(
+            try t20SourceFile("Cadence/Shared/Components/CadenceFieldRows.swift")
+        )
+
+        #expect(CadenceSourceScan.matchCount("var systemImage: String\\?", in: code) == 1)
+        #expect(CadenceSourceScan.matchCount("if let systemImage \\{", in: code) == 1)
+
+        // And the sheet's row is the one that omits it: no `systemImage:` argument anywhere in
+        // that file, which is where a re-invented glyph would have to appear.
+        try t20ExpectOccurrences(
+            of: "systemImage",
+            at: ["Cadence/macOS/Views/SettingsSupportViews.swift": 0]
         )
     }
 
@@ -519,11 +581,9 @@ struct SettingsSevenPaneVocabularyTests {
         var offenders: [String] = []
 
         for path in try t20SwiftFiles(under: "Cadence/macOS/Views") where path.contains("/Settings") {
-            // `SettingsListManagementSections.swift` is outside this batch and carries the last
-            // two-line survivor; it is filed as residue rather than silently allowed here, and the
-            // named exclusion is what keeps this a sweep with one hole rather than an allowlist
-            // that can grow.
-            if path.hasSuffix("SettingsListManagementSections.swift") { continue }
+            // The sweep has no hole any more. `SettingsListManagementSections.swift` carried the
+            // last two-line survivor and was skipped by name (T-449); its two calendar-row
+            // hairlines now read `CadenceRowDivider`, so every settings pane is scanned.
             scanned += 1
             let code = t286RemovingWhitespace(try t20StrippingComments(t20SourceFile(path)))
             if code.contains("Divider().background(Theme.borderSubtle") {
@@ -531,7 +591,7 @@ struct SettingsSevenPaneVocabularyTests {
             }
         }
 
-        #expect(scanned >= 11, "scanned only \(scanned) settings panes")
+        #expect(scanned >= 15, "scanned only \(scanned) settings panes")
         #expect(offenders.isEmpty, "painted-under hairline(s) in: \(offenders.sorted().joined(separator: ", "))")
     }
 

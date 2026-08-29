@@ -12,8 +12,11 @@ import SwiftUI
 // call sites already route through the shared `iOSChoiceRow` / `iOSChoicePopoverList` idiom, which
 // is the touch answer to the same question.
 //
-// Converging them means a shared *item model and filter* under two presentations, not one view.
-// Filed as T-446 rather than smuggled into a file move.
+// **T-446 finished it the other way round.** The two presentations stayed two; the *list* under them
+// became one. Sort, the archive rule, the unnamed-context fallback and the "none" row are
+// `CadenceContextPickerSupport` now — read here and at all three iOS sites — and the four spellings
+// they replaced did not agree: see that type's doc for what each got wrong. Nothing below derives a
+// context list; it presents one.
 
 struct CadenceContextPickerButton: View {
     let contexts: [Context]
@@ -23,8 +26,12 @@ struct CadenceContextPickerButton: View {
 
     @State private var showPicker = false
 
-    private var selectedContext: Context? {
-        selectedID.flatMap { id in contexts.first { $0.id == id } }
+    private var selectedItem: CadenceContextPickerSupport.Item {
+        CadenceContextPickerSupport.selectedItem(
+            from: contexts,
+            selectedID: selectedID,
+            noneTitle: "No context"
+        )
     }
 
     var body: some View {
@@ -32,9 +39,9 @@ struct CadenceContextPickerButton: View {
             HStack(spacing: style.iconLabelSpacing) {
                 selectedIcon
 
-                Text(selectedContext?.name ?? "No context")
+                Text(selectedItem.title)
                     .font(.system(size: style.fontSize, weight: .medium))
-                    .foregroundStyle(selectedContext == nil ? Theme.dim : Theme.text)
+                    .foregroundStyle(selectedItem.isNone ? Theme.dim : Theme.text)
                     .lineLimit(1)
 
                 Spacer(minLength: 8)
@@ -67,23 +74,14 @@ struct CadenceContextPickerButton: View {
         }
     }
 
-    @ViewBuilder
     private var selectedIcon: some View {
-        if let selectedContext {
-            Image(systemName: selectedContext.icon)
-                .font(.system(size: style.iconSize, weight: .semibold))
-                .foregroundStyle(Color(hex: selectedContext.colorHex))
-                .frame(width: style.iconBoxSize, height: style.iconBoxSize)
-                .background(Color(hex: selectedContext.colorHex).opacity(0.14))
-                .clipShape(RoundedRectangle(cornerRadius: style.iconCornerRadius))
-        } else {
-            Image(systemName: "circle")
-                .font(.system(size: style.iconSize, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .frame(width: style.iconBoxSize, height: style.iconBoxSize)
-                .background(Theme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: style.iconCornerRadius))
-        }
+        let item = selectedItem
+        return Image(systemName: item.icon ?? "circle")
+            .font(.system(size: style.iconSize, weight: .semibold))
+            .foregroundStyle(item.tint)
+            .frame(width: style.iconBoxSize, height: style.iconBoxSize)
+            .background(item.isNone ? Theme.surface : item.tint.opacity(0.14))
+            .clipShape(RoundedRectangle(cornerRadius: style.iconCornerRadius))
     }
 }
 
@@ -97,36 +95,20 @@ struct CadenceContextPickerList: View {
     @State private var highlightIndex = 0
     @FocusState private var isSearchFocused: Bool
 
-    private struct PickerItem: Equatable {
-        let id: UUID?
-        let label: String
+    private var pickerItems: [CadenceContextPickerSupport.Item] {
+        CadenceContextPickerSupport.items(
+            from: contexts,
+            selectedID: selectedID,
+            query: searchQuery,
+            noneTitle: allowNone ? "No context" : nil
+        )
     }
 
-    private var sortedContexts: [Context] {
-        contexts.sorted {
-            if $0.order == $1.order {
-                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }
-            return $0.order < $1.order
-        }
-    }
-
-    private var filteredContexts: [Context] {
-        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return sortedContexts }
-        let needle = trimmed.localizedLowercase
-        return sortedContexts.filter {
-            $0.name.localizedLowercase.contains(needle)
-        }
-    }
-
-    private var flattenedItems: [PickerItem] {
-        var items: [PickerItem] = []
-        if allowNone {
-            items.append(PickerItem(id: nil, label: "No context"))
-        }
-        items.append(contentsOf: filteredContexts.map { PickerItem(id: $0.id, label: $0.name) })
-        return items
+    /// A search that matched no context. The "no context" row goes with it: picking it while
+    /// looking for something named is not what the search was for.
+    private var searchFoundNothing: Bool {
+        !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && pickerItems.allSatisfy(\.isNone)
     }
 
     var body: some View {
@@ -135,7 +117,7 @@ struct CadenceContextPickerList: View {
 
             Divider().background(Theme.borderSubtle).padding(.top, 6)
 
-            if filteredContexts.isEmpty && !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if searchFoundNothing {
                 Text("No matching contexts")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.dim)
@@ -143,18 +125,11 @@ struct CadenceContextPickerList: View {
                     .padding(.vertical, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                if allowNone {
-                    row(id: nil, title: "No context", icon: "circle", colorHex: nil)
-                    Divider().background(Theme.borderSubtle).padding(.vertical, 2)
-                }
-
-                ForEach(filteredContexts) { context in
-                    row(
-                        id: context.id,
-                        title: context.name,
-                        icon: context.icon,
-                        colorHex: context.colorHex
-                    )
+                ForEach(pickerItems) { item in
+                    row(item)
+                    if item.isNone {
+                        Divider().background(Theme.borderSubtle).padding(.vertical, 2)
+                    }
                 }
             }
         }
@@ -167,10 +142,10 @@ struct CadenceContextPickerList: View {
             syncHighlight()
         }
         .onMoveCommand { direction in
-            guard !flattenedItems.isEmpty else { return }
+            guard !pickerItems.isEmpty else { return }
             switch direction {
             case .down:
-                highlightIndex = min(highlightIndex + 1, flattenedItems.count - 1)
+                highlightIndex = min(highlightIndex + 1, pickerItems.count - 1)
             case .up:
                 highlightIndex = max(highlightIndex - 1, 0)
             default:
@@ -191,8 +166,8 @@ struct CadenceContextPickerList: View {
                 .foregroundStyle(Theme.text)
                 .focused($isSearchFocused)
                 .onSubmit {
-                    guard highlightIndex >= 0, highlightIndex < flattenedItems.count else { return }
-                    pick(flattenedItems[highlightIndex].id)
+                    guard highlightIndex >= 0, highlightIndex < pickerItems.count else { return }
+                    pick(pickerItems[highlightIndex].id)
                 }
 
             if !searchQuery.isEmpty {
@@ -216,23 +191,23 @@ struct CadenceContextPickerList: View {
 
     @MainActor
     @ViewBuilder
-    private func row(id: UUID?, title: String, icon: String, colorHex: String?) -> some View {
-        let isSelected = selectedID == id
-        let isHighlighted = highlightIndex < flattenedItems.count && flattenedItems[highlightIndex].id == id
-        let tint = colorHex.map(Color.init(hex:)) ?? Theme.dim
+    private func row(_ item: CadenceContextPickerSupport.Item) -> some View {
+        let isSelected = selectedID == item.id
+        let isHighlighted = highlightIndex < pickerItems.count && pickerItems[highlightIndex].id == item.id
+        let tint = item.tint
 
         Button {
-            pick(id)
+            pick(item.id)
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: icon)
+                Image(systemName: item.icon ?? "circle")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(tint)
                     .frame(width: 22, height: 22)
-                    .background(tint.opacity(colorHex == nil ? 0.06 : 0.14))
+                    .background(tint.opacity(item.isNone ? 0.06 : 0.14))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                Text(title)
+                Text(item.title)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? Theme.text : Theme.muted)
                     .lineLimit(1)
@@ -263,15 +238,16 @@ struct CadenceContextPickerList: View {
     }
 
     private func syncHighlight() {
-        guard !flattenedItems.isEmpty else {
+        let items = pickerItems
+        guard !items.isEmpty else {
             highlightIndex = 0
             return
         }
 
-        if let selectedIndex = flattenedItems.firstIndex(where: { $0.id == selectedID }) {
+        if let selectedIndex = items.firstIndex(where: { $0.id == selectedID }) {
             highlightIndex = selectedIndex
         } else {
-            highlightIndex = min(highlightIndex, flattenedItems.count - 1)
+            highlightIndex = min(highlightIndex, items.count - 1)
         }
     }
 }

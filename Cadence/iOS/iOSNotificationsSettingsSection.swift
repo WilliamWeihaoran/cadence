@@ -46,7 +46,9 @@ struct iOSNotificationsSettingsSection: View {
 
                 Spacer(minLength: 0)
 
-                Toggle("", isOn: $notificationsEnabled)
+                // The macOS pane's own shape (T-484): the label is hidden from the layout by
+                // `.labelsHidden()` and kept as the control's accessible name.
+                Toggle("Enable reminders", isOn: $notificationsEnabled)
                     .labelsHidden()
                     .tint(Theme.blue)
             }

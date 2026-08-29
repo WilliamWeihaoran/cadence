@@ -841,6 +841,120 @@ struct CadenceCompactEyebrowConvergenceTests {
         // still compiles and is drawn by nothing is how `subtitle` survived three deletions.
         try expectNoLiveMention(of: "groupLabelKerning")
     }
+
+    /// **The derivation, not just the two numbers it lands on (T-452).** `SectionEyebrowLabel`'s
+    /// own prose has cited a test by this name since T-284 — and no test by this name existed
+    /// anywhere in the target until now, so the property it was cited for was unguarded while
+    /// reading as guarded. That is the worse of the two failures: a named test nobody can find is
+    /// how `theTwoTiersKeepTheirSizesAndDeriveOneKerning` came to look like more coverage than it is.
+    ///
+    /// Every value assertion in this suite is satisfied by a per-case literal
+    /// (`case .standard: 0.8` / `case .compact: 0.72`), which puts the two tiers back on two
+    /// independently editable numbers and leaves `kerningRatio` dead — the whole defect T-284
+    /// closed. So the source has to *read* the ratio, not merely agree with it.
+    @Test func theCompactKerningIsDerivedRatherThanASecondLiteral() throws {
+        let path = "Cadence/Shared/Components/SectionEyebrowLabel.swift"
+        let code = try strippingComments(sourceFile(path))
+        #expect(code.contains("enum Size"), "non-vacuity: still the eyebrow's file")
+
+        // The call site reads the shared token. Whitespace-insensitive, and indifferent to the
+        // `nonisolated` in front of it, so a reformat is not a failure but a rewrite is.
+        let dense = code.filter { !$0.isWhitespace }
+        #expect(
+            dense.contains("varkerning:CGFloat{fontSize*SectionEyebrowLabel.kerningRatio}"),
+            "the tier's kerning no longer derives from kerningRatio"
+        )
+
+        // And neither tier's kerning is written down. `0.08` does not contain either string, so
+        // the ratio itself is not what these catch.
+        #expect(!dense.contains("0.8"), "the standard tier's kerning is a literal again")
+        #expect(!dense.contains("0.72"), "the compact tier's kerning is a literal again")
+
+        // The arithmetic identity, independent of spelling: one ratio, both tiers.
+        #expect(
+            SectionEyebrowLabel.Size.standard.kerning
+                == SectionEyebrowLabel.Size.standard.fontSize * SectionEyebrowLabel.kerningRatio
+        )
+        #expect(
+            SectionEyebrowLabel.Size.compact.kerning
+                == SectionEyebrowLabel.Size.compact.fontSize * SectionEyebrowLabel.kerningRatio
+        )
+    }
+
+    /// **The eyebrow's prose names types that exist (T-477).** `Size` justified its `nonisolated`
+    /// members by "`CadenceEyebrowMetrics`' readers" and no such type has ever been in this repo —
+    /// T-284's own conversion renamed the prose out from under itself. A stale *rationale* is worse
+    /// than none: the next reader keeps or deletes the annotation on the strength of a type they
+    /// cannot find, which is how the annotation survived unexamined until somebody grepped the name.
+    ///
+    /// Deliberately narrow — this one file, and only backticked `…Metrics` identifiers. That is the
+    /// naming shape the eyebrow's neighbours use (`CadenceTaskGroupHeadingMetrics`,
+    /// `CadenceBoardColumnHeaderMetrics`, `SidebarMetrics`, `TaskInspectorFieldRowMetrics`), and a
+    /// checker for every capitalised word in every doc comment in the app is a different, much
+    /// noisier ticket. Live *code* is the corpus, so a name that survives only in this file's own
+    /// prose does not vouch for itself.
+    @Test func theEyebrowDocOnlyNamesMetricsTypesThatExist() throws {
+        let eyebrowPath = "Cadence/Shared/Components/SectionEyebrowLabel.swift"
+        let named = backtickedMetricsNames(inProseOf: try sourceFile(eyebrowPath))
+
+        #expect(named.count >= 3, "non-vacuity: read \(named.count) backticked metrics names out of the eyebrow's prose")
+        #expect(
+            named.contains("CadenceTaskGroupHeadingMetrics"),
+            "non-vacuity: the extractor missed a name this file demonstrably carries"
+        )
+
+        var live: Set<String> = []
+        var scanned = 0
+        for path in try swiftFiles(under: "Cadence") {
+            scanned += 1
+            let code = try strippingComments(sourceFile(path))
+            for name in named where code.contains(name) { live.insert(name) }
+        }
+
+        #expect(scanned > 250, "scanned only \(scanned) files under Cadence/")
+        let ghosts = named.subtracting(live).sorted()
+        #expect(
+            ghosts.isEmpty,
+            "the eyebrow's prose names type(s) no live source declares: \(ghosts.joined(separator: ", "))"
+        )
+    }
+
+    /// The extractor against text that is not the repository, so the check above cannot pass by
+    /// reading nothing. It must see a backticked name, follow it through a member access, and stay
+    /// out of live code and out of non-metrics symbols.
+    @Test func theMetricsNameExtractorReadsProseAndNotCode() {
+        #expect(backtickedMetricsNames(inProseOf: "/// see `CadenceTaskGroupHeadingMetrics`")
+            == ["CadenceTaskGroupHeadingMetrics"])
+        #expect(backtickedMetricsNames(inProseOf: "/// see `SidebarMetrics.contextHeaderKerning`")
+            == ["SidebarMetrics"])
+        // A possessive, which is how the stale name was spelled.
+        #expect(backtickedMetricsNames(inProseOf: "/// `CadenceEyebrowMetrics`' readers")
+            == ["CadenceEyebrowMetrics"])
+        // Not a metrics type, and not prose.
+        #expect(backtickedMetricsNames(inProseOf: "/// the shared `SectionEyebrowLabel`").isEmpty)
+        #expect(backtickedMetricsNames(inProseOf: "let x = SidebarMetrics.contextHeaderKerning").isEmpty)
+    }
+}
+
+/// Backticked `…Metrics` identifiers appearing in **comments only**, with any `.member` suffix
+/// dropped. Comment-only because the point is to check prose against code: a name that appears in
+/// live source is not the failure being hunted.
+private func backtickedMetricsNames(inProseOf source: String) -> Set<String> {
+    var names: Set<String> = []
+    for line in source.components(separatedBy: "\n") {
+        guard let marker = line.range(of: "//") else { continue }
+        let prose = String(line[marker.upperBound...])
+        var spans = prose.components(separatedBy: "`")
+        // An unterminated backtick leaves a trailing fragment that was never inside a span.
+        if spans.count % 2 == 0 { spans.removeLast() }
+        for (index, span) in spans.enumerated() where index % 2 == 1 {
+            let head = span.components(separatedBy: ".")[0]
+            guard head.hasSuffix("Metrics"), let first = head.first, first.isUppercase else { continue }
+            guard head.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { continue }
+            names.insert(head)
+        }
+    }
+    return names
 }
 
 /// Counts the hand-rolled **sub-label** eyebrow: a 9pt semibold/bold `Text` that is uppercased,

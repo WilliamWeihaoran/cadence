@@ -165,15 +165,31 @@ struct iOSGoalEditorSheet: View {
             }
 
             iOSTrackingPickerSection(title: "Context") {
-                iOSChoiceValueButton(title: selectedContext?.name.isEmpty == false ? selectedContext!.name : "Use Parent Context", color: Theme.text) {
+                iOSChoiceValueButton(
+                    title: CadenceContextPickerSupport.selectionTitle(
+                        from: contexts,
+                        selectedID: contextID,
+                        noneTitle: "Use Parent Context"
+                    ),
+                    color: Theme.text
+                ) {
                     showContextPicker = true
                 }
                 .popover(isPresented: $showContextPicker) {
                     iOSChoicePopoverList(
-                        rows: [iOSChoiceRow<UUID?>(value: nil, title: "Use Parent Context", color: Theme.dim)]
-                            + contexts.map { context in
-                                iOSChoiceRow(value: Optional(context.id), title: context.name, systemImage: context.icon, color: Color(hex: context.colorHex))
-                            },
+                        rows: CadenceContextPickerSupport.items(
+                            from: contexts,
+                            selectedID: contextID,
+                            noneTitle: "Use Parent Context"
+                        ).map { item in
+                            iOSChoiceRow<UUID?>(
+                                value: item.id,
+                                title: item.title,
+                                systemImage: item.icon,
+                                color: item.tint,
+                                id: AnyHashable(item.id)
+                            )
+                        },
                         selection: $contextID,
                         isPresented: $showContextPicker
                     )
@@ -386,15 +402,31 @@ struct iOSHabitEditorSheet: View {
             }
 
             iOSTrackingPickerSection(title: "Context") {
-                iOSChoiceValueButton(title: selectedContext?.name.isEmpty == false ? selectedContext!.name : "Use Goal Context", color: Theme.text) {
+                iOSChoiceValueButton(
+                    title: CadenceContextPickerSupport.selectionTitle(
+                        from: contexts,
+                        selectedID: contextID,
+                        noneTitle: "Use Goal Context"
+                    ),
+                    color: Theme.text
+                ) {
                     showContextPicker = true
                 }
                 .popover(isPresented: $showContextPicker) {
                     iOSChoicePopoverList(
-                        rows: [iOSChoiceRow<UUID?>(value: nil, title: "Use Goal Context", color: Theme.dim)]
-                            + contexts.map { context in
-                                iOSChoiceRow(value: Optional(context.id), title: context.name, systemImage: context.icon, color: Color(hex: context.colorHex))
-                            },
+                        rows: CadenceContextPickerSupport.items(
+                            from: contexts,
+                            selectedID: contextID,
+                            noneTitle: "Use Goal Context"
+                        ).map { item in
+                            iOSChoiceRow<UUID?>(
+                                value: item.id,
+                                title: item.title,
+                                systemImage: item.icon,
+                                color: item.tint,
+                                id: AnyHashable(item.id)
+                            )
+                        },
                         selection: $contextID,
                         isPresented: $showContextPicker
                     )

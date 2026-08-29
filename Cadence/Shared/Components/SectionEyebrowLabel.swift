@@ -15,9 +15,21 @@ struct SectionEyebrowLabel: View {
 
     /// Which of the two eyebrow tiers a label belongs to.
     ///
-    /// `nonisolated` members throughout for the same reason `fontSize` is: `CadenceEyebrowMetrics`'
-    /// readers include nonisolated value types, and a nonisolated static cannot initialise from a
-    /// main-actor-isolated one.
+    /// `nonisolated` members throughout, matching the static `fontSize` below — but **not for the
+    /// same reason, and this tier's annotation is not load-bearing today (T-477).** The static has
+    /// to carry it: `CadenceTaskGroupHeadingMetrics` is a `nonisolated struct`, this target defaults
+    /// declarations to `@MainActor` (`SWIFT_APPROACHABLE_CONCURRENCY`), and a nonisolated static
+    /// cannot initialise from a main-actor-isolated one. `Size`'s members are read by
+    /// `SidebarMetrics`, `TaskInspectorFieldRowMetrics`, the notes list's group header and this
+    /// view's own `body`, every one of which is main-actor already — dropping `nonisolated` from
+    /// these three still builds, measured, so it stays for the tier to be reachable from the same
+    /// readers the bare `fontSize` is, not because something breaks without it.
+    ///
+    /// The wording this replaces justified the annotation by CadenceEyebrowMetrics' readers — a
+    /// type that has never existed in this repo, left behind when T-284's conversion renamed the
+    /// prose out from under itself. It is deliberately not written in backticks here: it is not a
+    /// symbol. `theEyebrowDocOnlyNamesMetricsTypesThatExist` is what stops a rationale in this file
+    /// naming a type again that a reader cannot go and check.
     enum Size {
         /// Page and section eyebrows — the default, and what 19 macOS files already draw.
         case standard

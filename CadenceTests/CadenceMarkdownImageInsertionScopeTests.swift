@@ -407,11 +407,27 @@ struct CadenceMarkdownImageInsertionScopeTests {
             .sorted()
         #expect(swiftFiles.count > 100, "walked \(swiftFiles.count) files; that is not the app source tree")
 
+        // The editor's own file mentions the flag because it *declares* it and threads it into
+        // the representable (T-478, so the drag cursor stops promising a drop the host refuses).
+        // That is the definition site, not a host: it presents no editor of its own, so it cannot
+        // satisfy the `editors > 0` relation above and does not belong in `outOfStore`. Excluded
+        // by name rather than by a pattern, so a real host in this file would still be caught.
+        let flagDefinitionSites = ["Cadence/macOS/Editor/MarkdownEditorView.swift"]
+
         var hostsPassingTheFlag: [String] = []
-        for path in swiftFiles {
+        for path in swiftFiles where !flagDefinitionSites.contains(path) {
             if try strippedSource(path).contains("allowsImageInsertion:") {
                 hostsPassingTheFlag.append(path)
             }
+        }
+
+        // The exclusion must stay load-bearing: if the editor ever stops threading the flag, this
+        // list is silently protecting nothing and should be deleted along with T-478's work.
+        for path in flagDefinitionSites {
+            #expect(
+                try strippedSource(path).contains("allowsImageInsertion:"),
+                "\(path) is excluded as the flag's definition site but no longer mentions it"
+            )
         }
 
         #expect(

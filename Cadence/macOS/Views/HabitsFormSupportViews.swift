@@ -324,7 +324,7 @@ private struct HabitReminderPicker: View {
                         .foregroundStyle(Theme.dim)
                 }
                 Spacer()
-                Toggle("", isOn: $hasReminder)
+                Toggle("Remind me", isOn: $hasReminder)
                     .labelsHidden()
                     .tint(Color(hex: tintHex))
             }

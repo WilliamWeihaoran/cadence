@@ -150,7 +150,8 @@ struct MarkdownEditor: View {
                 onTextViewChanged: {
                     textView = $0
                     onTextViewChanged($0)
-                }
+                },
+                allowsImageInsertion: allowsImageInsertion
             )
             .zIndex(0)
         }
@@ -237,35 +238,35 @@ private struct MarkdownEditorToolbar: View {
         HStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
-                    MarkdownToolbarTextButton(title: "H1", help: "Heading 1") {
+                    MarkdownToolbarTextButton(title: "H1", accessibilityLabel: "Heading 1") {
                         textView?.performMarkdownFormatCommand(.heading(1))
                     }
-                    MarkdownToolbarTextButton(title: "H2", help: "Heading 2") {
+                    MarkdownToolbarTextButton(title: "H2", accessibilityLabel: "Heading 2") {
                         textView?.performMarkdownFormatCommand(.heading(2))
                     }
                     toolbarDivider
-                    MarkdownToolbarButton(systemName: "bold", help: "Bold") {
+                    MarkdownToolbarButton(systemName: "bold", accessibilityLabel: "Bold") {
                         textView?.performMarkdownFormatCommand(.bold)
                     }
-                    MarkdownToolbarButton(systemName: "italic", help: "Italic") {
+                    MarkdownToolbarButton(systemName: "italic", accessibilityLabel: "Italic") {
                         textView?.performMarkdownFormatCommand(.italic)
                     }
-                    MarkdownToolbarButton(systemName: "strikethrough", help: "Strikethrough") {
+                    MarkdownToolbarButton(systemName: "strikethrough", accessibilityLabel: "Strikethrough") {
                         textView?.performMarkdownFormatCommand(.strikethrough)
                     }
-                    MarkdownToolbarButton(systemName: "highlighter", help: "Highlight") {
+                    MarkdownToolbarButton(systemName: "highlighter", accessibilityLabel: "Highlight") {
                         textView?.performMarkdownFormatCommand(.highlight)
                     }
-                    MarkdownToolbarButton(systemName: "chevron.left.forwardslash.chevron.right", help: "Inline code") {
+                    MarkdownToolbarButton(systemName: "chevron.left.forwardslash.chevron.right", accessibilityLabel: "Inline code") {
                         textView?.performMarkdownFormatCommand(.inlineCode)
                     }
                     toolbarDivider
-                    MarkdownToolbarButton(systemName: "link", help: "Link") {
+                    MarkdownToolbarButton(systemName: "link", accessibilityLabel: "Link") {
                         textView?.performMarkdownFormatCommand(.link)
                     }
                     MarkdownReferenceMenuButton(
                         systemName: "text.badge.plus",
-                        help: "Note link",
+                        accessibilityLabel: "Note link",
                         emptyTitle: "Blank Note Link",
                         suggestions: noteSuggestions,
                         blankAction: { textView?.performMarkdownFormatCommand(.noteLink) },
@@ -273,34 +274,34 @@ private struct MarkdownEditorToolbar: View {
                     )
                     MarkdownReferenceMenuButton(
                         systemName: "checkmark.circle",
-                        help: "Task reference",
+                        accessibilityLabel: "Task reference",
                         emptyTitle: "Blank Task Reference",
                         suggestions: taskSuggestions,
                         blankAction: { textView?.performMarkdownFormatCommand(.taskReference) },
                         selectAction: { textView?.insertMarkdownReference($0.markdown) }
                     )
                     toolbarDivider
-                    MarkdownToolbarButton(systemName: "list.bullet", help: "Bulleted list") {
+                    MarkdownToolbarButton(systemName: "list.bullet", accessibilityLabel: "Bulleted list") {
                         textView?.performMarkdownFormatCommand(.unorderedList)
                     }
-                    MarkdownToolbarButton(systemName: "list.number", help: "Numbered list") {
+                    MarkdownToolbarButton(systemName: "list.number", accessibilityLabel: "Numbered list") {
                         textView?.performMarkdownFormatCommand(.orderedList)
                     }
-                    MarkdownToolbarButton(systemName: "checklist", help: "Checklist") {
+                    MarkdownToolbarButton(systemName: "checklist", accessibilityLabel: "Checklist") {
                         textView?.performMarkdownFormatCommand(.todoList)
                     }
-                    MarkdownToolbarButton(systemName: "text.quote", help: "Quote") {
+                    MarkdownToolbarButton(systemName: "text.quote", accessibilityLabel: "Quote") {
                         textView?.performMarkdownFormatCommand(.quote)
                     }
                     toolbarDivider
-                    MarkdownToolbarButton(systemName: "curlybraces.square", help: "Code block") {
+                    MarkdownToolbarButton(systemName: "curlybraces.square", accessibilityLabel: "Code block") {
                         textView?.performMarkdownFormatCommand(.codeBlock)
                     }
-                    MarkdownToolbarButton(systemName: "minus", help: "Divider") {
+                    MarkdownToolbarButton(systemName: "minus", accessibilityLabel: "Divider") {
                         textView?.performMarkdownFormatCommand(.divider)
                     }
                     if let onChooseImages {
-                        MarkdownToolbarButton(systemName: "photo", help: "Image") {
+                        MarkdownToolbarButton(systemName: "photo", accessibilityLabel: "Image") {
                             onChooseImages()
                         }
                     }
@@ -334,9 +335,14 @@ private struct MarkdownEditorToolbar: View {
     }
 }
 
+/// A toolbar entry whose label is an icon, so the string has to be spelled twice: once for the
+/// pointer (`.help`) and once for assistive technology (`.accessibilityLabel`). Both read the same
+/// stored property, which is why it is named for the accessible name rather than for the tooltip —
+/// a `help:` that was only a tooltip is what T-472 found on all three of these views, and
+/// `CadenceIconButton` had the paired shape all along.
 private struct MarkdownReferenceMenuButton: View {
     let systemName: String
-    let help: String
+    let accessibilityLabel: String
     let emptyTitle: String
     let suggestions: [MarkdownReferenceSuggestion]
     let blankAction: () -> Void
@@ -369,13 +375,14 @@ private struct MarkdownReferenceMenuButton: View {
         .background(Theme.bg.opacity(0.001))
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .cadenceHoverHighlight(cornerRadius: 7, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
-        .help(help)
+        .accessibilityLabel(accessibilityLabel)
+        .help(accessibilityLabel)
     }
 }
 
 private struct MarkdownToolbarButton: View {
     let systemName: String
-    let help: String
+    let accessibilityLabel: String
     let action: () -> Void
 
     var body: some View {
@@ -390,13 +397,17 @@ private struct MarkdownToolbarButton: View {
         .background(Theme.bg.opacity(0.001))
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .cadenceHoverHighlight(cornerRadius: 7, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
-        .help(help)
+        .accessibilityLabel(accessibilityLabel)
+        .help(accessibilityLabel)
     }
 }
 
+/// The one toolbar button with visible text, and the one whose accessible name deliberately
+/// differs from it: the row reads `H1`, VoiceOver is handed "Heading 1". `.accessibilityLabel`
+/// replaces the label's own text rather than adding to it, so there is no double announcement.
 private struct MarkdownToolbarTextButton: View {
     let title: String
-    let help: String
+    let accessibilityLabel: String
     let action: () -> Void
 
     var body: some View {
@@ -411,7 +422,8 @@ private struct MarkdownToolbarTextButton: View {
         .background(Theme.bg.opacity(0.001))
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .cadenceHoverHighlight(cornerRadius: 7, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
-        .help(help)
+        .accessibilityLabel(accessibilityLabel)
+        .help(accessibilityLabel)
     }
 }
 
@@ -438,6 +450,9 @@ struct MarkdownEditorView: NSViewRepresentable {
     var onHoverEmbeddedTask: (UUID, Bool) -> Void = { _, _ in }
     var onEditingChanged: (Bool) -> Void = { _ in }
     var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
+    /// `MarkdownEditor.allowsImageInsertion`, carried down to the text view so the drop path can
+    /// refuse in the same breath as the toolbar button, the `/` menu and the paste (T-478).
+    var allowsImageInsertion = true
 
     func makeNSView(context: NSViewRepresentableContext<MarkdownEditorView>) -> NSScrollView {
         let scrollView = MarkdownEditorScrollView()
@@ -563,7 +578,8 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.onHoverEmbeddedMarkdownTask = onHoverEmbeddedTask
         textView.onCreateMarkdownImages = onCreateImages
         textView.onResizeMarkdownImage = onResizeImage
-        textView.registerForDraggedTypes([.fileURL, .tiff, .png])
+        textView.allowsMarkdownImageInsertion = allowsImageInsertion
+        textView.registerMarkdownDraggedTypes()
         context.coordinator.notifyTextViewIfNeeded(textView, onChange: onTextViewChanged)
         return didUpdateRenderedContent
     }

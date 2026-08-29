@@ -60,24 +60,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   behind when [[T-301]] collapsed the hand-rolled copies. Delete it or give it the one caller it was
   written for.
 
-- [T-446] **Two "pick a context" controls with nothing shared underneath.** Residue from [[T-288]],
-  which named `CadenceContextPicker` "the one with a live counterpart to converge on" and then had
-  to move it instead. The move is correct and the convergence is still owed.
-  What was found: the macOS control is keyboard-first — `onMoveCommand` (macOS/tvOS only), a search
-  field that takes focus on appear, an arrow-driven `highlightIndex`, an `onSubmit` that commits it,
-  and a hover wash on every row. None of that fires on iOS, and unfencing the file would have put a
-  list with a permanently-raised keyboard in front of the next iOS reader. The two iOS sites
-  (`iOSListEditorViews.swift:124`, `iOSTrackingEditorSheets.swift:167`/`:385`) already route through
-  the `iOSChoiceRow` / `iOSChoicePopoverList` idiom, which is the touch answer to the same question.
-  So the duplication is real but it is not a *view*: it is `sortedContexts`, the `localizedLowercase`
-  filter, the `allowNone` "No context" row and the flattening — spelled once in
-  `CadenceContextPickerList` and again, differently, at each iOS site.
-  Done: one shared item model + filter (a `CadenceContextPickerSupport` beside the other
-  `Cadence*Support` types), read by `CadenceContextPickerList` and by both iOS popovers, with the
-  presentations left as the two they legitimately are. A test that fails if either platform
-  re-derives the sort or the filter.
 
-- [T-447] **Nothing rendered the two iOS surfaces [[T-281]] and [[T-283]] changed.** Both landed on
+- [T-447] *(narrowed 2026-08-30: both landings reviewed. T-281 is a faithful but visually inert extraction — the two headers were already byte-identical before it. T-283's renames are correct and complete. Defects found and filed separately as [[T-492]] and [[T-493]]. Predicate two is effectively answered off-device already: the commit outcome is covered in `CadenceEventKitPlatformParityTests` and its position by `theEventSheetKeepsItsCommitNoticeInsideTheHeader` — only the pixel is left. Predicate one is narrowed by `nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader`: **nothing in `Cadence/` writes that environment key**, so only SwiftUI's own re-derivation inside NavigationStack -> HStack -> .frame remains device-only. That residue belongs with T-55 / T-280.)* **Nothing rendered the two iOS surfaces [[T-281]] and [[T-283]] changed.** Both landed on
   source-scan evidence plus four green scheme builds (`Cadence` macOS, `CadenceWidgets`,
   `CadenceMCPServer`, `Cadence` for `generic/platform=iOS Simulator`) — which is all
   `CadenceTests` can offer, since `Cadence/iOS/` is inside `#if os(iOS)` and the test target builds
@@ -93,22 +77,10 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   but its Apple Calendar mirror does not.
   Cheap: one iPad-width run of each note sheet, one iPhone-width run of Today and Inbox.
 
-- [T-449] **The last painted-under hairline is in `SettingsListManagementSections.swift`, and the
-  sweep names it rather than allowing it.** Residue from [[T-286]]. That file was outside this
-  batch, and it still carries the two-line `Divider().background(Theme.borderSubtle)` (calendar
-  rows) plus a `.stroke(Theme.borderSubtle` well — the same two defects the other seven panes just
-  lost. `noSettingsPanePaintsUnderTheSystemSeparatorAtAnyLineBreak` skips exactly this one path by
-  name, so the hole is one line of test source and closing it is one line of view source.
-
-- [T-450] **`SidebarTabEditorSheet.settingsPanelRow` is a fifth private settings row.** Residue from
-  [[T-286]]. A title over a subtitle with a trailing accessory, on its own `cadenceCard` — which is
-  `CadenceSettingsNoticeRow` minus the state glyph. It was left alone deliberately: inventing a
-  glyph to reach the shared component would put a verdict on a sheet that reports none. Either the
-  notice row grows an optional glyph or this row keeps its own spelling on purpose; it should not
-  stay undecided.
 
 
-- [T-452] **T-284's 9pt tier is pinned by value and by source, and has still never been looked at.**
+
+- [T-452] *(narrowed 2026-08-30: tier confirmed self-consistent — both tiers 0.08em, and 0.08 x 10 reproduces the standard tier's 0.8 exactly, so the 19 correct sites did not move. Not wrong by the design system's own rules; no value changed. Separately, this ticket's claim that the derivation was pinned was **false** — `theCompactKerningIsDerivedRatherThanASecondLiteral` was cited at `SectionEyebrowLabel.swift:80` and had never existed. It exists now and kills a flattening mutation the whole pre-existing T-284 suite passes. Remaining ask: one screenshot pass over the six tightened 9pt labels and the two that gained tracking.)* **T-284's 9pt tier is pinned by value and by source, and has still never been looked at.**
   The ticket's remaining ask was "one screenshot pass over those 8 sites", and the subagent runbook
   forbids launching or building the app for inspection — so the *judgement* is now recorded
   (letterspacing is optical, so the compact tier takes the same 0.08em the 19 correct 10pt sites
@@ -530,51 +502,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   in the edit menu and inserts the picture. Do not close this by reading the diff — a correct
   `paste(_:)` override that was never dispatched is exactly how the macOS bug survived.
 
-- [T-282] **The iPad's corner `+` carries the same palette, pointing the only way it can.**
-  **VERIFIED 2026-08-26 — keep open. The value half is strongly pinned; the device run still has not
-  happened.** Four mutations caught, including unifying the corner arc and weakening the drag arm,
-  and the old system-drag path is gone with zero live references. Placement is pinned as
-  *deliberately different* in both directions.
-  Still outstanding, and it is the one thing the ticket was left open for: **nobody has driven an
-  iPad.** The verifier was blocked all session — both booted simulators were held by live agents,
-  and the claim script correctly refuses to reclaim a device with live operations on it.
-  One specific risk only a device answers: `iOSCaptureRadialMenuOverlay`'s own comment says it sits
-  at the **shell's** level so a palette is not clipped by a 46pt bar row — but on iPad the host is
-  applied to the page's content, not the shell. The arc opens up-and-left so it probably clears.
-  "Probably clears" is what a simulator run is for.
-  From the [[T-73]] / [[T-170]] split, and the one genuine "control present at one width and absent
-  at the other" that audit found. [[T-171]] had shipped the hold-for-palette gesture on
-  `iOSCaptureRadialMenuButton`, whose **only** caller was `iOSCompactTabShell` — so holding the
-  centre `+` on iPhone offered `CadenceCaptureAction`'s three segments (Task / Event / Note) and a
-  drag onto a drop target, while the iPad's corner `+` (`iOSFloatingCreateTaskButton` →
-  `iOSCircularAddButton` + `.iOSNewTaskDragSource`) tapped straight into `iOSCreateTaskSheet` and
-  could capture nothing but a task. **Confirmed against the source before any of it was rebuilt.**
-  The corner button now renders that same `iOSCaptureRadialMenuButton`.
-  **What stayed different, deliberately, is the arc — and only the arc.** A button 50pt from the
-  trailing edge cannot draw a semicircle: two of its three segments would be off the display. So
-  `CadenceCapturePalettePlacement` gives `.bottomTrailing` a quadrant opening up and to the left,
-  and a wider `layoutRadius` because three tiles packed into 90° instead of 180° would otherwise
-  overlap — the tile width is published now so that claim is a test rather than a taste. The hold
-  delay, the drag slop, the dead zone and the margins the outer and escape rings keep past the tiles
-  are all the *same value*, asserted field by field.
-  **The three outcomes do coexist on that button, and the reason is the reason T-171 gives.** The
-  iPad's `+` carried a system `.onDrag`, and `UIDragInteraction`'s lift *is* a ~350ms long press —
-  the same window the palette wants — so the two could never have shared a touch. It carries
-  `CadenceCapturePressResolver`'s one `DragGesture` instead, exactly as the phone's does. Verified
-  on a booted iPad simulator: press-and-move drags, press-and-hold opens the palette, and moving
-  inside the radius slides between segments.
-  **Two things went with it rather than being left beside it.** The system drag lost its last
-  source, so `iOSNewTaskDragSource`, the drop target's `.onDrop`, `CadenceTaskDropPayload`,
-  `CadenceTaskDropCoordinator` and `UTType.cadenceNewTaskDrag` are deleted — a sourceless second
-  path into the same insertion ghost is how a comment ends up claiming "two mechanisms, on purpose"
-  about one. And the three composers a finished press can ask for moved out of `iOSCompactRootShell`
-  into `.iOSCaptureHost(_:)`, which both placements apply, because copying that routing to the iPad
-  is the near-copy this repo keeps paying for.
-  `iOSCircularAddButton`'s doc comment claimed the two buttons were "the same action in deliberately
-  different *places*" while they were not. It now says which parts are shared (the face, the gesture,
-  the composers, the feel) and which the placement chooses (the diameter, the corner inset, the arc)
-  — and the `Button` wrapper of that name is gone, the name having moved down to the circle it
-  always described.
 
 
 
@@ -611,16 +538,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-472] **The markdown toolbar has tooltips but no accessibility labels** (Codex, P2; source shape
-  measured, the VoiceOver announcement itself inferred — the app was not launched). Every icon-only
-  button in `macOS/Editor/MarkdownEditorView.swift` (`:203`, `:210`, `:333`, `:354`, `:375`) passes a
-  good semantic string — "Bold", "Inline code", "Note link", "Task reference" — to `.help(...)` and
-  nothing else, so assistive tech falls back to a symbol-ish or generic description. **The correct
-  pattern already exists**: `macOS/Views/CadenceButtons.swift:109`, where `CadenceIconButton` applies
-  `.accessibilityLabel(...)` *and* `.help(...)` from one string. Instance of [[T-374]]. Add the label
-  to `MarkdownReferenceMenuButton`, `MarkdownToolbarButton`, and also `MarkdownToolbarTextButton` —
-  the last one has visible `H1`/`H2` text, but the accessible name should be "Heading 1"/"Heading 2".
-  Pin it with a source scan so a tooltip-only regression fails.
 
 
 
@@ -633,18 +550,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   closing it turns that expected list into `[]`. Also the last piece of [[T-442]]'s parity gap — macOS's
   template Body label is already `CadenceSettingsField`'s eyebrow.
 
-- [T-477] **`SectionEyebrowLabel`'s doc comment names a type that does not exist.**
-  `Shared/Components/SectionEyebrowLabel.swift:18` explains its `nonisolated` members by reference to
-  "`CadenceEyebrowMetrics`' readers"; `rg CadenceEyebrowMetrics` returns exactly that one line in the
-  repo. Stale prose from [[T-284]]'s conversion — the reasoning is still right, the name is not.
 
-- [T-478] **The macOS editor shows a copy cursor for an image drop it will refuse.**
-  `MarkdownEditorView.updateNSView` calls `registerForDraggedTypes([.fileURL, .tiff, .png])`
-  unconditionally and `CadenceTextView.draggingEntered` answers `.copy` for any image payload, so at a
-  host with `allowsImageInsertion: false` ([[T-442]]) the cursor promises a capability the host has just
-  declined, then `performDragOperation` falls through to `super`. The fallthrough is the safe direction,
-  so this is cosmetic — but it is a control stating something untrue. Thread the flag into the
-  representable.
 
 - [T-479] **The iOS search surface never adopted `CadenceSearchMatcher.rank`.** Found while closing
   [[T-372a]]. `iOSSearchView` scores through the shared `matchScore`, then sorts each of its seven
@@ -662,16 +568,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   keep the periodic `scripts/test-suite-index.sh` read that T-465 settled on.
 
 
-- [T-484] **Visible settings toggles carry no accessible label** (Codex, P3; source measured, VoiceOver
-  behaviour inferred). The visible row text says what the switch controls, but the control is
-  `Toggle("", ...)` plus `.labelsHidden()`, so the switch's own semantic label is disconnected from the
-  title beside it — `iOS/iOSNotificationsSettingsSection.swift:38,49`,
-  `macOS/Views/SettingsNotificationsSection.swift:29,32`, `macOS/Views/SettingsSupportViews.swift:329`.
-  **The correct pattern is already in the repo**: `iOS/iOSCalendarSettingsSection.swift:457` and
-  `macOS/Views/SettingsListManagementSections.swift:332` pass a real label, e.g. `Toggle("Active", ...)`.
-  Instance of [[T-374]]; same family as [[T-472]]. Do Settings > Notifications on both platforms first,
-  then sweep. **Leave zero-size hidden keyboard-shortcut buttons alone** — different mechanism, not a
-  defect. Pin with a source scan for a visible `Toggle("", ...)` not paired with an accessibility label.
 
 
 - [T-485] **Three sibling suites still leave fabricated launch reports in the test host's `UserDefaults`.**
@@ -697,6 +593,72 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Its empty state held two retired strings for the entire time nobody could see it**, which is how dead
   UI decays. Either it is a planned All Tasks panel and something should draw it, or it and its branches
   should go.
+
+
+- [T-488] **`iOSListEditorSheet`'s Area row has the defect [[T-446]] just fixed for Context.** Same file,
+  one row down the same `Form`: `areaTitle` (`iOS/iOSListEditorViews.swift:83`) resolves against
+  `areas.filter(\.isActive)` while `selectedArea` (`:510`), which `save()` uses, resolves against the
+  unfiltered `areas`, and the popover offers only active ones. So editing a project whose area was since
+  deactivated **shows "None" and saves the inactive area**. There is no shared support type for area
+  picking to route it through — `CadenceContextPickerSupport` is the model to copy.
+
+- [T-489] **DECIDE: `.stroke` vs `.strokeBorder` app-wide.** Withdrawn from [[T-449]] rather than done.
+  `macOS/Views/SettingsListManagementSections.swift:381` draws a 28x28 glyph at radius 7 with `.stroke`,
+  which centres the 1pt line on the path — so the control renders 1pt wider than it measures, the defect
+  `CadenceSettingsWell`'s own doc names as the tell. `.strokeBorder` is the value-preserving fix, but it
+  is a 1pt visual change nobody has looked at and **28 other sites spell it the same way**. Either an
+  app-wide sweep or nothing.
+
+- [T-490] **`CadenceChoiceRow` defaults its `id` to `AnyHashable(title)`, and 32 call sites take the
+  default.** Two options with the same displayed title collide into one `ForEach` identity in
+  `CadenceChoicePopoverList`. [[T-446]] passed an explicit id at its three context sites; the other 32 in
+  `Cadence/iOS/` still default. Either make `id` non-defaulted or derive it from `value`, which is
+  already `Hashable`, rather than from the title.
+
+- [T-491] **The iPad capture palette's scrim stops at the detail pane.** Found while closing [[T-282]].
+  `iPadMacStyleRootShell` clips `detail()` and the capture host is inside it, so an open palette **dims
+  the page and leaves the sidebar bright**; on iPhone the shell-level host dims everything including the
+  tab bar. The scrim's `.ignoresSafeArea()` is a no-op inside that clip. Placement-vs-capability
+  judgement, so it needs a decision rather than a fix.
+
+- [T-492] **`iOSNoteEditorSheetHeader` hand-spells the editor-sheet host gutter.** Residue from
+  [[T-281]] — the fix that closed one duplication opened this one.
+  `.padding(.horizontal, isRegularWidth ? 20 : 18)` is exactly
+  `iOSEditorSheetMetrics.gutter(isRegularWidth:)`, which five surfaces read and whose own comment says it
+  exists so that figure is stated once. Worse, T-281's `oneSharedViewOwnsTheNoteEditorHeaderRamp`
+  **asserts the literal is present**, pinning the copy in place. Closing it is one line of view source
+  plus removing the named exclusion in `noEditorSheetSurfaceSpellsTheHostGutterRampItself`. Worth doing
+  for a second reason: `iOSEditorSheetMetrics` sits outside `#if os(iOS)` so `CadenceTests` can read it,
+  so routing the header through it converts that ramp into a behavioural assertion.
+
+- [T-493] **`iPadTodaySidePanel`'s kept prefix rests on a claim the code does not keep.**
+  `iPadTodaySupportViews.swift` says all three kept types are built only by the two-pane host and "a
+  compact width cannot reach any of them". True for two of the three. **False for `iPadTodaySidePanel`**:
+  `iOSTodayView.swift:24` names it in an `@AppStorage` default — a stored-property initialiser evaluated
+  at every width — and `iOSCompactTabShell`, `iOSTasksTabView` and `iOSSearchView` all construct that
+  view at compact width. [[T-283]]'s test silently omitted the enum from its reachability check, which is
+  why nothing said so. Either rename it or correct the comment.
+
+- [T-494] **Three retired `iPad*` names survive in agent-facing docs.** `docs/IOS_AGENTS_REFERENCE.md:129,318`
+  and `docs/CLAUDE_REFERENCE.md:1149` still name `iPadTodayScheduleViews` and `iPadTodayView`.
+  [[T-283]]'s retired-name sweep covers `Cadence/**/*.swift` only, so these are unguarded and **will send
+  the next agent to files that do not exist**. Widen that sweep to `docs/`.
+
+- [T-495] **`MarkdownEditorView` replaces `NSTextView`'s dragged-type registration rather than adding to
+  it.** `registerForDraggedTypes` sets the accepted-type list wholesale and `configure(_:context:)` has
+  called it unconditionally since before [[T-478]], so the macOS note editor may accept only the types
+  Cadence names — **plain-text and RTF drags into a note might silently do nothing**. **Not measured**: no
+  drag was performed, and `NSTextView` re-registers `acceptableDragTypes` on its own at various points,
+  which may already restore them. Cheap to settle by hand — drag selected text from another app into a
+  note. If real, union with `super`'s types in `CadenceTextView.registerMarkdownDraggedTypes()`.
+
+- [T-496] **One uppercase label size, three trackings.** `SectionEyebrowLabel.Size.standard` is 10/0.8
+  (0.08em, derived), `CadenceBoardColumnHeaderMetrics` is 10/0.4 (literal),
+  `CadenceCalendarWeekdayHeaderMetrics` is 10/0.5 (literal). All three are uppercased semibold at 10pt,
+  and **each file's doc cites the other two as the authority for its size while disagreeing on
+  tracking** — the [[T-284]] defect one file over. Deliberately not picked: choosing 0.08em doubles the
+  tracking on every kanban column header, which is the un-inspected change [[T-452]] is open for. Needs
+  the same screenshot pass, then a ratio.
 
 
 ## Done
@@ -1026,6 +988,126 @@ before filing**: this list has had the same ticket re-reported more than once.
   `DataIntegrityRepairServiceTests` already guards this ("so a test run cannot leave a fabricated report
   behind for the app to read"), so the convention exists and this suite predates it.
   **Closed 2026-08-30, wider than filed: the suite pollutes **two** keys, not one — `noteMigration.lastReport.v1` and `dataIntegrityRepair.lastReport.v1`, measured before any change. The guard is a recursive `@Suite(.preservesTheStoredLaunchReports)` trait in the existing `TemporaryDefaultsSupport.swift`, and the one hand-rolled guard it made redundant is gone. Proved by hashing the whole stored value out of the test host's plist either side of a scoped run: guard removed → CHANGED, `isRecursive` false → CHANGED, as written → unchanged. See [[T-485]] for the three sibling suites that still leak.**
+
+- [T-282] **The iPad's corner `+` carries the same palette, pointing the only way it can.**
+  **VERIFIED 2026-08-26 — keep open. The value half is strongly pinned; the device run still has not
+  happened.** Four mutations caught, including unifying the corner arc and weakening the drag arm,
+  and the old system-drag path is gone with zero live references. Placement is pinned as
+  *deliberately different* in both directions.
+  Still outstanding, and it is the one thing the ticket was left open for: **nobody has driven an
+  iPad.** The verifier was blocked all session — both booted simulators were held by live agents,
+  and the claim script correctly refuses to reclaim a device with live operations on it.
+  One specific risk only a device answers: `iOSCaptureRadialMenuOverlay`'s own comment says it sits
+  at the **shell's** level so a palette is not clipped by a 46pt bar row — but on iPad the host is
+  applied to the page's content, not the shell. The arc opens up-and-left so it probably clears.
+  "Probably clears" is what a simulator run is for.
+  From the [[T-73]] / [[T-170]] split, and the one genuine "control present at one width and absent
+  at the other" that audit found. [[T-171]] had shipped the hold-for-palette gesture on
+  `iOSCaptureRadialMenuButton`, whose **only** caller was `iOSCompactTabShell` — so holding the
+  centre `+` on iPhone offered `CadenceCaptureAction`'s three segments (Task / Event / Note) and a
+  drag onto a drop target, while the iPad's corner `+` (`iOSFloatingCreateTaskButton` →
+  `iOSCircularAddButton` + `.iOSNewTaskDragSource`) tapped straight into `iOSCreateTaskSheet` and
+  could capture nothing but a task. **Confirmed against the source before any of it was rebuilt.**
+  The corner button now renders that same `iOSCaptureRadialMenuButton`.
+  **What stayed different, deliberately, is the arc — and only the arc.** A button 50pt from the
+  trailing edge cannot draw a semicircle: two of its three segments would be off the display. So
+  `CadenceCapturePalettePlacement` gives `.bottomTrailing` a quadrant opening up and to the left,
+  and a wider `layoutRadius` because three tiles packed into 90° instead of 180° would otherwise
+  overlap — the tile width is published now so that claim is a test rather than a taste. The hold
+  delay, the drag slop, the dead zone and the margins the outer and escape rings keep past the tiles
+  are all the *same value*, asserted field by field.
+  **The three outcomes do coexist on that button, and the reason is the reason T-171 gives.** The
+  iPad's `+` carried a system `.onDrag`, and `UIDragInteraction`'s lift *is* a ~350ms long press —
+  the same window the palette wants — so the two could never have shared a touch. It carries
+  `CadenceCapturePressResolver`'s one `DragGesture` instead, exactly as the phone's does. Verified
+  on a booted iPad simulator: press-and-move drags, press-and-hold opens the palette, and moving
+  inside the radius slides between segments.
+  **Two things went with it rather than being left beside it.** The system drag lost its last
+  source, so `iOSNewTaskDragSource`, the drop target's `.onDrop`, `CadenceTaskDropPayload`,
+  `CadenceTaskDropCoordinator` and `UTType.cadenceNewTaskDrag` are deleted — a sourceless second
+  path into the same insertion ghost is how a comment ends up claiming "two mechanisms, on purpose"
+  about one. And the three composers a finished press can ask for moved out of `iOSCompactRootShell`
+  into `.iOSCaptureHost(_:)`, which both placements apply, because copying that routing to the iPad
+  is the near-copy this repo keeps paying for.
+  `iOSCircularAddButton`'s doc comment claimed the two buttons were "the same action in deliberately
+  different *places*" while they were not. It now says which parts are shared (the face, the gesture,
+  the composers, the feel) and which the placement chooses (the diameter, the corner inset, the arc)
+  — and the `Button` wrapper of that name is gone, the name having moved down to the circle it
+  always described.
+  **Closed 2026-08-30 **from source, without a device**. The ticket's one open item was whether the palette is clipped. There *is* a clip — `iPadMacStyleRootShell` applies `.clipped()` to the detail pane and the capture host is inside it — and the arc clears it provably: every corner tile stays within 50pt of the button centre, the tightest sitting 54.5pt inside the page's trailing edge. Pinned by `theCornerPalettesTilesFitInsideTheButtonsOwnCornerInset`, arithmetic over the real shared metrics. **Take this out of the device-blocked group.** Two residues filed: the scrim does *not* clear the clip ([[T-491]]), and this ticket contradicts itself about whether an iPad was ever driven — the top says nobody has, the historical section describes a booted iPad simulator session.**
+
+- [T-446] **Two "pick a context" controls with nothing shared underneath.** Residue from [[T-288]],
+  which named `CadenceContextPicker` "the one with a live counterpart to converge on" and then had
+  to move it instead. The move is correct and the convergence is still owed.
+  What was found: the macOS control is keyboard-first — `onMoveCommand` (macOS/tvOS only), a search
+  field that takes focus on appear, an arrow-driven `highlightIndex`, an `onSubmit` that commits it,
+  and a hover wash on every row. None of that fires on iOS, and unfencing the file would have put a
+  list with a permanently-raised keyboard in front of the next iOS reader. The two iOS sites
+  (`iOSListEditorViews.swift:124`, `iOSTrackingEditorSheets.swift:167`/`:385`) already route through
+  the `iOSChoiceRow` / `iOSChoicePopoverList` idiom, which is the touch answer to the same question.
+  So the duplication is real but it is not a *view*: it is `sortedContexts`, the `localizedLowercase`
+  filter, the `allowNone` "No context" row and the flattening — spelled once in
+  `CadenceContextPickerList` and again, differently, at each iOS site.
+  Done: one shared item model + filter (a `CadenceContextPickerSupport` beside the other
+  `Cadence*Support` types), read by `CadenceContextPickerList` and by both iOS popovers, with the
+  presentations left as the two they legitimately are. A test that fails if either platform
+  re-derives the sort or the filter.
+  **Closed 2026-08-30, **and the four spellings had diverged into a defect**. `Cadence/Shared/CadenceContextPickerSupport.swift` owns the sort, the archive rule, the unnamed fallback and the "none" row; the macOS list and all three iOS popovers read it, and the two presentations [[T-288]] refused to merge stay two. What the divergence actually was: `Context.isArchived` is excluded everywhere a context is *offered* — both sidebars, both settings panes, the MCP default — but only one of the four pickers filtered it, so **archiving a context did not stop you picking it fresh** on three surfaces. And the one site that did filter read its button label out of the *filtered* array while `save()` read the *unfiltered* one, so a project whose context had since been archived **displayed "None" and saved the archived context**. Also fixed: equal `order` resolved differently per platform (macOS broke ties on name, iOS relied on `@Query(sort:)` alone, which promises nothing among equal keys — and `order` defaults to 0, so every context created outside the reorder UI ties), and an empty name rendered three ways. Rule landed: hide what you could newly pick, never the one already assigned.**
+
+- [T-449] **The last painted-under hairline is in `SettingsListManagementSections.swift`, and the
+  sweep names it rather than allowing it.** Residue from [[T-286]]. That file was outside this
+  batch, and it still carries the two-line `Divider().background(Theme.borderSubtle)` (calendar
+  rows) plus a `.stroke(Theme.borderSubtle` well — the same two defects the other seven panes just
+  lost. `noSettingsPanePaintsUnderTheSystemSeparatorAtAnyLineBreak` skips exactly this one path by
+  name, so the hole is one line of test source and closing it is one line of view source.
+  **Closed 2026-08-30. Both calendar-row hairlines read `CadenceRowDivider(leadingInset: 44)`; the named exclusion is gone and the sweep scans all 15 settings panes. The exact-count pin for that file went 5 → 7, so reverting either site alone fails. **The ticket's second half is withdrawn**: the cited `.stroke(Theme.borderSubtle)` is a 28x28 menu glyph, not a typed-value well — `cadenceSettingsWell()` would force a min-height and 12pt of leading air, both wrong for a fixed glyph, and 28 other sites spell it the same way. See [[T-489]].**
+
+- [T-450] **`SidebarTabEditorSheet.settingsPanelRow` is a fifth private settings row.** Residue from
+  [[T-286]]. A title over a subtitle with a trailing accessory, on its own `cadenceCard` — which is
+  `CadenceSettingsNoticeRow` minus the state glyph. It was left alone deliberately: inventing a
+  glyph to reach the shared component would put a verdict on a sheet that reports none. Either the
+  notice row grows an optional glyph or this row keeps its own spelling on purpose; it should not
+  stay undecided.
+  **Closed 2026-08-30. `CadenceSettingsNoticeRow.systemImage` is optional, `SidebarTabEditorSheet` reads the shared row, private `settingsPanelRow` deleted. [[T-286]]'s reason for keeping it was right about the glyph and wrong about the outcome: the private copy had already drifted to an **11pt subtitle where the other four say 12** — including the identity block twenty lines above it in the same sheet. Cosmetic divergence, but drift rather than decision, which is what settled the either/or.**
+
+- [T-472] **The markdown toolbar has tooltips but no accessibility labels** (Codex, P2; source shape
+  measured, the VoiceOver announcement itself inferred — the app was not launched). Every icon-only
+  button in `macOS/Editor/MarkdownEditorView.swift` (`:203`, `:210`, `:333`, `:354`, `:375`) passes a
+  good semantic string — "Bold", "Inline code", "Note link", "Task reference" — to `.help(...)` and
+  nothing else, so assistive tech falls back to a symbol-ish or generic description. **The correct
+  pattern already exists**: `macOS/Views/CadenceButtons.swift:109`, where `CadenceIconButton` applies
+  `.accessibilityLabel(...)` *and* `.help(...)` from one string. Instance of [[T-374]]. Add the label
+  to `MarkdownReferenceMenuButton`, `MarkdownToolbarButton`, and also `MarkdownToolbarTextButton` —
+  the last one has visible `H1`/`H2` text, but the accessible name should be "Heading 1"/"Heading 2".
+  Pin it with a source scan so a tooltip-only regression fails.
+  **Closed 2026-08-30. All three markdown toolbar button types apply `.accessibilityLabel(...)` and `.help(...)` from one stored property — `CadenceIconButton`'s shape. **The durable half is the rename**: that property is called `accessibilityLabel` rather than `help` at all 19 call sites, because a parameter named `help` is what tells the next author the string is tooltip-only. Heading buttons are named "Heading 1"/"Heading 2" against visible `H1`/`H2`; `.accessibilityLabel` *replaces* a label's text rather than appending, so that is substitution, not double announcement. **What is verified is that the label is set** — nothing launched the app, so no claim is made about what VoiceOver announces. Ticket line numbers were one revision stale.**
+
+- [T-477] **`SectionEyebrowLabel`'s doc comment names a type that does not exist.**
+  `Shared/Components/SectionEyebrowLabel.swift:18` explains its `nonisolated` members by reference to
+  "`CadenceEyebrowMetrics`' readers"; `rg CadenceEyebrowMetrics` returns exactly that one line in the
+  repo. Stale prose from [[T-284]]'s conversion — the reasoning is still right, the name is not.
+  **Closed 2026-08-30, **conclusion reversed on measurement**. Stripping `nonisolated` from all three `Size` members builds clean for the app *and* for `CadenceTests`, so the annotation is **not** load-bearing there: the target sets `SWIFT_APPROACHABLE_CONCURRENCY`, and every live `Size` reader is main-actor already. The static `SectionEyebrowLabel.fontSize` **is** load-bearing, for the `nonisolated struct CadenceTaskGroupHeadingMetrics` — which is the true statement the stale sentence was a corrupted copy of. Annotation kept, rationale corrected, and `theEyebrowDocOnlyNamesMetricsTypesThatExist` now stops this file's prose naming a type nobody can grep.**
+
+- [T-478] **The macOS editor shows a copy cursor for an image drop it will refuse.**
+  `MarkdownEditorView.updateNSView` calls `registerForDraggedTypes([.fileURL, .tiff, .png])`
+  unconditionally and `CadenceTextView.draggingEntered` answers `.copy` for any image payload, so at a
+  host with `allowsImageInsertion: false` ([[T-442]]) the cursor promises a capability the host has just
+  declined, then `performDragOperation` falls through to `super`. The fallthrough is the safe direction,
+  so this is cosmetic — but it is a control stating something untrue. Thread the flag into the
+  representable.
+  **Closed 2026-08-30. `allowsImageInsertion` now reaches the drop — the one image door [[T-442]] missed. `draggingEntered` delegates to `markdownImageDropOperation(for:)`, which returns `nil` (deferring to `super`) unless the host allows images *and* the pasteboard carries one, and `.tiff`/`.png` are registered only at an allowing host. `.fileURL` stays registered on both paths deliberately: it is not image-specific, and the operation rule already answers the dragged-image-file case. The verdict was split out of `draggingEntered` so it could be driven with a private `NSPasteboard`, since `NSDraggingInfo` is a protocol with a dozen members this decision does not read.**
+
+- [T-484] **Visible settings toggles carry no accessible label** (Codex, P3; source measured, VoiceOver
+  behaviour inferred). The visible row text says what the switch controls, but the control is
+  `Toggle("", ...)` plus `.labelsHidden()`, so the switch's own semantic label is disconnected from the
+  title beside it — `iOS/iOSNotificationsSettingsSection.swift:38,49`,
+  `macOS/Views/SettingsNotificationsSection.swift:29,32`, `macOS/Views/SettingsSupportViews.swift:329`.
+  **The correct pattern is already in the repo**: `iOS/iOSCalendarSettingsSection.swift:457` and
+  `macOS/Views/SettingsListManagementSections.swift:332` pass a real label, e.g. `Toggle("Active", ...)`.
+  Instance of [[T-374]]; same family as [[T-472]]. Do Settings > Notifications on both platforms first,
+  then sweep. **Leave zero-size hidden keyboard-shortcut buttons alone** — different mechanism, not a
+  defect. Pin with a source scan for a visible `Toggle("", ...)` not paired with an accessibility label.
+  **Closed 2026-08-30, **and the ticket listed 3 of the 5**. The sweep found two more: the habit reminder row and the AI task-draft checkbox, alongside Notifications on both platforms and the sidebar-visibility row. `.labelsHidden()` stays — it hides the label from layout, not from the accessibility tree — and `SettingsSupportViews` **gained** it, because it was the one site without it, so a named toggle there would have drawn the row title twice. Zero-size keyboard-shortcut buttons are untouched and untouchable by construction: the rule keys on `Toggle("",` and they are `Button`s. Verified that the label is set; no VoiceOver announcement measured.**
 
 ## Cancelled
 

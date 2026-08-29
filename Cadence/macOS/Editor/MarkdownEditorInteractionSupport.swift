@@ -23,6 +23,14 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     var onHoverEmbeddedMarkdownTask: ((UUID, Bool) -> Void)?
     var onCreateMarkdownImages: (([NSImage], [URL]) -> [MarkdownImageAsset])?
     var onResizeMarkdownImage: ((UUID, CGFloat) -> Void)?
+    /// The host's `MarkdownEditor.allowsImageInsertion`, threaded down so the *drag* answer matches
+    /// the one every other image door already gives (T-478).
+    ///
+    /// `onCreateMarkdownImages` returning `[]` was enough to make a refused drop harmless, but not
+    /// enough to make it honest: `draggingEntered` answered `.copy` for any image payload, so the
+    /// pointer showed the copy badge over an editor that was about to decline. Read by
+    /// `markdownImageDropOperation(for:)` and by `registerMarkdownDraggedTypes()`.
+    var allowsMarkdownImageInsertion = true
 
     private var resizingImageID: UUID?
     private var resizeStartX: CGFloat = 0
@@ -106,8 +114,33 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         super.paste(sender)
     }
 
+    /// Registers the drag types this view accepts, image types included only at a host that will
+    /// mint an asset for them.
+    ///
+    /// `.fileURL` stays registered on both paths: it is not image-specific, and a file drop a
+    /// refusing host does not want is answered by `super` below rather than by advertising a
+    /// capability and then falling through.
+    func registerMarkdownDraggedTypes() {
+        var types: [NSPasteboard.PasteboardType] = [.fileURL]
+        if allowsMarkdownImageInsertion {
+            types.append(contentsOf: [.tiff, .png])
+        }
+        registerForDraggedTypes(types)
+    }
+
+    /// The drag operation this view claims for `pasteboard`, or `nil` when the drag is not its to
+    /// claim and `super` should answer.
+    ///
+    /// Split out of `draggingEntered` so the rule can be exercised against a private pasteboard.
+    /// `NSDraggingInfo` is a protocol with a dozen members a test would have to stub, none of which
+    /// this decision reads.
+    func markdownImageDropOperation(for pasteboard: NSPasteboard) -> NSDragOperation? {
+        guard allowsMarkdownImageInsertion, hasImagePayload(pasteboard) else { return nil }
+        return .copy
+    }
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        hasImagePayload(sender.draggingPasteboard) ? .copy : super.draggingEntered(sender)
+        markdownImageDropOperation(for: sender.draggingPasteboard) ?? super.draggingEntered(sender)
     }
 
     override func updateTrackingAreas() {

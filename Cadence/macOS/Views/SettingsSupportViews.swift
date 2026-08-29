@@ -21,10 +21,14 @@ import SwiftData
 // `SectionEyebrowLabel`, which `ContextSettingsRow` two hundred lines above was already using for
 // the identical label in the identical role.
 //
-// Left deliberately: `SidebarTabEditorSheet.settingsPanelRow` — a title/subtitle/accessory line on
-// its own card. It is close to `CadenceSettingsNoticeRow` and differs by having no state glyph, and
-// inventing one to reach the shared component would be adding a verdict where the sheet reports
-// none. Recorded as residue rather than bent.
+// The residue T-286 left here — `SidebarTabEditorSheet.settingsPanelRow`, a title/subtitle/accessory
+// line on its own card — is gone (T-450). It was left on the argument that reaching
+// `CadenceSettingsNoticeRow` meant inventing a state glyph where the sheet reports none; the answer
+// was to make the glyph optional rather than to keep a fifth private row, because the private row
+// had already drifted off the shared spelling in the quiet way copies do: an 11pt subtitle where the
+// other four say 12, and where the identity block twenty lines above it in the same sheet says 12.
+// The card and its padding stay at the call site — a sheet with no `CadenceFieldSection` around it
+// has to draw its own chrome, and that part really was this sheet's own.
 
 struct ContextSettingsRow: View {
     @Bindable var context: Context
@@ -326,15 +330,21 @@ struct SidebarTabEditorSheet: View {
                 ColorGrid(selected: $tintHex, palette: CadenceColorPalette.destinationTints)
             }
 
-            settingsPanelRow(
+            CadenceSettingsNoticeRow(
                 title: "Visible in Sidebar",
-                subtitle: "Turn this off to hide the tab without losing its place."
+                detail: "Turn this off to hide the tab without losing its place."
             ) {
-                Toggle("", isOn: $isVisible)
+                // `.labelsHidden()` is new alongside the name: an empty label already drew
+                // nothing, and a named one without it would put the title on screen twice.
+                Toggle("Visible in Sidebar", isOn: $isVisible)
+                    .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .tint(Theme.blue)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .cadenceCard(cornerRadius: Theme.radiusCard)
 
             HStack {
                 Spacer()
@@ -350,32 +360,6 @@ struct SidebarTabEditorSheet: View {
         .padding(22)
         .frame(width: 420)
         .background(Theme.bg)
-    }
-
-    @ViewBuilder
-    private func settingsPanelRow<Accessory: View>(
-        title: String,
-        subtitle: String,
-        @ViewBuilder accessory: () -> Accessory
-    ) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer()
-
-            accessory()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .cadenceCard(cornerRadius: Theme.radiusCard)
     }
 }
 
