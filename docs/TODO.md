@@ -45,6 +45,68 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
+- [T-446] **Two "pick a context" controls with nothing shared underneath.** Residue from [[T-288]],
+  which named `CadenceContextPicker` "the one with a live counterpart to converge on" and then had
+  to move it instead. The move is correct and the convergence is still owed.
+  What was found: the macOS control is keyboard-first — `onMoveCommand` (macOS/tvOS only), a search
+  field that takes focus on appear, an arrow-driven `highlightIndex`, an `onSubmit` that commits it,
+  and a hover wash on every row. None of that fires on iOS, and unfencing the file would have put a
+  list with a permanently-raised keyboard in front of the next iOS reader. The two iOS sites
+  (`iOSListEditorViews.swift:124`, `iOSTrackingEditorSheets.swift:167`/`:385`) already route through
+  the `iOSChoiceRow` / `iOSChoicePopoverList` idiom, which is the touch answer to the same question.
+  So the duplication is real but it is not a *view*: it is `sortedContexts`, the `localizedLowercase`
+  filter, the `allowNone` "No context" row and the flattening — spelled once in
+  `CadenceContextPickerList` and again, differently, at each iOS site.
+  Done: one shared item model + filter (a `CadenceContextPickerSupport` beside the other
+  `Cadence*Support` types), read by `CadenceContextPickerList` and by both iOS popovers, with the
+  presentations left as the two they legitimately are. A test that fails if either platform
+  re-derives the sort or the filter.
+
+- [T-447] **Nothing rendered the two iOS surfaces [[T-281]] and [[T-283]] changed.** Both landed on
+  source-scan evidence plus four green scheme builds (`Cadence` macOS, `CadenceWidgets`,
+  `CadenceMCPServer`, `Cadence` for `generic/platform=iOS Simulator`) — which is all
+  `CadenceTests` can offer, since `Cadence/iOS/` is inside `#if os(iOS)` and the test target builds
+  for macOS. No simulator ran: both booted devices were held by live agents, and
+  `scripts/simulator-claim.sh` correctly refuses to reclaim one.
+  Two predicates a device answers and a scan cannot. **One:** `iOSNoteEditorSheetHeader` now reads
+  `@Environment(\.horizontalSizeClass)` itself instead of taking the flag from its sheet. That is
+  the same trait either way *in theory* — a `.frame(width: 320)` does not change a scene trait — so
+  the regular-width rail on both note sheets should still draw the 24pt title, the 20/20 padding and
+  the full-height rail. If the trait does not propagate into that rail the title drops to 22pt and
+  the padding to 18/14, which is visible and which no scan can see. **Two:** the event sheet's
+  commit-failure notice still appears under the title, inside the header block, when a note saves
+  but its Apple Calendar mirror does not.
+  Cheap: one iPad-width run of each note sheet, one iPhone-width run of Today and Inbox.
+
+- [T-449] **The last painted-under hairline is in `SettingsListManagementSections.swift`, and the
+  sweep names it rather than allowing it.** Residue from [[T-286]]. That file was outside this
+  batch, and it still carries the two-line `Divider().background(Theme.borderSubtle)` (calendar
+  rows) plus a `.stroke(Theme.borderSubtle` well — the same two defects the other seven panes just
+  lost. `noSettingsPanePaintsUnderTheSystemSeparatorAtAnyLineBreak` skips exactly this one path by
+  name, so the hole is one line of test source and closing it is one line of view source.
+
+- [T-450] **`SidebarTabEditorSheet.settingsPanelRow` is a fifth private settings row.** Residue from
+  [[T-286]]. A title over a subtitle with a trailing accessory, on its own `cadenceCard` — which is
+  `CadenceSettingsNoticeRow` minus the state glyph. It was left alone deliberately: inventing a
+  glyph to reach the shared component would put a verdict on a sheet that reports none. Either the
+  notice row grows an optional glyph or this row keeps its own spelling on purpose; it should not
+  stay undecided.
+
+- [T-451] **`CadenceNotesListSupport` re-types the eyebrow's `0.8` as a literal.** Residue from
+  [[T-284]]. The notes group header (`.kerning(0.8)`, line ~656) is *not* an eyebrow — it is bold,
+  sentence-case, `Theme.text`, at 11/12pt — so folding it into `SectionEyebrowLabel` would be the
+  size-decision-dressed-as-a-refactor that ticket refused twice. But 0.8 is the standard tier's own
+  number, hand-typed, and it is now the only copy of it left outside `Theme`-adjacent metrics.
+  Decide whether that header's tracking is its own decision (and say so beside it) or the eyebrow's.
+
+- [T-452] **T-284's 9pt tier is pinned by value and by source, and has still never been looked at.**
+  The ticket's remaining ask was "one screenshot pass over those 8 sites", and the subagent runbook
+  forbids launching or building the app for inspection — so the *judgement* is now recorded
+  (letterspacing is optical, so the compact tier takes the same 0.08em the 19 correct 10pt sites
+  take; the plurality of 0.6/0.54 was two independent guesses, not a decision) and the derivation is
+  pinned against being re-flattened into two literals, but nobody has seen the six tightened labels
+  or the two that gained tracking rendered. One pass by whoever can run the app closes it.
+
 - [T-435] **The target-membership guard matches capitalised identifiers, so a top-level `func` still
   slips through.** From [[T-409]]. It catches a type referenced across a target boundary, which is
   the shape `aaa0064` had, but a free function or an extension method declared in a non-member file
