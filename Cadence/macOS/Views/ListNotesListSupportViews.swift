@@ -105,7 +105,7 @@ struct TaskNoteListRow: View {
     let isSelected: Bool
 
     private var title: String {
-        task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Task" : task.title
+        TaskTitleSupport.displayTitle(task.title)
     }
 
     private var excerpt: String {

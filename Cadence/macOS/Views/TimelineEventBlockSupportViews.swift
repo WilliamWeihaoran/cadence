@@ -185,6 +185,28 @@ struct CalendarEventEditPopover: View {
         }
     }
 
+    /// **T-467.** The event's calendar link, as the row and the menu both read it.
+    ///
+    /// This card used to hand the picker `writableCalendars` alone and let it title whatever it
+    /// could find. The timeline's events come from `availableCalendars`, which filters by
+    /// visibility and not by writability, so an event on an **active read-only** subscribed
+    /// calendar reached this card, printed its calendar's name two rows above in `calendarLabel`,
+    /// and had "No calendar" underneath — the [[T-441]] collapse, on a second surface.
+    ///
+    /// The universe here is `availableCalendars`, not `allCalendars`: it is exactly what the
+    /// timeline can show, so `availableCalendars` minus `writableCalendars` is exactly the active
+    /// read-only calendars and `.readOnly` is always the true word for anything this offer adds
+    /// back. Hidden calendars never reach this editor at all — the fetch dropped them first — so
+    /// `.hidden` is not a state this card can be in.
+    private var calendarLink: CadenceCalendarLink {
+        CadenceCalendarLink(
+            linkedCalendarID: selectedCalendarID,
+            allCalendars: calendarManager.availableCalendars,
+            visibleCalendars: calendarManager.writableCalendars,
+            exclusion: .readOnly
+        )
+    }
+
     private var calendarCard: some View {
         infoCard {
             HStack(spacing: 10) {
@@ -193,8 +215,9 @@ struct CalendarEventEditPopover: View {
                     .foregroundStyle(Theme.dim)
                     .frame(width: 88, alignment: .leading)
                 CadenceCalendarPickerButton(
-                    calendars: calendarManager.writableCalendars,
-                    selectedID: $selectedCalendarID
+                    calendars: calendarLink.pickableCalendars(from: calendarManager.availableCalendars),
+                    selectedID: $selectedCalendarID,
+                    link: calendarLink
                 )
                 Spacer(minLength: 0)
             }

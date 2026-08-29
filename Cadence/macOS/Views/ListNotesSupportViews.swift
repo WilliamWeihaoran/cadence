@@ -31,7 +31,7 @@ struct TaskNoteEditorPane: View {
     @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
 
     private var taskTitle: String {
-        task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Task" : task.title
+        TaskTitleSupport.displayTitle(task.title)
     }
 
     private var noteContentBinding: Binding<String> {

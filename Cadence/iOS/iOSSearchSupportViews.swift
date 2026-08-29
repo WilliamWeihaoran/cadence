@@ -45,8 +45,18 @@ struct iOSSearchListCandidate {
     let route: iOSListRoute
     let fields: [String]
 
+    /// Areas and projects are one section here, so the identity has to carry which table the row
+    /// came from — `CadenceSearchIdentity`'s prefix is exactly that.
+    var identity: String {
+        switch route {
+        case .area(let id): CadenceSearchIdentity.area(id)
+        case .project(let id): CadenceSearchIdentity.project(id)
+        }
+    }
+
     func result(score: Int) -> iOSSearchResult {
         iOSSearchResult(
+            id: identity,
             destination: .list(route),
             title: title,
             subtitle: subtitle,
@@ -69,6 +79,7 @@ struct iOSSearchFeatureCandidate {
 
     func result(score: Int) -> iOSSearchResult {
         iOSSearchResult(
+            id: CadenceSearchIdentity.page(destination.rawValue),
             destination: .feature(destination),
             title: title,
             subtitle: subtitle,
@@ -102,7 +113,19 @@ struct iOSSearchResult: Identifiable {
         case feature(CadenceFeatureDestination)
     }
 
-    let id = UUID()
+    /// **T-479. A stable identity, not a fresh `UUID()`.**
+    ///
+    /// This was `let id = UUID()`, minted at construction. Two things followed. The rank tie-break
+    /// `CadenceSearchMatcher.rank` needs an `identity` leg for, and a per-build UUID cannot be it:
+    /// it *is* total, but it is a different total order on every recomputation, which is the
+    /// nondeterminism the leg exists to remove rather than a fix for it. And SwiftUI got a brand
+    /// new identity for every row on every keystroke, so no row was ever the same row twice.
+    ///
+    /// Spelled by `CadenceSearchIdentity`, the same strings macOS's palette rows carry, and
+    /// **non-optional in the memberwise initialiser on purpose** — the T-372a rule applied one
+    /// level down. An eighth construction site cannot be added without deciding what identifies
+    /// the row it builds.
+    let id: String
     let destination: Destination
     let title: String
     let subtitle: String
@@ -115,6 +138,34 @@ struct iOSSearchResult: Identifiable {
     /// end of a bullet-joined metadata string, so a long list name plus tags truncated it
     /// away entirely. Carried separately, the row can lay it out with priority.
     var dueLabel: String?
+}
+
+/// The one funnel every scored section on this screen ranks through.
+///
+/// **T-479.** Each of the six sections used to end in a bare `.sorted { $0.score > $1.score }` —
+/// no title leg and no identity leg — so two rows that merely tied on score came back in `@Query`
+/// order. That is more partial than the state T-372 found macOS in, and T-372a's fix could not
+/// reach it because nothing here called `rank` at all. It is deliberately one funnel rather than
+/// six threaded closures, for the reason `GlobalSearchIndexSupport.rankedResults` is one: a
+/// per-section comparator is a per-section opportunity to drop a leg, which is the defect.
+///
+/// The score is already computed — `CadenceSearchMatcher.matchScore` folds and regex-strips every
+/// field on each call, and each section scores while it filters — so this takes the `score:`
+/// overload rather than re-scoring from the query.
+///
+/// **Ranking happens before `prefix`, never after.** `resultSection` shows the first 24 rows, and
+/// on a partial order the *window* is nondeterministic too, not just the arrangement inside it:
+/// tied rows past the cut are dropped by fetch order. Same rule
+/// `GlobalSearchIndexSupport.eventResults` records for macOS.
+enum iOSSearchIndexSupport {
+    static func rankedResults(_ results: [iOSSearchResult]) -> [iOSSearchResult] {
+        CadenceSearchMatcher.rank(
+            results,
+            score: { $0.score },
+            title: { $0.title },
+            identity: { $0.id }
+        )
+    }
 }
 
 /// The filter row above the results. macOS's palette has no scope filter — it is a

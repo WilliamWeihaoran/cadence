@@ -45,7 +45,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-462] **`docs/TODO_DONE.md` had no `T-4xx` entry at all until `ca06ad1`+1.** Eighty-five tickets
+- [T-462] *(narrowed 2026-08-30, measured by replaying all 210 revisions of the file: the gap is **200, not 284**. All 200 are recoverable verbatim, but that is ~33k tokens onto a file whose purpose is to be cheap to search — and **87.5% were removed by bookkeeping commits that changed no Swift**, so each entry's SHA would need its own bisect: 200 investigations for a file half of which would be blank. **Do not backfill.** The cheap half is done — 32 entries reading `(title not recovered)` were unsearchable and all 32 titles were recovered from the file's own revisions (the earlier reconstruction had searched commit *messages*), and the header count, which had never been true at any revision, now reads the real 177. Residue: [[T-501]].)* **`docs/TODO_DONE.md` had no `T-4xx` entry at all until `ca06ad1`+1.** Eighty-five tickets
   closed in this session were removed from Open and never archived, and the same gap runs back to
   T-01 — **284 in total**. Today's 85 are now reconstructed from git history; the older 199 are not.
   Either backfill them the same way or state that the archive begins at this session and stop
@@ -53,12 +53,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-453] **`CadenceWidgetDateSupport.storageCalendar(inheritingTimeZoneFrom:)` has no callers.**
-  Found by a mutation that **survived**: re-pointing it to return the caller's calendar changed
-  nothing, because nothing calls it. Its sibling forwards to `DateFormatters.dateKey(from:calendar:)`,
-  which forces Gregorian itself — so the widget is correct and this is a dead pass-through left
-  behind when [[T-301]] collapsed the hand-rolled copies. Delete it or give it the one caller it was
-  written for.
 
 
 - [T-447] *(narrowed 2026-08-30: both landings reviewed. T-281 is a faithful but visually inert extraction — the two headers were already byte-identical before it. T-283's renames are correct and complete. Defects found and filed separately as [[T-492]] and [[T-493]]. Predicate two is effectively answered off-device already: the commit outcome is covered in `CadenceEventKitPlatformParityTests` and its position by `theEventSheetKeepsItsCommitNoticeInsideTheHeader` — only the pixel is left. Predicate one is narrowed by `nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader`: **nothing in `Cadence/` writes that environment key**, so only SwiftUI's own re-derivation inside NavigationStack -> HStack -> .frame remains device-only. That residue belongs with T-55 / T-280.)* **Nothing rendered the two iOS surfaces [[T-281]] and [[T-283]] changed.** Both landed on
@@ -97,14 +91,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-374] **The most common defect shape in 21 audits is "a correct shared helper exists and call
-  sites don't use it" — enforce it mechanically.** Synthesis, not a new defect. [[T-359]] (four
-  open-coded habit toggles), [[T-362]] (eleven unreconciled date edits), [[T-364]] (creation paths
-  bypassing `TaskCreationService`), [[T-365]], [[T-343]] all have that shape, and each was found by
-  a human-scale read that will not repeat reliably. `CadenceCreateTaskCommitSurfaceTests` is already
-  the right instrument. Extend that source-scan pattern to habit completion, task date/time
-  mutation, and delete commit — **after** each shared wrapper exists, not before, or the test
-  becomes a brittle census of scattered call sites.
 
 - [T-352] **DECIDE: should the root destination persist? A comment already says it does.** From the
   same audit; **premise verified** — `macOSRootView` holds the selection in `@State` with **zero**
@@ -140,19 +126,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   placement. **Ask the user before touching it**, and if the answer is "leave it", record that here
   and close, because the test currently pins the opposite of what a reader might assume.
 
-- [T-322] **Decide the rule for `try? save()`, then sweep — there are 133 of them.** Measured, not
-  estimated: `try? modelContext.save()` / `try? context.save()` appears **133 times** across
-  `Cadence/`. [[T-319]], [[T-320]] and [[T-321]] are four of them; [[T-291]], [[T-298]], [[T-307]]
-  and [[T-315]] are the same shape found by four earlier audits in unrelated code.
-  **This is a convention, not a set of bugs, and it should not be fixed with a sed.** Many of the
-  133 are probably fine — a save whose failure the user cannot act on, or a transient object. What
-  is missing is a rule saying which is which, so the next one is written correctly instead of
-  found by the ninth audit.
-  Proposed shape, to be decided: a save is allowed to swallow its error only when nothing visible
-  depends on it. Any save whose failure would let the UI **dismiss, navigate, or report success**
-  must throw and be handled. Then triage the 133 against that rule rather than converting them all.
-  Write the rule into `AGENTS.md` when it is decided — a rule an agent reads before writing the
-  134th is worth more than fixing the first 133.
 
 - [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
   Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes
@@ -506,33 +479,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-467] **`CadenceCalendarPickerButton` collapses "hidden or read-only" into "No calendar"** — the
-  [[T-441]] bug on a second surface. It renders `selected?.title ?? "No calendar"` by looking
-  `selectedID` up in whatever `calendars` it was handed, and `TimelineEventBlockSupportViews.swift:195`
-  hands it `calendarManager.writableCalendars` (active AND `allowsContentModifications`). Events are
-  fetched from `availableCalendars`, which does not filter by writability, so an event on a subscribed
-  read-only calendar should reach the timeline and print its calendar name in `calendarLabel` while the
-  Calendar row directly beneath says "No calendar" — two contradictory readings in one card. Route it
-  through `CadenceCalendarLink` ([[T-464]]), which now exists for exactly this. **Reachability narrowed by a second audit (Codex, 2026-08-29, measured source flow):** the *hidden*
-  case is **not** reachable — the timeline fetch uses `availableCalendars`, which already excludes hidden
-  calendars. The reachable case is an **active read-only / subscribed** calendar: the timeline shows its
-  events, the detail picker is handed `writableCalendars` (`TimelineEventBlockSupportViews.swift:195`),
-  `selected` comes back nil and the row renders "No calendar"
-  (`CadenceCalendarPicker.swift:230,248`; `CalendarManager.swift:159,164`). So fix the read-only case and
-  drop the hidden framing. The QuickCreate call
-  site (`QuickCreateChoiceSupportViews.swift:203`) is a create flow with `allowNone: false` and is not
-  affected.
-
-- [T-468] **macOS silent push registration has two launch callers** (Codex, P3, source drift measured;
-  the duplicate-OS-call risk is inferred). `CadenceApp.swift:13` and
-  `macOS/Services/CadenceAppDelegate.swift:10,27` both call the same registrar on a normal launch.
-  `registerIfNeeded()` checks `isRegisteredForRemoteNotifications`, so it may collapse to one OS call
-  depending on timing — the defect is that the launch wiring is duplicated while docs and history
-  describe the AppDelegate as *the* registration site, which is how a future launch audit or an App
-  Review explanation gets subtly wrong. Not a permission-prompt bug: the app still correctly avoids
-  `requestAuthorization()` on cold launch. Pick one owner (probably the AppDelegate), delete the other
-  call, and pin **exactly one production caller** with a source scan. Confirm:
-  `rg -n "registerIfNeeded\(|registerForRemoteNotifications\(" Cadence/CadenceApp.swift Cadence/macOS/Services/CadenceAppDelegate.swift`
 
 
 
@@ -543,22 +489,10 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-476] **The iOS template editor's `BODY` label is the last hand-typed letterspacing in the app.**
-  `iOS/iOSSettingsTemplateAndListSections.swift:594` — a hand-rolled `SectionEyebrowLabel`, so the fix
-  is the component, which changes the weight from bold to semibold, and no macOS test target can render
-  an iOS view to check the result. `exactlyOneHandTypedLetterspacingIsLeftInTheApp` names this path;
-  closing it turns that expected list into `[]`. Also the last piece of [[T-442]]'s parity gap — macOS's
-  template Body label is already `CadenceSettingsField`'s eyebrow.
 
 
 
-- [T-479] **The iOS search surface never adopted `CadenceSearchMatcher.rank`.** Found while closing
-  [[T-372a]]. `iOSSearchView` scores through the shared `matchScore`, then sorts each of its seven
-  sections with a bare `.sorted { $0.score > $1.score }` (`:105,123,172,199,230,245,261`) — no title
-  leg, no identity leg. That is **more** partial than the state T-372 found macOS in, so two iPhone
-  results that merely tie on score come back in `@Query` order, and T-372a's fix does not reach them
-  because they never call `rank`. The shape is `GlobalSearchIndexSupport.rankedResults` — one funnel per
-  surface passing `title:` and `identity:` — not seven threaded closures.
+
 
 
 - [T-481] **DECIDE: one top-level suite per test file?** Raised and deliberately *not* landed while
@@ -639,10 +573,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   view at compact width. [[T-283]]'s test silently omitted the enum from its reachability check, which is
   why nothing said so. Either rename it or correct the comment.
 
-- [T-494] **Three retired `iPad*` names survive in agent-facing docs.** `docs/IOS_AGENTS_REFERENCE.md:129,318`
-  and `docs/CLAUDE_REFERENCE.md:1149` still name `iPadTodayScheduleViews` and `iPadTodayView`.
-  [[T-283]]'s retired-name sweep covers `Cadence/**/*.swift` only, so these are unguarded and **will send
-  the next agent to files that do not exist**. Widen that sweep to `docs/`.
 
 - [T-495] **`MarkdownEditorView` replaces `NSTextView`'s dragged-type registration rather than adding to
   it.** `registerForDraggedTypes` sets the accepted-type list wholesale and `configure(_:context:)` has
@@ -659,6 +589,58 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   tracking** — the [[T-284]] defect one file over. Deliberately not picked: choosing 0.08em doubles the
   tracking on every kanban column header, which is the un-inspected change [[T-452]] is open for. Needs
   the same screenshot pass, then a ratio.
+
+
+- [T-497] **The 12 condemned `try? save()` sites [[T-322]] did not fix.** Tiered, and each is already an
+  entry in `CadenceSaveCommitDisciplineTests`' exemption lists — **delete the entry with the fix, a stale
+  one fails the suite.**
+  **Tier 1 (existence, 4):** `CadenceNoteFolderSupport.createNote`; `SettingsTagsSection.createTag` +
+  `iOSSettingsTagsSection.createTag` (one pair); `iOSCalendarEventEditSheet.openEventNote` — which
+  inserts a note *and opens it*, so the screen the user lands on is itself the report of success. Route
+  through `commitInsert`, take `commit:`, throw.
+  **Tier 2 (report, 3 inline row editors):** `SettingsTagsSection.saveEdits`,
+  `TagPickerPopoverViews.saveEdits`/`archive` — `commitEdit(in:undo:)` plus
+  `CadencePendingChangePersistence.editFailureNotice`, which already says the right sentence.
+  **Tier 3 (needs a design answer first, 2):** `iOSSearchSupportViews` (note editor Done) and
+  `iOSTaskDetailSheet.finishEditingAndDismiss`. Both are "flush an in-place edit, then close"; the open
+  question is what *undo* means for a field the user is still looking at and still has focus in. Answer
+  it once and both fall out.
+  **Not defects, and the exemptions say so:** `TagSupport.seedDefaultTags`/`deduplicateTags` (launch-time,
+  idempotent, both already take a save flag) and `CadenceUITestSupport.seedDataIfNeeded` (no user).
+
+- [T-498] **iOS search's *idle* suggestion windows are cut from a partial order.** [[T-479]] fixed the
+  `isSearching` branches; the idle ones take `prefix` straight off a partial order in four of six
+  sections — `taskResults` sorts dueDate then `order` (per-list, so cross-list ties are routine) then
+  `.prefix(8)`; `listResults`, `noteResults`, `progressResults` prefix straight off `@Query` order. On a
+  partial order the **window itself** is nondeterministic, not just its arrangement: tied rows past the
+  cut are dropped by fetch order, so *which eight* suggestions appear changes between reads. `pageResults`
+  (catalog order) and `eventResults` (already total, [[T-373]]) are fine. The fix is a final identity leg
+  on each idle comparator, **not** the score funnel — an idle list is deliberately chronological/manual
+  rather than scored.
+
+- [T-499] **The MCP server target re-types three user-facing fallbacks it cannot read.**
+  `CadenceReadService.swift:814,843,1069,1251` and `NoteReferenceSupport.swift:113` spell
+  `"Untitled Task"`/`"Untitled Context"` because `Cadence/Shared/` is not in the `CadenceMCPServer`
+  source list. Real duplication, not reachable duplication — **the app and the MCP surface can drift on
+  user-visible copy.** Fix by moving `TaskTitleSupport.defaultDisplayTitle` and
+  `CadenceContextPickerSupport.untitledName` to `Models/` (the [[T-354]] boundary), or give the MCP target
+  its own named constant. Currently subtracted by [[T-374]]'s sweep and pinned by
+  `theSweepSkipsTheFilesTheMCPServerTargetCompiles`, which **fails when this is fixed**, so the
+  subtraction gets deleted along with it.
+
+- [T-500] **Four near-duplicate title-fallback helpers.** `CadenceMCPServiceSupport.resolvedTitle`,
+  `CadenceReadService.resolvedTitle`, `MarkdownTaskEmbedSupport.sanitizedReferenceTitle` and
+  `NoteReferenceSupport.sanitizedReferenceTitle` are four re-implementations of
+  `CadenceTitleNormalization.display(_:fallback:)`. A [[T-374]] instance its string sweep **structurally
+  cannot see**: that sweep detects a duplicated literal, not a duplicated function.
+
+- [T-501] **`docs/TODO_DONE.md`'s "Landed in" SHAs record where a ticket was *removed*, not where it
+  shipped.** Found while applying [[T-462]]'s title recovery: T-285's entry reads "Landed in `0dd7258`",
+  whose subject is *"Deduplicate docs/TODO.md"* — a bookkeeping commit that changed no Swift.
+  [[T-462]]'s measurement explains why: **175 of 200 archived tickets were removed by commits that
+  touched only `docs/TODO.md`.** So an unknown share of the 177 existing entries attribute a fix to a
+  commit that did not contain it, which is worse than a missing SHA because it reads as authoritative.
+  Establish how many are wrong before deciding whether to re-derive them.
 
 
 ## Done
@@ -1108,6 +1090,92 @@ before filing**: this list has had the same ticket re-reported more than once.
   then sweep. **Leave zero-size hidden keyboard-shortcut buttons alone** — different mechanism, not a
   defect. Pin with a source scan for a visible `Toggle("", ...)` not paired with an accessibility label.
   **Closed 2026-08-30, **and the ticket listed 3 of the 5**. The sweep found two more: the habit reminder row and the AI task-draft checkbox, alongside Notifications on both platforms and the sidebar-visibility row. `.labelsHidden()` stays — it hides the label from layout, not from the accessibility tree — and `SettingsSupportViews` **gained** it, because it was the one site without it, so a named toggle there would have drawn the row title twice. Zero-size keyboard-shortcut buttons are untouched and untouchable by construction: the rule keys on `Toggle("",` and they are `Button`s. Verified that the label is set; no VoiceOver announcement measured.**
+
+- [T-322] **Decide the rule for `try? save()`, then sweep — there are 133 of them.** Measured, not
+  estimated: `try? modelContext.save()` / `try? context.save()` appears **133 times** across
+  `Cadence/`. [[T-319]], [[T-320]] and [[T-321]] are four of them; [[T-291]], [[T-298]], [[T-307]]
+  and [[T-315]] are the same shape found by four earlier audits in unrelated code.
+  **This is a convention, not a set of bugs, and it should not be fixed with a sed.** Many of the
+  133 are probably fine — a save whose failure the user cannot act on, or a transient object. What
+  is missing is a rule saying which is which, so the next one is written correctly instead of
+  found by the ninth audit.
+  Proposed shape, to be decided: a save is allowed to swallow its error only when nothing visible
+  depends on it. Any save whose failure would let the UI **dismiss, navigate, or report success**
+  must throw and be handled. Then triage the 133 against that rule rather than converting them all.
+  Write the rule into `AGENTS.md` when it is decided — a rule an agent reads before writing the
+  134th is worth more than fixing the first 133.
+  **Closed 2026-08-30. The rule is in `AGENTS.md` under "The `try? save()` rule", both halves enforced by `CadenceSaveCommitDisciplineTests`. **112 live sites, not 133** — that figure predates eight earlier conversions, and 15 matches are tombstone comments quoting the retired line. **96 of 112 (86%) pass and should stay `try?`**; converting them would be 96 `do`/`catch` blocks buying nothing. 16 condemned, 4 fixed worst-first, 12 carried in exemption lists **by function name** with a test that fails when an entry goes stale *or* when a new offender hides beside an allowed one. **The proposed rule needed a second half.** "A save whose failure lets the UI dismiss or report success" is caller-local, so it cannot see a *helper* that swallows while its caller dismisses — which is what [[T-471]] was. The **existence** half (the function also `insert`s or `delete`s) catches that from one function, with no judgement. **And the cost was misstated**: this app has one `ModelContext`, so a swallowed failure does not mean the change did not happen — it stays *pending*, committed by the next unrelated `save()` from any screen or discarded by the next unrelated `rollback()`. Swallowing is a coin flip resolved on someone else's code path. Worst fix: `saveGoal`/`saveHabit` ended `try? save(); return resolved` and **all three callers read non-nil as success and dismissed** — create a goal, sheet closes, goal gone. Remainder is [[T-497]].**
+
+- [T-374] **The most common defect shape in 21 audits is "a correct shared helper exists and call
+  sites don't use it" — enforce it mechanically.** Synthesis, not a new defect. [[T-359]] (four
+  open-coded habit toggles), [[T-362]] (eleven unreconciled date edits), [[T-364]] (creation paths
+  bypassing `TaskCreationService`), [[T-365]], [[T-343]] all have that shape, and each was found by
+  a human-scale read that will not repeat reliably. `CadenceCreateTaskCommitSurfaceTests` is already
+  the right instrument. Extend that source-scan pattern to habit completion, task date/time
+  mutation, and delete commit — **after** each shared wrapper exists, not before, or the test
+  becomes a brittle census of scattered call sites.
+  **Closed 2026-08-30 — **one sweep shipped, two families measured and refused.** Shipped: `CadenceSharedConstantReuseSweepTests`, every `static let` string constant in `Cadence/Shared/` harvested *from source* rather than hand-listed, swept over all 552 files under `Cadence/` through `CadenceScanInstrument`, two target boundaries subtracted by rule, one measured exemption. **28 raw hits, 22 true positives of 23 verdicts (96%)**, all 22 fixed. **Refused with numbers:** 80 numeric constants in `Shared/` produce **10,745 hits** and are *unattributable* — 11 distinct constants each equal `1`, 11 equal `8`, 11 equal `10`, so a hit cannot name which constant it should have read; and verbatim-line duplication yields 496 candidates topped by `.frame(maxWidth: .infinity, alignment: .leading)` in 72 files, which is SwiftUI idiom, not a helper. Both numbers live in the test so the claim can be re-run rather than trusted. One user-visible change: 16 fixed sites stop using `.isEmpty`, which the shared helper documents as the wrong guard, so a whitespace-only task title now reads "Untitled Task" instead of rendering blank. **The sweep caught its own author's mistake** — a first pass "fixed" 5 sites in files the MCP target compiles, turning the membership guard red; those are now subtracted by rule using that guard's own graph.**
+
+- [T-453] **`CadenceWidgetDateSupport.storageCalendar(inheritingTimeZoneFrom:)` has no callers.**
+  Found by a mutation that **survived**: re-pointing it to return the caller's calendar changed
+  nothing, because nothing calls it. Its sibling forwards to `DateFormatters.dateKey(from:calendar:)`,
+  which forces Gregorian itself — so the widget is correct and this is a dead pass-through left
+  behind when [[T-301]] collapsed the hand-rolled copies. Delete it or give it the one caller it was
+  written for.
+  **Closed 2026-08-30, **and the interesting version was true**. Not dead on arrival: `b49b76e` added `storageCalendar(inheritingTimeZoneFrom:)` *with* two callers inside the same enum, and [[T-301]]'s collapse in `0e78c5b` rewrote both bodies to forward to `DateFormatters`, leaving an uncalled forwarding shim. Deleted; the Buddhist/Japanese/Islamic-calendar history it carried is already on `DateFormatters.storageCalendar`, with a tombstone pointing there. Guarded by a **census** rather than a name check — every `static func` in `CadenceWidgetDateSupport` must be reachable, counted two ways so an unqualified in-enum call is not miscounted as dead — so the next collapse that strands a member fails here instead of waiting for a survived mutation.**
+
+- [T-467] **`CadenceCalendarPickerButton` collapses "hidden or read-only" into "No calendar"** — the
+  [[T-441]] bug on a second surface. It renders `selected?.title ?? "No calendar"` by looking
+  `selectedID` up in whatever `calendars` it was handed, and `TimelineEventBlockSupportViews.swift:195`
+  hands it `calendarManager.writableCalendars` (active AND `allowsContentModifications`). Events are
+  fetched from `availableCalendars`, which does not filter by writability, so an event on a subscribed
+  read-only calendar should reach the timeline and print its calendar name in `calendarLabel` while the
+  Calendar row directly beneath says "No calendar" — two contradictory readings in one card. Route it
+  through `CadenceCalendarLink` ([[T-464]]), which now exists for exactly this. **Reachability narrowed by a second audit (Codex, 2026-08-29, measured source flow):** the *hidden*
+  case is **not** reachable — the timeline fetch uses `availableCalendars`, which already excludes hidden
+  calendars. The reachable case is an **active read-only / subscribed** calendar: the timeline shows its
+  events, the detail picker is handed `writableCalendars` (`TimelineEventBlockSupportViews.swift:195`),
+  `selected` comes back nil and the row renders "No calendar"
+  (`CadenceCalendarPicker.swift:230,248`; `CalendarManager.swift:159,164`). So fix the read-only case and
+  drop the hidden framing. The QuickCreate call
+  site (`QuickCreateChoiceSupportViews.swift:203`) is a create flow with `allowNone: false` and is not
+  affected.
+  **Closed 2026-08-30, **reachability confirmed independently first**. Two audits had disagreed; the second was right. Measured from source: `fetchEvents`/`fetchAllDayEvents` build their EventKit predicate from `availableCalendars`, and `isActiveCalendar` consults visibility **only, never writability** — so a hidden calendar's events never reach the timeline and **the hidden case cannot be opened in this editor**. The live case is an active read-only/subscribed calendar. The fact that made the fix clean: `availableCalendars \ writableCalendars` is *exactly* the active read-only set, so `.readOnly` is always the true word for whatever the offer adds back. Routed through `CadenceCalendarLink` with a new `CadenceCalendarLinkExclusion` (`.hidden`/`.readOnly`) — calling a read-only calendar "(Hidden)" would be the same collapse one word further down. The picker list and button take the link rather than a set of ids, so the button's value and the menu it opens cannot word the same calendar differently.**
+
+- [T-468] **macOS silent push registration has two launch callers** (Codex, P3, source drift measured;
+  the duplicate-OS-call risk is inferred). `CadenceApp.swift:13` and
+  `macOS/Services/CadenceAppDelegate.swift:10,27` both call the same registrar on a normal launch.
+  `registerIfNeeded()` checks `isRegisteredForRemoteNotifications`, so it may collapse to one OS call
+  depending on timing — the defect is that the launch wiring is duplicated while docs and history
+  describe the AppDelegate as *the* registration site, which is how a future launch audit or an App
+  Review explanation gets subtly wrong. Not a permission-prompt bug: the app still correctly avoids
+  `requestAuthorization()` on cold launch. Pick one owner (probably the AppDelegate), delete the other
+  call, and pin **exactly one production caller** with a source scan. Confirm:
+  `rg -n "registerIfNeeded\(|registerForRemoteNotifications\(" Cadence/CadenceApp.swift Cadence/macOS/Services/CadenceAppDelegate.swift`
+  **Closed 2026-08-30 **with its limit stated**. `CadenceApp.init()`'s call is gone; `applicationDidFinishLaunching` is the sole owner, pinned by a body-scoped scan. **No double OS registration was fixed or claimed** — `registerIfNeeded()` guards on `isRegisteredForRemoteNotifications`, which only turns true after a completed round trip, so the second caller *plausibly* fired a second registration, but nothing in a test host can observe that. Unproven either way, exactly as the audit had it. Three things are pinned: exactly one qualified caller and it is inside that method; the registrar is the only thing in the app calling AppKit's `registerForRemoteNotifications()`; and cold launch still calls no `requestAuthorization`. The scan reads comment-stripped source, which is load-bearing — the new tombstone comment names the call it no longer makes, and a raw scan would count it as the second caller.**
+
+- [T-476] **The iOS template editor's `BODY` label is the last hand-typed letterspacing in the app.**
+  `iOS/iOSSettingsTemplateAndListSections.swift:594` — a hand-rolled `SectionEyebrowLabel`, so the fix
+  is the component, which changes the weight from bold to semibold, and no macOS test target can render
+  an iOS view to check the result. `exactlyOneHandTypedLetterspacingIsLeftInTheApp` names this path;
+  closing it turns that expected list into `[]`. Also the last piece of [[T-442]]'s parity gap — macOS's
+  template Body label is already `CadenceSettingsField`'s eyebrow.
+  **Closed 2026-08-30. `SectionEyebrowLabel(text: "Body")`; `exactlyOneHandTypedLetterspacingIsLeftInTheApp` is now `noHandTypedLetterspacingIsLeftInTheApp` with an expected list of `[]`, plus a direct read of the site — an empty sweep and a sweep that stopped reading the file look identical. Size, tint, uppercasing and 0.8 tracking are value-preserved and asserted. **The weight goes bold → semibold and that result is unverified**: no macOS test target can render an iOS view. Somebody has to look at it on a phone.**
+
+- [T-479] **The iOS search surface never adopted `CadenceSearchMatcher.rank`.** Found while closing
+  [[T-372a]]. `iOSSearchView` scores through the shared `matchScore`, then sorts each of its seven
+  sections with a bare `.sorted { $0.score > $1.score }` (`:105,123,172,199,230,245,261`) — no title
+  leg, no identity leg. That is **more** partial than the state T-372 found macOS in, so two iPhone
+  results that merely tie on score come back in `@Query` order, and T-372a's fix does not reach them
+  because they never call `rank`. The shape is `GlobalSearchIndexSupport.rankedResults` — one funnel per
+  surface passing `title:` and `identity:` — not seven threaded closures.
+  **Closed 2026-08-30. **`iOSSearchResult.id = UUID()` was the real blocker** — a per-construction UUID *is* a total order, but a different one on every recomputation, so adopting it as the identity leg would have produced exactly the nondeterminism the leg removes while looking like a fix. `id` is a stable `String`, non-optional in the memberwise init ([[T-372a]]'s rule one level down). Also **six sections, not the ticket's seven**: `:123` is an idle-suggestion sort on dueDate-then-order, a different shape. Spellings live in a shared `CadenceSearchIdentity`, adopted by macOS's nine literals too, so the fix did not author a tenth hand-typed `"task-\(uuid)"`. Two are decisions: events tie on the **occurrence-scoped** identifier, deliberately against a neighbouring file whose prior leg is the start instant (this one's is the score, and a week of one standup scores and titles identically); and goals/habits both navigate to `.feature(...)` — the page, not the entity — which is why `id` is stored rather than derived. Idle-branch windows are [[T-498]].**
+
+- [T-494] **Three retired `iPad*` names survive in agent-facing docs.** `docs/IOS_AGENTS_REFERENCE.md:129,318`
+  and `docs/CLAUDE_REFERENCE.md:1149` still name `iPadTodayScheduleViews` and `iPadTodayView`.
+  [[T-283]]'s retired-name sweep covers `Cadence/**/*.swift` only, so these are unguarded and **will send
+  the next agent to files that do not exist**. Widen that sweep to `docs/`.
+  **Closed 2026-08-30, **and the free answer is "nothing else"**. Three names fixed across the two references; the retired-name list is now one constant read by both the code sweep and a new doc sweep, so a fifth name cannot be added to one copy only. The widened sweep walks the root guides, every scoped `AGENTS.md` and `docs/`, minus the two ticket ledgers — excluded **by rule**, because an archive entry describing a rename has to spell the old name. Checked both failure shapes repo-wide: the only absent identifiers left are four **tombstones** — sentences that exist to say a type never existed — which must stay, and one frozen audit snapshot whose citations were deliberately not rewritten, since that would make the snapshot describe a tree it was not taken from.**
 
 ## Cancelled
 

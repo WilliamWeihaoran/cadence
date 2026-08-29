@@ -60,7 +60,12 @@ nonisolated enum CadenceCalendarLinkRowState: Equatable, Sendable {
     /// picker as the label on the one hidden calendar it offers — and two surfaces wording the same
     /// state separately is how the pair drifts. `CadenceCalendarLinkHealth.missingLinkTitle` pins
     /// the *missing* wording for the same reason; this is the hidden half of it.
-    static func hiddenTitle(_ title: String) -> String { "\(title) (Hidden)" }
+    ///
+    /// **T-467.** The word itself now lives on `CadenceCalendarLinkExclusion`, because a second
+    /// surface excludes calendars for a second reason and needs a second word for the same shape.
+    static func hiddenTitle(_ title: String) -> String {
+        CadenceCalendarLinkExclusion.hidden.title(title)
+    }
 
     /// Whether the row draws its value as a set field.
     ///
@@ -121,6 +126,37 @@ nonisolated struct CadenceCalendarChoice: Equatable, Sendable {
     }
 }
 
+/// Why a calendar can be *stored* on a link and still sit outside the set a picker offers.
+///
+/// **T-467.** [[T-441]] and [[T-464]] built this machinery for one exclusion — the user has
+/// unticked the calendar in Cadence's calendar settings — and spelled that word into the label.
+/// The timeline's event editor excludes calendars for a different reason: it offers
+/// `CalendarManager.writableCalendars`, while the timeline's events are fetched from
+/// `availableCalendars`, which filters by visibility alone. So an event on an active **read-only**
+/// subscribed calendar reached a picker its own calendar was not in, and the row under a card that
+/// had just printed "Holidays" said "No calendar".
+///
+/// The two exclusions are the same shape and different words, so the shape is shared and the word
+/// is a parameter. Calling a read-only calendar "(Hidden)" would be this family of tickets' own
+/// collapse, one word further down.
+nonisolated enum CadenceCalendarLinkExclusion: Equatable, Sendable, CaseIterable {
+    /// The offer is what Cadence is showing; what it leaves out, the user hid in calendar settings.
+    case hidden
+    /// The offer is what the user can write to; what it leaves out is read-only or subscribed.
+    case readOnly
+
+    /// The parenthetical a surface puts after an excluded calendar's name.
+    var qualifier: String {
+        switch self {
+        case .hidden: "Hidden"
+        case .readOnly: "Read-only"
+        }
+    }
+
+    /// An excluded calendar's name, spelled the one way every surface spells it.
+    func title(_ title: String) -> String { "\(title) (\(qualifier))" }
+}
+
 /// One list's calendar link as the row *and* the picker see it, from one set of inputs.
 ///
 /// **T-464.** [[T-441]] taught the row to tell `.hidden` from `.missing`, and left the picker
@@ -147,26 +183,39 @@ nonisolated struct CadenceCalendarLink: Equatable, Sendable {
     let allCalendars: [CadenceCalendarChoice]
     /// The calendars Cadence is currently showing.
     let visibleCalendarIDs: Set<String>
+    /// **T-467.** Why a calendar can be outside `visibleCalendarIDs` — the word for the one
+    /// excluded calendar this link still offers. `.hidden` for the list editor, whose offer is
+    /// visibility; `.readOnly` for the event editor, whose offer is writability. The default is
+    /// `.hidden` because that is the offer every caller before T-467 had.
+    let exclusion: CadenceCalendarLinkExclusion
 
     init(
         linkedCalendarID: String,
         allCalendars: [CadenceCalendarChoice],
-        visibleCalendarIDs: Set<String>
+        visibleCalendarIDs: Set<String>,
+        exclusion: CadenceCalendarLinkExclusion = .hidden
     ) {
         self.linkedCalendarID = linkedCalendarID
         self.allCalendars = allCalendars
         self.visibleCalendarIDs = visibleCalendarIDs
+        self.exclusion = exclusion
     }
 
     /// The EventKit-shaped call, for the row. Same reason the row state has one: an `EKCalendar`'s
     /// `calendarIdentifier` is read-only, so the decision is untestable in its EventKit shape.
-    init(linkedCalendarID: String, allCalendars: [EKCalendar], visibleCalendars: [EKCalendar]) {
+    init(
+        linkedCalendarID: String,
+        allCalendars: [EKCalendar],
+        visibleCalendars: [EKCalendar],
+        exclusion: CadenceCalendarLinkExclusion = .hidden
+    ) {
         self.init(
             linkedCalendarID: linkedCalendarID,
             allCalendars: allCalendars.map {
                 CadenceCalendarChoice(id: $0.calendarIdentifier, title: $0.title)
             },
-            visibleCalendarIDs: Set(visibleCalendars.map(\.calendarIdentifier))
+            visibleCalendarIDs: Set(visibleCalendars.map(\.calendarIdentifier)),
+            exclusion: exclusion
         )
     }
 
@@ -183,7 +232,10 @@ nonisolated struct CadenceCalendarLink: Equatable, Sendable {
     ///
     /// The single question both surfaces ask. A `.missing` identifier answers `true` here too and
     /// that is harmless: it names no calendar, so it reaches no picker row and no label.
-    func isHidden(_ calendarID: String) -> Bool { !visibleCalendarIDs.contains(calendarID) }
+    func isExcluded(_ calendarID: String) -> Bool { !visibleCalendarIDs.contains(calendarID) }
+
+    /// The same question under the name it had when visibility was the only offer.
+    func isHidden(_ calendarID: String) -> Bool { isExcluded(calendarID) }
 
     /// The calendars the picker offers, in `allCalendars` order: everything visible, plus the
     /// linked one when it is hidden.
@@ -211,6 +263,6 @@ nonisolated struct CadenceCalendarLink: Equatable, Sendable {
 
     /// What a picker row is called. Reads the row's own spelling rather than a second one.
     func pickerLabel(title: String, calendarID: String) -> String {
-        isHidden(calendarID) ? CadenceCalendarLinkRowState.hiddenTitle(title) : title
+        isExcluded(calendarID) ? exclusion.title(title) : title
     }
 }

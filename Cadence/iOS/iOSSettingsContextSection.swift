@@ -196,7 +196,7 @@ struct iOSSettingsContextRow: View {
         HStack(spacing: iOSSettingsMetrics.glyphLabelSpacing) {
             iOSSettingsContextIcon(icon: context.icon, colorHex: context.colorHex)
 
-            Text(context.name.isEmpty ? "Untitled Context" : context.name)
+            Text(CadenceContextPickerSupport.title(for: context))
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
@@ -225,7 +225,7 @@ struct iOSSettingsArchivedContextRow: View {
             iOSSettingsContextIcon(icon: context.icon, colorHex: context.colorHex, opacity: 0.42)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(context.name.isEmpty ? "Untitled Context" : context.name)
+                Text(CadenceContextPickerSupport.title(for: context))
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Theme.muted)
                     .lineLimit(1)

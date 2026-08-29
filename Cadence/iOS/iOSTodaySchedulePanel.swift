@@ -510,7 +510,7 @@ private struct iOSScheduleReadyTaskRow: View {
                     taskInspector(task)
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(task.title.isEmpty ? "Untitled Task" : task.title)
+                        Text(TaskTitleSupport.displayTitle(task.title))
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Theme.text)
                             .lineLimit(1)

@@ -467,16 +467,18 @@ struct CadenceNotesListSupportTests {
         )
     }
 
-    /// The same rule stated over the whole app, and the one site still breaking it.
+    /// The same rule stated over the whole app, with nothing left breaking it.
     ///
-    /// After T-451 exactly one hand-typed letterspacing survives in `Cadence/`: the `BODY` label
-    /// above the **iOS** note-template editor, which is a hand-rolled eyebrow (uppercase, 10pt,
-    /// `Theme.dim`) and so wants `SectionEyebrowLabel` rather than a shared constant — a component
-    /// swap that changes the label's weight from bold to semibold, and this target cannot render an
-    /// iOS view to look at the result. So it is named here, the way the settings-separator sweep
-    /// names its one skipped pane: the hole is one line of test source, and closing it turns this
-    /// list into `[]`.
-    @Test func exactlyOneHandTypedLetterspacingIsLeftInTheApp() throws {
+    /// The expected list was `["Cadence/iOS/iOSSettingsTemplateAndListSections.swift"]` until
+    /// T-476 — the `BODY` label above the iOS note-template editor, a hand-rolled eyebrow
+    /// (uppercase, 10pt, `Theme.dim`, `.tracking(0.8)`) that wanted `SectionEyebrowLabel` rather
+    /// than a shared constant. It is that component now, so the list is `[]`.
+    ///
+    /// **The one thing this cannot say is what it looks like.** The swap changes the label's
+    /// weight from bold to semibold, because weight is the eyebrow component's decision, and this
+    /// bundle builds for macOS and cannot render an iOS view. The value assertions below are the
+    /// whole of the evidence: the *rendered* result of T-476 is unverified.
+    @Test func noHandTypedLetterspacingIsLeftInTheApp() throws {
         let handTypedLetterspacing = try notesLetterspacingLiteralInstrument()
         let paths = try notesSwiftFiles(under: "Cadence").sorted()
 
@@ -487,10 +489,44 @@ struct CadenceNotesListSupportTests {
             read: { CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0)) }
         )
 
-        #expect(
-            hits == ["Cadence/iOS/iOSSettingsTemplateAndListSections.swift"],
-            "the hand-typed letterspacing sites changed: \(hits)"
-        )
+        #expect(hits == [], "the hand-typed letterspacing sites changed: \(hits)")
+    }
+
+    /// The site the list above used to name, read directly — an empty sweep result is also what a
+    /// sweep that stopped reading that file would produce.
+    ///
+    /// Weight is the only thing the swap changes, and it is the only thing not asserted here:
+    /// `SectionEyebrowLabel` draws `.semibold`, the hand-rolled label drew `.bold`, and the size,
+    /// tint, uppercasing and 0.8 tracking are all value-preserved.
+    @Test func theIOSTemplateBodyLabelIsTheSharedEyebrow() throws {
+        let path = "Cadence/iOS/iOSSettingsTemplateAndListSections.swift"
+        let raw = try CadenceSourceScan.sourceFile(path)
+        // **Two readers, on purpose.** `codeOnly` masks string *literals* as well as comments —
+        // that is what makes it the right reader for a detector that must not fire on prose — so
+        // every needle below that carries a quoted string is invisible to it and a `contains`
+        // against it can never match. `strippingComments` blanks comments only, which is what
+        // these assertions need. Getting that backwards is a test that passes by never being
+        // true, in the shape this file's own header warns about.
+        let code = CadenceSourceScan.strippingComments(raw)
+        let masked = CadenceSourceScan.codeOnly(raw)
+
+        // Non-vacuity: this is still the template editor's file, and both readers ran without
+        // shortening it.
+        #expect(code.contains("struct iOSTemplateBodyEditor"))
+        #expect(code != raw)
+        #expect(code.count == raw.count)
+        #expect(masked.count == raw.count)
+        // The reader difference itself, so the pairing above cannot silently collapse to one.
+        #expect(!masked.contains("SectionEyebrowLabel(text: \"Body\")"))
+
+        #expect(code.contains("SectionEyebrowLabel(text: \"Body\")"))
+        #expect(!code.contains("Text(\"BODY\")"))
+        #expect(try notesLetterspacingLiteralInstrument().fires(on: masked) == false)
+
+        // What the component supplies in place of the four hand-typed modifiers.
+        #expect(SectionEyebrowLabel.Size.standard.fontSize == 10)
+        #expect(SectionEyebrowLabel.Size.standard.kerning == 0.8)
+        #expect("Body".uppercased() == "BODY")
     }
 
     /// Fires on a letterspacing modifier given a number, and not on one given a shared value.

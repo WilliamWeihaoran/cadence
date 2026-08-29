@@ -47,6 +47,15 @@ per-agent boilerplate.
 - **The coordinator stages finished trees into the user's repo while the batch is still running.** So the
   repo going dirty mid-run is expected and is not another agent editing it in place. Diff against **your
   own base commit**, not against the repo's current state, and do not "restore" files you did not touch.
+- **`CadenceSourceScan.codeOnly` blanks string literals as well as comments**, so a *quoted* needle can
+  never match there — a scan asserting `contains("SomeView(text: \"Body\")")` against `codeOnly` is
+  permanently, silently green. Use `strippingComments` for literal assertions and keep `codeOnly` for
+  the instrument, and pin that the two readers genuinely differ so the pairing cannot collapse. Three
+  agents hit this independently in one session; it is the single most repeated scan mistake here.
+- **`try? save()` has a rule now** (`AGENTS.md`, "The `try? save()` rule"), enforced by
+  `CadenceSaveCommitDisciplineTests`. Its two exemption lists carry the known remaining sites **by
+  function name**, and a stale entry fails the suite — so if you fix one, delete its entry in the same
+  change.
 - **Never** launch or build the Cadence app, kill a process named `Cadence`, use a simulator, touch
   the real app-group store, or set `CADENCE_MCP_ENABLE_WRITES`.
 - **Delete your DerivedData when you finish** (~1.7 GB) and release the lock.

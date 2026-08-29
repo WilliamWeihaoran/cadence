@@ -91,6 +91,26 @@ Long references, searchable only when needed:
 - iPhone and iPad share one style; they differ by layout, not by row/chip/header vocabulary.
 - Do not revert unrelated user or agent changes.
 
+### The `try? save()` rule
+
+`try? modelContext.save()` is the most-repeated line in this repo (108 of them under `Cadence/`).
+It is allowed, and it is allowed **only** when the save commits nothing but in-place field edits to
+objects the store already holds, and nothing after it tells the user it worked. A site breaks the
+rule if either half is true:
+
+1. **Existence** — the function also calls `modelContext.insert(…)` or `modelContext.delete(…)`.
+2. **Report** — something in the save's own block, after it, dismisses or reports success:
+   `dismiss()`, `isPresented = false`, `onSave(…)`.
+
+Both are fixed the same way: commit through `CadencePendingChangePersistence`
+(`commitInsert` / `commitDelete` / `commitEdit(in:undo:)`), `throws`, take the `commit:` parameter,
+and let the caller name the failure where the user is already looking.
+
+Why it matters: this app has **one** `ModelContext`, so a swallowed failure does not mean "the
+change did not happen" — the change stays *pending*, committed by the next unrelated `save()` from
+any other screen or discarded by the next unrelated `rollback()`. Enforced by
+`CadenceSaveCommitDisciplineTests`; see the runbook for its exemption lists.
+
 ## Build And Run Safety
 
 - Always build into a private `-derivedDataPath` when another build may be running.

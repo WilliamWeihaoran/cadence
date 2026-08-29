@@ -67,6 +67,40 @@ enum CadenceSourceScan {
         return nil
     }
 
+    /// Every `.swift` path under `relativeDirectory`, repo-relative.
+    ///
+    /// Enumerated by `enumerator(atPath:)` rather than `enumerator(at:)`: the URL variant yields
+    /// absolute paths, and `#filePath` can name the repo through a symlinked prefix (`/tmp` against
+    /// `/private/tmp` on an isolated build tree) that `FileManager` resolves and the literal does
+    /// not.
+    ///
+    /// **T-374.** Was `CadenceRetiredCopyTests`' own private helper, copied by the next sweep that
+    /// needed it — which is the defect shape that ticket is about, committed inside the test target
+    /// that enforces it.
+    static func swiftFiles(under relativeDirectory: String) throws -> [String] {
+        let directory = repositoryRoot().appendingPathComponent(relativeDirectory)
+        guard let enumerator = FileManager.default.enumerator(atPath: directory.path) else { return [] }
+        return enumerator.compactMap { element in
+            guard let name = element as? String, name.hasSuffix(".swift") else { return nil }
+            return "\(relativeDirectory)/\(name)"
+        }
+    }
+
+    /// Reads each file once and hands a sweep source with its comments already blanked.
+    ///
+    /// Reading and stripping every file once per *needle* would be quadratic twice over:
+    /// `strippingComments` rescans from the start of the string after each match, and a sweep runs
+    /// dozens of needles over 300-odd files.
+    static func strippedSourceReader() -> (String) throws -> String {
+        var cache: [String: String] = [:]
+        return { path in
+            if let hit = cache[path] { return hit }
+            let stripped = strippingComments(try sourceFile(path))
+            cache[path] = stripped
+            return stripped
+        }
+    }
+
     /// The number of matches for `pattern`, or `-1` when the pattern itself does not compile — a
     /// value no `== 0` assertion can pass by accident.
     static func matchCount(_ pattern: String, in text: String) -> Int {

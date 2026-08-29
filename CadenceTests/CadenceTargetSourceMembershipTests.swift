@@ -291,7 +291,10 @@ struct CadenceTargetSourceMembershipTests {
 /// Reads one target's Sources phase out of `project.pbxproj`, resolves it against the synchronized
 /// folders that target also gets for free, and works out which repository types that target
 /// therefore cannot see.
-private struct TargetSourceGraph {
+/// **T-374.** Internal rather than private: `CadenceSharedConstantReuseSweepTests` needs the same
+/// answer -- which files a target actually compiles -- and re-deriving it there would be this
+/// repo's most common defect shape committed inside the test that enforces it.
+struct TargetSourceGraph {
     let name: String
     /// Paths written into the Sources phase, verbatim.
     let listedPaths: Set<String>

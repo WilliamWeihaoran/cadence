@@ -131,7 +131,7 @@ struct CadenceBundleInspectorHostTests {
         bundle.tasks = [first, second]
         try context.save()
 
-        CadenceTaskMutationSupport.deleteBundle(bundle, modelContext: context)
+        try CadenceTaskMutationSupport.deleteBundle(bundle, modelContext: context)
 
         let survivors = try context.fetch(FetchDescriptor<AppTask>())
         #expect(Set(survivors.map(\.id)) == Set([first.id, second.id]))
@@ -164,7 +164,7 @@ struct CadenceBundleInspectorHostTests {
         bundle.tasks = [task]
         try context.save()
 
-        CadenceTaskMutationSupport.deleteBundle(bundle, modelContext: context)
+        try CadenceTaskMutationSupport.deleteBundle(bundle, modelContext: context)
 
         let survivor = try #require(try context.fetch(FetchDescriptor<AppTask>()).first)
         #expect(survivor.calendarEventID == "")

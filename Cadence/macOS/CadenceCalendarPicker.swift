@@ -9,12 +9,13 @@ import EventKit
 struct CadenceCalendarPickerList: View {
     let calendars: [EKCalendar]
     @Binding var selectedID: String
-    /// **T-464.** Identifiers among `calendars` that Cadence is not showing, which the list editor
-    /// fills from `CadenceCalendarLink.hiddenPickableCalendarIDs`. The picker does not work this out
-    /// for itself — it has never had the full calendar list to work it out *from*, and a second
-    /// opinion about which calendars are hidden is exactly what the ticket is about. Empty for every
-    /// caller that only ever offers visible calendars, which is the honest answer for them.
-    var hiddenCalendarIDs: Set<String> = []
+    /// **T-464/T-467.** The link this list is offering, when its offer can contain a calendar from
+    /// outside the normal set — the one already stored. The picker does not work out for itself
+    /// which calendar that is, or what to call it: it has never had the full calendar list to work
+    /// it out *from*, and a second opinion about which calendars are excluded is exactly what these
+    /// tickets are about. `nil` for every caller whose offer is closed, which is the honest answer
+    /// for them.
+    var link: CadenceCalendarLink? = nil
     var allowNone: Bool = true
     /// Called after the user taps a row so the parent can dismiss the popover.
     var onPick: (() -> Void)? = nil
@@ -68,12 +69,12 @@ struct CadenceCalendarPickerList: View {
         return items
     }
 
-    /// A calendar's name in this list. A hidden one carries the row's wording, so the calendar the
-    /// field row calls "Team (Hidden)" is the same words in the menu the row opens.
+    /// A calendar's name in this list. An excluded one carries the link's wording, so the calendar
+    /// the field row calls "Team (Hidden)" — or "Holidays (Read-only)" — is the same words in the
+    /// menu the row opens.
     private func label(for calendar: EKCalendar) -> String {
-        hiddenCalendarIDs.contains(calendar.calendarIdentifier)
-            ? CadenceCalendarLinkRowState.hiddenTitle(calendar.title)
-            : calendar.title
+        link?.pickerLabel(title: calendar.title, calendarID: calendar.calendarIdentifier)
+            ?? calendar.title
     }
 
     var body: some View {
@@ -236,6 +237,10 @@ struct CadenceCalendarPickerButton: View {
     let calendars: [EKCalendar]
     @Binding var selectedID: String
     var allowNone: Bool = true
+    /// **T-467.** The link this button is editing, when the offer it was handed can exclude the
+    /// calendar already stored. It words the button's value and the menu's row with one rule, so
+    /// the button cannot call a calendar something the menu under it does not.
+    var link: CadenceCalendarLink? = nil
     /// Pass `.compact` for tighter padding (e.g. inside table rows).
     var style: CadenceCalendarPickerStyle = .standard
 
@@ -243,6 +248,17 @@ struct CadenceCalendarPickerButton: View {
 
     private var selected: EKCalendar? {
         calendars.first { $0.calendarIdentifier == selectedID }
+    }
+
+    /// What the button prints for the calendar it is showing, or `nil` when it is showing none.
+    ///
+    /// Without a link this is the calendar's plain title, which is every closed offer's honest
+    /// answer. `nil` is still worded by the button itself: "no calendar" and the menu's "None" are
+    /// two different sentences in two different places, and unifying them is not this ticket.
+    private var selectedLabel: String? {
+        guard let selected else { return nil }
+        return link?.pickerLabel(title: selected.title, calendarID: selected.calendarIdentifier)
+            ?? selected.title
     }
 
     var body: some View {
@@ -259,7 +275,7 @@ struct CadenceCalendarPickerButton: View {
                 .frame(width: style.dotSize, height: style.dotSize)
 
                 // Label
-                Text(selected?.title ?? "No calendar")
+                Text(selectedLabel ?? "No calendar")
                     .font(.system(size: style.fontSize))
                     .foregroundStyle(selected != nil ? Theme.text : Theme.dim)
                     .lineLimit(1)
@@ -283,6 +299,7 @@ struct CadenceCalendarPickerButton: View {
                 CadenceCalendarPickerList(
                     calendars: calendars,
                     selectedID: $selectedID,
+                    link: link,
                     allowNone: allowNone,
                     onPick: { showPicker = false }
                 )

@@ -261,7 +261,7 @@ struct iOSMarkdownEditingSurface: View {
                     let subtitle = task.containerName.trimmingCharacters(in: .whitespacesAndNewlines)
                     return iOSMarkdownReferenceCompletionChoice(
                         id: "task-\(task.id.uuidString)",
-                        title: title.isEmpty ? "Untitled Task" : title,
+                        title: TaskTitleSupport.displayTitle(title),
                         subtitle: subtitle.isEmpty ? (task.isDone ? "Completed" : "Task") : subtitle,
                         systemImage: task.isDone ? "checkmark.circle.fill" : "checkmark.circle",
                         tint: task.isDone ? Theme.green : Theme.blue,

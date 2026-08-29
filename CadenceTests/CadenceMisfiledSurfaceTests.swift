@@ -112,7 +112,7 @@ struct TodayAndInboxNamingTests {
     /// were, and nothing else is. That allowlist is two entries and named, which is the point —
     /// a third file explaining the rename is a third file that has to justify itself.
     @Test func noLiveSourceSpellsARetiredIPadName() throws {
-        let retired = ["iPadInboxView", "iPadTodayView", "iPadTodayCompactViews", "iPadTodayScheduleViews"]
+        let retired = misfiledRetiredIPadNames
         let recordsTheRename: Set<String> = [
             "Cadence/iOS/iOSInboxView.swift",
             "Cadence/iOS/iPadTodaySupportViews.swift"
@@ -287,6 +287,65 @@ struct TodayAndInboxNamingTests {
         let code = CadenceSourceScan.codeOnly(try misfiledSourceFile("Cadence/iOS/iOSTodayView.swift"))
         let twoPane = try #require(CadenceSourceScan.functionBody(named: "twoPaneTodayLayout", in: code))
         #expect(twoPane.contains("iPadTodaySidePanel") == false)
+    }
+
+    // MARK: - T-494: the same sweep, over the docs that route agents
+
+    /// **The rename half-landed in the place it does the most damage.**
+    ///
+    /// `noLiveSourceSpellsARetiredIPadName` above walks `Cadence/**/*.swift` and nothing else, so
+    /// three retired names survived in `docs/IOS_AGENTS_REFERENCE.md` and `docs/CLAUDE_REFERENCE.md`
+    /// — the two files an agent is *told* to read before touching the iOS surface. A dangling name
+    /// in code is a compile error; a dangling name in a routing doc sends the next reader to a file
+    /// that does not exist, and nothing anywhere says so.
+    ///
+    /// **What the widened sweep found, in full.** Extending it to every first-party markdown file
+    /// turned up exactly those three and nothing else. Every other Cadence symbol named in the
+    /// agent docs but absent from the tree — `SidebarAreaDropDelegate`, `SidebarProjectDropDelegate`,
+    /// `TildeSectionPickerRow`, `TildeSectionSearchPanel` — is named by a sentence that exists to
+    /// say it does not exist. Those are tombstones, which is the opposite defect and must stay.
+    ///
+    /// The walk covers the root guides, every scoped `AGENTS.md`, and `docs/`, minus the two ticket
+    /// ledgers. `docs/TODO.md` and `docs/TODO_DONE.md` are *records*: an archive entry describing a
+    /// rename has to spell the old name, and a sweep that forbade it would forbid the archive from
+    /// being accurate. They are excluded by rule rather than allowlisted, because they change on
+    /// almost every commit and an allowlist entry with a non-vacuity check would turn a routine
+    /// ticket edit into a red suite.
+    @Test func noAgentFacingDocSpellsARetiredIPadName() throws {
+        let paths = try misfiledAgentFacingDocs()
+        // `docs/refactor-phases-4-6.md` is an audit snapshot taken at `249b475` and says so in its
+        // own header. Its findings cite the file names that existed *then*; rewriting them would
+        // make the snapshot describe a tree it was not taken from. Allowlisted by name, with the
+        // same non-vacuity check the code sweep uses on its allowlist.
+        let snapshot = "docs/refactor-phases-4-6.md"
+
+        var hits: [String] = []
+        for name in misfiledRetiredIPadNames {
+            let found = try misfiledRetiredNameInstrument(for: name).sweep(
+                paths,
+                // 29 first-party markdown files at the time of writing, minus the two ledgers.
+                atLeast: 20,
+                including: "docs/IOS_AGENTS_REFERENCE.md",
+                read: misfiledSourceFile
+            )
+            hits.append(contentsOf: found.filter { $0 != snapshot }.map { "\($0): \(name)" })
+        }
+        #expect(hits.isEmpty, "retired iPad names in agent-facing docs: \(hits.sorted())")
+
+        // The allowlist earns its place or it goes.
+        let frozen = try misfiledSourceFile(snapshot)
+        #expect(
+            misfiledRetiredIPadNames.contains { misfiledSpellsWord($0, in: frozen) },
+            "\(snapshot) is allowlisted but no longer names a retired surface"
+        )
+
+        // And the walk really reached the two files the ticket named, rather than a list that
+        // happens to be long enough.
+        for path in ["docs/IOS_AGENTS_REFERENCE.md", "docs/CLAUDE_REFERENCE.md", "Cadence/iOS/AGENTS.md"] {
+            #expect(paths.contains(path), "the doc walk missed \(path)")
+        }
+        #expect(paths.contains("docs/TODO.md") == false, "the ticket ledger is inside the sweep")
+        #expect(paths.contains("docs/TODO_DONE.md") == false, "the archive is inside the sweep")
     }
 }
 
@@ -698,4 +757,51 @@ private func misfiledWritesTheHorizontalSizeClass(_ source: String) -> Bool {
         "\\.environment\\(\\s*\\\\\\.horizontalSizeClass",
         in: CadenceSourceScan.codeOnly(source)
     ) > 0
+}
+
+/// The four names T-283 retired. One list, read by both the code sweep and the doc sweep — the
+/// second was written because the first covered `Cadence/**/*.swift` only, so a fifth name added
+/// to one copy and not the other is the exact way this pair would drift apart again.
+private let misfiledRetiredIPadNames = [
+    "iPadInboxView",
+    "iPadTodayView",
+    "iPadTodayCompactViews",
+    "iPadTodayScheduleViews"
+]
+
+/// Every first-party markdown file an agent is routed through: the root guides, each scoped
+/// `AGENTS.md`, and `docs/` — minus the two ticket ledgers, which are records rather than routing.
+///
+/// Enumerated with an explicit prune list rather than a whole-tree walk: an isolated verification
+/// copy carries `.codex-build/SourcePackages`, several hundred vendored markdown files that have
+/// nothing to do with Cadence and would make the `atLeast:` floor meaningless.
+private func misfiledAgentFacingDocs() throws -> [String] {
+    let pruned: Set<String> = [".git", ".build", ".codex-build", "node_modules", "DerivedData", "build"]
+    let ledgers: Set<String> = ["docs/TODO.md", "docs/TODO_DONE.md"]
+    let root = misfiledRepositoryRoot()
+    guard let enumerator = FileManager.default.enumerator(atPath: root.path) else { return [] }
+
+    var paths: [String] = []
+    for element in enumerator {
+        guard let name = element as? String else { continue }
+        if pruned.contains((name as NSString).lastPathComponent) {
+            enumerator.skipDescendants()
+            continue
+        }
+        guard name.hasSuffix(".md"), !ledgers.contains(name) else { continue }
+        paths.append(name)
+    }
+    return paths.sorted()
+}
+
+/// Whole-word, so `iPadTodayView` does not fire on `iPadTodayViewModel`. The negative witness is
+/// the longer name it must not swallow — the near miss `misfiledSpellsWord` exists to handle, now
+/// pinned as a build requirement of the sweep rather than as a comment about it.
+private func misfiledRetiredNameInstrument(for name: String) throws -> CadenceScanInstrument {
+    try CadenceScanInstrument(
+        "retired iPad name \(name)",
+        fires: "- **The host decides, the list draws.** `\(name)` holds the `@AppStorage` day key.",
+        andNotOn: "- **The host decides, the list draws.** `\(name)Model` holds the `@AppStorage` day key.",
+        by: { misfiledSpellsWord(name, in: $0) }
+    )
 }

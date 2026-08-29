@@ -96,13 +96,12 @@ struct iOSSearchView: View {
         }
 
         if isSearching {
-            return candidates.compactMap { candidate in
+            return iOSSearchIndexSupport.rankedResults(candidates.compactMap { candidate in
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: candidate.fields) else {
                     return nil
                 }
                 return candidate.result(score: score)
-            }
-            .sorted { $0.score > $1.score }
+            })
         }
 
         return candidates.prefix(5).map { $0.result(score: 0) }
@@ -163,13 +162,12 @@ struct iOSSearchView: View {
         }
 
         if isSearching {
-            return listItems.compactMap { candidate in
+            return iOSSearchIndexSupport.rankedResults(listItems.compactMap { candidate in
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: candidate.fields) else {
                     return nil
                 }
                 return candidate.result(score: score)
-            }
-            .sorted { $0.score > $1.score }
+            })
         }
 
         return Array(listItems.prefix(8)).map { $0.result(score: 0) }
@@ -185,7 +183,7 @@ struct iOSSearchView: View {
         let taskTitles = MarkdownTaskEmbedTitleCache.titles(for: tasks)
 
         if isSearching {
-            return searchableNotes.compactMap { note in
+            return iOSSearchIndexSupport.rankedResults(searchableNotes.compactMap { note in
                 let tagText = CadenceSearchTagSupport.text(for: note.sortedTags)
                 let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
                 guard let score = CadenceSearchMatcher.matchScore(
@@ -195,8 +193,7 @@ struct iOSSearchView: View {
                     return nil
                 }
                 return noteResult(note, score: score, taskTitles: taskTitles)
-            }
-            .sorted { $0.score > $1.score }
+            })
         }
 
         return searchableNotes.prefix(8).map { noteResult($0, score: 0, taskTitles: taskTitles) }
@@ -206,6 +203,12 @@ struct iOSSearchView: View {
         let candidates = goals.filter { $0.status != .done }.map { goal in
             let summary = GoalContributionResolver.summary(for: goal)
             return iOSSearchResult(
+                // The destination is the Goals *page* — this row navigates there rather than to
+                // the goal — so it cannot supply the identity, and neither can `.feature(.habits)`
+                // below. That is the whole reason `iOSSearchResult.id` is stored rather than
+                // derived from `destination`: this one section merges two tables behind one
+                // destination apiece, so deriving would give every goal `page-goals`.
+                id: CadenceSearchIdentity.goal(goal.id),
                 destination: .feature(.goals),
                 title: goal.title.isEmpty ? "Untitled Goal" : goal.title,
                 subtitle: goal.parentGoal?.title ?? goal.context?.name ?? goal.kind.label,
@@ -216,6 +219,7 @@ struct iOSSearchView: View {
             )
         } + habits.map { habit in
             iOSSearchResult(
+                id: CadenceSearchIdentity.habit(habit.id),
                 destination: .feature(.habits),
                 title: habit.title.isEmpty ? "Untitled Habit" : habit.title,
                 subtitle: habit.goal?.title ?? habit.context?.name ?? habit.frequencySummary,
@@ -227,7 +231,7 @@ struct iOSSearchView: View {
         }
 
         if isSearching {
-            return candidates.filter { $0.score > 0 }.sorted { $0.score > $1.score }
+            return iOSSearchIndexSupport.rankedResults(candidates.filter { $0.score > 0 })
         }
 
         return Array(candidates.prefix(8))
@@ -235,14 +239,13 @@ struct iOSSearchView: View {
 
     private var eventResults: [iOSSearchResult] {
         if isSearching {
-            return calendarSearchEvents.compactMap { event in
+            return iOSSearchIndexSupport.rankedResults(calendarSearchEvents.compactMap { event in
                 let fields = eventSearchFields(for: event)
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: fields) else {
                     return nil
                 }
                 return eventResult(event, score: score)
-            }
-            .sorted { $0.score > $1.score }
+            })
         }
 
         return calendarSearchEvents.prefix(8).map { eventResult($0, score: 0) }
@@ -252,19 +255,19 @@ struct iOSSearchView: View {
     /// this used to build by hand had no lifecycle aliases and no tag slugs, so *done*,
     /// *completed* and a hand-set slug found tasks on the Mac and nothing here (T-377).
     private var rankedTaskResults: [iOSSearchResult] {
-        searchableTasks.compactMap { task in
+        iOSSearchIndexSupport.rankedResults(searchableTasks.compactMap { task in
             guard let score = CadenceTaskSearchSupport.matchScore(query: trimmedQuery, task: task) else {
                 return nil
             }
             return taskResult(task, score: score)
-        }
-        .sorted { $0.score > $1.score }
+        })
     }
 
     private func taskResult(_ task: AppTask, score: Int) -> iOSSearchResult {
         iOSSearchResult(
+            id: CadenceSearchIdentity.task(task.id),
             destination: .task(task),
-            title: task.title.isEmpty ? "Untitled Task" : task.title,
+            title: TaskTitleSupport.displayTitle(task.title),
             subtitle: taskSubtitle(task),
             detail: taskDetail(task),
             icon: taskIcon(for: CadenceTaskSearchSupport.glyph(for: task)),
@@ -592,6 +595,10 @@ struct iOSSearchView: View {
 
     private func eventResult(_ event: EKEvent, score: Int) -> iOSSearchResult {
         iOSSearchResult(
+            // Occurrence-scoped. `rawIdentifier` is shared by every occurrence of a recurring
+            // series, and a week of standups scores and titles identically — so the raw one is not
+            // a tie-break here at all. See `CadenceSearchIdentity.event`.
+            id: CadenceSearchIdentity.event(CadenceEventNoteSupport.identifier(for: event)),
             destination: .event(event),
             title: iOSCalendarEventSupport.title(for: event),
             subtitle: event.calendar?.title ?? "Apple Calendar",
@@ -613,6 +620,7 @@ struct iOSSearchView: View {
 
     private func noteResult(_ note: Note, score: Int, taskTitles: [UUID: String]) -> iOSSearchResult {
         iOSSearchResult(
+            id: CadenceSearchIdentity.note(note.id),
             destination: .note(note),
             title: note.displayTitle,
             subtitle: noteSubtitle(note),

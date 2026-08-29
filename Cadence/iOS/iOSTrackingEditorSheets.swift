@@ -52,6 +52,10 @@ struct iOSGoalEditorSheet: View {
     @State private var parentGoalID: UUID?
     @State private var showParentGoalPicker = false
     @State private var showContextPicker = false
+    /// T-322, and the same slot `iOSCalendarQuickCreateSheet` keeps for the same reason: what went
+    /// wrong stays on the sheet the user is looking at, rather than travelling out with a
+    /// `dismiss()` that should not have happened.
+    @State private var actionError: String?
 
     init(mode: iOSGoalEditorMode, onSave: @escaping (Goal) -> Void = { _ in }) {
         self.mode = mode
@@ -135,6 +139,7 @@ struct iOSGoalEditorSheet: View {
             tint: Color(hex: colorHex),
             save: save
         ) {
+            actionErrorNotice
             iOSTrackingTextField(title: "Title", placeholder: "e.g. Become more knowledgeable", text: $title)
             iOSTrackingTextField(title: "Definition of Done", placeholder: "What does done look like?", text: $desc, axis: .vertical)
 
@@ -251,24 +256,50 @@ struct iOSGoalEditorSheet: View {
         }
     }
 
+    /// The same notice the calendar sheets show, in the same component, reading a string held
+    /// beside the mutation that throws it (T-322).
+    @ViewBuilder
+    private var actionErrorNotice: some View {
+        if let actionError {
+            iOSEditorSection(title: nil, style: .ruled) {
+                Text(actionError)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    /// T-322. `onSave` and `dismiss()` are reachable only through the `try` succeeding. The `nil`
+    /// answer — an empty title, which `canSave` already prevents — stays a silent return and does
+    /// not dismiss, the same separation `iOSCalendarQuickCreateSheet.createTask()` draws.
     private func save() {
-        guard let goal = CadenceTrackingMutationSupport.saveGoal(
-            editingGoal,
-            title: title,
-            desc: desc,
-            startDate: DateFormatters.dateKey(from: startDate),
-            endDate: DateFormatters.dateKey(from: max(startDate, endDate)),
-            progressType: progressType,
-            targetHours: targetHours,
-            icon: icon,
-            colorHex: colorHex,
-            kind: kind,
-            status: status,
-            context: selectedContext,
-            parentGoal: selectedParentGoal,
-            allGoals: allGoals,
-            modelContext: modelContext
-        ) else { return }
+        let goal: Goal?
+        do {
+            goal = try CadenceTrackingMutationSupport.saveGoal(
+                editingGoal,
+                title: title,
+                desc: desc,
+                startDate: DateFormatters.dateKey(from: startDate),
+                endDate: DateFormatters.dateKey(from: max(startDate, endDate)),
+                progressType: progressType,
+                targetHours: targetHours,
+                icon: icon,
+                colorHex: colorHex,
+                kind: kind,
+                status: status,
+                context: selectedContext,
+                parentGoal: selectedParentGoal,
+                allGoals: allGoals,
+                modelContext: modelContext
+            )
+        } catch {
+            actionError = CadenceTrackingMutationSupport.goalSaveFailureNotice
+            return
+        }
+        guard let goal else { return }
+        actionError = nil
         onSave(goal)
         dismiss()
     }
@@ -298,6 +329,8 @@ struct iOSHabitEditorSheet: View {
     @State private var showGoalPicker = false
     @State private var showContextPicker = false
     @State private var showReminderTimePicker = false
+    /// See `iOSGoalEditorSheet.actionError` (T-322).
+    @State private var actionError: String?
 
     init(mode: iOSHabitEditorMode, onSave: @escaping (Habit) -> Void = { _ in }) {
         self.mode = mode
@@ -380,6 +413,7 @@ struct iOSHabitEditorSheet: View {
             tint: Color(hex: colorHex),
             save: save
         ) {
+            actionErrorNotice
             iOSTrackingTextField(title: "Title", placeholder: "e.g. Read for 20 minutes", text: $title)
 
             iOSTrackingPickerSection(title: "Goal") {
@@ -495,23 +529,60 @@ struct iOSHabitEditorSheet: View {
         return "\(parentName) › \(name)"
     }
 
+    /// See `iOSGoalEditorSheet.actionErrorNotice` (T-322).
+    @ViewBuilder
+    private var actionErrorNotice: some View {
+        if let actionError {
+            iOSEditorSection(title: nil, style: .ruled) {
+                Text(actionError)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    /// T-322, and this one had a second swallowed save under the first: `reminderMinuteOfDay` is
+    /// written *after* `saveHabit` returns and was committed by its own `try?`. Both go through the
+    /// reminder edit now, so a refused write cannot leave the habit saved with a reminder the store
+    /// never took — the notification reconcile below would then schedule against a value only this
+    /// process believes in.
     private func save() {
         let frequency = resolvedFrequency()
-        guard let habit = CadenceTrackingMutationSupport.saveHabit(
-            editingHabit,
-            title: title,
-            icon: icon,
-            colorHex: colorHex,
-            frequencyType: frequencyType,
-            frequencyDays: frequency.days,
-            targetCount: frequency.targetCount,
-            context: selectedContext,
-            goal: selectedGoal,
-            allHabits: allHabits,
-            modelContext: modelContext
-        ) else { return }
+        let habit: Habit?
+        do {
+            habit = try CadenceTrackingMutationSupport.saveHabit(
+                editingHabit,
+                title: title,
+                icon: icon,
+                colorHex: colorHex,
+                frequencyType: frequencyType,
+                frequencyDays: frequency.days,
+                targetCount: frequency.targetCount,
+                context: selectedContext,
+                goal: selectedGoal,
+                allHabits: allHabits,
+                modelContext: modelContext
+            )
+        } catch {
+            actionError = CadenceTrackingMutationSupport.habitSaveFailureNotice
+            return
+        }
+        guard let habit else { return }
+
+        let previousReminder = habit.reminderMinuteOfDay
         habit.reminderMinuteOfDay = hasReminder ? reminderMinuteOfDay : nil
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext) {
+                habit.reminderMinuteOfDay = previousReminder
+            }
+        } catch {
+            actionError = CadenceTrackingMutationSupport.habitSaveFailureNotice
+            return
+        }
+
+        actionError = nil
         HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
         onSave(habit)
         dismiss()

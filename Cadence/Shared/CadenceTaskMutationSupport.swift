@@ -413,6 +413,21 @@ enum CadenceTaskMutationSupport {
     /// family's second sentence exists to deny.
     static let bundleSaveFailureNotice = "Couldn't save this block."
 
+    /// Shown when a block the user asked to delete could not be committed (T-322).
+    ///
+    /// It carries the delete family's second sentence — `deleteFailureNotice`,
+    /// `CadenceListDeletionKind.deleteFailureNotice` and `CadenceNoteDeletionSummary` all promise
+    /// the same thing — because `deleteBundle` now rolls back, so the block really is back where
+    /// the user can see it. `bundleSaveFailureNotice` above deliberately has no such clause; a
+    /// refused *creation* has nothing to fear losing, and a refused deletion does.
+    static let bundleDeleteFailureNotice = "Couldn't delete this block. Nothing was removed."
+
+    /// The alert title that carries `bundleDeleteFailureNotice` on iOS.
+    ///
+    /// Beside the sentence for the reason `deleteFailureAlertTitle` gives: the title and the body
+    /// travel together, so there is no arrangement in which one is updated alone.
+    static let bundleDeleteFailureAlertTitle = "Couldn't Delete Block"
+
     /// - Parameter commit: See `deleteTasks(withIDs:modelContext:commitsImmediately:commit:…)`.
     @discardableResult
     static func delete(
@@ -973,7 +988,22 @@ enum CadenceTaskMutationSupport {
     /// `Cadence/Models/AGENTS.md`) — so this is not a live bug being fixed. It is the two loops
     /// agreeing: a value left on disk by an older build, or arriving from CloudKit, must not
     /// survive one of the two ways a bundle can end and not the other.
-    static func deleteBundle(_ bundle: TaskBundle, modelContext: ModelContext) {
+    ///
+    /// **Throws when the commit is refused (T-322).** It used to end `try? modelContext.save()`,
+    /// and its one production caller — `iOSCalendarBundleDetailSheet`'s "Delete Block" — dismissed
+    /// straight afterwards, so a refused delete closed the sheet exactly as a successful one does.
+    /// That is the shape `delete(_:modelContext:commit:)` two hundred lines above was already fixed
+    /// into (T-365), and this is the sibling that was missed: the *other* way a block can end.
+    ///
+    /// `commitDelete` rolls back, so `bundleDeleteFailureNotice` can say nothing was removed and be
+    /// telling the truth — the block and its members are visible again, unbundling and all.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitDelete(in:commit:)`.
+    static func deleteBundle(
+        _ bundle: TaskBundle,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         for task in bundle.tasks ?? [] {
             task.bundle = nil
             task.bundleOrder = 0
@@ -984,7 +1014,7 @@ enum CadenceTaskMutationSupport {
 
         bundle.tasks = []
         modelContext.delete(bundle)
-        try? modelContext.save()
+        try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)
     }
 
     private static func nextContainerOrder(

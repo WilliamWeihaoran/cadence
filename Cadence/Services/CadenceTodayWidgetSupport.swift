@@ -242,18 +242,15 @@ nonisolated enum CadenceTodayWidgetSupport {
 /// widget on a French phone rendered `SAM.` and `15 août` beside the app's English chrome on the
 /// same home screen. The pinned formatters are the whole point of that file.
 nonisolated enum CadenceWidgetDateSupport {
-    /// Gregorian regardless of `Calendar.current`'s identifier, matching `DateFormatters.ymd`,
-    /// which is what every stored key was written with. The hand-rolled copy this replaces once
-    /// read its components off `Calendar.current`: under a Buddhist current calendar `dateKey`
-    /// then returned `"2569-08-11"`, which matches no row in the store, so the Today and Calendar
-    /// widgets rendered permanently empty and every task read "Overdue".
-    nonisolated static func storageCalendar(inheritingTimeZoneFrom calendar: Calendar) -> Calendar {
-        DateFormatters.storageCalendar(inheritingTimeZoneFrom: calendar)
-    }
-
     /// Calendar-injectable core. The `Calendar.current` convenience below is what the widget
     /// actually calls, but a test host is always Gregorian, so without a seam no assertion here
     /// can tell a correct implementation from one that reads `Calendar.current`'s components.
+    ///
+    /// The Gregorian forcing that keeps these keys matching the store lives in
+    /// `DateFormatters.storageCalendar(inheritingTimeZoneFrom:)`, which documents the Buddhist /
+    /// Japanese / Islamic keys a `Calendar.current` read produced. This enum used to re-expose
+    /// that as a forwarding member of its own; the collapse in `0e78c5b` left it with no callers,
+    /// and T-453 removed it. Reach for `DateFormatters` directly if a widget ever needs it again.
     nonisolated static func dateKey(from date: Date, calendar: Calendar) -> String {
         DateFormatters.dateKey(from: date, calendar: calendar)
     }

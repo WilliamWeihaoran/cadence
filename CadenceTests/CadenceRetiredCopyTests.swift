@@ -270,23 +270,12 @@ private func retiredCopyInstrument(for phrase: CadenceRetiredPhrase) throws -> C
 /// rescans from the start of the string after each match, which is quadratic, and there are seven
 /// phrases and 300-odd files.
 private func retiredCopyStrippedSourceReader() -> (String) throws -> String {
-    var cache: [String: String] = [:]
-    return { path in
-        if let hit = cache[path] { return hit }
-        let stripped = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
-        cache[path] = stripped
-        return stripped
-    }
+    CadenceSourceScan.strippedSourceReader()
 }
 
 /// Enumerated by `enumerator(atPath:)` rather than `enumerator(at:)`: the URL variant yields
 /// absolute paths, and `#filePath` can name the repo through a symlinked prefix (`/tmp` against
 /// `/private/tmp` on an isolated build tree) that `FileManager` resolves and the literal does not.
 private func retiredCopySwiftFiles(under relativeDirectory: String) throws -> [String] {
-    let directory = CadenceSourceScan.repositoryRoot().appendingPathComponent(relativeDirectory)
-    guard let enumerator = FileManager.default.enumerator(atPath: directory.path) else { return [] }
-    return enumerator.compactMap { element in
-        guard let name = element as? String, name.hasSuffix(".swift") else { return nil }
-        return "\(relativeDirectory)/\(name)"
-    }
+    try CadenceSourceScan.swiftFiles(under: relativeDirectory)
 }

@@ -363,4 +363,228 @@ struct CadenceSearchCandidateSupportTests {
         // And it is the *set* that decides, not the arrival order.
         #expect(GlobalSearchIndexSupport.rankedResults(descending.reversed(), query: "admin").map(\.id) == ranked.map(\.id))
     }
+
+    // MARK: - T-479: the iOS surface's tie-break
+
+    private static let iOSSearchSupportPath = "Cadence/iOS/iOSSearchSupportViews.swift"
+
+    /// A UUID identifies a row only as long as no second table is in the list with it.
+    ///
+    /// **Behavioural.** iOS's Lists section is areas *and* projects and its "Goals and Habits"
+    /// section is both; macOS's palette merges nine categories into one ranked list. So the
+    /// identity leg has to carry the entity **type**, which is the same conclusion
+    /// `CadenceReadService.search` reached when it tied on `entityType:entityId` rather than on
+    /// `entityId` (T-372a).
+    ///
+    /// The fixture gives every case the *same* UUID on purpose: that is the collision a bare
+    /// `uuidString` cannot survive, and nothing else in the string would distinguish them.
+    @Test func aSearchIdentityCarriesTheEntityTypeSoOneSectionCanMergeTwoTables() {
+        let shared = UUID()
+        let byType = [
+            CadenceSearchIdentity.task(shared),
+            CadenceSearchIdentity.area(shared),
+            CadenceSearchIdentity.project(shared),
+            CadenceSearchIdentity.goal(shared),
+            CadenceSearchIdentity.habit(shared),
+            CadenceSearchIdentity.note(shared),
+            CadenceSearchIdentity.eventNote(shared)
+        ]
+
+        #expect(byType.count == 7)
+        #expect(Set(byType).count == 7, "two entity types share an identity: \(byType)")
+        #expect(byType.allSatisfy { $0.hasSuffix(shared.uuidString) })
+
+        // The values, pinned. macOS's palette has spelled these nine since long before T-479 and
+        // this change moved them behind the enum without changing one of them.
+        #expect(CadenceSearchIdentity.task(shared) == "task-\(shared.uuidString)")
+        #expect(CadenceSearchIdentity.area(shared) == "area-\(shared.uuidString)")
+        #expect(CadenceSearchIdentity.project(shared) == "project-\(shared.uuidString)")
+        #expect(CadenceSearchIdentity.goal(shared) == "goal-\(shared.uuidString)")
+        #expect(CadenceSearchIdentity.habit(shared) == "habit-\(shared.uuidString)")
+        #expect(CadenceSearchIdentity.note(shared) == "note-\(shared.uuidString)")
+        #expect(CadenceSearchIdentity.eventNote(shared) == "event-note-\(shared.uuidString)")
+        #expect(CadenceSearchIdentity.event("series-1") == "event-series-1")
+        #expect(CadenceSearchIdentity.page("today") == "page-today")
+        #expect(CadenceSearchIdentity.command("newTask") == "command-newTask")
+    }
+
+    /// The macOS half of the same claim, called rather than read: the two catalog sections need no
+    /// store, so their ids can be checked against the strings the palette shipped with.
+    @Test func theMacOSPaletteStillBuildsTheIdsItAlwaysDid() throws {
+        let commands = GlobalSearchIndexSupport.commandResults(
+            query: "",
+            sidebarTabColorsRaw: CadencePreferenceKeys.emptySidebarPreference
+        )
+        let pages = GlobalSearchIndexSupport.pageResults(
+            query: "",
+            hiddenTabs: [],
+            sidebarTabColorsRaw: CadencePreferenceKeys.emptySidebarPreference
+        )
+
+        // Non-vacuity: both catalogs produced rows, so `allSatisfy` is not passing on nothing.
+        #expect(commands.count > 3)
+        #expect(pages.count > 3)
+        #expect(commands.allSatisfy { $0.id.hasPrefix("command-") })
+        #expect(pages.allSatisfy { $0.id.hasPrefix("page-") })
+        #expect(Set(commands.map(\.id)).count == commands.count)
+        #expect(Set(pages.map(\.id)).count == pages.count)
+
+        let first = try #require(GlobalSearchCommandDefinition.all.first)
+        #expect(commands.contains { $0.id == "command-\(first.command.rawValue)" })
+
+        let fixture = try makeTaskFixture()
+        let tasks = GlobalSearchIndexSupport.taskResults(tasks: fixture.tasks, query: "roadmap")
+        #expect(tasks.map(\.id) == ["task-\(fixture.scheduled.id.uuidString)"])
+    }
+
+    /// **Behavioural, and it is the type prefix that is under test.**
+    ///
+    /// Four rows from the one section that merges goals and habits. Every adjacent pair disagrees
+    /// on exactly one tier while the tiers *below* it point the other way, which is what makes the
+    /// expectation discriminating — the trap T-372a's agent recorded is a fixture whose score order
+    /// and title order agree, where sorting by either alone gives the same answer.
+    ///
+    /// - `Admin/goal-…0002` before `Admin/habit-…0001`: same score, same title, **identity**
+    ///   decides — and it decides on the prefix, because the UUIDs point the other way. That pair
+    ///   is the whole argument for the prefix, asserted again below by ranking the same rows on
+    ///   bare UUIDs and watching them swap.
+    /// - both before `Zulu/goal-…0001`: same score, **title** decides, against an identity that
+    ///   sorts first.
+    /// - all before `AAA/goal-…0000`, whose title and identity both sort first and whose **score**
+    ///   does not.
+    @Test func twoRowsFromDifferentTablesInOneSectionRankByTypeThenEntity() {
+        func uuid(_ tail: Int) -> UUID {
+            UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", tail)) ?? UUID()
+        }
+        struct Row { let title: String; let score: Int; let identity: String; let entity: UUID }
+
+        let rows = [
+            Row(title: "Admin", score: 100, identity: CadenceSearchIdentity.goal(uuid(2)), entity: uuid(2)),
+            Row(title: "Admin", score: 100, identity: CadenceSearchIdentity.habit(uuid(1)), entity: uuid(1)),
+            Row(title: "Zulu", score: 100, identity: CadenceSearchIdentity.goal(uuid(1)), entity: uuid(1)),
+            Row(title: "AAA", score: 50, identity: CadenceSearchIdentity.goal(uuid(0)), entity: uuid(0))
+        ]
+
+        func ranked(_ input: [Row], identity: @escaping (Row) -> String) -> [String] {
+            CadenceSearchMatcher.rank(input, score: { $0.score }, title: { $0.title }, identity: identity)
+                .map { "\($0.title)/\($0.identity)" }
+        }
+
+        let byIdentity = ranked(rows) { $0.identity }
+        #expect(byIdentity == [
+            "Admin/\(CadenceSearchIdentity.goal(uuid(2)))",
+            "Admin/\(CadenceSearchIdentity.habit(uuid(1)))",
+            "Zulu/\(CadenceSearchIdentity.goal(uuid(1)))",
+            "AAA/\(CadenceSearchIdentity.goal(uuid(0)))"
+        ])
+
+        // A function of the *set*, not of the order the store handed the rows over in — the
+        // property the whole leg exists for, and the one a bare `.sorted { $0.score > $1.score }`
+        // cannot have.
+        #expect(ranked(rows.reversed()) { $0.identity } == byIdentity)
+
+        // The prefix is load-bearing: on bare UUIDs the first two swap, because habit …0001 sorts
+        // ahead of goal …0002.
+        let byBareUUID = ranked(rows) { $0.entity.uuidString }
+        #expect(byBareUUID != byIdentity)
+        #expect(byBareUUID.first == "Admin/\(CadenceSearchIdentity.habit(uuid(1)))")
+    }
+
+    /// **Behavioural.** An event row's identity is occurrence-scoped, and it has to be.
+    ///
+    /// `CadenceCalendarEventSearchSupport.identity(of:)` deliberately drops the `#occurrence=`
+    /// suffix and says why: the leg before it there is the start instant, which two occurrences of
+    /// one series never share. Here the leg before it is the **score**, and a week of the same
+    /// standup scores and titles identically — so the suffix is the only thing left to separate
+    /// them, and `rawIdentifier` would put the whole series back in fetch order.
+    @Test func aRecurringSeriesRanksByOccurrenceRatherThanByTheIdentifierItsOccurrencesShare() {
+        let base = "series-1"
+        let monday = Date(timeIntervalSince1970: 1_700_000_000)
+        let tuesday = monday.addingTimeInterval(86_400)
+        let first = CadenceEventNoteSupport.occurrenceIdentifier(baseIdentifier: base, occurrenceDate: monday)
+        let second = CadenceEventNoteSupport.occurrenceIdentifier(baseIdentifier: base, occurrenceDate: tuesday)
+
+        #expect(first != second)
+        #expect(CadenceEventNoteSupport.lookupIdentifier(from: first) == base)
+        #expect(CadenceEventNoteSupport.lookupIdentifier(from: second) == base)
+
+        struct Row { let occurrence: String }
+        let rows = [Row(occurrence: second), Row(occurrence: first)]
+
+        func ranked(_ input: [Row], identity: @escaping (Row) -> String) -> [String] {
+            CadenceSearchMatcher.rank(input, score: { _ in 100 }, title: { _ in "Standup" }, identity: identity)
+                .map(\.occurrence)
+        }
+
+        let scoped = ranked(rows) { CadenceSearchIdentity.event($0.occurrence) }
+        #expect(scoped == [first, second])
+        #expect(ranked(rows.reversed()) { CadenceSearchIdentity.event($0.occurrence) } == scoped)
+
+        // The identifier the other comparator uses is the same string for both, so it cannot break
+        // this tie: the sort can only echo its input, and the two calls disagree.
+        let raw = { (row: Row) in CadenceEventNoteSupport.lookupIdentifier(from: row.occurrence) }
+        #expect(ranked(rows) { CadenceSearchIdentity.event(raw($0)) } != ranked(rows.reversed()) { CadenceSearchIdentity.event(raw($0)) })
+    }
+
+    /// **Source-shape, not behavioural.** `Cadence/iOS/` is behind `#if os(iOS)` and this bundle
+    /// builds for macOS, so nothing here calls `iOSSearchIndexSupport.rankedResults`; the claim is
+    /// that all six scored sections reach it and that none of them still sorts on score alone.
+    @Test func everyScoredIOSSearchSectionRanksThroughTheOneFunnel() throws {
+        let raw = try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath)
+        let stripped = CadenceSourceScan.strippingComments(raw)
+
+        // Non-vacuity: the file was read, the stripper ran, and all six sections are still here.
+        #expect(raw.contains("struct iOSSearchView"))
+        #expect(stripped != raw)
+        #expect(stripped.count == raw.count)
+        for section in ["pageResults", "listResults", "noteResults", "progressResults", "eventResults", "rankedTaskResults"] {
+            #expect(stripped.contains("private var \(section)"), "\(section) is no longer a section on this screen")
+        }
+
+        #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedResults\\(", in: stripped) == 6)
+
+        // The six bare comparators this ticket removed, and a self-check that the pattern still
+        // matches the shape it is looking for.
+        #expect(CadenceSourceScan.matchCount("\\.sorted \\{ \\$0\\.score", in: stripped) == 0)
+        #expect(
+            CadenceSourceScan.matchCount("\\.sorted \\{ \\$0\\.score", in: "    .sorted { $0.score > $1.score }\n") == 1
+        )
+    }
+
+    /// **Source-shape.** The funnel itself, and the identity it ties on.
+    ///
+    /// `iOSSearchResult.id` was `let id = UUID()`, minted per construction — total, but a
+    /// *different* total order on every recomputation, which is the nondeterminism the leg exists
+    /// to remove rather than a fix for it.
+    @Test func theIOSFunnelTiesOnAStableIdentityRatherThanAFreshUUID() throws {
+        let raw = try CadenceSourceScan.sourceFile(Self.iOSSearchSupportPath)
+        let stripped = CadenceSourceScan.strippingComments(raw)
+
+        #expect(raw.contains("struct iOSSearchResult"))
+        #expect(stripped != raw)
+        #expect(stripped.contains("enum iOSSearchIndexSupport"))
+
+        let funnel = try #require(CadenceSourceScan.functionBody(named: "rankedResults", in: stripped))
+        #expect(funnel.contains("CadenceSearchMatcher.rank("))
+        #expect(funnel.contains("score: { $0.score }"))
+        #expect(funnel.contains("title: { $0.title }"))
+        #expect(funnel.contains("identity: { $0.id }"))
+
+        #expect(stripped.contains("let id: String"))
+        #expect(CadenceSourceScan.matchCount("let id = UUID\\(\\)", in: stripped) == 0)
+        #expect(CadenceSourceScan.matchCount("let id = UUID\\(\\)", in: "    let id = UUID()\n") == 1)
+
+        // Every section's identity is spelled by the shared enum: areas and projects here, the
+        // other five in the view.
+        #expect(stripped.contains("CadenceSearchIdentity.area(id)"))
+        #expect(stripped.contains("CadenceSearchIdentity.project(id)"))
+        #expect(stripped.contains("CadenceSearchIdentity.page(destination.rawValue)"))
+
+        let view = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath))
+        #expect(view.contains("CadenceSearchIdentity.task(task.id)"))
+        #expect(view.contains("CadenceSearchIdentity.note(note.id)"))
+        #expect(view.contains("CadenceSearchIdentity.goal(goal.id)"))
+        #expect(view.contains("CadenceSearchIdentity.habit(habit.id)"))
+        #expect(view.contains("CadenceSearchIdentity.event(CadenceEventNoteSupport.identifier(for: event))"))
+    }
 }

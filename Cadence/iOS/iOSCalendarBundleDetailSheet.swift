@@ -13,6 +13,11 @@ struct iOSCalendarBundleDetailSheet: View {
     @State private var durationMinutes: Int
     @State private var selectedTask: AppTask?
     @State private var showDeleteConfirmation = false
+    /// T-322. `deleteBundle` used to end in `try? modelContext.save()` and the button below
+    /// dismissed regardless, so a refused delete closed this sheet exactly as a successful one
+    /// does. The alert is the shape `iOSTaskDeleteFailureAlert` already uses for the task delete
+    /// this is the block-shaped sibling of.
+    @State private var deleteFailed = false
     @State private var showStartTimePicker = false
 
     private let calendar = Calendar.current
@@ -75,12 +80,24 @@ struct iOSCalendarBundleDetailSheet: View {
             }
             .confirmationDialog("Delete this block?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
                 Button("Delete Block", role: .destructive) {
-                    CadenceTaskMutationSupport.deleteBundle(bundle, modelContext: modelContext)
+                    do {
+                        try CadenceTaskMutationSupport.deleteBundle(bundle, modelContext: modelContext)
+                    } catch {
+                        deleteFailed = true
+                        return
+                    }
                     dismiss()
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("The tasks stay scheduled for \(DateFormatters.relativeDate(from: bundle.dateKey)), but they will no longer be grouped in this block.")
+            }
+            // The promise it makes is earned by `commitDelete`'s rollback: the block and its
+            // members are visible again, so nothing was removed.
+            .alert(CadenceTaskMutationSupport.bundleDeleteFailureAlertTitle, isPresented: $deleteFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(CadenceTaskMutationSupport.bundleDeleteFailureNotice)
             }
         }
     }
@@ -288,7 +305,7 @@ private struct iOSCalendarBundleTaskRow: View {
             .accessibilityLabel(task.isDone ? "Mark not done" : "Mark done")
 
             VStack(alignment: .leading, spacing: CadenceBundleTaskRowMetrics.summarySpacing) {
-                Text(task.title.isEmpty ? "Untitled Task" : task.title)
+                Text(TaskTitleSupport.displayTitle(task.title))
                     .font(.system(size: CadenceBundleTaskRowMetrics.titleSize, weight: CadenceBundleTaskRowMetrics.titleWeight))
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                     .strikethrough(task.isDone, color: Theme.dim)

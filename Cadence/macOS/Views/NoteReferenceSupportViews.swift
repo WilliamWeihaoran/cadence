@@ -43,7 +43,7 @@ struct NoteReferenceStrip: View {
                         ForEach(linkedTasks, id: \.id) { task in
                             ReferenceChip(
                                 icon: NoteReferencePanelSection.taskReferences.systemImage,
-                                title: task.title.isEmpty ? "Untitled Task" : task.title,
+                                title: TaskTitleSupport.displayTitle(task.title),
                                 tint: Theme.green,
                                 dueLabel: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey),
                                 isOverdue: task.isOverdue(todayKey: todayKey)

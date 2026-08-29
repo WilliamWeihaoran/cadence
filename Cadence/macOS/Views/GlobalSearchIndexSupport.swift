@@ -68,7 +68,7 @@ enum GlobalSearchIndexSupport {
             GlobalSearchCommandDefinition.all.compactMap { definition in
                 guard matches(query: query, fields: [definition.title, definition.subtitle, definition.aliases]) else { return nil }
                 return GlobalSearchResult(
-                    id: "command-\(definition.command.rawValue)",
+                    id: CadenceSearchIdentity.command(definition.command.rawValue),
                     category: .commands,
                     title: definition.title,
                     subtitle: definition.subtitle,
@@ -98,7 +98,7 @@ enum GlobalSearchIndexSupport {
             }
             guard matches(query: query, fields: [page.label, subtitle, page.aliases]) else { return nil }
             return GlobalSearchResult(
-                id: "page-\(page.label)",
+                id: CadenceSearchIdentity.page(page.label),
                 category: .pages,
                 title: page.label,
                 subtitle: subtitle,
@@ -119,7 +119,7 @@ enum GlobalSearchIndexSupport {
             let contextName = area.context?.name ?? "No context"
             guard matches(query: query, fields: CadenceListSearchSupport.searchFields(for: area)) else { return nil }
             return GlobalSearchResult(
-                id: "area-\(area.id.uuidString)",
+                id: CadenceSearchIdentity.area(area.id),
                 category: .areas,
                 title: area.name,
                 subtitle: "\(contextName) • \(CadenceTaskQuerySupport.openTaskCount(for: area)) active tasks • \(CadenceListSearchSupport.lifecycle(of: area).statusLabel)",
@@ -138,7 +138,7 @@ enum GlobalSearchIndexSupport {
             let summary = [contextName, areaName].compactMap { $0 }.joined(separator: " • ")
             guard matches(query: query, fields: CadenceListSearchSupport.searchFields(for: project)) else { return nil }
             return GlobalSearchResult(
-                id: "project-\(project.id.uuidString)",
+                id: CadenceSearchIdentity.project(project.id),
                 category: .projects,
                 title: project.name,
                 subtitle: "\(summary) • \(CadenceTaskQuerySupport.openTaskCount(for: project)) active tasks • \(CadenceListSearchSupport.lifecycle(of: project).statusLabel)",
@@ -175,9 +175,9 @@ enum GlobalSearchIndexSupport {
             ].compactMap { $0 }
 
             return GlobalSearchResult(
-                id: "task-\(task.id.uuidString)",
+                id: CadenceSearchIdentity.task(task.id),
                 category: .tasks,
-                title: task.title.isEmpty ? "Untitled Task" : task.title,
+                title: TaskTitleSupport.displayTitle(task.title),
                 subtitle: meta.joined(separator: " • "),
                 icon: taskIcon(for: CadenceTaskSearchSupport.glyph(for: task)),
                 tintHex: task.containerColor,
@@ -202,7 +202,7 @@ enum GlobalSearchIndexSupport {
             let parentName = goal.parentGoal?.title ?? ""
             guard matches(query: query, fields: [goal.title, goal.desc, contextName, parentName, goal.kind.label]) else { return nil }
             return GlobalSearchResult(
-                id: "goal-\(goal.id.uuidString)",
+                id: CadenceSearchIdentity.goal(goal.id),
                 category: .goals,
                 title: goal.title,
                 subtitle: "\(parentName.isEmpty ? contextName : parentName) • \(Int(goal.progress * 100))% complete",
@@ -219,7 +219,7 @@ enum GlobalSearchIndexSupport {
             let goalName = habit.goal?.title ?? ""
             guard matches(query: query, fields: [habit.title, contextName, goalName]) else { return nil }
             return GlobalSearchResult(
-                id: "habit-\(habit.id.uuidString)",
+                id: CadenceSearchIdentity.habit(habit.id),
                 category: .habits,
                 title: habit.title,
                 subtitle: "\(goalName.isEmpty ? contextName : goalName) • \(habit.streakUnit.phrase(habit.currentStreak))",
@@ -273,7 +273,7 @@ enum GlobalSearchIndexSupport {
         .joined(separator: " • ")
 
         return GlobalSearchResult(
-            id: "event-\(item.id)",
+            id: CadenceSearchIdentity.event(item.id),
             category: .events,
             title: item.title,
             subtitle: subtitle,
@@ -312,7 +312,7 @@ enum GlobalSearchIndexSupport {
             let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
             guard matches(query: query, fields: [title, content, dateLabel, tagText]) else { return nil }
             return GlobalSearchResult(
-                id: "event-note-\(note.id.uuidString)",
+                id: CadenceSearchIdentity.eventNote(note.id),
                 category: .meetingNotes,
                 title: title,
                 subtitle: dateLabel,
@@ -326,7 +326,10 @@ enum GlobalSearchIndexSupport {
     /// **T-372a: `id` is the tie-break.** `GlobalSearchResult.id` is already the
     /// category-prefixed entity id every row here is built with (`"task-<uuid>"`,
     /// `"event-note-<uuid>"`), so it is both stable across rebuilds of the index and unique
-    /// across the categories this list merges. Two tasks called "Admin" in two lists score the
+    /// across the categories this list merges. Those nine spellings are
+    /// `CadenceSearchIdentity`'s since T-479, unchanged in value: the iOS search surface needed
+    /// the same strings, and a tenth hand-typed `"task-\(uuid)"` is how two surfaces come to
+    /// disagree about the prefix for one entity. Two tasks called "Admin" in two lists score the
     /// same and title the same, and without this leg `Cmd+K` listed them in whichever order the
     /// `@Query` happened to hand over — so the arrow keys landed on a different one between
     /// keystrokes.

@@ -70,7 +70,7 @@ struct FocusSessionHeader: View {
 
         FocusSurfaceHeader(
             eyebrow: "Focus Session",
-            title: task.title.isEmpty ? "Untitled Task" : task.title,
+            title: TaskTitleSupport.displayTitle(task.title),
             onClose: onClose
         ) {
             HStack(spacing: 7) {

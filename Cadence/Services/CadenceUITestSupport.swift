@@ -44,11 +44,14 @@ enum CadenceUITestSupport {
     }
 
     private static func resetUserDefaults() {
+        // Read from `CadencePreferenceKeys` rather than re-typed: a key renamed there used to
+        // leave this list quietly resetting a defaults entry nothing writes any more, which is a
+        // UI-test reset that stops resetting without failing.
         let keys = [
-            "listDetailDefaultPage",
-            "sidebarHiddenTabs",
-            "sidebarTabOrder",
-            "sidebarTabColors",
+            CadencePreferenceKeys.listDetailDefaultPage,
+            CadencePreferenceKeys.sidebarHiddenTabs,
+            CadencePreferenceKeys.sidebarTabOrder,
+            CadencePreferenceKeys.sidebarTabColors,
         ]
 
         for key in keys {

@@ -360,7 +360,7 @@ struct CadenceCalendarLinkPickerOfferTests {
 
         #expect(source.contains("calendars: link.pickableCalendars(from: allCalendars)"),
                 "the row still opens a picker over the calendars it can see")
-        #expect(source.contains("hiddenCalendarIDs: link.hiddenPickableCalendarIDs"),
+        #expect(source.contains("link: link,"),
                 "the picker is not told which of the calendars it was handed are hidden")
         #expect(CadenceSourceScan.matchCount(#"calendars: calendars,"#, in: source) == 0,
                 "the picker is handed the visible subset again, which is the T-464 bug")
@@ -376,10 +376,10 @@ struct CadenceCalendarLinkPickerOfferTests {
         #expect(source.count == raw.count, "the stripper changed the length")
         #expect(source.contains("struct CadenceCalendarPickerList: View"), "the picker moved")
 
-        #expect(source.contains("var hiddenCalendarIDs: Set<String> = []"),
+        #expect(source.contains("var link: CadenceCalendarLink? = nil"),
                 "the picker cannot be told which calendars are hidden")
-        #expect(source.contains("CadenceCalendarLinkRowState.hiddenTitle("),
-                "the picker does not read the row's wording")
+        #expect(source.contains("link?.pickerLabel(title: calendar.title, calendarID: calendar.calendarIdentifier)"),
+                "the picker does not read the link's wording")
         #expect(CadenceSourceScan.matchCount(#"\(Hidden\)"#, in: source) == 0,
                 "the picker spells the hidden wording itself")
         #expect(CadenceSourceScan.matchCount(#""None""#, in: source) == 0,
@@ -399,5 +399,161 @@ struct CadenceCalendarLinkPickerOfferTests {
         #expect(CadenceSourceScan.matchCount(#""None""#, in: #"row(id: "", label: "None")"#) == 1)
         #expect(CadenceSourceScan.matchCount(#""None""#,
                                              in: "row(id: \"\", label: CadenceCalendarLinkRowState.unlinkedText)") == 0)
+    }
+}
+
+/// **T-467.** The [[T-441]] bug on the timeline's event editor, with a different exclusion.
+///
+/// `CalendarEventEditPopover` hands `CadenceCalendarPickerButton` `writableCalendars` — active
+/// **and** `allowsContentModifications` — while the timeline's events are fetched from
+/// `availableCalendars`, which filters by visibility alone. So an event on an active read-only
+/// subscribed calendar reaches the timeline, its card prints the calendar's name in `calendarLabel`,
+/// and the Calendar row directly beneath it says "No calendar": two contradictory readings of the
+/// same event, one card apart.
+///
+/// The hidden case is **not** reachable here — `availableCalendars` has already dropped hidden
+/// calendars before the fetch, so no event on one can be open in this editor. `availableCalendars`
+/// minus `writableCalendars` is exactly the active read-only calendars, which is why the exclusion
+/// this surface passes is `.readOnly` and why that word is always the true one for anything it
+/// offers back.
+struct CadenceCalendarPickerReadOnlyOfferTests {
+
+    private let work = CadenceCalendarChoice(id: "cal-work", title: "Work")
+    private let holidays = CadenceCalendarChoice(id: "cal-holidays", title: "Holidays")
+    private let awayDays = CadenceCalendarChoice(id: "cal-away", title: "Team Away")
+
+    /// The event editor's link: the universe is what the timeline can show, the offer is what the
+    /// user can write to, and the exclusion between them is read-only rather than hidden.
+    private func eventLink(on calendarID: String) -> CadenceCalendarLink {
+        CadenceCalendarLink(
+            linkedCalendarID: calendarID,
+            allCalendars: [work, holidays, awayDays],
+            visibleCalendarIDs: ["cal-work"],
+            exclusion: .readOnly
+        )
+    }
+
+    // MARK: - Two exclusions, two words
+
+    /// The ticket in one assertion. Both surfaces exclude a calendar from their offer and both
+    /// still have to offer the one already stored; only the reason differs, so only the word does.
+    @Test func theTwoExclusionsAreTheSameShapeWithDifferentWords() {
+        #expect(CadenceCalendarLinkExclusion.hidden.title("Team") == "Team (Hidden)")
+        #expect(CadenceCalendarLinkExclusion.readOnly.title("Holidays") == "Holidays (Read-only)")
+        #expect(CadenceCalendarLinkExclusion.readOnly.title("Holidays")
+                != CadenceCalendarLinkExclusion.hidden.title("Holidays"),
+                "a read-only calendar is being called hidden, which is the collapse one word down")
+
+        for exclusion in CadenceCalendarLinkExclusion.allCases {
+            #expect(exclusion.title("Team") != "Team",
+                    "\(exclusion) leaves an excluded calendar indistinguishable from an offered one")
+            #expect(exclusion.title("Team").hasPrefix("Team ("),
+                    "\(exclusion) no longer qualifies the calendar's own name")
+        }
+    }
+
+    /// One spelling of the hidden wording still, now that a second wording exists beside it —
+    /// `CadenceCalendarLinkRowState.hiddenTitle` reads it rather than keeping a copy.
+    @Test func theHiddenWordingIsStillReadFromOnePlaceAfterTheSecondOneArrived() {
+        #expect(CadenceCalendarLinkRowState.hiddenTitle("Team")
+                == CadenceCalendarLinkExclusion.hidden.title("Team"))
+        #expect(CadenceCalendarLinkRowState.hidden(title: "Team").valueText
+                == CadenceCalendarLinkExclusion.hidden.title("Team"))
+    }
+
+    // MARK: - The offer
+
+    /// The event's own read-only calendar is offered because it is already stored; every other
+    /// read-only calendar stays out, so no *new* unwritable link can be made from this card.
+    @Test func theEventEditorOffersTheReadOnlyCalendarItsEventIsAlreadyOn() {
+        let link = eventLink(on: "cal-holidays")
+
+        #expect(link.pickableCalendars.map(\.id) == ["cal-work", "cal-holidays"])
+        #expect(link.pickableCalendars.contains(awayDays) == false,
+                "a read-only calendar the event is not on reached the picker")
+        #expect(link.isExcluded("cal-holidays"))
+        #expect(link.isExcluded("cal-work") == false)
+        #expect(link.pickerLabel(title: "Holidays", calendarID: "cal-holidays") == "Holidays (Read-only)")
+        #expect(link.pickerLabel(title: "Work", calendarID: "cal-work") == "Work")
+    }
+
+    /// The ordinary event — on a writable calendar — sees exactly what it saw before: the writable
+    /// offer, its own calendar in it once, and its plain name.
+    @Test func anEventOnAWritableCalendarSeesTheOfferItAlwaysSaw() {
+        let link = eventLink(on: "cal-work")
+
+        #expect(link.pickableCalendars.map(\.id) == ["cal-work"])
+        #expect(link.pickerLabel(title: "Work", calendarID: "cal-work") == "Work")
+        #expect(link.rowState == .linked(title: "Work"))
+    }
+
+    /// The list editor is untouched by the new parameter: leaving it out means `.hidden`, which is
+    /// the offer every caller before this ticket had.
+    @Test func aLinkBuiltWithoutAnExclusionIsStillTheHiddenOne() {
+        let link = CadenceCalendarLink(
+            linkedCalendarID: "cal-holidays",
+            allCalendars: [work, holidays, awayDays],
+            visibleCalendarIDs: ["cal-work"]
+        )
+
+        #expect(link.exclusion == .hidden)
+        #expect(link.pickerLabel(title: "Holidays", calendarID: "cal-holidays") == "Holidays (Hidden)")
+        #expect(link.pickerLabel(title: "Holidays", calendarID: "cal-holidays") == link.rowState.valueText,
+                "the row and the menu word the same calendar differently")
+    }
+
+    /// A **source scan**: the editor is a SwiftUI view whose picker arguments are private, so what
+    /// a test can check is that it routes the offer through the shared link instead of handing the
+    /// picker a subset its own calendar can be missing from.
+    @Test func theTimelineEventEditorOffersTheCalendarTheEventIsAlreadyOn() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineEventBlockSupportViews.swift")
+        #expect(raw.count > 400, "the timeline support views read as \(raw.count) characters")
+        let source = CadenceSourceScan.strippingComments(raw)
+        #expect(source != raw, "the comment stripper removed nothing")
+        #expect(source.count == raw.count, "the stripper changed the length")
+        #expect(source.contains("struct CalendarEventEditPopover: View"), "the editor moved")
+
+        #expect(source.contains("CadenceCalendarLink("),
+                "the editor still decides its own offer instead of asking the shared link")
+        #expect(source.contains("exclusion: .readOnly"),
+                "the editor does not say why its offer excludes a calendar, so the picker cannot word it")
+        #expect(source.contains("calendars: calendarLink.pickableCalendars(from: calendarManager.availableCalendars)"),
+                "the picker is not handed the offer plus the calendar the event is already on")
+        #expect(CadenceSourceScan.matchCount(#"calendars: calendarManager\.writableCalendars"#, in: source) == 0,
+                "the picker is handed the writable subset again, which is the T-467 bug")
+    }
+
+    /// The button's label is the same question the menu row asks, asked once. It used to look
+    /// `selectedID` up in whatever it was handed and call every miss "No calendar" — the T-441
+    /// collapse, on the value rather than on the offer.
+    @Test func thePickerButtonAsksTheLinkWhatToCallTheCalendarItIsShowing() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/CadenceCalendarPicker.swift")
+        #expect(raw.count > 400, "the picker read as \(raw.count) characters")
+        let source = CadenceSourceScan.strippingComments(raw)
+        #expect(source != raw, "the comment stripper removed nothing")
+        #expect(source.count == raw.count, "the stripper changed the length")
+        #expect(source.contains("struct CadenceCalendarPickerButton: View"), "the button moved")
+
+        #expect(CadenceSourceScan.matchCount(#"link\?\.pickerLabel\("#, in: source) == 2,
+                "the button and the menu do not both read their label off the one link")
+        #expect(CadenceSourceScan.matchCount(#"selected\?\.title \?\? "No calendar""#, in: source) == 0,
+                "the button still titles what it can see and calls every miss No calendar")
+    }
+
+    /// Without these every `== 0` above is true of any text at all, and the `== 2` could be
+    /// counting something that never appears in either shape.
+    @Test func theReadOnlyOfferScanNeedlesAreNotVacuous() {
+        #expect(CadenceSourceScan.matchCount(#"calendars: calendarManager\.writableCalendars"#,
+                                             in: "calendars: calendarManager.writableCalendars,") == 1)
+        #expect(CadenceSourceScan.matchCount(#"calendars: calendarManager\.writableCalendars"#,
+                                             in: "calendars: calendarLink.pickableCalendars(from: calendarManager.availableCalendars),") == 0)
+        #expect(CadenceSourceScan.matchCount(#"selected\?\.title \?\? "No calendar""#,
+                                             in: #"Text(selected?.title ?? "No calendar")"#) == 1)
+        #expect(CadenceSourceScan.matchCount(#"selected\?\.title \?\? "No calendar""#,
+                                             in: "Text(selectedLabel ?? noCalendarText)") == 0)
+        #expect(CadenceSourceScan.matchCount(#"link\?\.pickerLabel\("#,
+                                             in: "link?.pickerLabel(title: a, calendarID: b)\nlink?.pickerLabel(title: c, calendarID: d)") == 2)
+        #expect(CadenceSourceScan.matchCount(#"link\?\.pickerLabel\("#,
+                                             in: "CadenceCalendarLinkRowState.hiddenTitle(calendar.title)") == 0)
     }
 }

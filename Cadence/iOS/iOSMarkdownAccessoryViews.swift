@@ -236,7 +236,7 @@ private struct iOSMarkdownTaskReferenceRow: View {
 
     private var title: String {
         let trimmed = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Untitled Task" : trimmed
+        return TaskTitleSupport.displayTitle(trimmed)
     }
 
     private var subtitle: String {

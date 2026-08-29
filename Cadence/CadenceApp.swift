@@ -9,9 +9,14 @@ struct CadenceApp: App {
 #endif
 
     init() {
-#if os(macOS)
-        CadenceRemoteNotificationRegistrar.registerIfNeeded()
-#endif
+        // Silent-push registration is **not** here. `CadenceAppDelegate.applicationDidFinishLaunching`
+        // is the one production caller of `CadenceRemoteNotificationRegistrar.registerIfNeeded()`,
+        // and this initializer used to call it too — two launch callers for one registrar, while
+        // every doc and commit message described the delegate as *the* registration site (T-468).
+        // `@NSApplicationDelegateAdaptor` above guarantees the delegate exists on macOS, so nothing
+        // is lost by leaving it to the one owner. Pinned by
+        // `CadenceLaunchWiringTests.exactlyOneProductionCallSiteRegistersForSilentPush`.
+        //
         // Touch the singleton now so its init runs and registers the UNUserNotificationCenterDelegate
         // early. Deliberately does NOT call requestAuthorization() here — that stays gated behind an
         // explicit Settings button so there's no jarring cold-launch permission prompt.

@@ -27,6 +27,11 @@ struct CreateGoalSheet: View {
     @State private var selectedKind: GoalKind = .completable
     @State private var selectedStatus: GoalStatus = .active
 
+    /// T-322. `saveGoal` used to swallow its commit and this sheet dismissed on the answer, so a
+    /// refused write closed the editor over a goal the store never took. The sentence lands in the
+    /// footer beside the button that appeared to work.
+    @State private var saveError: String?
+
     /// `parentGoal` is optional — a goal with no parent is a top-level direction (what used to be
     /// a Pursuit), and a goal with a parent reads as one of that goal's milestones.
     init(goal: Goal? = nil, parentGoal: Goal? = nil) {
@@ -198,6 +203,16 @@ struct CreateGoalSheet: View {
 
             Divider().background(Theme.borderSubtle)
 
+            if let saveError {
+                Text(saveError)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 10)
+            }
+
             HStack {
                 if isEditing {
                     CadenceActionButton(
@@ -268,31 +283,45 @@ struct CreateGoalSheet: View {
         }
     }
 
+    /// T-322. `dismiss()` is reachable only through the `try` succeeding; a refused commit names
+    /// itself in `saveError` and leaves the sheet open over the user's own typed values.
+    ///
+    /// `attachInitialList` stays *after* the commit and outside the `do`. It is a second, separate
+    /// change — the list a brand-new goal starts attached to — and it has never been part of what
+    /// the Save button promises; running it against a goal the store refused would be attaching a
+    /// list to nothing.
     private func save() {
         guard GoalAssignmentRules.canSaveGoal(title: title) else { return }
 
-        let saved = CadenceTrackingMutationSupport.saveGoal(
-            editingGoal,
-            title: title,
-            desc: desc,
-            startDate: DateFormatters.dateKey(from: startDate),
-            endDate: DateFormatters.dateKey(from: max(endDate, startDate)),
-            progressType: editingGoal?.progressType ?? .subtasks,
-            targetHours: editingGoal?.targetHours ?? 0,
-            icon: selectedIcon,
-            colorHex: selectedColor,
-            kind: selectedKind,
-            status: selectedStatus,
-            context: selectedContextID.flatMap { id in allContexts.first { $0.id == id } },
-            parentGoal: selectedParentGoal,
-            allGoals: allGoals,
-            modelContext: modelContext
-        )
+        let saved: Goal?
+        do {
+            saved = try CadenceTrackingMutationSupport.saveGoal(
+                editingGoal,
+                title: title,
+                desc: desc,
+                startDate: DateFormatters.dateKey(from: startDate),
+                endDate: DateFormatters.dateKey(from: max(endDate, startDate)),
+                progressType: editingGoal?.progressType ?? .subtasks,
+                targetHours: editingGoal?.targetHours ?? 0,
+                icon: selectedIcon,
+                colorHex: selectedColor,
+                kind: selectedKind,
+                status: selectedStatus,
+                context: selectedContextID.flatMap { id in allContexts.first { $0.id == id } },
+                parentGoal: selectedParentGoal,
+                allGoals: allGoals,
+                modelContext: modelContext
+            )
+        } catch {
+            saveError = CadenceTrackingMutationSupport.goalSaveFailureNotice
+            return
+        }
 
         if editingGoal == nil, let saved {
             attachInitialList(to: saved)
         }
 
+        saveError = nil
         dismiss()
     }
 

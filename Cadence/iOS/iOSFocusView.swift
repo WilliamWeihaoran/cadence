@@ -237,7 +237,7 @@ struct iOSFocusView: View {
 
     private func title(of item: CadenceFocusPickItem) -> String {
         switch item {
-        case .task(let task): return task.title.isEmpty ? "Untitled Task" : task.title
+        case .task(let task): return TaskTitleSupport.displayTitle(task.title)
         case .bundle(let bundle): return bundle.displayTitle
         }
     }
@@ -298,7 +298,7 @@ struct iOSFocusView: View {
     }
 
     private func selectedTaskHeader(_ task: AppTask) -> some View {
-        sessionHeader(title: task.title.isEmpty ? "Untitled Task" : task.title) {
+        sessionHeader(title: TaskTitleSupport.displayTitle(task.title)) {
             if !task.containerName.isEmpty {
                 iOSMetaChip(label: task.containerName, color: Color(hex: task.containerColor))
             }
@@ -839,7 +839,7 @@ private struct iOSFocusBundleMemberRow: View {
                     .frame(width: 30, height: 30)
 
                 VStack(alignment: .leading, spacing: CadenceBundleTaskRowMetrics.summarySpacing) {
-                    Text(task.title.isEmpty ? "Untitled Task" : task.title)
+                    Text(TaskTitleSupport.displayTitle(task.title))
                         .font(.system(size: CadenceBundleTaskRowMetrics.titleSize, weight: CadenceBundleTaskRowMetrics.titleWeight))
                         .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                         .strikethrough(task.isDone, color: Theme.dim)
@@ -868,7 +868,7 @@ private struct iOSFocusBundleMemberRow: View {
         }
         .buttonStyle(.iosPressable)
         .accessibilityLabel(isSelected ? "Exclude from time log" : "Include in time log")
-        .accessibilityValue(task.title.isEmpty ? "Untitled Task" : task.title)
+        .accessibilityValue(TaskTitleSupport.displayTitle(task.title))
     }
 }
 #endif

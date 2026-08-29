@@ -225,3 +225,60 @@ nonisolated enum CadenceListSearchSupport {
         CadenceSearchMatcher.matchScore(query: query, fields: searchFields(for: project))
     }
 }
+
+// MARK: - Identity
+
+/// The **identity leg** of a search row's order, spelled once.
+///
+/// `CadenceSearchMatcher.rank` takes three legs — score, title, identity — and the third is what
+/// makes the order *total*: two rows that tie on score and title are otherwise left in whatever
+/// order the store handed them over, which is a property of the store rather than of search
+/// (T-372a). Every surface therefore needs an identity per row, and the question this enum answers
+/// is what that string should say.
+///
+/// **Why an enum and not a literal per call site.** macOS built `"task-\(uuid)"` inline at nine
+/// construction sites and iOS had none; adding a tenth spelling on the phone would have been the
+/// near-copy this repo's rules forbid, and the two surfaces would have been free to disagree about
+/// the prefix for the same entity. They are the same string now.
+///
+/// **Why the type prefix, and not the bare UUID.** A section can merge two tables: iOS's Lists
+/// section is areas *and* projects, its Goals and Habits section is both, and macOS's palette
+/// merges every category into one list. A bare `uuidString` identifies a row only as long as no
+/// second table is in the list with it — the same reason `CadenceReadService.search` ties on
+/// `entityType:entityId` rather than on `entityId`. The prefix is the entity type; the suffix is
+/// the entity.
+///
+/// Deliberately **not** the row's SwiftUI identity contract, and not a payload anything parses.
+/// Nothing reads these back apart from `lookupIdentifier` on the event case, so the spellings are
+/// free to be whatever reads best in a failure message.
+nonisolated enum CadenceSearchIdentity {
+    static func task(_ id: UUID) -> String { "task-\(id.uuidString)" }
+    static func area(_ id: UUID) -> String { "area-\(id.uuidString)" }
+    static func project(_ id: UUID) -> String { "project-\(id.uuidString)" }
+    static func goal(_ id: UUID) -> String { "goal-\(id.uuidString)" }
+    static func habit(_ id: UUID) -> String { "habit-\(id.uuidString)" }
+
+    /// iOS's Notes section searches every note kind; macOS's palette has a *meeting-notes* section
+    /// and no general one. Two cases rather than one because they are two different row
+    /// populations, and `event-note-` is the string macOS's palette has always used.
+    static func note(_ id: UUID) -> String { "note-\(id.uuidString)" }
+    static func eventNote(_ id: UUID) -> String { "event-note-\(id.uuidString)" }
+
+    /// **Occurrence-scoped, not `rawIdentifier`.** Pass `CadenceEventNoteSupport.identifier(for:)`.
+    ///
+    /// `CadenceCalendarEventSearchSupport.identity(of:)` deliberately drops the `#occurrence=`
+    /// suffix, and its note says why: that comparator comes *after* a start-instant leg, and two
+    /// occurrences of one series never share a start, so the suffix could not break a tie there.
+    /// Here the leg before it is the **score**, and every occurrence of a recurring meeting scores
+    /// identically on the same title — so the suffix is the only thing that tells them apart, and
+    /// dropping it would put a week of standups back in fetch order.
+    static func event(_ occurrenceIdentifier: String) -> String { "event-\(occurrenceIdentifier)" }
+
+    /// A static destination row rather than a stored entity. The key is whatever that surface's
+    /// catalog uses as its own stable handle — `CadenceFeatureDestination.rawValue` on iOS, the
+    /// page definition's label on macOS — because neither catalog has a UUID and both are unique
+    /// within the one section that draws them.
+    static func page(_ key: String) -> String { "page-\(key)" }
+
+    static func command(_ rawValue: String) -> String { "command-\(rawValue)" }
+}

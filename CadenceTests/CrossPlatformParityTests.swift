@@ -469,6 +469,126 @@ struct CrossPlatformParityTests {
         #expect(CadenceSourceScan.matchCount(#"habit\.reminderMinuteOfDay != nil"#, in: "habit.reminderMinuteOfDay != nil") == 1)
         #expect(CadenceSourceScan.matchCount(#"habit\.reminderMinuteOfDay != nil"#, in: "reminder.isOn") == 0)
     }
+
+    // MARK: - The widget date vocabulary carries no member nothing calls (T-453)
+
+    /// `CadenceWidgetDateSupport` exists to give the widget target one spelling of every date
+    /// string the app already has. After [[T-301]] collapsed its hand-rolled copies into forwards
+    /// to `DateFormatters`, one member — `storageCalendar(inheritingTimeZoneFrom:)` — was left
+    /// behind with **zero** callers: the two in-enum uses it was written for, in
+    /// `dateKey(from:calendar:)` and `parsedDate(fromKey:)`, both became `DateFormatters` calls in
+    /// the same commit. It was found by a mutation that *survived* — re-pointing it at the
+    /// caller's calendar changed no test, because nothing reached it.
+    ///
+    /// A survived mutation is a weak signal and an expensive one. This is the cheap version, and
+    /// it generalises: **every** member of this enum must be reached, so the next collapse that
+    /// strands one fails here instead of waiting for a mutation to notice.
+    ///
+    /// Reach is counted two ways because Swift spells it two ways: qualified
+    /// (`CadenceWidgetDateSupport.dueLabel(...)`) from anywhere, and unqualified from inside the
+    /// enum's own body. Counting only the first would call `dayLabel(fromKey:)` — a private-ish
+    /// helper only `dueLabel` uses — dead, which it is not.
+    @Test func everyMemberOfTheWidgetDateVocabularyIsReachedFromSomewhere() throws {
+        let declaringPath = "Cadence/Services/CadenceTodayWidgetSupport.swift"
+        let sources = try parityWidgetVocabularySources()
+        let declaringSource = try #require(sources[declaringPath], "the walk missed \(declaringPath)")
+        let body = try #require(
+            parityEnumBody(named: "CadenceWidgetDateSupport", in: declaringSource),
+            "could not brace-match CadenceWidgetDateSupport's body in \(declaringPath)"
+        )
+
+        let members = Set(parityCaptures(#"static func ([A-Za-z_][A-Za-z0-9_]*)\s*\("#, in: body))
+
+        // Non-vacuity for the extraction. A member list that came back empty or truncated is how
+        // a census like this reports "nothing is dead" while having read nothing at all.
+        #expect(members.count >= 6, "read only \(members.sorted()) out of the widget date enum")
+        #expect(members.contains("dateKey"), "the extraction missed dateKey")
+        #expect(members.contains("dueLabel"), "the extraction missed dueLabel")
+
+        let paths = sources.keys.sorted()
+        var census: [String: Int] = [:]
+        for member in members.sorted() {
+            let qualified = try parityQualifiedCallInstrument(for: member).sweep(
+                paths,
+                atLeast: 700,
+                including: declaringPath,
+                // `paths` is `sources.keys`, so this subscript cannot miss; the walk's own
+                // non-vacuity is carried by `atLeast:` and `including:` above.
+                read: { sources[$0] ?? "" }
+            )
+            let unqualifiedInsideTheEnum = CadenceSourceScan.matchCount(
+                #"(?<!func )(?<![.\w])"# + member + #"\s*\("#,
+                in: body
+            )
+            census[member] = qualified.count + unqualifiedInsideTheEnum
+        }
+
+        let unreached = census.filter { $0.value == 0 }.keys.sorted()
+        #expect(unreached.isEmpty, "widget date members nothing calls: \(unreached); census \(census)")
+
+        // The census is only worth reading if it can also come back non-zero, so pin the two ends:
+        // a member every widget spells, and one only its neighbour in the enum spells.
+        #expect((census["dueLabel"] ?? 0) > 0, "the census cannot see a qualified call")
+        #expect((census["dayLabel"] ?? 0) > 0, "the census cannot see an unqualified in-enum call")
+    }
+}
+
+/// Every Swift file the widget date vocabulary could be called from: the app, the widget extension
+/// that compiles a subset of it, and the test target. Read once and cached, because the census
+/// above asks the same files one question per member.
+private func parityWidgetVocabularySources() throws -> [String: String] {
+    var sources: [String: String] = [:]
+    for root in ["Cadence", "CadenceWidgets", "CadenceTests"] {
+        let directory = parityRepositoryRoot().appendingPathComponent(root)
+        guard let enumerator = FileManager.default.enumerator(atPath: directory.path) else { continue }
+        for element in enumerator {
+            guard let name = element as? String, name.hasSuffix(".swift") else { continue }
+            let path = "\(root)/\(name)"
+            sources[path] = CadenceSourceScan.codeOnly(try paritySourceFile(path))
+        }
+    }
+    return sources
+}
+
+/// The text between the braces of `enum <name> {`, found by brace matching. Deliberately not
+/// `CadenceSourceScan.functionBody`, which anchors on `func <name>(`.
+private func parityEnumBody(named name: String, in source: String) -> String? {
+    guard let declaration = source.range(of: "enum \(name) {") else { return nil }
+    guard let open = source.range(of: "{", range: declaration.lowerBound..<source.endIndex) else { return nil }
+
+    var depth = 0
+    var index = open.lowerBound
+    while index < source.endIndex {
+        if source[index] == "{" {
+            depth += 1
+        } else if source[index] == "}" {
+            depth -= 1
+            if depth == 0 { return String(source[source.index(after: open.lowerBound)..<index]) }
+        }
+        index = source.index(after: index)
+    }
+    return nil
+}
+
+private func parityCaptures(_ pattern: String, in text: String) -> [String] {
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+    return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+        Range($0.range(at: 1), in: text).map { String(text[$0]) }
+    }
+}
+
+/// Fires on a **qualified** call of one member. The negative witness is the same member name
+/// called on the enum this one forwards to — the nearest miss there is, and the one a detector
+/// keyed on the bare name would fail.
+private func parityQualifiedCallInstrument(for member: String) throws -> CadenceScanInstrument {
+    try CadenceScanInstrument(
+        "qualified call of CadenceWidgetDateSupport.\(member)",
+        fires: "        let value = CadenceWidgetDateSupport.\(member)(from: Date())",
+        andNotOn: "        let value = DateFormatters.\(member)(from: Date())",
+        by: { source in
+            CadenceSourceScan.matchCount(#"CadenceWidgetDateSupport\."# + member + #"\s*\("#, in: source) > 0
+        }
+    )
 }
 
 private func parityRepositoryRoot() -> URL {

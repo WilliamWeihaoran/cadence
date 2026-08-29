@@ -379,7 +379,7 @@ struct ListEditorCalendarRow: View {
                 CadenceCalendarPickerList(
                     calendars: link.pickableCalendars(from: allCalendars),
                     selectedID: $selectedID,
-                    hiddenCalendarIDs: link.hiddenPickableCalendarIDs,
+                    link: link,
                     onPick: { showPicker = false }
                 )
             }

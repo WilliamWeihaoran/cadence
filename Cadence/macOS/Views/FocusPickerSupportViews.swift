@@ -246,7 +246,7 @@ private struct FocusPickItemRow: View {
     private var title: String {
         switch item {
         case .task(let task):
-            return task.title.isEmpty ? "Untitled Task" : task.title
+            return TaskTitleSupport.displayTitle(task.title)
         case .bundle(let bundle):
             return bundle.displayTitle
         }

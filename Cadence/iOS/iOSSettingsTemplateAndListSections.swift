@@ -588,10 +588,13 @@ private struct iOSTemplateBodyEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text("BODY")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Theme.dim)
-                .tracking(0.8)
+            // **T-476.** Was a hand-rolled eyebrow — `Text("BODY")`, 10pt bold, `Theme.dim`,
+            // `.tracking(0.8)` — and the last hand-typed letterspacing left in `Cadence/`. Every
+            // number in it was the shared component's already; what the swap changes is the
+            // weight, bold to semibold, because an eyebrow's weight is `SectionEyebrowLabel`'s
+            // decision and not this pane's. Uppercasing moves into the component too, so the
+            // string is written the way it reads.
+            SectionEyebrowLabel(text: "Body")
 
             iOSMarkdownEditingSurface(
                 text: $text,

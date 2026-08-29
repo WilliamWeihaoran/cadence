@@ -126,7 +126,7 @@ Four things about the wiring that are easy to get wrong:
   optional `iOSBundleFormingDrop` bundling the task list, the drop handler and the targeting
   callback, because the three are useless apart. `iOSListSupportViews` draws the same card and
   passes `nil`, and so does the column's *completed* footer — a finished card is not something you
-  plan around — and so does `iPadTodayScheduleViews`, which draws the same block. The value was
+  plan around — and so does `iOSTodaySchedulePanel`, which draws the same block. The value was
   `iOSBoardTaskCardBundleDrop` until the timeline became its second user; renaming it is what keeps
   "may this task be dropped on" one decision rather than two that drift.
 - **The modifiers hang off an `if let`, not an always-on closure returning `false`.** `isTargeted`
@@ -315,7 +315,7 @@ left beside them.
 
 Four things about the iOS wiring that are easy to get wrong:
 
-- **The host decides, the list draws.** `iPadTodayView` holds the `@AppStorage` day key and builds
+- **The host decides, the list draws.** `iOSTodayView` holds the `@AppStorage` day key and builds
   an `iOSTodayRolloverNotice` (tasks + action, opted into whole — the same shape as
   `iOSBundleFormingDrop`); `iOSTodayTaskSections` is the only thing that renders the banner,
   which is what makes "both widths show it" true by construction instead of by remembering. The
