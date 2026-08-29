@@ -154,3 +154,66 @@ enum CadenceMobileSettingsLayout {
         )
     ]
 }
+
+/// Which settings category you are in, stored once, read two ways.
+///
+/// Mobile draws Settings as a rail beside the content at regular width and as a list you drill into
+/// at compact width. Those were two `@State` properties on one view — `selectedCategory` for the
+/// rail, `drilledCategory` for the phone — with nothing between them, and the view itself sits in a
+/// different place in each shell, so a size-class change tore it down and reset both. Widening out
+/// of Templates landed on Navigation and narrowing out of Calendar dropped back to the category
+/// list (T-335).
+///
+/// The rule is the one Month's detail toggle already follows (`CadenceCalendarMonthLayout`): **the
+/// category is user state, compact-versus-regular is presentation.** So there is one stored value
+/// and two readings of it. The empty string is the phone's category list — a real place the user
+/// can be, and the one state regular width has no way to show, which is why widening out of it
+/// falls back to the default rather than to nothing.
+///
+/// Stored rather than held, because a value held in a view that the size class destroys is the bug.
+/// It is `Shared/` for the usual reason: `Cadence/iOS/` is invisible to the macOS test target.
+///
+/// Not `nonisolated`, unlike most of `Shared/`: it reads `CadenceMobileSettingsLayout.categories`,
+/// and this project builds with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so that property is
+/// main-actor isolated. The rest of this file is main-actor for the same reason.
+enum CadenceMobileSettingsNavigation {
+    /// Where the rail points before the user has chosen anything, matching macOS's own settings
+    /// shell.
+    static let defaultCategory: CadenceSettingsCategoryKind = .navigation
+
+    /// The stored spelling of "the phone's category list". Not a sentinel word: an unset
+    /// `@AppStorage` string is already `""`, so the cold-launch state and the popped-back-to-the-list
+    /// state are the same value rather than two that have to agree.
+    static let categoryListRawValue = ""
+
+    /// What the iPad rail points at. Never `nil` — the rail is beside the content, so there is no
+    /// "no category" state for it to be in, and the list state widens into the default.
+    static func railCategory(storedRawValue: String) -> CadenceSettingsCategoryKind {
+        guard let kind = category(storedRawValue: storedRawValue) else { return defaultCategory }
+        return kind
+    }
+
+    /// What the phone has drilled into, or `nil` for the category list.
+    static func drilledCategory(storedRawValue: String) -> CadenceSettingsCategoryKind? {
+        category(storedRawValue: storedRawValue)
+    }
+
+    /// The value to store for a category, or for the list.
+    static func storedRawValue(for category: CadenceSettingsCategoryKind?) -> String {
+        category?.rawValue ?? categoryListRawValue
+    }
+
+    /// A stored category mobile actually offers, or `nil`.
+    ///
+    /// Filtered against `CadenceMobileSettingsLayout.categories`, not merely parsed: `sidebar` and
+    /// `account` are real `CadenceSettingsCategoryKind` cases with no mobile screen, so a raw value
+    /// arriving from anywhere else — a synced default, a future desktop-only addition — must not
+    /// select a category the rail cannot draw and the detail cannot render.
+    private static func category(storedRawValue: String) -> CadenceSettingsCategoryKind? {
+        guard
+            let kind = CadenceSettingsCategoryKind(rawValue: storedRawValue),
+            CadenceMobileSettingsLayout.categories.contains(kind)
+        else { return nil }
+        return kind
+    }
+}

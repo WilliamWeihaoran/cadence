@@ -70,7 +70,7 @@ struct CadenceGoalListLinkSurfaceTests {
             directTaskCount: directTaskCount,
             linkedListCount: linkedListCount,
             focusMinutes: 0,
-            overdueTaskCount: 0,
+            overdueTaskIDs: [],
             recentCompletedCount: 0,
             nextActionTitle: nil,
             nextActionDueDate: nil

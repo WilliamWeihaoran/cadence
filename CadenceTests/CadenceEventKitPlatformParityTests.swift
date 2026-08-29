@@ -242,13 +242,27 @@ struct CadenceEventKitPlatformParityTests {
 
     /// The native write has to be able to answer, or ordering the save first buys nothing: the
     /// sheet would still be guessing at the second half.
+    ///
+    /// The answer was `Bool` until T-339 and is a `CalendarWriteFailure?` now; `nil` is the value
+    /// a completed write returns, so the editor narrows it with `== nil` at the one place that
+    /// needs a yes/no — the same narrowing `EventNoteSupport.syncNativeCalendarNotes` does on the
+    /// desktop.
     @Test func theIOSNoteSyncReportsWhetherAppleCalendarTookIt() throws {
         let code = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarManager.swift")
         )
 
-        #expect(code.contains("func updateEventNotes(_ event: EKEvent, notes: String) -> Bool"))
-        #expect(code.contains("func updateEventNotes(calendarEventID: String, notes: String) -> Bool"))
+        #expect(code.contains("func updateEventNotes(_ event: EKEvent, notes: String) -> CalendarWriteFailure?"))
+        #expect(code.contains("func updateEventNotes(calendarEventID: String, notes: String) -> CalendarWriteFailure?"))
+
+        let sheet = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSEventNoteEditorSheet.swift")
+        )
+        let sync = try #require(CadenceSourceScan.functionBody(named: "syncNoteToNativeEvent", in: sheet))
+        #expect(
+            CadenceSourceScan.matchCount(#"updateEventNotes\([^\n]*\) == nil"#, in: sync) == 2,
+            "the editor stopped narrowing both note writes to an answer"
+        )
     }
 
     // MARK: - T-389: the desktop reports the same miss iOS does
@@ -401,6 +415,165 @@ struct CadenceEventKitPlatformParityTests {
         #expect(CadenceEventNoteSupport.meetingNotes(forLinkedCalendarID: "calendar-before", in: [note]).count == 1)
     }
 
+    // MARK: - T-339: one EventKit failure vocabulary, on both platforms
+
+    /// The typed failure used to be declared inside `CalendarManager.swift`, which is one big
+    /// `#if os(macOS)` — so the only platform that could name a cause was the one that already
+    /// had a shared alert to show it in. iOS answered `Bool` and reached for T-324's one-sentence
+    /// notices, which exist precisely because a `Bool` cannot say *why*.
+    ///
+    /// Moving the enum is the whole of the port: it is a bare value type over `String`s with no
+    /// EventKit in it, so nothing about it was ever desktop-only.
+    @Test func theTypedCalendarWriteFailureIsDeclaredOnceInSharedCode() throws {
+        let rawShared = try CadenceSourceScan.sourceFile("Cadence/Shared/CalendarWriteFailure.swift")
+        let shared = CadenceSourceScan.strippingComments(rawShared)
+        #expect(rawShared.count > 800, "the shared file read as \(rawShared.count) characters")
+        #expect(shared != rawShared, "expected comments to have been blanked")
+        #expect(shared.count == rawShared.count, "the stripper changed the length")
+
+        // `nonisolated` for the reason `NonisolatedValueTypeTests` records: without it the
+        // synthesized `Equatable` is main-actor isolated and every `#expect(a == b)` warns.
+        #expect(shared.contains("nonisolated enum CalendarWriteFailure: Equatable"))
+        for cause in [
+            "case notAuthorized",
+            "case noWritableCalendar",
+            "case invalidRange",
+            "case eventNotFound",
+            "case saveFailed(String)"
+        ] {
+            #expect(shared.contains(cause), "the shared failure lost \(cause)")
+        }
+        #expect(
+            CadenceSourceScan.matchCount(#"#if os\(macOS\)"#, in: shared) == 0,
+            "the shared failure is still fenced to one platform"
+        )
+
+        // And it is declared *once*: the desktop manager returns it but no longer owns it.
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Services/CalendarManager.swift")
+        )
+        #expect(mac.contains("-> CalendarWriteFailure?"), "the desktop manager stopped returning the typed failure")
+        #expect(
+            CadenceSourceScan.matchCount("enum CalendarWriteFailure", in: mac) == 0,
+            "the desktop manager still declares its own copy"
+        )
+    }
+
+    /// Every write on the iOS manager answers with a cause. `Bool` survives only on the two
+    /// members that are genuinely yes/no questions — `requestAccess()` and `canModify(_:)`.
+    @Test func theIOSCalendarWritesAnswerWithTheTypedFailureRatherThanABool() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarManager.swift")
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(raw.count > 1_000, "iOSCalendarManager.swift read as \(raw.count) characters")
+        #expect(code != raw, "expected comments to have been blanked")
+        #expect(code.count == raw.count, "the stripper changed the length")
+
+        // Five writes: create, update, delete, and the two note overloads.
+        #expect(
+            CadenceSourceScan.matchCount(#"\) -> CalendarWriteFailure\? \{"#, in: code) == 5,
+            "not every iOS calendar write returns the typed failure"
+        )
+        #expect(
+            code.contains("func requestAccess() async -> Bool"),
+            "the authorization question should still be a Bool"
+        )
+        #expect(
+            code.contains("func canModify(_ event: EKEvent) -> Bool"),
+            "the editability question should still be a Bool"
+        )
+
+        // The causes are named, not collapsed. `eventNotFound` is the one the old comment
+        // described in prose ("a sync that did not happen, not a no-op") and could not return.
+        for cause in [
+            "return .notAuthorized",
+            "return .noWritableCalendar",
+            "return .invalidRange",
+            "return .eventNotFound",
+            "return .saveFailed(error.localizedDescription)"
+        ] {
+            #expect(code.contains(cause), "the iOS manager never returns \(cause)")
+        }
+    }
+
+    /// Both iOS event sheets show the cause, through the shared notices rather than a third
+    /// wording of their own.
+    @Test func bothIOSEventSheetsNameTheCauseOfARejectedWrite() throws {
+        for path in [
+            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
+            "Cadence/iOS/iOSCalendarEventEditSheet.swift"
+        ] {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            let code = CadenceSourceScan.strippingComments(raw)
+            #expect(raw.count > 1_000, "\(path) read as \(raw.count) characters")
+            #expect(code != raw, "\(path): expected comments to have been blanked")
+
+            #expect(
+                code.contains("CadenceCalendarEventEditingSupport.saveFailureNotice(for:"),
+                "\(path) still shows a causeless save-failure notice"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#""Couldn.t save this event"#, in: code) == 0,
+                "\(path) spells the save-failure notice itself"
+            )
+        }
+
+        let editSheet = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarEventEditSheet.swift")
+        )
+        #expect(
+            editSheet.contains("CadenceCalendarEventEditingSupport.deleteFailureNotice(for:"),
+            "the edit sheet still shows a causeless delete-failure notice"
+        )
+    }
+
+    /// Behavioural, not a scan: the notice a sheet shows for each cause, run directly.
+    ///
+    /// The lead sentence names the operation and the rest is `CalendarWriteFailure.message` — the
+    /// same string the desktop alert has shown since the type existed, which is what "the same
+    /// cause-aware notice" means. `nil` keeps T-324's one sentence, for the caller that failed
+    /// before EventKit was asked.
+    @Test func theCauseAwareEventNoticeAddsTheCauseToTheOperationSentence() {
+        let causes: [CalendarWriteFailure] = [
+            .notAuthorized,
+            .noWritableCalendar,
+            .invalidRange,
+            .eventNotFound,
+            .saveFailed("iCloud rejected the write")
+        ]
+
+        for cause in causes {
+            let save = CadenceCalendarEventEditingSupport.saveFailureNotice(for: cause)
+            let delete = CadenceCalendarEventEditingSupport.deleteFailureNotice(for: cause)
+
+            #expect(save.hasPrefix(CadenceCalendarEventEditingSupport.saveFailureNotice))
+            #expect(delete.hasPrefix(CadenceCalendarEventEditingSupport.deleteFailureNotice))
+            #expect(save.contains(cause.message), "the save notice drops the cause for \(cause)")
+            #expect(delete.contains(cause.message), "the delete notice drops the cause for \(cause)")
+            // The whole point: it says more than the causeless sentence did.
+            #expect(save != CadenceCalendarEventEditingSupport.saveFailureNotice)
+            #expect(save != delete)
+        }
+
+        // Five causes, five distinct sentences — a `message` that collapsed two of them would
+        // leave the sheet no better off than the `Bool` it replaced.
+        #expect(Set(causes.map { CadenceCalendarEventEditingSupport.saveFailureNotice(for: $0) }).count == 5)
+        #expect(
+            CadenceCalendarEventEditingSupport.saveFailureNotice(for: .saveFailed("iCloud rejected the write"))
+                .contains("iCloud rejected the write"),
+            "the EventKit error text is the only new information a save failure carries"
+        )
+
+        // No cause to name is still a sentence, and it is T-324's.
+        #expect(
+            CadenceCalendarEventEditingSupport.saveFailureNotice(for: nil)
+                == CadenceCalendarEventEditingSupport.saveFailureNotice
+        )
+        #expect(
+            CadenceCalendarEventEditingSupport.deleteFailureNotice(for: nil)
+                == CadenceCalendarEventEditingSupport.deleteFailureNotice
+        )
+    }
+
     // MARK: - Non-vacuity
 
     /// Every source-reading test above passes trivially if the read returns nothing, so prove the
@@ -409,6 +582,8 @@ struct CadenceEventKitPlatformParityTests {
         for path in [
             "Cadence/iOS/iOSCalendarManager.swift",
             "Cadence/iOS/iOSEventNoteEditorSheet.swift",
+            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
+            "Cadence/iOS/iOSCalendarEventEditSheet.swift",
             "Cadence/macOS/Services/CalendarManager.swift"
         ] {
             let raw = try CadenceSourceScan.sourceFile(path)

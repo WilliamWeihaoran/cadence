@@ -98,6 +98,18 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
   `CadenceCompactTab` live here because both platforms need them.
 - `CompactTagStrip` is declared inside `Components/CadenceTagChip.swift`; there is no
   `CompactTagStrip.swift`.
+- **`ModelContext.rollback()` is for deletes, not edits.** Both app call sites are in
+  `CadencePendingChangePersistence` — `commitDelete` and `commitCascade` — and both are correct.
+  Edit undo is a field snapshot (`CadenceTaskFieldSnapshot`, `CadenceListEditSnapshot`). The
+  **load-bearing** reason, and the one to lead with: this app has a single `ModelContext`, so a
+  rollback discards pending work the editor knows nothing about. Pinned by
+  `arefusedListEditLeavesUnrelatedPendingWorkAlone`, and independent of SwiftData's behaviour.
+  The *secondary* reason is measured and conditional (T-402): `rollback()` corrects the store at
+  once, but a live `PersistentModel` keeps the assigned value until something **fetches** —
+  `area.name = "New"; rollback(); area.name` still reads `"New"`. Pinned by
+  `rollbackRestoresAnEditOnlyOnceSomethingRefreshesTheObject`, whose assertion order is itself
+  load-bearing: a fetch placed before the read measures the opposite. A fourth `rollback()` must
+  be a delete — `everyRollbackCallSiteInTheAppIsADeleteCommit` is red on a new one.
 
 ## Page Headers
 

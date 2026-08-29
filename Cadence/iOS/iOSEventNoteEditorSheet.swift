@@ -189,12 +189,19 @@ struct iOSEventNoteEditorSheet: View {
 
     /// Whether Apple Calendar now holds this note's text. A note with no native event to mirror
     /// into has nothing that can fail, so it is not a sync failure.
+    ///
+    /// The writes answer `CalendarWriteFailure?` since T-339, and this narrows that back to the
+    /// `Bool` `commitNote` wants — deliberately, and in the same place macOS's
+    /// `EventNoteSupport.syncNativeCalendarNotes` does it. `CadenceEventNoteCommitOutcome` is
+    /// about what happened to the *note*: whether the local save landed, and whether the mirror
+    /// did. Which EventKit rejection it was does not change either of those, and this editor's
+    /// banner is a debounced flush that fires while someone types.
     private func syncNoteToNativeEvent() -> Bool {
         if let event {
-            return calendarManager.updateEventNotes(event, notes: note.content)
+            return calendarManager.updateEventNotes(event, notes: note.content) == nil
         }
         if !note.calendarEventID.isEmpty {
-            return calendarManager.updateEventNotes(calendarEventID: note.calendarEventID, notes: note.content)
+            return calendarManager.updateEventNotes(calendarEventID: note.calendarEventID, notes: note.content) == nil
         }
         return true
     }

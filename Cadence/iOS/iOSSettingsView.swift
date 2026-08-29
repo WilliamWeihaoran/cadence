@@ -27,16 +27,25 @@ struct iOSSettingsView: View {
     @State private var cloudAccount = CadenceCloudAccountProbe()
     @State private var contextEditorMode: iOSContextEditorMode?
     @State private var pendingDeletion: iOSListDeletionTarget?
-    /// What the iPad rail is pointing at. On iPad a category is always selected — the rail is
-    /// beside the content, so there is no "no category" state to be in.
-    @State private var selectedCategory: iOSSettingsCategory = .navigation
-    /// The category the phone has drilled into, or `nil` for the category list.
+    /// Which category you are in — **one** value, read two ways.
     ///
-    /// Deliberately local state rather than a `NavigationLink`: this same view is hosted with a
-    /// navigation stack around it on iPhone and without one in the iPad shell, and a link whose
-    /// destination is only sometimes reachable is the kind of control that looks tappable and
-    /// does nothing.
-    @State private var drilledCategory: iOSSettingsCategory?
+    /// This was two `@State` properties, `selectedCategory` for the iPad rail and
+    /// `drilledCategory` for the phone, with nothing between them. Compact taps wrote one and the
+    /// regular layout read the other, so widening out of Templates landed on Navigation and
+    /// narrowing out of Calendar dropped back to the category list (T-335). Nor could `@State`
+    /// have carried it: this view sits in the sidebar shell's detail at regular width and on the
+    /// More tab's stack at compact width, so the size class destroys and rebuilds it.
+    ///
+    /// Stored, not held, for that reason — and persisted like `ios.compact.selectedTab` and the
+    /// calendar's own anchor, because on this platform where you were is where you come back to.
+    /// `CadenceMobileSettingsNavigation` owns both readings and the empty-string "category list"
+    /// spelling; the rule it encodes is Month's (`CadenceCalendarMonthLayout`): the category is
+    /// user state, compact-versus-regular is presentation.
+    ///
+    /// Still not a `NavigationLink` on the compact side: this view is hosted with a navigation
+    /// stack around it on iPhone and without one in the iPad shell, and a link whose destination is
+    /// only sometimes reachable is the kind of control that looks tappable and does nothing.
+    @AppStorage("ios.settings.category") private var settingsCategoryRaw = CadenceMobileSettingsNavigation.categoryListRawValue
     @State private var aiAPIKeyDraft = ""
     #if DEBUG
     @State private var sampleDataStatus: String?
@@ -54,6 +63,24 @@ struct iOSSettingsView: View {
 
     private var calendarPresentation: CadenceCalendarPresentation {
         CadenceCalendarPresentation(rawValue: calendarPresentationRaw) ?? .timeline
+    }
+
+    /// What the iPad rail points at. Never `nil`: the rail is beside the content, so there is no
+    /// "no category" state for it to be in, and the phone's list state widens into the default.
+    private var selectedCategory: iOSSettingsCategory {
+        iOSSettingsCategory(
+            kind: CadenceMobileSettingsNavigation.railCategory(storedRawValue: settingsCategoryRaw)
+        ) ?? .navigation
+    }
+
+    /// The category the phone has drilled into, or `nil` for the category list.
+    private var drilledCategory: iOSSettingsCategory? {
+        CadenceMobileSettingsNavigation.drilledCategory(storedRawValue: settingsCategoryRaw)
+            .flatMap { iOSSettingsCategory(kind: $0) }
+    }
+
+    private func select(_ category: iOSSettingsCategory?) {
+        settingsCategoryRaw = CadenceMobileSettingsNavigation.storedRawValue(for: category?.sharedKind)
     }
 
     var body: some View {
@@ -87,7 +114,7 @@ struct iOSSettingsView: View {
                     iOSSettingsPageHeader(
                         title: category.title,
                         tint: category.tint,
-                        onBack: { drilledCategory = nil }
+                        onBack: { select(nil) }
                     )
 
                     sectionContent(for: category)
@@ -99,7 +126,7 @@ struct iOSSettingsView: View {
                     )
 
                     iOSSettingsCategoryList { category in
-                        drilledCategory = category
+                        select(category)
                     }
                 }
             }
@@ -116,7 +143,12 @@ struct iOSSettingsView: View {
 
     private var settingsRegularLayout: some View {
         HStack(spacing: 0) {
-            iOSSettingsRail(selectedCategory: $selectedCategory)
+            iOSSettingsRail(
+                selectedCategory: Binding(
+                    get: { selectedCategory },
+                    set: { select($0) }
+                )
+            )
 
             Rectangle()
                 .fill(Theme.borderSubtle)

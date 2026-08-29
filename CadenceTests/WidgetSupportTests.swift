@@ -602,9 +602,12 @@ struct WidgetSupportTests {
         manager.clear()
     }
 
-    /// `TaskTitleShortcutParsing` had to spell its own trim because `CadenceTitleNormalization`,
-    /// the app's one trim rule, is not in the widget target's source list. This is the guard that
-    /// the copy cannot drift from the original.
+    /// `TaskTitleShortcutParsing` used to spell its own trim because `CadenceTitleNormalization`,
+    /// the app's one trim rule, was in `Shared/` and out of the widget target's source list. T-406
+    /// moved the declaration into `Models/ModelEnums.swift` instead, so this now asserts one
+    /// function against itself. It stays as the behavioural half of that pin — the structural half
+    /// is `theTitleTrimRuleIsDeclaredOnceInAFileTheWidgetTargetCompiles` below, and a future
+    /// re-fork would have to defeat both.
     @Test func taskTitleShortcutTrimAgreesWithTheSharedTitleTrim() {
         let samples = [
             "  review launch plan  ",
@@ -668,4 +671,224 @@ struct WidgetSupportTests {
 
         #expect(prioritized.map(\.title) == ["Ship v2"])
     }
+
+    // MARK: - T-313: one resolver walk per goal per timeline
+
+    /// The milestone snapshot must resolve each goal's summaries **once**.
+    ///
+    /// This is a source scan rather than a behavioural assertion because the duplication it guards
+    /// against is invisible in the output: `GoalContributionResolver.summary` is a pure function of
+    /// the goal and `now`, so calling it three times produces exactly what calling it once
+    /// produces. What it costs is three recursive walks through sub-goals, linked lists, tasks and
+    /// habits inside a WidgetKit timeline — and a widget that overruns its execution budget renders
+    /// nothing at all, so the cost is a blank widget rather than a wrong number.
+    @Test func milestoneSnapshotResolvesEachGoalSummaryExactlyOnce() throws {
+        let path = "Cadence/Services/CadenceMilestoneWidgetSupport.swift"
+        let source = try widgetSourceFile(path)
+
+        // Non-vacuity: the scan really read the file it names, and read the type it is about.
+        // Without this a typo'd path yields "" and every count below trivially passes.
+        #expect(source.contains("enum CadenceMilestoneWidgetSupport"))
+        #expect(source.count > 2_000)
+
+        let code = widgetSourceCodeOnly(source)
+        // ...and the comment stripper did not eat the file it was handed.
+        #expect(code.contains("enum CadenceMilestoneWidgetSupport"))
+
+        #expect(
+            widgetOccurrences(of: "GoalContributionResolver.summary(", in: code) == 1,
+            "contribution summaries must be resolved once and carried, not recomputed per render"
+        )
+        #expect(
+            widgetOccurrences(of: "GoalHabitMomentumResolver.summary(", in: code) == 1,
+            "habit momentum must be resolved once and carried, not recomputed per render"
+        )
+        #expect(
+            widgetOccurrences(of: "GoalContributionResolver.overdueTasks(", in: code) == 0,
+            "the overdue rollup reads the ids the contribution walk already produced"
+        )
+    }
+
+    /// The summaries the ranking used are the ones the rendering draws.
+    ///
+    /// The behavioural half of the scan above: a decoration that carried a *stale* summary would
+    /// still pass a call count. This pins that what is carried equals what a fresh resolve at the
+    /// same instant produces, and that `snapshot` renders from those carried values.
+    @Test func milestoneDecorationsCarryTheSummariesTheRenderingUses() {
+        let now = DateFormatters.date(from: "2026-05-11")!
+
+        let overdueGoal = Goal(title: "Overdue launch")
+        let overdueTask = AppTask(title: "Fix blocking task")
+        overdueTask.dueDate = "2026-05-08"
+        overdueGoal.tasks = [overdueTask]
+        let habit = Habit(title: "Daily review")
+        habit.frequencyType = .daily
+        overdueGoal.habits = [habit]
+
+        let routineGoal = Goal(title: "Routine upkeep")
+        let routineTask = AppTask(title: "Follow up")
+        routineTask.dueDate = "2026-05-14"
+        routineGoal.tasks = [routineTask]
+
+        let decorations = CadenceMilestoneWidgetSupport.prioritizedDecorations(
+            from: [routineGoal, overdueGoal],
+            now: now
+        )
+
+        #expect(decorations.map(\.goal.title) == ["Overdue launch", "Routine upkeep"])
+
+        for decoration in decorations {
+            let contribution = GoalContributionResolver.summary(for: decoration.goal, now: now)
+            let momentum = GoalHabitMomentumResolver.summary(for: decoration.goal, now: now)
+            #expect(decoration.contribution.overdueTaskIDs == contribution.overdueTaskIDs)
+            #expect(decoration.contribution.percentLabel == contribution.percentLabel)
+            #expect(decoration.contribution.nextActionTitle == contribution.nextActionTitle)
+            #expect(decoration.momentum.linkedHabitCount == momentum.linkedHabitCount)
+            #expect(decoration.momentum.dueTodayLabel == momentum.dueTodayLabel)
+        }
+
+        let snapshot = CadenceMilestoneWidgetSupport.snapshot(
+            from: [routineGoal, overdueGoal],
+            now: now,
+            limit: 5
+        )
+
+        #expect(snapshot.visibleGoals.map(\.id) == decorations.map(\.goal.id))
+        #expect(snapshot.visibleGoals.map(\.percentLabel) == decorations.map(\.contribution.percentLabel))
+        #expect(snapshot.visibleGoals.map(\.overdueTaskCount) == decorations.map(\.contribution.overdueTaskCount))
+        #expect(snapshot.visibleGoals.map(\.linkedHabitCount) == decorations.map(\.momentum.linkedHabitCount))
+        #expect(snapshot.visibleGoals.map(\.dueTodayLabel) == decorations.map(\.momentum.dueTodayLabel))
+    }
+
+    /// `GoalContributionSummary.overdueTaskIDs` is the same set `overdueTasks(for:now:)` returns.
+    ///
+    /// The rollup switched from the second call to the carried ids, so the two have to name the
+    /// same tasks — including through a nested goal, which is the case the union exists for.
+    @Test func goalSummaryCarriesTheSameOverdueTasksTheResolverReports() {
+        let now = DateFormatters.date(from: "2026-05-11")!
+
+        let area = Area(name: "Launch")
+        let first = AppTask(title: "Fix blocker")
+        first.dueDate = "2026-05-08"
+        let second = AppTask(title: "Ship changelog")
+        second.dueDate = "2026-05-09"
+        let onTime = AppTask(title: "Later")
+        onTime.dueDate = "2026-05-20"
+        area.tasks = [first, second, onTime]
+
+        let direction = Goal(title: "Ship v2")
+        let milestone = Goal(title: "Beta cut")
+        direction.subGoals = [milestone]
+        milestone.parentGoal = direction
+        milestone.listLinks = [GoalListLink(goal: milestone, area: area)]
+
+        for goal in [direction, milestone] {
+            let carried = GoalContributionResolver.summary(for: goal, now: now).overdueTaskIDs
+            let resolved = GoalContributionResolver.overdueTasks(for: goal, now: now).map(\.id)
+            #expect(Set(carried) == Set(resolved))
+            #expect(carried.count == resolved.count)
+        }
+
+        // Non-vacuity: an empty set would satisfy the equality above against itself.
+        #expect(GoalContributionResolver.summary(for: direction, now: now).overdueTaskIDs.count == 2)
+    }
+
+    // MARK: - T-406: the trim rule is declared once, where every target can reach it
+
+    /// One declaration of `CadenceTitleNormalization`, in a file `CadenceWidgets` compiles.
+    ///
+    /// Both halves matter and they are the same fact. `TaskTitleShortcutParsing` re-spelled the
+    /// trim only because the declaration sat in `Shared/`, which the widget's **explicit** source
+    /// list barely reaches; moving it is what removes the copy, and it is only a fix for as long as
+    /// the widget target still compiles wherever it landed. That second half is the `aaa0064`
+    /// failure mode mechanised — a call routed into a file no target compiles leaves
+    /// `-scheme Cadence` green while another target breaks.
+    @Test func theTitleTrimRuleIsDeclaredOnceInAFileTheWidgetTargetCompiles() throws {
+        let declaringFiles = try widgetSwiftFiles(under: "Cadence").filter { path in
+            (try? widgetSourceFile(path))?.contains("enum CadenceTitleNormalization") ?? false
+        }
+
+        // Non-vacuity: the sweep walked a real tree, not an empty one.
+        #expect(try widgetSwiftFiles(under: "Cadence").count > 100)
+        #expect(declaringFiles == ["Cadence/Models/ModelEnums.swift"])
+
+        let declaring = try widgetSourceFile("Cadence/Models/ModelEnums.swift")
+        #expect(
+            widgetOccurrences(of: "trimmingCharacters(in: .whitespacesAndNewlines)", in: widgetSourceCodeOnly(declaring)) == 1,
+            "the trim is spelled once, inside CadenceTitleNormalization.normalized"
+        )
+        #expect(declaring.contains("CadenceTitleNormalization.normalized(title)"))
+
+        let widgetSources = try widgetTargetSourcesPhase()
+        #expect(widgetSources.contains("Cadence/Models/ModelEnums.swift in Sources"))
+    }
+}
+
+
+// MARK: - Source-scan helpers for WidgetSupportTests
+
+private func widgetRepositoryRoot() -> URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+}
+
+private func widgetSourceFile(_ relativePath: String) throws -> String {
+    try String(contentsOf: widgetRepositoryRoot().appendingPathComponent(relativePath), encoding: .utf8)
+}
+
+/// Enumerated by `enumerator(atPath:)` rather than `enumerator(at:)` for the reason
+/// `AINoteActionReviewTests` documents: the URL variant yields absolute paths, and `#filePath` can
+/// name the repo through a symlinked prefix that `FileManager` resolves and the literal does not.
+private func widgetSwiftFiles(under relativeDirectory: String) throws -> [String] {
+    let directory = widgetRepositoryRoot().appendingPathComponent(relativeDirectory)
+    guard let enumerator = FileManager.default.enumerator(atPath: directory.path) else { return [] }
+    return enumerator.compactMap { element in
+        guard let relativePath = element as? String, relativePath.hasSuffix(".swift") else { return nil }
+        return "\(relativeDirectory)/\(relativePath)"
+    }
+}
+
+/// Blanks `//` line comments so a scan reads code rather than prose — these files explain in
+/// comments exactly which calls they no longer make, which would otherwise be counted as calls.
+/// Crude on purpose: a `//` inside a string literal is blanked too, which can only make these
+/// checks stricter about what counts as a comment, never looser about live code.
+private func widgetSourceCodeOnly(_ source: String) -> String {
+    source
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map { line -> String in
+            guard let range = line.range(of: "//") else { return String(line) }
+            return String(line[..<range.lowerBound])
+        }
+        .joined(separator: "\n")
+}
+
+private func widgetOccurrences(of needle: String, in haystack: String) -> Int {
+    guard !needle.isEmpty else { return 0 }
+    var count = 0
+    var index = haystack.startIndex
+    while let found = haystack.range(of: needle, range: index..<haystack.endIndex) {
+        count += 1
+        index = found.upperBound
+    }
+    return count
+}
+
+/// The `CadenceWidgets` target's `PBXSourcesBuildPhase` block, found by a file only that target
+/// compiles rather than by its object id, so a project-file regeneration does not silently make
+/// this scan read a different phase.
+private func widgetTargetSourcesPhase() throws -> String {
+    let project = try widgetSourceFile("Cadence.xcodeproj/project.pbxproj")
+    let blocks = project
+        .components(separatedBy: "isa = PBXSourcesBuildPhase;")
+        .dropFirst()
+        .map { block -> String in
+            guard let end = block.range(of: "runOnlyForDeploymentPostprocessing") else { return block }
+            return String(block[..<end.lowerBound])
+        }
+    let widgetBlocks = blocks.filter { $0.contains("Cadence/Services/CadenceWidgetIntents.swift in Sources") }
+    // Non-vacuity: exactly one phase compiles the widget's App Intents. Zero would mean the anchor
+    // went stale and every `contains` below would read an empty string.
+    #expect(widgetBlocks.count == 1)
+    return widgetBlocks.first ?? ""
 }

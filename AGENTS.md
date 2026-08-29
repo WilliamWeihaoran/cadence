@@ -133,6 +133,9 @@ Before treating a red run as a code regression, check:
   exited early.
 - UI-test failures in an ordinary test run: the run was not scoped to `CadenceTests`.
 - Compile failures that name your file are real until proven otherwise.
+- **Count test hosts with `pgrep -f '^/Applications/.*/xcodebuild test'`.** A loose
+  `pgrep -f xcodebuild` matches any script whose own command text contains the word — including the
+  poller asking. That hid a stranded lock for 29 minutes on 2026-08-29.
 - **A warning count from a run that did not recompile the file is vacuous.** An incremental
   `xcodebuild test` reuses object files, so `grep -c warning:` returns 0 whether or not your change
   introduced warnings. Only trust a warning count from a run that actually rebuilt the file you

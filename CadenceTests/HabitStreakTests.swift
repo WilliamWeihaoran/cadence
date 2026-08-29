@@ -388,6 +388,13 @@ struct HabitStreakTests {
     /// out of proportion for this pass. This test locks in the current (unclamped) behavior so
     /// a future migration-aware fix has a regression test to update rather than leaving this
     /// gap silently undocumented.
+    ///
+    /// The gap is still at the **model** layer, and only there. Two later passes put the check
+    /// where the value is used instead: `HabitNotificationPlanner.reminderMinuteRange` (T-363),
+    /// which refuses to schedule an out-of-range minute, and `CadenceHabitReminderEditing`
+    /// (T-410), which opens both habit editors on "unset" rather than a fabricated time. So a
+    /// corrupt value still round-trips through `Habit` exactly as asserted below; what changed is
+    /// that nothing downstream pretends it is a time.
     @Test func reminderMinuteOfDayHasNoRangeValidationTodayByDesignGap() throws {
         let habit = Habit(title: "Test")
 

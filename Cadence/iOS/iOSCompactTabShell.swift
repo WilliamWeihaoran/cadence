@@ -50,6 +50,13 @@ struct iOSCompactRootShell: View {
     @Binding var selectedTab: CadenceCompactTab
     @Binding var tasksSection: CadenceTasksSection
     @Binding var paths: iOSCompactTabPaths
+    /// Reported up because a `NavigationPath` is write-only — it can be replaced and counted, never
+    /// read — so the root cannot otherwise tell whether the More tab is showing its menu or a
+    /// feature the sidebar has a row for. Without that, widening out of More → Goals had nothing to
+    /// widen *into* and left the sidebar on whatever it was last pointed at (T-334). Every feature
+    /// push in every tab passes through the one `navigationDestination` below, so this is one call
+    /// site rather than a rule each screen has to remember.
+    var onFeatureDestinationAppear: (CadenceCompactTab, CadenceFeatureDestination) -> Void = { _, _ in }
 
     // No `@Query` here on purpose. The shell used to hold
     // `@Query(sort: \AppTask.order) private var allTasks` for the placeholder capture sheet, which
@@ -118,6 +125,7 @@ struct iOSCompactRootShell: View {
             root(for: tab)
                 .navigationDestination(for: CadenceFeatureDestination.self) { destination in
                     iOSCompactFeatureDestinationView(destination: destination)
+                        .onAppear { onFeatureDestinationAppear(tab, destination) }
                 }
         }
         // A tab kept alive at zero opacity is still laying its rows out, and the custom capture

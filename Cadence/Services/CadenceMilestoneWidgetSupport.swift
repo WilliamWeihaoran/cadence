@@ -39,6 +39,16 @@ nonisolated struct CadenceMilestoneWidgetSnapshot: Hashable {
     }
 }
 
+/// A pool goal with the two summaries this widget both ranks and renders it by, resolved once.
+///
+/// See `CadenceMilestoneWidgetSupport.snapshot(from:now:limit:)` — this type exists so the ranking
+/// pass can hand its work to the rendering pass instead of dropping it (T-313).
+nonisolated struct CadenceMilestoneWidgetGoalDecoration {
+    let goal: Goal
+    let contribution: GoalContributionSummary
+    let momentum: GoalHabitMomentumSummary
+}
+
 nonisolated enum CadenceMilestoneWidgetSupport {
     static func snapshot(
         modelContext: ModelContext,
@@ -49,14 +59,26 @@ nonisolated enum CadenceMilestoneWidgetSupport {
         return snapshot(from: goals, now: Date(), limit: limit)
     }
 
+    /// **T-313: every goal is resolved exactly once here.**
+    ///
+    /// This used to walk the same trees three times over. `prioritizedGoals` decorated the pool
+    /// with a contribution summary and a habit-momentum summary, ranked by them, and then threw
+    /// both away at `.map(\.goal)`; `widgetGoal` recomputed both for every goal the widget draws;
+    /// and the overdue rollup called `GoalContributionResolver.overdueTasks` once more for every
+    /// active goal. Each of those recurses sub-goals, linked lists, tasks and habits, so on a large
+    /// store the timeline could approach WidgetKit's execution budget — and a widget that overruns
+    /// it renders *nothing*, which is a worse failure than any number this file computes.
+    ///
+    /// One contribution walk per active goal and one momentum walk per pool goal now, shared by
+    /// the ranking, the rendering and the rollup.
     static func snapshot(
         from goals: [Goal],
         now: Date = Date(),
         limit: Int
     ) -> CadenceMilestoneWidgetSnapshot {
-        let pool = prioritizedGoals(from: goals, now: now)
-        let visibleGoals = Array(pool.prefix(max(limit, 0))).map { widgetGoal($0, now: now) }
-        let activeGoals = goals.filter { $0.status == .active }
+        let contributions = activeContributions(from: goals, now: now)
+        let pool = ranked(contributions, now: now)
+        let visibleGoals = pool.prefix(max(limit, 0)).map(widgetGoal)
 
         return CadenceMilestoneWidgetSnapshot(
             date: now,
@@ -72,8 +94,8 @@ nonisolated enum CadenceMilestoneWidgetSupport {
             // every active goal because a direction that steps out of the pool can still own
             // overdue tasks directly, and this badge is the app's overdue total, not the visible
             // rows'.
-            totalOverdueTaskCount: activeGoals.reduce(into: Set<UUID>()) { partial, goal in
-                partial.formUnion(GoalContributionResolver.overdueTasks(for: goal, now: now).map(\.id))
+            totalOverdueTaskCount: contributions.reduce(into: Set<UUID>()) { partial, entry in
+                partial.formUnion(entry.contribution.overdueTaskIDs)
             }.count,
             visibleGoals: visibleGoals
         )
@@ -111,25 +133,53 @@ nonisolated enum CadenceMilestoneWidgetSupport {
         from goals: [Goal],
         now: Date = Date()
     ) -> [Goal] {
+        prioritizedDecorations(from: goals, now: now).map(\.goal)
+    }
+
+    /// The ranked pool with the summaries the ranking used still attached.
+    ///
+    /// This is the shape `snapshot` needs and `prioritizedGoals` is now a projection of it. See
+    /// `snapshot(from:now:limit:)` for why the summaries are carried rather than recomputed.
+    static func prioritizedDecorations(
+        from goals: [Goal],
+        now: Date = Date()
+    ) -> [CadenceMilestoneWidgetGoalDecoration] {
+        ranked(activeContributions(from: goals, now: now), now: now)
+    }
+
+    /// One contribution walk per **active** goal — not per pool goal, because the overdue rollup
+    /// counts directions that stepped out of the pool too. See `snapshot`'s note on the union.
+    private static func activeContributions(
+        from goals: [Goal],
+        now: Date
+    ) -> [(goal: Goal, contribution: GoalContributionSummary)] {
+        goals
+            .filter { $0.status == .active }
+            .map { ($0, GoalContributionResolver.summary(for: $0, now: now)) }
+    }
+
+    private static func ranked(
+        _ contributions: [(goal: Goal, contribution: GoalContributionSummary)],
+        now: Date
+    ) -> [CadenceMilestoneWidgetGoalDecoration] {
         // Decorated before sorting rather than resolved inside the comparator. Both resolvers
         // walk the goal's whole sub-tree, and a comparator runs O(n log n) times — so this was
         // four full tree walks per comparison, inside a widget timeline where the CPU and memory
-        // budget is hard. Now it is two per goal, once.
-        let decorated = activeMilestonePool(from: goals)
-            .map { goal in
-                (
-                    goal: goal,
-                    summary: GoalContributionResolver.summary(for: goal, now: now),
-                    momentum: GoalHabitMomentumResolver.summary(for: goal, now: now)
+        // budget is hard. Now it is one contribution and one momentum per goal, once.
+        return contributions
+            .filter { isInMilestonePool($0.goal) }
+            .map { entry in
+                CadenceMilestoneWidgetGoalDecoration(
+                    goal: entry.goal,
+                    contribution: entry.contribution,
+                    momentum: GoalHabitMomentumResolver.summary(for: entry.goal, now: now)
                 )
             }
-
-        return decorated
             .sorted { lhsEntry, rhsEntry in
                 let lhs = lhsEntry.goal
                 let rhs = rhsEntry.goal
-                let lhsSummary = lhsEntry.summary
-                let rhsSummary = rhsEntry.summary
+                let lhsSummary = lhsEntry.contribution
+                let rhsSummary = rhsEntry.contribution
                 let lhsMomentum = lhsEntry.momentum
                 let rhsMomentum = rhsEntry.momentum
 
@@ -154,7 +204,6 @@ nonisolated enum CadenceMilestoneWidgetSupport {
                 }
                 return normalizedTitle(lhs.title) < normalizedTitle(rhs.title)
             }
-            .map(\.goal)
     }
 
     /// The goals this widget ranks against each other: the **leaves** of the active goal tree.
@@ -182,7 +231,13 @@ nonisolated enum CadenceMilestoneWidgetSupport {
     /// that goals nest exactly one level, but the editors enforce that, not the store, so a third
     /// level arriving over CloudKit must not put a middle goal back beside its own child.
     static func activeMilestonePool(from goals: [Goal]) -> [Goal] {
-        goals.filter { $0.status == .active && !hasActiveDescendant($0) }
+        goals.filter(isInMilestonePool)
+    }
+
+    /// The pool predicate, spelled once. `ranked` filters already-decorated entries with it rather
+    /// than re-deriving the same two clauses, so the pool cannot come to mean two things.
+    private static func isInMilestonePool(_ goal: Goal) -> Bool {
+        goal.status == .active && !hasActiveDescendant(goal)
     }
 
     private static func hasActiveDescendant(_ goal: Goal) -> Bool {
@@ -200,11 +255,11 @@ nonisolated enum CadenceMilestoneWidgetSupport {
     }
 
     private static func widgetGoal(
-        _ goal: Goal,
-        now: Date
+        _ decoration: CadenceMilestoneWidgetGoalDecoration
     ) -> CadenceMilestoneWidgetGoal {
-        let contribution = GoalContributionResolver.summary(for: goal, now: now)
-        let momentum = GoalHabitMomentumResolver.summary(for: goal, now: now)
+        let goal = decoration.goal
+        let contribution = decoration.contribution
+        let momentum = decoration.momentum
         return CadenceMilestoneWidgetGoal(
             id: goal.id,
             title: normalizedTitle(goal.title),

@@ -44,9 +44,25 @@ struct iOSRootView: View {
     /// took an initial scroll reading for a user action and then compounded across launches.
     @AppStorage("ios.compact.selectedTab") private var selectedTabRaw = CadenceCompactTab.defaultTab.rawValue
     @AppStorage("ios.compact.tasksSection") private var tasksSectionRaw = CadenceTasksSection.defaultSection.rawValue
+    /// The feature screen sitting on each tab's stack, mirrored here because `NavigationPath` can
+    /// be replaced and counted but never read back. Only the size-class bridge consults it; see
+    /// `iOSCompactRootShell.onFeatureDestinationAppear`.
+    @State private var compactPushedFeature: [CadenceCompactTab: CadenceFeatureDestination] = [:]
 
     private var selectedTab: CadenceCompactTab {
         CadenceCompactTab.resolved(selectedTabRaw)
+    }
+
+    private var tasksSection: CadenceTasksSection {
+        CadenceTasksSection.resolved(tasksSectionRaw)
+    }
+
+    /// The mirrored push, but only while the selected tab's stack is actually holding something.
+    /// A tab popped back to its root keeps its last recorded value, and a count of zero is the one
+    /// signal available that the value has been left behind.
+    private var compactPushedDestination: CadenceFeatureDestination? {
+        guard compactPaths[selectedTab].count > 0 else { return nil }
+        return compactPushedFeature[selectedTab]
     }
 
     var body: some View {
@@ -62,10 +78,13 @@ struct iOSRootView: View {
                         set: { selectedTabRaw = $0.rawValue }
                     ),
                     tasksSection: Binding(
-                        get: { CadenceTasksSection.resolved(tasksSectionRaw) },
+                        get: { tasksSection },
                         set: { tasksSectionRaw = $0.rawValue }
                     ),
-                    paths: $compactPaths
+                    paths: $compactPaths,
+                    onFeatureDestinationAppear: { tab, destination in
+                        compactPushedFeature[tab] = destination
+                    }
                 )
             }
         }
@@ -96,6 +115,24 @@ struct iOSRootView: View {
         }
         .onChange(of: deepLinkManager.route?.token) { _, _ in
             handleDeepLinkRoute()
+        }
+        // T-334. Split View and Stage Manager make the regular/compact switch an ordinary gesture,
+        // and until this existed it was the one navigation event that carried nothing across: the
+        // shell the user was *not* looking at kept whatever it was last told, so Calendar on iPad
+        // narrowed into a stale Tasks and compact Calendar widened back into a stale Today. Deep
+        // links and the Focus handoff had always written both shells; plain navigation never did.
+        //
+        // Bridged here rather than on every selection write because this is the only moment the
+        // two stores are asked to agree, and because a bridge on each write is two properties
+        // observing each other — the shape that turns one tap into a loop.
+        .onChange(of: horizontalSizeClass) { previous, sizeClass in
+            // `nil -> something` is the shell being told its width for the first time, not a
+            // resize, and there is nothing to carry across it. Bridging there would read the
+            // sidebar's `@State` default of Today against a *restored* `ios.compact.selectedTab`,
+            // decide they disagree, and write the default over the restored tab — a launch that
+            // silently forgets which tab you left the app on.
+            guard previous != nil else { return }
+            bridgeNavigation(to: sizeClass)
         }
         // The shell navigates; the Focus screen adopts. Split that way because they are two
         // different pieces of knowledge — which tab owns Focus, and what happens to the session
@@ -207,9 +244,39 @@ private extension iOSRootView {
         let route = CadenceFocusHandoff.destination.compactRoute
         selection = CadenceFocusHandoff.destination.item
         selectedTabRaw = route.tab.rawValue
+        compactPushedFeature[route.tab] = route.pushedDestination
         let path = route.pushedDestination.map { NavigationPath([$0]) } ?? NavigationPath()
         if compactPaths[route.tab] != path {
             compactPaths[route.tab] = path
+        }
+    }
+
+    /// Carry the selection from the shell that is going away into the one that is arriving.
+    ///
+    /// Only ever writes the *arriving* shell's store, and only when it disagrees. The compact
+    /// stack is left alone when both shells already name the same feature, so narrowing while the
+    /// sidebar is on a project lands on Lists without flattening a list detail you were already
+    /// inside.
+    func bridgeNavigation(to sizeClass: UserInterfaceSizeClass?) {
+        if sizeClass == .regular {
+            guard let destination = CadenceShellNavigationBridge.visibleDestination(
+                tab: selectedTab,
+                tasksSection: tasksSection,
+                pushedDestination: compactPushedDestination
+            ) else { return }
+            let item = destination.item
+            if selection != item {
+                selection = item
+            }
+        } else {
+            guard let destination = (selection ?? .today).featureDestination else { return }
+            let showing = CadenceShellNavigationBridge.visibleDestination(
+                tab: selectedTab,
+                tasksSection: tasksSection,
+                pushedDestination: compactPushedDestination
+            )
+            guard showing != destination else { return }
+            apply(destination.compactRoute)
         }
     }
 
@@ -220,6 +287,7 @@ private extension iOSRootView {
         if let section = route.tasksSection {
             tasksSectionRaw = section.rawValue
         }
+        compactPushedFeature[route.tab] = route.pushedDestination
         compactPaths[route.tab] = route.pushedDestination.map { NavigationPath([$0]) } ?? NavigationPath()
     }
 }

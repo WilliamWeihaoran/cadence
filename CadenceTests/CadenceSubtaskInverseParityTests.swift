@@ -248,6 +248,74 @@ struct CadenceSubtaskInverseParityTests {
 
     // MARK: - T-338 / T-387: one shared subtask insert
 
+    /// **The measurement the guide now cites, made into a test (T-401).**
+    ///
+    /// `Cadence/Models/AGENTS.md` says to append to an optional to-many by assigning a new array.
+    /// On the delete side that is a repair for the window above. On the *create* side it is a
+    /// convention, and this is why: inside the owning `ModelContext` SwiftData back-populates the
+    /// inverse **and** the parent's array synchronously, so writing either side alone leaves the
+    /// other already correct before any save. T-387 measured it by mutation — dropping
+    /// `parent.subtasks = existing + [subtask]` and dropping `subtask.parentTask = parent` from
+    /// the insert helper both left the suite green — but a surviving mutation is evidence that
+    /// evaporates when the mutation is reverted. This asserts the fact directly, so it is still
+    /// on record next time.
+    ///
+    /// Two independent audits filed a one-sided create as a defect (T-338, T-387) and T-294 hit it
+    /// a third time; each cost real time fixing something that was not broken. **Red here does not
+    /// mean the app regressed** — it means SwiftData stopped back-populating, the create-side rule
+    /// became a repair after all, and the guide bullet needs rewriting.
+    ///
+    /// Read in the owning context on purpose, unlike every other test in this file: "is this true
+    /// of a second context after a save" is a different and easier question, and the window the
+    /// three tickets predicted is here, before the commit.
+    @Test func swiftDataBackPopulatesEitherSideOfANewSubtaskInverse() throws {
+        let container = try makeContainer()
+        let modelContext = ModelContext(container)
+
+        // Half one: write only the child's back-reference and read the parent's array.
+        let arrayNeverWritten = AppTask(title: "Attached from the child")
+        modelContext.insert(arrayNeverWritten)
+        #expect((arrayNeverWritten.subtasks ?? []).isEmpty, "the fixture starts with no children")
+
+        let fromChild = Subtask(title: "Only parentTask was assigned")
+        fromChild.parentTask = arrayNeverWritten
+        modelContext.insert(fromChild)
+
+        #expect(
+            (arrayNeverWritten.subtasks ?? []).map(\.title) == ["Only parentTask was assigned"],
+            """
+            SwiftData no longer back-populates the parent's array from the inverse. \
+            The create-side half of the to-many rule in Cadence/Models/AGENTS.md is now a repair; \
+            rewrite that bullet before relaxing anything.
+            """
+        )
+
+        // Half two: write only the parent's array and read the child's back-reference.
+        let backReferenceNeverWritten = AppTask(title: "Attached from the parent")
+        modelContext.insert(backReferenceNeverWritten)
+
+        let fromParent = Subtask(title: "Only the array was assigned")
+        modelContext.insert(fromParent)
+        #expect(fromParent.parentTask == nil, "the fixture starts unattached")
+
+        backReferenceNeverWritten.subtasks =
+            (backReferenceNeverWritten.subtasks ?? []) + [fromParent]
+
+        #expect(
+            fromParent.parentTask?.id == backReferenceNeverWritten.id,
+            """
+            SwiftData no longer back-populates the inverse from the parent's array. \
+            The create-side half of the to-many rule in Cadence/Models/AGENTS.md is now a repair; \
+            rewrite that bullet before relaxing anything.
+            """
+        )
+
+        // Non-vacuity for "before any commit": nothing above has been saved, so a second context
+        // on the same container still sees an empty store. Last, because a fetch is exactly the
+        // kind of refresh that would make this measure something else.
+        #expect(try fetchSubtasks(in: container).isEmpty)
+    }
+
     /// The insert helper's own contract: trimming, ordering, the blank-title guard, both sides
     /// before any save, and both sides again in the store afterwards.
     ///

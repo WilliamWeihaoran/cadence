@@ -62,11 +62,35 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Residue from [[T-411]]. `iOSCalendarEventEditSheet` and `iOSCalendarQuickCreateSheet` in event mode
   write into EventKit, so an image pasted there is invisible to the inventory for the same reason.
 
-- [T-423] **`CadenceNoteDeletionSummary.forNote` now over-promises.** Residue from [[T-411]]. Its doc
-  comment claims it names "the exact set `deleteUnreferencedMarkdownImageAssets` will collect", which
-  stopped being true when the sweep widened to seven markdown sources — the summary still counts
-  reclaimed images from surviving `Note.content` alone. Either widen it to the inventory or correct
-  the promise; the current state is a comment asserting a guarantee the code no longer keeps.
+- [T-433] **`CadenceListDeletionSummary` says its counts "mirror
+  `ModelContext.deleteArea/deleteProject/deleteContext` exactly" and omits the image sweep all
+  three of them run.** Found while fixing [[T-423]], which was the same defect one summary over.
+  The struct counts tasks, notes, links, projects, areas, goals and habits; it has no `images`
+  field at all, while every cascade it mirrors ends in `deleteUnreferencedMarkdownImageAssets`. So
+  deleting an area holding twenty image-bearing notes destroys those `.externalStorage` bytes with
+  the confirmation saying nothing about them — and the note confirmation beside it *does* say
+  "N embedded images", so the two disagree about whether images are worth mentioning.
+  The arithmetic is now available: `CadenceNoteDeletionSummary.forNote` reads it through
+  `CadenceMarkdownSourceInventory.liveMarkdownTexts(in:excludingNoteIDs:)`, and the list version is
+  the same call with every doomed note's id in the exclusion set. Two things to settle first,
+  though, which is why this is filed rather than done: the list summaries are computed from model
+  objects with **no `ModelContext` parameter** (`forArea(_:)`, `forProject(_:)`, `forContext(_:)`),
+  so the signature has to change the way `forNote` already has; and the cascade counts are exact
+  today, so adding a count that can be a floor means porting `hasUnknownImpact` across too, or the
+  new number silently breaks the "may not over-promise" rule the whole file is built on.
+  Fix the doc comment's "exactly" in the same pass either way.
+
+- [T-434] **The compactness test pins three `AGENTS.md` files and misses the two that are
+  actually near the limit.** Found while fixing [[T-401]].
+  `AgentContextBudgetTests.activeAgentGuidesStayCompactAndRouteToReferences` caps the root guide at
+  180 lines and `Cadence/Shared/` and `Cadence/iOS/` at 160. Measured today: root 176,
+  **`Cadence/Models/` 175**, **`CadenceMCPServer/` 170**, Shared 151, iOS 110. So the two files
+  closest to overflowing are the two the test cannot see, and one of them is the file whose
+  unmarked claim caused [[T-338]] and [[T-387]] — the guide most worth keeping readable is the one
+  with no ceiling. Nine of the twelve `AGENTS.md` files are unpinned.
+  Prefer enumerating every `AGENTS.md` under a single cap over adding two more literals, so a new
+  scoped guide is covered on the day it is created. Pick the cap deliberately: 180 leaves Models
+  five lines of headroom, which will read as a wall to the next editor rather than as a budget.
 
 - [T-409] **`CadenceMCPServer` broke for four commits and `-scheme Cadence` stayed green the whole
   time.** `aaa0064` routed `CadenceWriteService` through `CadenceTaskMutationSupport.insertSubtasks`,
@@ -80,12 +104,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   now builds `CadenceMCPServer` too, but that is a habit, not a guard. A CI-side or test-side check
   would be better.
 
-- [T-410] **The two habit editors disagree about what a corrupt reminder time looks like.** Found
-  while fixing T-363: macOS renders an out-of-range `reminderMinuteOfDay` as *the current time*,
-  iOS wraps 1440 to "12 AM". Neither is wrong about the data — there is no right answer for a value
-  the model never validated — but they should agree, and probably both should say the time is unset
-  rather than invent one.
-
 - [T-407] **`iOSTaskDetailSheet` is the one task surface outside both wrappers.** Residue from
   [[T-343]]. It calls `setStatus`/`toggleCompletion` without reconciling notifications, and
   `dismiss()`es on delete regardless of the `Bool` that delete now returns. Both halves belong to
@@ -93,52 +111,15 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Warning for whoever takes it:** `normalizeCompletionState` must *not* be routed through the
   status wrapper — opening the sheet would then reconcile every time.
 
-- [T-401] **`Cadence/Models/AGENTS.md` states the to-many rule without saying which half was
-  measured.** From the T-387 work, and it is the reason two independent audits filed the same false
-  finding. The guide says to append to an optional to-many by assigning a new array rather than
-  trusting the inverse. On the **delete** side that is measured — T-296 found the window. On the
-  **create** side it is not: mutations that dropped `parent.subtasks = existing + [subtask]` and
-  that dropped `subtask.parentTask = parent` **both survived**, because SwiftData back-populates
-  the inverse *and* the array synchronously inside the owning context. So the create-side rule is a
-  convention worth keeping, not a repair — and stating it as if it were a repair generated T-338 and
-  T-387, with T-294 hitting the same thing and recording it only in a test comment. Mark the two
-  halves apart in the guide.
-
-- [T-402] **`rollback()` undoes an edit in the store immediately, but a live `PersistentModel`
-  reference keeps the assigned value until something fetches.** Measured by a six-case probe while
-  fixing T-321: `area.name = "EDITED"; rollback(); area.name` reads `EDITED`; after any fetch it
-  reads `Work`. Identical with and without a delete in the change set, and identical whether
-  `rollback()` is called directly or from inside an undo closure. **The variable is the fetch.** The
-  delete half is undone unconditionally, which is why `commitDelete` and the cascades are correct.
-  Note the agent that found this corrected itself twice before measuring it — the first version of
-  the T-321 fix used `rollback()` by analogy with the cascades, and the first *test* of that fetched
-  before reading the field and so measured the opposite.
-  **The load-bearing reason `commitEdit` offers no rollback undo does not depend on this at all:**
-  this app has a single `ModelContext`, so a rollback discards unrelated pending work. That is
-  pinned by `arefusedListEditLeavesUnrelatedPendingWorkAlone`. The refresh-timing finding is the
-  secondary reason — real, but conditional.
-  Not a defect today: all three `rollback()` callers are deletes and all are correct. This is a note
-  for whoever adds the fourth.
-
 - [T-403] **`CadenceCalendarEventSearchSupport.identity(of:)` re-spells the first two lines of
   `CadenceEventNoteSupport.rawIdentifier`.** From the T-373 work, kept visible rather than hidden:
   `rawIdentifier` is main-actor isolated and `precedes` must stay `nonisolated` because
   `iOSCalendarManager.fetchEvents` passes it to `sorted(by:)` as a plain function value. The fix is
   one `nonisolated` keyword on `rawIdentifier`; that file was off-limits to the batch that found it.
 
-- [T-404] **Widget capture still bypasses the rest of `TaskCreationService`.** From T-354, which
-  fixed only the priority shortcut. The blocker is `CadencePendingChangePersistence` not being in
-  the widget target's explicit source list, so closing it means a project-file edit — decide that
-  before attempting it.
-
 - [T-405] **The iOS half of T-369 is compile-checked only.** `iOSCalendarView` applies a dated
   calendar link after `CadenceCalendarDateMemory` restores, but `CadenceTests` cannot see
   `Cadence/iOS/`, so that ordering is verified by an iOS-simulator build rather than by a test.
-
-- [T-406] **`TaskTitleShortcutParsing.normalized` is a guarded second copy of the app's trim rule.**
-  From T-354. It lives in `Models/` because the widget target's source list reaches `Models/` and
-  almost none of `Shared/`. A test pins the two spellings agreeing; the duplication is deliberate
-  and the pin is what makes it safe.
 
 - [T-400] **A dead calendar link can be detected with no stored metadata at all.** Residue from
   [[T-390]], which decided not to store calendar title/source because that needs stored properties
@@ -200,43 +181,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   persist area or project ids until [[T-345]] lands**, or launch will restore a selection pointing
   at a deleted list, which is that ticket's bug made permanent.
 
-- [T-339] **iOS has three failure vocabularies for EventKit; macOS has one.** Recommended by the
-  agent that closed [[T-323]] and [[T-325]], which deliberately did **not** do it.
-  macOS models a calendar write failure once, as `CalendarWriteFailure` with a `title` and a
-  `message`, and renders it through one shared alert. iOS has accumulated three answers to the same
-  question: a `Bool` return, the shared notice strings [[T-324]] introduced in
-  `CadenceCalendarEventEditingSupport`, and now an outcome enum for the note commit. Each was the
-  right local call; together they are the divergence.
-  Porting the macOS model means changing every `Bool` write on `iOSCalendarManager` and every call
-  site in both event sheets — well past the two tickets that surfaced it, which is why it was
-  correctly refused there. It is its own ticket.
-  This is the fifth finding where **iOS lags a model macOS already grew** (see [[T-323]], [[T-324]],
-  [[T-325]]). At five, the pattern is the work: port the model once rather than patch the sixth.
-
-- [T-334] **Resizing an iPad window can land you on the wrong screen.** From the iPad/iPhone layout
-  audit (Codex, 2026-08-26); **premise verified — there are zero `onChange(of: horizontalSizeClass)`
-  handlers in `iOSRootView`.** The root keeps the sidebar's `selection` and the compact shell's
-  `selectedTabRaw` / `tasksSectionRaw` as separate stores, picks a shell from the size class, and
-  never bridges between them. A regular sidebar tap writes only `selection`; a compact tab tap
-  writes only `selectedTab`. So Calendar on iPad can narrow into a stale Tasks, and compact Calendar
-  can widen back into a stale Today — reachable through Split View and Stage Manager resizing,
-  which is ordinary iPad use.
-  **The correct pattern is already in the same file**: deep links and the Focus handoff both write
-  *both* shells. So this is not a missing mechanism — it is user navigation not using the one that
-  exists. Fix with a projection between compact route and sidebar item, applied on selection or on
-  the size-class transition, and pin it for plain navigation rather than only for deep links.
-  Measured in source; the live effect is inferred, since neither the auditor nor I drove a resize.
-
-- [T-335] **Settings forgets which category you were in when the window resizes.** From the same
-  audit, premise verified — `iOSSettingsView` holds `selectedCategory` for the rail and
-  `drilledCategory` for the phone layout, ten references between them, and **zero** size-class
-  bridges. Compact taps write one, the regular layout reads the other, so widening from Templates
-  can land on Navigation and narrowing from Calendar can drop back to the category list.
-  **The app already solves exactly this elsewhere**, and the audit named it: Calendar stores the
-  user's Month detail choice separately and lets width decide only *placement*. That is the rule —
-  **the category is user state, compact-versus-regular is presentation** — and it generalises past
-  this ticket, including to [[T-334]].
-
 - [T-336] **DECISION NEEDED: should the iPhone `+` inherit the page you are on?** From the same
   **ANSWERED 2026-08-26 by the user, and superseded by [[T-337]].** The question was whether the
   iPhone `+` should inherit the page. The answer is **neither button should** — context comes from
@@ -267,21 +211,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   must throw and be handled. Then triage the 133 against that rule rather than converting them all.
   Write the rule into `AGENTS.md` when it is decided — a rule an agent reads before writing the
   134th is worth more than fixing the first 133.
-
-- [T-313] **The milestone widget recomputes every goal summary two or three times per timeline.**
-  From the same audit. The snapshot fetches all goals, computes contribution and habit summaries to
-  prioritize them, then recomputes them for the visible ones and again for the overdue rollup. Goal
-  contribution walks recurse through sub-goals, linked lists, tasks and habits, so on a large store
-  this can approach WidgetKit's execution budget — and a widget that misses that budget renders
-  nothing at all. Carry the decorated summaries from the prioritization pass into rendering.
-
-- [T-314] **Widget intents re-implement task capture and habit toggling.** From the same audit.
-  `CaptureTaskIntent` creates tasks inline and `ToggleHabitCompletionIntent` duplicates the toggle,
-  rather than going through the shared mutation helpers. Small today, and exactly the drift this
-  repo keeps paying for as defaults, recurrence and habit semantics evolve — the same argument as
-  [[T-296]] and [[T-292]], where one strict shared path exists beside looser open-coded copies.
-  An App Intent-safe mutation service owning capture, complete and habit toggle would also give
-  [[T-311]] and [[T-312]] one place to put the preflight and the reconcile marker.
 
 - [T-300] **The drag-and-drop date seed has the same lenient-parse bug.** From the same audit,
   premise verified verbatim: `CadenceTaskDropSupport.dateValue` does

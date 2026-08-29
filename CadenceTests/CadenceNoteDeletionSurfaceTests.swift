@@ -164,6 +164,77 @@ struct CadenceNoteDeletionSurfaceTests {
         #expect(CadenceNoteDeletionSummary.forNote(doomed, in: modelContext).images == 1)
     }
 
+    /// **The promise, checked against the sweep instead of against a restatement of it (T-423).**
+    ///
+    /// `forNote`'s doc comment claimed `images` named "the exact set
+    /// `deleteUnreferencedMarkdownImageAssets` will collect", and nothing compared the two. T-411
+    /// then widened the sweep from `Note.content` to the seven fields of
+    /// `CadenceMarkdownSourceInventory` while the summary went on reading surviving notes alone —
+    /// so an image also pasted into a task's notes, or living in a legacy row the migration never
+    /// deleted, was announced as about to be lost and then kept. The comment stayed true-looking
+    /// the whole time because it was only ever checked against itself.
+    ///
+    /// So this runs the real delete and compares. The wrong direction is the safe one — the
+    /// summary over-stated the *loss*, never the survival — but it is still a number on a
+    /// confirmation that does not describe what the button does.
+    ///
+    /// The orphan is why the restriction in the promise is real rather than pedantic: the sweep
+    /// collects it, this note is not why, and `images` must not claim credit for it.
+    @Test func theImageCountMatchesWhatTheSweepActuallyCollects() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let exclusive = imageAsset(1)
+        let alsoInATask = imageAsset(2)
+        let alsoInALegacyRow = imageAsset(3)
+        let orphan = imageAsset(4)
+
+        let doomed = Note(
+            kind: .list,
+            title: "Doomed",
+            content: [
+                imageLine(exclusive),
+                imageLine(alsoInATask),
+                imageLine(alsoInALegacyRow)
+            ].joined(separator: "\n")
+        )
+        let task = AppTask(title: "Wire the thing")
+        task.notes = imageLine(alsoInATask)
+        let legacy = DailyNote(date: "2026-08-21")
+        legacy.content = imageLine(alsoInALegacyRow)
+
+        for asset in [exclusive, alsoInATask, alsoInALegacyRow, orphan] {
+            modelContext.insert(asset)
+        }
+        modelContext.insert(doomed)
+        modelContext.insert(task)
+        modelContext.insert(legacy)
+        try modelContext.save()
+
+        let doomedReferences = MarkdownImageAssetService.referencedIDs(in: doomed.content)
+        let before = Set(try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).map(\.id))
+        // Non-vacuity: four rows, three of them referenced by the note under test.
+        #expect(before.count == 4)
+        #expect(doomedReferences.count == 3)
+
+        let summary = CadenceNoteDeletionSummary.forNote(doomed, in: modelContext)
+        #expect(!summary.hasUnknownImpact, "the fixture is fully readable")
+
+        modelContext.deleteNote(doomed)
+        try modelContext.save()
+
+        let after = Set(try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).map(\.id))
+        // What the sweep did: the exclusive image and the pre-existing orphan went; the two the
+        // task and the legacy row still reference stayed.
+        #expect(after == [alsoInATask.id, alsoInALegacyRow.id])
+
+        // The promise, spelled as the arithmetic rather than as a literal: everything this note
+        // referenced that the delete actually took.
+        #expect(summary.images == before.subtracting(after).intersection(doomedReferences).count)
+        #expect(summary.images == 1)
+        #expect(summary.lostItemLines.contains("1 embedded image"))
+    }
+
     /// Words, tags and backlinks, and which of the three are losses. A note is a small enough
     /// object that the reassurance carries as much of the confirmation as the warning does.
     @Test func theSummaryCountsWordsAsLossAndTagsAndBacklinksAsSurvivors() throws {
@@ -408,6 +479,7 @@ struct CadenceNoteDeletionSurfaceTests {
         let known = CadenceNoteDeletionSummary.forNote(
             doomed,
             allNotes: notes,
+            survivingMarkdownTexts: [backlink.content],
             existingImageAssetIDs: assetIDs
         )
         #expect(!known.hasUnknownImpact)
@@ -420,6 +492,7 @@ struct CadenceNoteDeletionSurfaceTests {
         let noNotes = CadenceNoteDeletionSummary.forNote(
             doomed,
             allNotes: nil,
+            survivingMarkdownTexts: nil,
             existingImageAssetIDs: assetIDs
         )
         #expect(noNotes.hasUnknownImpact)
@@ -429,6 +502,7 @@ struct CadenceNoteDeletionSurfaceTests {
         let noAssets = CadenceNoteDeletionSummary.forNote(
             doomed,
             allNotes: notes,
+            survivingMarkdownTexts: [backlink.content],
             existingImageAssetIDs: nil
         )
         #expect(noAssets.images == 0)
@@ -437,9 +511,23 @@ struct CadenceNoteDeletionSurfaceTests {
         let neither = CadenceNoteDeletionSummary.forNote(
             doomed,
             allNotes: nil,
+            survivingMarkdownTexts: nil,
             existingImageAssetIDs: nil
         )
         #expect(neither.hasUnknownImpact)
+
+        // T-423 added a third fetch that can fail on its own: the note table read fine, but one of
+        // the other six markdown sources did not. `images` then loses its survivor set the same
+        // way, so the flag has to rise for this case too — and the backlink count, which does not
+        // depend on it, stays exact.
+        let noMarkdown = CadenceNoteDeletionSummary.forNote(
+            doomed,
+            allNotes: notes,
+            survivingMarkdownTexts: nil,
+            existingImageAssetIDs: assetIDs
+        )
+        #expect(noMarkdown.hasUnknownImpact)
+        #expect(noMarkdown.backlinks == known.backlinks)
 
         // The words, the tags and the folder are read off the note itself and stay exact through
         // all of it — which is why this is a flag beside the counts rather than four `Int?`s.
@@ -456,6 +544,7 @@ struct CadenceNoteDeletionSurfaceTests {
         let summary = CadenceNoteDeletionSummary.forNote(
             lonely,
             allNotes: [lonely],
+            survivingMarkdownTexts: [],
             existingImageAssetIDs: []
         )
 
@@ -475,6 +564,7 @@ struct CadenceNoteDeletionSurfaceTests {
         let known = CadenceNoteDeletionSummary.forNote(
             blank,
             allNotes: [blank],
+            survivingMarkdownTexts: [],
             existingImageAssetIDs: []
         )
         #expect(known.isEmpty)
@@ -483,6 +573,7 @@ struct CadenceNoteDeletionSurfaceTests {
         let unknown = CadenceNoteDeletionSummary.forNote(
             blank,
             allNotes: nil,
+            survivingMarkdownTexts: nil,
             existingImageAssetIDs: []
         )
         #expect(!unknown.isEmpty)
@@ -516,6 +607,12 @@ struct CadenceNoteDeletionSurfaceTests {
         // And neither read is flattened.
         #expect(!body.contains("?? []"))
         #expect(CadenceSourceScan.matchCount("\\?\\? \\[\\]", in: body) == 0)
+        // The survivor set is the sweep's own, not a second opinion assembled from the note table
+        // (T-423). A revert here is the exact shape that let the doc comment's promise go stale
+        // while every behavioural test stayed green, so it is asserted positively rather than
+        // left to the `?? []` check above to catch by accident.
+        #expect(body.contains("CadenceMarkdownSourceInventory.liveMarkdownTexts("))
+        #expect(body.contains("excludingNoteIDs: [note.id]"))
         // The needle compiles and discriminates; `matchCount` answers -1 for one that does not.
         #expect(CadenceSourceScan.matchCount("\\?\\? \\[\\]", in: "let x = y ?? []") == 1)
     }

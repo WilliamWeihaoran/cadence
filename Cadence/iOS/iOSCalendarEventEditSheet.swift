@@ -567,7 +567,7 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private func applySave(scope: iOSCalendarRecurrenceEditScope) {
-        guard calendarManager.updateEvent(
+        if let failure = calendarManager.updateEvent(
             event,
             title: title,
             startDate: normalizedStartDate,
@@ -576,10 +576,12 @@ struct iOSCalendarEventEditSheet: View {
             notes: notes,
             span: scope.eventSpan,
             isAllDay: isAllDay
-        ) else {
+        ) {
             // A rejected write used to return here and do nothing at all: the sheet stayed open,
-            // unchanged, with no indication that the save had failed.
-            actionError = CadenceCalendarEventEditingSupport.saveFailureNotice
+            // unchanged, with no indication that the save had failed. It then said *that* it had
+            // failed but not why; since T-339 the manager hands back the cause macOS has always
+            // shown in its alert.
+            actionError = CadenceCalendarEventEditingSupport.saveFailureNotice(for: failure)
             return
         }
         actionError = nil
@@ -587,10 +589,10 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private func applyDelete(scope: iOSCalendarRecurrenceEditScope) {
-        if calendarManager.deleteEvent(event, span: scope.eventSpan) {
-            dismiss()
+        if let failure = calendarManager.deleteEvent(event, span: scope.eventSpan) {
+            actionError = CadenceCalendarEventEditingSupport.deleteFailureNotice(for: failure)
         } else {
-            actionError = CadenceCalendarEventEditingSupport.deleteFailureNotice
+            dismiss()
         }
     }
 

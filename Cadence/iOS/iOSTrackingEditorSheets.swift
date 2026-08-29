@@ -305,8 +305,11 @@ struct iOSHabitEditorSheet: View {
             _monthlyDay = State(initialValue: habit.frequencyType == .monthly ? min(max(storedDays.first ?? 1, 1), 31) : 1)
             _contextID = State(initialValue: habit.context?.id)
             _goalID = State(initialValue: habit.goal?.id)
-            _hasReminder = State(initialValue: habit.reminderMinuteOfDay != nil)
-            _reminderMinuteOfDay = State(initialValue: habit.reminderMinuteOfDay ?? 9 * 60)
+            // An out-of-range stored minute opens unset rather than as a fabricated time, and
+            // macOS's editor reads the same decision. See `CadenceHabitReminderEditing` (T-410).
+            let reminder = CadenceHabitReminderEditing.editorState(for: habit.reminderMinuteOfDay)
+            _hasReminder = State(initialValue: reminder.isOn)
+            _reminderMinuteOfDay = State(initialValue: reminder.minuteOfDay)
         case .new(let goal):
             _title = State(initialValue: "")
             _icon = State(initialValue: "star.fill")
@@ -318,7 +321,7 @@ struct iOSHabitEditorSheet: View {
             _contextID = State(initialValue: goal?.context?.id)
             _goalID = State(initialValue: goal?.id)
             _hasReminder = State(initialValue: false)
-            _reminderMinuteOfDay = State(initialValue: 9 * 60)
+            _reminderMinuteOfDay = State(initialValue: CadenceHabitReminderEditing.defaultMinuteOfDay)
         }
     }
 

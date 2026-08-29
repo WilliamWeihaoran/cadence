@@ -288,12 +288,19 @@ private struct HabitReminderPicker: View {
     @Binding var reminderMinuteOfDay: Int
     let tintHex: String
 
+    /// **T-410.** The `?? Date()` below used to be reachable for an ordinary corrupt value:
+    /// `date(bySettingHour:)` returns `nil` for hour 24, so a stored 1440 rendered this picker as
+    /// *the current time* — a time no user set and this sheet would then save. Clamping first
+    /// leaves the fallback for the one case it is honest about, a minute that genuinely does not
+    /// exist today (a spring-forward DST gap), which is the same distinction
+    /// `HabitNotificationPlanner.reminder(for:now:)` draws.
     private var reminderDate: Binding<Date> {
         Binding(
             get: {
-                Calendar.current.date(
-                    bySettingHour: reminderMinuteOfDay / 60,
-                    minute: reminderMinuteOfDay % 60,
+                let minuteOfDay = CadenceHabitReminderEditing.editorMinuteOfDay(reminderMinuteOfDay)
+                return Calendar.current.date(
+                    bySettingHour: minuteOfDay / 60,
+                    minute: minuteOfDay % 60,
                     second: 0,
                     of: Date()
                 ) ?? Date()

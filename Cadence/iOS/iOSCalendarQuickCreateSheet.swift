@@ -546,13 +546,17 @@ struct iOSCalendarQuickCreateSheet: View {
         dismiss()
     }
 
-    /// Every exit from here that is not a created event now says so. It used to have two silent
-    /// ones: an unparseable `dateKey`, and a rejected write — missing Calendar access, no writable
-    /// calendar, an end date not after the start, or a throwing EventKit save, all of which arrive
-    /// as the same `false`. The sheet simply returned, so the create button looked inert (T-324).
+    /// Every exit from here that is not a created event now says so, and says why. It used to
+    /// have two silent ones: an unparseable `dateKey`, and a rejected write — the sheet simply
+    /// returned, so the create button looked inert (T-324).
+    ///
+    /// T-324 could name the operation but not the cause, because the four rejections all arrived
+    /// as the same `false`. Since T-339 they arrive as a `CalendarWriteFailure`. The date-key
+    /// branch still has no cause to name: nothing was ever offered to EventKit, so it passes
+    /// `nil` rather than picking a case that would read as EventKit's answer.
     private func createEvent() {
         guard let baseDate = DateFormatters.date(from: dateKey) else {
-            actionError = CadenceCalendarEventEditingSupport.saveFailureNotice
+            actionError = CadenceCalendarEventEditingSupport.saveFailureNotice(for: nil)
             return
         }
         let startDate: Date
@@ -565,15 +569,15 @@ struct iOSCalendarQuickCreateSheet: View {
             startDate = Calendar.current.date(byAdding: .minute, value: startMinute, to: baseDate) ?? baseDate
             endDate = Calendar.current.date(byAdding: .minute, value: max(5, estimatedMinutes), to: startDate) ?? startDate
         }
-        guard calendarManager.createEvent(
+        if let failure = calendarManager.createEvent(
             title: title,
             startDate: startDate,
             endDate: endDate,
             calendarID: selectedCalendarID,
             notes: notes,
             isAllDay: eventIsAllDay
-        ) else {
-            actionError = CadenceCalendarEventEditingSupport.saveFailureNotice
+        ) {
+            actionError = CadenceCalendarEventEditingSupport.saveFailureNotice(for: failure)
             return
         }
         actionError = nil

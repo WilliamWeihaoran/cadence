@@ -8,7 +8,15 @@ nonisolated struct GoalContributionSummary {
     let directTaskCount: Int
     let linkedListCount: Int
     let focusMinutes: Int
-    let overdueTaskCount: Int
+    /// The ids of the goal's open, past-due contributing tasks — not just how many.
+    ///
+    /// **T-313.** Callers that roll several goals up have to *union* these rather than add the
+    /// counts, because `contributingTasks` recurses sub-goals and a direction's tasks already
+    /// include its milestones'. `CadenceMilestoneWidgetSupport` used to get the count from here
+    /// and then call `GoalContributionResolver.overdueTasks(for:)` a second time, per goal, purely
+    /// to obtain the ids the union needs — a whole extra tree walk per active goal inside a widget
+    /// timeline. The walk already computed them; carrying them out costs one array.
+    let overdueTaskIDs: [UUID]
     let recentCompletedCount: Int
     let nextActionTitle: String?
     /// `yyyy-MM-dd` due date of the `nextActionTitle` task, `nil` when it has none. The next
@@ -19,6 +27,8 @@ nonisolated struct GoalContributionSummary {
     /// subtask completion ratio, even for goals configured with `progressType == .hours`.
     /// That meant an "hours" goal's progress bar (GoalsView/GoalInspectorView/widgets, all of
     /// which read `summary.progress`) never reflected `loggedHours`/`targetHours` at all.
+    var overdueTaskCount: Int { overdueTaskIDs.count }
+
     var progress: Double {
         switch progressType {
         case .hours:
@@ -165,7 +175,7 @@ nonisolated enum GoalContributionResolver {
             }
             .first
 
-        let overdueCount = overdueTasks(among: tasks, now: now).count
+        let overdueTaskIDs = overdueTasks(among: tasks, now: now).map(\.id)
 
         let recentCompleted = tasks.filter { task in
             guard let completedAt = task.completedAt else { return false }
@@ -180,7 +190,7 @@ nonisolated enum GoalContributionResolver {
             directTaskCount: directTasks(for: goal).count,
             linkedListCount: linkedListCount(for: goal),
             focusMinutes: tasks.reduce(loggedMinutes(for: goal)) { $0 + max(0, $1.actualMinutes) },
-            overdueTaskCount: overdueCount,
+            overdueTaskIDs: overdueTaskIDs,
             recentCompletedCount: recentCompleted,
             nextActionTitle: nextAction?.title,
             nextActionDueDate: nextAction.map(\.dueDate).flatMap { $0.isEmpty ? nil : $0 }

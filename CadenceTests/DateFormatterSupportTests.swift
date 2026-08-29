@@ -111,7 +111,7 @@ struct DateFormatterSupportTests {
             directTaskCount: 0,
             linkedListCount: 0,
             focusMinutes: 165,
-            overdueTaskCount: 0,
+            overdueTaskIDs: [],
             recentCompletedCount: 0,
             nextActionTitle: nil,
             nextActionDueDate: nil

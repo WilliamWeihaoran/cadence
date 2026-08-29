@@ -346,6 +346,129 @@ struct CrossPlatformParityTests {
         #expect("area.desc = details".range(of: "area\\.desc\\s*=", options: .regularExpression) != nil)
         #expect("details = area.desc".range(of: "area\\.desc\\s*=", options: .regularExpression) == nil)
     }
+
+    // MARK: - T-410: a corrupt habit reminder time reads the same on both platforms
+
+    /// Behavioural, not a scan: the decision both editors now read, run directly.
+    ///
+    /// The two old renderings are asserted here as *inputs*, so this test knows what it replaced:
+    /// 1440 is the value iOS showed as "12 AM", and -15 and 1440 are both values
+    /// `Calendar.date(bySettingHour:minute:second:of:)` answers `nil` for, which is how macOS
+    /// reached its `?? Date()`.
+    @Test func aStoredHabitReminderMinuteOutsideTheSchedulableRangeOpensUnset() {
+        // In range: loaded as-is, both ends included.
+        for minute in [0, 540, 1439] {
+            let state = CadenceHabitReminderEditing.editorState(for: minute)
+            #expect(state.isOn, "\(minute) is schedulable but opened unset")
+            #expect(state.minuteOfDay == minute, "\(minute) opened on a different time")
+        }
+
+        // Unset stays unset, and 0 is not confused with it — midnight is a real reminder time.
+        let unset = CadenceHabitReminderEditing.editorState(for: nil)
+        #expect(unset.isOn == false)
+        #expect(unset.minuteOfDay == CadenceHabitReminderEditing.defaultMinuteOfDay)
+        #expect(CadenceHabitReminderEditing.defaultMinuteOfDay == 540)
+
+        // Out of range opens unset rather than as an invented time.
+        for corrupt in [-15, -1, 1440, 1500, 100_000] {
+            let state = CadenceHabitReminderEditing.editorState(for: corrupt)
+            #expect(state.isOn == false, "\(corrupt) opened as a set reminder")
+            #expect(
+                state.minuteOfDay == CadenceHabitReminderEditing.defaultMinuteOfDay,
+                "\(corrupt) opened on a fabricated time"
+            )
+        }
+
+        // The range is the scheduler's, not a second copy of it: this is what fails if someone
+        // respells `0...1439` here and the two drift.
+        #expect(HabitNotificationPlanner.reminderMinuteRange == 0...1439)
+        for minute in [-15, 1440, 1500] {
+            #expect(
+                HabitNotificationPlanner.reminderMinuteRange.contains(minute) == false,
+                "\(minute) is schedulable, so the editor is right to show it"
+            )
+            #expect(
+                Calendar.current.date(bySettingHour: minute / 60, minute: minute % 60, second: 0, of: Date()) == nil,
+                "\(minute) resolves to a real time, so it was never the macOS symptom"
+            )
+        }
+
+        // And the picker clamp, which is what stopped `?? Date()` from being reachable.
+        #expect(CadenceHabitReminderEditing.editorMinuteOfDay(540) == 540)
+        #expect(CadenceHabitReminderEditing.editorMinuteOfDay(0) == 0)
+        #expect(CadenceHabitReminderEditing.editorMinuteOfDay(1439) == 1439)
+        #expect(CadenceHabitReminderEditing.editorMinuteOfDay(1440) == CadenceHabitReminderEditing.defaultMinuteOfDay)
+        #expect(CadenceHabitReminderEditing.editorMinuteOfDay(-15) == CadenceHabitReminderEditing.defaultMinuteOfDay)
+
+        // The old iOS rendering, kept as the thing that is no longer reached: `timeString` still
+        // wraps, because ordinary in-range callers rely on it. The editor just stops feeding it
+        // junk.
+        #expect(TimeFormatters.timeString(from: 1440) == "12 AM")
+        #expect(TimeFormatters.timeString(from: CadenceHabitReminderEditing.editorState(for: 1440).minuteOfDay) == "9 AM")
+    }
+
+
+    /// `Habit.reminderMinuteOfDay` is an unvalidated `Int?` and says so in its own doc, so the
+    /// two habit editors each had to decide what an out-of-range value looks like — and decided
+    /// differently. macOS fed it to `Calendar.date(bySettingHour:minute:second:of:)`, which
+    /// returns `nil` for hour 24, and its `?? Date()` fallback then rendered the reminder as
+    /// **the current time**. iOS fed the same value to `TimeFormatters.timeString(from:)`, which
+    /// takes it modulo a day, so 1440 read as **12 AM**. Both are inventions; a picker opened on
+    /// either one saves it straight back as if the user had chosen it.
+    ///
+    /// The agreed answer is that neither editor names a time it cannot justify: an out-of-range
+    /// value opens **unset**, exactly as `nil` does, and the range consulted is
+    /// `HabitNotificationPlanner.reminderMinuteRange` — the one T-363 already made the app's only
+    /// check, rather than a second spelling of `0...1439`.
+    @Test func bothHabitEditorsOpenACorruptReminderTimeAsUnsetRatherThanInventingOne() throws {
+        for relativePath in [
+            "Cadence/macOS/Views/HabitsFormSheets.swift",
+            "Cadence/iOS/iOSTrackingEditorSheets.swift"
+        ] {
+            let raw = try paritySourceFile(relativePath)
+            let code = try parityStrippingComments(raw)
+            #expect(raw.count > 1_000, "\(relativePath) read as \(raw.count) characters")
+            #expect(code != raw, "\(relativePath) has no comments, so the stripper read the wrong file")
+            #expect(code.count == raw.count, "the comment stripper changed \(relativePath)'s length")
+            #expect(code.contains("reminderMinuteOfDay"), "\(relativePath) is not a habit editor")
+
+            #expect(
+                code.contains("CadenceHabitReminderEditing.editorState(for: habit.reminderMinuteOfDay)"),
+                "\(relativePath) still decides for itself what a corrupt reminder time looks like"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"habit\.reminderMinuteOfDay \?\?"#, in: code) == 0,
+                "\(relativePath) still coerces a stored reminder time with ??"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"habit\.reminderMinuteOfDay != nil"#, in: code) == 0,
+                "\(relativePath) still treats any non-nil stored minute as a set reminder"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"9 \* 60"#, in: code) == 0,
+                "\(relativePath) still spells the default reminder time itself"
+            )
+            #expect(
+                code.contains("CadenceHabitReminderEditing.defaultMinuteOfDay"),
+                "\(relativePath) does not read the shared default reminder time"
+            )
+        }
+
+        // The desktop picker is the surface that rendered "now": its `Date` binding must clamp
+        // before it asks `Calendar` for an hour, or the fallback is reachable again.
+        let picker = try parityStrippingComments(paritySourceFile("Cadence/macOS/Views/HabitsFormSupportViews.swift"))
+        #expect(picker.contains("HabitReminderPicker"), "read the wrong file for the desktop reminder picker")
+        #expect(
+            picker.contains("CadenceHabitReminderEditing.editorMinuteOfDay(reminderMinuteOfDay)"),
+            "the desktop reminder picker can still render an out-of-range minute as the current time"
+        )
+
+        // Self-checks for the two needles that must find nothing above.
+        #expect(CadenceSourceScan.matchCount(#"habit\.reminderMinuteOfDay \?\?"#, in: "habit.reminderMinuteOfDay ?? 9 * 60") == 1)
+        #expect(CadenceSourceScan.matchCount(#"habit\.reminderMinuteOfDay \?\?"#, in: "editorState(for: habit.reminderMinuteOfDay)") == 0)
+        #expect(CadenceSourceScan.matchCount(#"habit\.reminderMinuteOfDay != nil"#, in: "habit.reminderMinuteOfDay != nil") == 1)
+        #expect(CadenceSourceScan.matchCount(#"habit\.reminderMinuteOfDay != nil"#, in: "reminder.isOn") == 0)
+    }
 }
 
 private func parityRepositoryRoot() -> URL {

@@ -678,6 +678,49 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(apply.contains("commit(alsoRestoring: targets)"))
     }
 
+    /// **The note for whoever adds the fourth `rollback()`, made into a guard (T-402).**
+    ///
+    /// There is no way to write a test that fails when someone *should* have used a snapshot and
+    /// used a rollback instead — the two compile identically and differ only in what they discard.
+    /// What can be pinned is the census: every `rollback()` in the app belongs to a delete commit.
+    /// Adding one anywhere else turns this red, which is the moment to read the two reasons above
+    /// rather than the moment after the bug ships.
+    ///
+    /// The measured count is **two**, not the three `docs/TODO.md` T-402 recorded; the third was
+    /// the test at the top of this file.
+    @Test func everyRollbackCallSiteInTheAppIsADeleteCommit() throws {
+        var callSites: [String: Int] = [:]
+        var filesRead = 0
+
+        for path in swiftFiles(under: "Cadence") {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            filesRead += 1
+            let count = CadenceSourceScan.matchCount(#"\.rollback\(\)"#, in: code)
+            if count > 0 { callSites[path] = count }
+        }
+
+        // Non-vacuity: the walker really enumerated the app tree rather than returning nothing.
+        #expect(filesRead > 400, "the walker read \(filesRead) Swift files under Cadence/")
+
+        #expect(
+            callSites == ["Cadence/Shared/CadencePendingChangePersistence.swift": 2],
+            "rollback() moved or gained a call site: \(callSites)"
+        )
+
+        // And both of them are the delete commits, not something that grew inside the file.
+        // Split on the declaration keyword rather than using `functionBody(named:)`: every commit
+        // here takes a **defaulted closure parameter**, which that reader would mistake for the
+        // body (`Cadence/Shared/AGENTS.md`).
+        let persistence = try scanned("Cadence/Shared/CadencePendingChangePersistence.swift")
+        let declarations = persistence.components(separatedBy: "static func ").dropFirst()
+        #expect(declarations.count >= 4, "found \(declarations.count) declarations, expected all four commits")
+        let owners = declarations
+            .filter { CadenceSourceScan.matchCount(#"\.rollback\(\)"#, in: $0) > 0 }
+            .map { String($0.prefix { $0 != "(" }) }
+            .sorted()
+        #expect(owners == ["commitCascade", "commitDelete"], "rollback() is owned by \(owners)")
+    }
+
     /// Non-vacuity for every scan above: the reader really opened these files and really read
     /// code, and the two `== 0` needles match the spelling they hunt.
     @Test func thesourceScanActuallyReadsTheseEditors() throws {
@@ -695,6 +738,11 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(CadenceSourceScan.matchCount(#"onChanged\(\)"#, in: "onChanged()") == 1)
         #expect(CadenceSourceScan.matchCount(#"modelContext\.rollback\(\)"#, in: "modelContext.rollback()") == 1)
         #expect(CadenceSourceScan.matchCount(#"modelContext\.rollback\(\)"#, in: "undo: undo.restore") == 0)
+        // The wider needle `everyRollbackCallSiteInTheAppIsADeleteCommit` uses: it must find a
+        // rollback spelled through any receiver, and must not fire on the word alone.
+        #expect(CadenceSourceScan.matchCount(#"\.rollback\(\)"#, in: "context.rollback()") == 1)
+        #expect(CadenceSourceScan.matchCount(#"\.rollback\(\)"#, in: "modelContext.rollback()") == 1)
+        #expect(CadenceSourceScan.matchCount(#"\.rollback\(\)"#, in: "a rollback undoes it") == 0)
         #expect(
             CadenceSourceScan.matchCount(
                 #"CadenceListEditSnapshot\((area|project), tasks: \1\.tasks \?\? \[\]\)"#,
@@ -718,6 +766,20 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(stripped != raw, "\(path): the comment stripper removed nothing")
         #expect(stripped.count == raw.count, "\(path): the stripper changed the length")
         return stripped
+    }
+
+    /// Every `.swift` file under one repository-relative directory, as repository-relative paths.
+    ///
+    /// `enumerator(atPath:)` rather than `enumerator(at:)`: the URL variant yields absolute paths,
+    /// and `#filePath` can name the repo through a symlinked prefix (`/tmp` against `/private/tmp`
+    /// on an isolated build tree) that `FileManager` resolves and the literal does not.
+    private func swiftFiles(under relativeDirectory: String) -> [String] {
+        let directory = CadenceSourceScan.repositoryRoot().appendingPathComponent(relativeDirectory)
+        guard let enumerator = FileManager.default.enumerator(atPath: directory.path) else { return [] }
+        return enumerator.compactMap { element in
+            guard let relativePath = element as? String, relativePath.hasSuffix(".swift") else { return nil }
+            return "\(relativeDirectory)/\(relativePath)"
+        }
     }
 
     /// Every copy of `func <name>(` in the file, because `EditListSheet` holds one per sheet and

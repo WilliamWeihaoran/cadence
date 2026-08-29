@@ -406,6 +406,30 @@ private extension CadenceSidebarLists.Item {
     }
 }
 
+extension iOSSidebarItem {
+    /// The feature this row stands for, for the projection that carries a selection across a
+    /// size-class change (`CadenceShellNavigationBridge`, T-334).
+    ///
+    /// A specific area or project answers `.lists`: the compact shell reaches a list through the
+    /// Lists screen, and pushing the list itself would need a route this projection has no business
+    /// minting. Landing on Lists is the same room one door out; landing on Today is the bug.
+    var featureDestination: CadenceFeatureDestination? {
+        switch self {
+        case .today: return .today
+        case .allTasks: return .allTasks
+        case .focus: return .focus
+        case .inbox: return .inbox
+        case .calendar: return .calendar
+        case .goals: return .goals
+        case .habits: return .habits
+        case .notes: return .notes
+        case .lists, .area, .project: return .lists
+        case .search: return .search
+        case .settings: return .settings
+        }
+    }
+}
+
 extension CadenceFeatureDestination {
     var item: iOSSidebarItem {
         switch self {

@@ -48,9 +48,23 @@ extension ModelContext {
 /// The same job `CadenceListDeletionSummary` does for a list, and the same rule: **it may not
 /// over-promise.** A confirmation that claims an image is about to go when another note still
 /// references it teaches the user that the numbers on this screen are decorative. So `images`
-/// counts the assets that both exist *and* are referenced by no surviving note — the exact set
-/// `deleteUnreferencedMarkdownImageAssets` will collect — rather than the image references in the
-/// note's own body, which is the number a naive count would produce and is larger.
+/// counts the assets that both exist *and* are referenced by no surviving markdown — rather than
+/// the image references in the note's own body, which is the number a naive count would produce
+/// and is larger.
+///
+/// **`images` is exactly `deleteUnreferencedMarkdownImageAssets`'s collection restricted to the
+/// assets this note references, and it is computed from the same source (T-423).** This comment
+/// used to claim the two sets were identical, full stop. Two things were wrong with that. The
+/// sweep also collects assets *nobody* references — orphans already in the store — which are not
+/// this delete's cost and are deliberately excluded here. And the claim silently stopped holding
+/// even in the restricted sense when T-411 widened "referenced" from `Note.content` to the seven
+/// fields in `CadenceMarkdownSourceInventory`, while this summary went on asking the surviving
+/// *notes* only: an image also pasted into a task's notes was reported as about to be reclaimed
+/// when the sweep would keep it. Both halves now read the store through
+/// `CadenceMarkdownSourceInventory.liveMarkdownTexts(in:excludingNoteIDs:)` with the same
+/// exclusion set, so widening the field list again moves them together.
+/// `CadenceNoteDeletionSurfaceTests.theImageCountMatchesWhatTheSweepActuallyCollects` pins the
+/// agreement against the real sweep rather than against a restatement of it.
 ///
 /// The other two counts are on the screen precisely because they are **not** losses. Tags survive,
 /// and backlinks are other people's notes, which survive with a link that stops resolving. Saying
@@ -177,7 +191,20 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
         let allNotes = try? modelContext.fetch(FetchDescriptor<Note>())
         let assetIDs = (try? modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()))
             .map { Set($0.map(\.id)) }
-        return forNote(note, allNotes: allNotes, existingImageAssetIDs: assetIDs)
+        // The same call `deleteUnreferencedMarkdownImageAssets` makes, with the same exclusion set
+        // — the note is still live here and already gone there, and `excludingNoteIDs` is what
+        // makes the two agree anyway. Its `nil` means the same thing as the two above: a fetch
+        // failed, so the survivor set is not a survivor set.
+        let survivingMarkdown = CadenceMarkdownSourceInventory.liveMarkdownTexts(
+            in: modelContext,
+            excludingNoteIDs: [note.id]
+        )
+        return forNote(
+            note,
+            allNotes: allNotes,
+            survivingMarkdownTexts: survivingMarkdown,
+            existingImageAssetIDs: assetIDs
+        )
     }
 
     /// The same arithmetic with the store reads hoisted out, so it can be exercised directly.
@@ -186,21 +213,33 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
     /// arithmetic — there is nothing else to compute from — and differ in `hasUnknownImpact`,
     /// which is what the confirmation needs in order to stop presenting a floor as a total. Same
     /// signature shape as `HabitNotificationReconcileSupport.reconcileInput`, for the same reason.
-    static func forNote(_ note: Note, allNotes: [Note]?, existingImageAssetIDs: Set<UUID>?) -> Self {
+    ///
+    /// `allNotes` still answers the backlink question — that one really is about notes. `images`
+    /// is answered from `survivingMarkdownTexts`, which is every markdown-bearing field in the
+    /// store minus this note's, because that is the set the sweep asks about (T-423).
+    static func forNote(
+        _ note: Note,
+        allNotes: [Note]?,
+        survivingMarkdownTexts: [String]?,
+        existingImageAssetIDs: Set<UUID>?
+    ) -> Self {
         let survivors = (allNotes ?? []).filter { $0.id != note.id }
-        let stillReferenced = survivors.reduce(into: Set<UUID>()) { result, other in
-            result.formUnion(MarkdownImageAssetService.referencedIDs(in: other.content))
+        let stillReferenced = (survivingMarkdownTexts ?? []).reduce(into: Set<UUID>()) { result, text in
+            result.formUnion(MarkdownImageAssetService.referencedIDs(in: text))
         }
         let reclaimed = MarkdownImageAssetService.referencedIDs(in: note.content)
             .intersection(existingImageAssetIDs ?? [])
             .subtracting(stillReferenced)
 
         var summary = Self()
-        // Either failure taints both derived counts, not one each. A missing note table drops the
-        // backlink count *and* leaves `stillReferenced` empty, which moves `images` in the other
-        // direction; a missing asset table empties the intersection. Naming which fetch failed
-        // would be a distinction the confirmation has no way to act on.
-        summary.hasUnknownImpact = allNotes == nil || existingImageAssetIDs == nil
+        // Any failure taints both derived counts, not one each. A missing note table drops the
+        // backlink count; a missing markdown read leaves `stillReferenced` empty, which moves
+        // `images` in the other direction; a missing asset table empties the intersection. Naming
+        // which fetch failed would be a distinction the confirmation has no way to act on. Note
+        // that both wrong directions here over-state the *loss*, never the survival — which is the
+        // one direction this summary's standing rule forbids.
+        summary.hasUnknownImpact =
+            allNotes == nil || survivingMarkdownTexts == nil || existingImageAssetIDs == nil
         summary.words = wordCount(note.content)
         summary.images = reclaimed.count
         summary.tags = (note.tags ?? []).count

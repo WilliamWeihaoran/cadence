@@ -12,6 +12,21 @@ These are shared SwiftData models. Changes here are high impact because they aff
 area.tasks = (area.tasks ?? []) + [task]
 ```
 
+  **The two halves of that rule have different standing. Do not restate it without them (T-401).**
+  - *Delete side — a repair.* T-296 measured the window: between `modelContext.delete(subtask)` and
+    the next flush the parent's array still holds the deleted row, so a surface re-rendering in
+    between draws a gone object. Sever both sides by hand;
+    `CadenceTaskMutationSupport.deleteSubtask` is the one spelling.
+  - *Create side — a convention, measured **not** to be a repair.* Inside the owning `ModelContext`
+    SwiftData back-populates the inverse *and* the array synchronously: T-387 dropped
+    `parent.subtasks = existing + [subtask]`, then dropped `subtask.parentTask = parent`, and
+    **both mutations survived**. Write both sides anyway so no reader has to know which direction
+    is authoritative — but **a one-sided create is not a defect, and needs a failing test before it
+    is filed as one.** Two independent audits filed it as one (T-338, T-387) and T-294 hit it a
+    third time, recording the correction only in a test comment.
+    `CadenceSubtaskInverseParityTests.swiftDataBackPopulatesEitherSideOfANewSubtaskInverse` pins
+    the measurement; red there means SwiftData changed and this half became a repair.
+
 - Avoid adding required persisted fields unless you also handle migration/default behavior.
 - Store day-level dates as `yyyy-MM-dd` strings. Use `DateFormatters` helpers.
 - Keep computed properties side-effect free.

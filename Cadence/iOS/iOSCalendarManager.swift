@@ -114,9 +114,12 @@ final class iOSCalendarManager {
         calendarID: String?,
         notes: String? = nil,
         isAllDay: Bool = false
-    ) -> Bool {
-        guard isAuthorized, endDate > startDate else { return false }
-        guard let calendar = writableCalendar(with: calendarID) ?? writableCalendars.first else { return false }
+    ) -> CalendarWriteFailure? {
+        guard isAuthorized else { return .notAuthorized }
+        guard endDate > startDate else { return .invalidRange }
+        guard let calendar = writableCalendar(with: calendarID) ?? writableCalendars.first else {
+            return .noWritableCalendar
+        }
 
         let event = EKEvent(eventStore: store)
         event.title = CadenceEventTitleSupport.storedTitle(title)
@@ -129,13 +132,13 @@ final class iOSCalendarManager {
         do {
             try store.save(event, span: .thisEvent)
             storeVersion += 1
-            return true
+            return nil
         } catch {
             // Matches macOS, which resets on the create path too. The instance is local and
             // discarded here, so this is parity rather than an observable fix.
             event.reset()
             print("iOSCalendarManager: failed to create event: \(error)")
-            return false
+            return .saveFailed(error.localizedDescription)
         }
     }
 
@@ -149,8 +152,12 @@ final class iOSCalendarManager {
         notes: String? = nil,
         span: EKSpan = .thisEvent,
         isAllDay: Bool = false
-    ) -> Bool {
-        guard isAuthorized, endDate > startDate, canModify(event) else { return false }
+    ) -> CalendarWriteFailure? {
+        guard isAuthorized else { return .notAuthorized }
+        guard endDate > startDate else { return .invalidRange }
+        // A read-only calendar is the "no calendar available to write to" case, one event at a
+        // time: EventKit will refuse the save, and the notice already names that possibility.
+        guard canModify(event) else { return .noWritableCalendar }
         event.title = CadenceEventTitleSupport.storedTitle(title)
         event.isAllDay = isAllDay
         event.startDate = startDate
@@ -163,7 +170,7 @@ final class iOSCalendarManager {
         do {
             try store.save(event, span: span)
             storeVersion += 1
-            return true
+            return nil
         } catch {
             // `EKEvent` is a reference type and this very instance is held by `CalendarEventItem`
             // and rendered by the timeline. A failed save emits no `EKEventStoreChanged`
@@ -172,20 +179,21 @@ final class iOSCalendarManager {
             // macOS does this in `CalendarManager.save(_:span:describing:)`.
             event.reset()
             print("iOSCalendarManager: failed to update event: \(error)")
-            return false
+            return .saveFailed(error.localizedDescription)
         }
     }
 
     @discardableResult
-    func deleteEvent(_ event: EKEvent, span: EKSpan = .thisEvent) -> Bool {
-        guard isAuthorized, canModify(event) else { return false }
+    func deleteEvent(_ event: EKEvent, span: EKSpan = .thisEvent) -> CalendarWriteFailure? {
+        guard isAuthorized else { return .notAuthorized }
+        guard canModify(event) else { return .noWritableCalendar }
         do {
             try store.remove(event, span: span)
             storeVersion += 1
-            return true
+            return nil
         } catch {
             print("iOSCalendarManager: failed to delete event: \(error)")
-            return false
+            return .saveFailed(error.localizedDescription)
         }
     }
 
@@ -194,33 +202,38 @@ final class iOSCalendarManager {
     /// **T-325.** This returned `Void`, so its only report of a rejected write was a `print` —
     /// and its one caller, `iOSEventNoteEditorSheet`, called it *after* a `try?` save it had not
     /// checked either. Apple Calendar is not a surface Cadence can roll back, so the caller has
-    /// to be able to see this answer. `Bool` rather than a failure enum is deliberate: it is the
-    /// vocabulary the other three writes here already speak, and T-324's shared notice strings
-    /// exist precisely because a `Bool` cannot name a cause.
+    /// to be able to see this answer.
+    ///
+    /// It answered `Bool`, matching the other three writes here, and T-324's shared notice
+    /// strings exist precisely because a `Bool` cannot name a cause. **T-339** removed the reason
+    /// for that: `CalendarWriteFailure` is shared now, so all five writes name one.
     @discardableResult
-    func updateEventNotes(_ event: EKEvent, notes: String) -> Bool {
-        guard isAuthorized, canModify(event) else { return false }
+    func updateEventNotes(_ event: EKEvent, notes: String) -> CalendarWriteFailure? {
+        guard isAuthorized else { return .notAuthorized }
+        guard canModify(event) else { return .noWritableCalendar }
         let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let nextNotes = trimmed.isEmpty ? nil : notes
         // Already what the store holds: nothing to write, and nothing failed.
-        guard event.notes != nextNotes else { return true }
+        guard event.notes != nextNotes else { return nil }
         event.notes = nextNotes
         do {
             try store.save(event, span: .thisEvent)
             storeVersion += 1
-            return true
+            return nil
         } catch {
             // Same hazard as `updateEvent`: the mutated `notes` would otherwise stick in the UI.
             event.reset()
             print("iOSCalendarManager: failed to update event notes: \(error)")
-            return false
+            return .saveFailed(error.localizedDescription)
         }
     }
 
     @discardableResult
-    func updateEventNotes(calendarEventID: String, notes: String) -> Bool {
-        // An identifier that resolves to nothing is a sync that did not happen, not a no-op.
-        guard let event = event(withIdentifier: calendarEventID) else { return false }
+    func updateEventNotes(calendarEventID: String, notes: String) -> CalendarWriteFailure? {
+        // An identifier that resolves to nothing is a sync that did not happen, not a no-op. That
+        // sentence is what `.eventNotFound` was named for on the desktop side (T-389); until
+        // T-339 this overload could only assert it in a comment.
+        guard let event = event(withIdentifier: calendarEventID) else { return .eventNotFound }
         return updateEventNotes(event, notes: notes)
     }
 

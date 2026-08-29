@@ -53,6 +53,48 @@ nonisolated enum TaskPriority: String, Codable, CaseIterable, Hashable {
     }
 }
 
+// MARK: - Title normalization
+
+// `CadenceTitleNormalization` lives here, not in `Shared/`, for the same mechanical reason
+// `TaskTitleShortcutParsing` below does: `CadenceWidgets` and `CadenceMCPServer` have explicit
+// source lists that compile all of `Models/` and almost none of `Shared/`. It sat in
+// `Shared/CadenceTitleNormalization.swift`, out of the widget's reach, so `TaskTitleShortcutParsing
+// .normalized` re-spelled the trim rule and a test pinned the two copies against each other
+// (T-406). Moving the declaration is what removes the copy; `Shared/CadenceEventTitleSupport.swift`
+// keeps the EventKit-title wrapper that was its file-mate and still delegates here.
+
+/// The one trim rule for every user-entered title or name, on both platforms.
+///
+/// macOS and iOS spelled the same intent two ways: several macOS forms trimmed `.whitespaces`
+/// only (or saved the raw string), while their iOS siblings trimmed `.whitespacesAndNewlines`
+/// (T-332). `"Name\n"` therefore round-tripped as `"Name\n"` on the Mac and `"Name"` on the
+/// phone — a difference a paste can produce and no form can see. Route new name/title fields
+/// here rather than picking whichever spelling the neighbouring file happens to use.
+///
+/// `.whitespacesAndNewlines` wins because it is the strictly stronger rule: a title is a
+/// single-line value, so a trailing newline is never content, and the weaker spelling can only
+/// ever let one through.
+nonisolated enum CadenceTitleNormalization {
+    /// The stored form of a user-entered title: trimmed at both ends, newlines included.
+    static func normalized(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Whether the value carries no content. `" "` and `"\n"` are blank; this is the guard to
+    /// write, not `raw.isEmpty`, which passes a whitespace-only string straight through.
+    static func isBlank(_ raw: String) -> Bool {
+        normalized(raw).isEmpty
+    }
+
+    /// The normalized title, or `fallback` when it is blank. Note that this returns the
+    /// *trimmed* title, so a caller cannot accidentally store the untrimmed original after
+    /// testing the trimmed one for emptiness.
+    static func display(_ raw: String, fallback: String) -> String {
+        let trimmed = normalized(raw)
+        return trimmed.isEmpty ? fallback : trimmed
+    }
+}
+
 /// The `!` / `!!` / `!!!` shortcut in a typed task title, parsed once for every surface that
 /// captures a task.
 ///
@@ -67,14 +109,15 @@ nonisolated enum TaskPriority: String, Codable, CaseIterable, Hashable {
 /// The mapping is bang count to priority, so like `TaskPriority.rank` it is a property of the
 /// enum's own vocabulary rather than of any one screen.
 nonisolated enum TaskTitleShortcutParsing {
-    /// The trim rule for a typed title.
+    /// The trim rule for a typed title — the app's one rule, not a second spelling of it.
     ///
-    /// Spelled out here rather than delegated to `CadenceTitleNormalization`, which is the app's
-    /// one trim rule but is not in the widget target's source list.
-    /// `WidgetSupportTests.taskTitleShortcutTrimAgreesWithTheSharedTitleTrim` pins the two against
-    /// each other so this copy cannot drift away from it.
+    /// This used to re-spell `trimmingCharacters(in: .whitespacesAndNewlines)` because
+    /// `CadenceTitleNormalization` was in `Shared/` and out of the widget target's reach, with
+    /// `WidgetSupportTests.taskTitleShortcutTrimAgreesWithTheSharedTitleTrim` pinning the two
+    /// copies against each other. T-406 moved the declaration into this file instead, which is
+    /// what makes the pin structural rather than a promise.
     static func normalized(_ title: String) -> String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines)
+        CadenceTitleNormalization.normalized(title)
     }
 
     /// The title with its priority marks removed, plus the priority they asked for — or `nil` when
