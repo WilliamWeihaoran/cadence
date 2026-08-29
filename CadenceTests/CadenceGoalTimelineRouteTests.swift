@@ -129,7 +129,7 @@ struct CadenceGoalTimelineRouteTests {
     /// "onEdit" and "Edit" repeatedly, so an unstripped scan would fail the absence checks rather
     /// than pass them, and a *stripped* scan that read nothing would pass everything.
     @Test
-    func theSourceScanActuallyReadsTheseFiles() throws {
+    func theSourceScanActuallyReadsTheseFilesInGoalTimelineRoute() throws {
         for path in [Self.goalsView, Self.timelineView, Self.timelineSupport, Self.timelineBar] {
             let raw = try goalRouteSource(path)
             let code = try goalRouteCode(path)

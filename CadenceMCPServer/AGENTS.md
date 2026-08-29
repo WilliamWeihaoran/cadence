@@ -159,9 +159,13 @@ than naming a build.
   fetch descriptor, and `CadenceReadServiceTests` asserts bounded numbers against it. What is
   *not* pushable: full-text scoring (`search_cadence`, and the `textQuery` arm of `list_tasks`),
   the explicit `statuses` filter (it compares `statusRaw.lowercased()`, which the predicate grammar
-  has no equivalent for), and the **sort** — `taskSort` and `CadenceMCPOrdering` both end on
-  `id.uuidString`, and `UUID` is not `Comparable`, so `offset`/`limit` still slice in memory
-  ([[T-415]]).
+  has no equivalent for), and the **sort**, so `offset`/`limit` still slice in memory. That last one
+  is **settled, not deferred** (T-415, closed as X-09) — and not for the `UUID` reason this file
+  used to give, which was never checked and is false: Foundation conforms `UUID` to `Comparable`.
+  The real ones are computed sort legs (`AppTask.isDone`, `Note.displayTitle`),
+  `localizedCaseInsensitiveCompare` against `SortDescriptor`'s numeric-aware `.localizedStandard`,
+  and candidate lists that are relationship edges or cross-kind merges rather than fetches. Written
+  out on `CadencePage.paging`; closing it needs a stored sort key and a migration.
 - **Read-write startup prepares the store exactly once** (T-309). The four-step sequence — note
   migration, tag seeding, tag sync, integrity repair — lives in `CadenceMCPStorePreparation.prepare`
   and is run by `makeReadWriteContainer()`. `main.swift` then passes `performsMigrations: false` and

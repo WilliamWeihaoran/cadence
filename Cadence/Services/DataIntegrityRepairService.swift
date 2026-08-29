@@ -43,6 +43,66 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     }
 }
 
+/// **In an extension, so the memberwise initializer survives.** An `init` in the struct body would
+/// suppress it, and both `repairIfNeeded` and `DataIntegrityRepairServiceTests` build the report
+/// memberwise from its head fields and then assign counters.
+///
+/// **`nonisolated` is load-bearing and is not decoration.** The `nonisolated` on the struct itself
+/// does not reach an extension, and the app and widget targets set
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` — so without it the `Decodable` witness declared
+/// here is main-actor isolated while the conformance is not, which is
+/// *"conformance ... crosses into main actor-isolated code"*: a warning against a zero baseline
+/// under `-scheme Cadence`, and an error under the Swift 6 language mode `CadenceMCPServer`
+/// already builds in. Measured, not assumed — the first spelling of this extension produced
+/// exactly that warning on the app build while the MCP scheme stayed silent, because that target
+/// is the one *without* the MainActor default.
+nonisolated extension DataIntegrityRepairReport {
+    /// **Hand-written because synthesized decoding ignores property defaults (T-445).**
+    ///
+    /// This report is archived to `UserDefaults` under `dataIntegrityRepair.lastReport.v1` and read
+    /// back on the next launch. Every counter above has an `= 0` default, which reads as "an older
+    /// blob missing this key still decodes" and is not what `Codable` synthesis does: the generated
+    /// `init(from:)` calls `decode(Int.self, forKey:)` for a non-optional `Int` and throws
+    /// `keyNotFound` when the key is absent. The default is applied by the *memberwise* initializer
+    /// only. So every counter added to this struct silently invalidated every stored report written
+    /// before it — twice already, `habitRemindersCleared` (T-428) after the T-359 counters — and
+    /// `lastReport()` swallows the throw with `try?`, so the failure surfaced as `nil`: no crash, no
+    /// log, and `repairAndRecordFailure` handing back nothing on exactly the launch where the repair
+    /// failed and the previous report was the thing worth having.
+    ///
+    /// `decodeIfPresent(…) ?? 0` per counter is the whole fix, and it is deliberately exhaustive
+    /// rather than clever. The five head fields stay `decode`: they have been written by every
+    /// version of this key, they have no defaults to apply, and a blob missing `success` is not an
+    /// older report — it is not this report.
+    ///
+    /// `DataIntegrityRepairServiceTests.aStoredReportSurvivesEveryCounterThisStructWillEverGain`
+    /// re-derives the counter list from an encoded report rather than restating it, so a *third*
+    /// counter added without a line here fails that test instead of being decoded as a throw.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        source = try container.decode(String.self, forKey: .source)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        finishedAt = try container.decode(Date.self, forKey: .finishedAt)
+        success = try container.decode(Bool.self, forKey: .success)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        duplicateContextsMerged = try container.decodeIfPresent(Int.self, forKey: .duplicateContextsMerged) ?? 0
+        duplicateAreasMerged = try container.decodeIfPresent(Int.self, forKey: .duplicateAreasMerged) ?? 0
+        duplicateProjectsMerged = try container.decodeIfPresent(Int.self, forKey: .duplicateProjectsMerged) ?? 0
+        duplicateNotesMerged = try container.decodeIfPresent(Int.self, forKey: .duplicateNotesMerged) ?? 0
+        duplicateHabitCompletionsRemoved = try container.decodeIfPresent(Int.self, forKey: .duplicateHabitCompletionsRemoved) ?? 0
+        habitRemindersCleared = try container.decodeIfPresent(Int.self, forKey: .habitRemindersCleared) ?? 0
+        movedAreas = try container.decodeIfPresent(Int.self, forKey: .movedAreas) ?? 0
+        movedProjects = try container.decodeIfPresent(Int.self, forKey: .movedProjects) ?? 0
+        movedTasks = try container.decodeIfPresent(Int.self, forKey: .movedTasks) ?? 0
+        movedGoals = try container.decodeIfPresent(Int.self, forKey: .movedGoals) ?? 0
+        movedHabits = try container.decodeIfPresent(Int.self, forKey: .movedHabits) ?? 0
+        movedNotes = try container.decodeIfPresent(Int.self, forKey: .movedNotes) ?? 0
+        movedDocuments = try container.decodeIfPresent(Int.self, forKey: .movedDocuments) ?? 0
+        movedLinks = try container.decodeIfPresent(Int.self, forKey: .movedLinks) ?? 0
+        movedGoalLinks = try container.decodeIfPresent(Int.self, forKey: .movedGoalLinks) ?? 0
+    }
+}
+
 /// **Scope: duplicate rows, the references a merge invalidates, and single-row fields that name
 /// something impossible. Not an orphan sweep** (T-328).
 ///

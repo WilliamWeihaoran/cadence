@@ -290,7 +290,7 @@ struct MacSettingsAboutAndHabitMetricsTests {
 
     /// The scan itself works. Without this, a wrong repository root or a broken enumerator makes
     /// every absence assertion above pass by reading nothing at all.
-    @Test func theSourceScanIsNotVacuous() throws {
+    @Test func theSourceScanIsNotVacuousInMacSettingsAboutAndHabitMetrics() throws {
         let files = try swiftFiles(under: "Cadence")
         #expect(files.count > 200)
         #expect(files.contains("Cadence/macOS/Views/SettingsAboutSection.swift"))

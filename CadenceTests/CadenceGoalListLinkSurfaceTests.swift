@@ -413,7 +413,7 @@ struct CadenceGoalListLinkSurfaceTests {
         #expect(GoalLinkPresentation.candidateCount(in: groups) == 1)
     }
 
-    @Test func anUntitledListStillGetsAName() throws {
+    @Test func anUntitledListStillGetsANameInGoalListLinkSurface() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
         let area = Area(name: "   ")
@@ -540,7 +540,7 @@ struct CadenceGoalListLinkSurfaceTests {
     /// silently returns nothing passes every zero-count assertion. This is the test that stops them
     /// going vacuous — the exact failure mode that let a `/tmp` against `/private/tmp` path
     /// mismatch look like real regressions while the scan was reading nothing at all.
-    @Test func theSourceScanActuallyReachesBothPlatformsSource() throws {
+    @Test func theSourceScanActuallyReachesBothPlatformsSourceInGoalListLinkSurface() throws {
         let files = try swiftFiles(under: "Cadence")
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")

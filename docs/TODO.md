@@ -142,45 +142,13 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   real widget membership violation is a compile error under `-scheme Cadence`, so no compiling
   mutation can make that assertion fire.
 
-- [T-445] **`DataIntegrityRepairReport` is a synthesized `Codable`, so adding a counter makes the
-  stored report undecodable.** Synthesized decoding does not apply property defaults for missing
-  keys, so `lastReport.v1` written before a new field cannot be read after. `lastReport()` swallows
-  it with `try?`, so nothing breaks — but the diagnostic is lost, and `repairAndRecordFailure`
-  returns `nil` on exactly the launch that meant to hand back the last good report. **Second
-  occurrence** — T-359 added the first counter, T-428 the second. One `init(from:)` using
-  `decodeIfPresent` closes it. Not data loss; no user data lives in that key.
 
 - [T-442] **The macOS note-template editor is a bare `TextEditor` while iOS gets the full markdown
   surface.** An unrecorded parity gap, and the reason T-421's fix is iOS-only: macOS never had an
   image door to close.
 
-- [T-414] **`subGoalCount` and `habitCount` have the same naming defect [[T-388]] just fixed.**
-  They report own-only numbers under names that read like totals. Left alone deliberately so the
-  breaking wire change stayed one rename rather than three — but the DTO is now half-renamed, and a
-  half-applied convention is worse than either end state. Close it before it ossifies.
 
-- [T-415] **The MCP page slice still happens in memory.** From [[T-384]]: `taskSort` and
-  `CadenceMCPOrdering` both end on `id.uuidString`, `UUID` is not `Comparable`, and `isDone` is
-  computed — so `offset`/`limit` cannot be pushed into the store's sort descriptor and the rows are
-  still materialised before being sliced. Reads are far narrower now, but the last hop is unchanged.
 
-- [T-433] **`CadenceListDeletionSummary` says its counts "mirror
-  `ModelContext.deleteArea/deleteProject/deleteContext` exactly" and omits the image sweep all
-  three of them run.** Found while fixing [[T-423]], which was the same defect one summary over.
-  The struct counts tasks, notes, links, projects, areas, goals and habits; it has no `images`
-  field at all, while every cascade it mirrors ends in `deleteUnreferencedMarkdownImageAssets`. So
-  deleting an area holding twenty image-bearing notes destroys those `.externalStorage` bytes with
-  the confirmation saying nothing about them — and the note confirmation beside it *does* say
-  "N embedded images", so the two disagree about whether images are worth mentioning.
-  The arithmetic is now available: `CadenceNoteDeletionSummary.forNote` reads it through
-  `CadenceMarkdownSourceInventory.liveMarkdownTexts(in:excludingNoteIDs:)`, and the list version is
-  the same call with every doomed note's id in the exclusion set. Two things to settle first,
-  though, which is why this is filed rather than done: the list summaries are computed from model
-  objects with **no `ModelContext` parameter** (`forArea(_:)`, `forProject(_:)`, `forContext(_:)`),
-  so the signature has to change the way `forNote` already has; and the cascade counts are exact
-  today, so adding a count that can be a floor means porting `hasUnknownImpact` across too, or the
-  new number silently breaks the "may not over-promise" rule the whole file is built on.
-  Fix the doc comment's "exactly" in the same pass either way.
 
 - [T-372a] **`CadenceSearchMatcher.rank` is the one ordering left partial after [[T-372]].** Found
   while fixing T-372 and deliberately not fixed there: `rank` ends at score-then-title
@@ -191,13 +159,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   site rather than the one-file change T-372 was. Scoped out to keep the MCP fix reviewable; the
   fix shape is the same `id` tail `CadenceMCPOrdering.precedes` now uses.
 
-- [T-367] **Global Cmd+Z on the model context is either a feature or a hazard, and nothing says
-  which.** P3, source measured, runtime behaviour not measured. The macOS root installs an
-  `UndoManager` on the shared `ModelContext` and routes non-text Cmd+Z/Cmd+Shift+Z into it, while
-  destructive copy elsewhere tells the user "This cannot be undone." Editor undo is correctly scoped
-  to the text view. **Decide:** if global model undo is real, pin what it may undo; if not, remove
-  the root fallback. Do not leave it undecided — the current state means neither the code nor the
-  copy can be trusted.
 
 - [T-374] **The most common defect shape in 21 audits is "a correct shared helper exists and call
   sites don't use it" — enforce it mechanically.** Synthesis, not a new defect. [[T-359]] (four
@@ -291,109 +252,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   and the chrome gone, which is a different shape rather than the same one rotated.
 
 
-- [T-161] **Tests pin helpers, not wiring.** The T-149 verifier proved by mutation that reverting the
-  `macOSRootCommandActionSupport` fix leaves all 1692 tests green, and the same holds for T-150 —
-  nothing observes that `MarkdownEditorView` calls the shared functions. `D-113` closed this for the
-  markdown indent formula by testing that the stylist *reads the shared metrics*, not merely that the
-  numbers are right. Worth applying that pattern to the two search fixes, and treating it as the
-  default shape for consolidation work: a test that passes when the call site is reverted has not
-  pinned the consolidation.
-
-  **Survey, 2026-08-25, against `6e1f1e0`.** Measured rather than estimated, because nobody had:
-  **2,514 `@Test` functions, of which 154 read a `.swift` file as text**, spread over **32 of 189**
-  test files. Of those 154, **73 assert nothing but that some text exists** and 81 also assert at
-  least one value produced by a real call. So the source-scan population is ~6% of the suite — small
-  — and it is concentrated where the risk is: iOS surfaces the macOS target cannot compile, plus a
-  tail of macOS files where a value *was* available and nobody reached for it. The script is
-  reproducible from the classification described here; it strips comments and masks string literals
-  before matching, because `func select(` inside a needle literal otherwise reads as a declaration.
-
-  **Partly shipped in `902b386`: three fixed, each with the blindness proved first** (pre-fix
-  mutation → all green, post-fix same mutation → red, both at 0 compile errors). Six more
-  whole-file needle counts, listed below, were recorded as remaining rather than fixed — this
-  ticket stays open for those:
-  - *macOS's settings rail was pinned one case at a time.* `SettingsCategoryGroup` was `private`, so
-    `theSyncCategoryIsFiledInTheMacOSRail` and `theAboutCategoryIsFiledInTheRailAndRoutedToItsSection`
-    each found `static let all: [SettingsCategoryGroup]` in the source text, sliced to the next
-    `\n}`, and asked whether the slice contained `".sync"` / `".about"`. Deleting `.notifications`
-    from the Connections group — Settings → Notifications unreachable on macOS — passed. The struct
-    is `internal` now and `theRailFilesEverySharedCategoryExactlyOnce` states the general rule.
-  - *Both edit sheets' wind-down was two whole-file counts.* `macOSStillWindsDownOnArchiveAndOnCompletion`
-    asserted `cancelRemainingActiveTasks(` == 2 and `completeRemainingActiveTasks(` == 2 in
-    `EditListSheet.swift`. **Swapping them** — archiving a list marks its leftovers *done*, completing
-    one cancels them — leaves both counts at 2 and passed. The branch is a value now
-    (`ListEditorLifecycleChoice.windDownOutcome`) over a new
-    `TaskContainerLifecycleService.settleRemainingActiveTasks(…outcome:)`, and the surviving scan is
-    scoped to `apply(_:)`'s brace-matched body instead of the file.
-  - *T-240, closed in `902b386` — see Done.*
-
-  **`cadenceFunctionBody(_:in:)` is now the one brace matcher in `CadenceTests`** — `cfa3b3b`'s
-  `focusFunctionBody`, promoted to `internal` and renamed, read by `FocusPickerPlayControlTests`,
-  `AppStoreReviewReadinessTests` and `CadenceListWindDownSurfaceTests`. Anything else scoping a scan
-  to one function calls it rather than writing a second.
-
-  **Second pass, 2026-08-26 against `36be8ba`: four of the six done, each proved by mutation**
-  (apply → red on exactly the intended test, restore → green; 0 compile errors on every run, and
-  for each one the *old* whole-file needle was grepped in the mutated file and found still present,
-  which is the blindness proof stated mechanically rather than by re-running a deleted assertion).
-  - *The two inspector-host suites.* The repo-wide dictionaries are kept — they are the right shape
-    for "exactly N places in the whole app" — and the per-file half is now placement.
-    `theHostDrawsThePanelOnlyInTheStayBranchOfTheSharedRule` (and its bundle twin) pin the panel to
-    the `.stay` arm of `CadenceDetailPanelPresentation.resolveHeldSubject`; **swapping the `.stay`
-    and `.close` arms** leaves `iOSTaskDetailSheet(` at one occurrence in one file, every old
-    assertion green, and every row in the app opening nothing.
-    `theRootAppliesTheHostAboveBothShellsRatherThanInsideOne` (and its bundle twin) slice
-    `iOSRootView`'s `Group` and require the host, the bundle host and the startup banner to be
-    applied *to* it, not inside it; **moving `.iOSTaskInspectorHost()` into the
-    `horizontalSizeClass == .regular` branch** — iPad keeps the inspector, the iPhone's four tabs
-    get dead taps — keeps the file count at exactly 1.
-    `theNestedHostSitsOnTheSheetThatCarriesAWholePageOfRows` scopes the nested host to
-    `iOSTodayOverdueListSheet`'s **`var body`**, and the reason is a measured one: the first draft
-    scoped it to the *struct* and survived a mutation that moved the modifier onto a second computed
-    property in the same struct. Struct-level was not enough; `var body` is.
-  - *`CadenceTodayOverdueSummarySurfaceTests.theMacCardsHopTheNavigationManagerThroughTheSharedRequest`
-    is behavioural now.* macOS's half is compiled by this target and nobody had reached for it: the
-    test drives `TasksPanelSupport.openOverdueListSummary` / `openOverdueSectionSummary` against
-    `ListNavigationManager.shared` and reads the request it is left holding. Two mutations that the
-    old scan could not see: **swapping the `.area` and `.project` arms** of the private
-    `open(_:listNavigationManager:)`, and **dropping `sectionName:`** from both hops so the board
-    lands on whatever column it last showed. The one whole-file assertion kept is the *absence*
-    (`if let projectID = summary.projectID`), which is the claim a scan states better than a call.
-  - *`CadenceTodayRolloverSurfaceTests.theMacSpellingDelegatesToTheSharedMutation` is scoped and
-    stated as an equality.* `cadenceFunctionBody` slices `SchedulingActions.rollOverTaskToToday` and
-    the whole trimmed body must equal the one delegating call, so **any** added statement fails —
-    proved with `task.scheduledStartMin = -1` appended under the delegation, which the old
-    `contains(…)` cannot see.
-  - *`55d696b`'s owed evidence is paid.* Forcing `CadenceTaskGroupHeadingMetrics.showsCapsule` to
-    `true` fails `CadenceInboxRemindersSurfaceTests.onlyAnUnknownCountSuppressesTheCapsule`, exit 65
-    at 0 compile errors. The behavioural test was load-bearing all along.
-
-  **Still open, and the list is shorter than it was for one reason worth reading.**
-  - `CadenceKanbanColumnLifecycleSurfaceTests.bothVisibleCompletionControlsSitInsideTheLifecycleGate`
-    and `theKeyboardRouteAndTheConvergencePointBothRefuseDefault`. Both already assert *structure*
-    with brace-adjacent regexes; what is unscoped is the pair of
-    `section.supportsLifecycle` == 2 counts beside them. Not attempted here.
-  - `CadenceListDetailTabStripMarginTests.theResetIsTheStripsAloneAndTheHostCompensatesForNothing`.
-    Not attempted. Note while you are in the file: it declares a **second** declaration slicer
-    (`declaration(named:in:)`, which slices to the next `\nstruct` rather than brace-matching), and
-    `CadencePageHeaderMetricsTests` / `CadenceTodayUnificationTests` declare a **third** between
-    them (`declarationBody(of:in:)`, twice, byte-identical). Three private near-copies of the thing
-    `cadenceFunctionBody(_:in:)` was promoted to be.
-  - `CadenceSharedBoardChromeTests.bothBoardsDrawTheSharedMetadataChip`. Not attempted.
-  - `CadenceSharedTaskRowJobsTests.theRowsAnimatedPartsAreStillExtractedIntoTheirOwnSubViews` was
-    **rewritten but is the one place a mutation did not survive on its own merits**, and that is the
-    finding rather than the fix. It now asks each declaration for its own count —
-    `TaskCompletionButton` 1, `TaskRowBackground` 1, `MacTaskRow` 0, `MacTaskRowEstimateChip` 0 —
-    over `cadenceFunctionBody`, with the whole-file 2 kept as a no-fifth-reader guard. The mutation
-    (the row observes the manager and hands it down to `TaskRowBackground` as a `let`) does turn it
-    red, but it turns `CadenceTodayUnificationTests.theTaskRowStillDoesNotObserveTheCompletionAnimationManager`
-    red too — that test has scoped `MacTaskRow` and `MacTaskRowEstimateChip` to their declaration
-    bodies all along, so the bullet's stated gap ("cannot tell the two extracted sub-views from
-    `MacTaskRow` growing one of its own") was already closed by a neighbour nobody had checked.
-    The residue the new assertion adds — *both* observations in one sub-view and none in the other —
-    could not be mutated into existence in code that compiles, because a view that uses `manager`
-    has to obtain it and the only non-observing route needs a holder that is itself forbidden from
-    observing. Recorded as unprovable rather than claimed as proved.
 
 
 
@@ -766,11 +624,181 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Done: one panel — the container list, the highlight arithmetic, the selection and the section
   normalisation — read by both the title field and the drag-create popover, one item type, and a
   test that fails if either file re-declares `tildeFlatContainers`.
+- [T-465] **A test can be declared in the wrong `struct` and no assertion can catch it.** This is the
+  one shape [[T-161]] did **not** close mechanically: a test that belongs to the calendar suite but
+  is declared inside the deletion suite compiles, runs, and passes. Nothing can compare a test's
+  location against its author's intent. `scripts/test-suite-index.sh` prints suite -> test names for
+  review; the ask here is a periodic read of that output, not a guard. Filed rather than solved so the
+  gap is written down instead of assumed closed by T-161.
+
+- [T-466] **`NoteMigrationReport` is [[T-445]] untouched.** Same synthesized-`Codable` shape: adding a
+  counter makes every previously stored report fail to decode, so the history silently empties. T-445
+  fixed `DataIntegrityRepairReport` with a `nonisolated extension` and `decodeIfPresent(...) ?? 0` per
+  counter, plus a test that removes each key in turn. Apply the identical treatment here. Note the
+  actor-isolation trap T-445 hit: the naive spelling warns only under
+  `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which the MCP scheme does not set, so an MCP-only build
+  reports zero warnings on broken code.
+
+
 ## Done
 
 Moved to [`TODO_DONE.md`](TODO_DONE.md) on 2026-08-26 — 220 entries, with their reasoning and shipping SHAs intact.
 The working list was ~82k tokens and two thirds of it was finished work. **Search the archive
 before filing**: this list has had the same ticket re-reported more than once.
+
+- [T-161] **Tests pin helpers, not wiring.** The T-149 verifier proved by mutation that reverting the
+  `macOSRootCommandActionSupport` fix leaves all 1692 tests green, and the same holds for T-150 —
+  nothing observes that `MarkdownEditorView` calls the shared functions. `D-113` closed this for the
+  markdown indent formula by testing that the stylist *reads the shared metrics*, not merely that the
+  numbers are right. Worth applying that pattern to the two search fixes, and treating it as the
+  default shape for consolidation work: a test that passes when the call site is reverted has not
+  pinned the consolidation.
+
+  **Survey, 2026-08-25, against `6e1f1e0`.** Measured rather than estimated, because nobody had:
+  **2,514 `@Test` functions, of which 154 read a `.swift` file as text**, spread over **32 of 189**
+  test files. Of those 154, **73 assert nothing but that some text exists** and 81 also assert at
+  least one value produced by a real call. So the source-scan population is ~6% of the suite — small
+  — and it is concentrated where the risk is: iOS surfaces the macOS target cannot compile, plus a
+  tail of macOS files where a value *was* available and nobody reached for it. The script is
+  reproducible from the classification described here; it strips comments and masks string literals
+  before matching, because `func select(` inside a needle literal otherwise reads as a declaration.
+
+  **Partly shipped in `902b386`: three fixed, each with the blindness proved first** (pre-fix
+  mutation → all green, post-fix same mutation → red, both at 0 compile errors). Six more
+  whole-file needle counts, listed below, were recorded as remaining rather than fixed — this
+  ticket stays open for those:
+  - *macOS's settings rail was pinned one case at a time.* `SettingsCategoryGroup` was `private`, so
+    `theSyncCategoryIsFiledInTheMacOSRail` and `theAboutCategoryIsFiledInTheRailAndRoutedToItsSection`
+    each found `static let all: [SettingsCategoryGroup]` in the source text, sliced to the next
+    `\n}`, and asked whether the slice contained `".sync"` / `".about"`. Deleting `.notifications`
+    from the Connections group — Settings → Notifications unreachable on macOS — passed. The struct
+    is `internal` now and `theRailFilesEverySharedCategoryExactlyOnce` states the general rule.
+  - *Both edit sheets' wind-down was two whole-file counts.* `macOSStillWindsDownOnArchiveAndOnCompletion`
+    asserted `cancelRemainingActiveTasks(` == 2 and `completeRemainingActiveTasks(` == 2 in
+    `EditListSheet.swift`. **Swapping them** — archiving a list marks its leftovers *done*, completing
+    one cancels them — leaves both counts at 2 and passed. The branch is a value now
+    (`ListEditorLifecycleChoice.windDownOutcome`) over a new
+    `TaskContainerLifecycleService.settleRemainingActiveTasks(…outcome:)`, and the surviving scan is
+    scoped to `apply(_:)`'s brace-matched body instead of the file.
+  - *T-240, closed in `902b386` — see Done.*
+
+  **`cadenceFunctionBody(_:in:)` is now the one brace matcher in `CadenceTests`** — `cfa3b3b`'s
+  `focusFunctionBody`, promoted to `internal` and renamed, read by `FocusPickerPlayControlTests`,
+  `AppStoreReviewReadinessTests` and `CadenceListWindDownSurfaceTests`. Anything else scoping a scan
+  to one function calls it rather than writing a second.
+
+  **Second pass, 2026-08-26 against `36be8ba`: four of the six done, each proved by mutation**
+  (apply → red on exactly the intended test, restore → green; 0 compile errors on every run, and
+  for each one the *old* whole-file needle was grepped in the mutated file and found still present,
+  which is the blindness proof stated mechanically rather than by re-running a deleted assertion).
+  - *The two inspector-host suites.* The repo-wide dictionaries are kept — they are the right shape
+    for "exactly N places in the whole app" — and the per-file half is now placement.
+    `theHostDrawsThePanelOnlyInTheStayBranchOfTheSharedRule` (and its bundle twin) pin the panel to
+    the `.stay` arm of `CadenceDetailPanelPresentation.resolveHeldSubject`; **swapping the `.stay`
+    and `.close` arms** leaves `iOSTaskDetailSheet(` at one occurrence in one file, every old
+    assertion green, and every row in the app opening nothing.
+    `theRootAppliesTheHostAboveBothShellsRatherThanInsideOne` (and its bundle twin) slice
+    `iOSRootView`'s `Group` and require the host, the bundle host and the startup banner to be
+    applied *to* it, not inside it; **moving `.iOSTaskInspectorHost()` into the
+    `horizontalSizeClass == .regular` branch** — iPad keeps the inspector, the iPhone's four tabs
+    get dead taps — keeps the file count at exactly 1.
+    `theNestedHostSitsOnTheSheetThatCarriesAWholePageOfRows` scopes the nested host to
+    `iOSTodayOverdueListSheet`'s **`var body`**, and the reason is a measured one: the first draft
+    scoped it to the *struct* and survived a mutation that moved the modifier onto a second computed
+    property in the same struct. Struct-level was not enough; `var body` is.
+  - *`CadenceTodayOverdueSummarySurfaceTests.theMacCardsHopTheNavigationManagerThroughTheSharedRequest`
+    is behavioural now.* macOS's half is compiled by this target and nobody had reached for it: the
+    test drives `TasksPanelSupport.openOverdueListSummary` / `openOverdueSectionSummary` against
+    `ListNavigationManager.shared` and reads the request it is left holding. Two mutations that the
+    old scan could not see: **swapping the `.area` and `.project` arms** of the private
+    `open(_:listNavigationManager:)`, and **dropping `sectionName:`** from both hops so the board
+    lands on whatever column it last showed. The one whole-file assertion kept is the *absence*
+    (`if let projectID = summary.projectID`), which is the claim a scan states better than a call.
+  - *`CadenceTodayRolloverSurfaceTests.theMacSpellingDelegatesToTheSharedMutation` is scoped and
+    stated as an equality.* `cadenceFunctionBody` slices `SchedulingActions.rollOverTaskToToday` and
+    the whole trimmed body must equal the one delegating call, so **any** added statement fails —
+    proved with `task.scheduledStartMin = -1` appended under the delegation, which the old
+    `contains(…)` cannot see.
+  - *`55d696b`'s owed evidence is paid.* Forcing `CadenceTaskGroupHeadingMetrics.showsCapsule` to
+    `true` fails `CadenceInboxRemindersSurfaceTests.onlyAnUnknownCountSuppressesTheCapsule`, exit 65
+    at 0 compile errors. The behavioural test was load-bearing all along.
+
+  **Still open, and the list is shorter than it was for one reason worth reading.**
+  - `CadenceKanbanColumnLifecycleSurfaceTests.bothVisibleCompletionControlsSitInsideTheLifecycleGate`
+    and `theKeyboardRouteAndTheConvergencePointBothRefuseDefault`. Both already assert *structure*
+    with brace-adjacent regexes; what is unscoped is the pair of
+    `section.supportsLifecycle` == 2 counts beside them. Not attempted here.
+  - `CadenceListDetailTabStripMarginTests.theResetIsTheStripsAloneAndTheHostCompensatesForNothing`.
+    Not attempted. Note while you are in the file: it declares a **second** declaration slicer
+    (`declaration(named:in:)`, which slices to the next `\nstruct` rather than brace-matching), and
+    `CadencePageHeaderMetricsTests` / `CadenceTodayUnificationTests` declare a **third** between
+    them (`declarationBody(of:in:)`, twice, byte-identical). Three private near-copies of the thing
+    `cadenceFunctionBody(_:in:)` was promoted to be.
+  - `CadenceSharedBoardChromeTests.bothBoardsDrawTheSharedMetadataChip`. Not attempted.
+  - `CadenceSharedTaskRowJobsTests.theRowsAnimatedPartsAreStillExtractedIntoTheirOwnSubViews` was
+    **rewritten but is the one place a mutation did not survive on its own merits**, and that is the
+    finding rather than the fix. It now asks each declaration for its own count —
+    `TaskCompletionButton` 1, `TaskRowBackground` 1, `MacTaskRow` 0, `MacTaskRowEstimateChip` 0 —
+    over `cadenceFunctionBody`, with the whole-file 2 kept as a no-fifth-reader guard. The mutation
+    (the row observes the manager and hands it down to `TaskRowBackground` as a `let`) does turn it
+    red, but it turns `CadenceTodayUnificationTests.theTaskRowStillDoesNotObserveTheCompletionAnimationManager`
+    red too — that test has scoped `MacTaskRow` and `MacTaskRowEstimateChip` to their declaration
+    bodies all along, so the bullet's stated gap ("cannot tell the two extracted sub-views from
+    `MacTaskRow` growing one of its own") was already closed by a neighbour nobody had checked.
+    The residue the new assertion adds — *both* observations in one sub-view and none in the other —
+    could not be mutated into existence in code that compiles, because a view that uses `manager`
+    has to obtain it and the only non-observing route needs a holder that is itself forbidden from
+    observing. Recorded as unprovable rather than claimed as proved.
+  **Closed 2026-08-29. `CadenceScanInstrument` validates a detector against a positive **and** a negative fixture in its *initializer*, so a blinded detector cannot reach a sweep; `sweep`'s `atLeast:`/`including:` are non-defaulted, so omitting the non-vacuity assertion is a compile error. Evidence: the same blinding mutation, both at 0 strict compile errors, left the bare-predicate sweep green and made the instrument-backed sweep fail with `does not fire on its own positive witness`. Also scanned the test target against itself: 13 shared names across 46 declarations -> 0 duplicates across 3,394 tests. The wrong-`struct` trap is not closed mechanically -- see [[T-465]].**
+
+- [T-367] **Global Cmd+Z on the model context is either a feature or a hazard, and nothing says
+  which.** P3, source measured, runtime behaviour not measured. The macOS root installs an
+  `UndoManager` on the shared `ModelContext` and routes non-text Cmd+Z/Cmd+Shift+Z into it, while
+  destructive copy elsewhere tells the user "This cannot be undone." Editor undo is correctly scoped
+  to the text view. **Decide:** if global model undo is real, pin what it may undo; if not, remove
+  the root fallback. Do not leave it undecided — the current state means neither the code nor the
+  copy can be trusted.
+  **Closed 2026-08-29 **as a removal, not a fix.** `modelContext.undoManager = UndoManager()` is gone from `macOSRootLifecycleSupport.handleAppear` and `case 6:` is gone from the Cmd-key table, so Cmd+Z falls through to `default: return event` and `NSTextView` keeps its own undo. Reasons: one shared `ModelContext` across every surface; destructive paths pair store writes with effects (EventKit, notifications, file removal) that no undo stack saw; the "This cannot be undone" copy already contradicted it. A headless measurement -- recorded as a bound, not as the app's behaviour, since there is no run loop -- had `canUndo` true while `undo()` left a deleted row deleted and removed an edited row rather than restoring its title.**
+
+- [T-414] **`subGoalCount` and `habitCount` have the same naming defect [[T-388]] just fixed.**
+  They report own-only numbers under names that read like totals. Left alone deliberately so the
+  breaking wire change stayed one rename rather than three — but the DTO is now half-renamed, and a
+  half-applied convention is worse than either end state. Close it before it ossifies.
+  **Closed 2026-08-29. `subGoalCount`/`habitCount` -> `ownSubGoalCount`/`ownHabitCount`, matching [[T-388]]; arithmetic untouched. Wire-key test pins all four new keys present and all four old keys absent. Breaking bump 0.5.0 -> 0.6.0.**
+
+- [T-415] **The MCP page slice still happens in memory.** From [[T-384]]: `taskSort` and
+  `CadenceMCPOrdering` both end on `id.uuidString`, `UUID` is not `Comparable`, and `isDone` is
+  computed — so `offset`/`limit` cannot be pushed into the store's sort descriptor and the rows are
+  still materialised before being sliced. Reads are far narrower now, but the last hop is unchanged.
+  **Closed 2026-08-29 as **a documented limit, not a fix** -- see `[X-09]` in the Cancelled section. The ticket's stated reason was wrong (`UUID` *is* `Comparable`), but three real blockers stand.**
+
+- [T-433] **`CadenceListDeletionSummary` says its counts "mirror
+  `ModelContext.deleteArea/deleteProject/deleteContext` exactly" and omits the image sweep all
+  three of them run.** Found while fixing [[T-423]], which was the same defect one summary over.
+  The struct counts tasks, notes, links, projects, areas, goals and habits; it has no `images`
+  field at all, while every cascade it mirrors ends in `deleteUnreferencedMarkdownImageAssets`. So
+  deleting an area holding twenty image-bearing notes destroys those `.externalStorage` bytes with
+  the confirmation saying nothing about them — and the note confirmation beside it *does* say
+  "N embedded images", so the two disagree about whether images are worth mentioning.
+  The arithmetic is now available: `CadenceNoteDeletionSummary.forNote` reads it through
+  `CadenceMarkdownSourceInventory.liveMarkdownTexts(in:excludingNoteIDs:)`, and the list version is
+  the same call with every doomed note's id in the exclusion set. Two things to settle first,
+  though, which is why this is filed rather than done: the list summaries are computed from model
+  objects with **no `ModelContext` parameter** (`forArea(_:)`, `forProject(_:)`, `forContext(_:)`),
+  so the signature has to change the way `forNote` already has; and the cascade counts are exact
+  today, so adding a count that can be a floor means porting `hasUnknownImpact` across too, or the
+  new number silently breaks the "may not over-promise" rule the whole file is built on.
+  Fix the doc comment's "exactly" in the same pass either way.
+  **Closed 2026-08-29. `CadenceListDeletionSummary` gains `images` and `hasUnknownImpact`; `forArea/forProject/forContext` now take `in modelContext:`; the doc comment's "exactly" is retired. The amber unknown-impact row is now one shared `iOSDeleteUnknownImpactRow` across both sheets.**
+
+- [T-445] **`DataIntegrityRepairReport` is a synthesized `Codable`, so adding a counter makes the
+  stored report undecodable.** Synthesized decoding does not apply property defaults for missing
+  keys, so `lastReport.v1` written before a new field cannot be read after. `lastReport()` swallows
+  it with `try?`, so nothing breaks — but the diagnostic is lost, and `repairAndRecordFailure`
+  returns `nil` on exactly the launch that meant to hand back the last good report. **Second
+  occurrence** — T-359 added the first counter, T-428 the second. One `init(from:)` using
+  `decodeIfPresent` closes it. Not data loss; no user data lives in that key.
+  **Closed 2026-08-29. `nonisolated extension DataIntegrityRepairReport { init(from:) }` with `decodeIfPresent(...) ?? 0` per counter; the four head fields stay `decode`. An extension rather than the struct body, so the memberwise init survives. `nonisolated` matters: the first spelling warned that the `Decodable` conformance crossed into main-actor code -- invisible to the MCP scheme, the one target without `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.**
 
 ## Cancelled
 
@@ -912,3 +940,16 @@ before filing**: this list has had the same ticket re-reported more than once.
   `project.pbxproj`), so any `.swift` file under `Cadence/` is compiled by directory membership with
   no `project.pbxproj` change to show for it. An untracked file therefore silently joins every
   build, and restoring `HEAD` means **deleting** it, not keeping it.
+
+- [X-09] **Push the MCP page slice into the fetch (was [[T-415]]).** Not doing it. The ticket's stated
+  reason was false -- `UUID` *is* `Comparable` in Foundation, and `UUID() < UUID()` typechecks at
+  `-target arm64-apple-macos14.0`. Three real blockers stand, each independently sufficient: both
+  comparators lead on **computed** properties (`AppTask.isDone` off `statusRaw`, `Note.displayTitle`)
+  that a `SortDescriptor` key path cannot reach; the title leg is `localizedCaseInsensitiveCompare`
+  while `SortDescriptor` offers only numeric-aware `.localizedStandard`, so pushing it down changes
+  the very order `offset` is defined against; and half the candidate lists are relationship edges
+  ([[T-384]]) or cross-kind merges ([[T-383]]) with no `FetchDescriptor` to carry `fetchOffset`.
+  Reopening would need a stored `Comparable` sort key on `AppTask`/`Note` reproducing today's order,
+  plus a partial revert of T-384 -- a CloudKit migration, with no `SchemaMigrationPlan` in the repo,
+  to remove one array slice from reads whose fetch is already bounded and asserted. The limit is
+  documented on `CadencePage.paging` and in the MCP guide instead.

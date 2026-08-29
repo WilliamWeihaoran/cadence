@@ -283,7 +283,7 @@ struct CadenceRecurrenceEndSurfaceTests {
     /// The absence assertions above are worth nothing if the scan reads no files, and a scan that
     /// silently returns nothing passes every one of them. A `/tmp` against `/private/tmp` mismatch
     /// once made a scan that read nothing at all look like four clean results.
-    @Test func theSourceScanActuallyReachesBothPlatformsSource() throws {
+    @Test func theSourceScanActuallyReachesBothPlatformsSourceInRecurrenceEndSurface() throws {
         let files = try swiftFiles(under: "Cadence")
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")

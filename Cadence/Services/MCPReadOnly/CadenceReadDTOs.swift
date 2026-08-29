@@ -37,6 +37,33 @@ nonisolated struct CadencePage<Item: Codable & Sendable>: Codable, Sendable {
     ///
     /// `transform` runs only on the rows that survive the slice, so paging stays cheaper than the
     /// map it replaces. It does not make the *fetch* cheaper; that is T-384 and is not this.
+    ///
+    /// **This slice is in memory and stays that way. Settled, not deferred** (T-415).
+    ///
+    /// `fetchOffset`/`fetchLimit` on a `FetchDescriptor` would move it into the store, and the
+    /// obvious blocker — `UUID` is not `Comparable`, so the identity leg of the sort cannot go into
+    /// a `SortDescriptor` — turned out to be false when it was finally checked: Foundation gives
+    /// `UUID` a `Comparable` conformance and `UUID() < UUID()` compiles at this deployment target.
+    /// Three real ones remain, and each is independently sufficient:
+    ///
+    /// - **The comparators lead on computed properties.** `CadenceReadService.taskSort` sorts on
+    ///   `isDone`, which is `status == .done` derived from `statusRaw`;
+    ///   `CadenceMCPOrdering.sortKey(_: Note)` sorts on `displayTitle`. Neither is stored, so
+    ///   neither is expressible in a sort descriptor. Storing them means a schema change and a
+    ///   CloudKit migration to buy an optimisation.
+    /// - **The title leg is `localizedCaseInsensitiveCompare`.** `SortDescriptor`'s nearest
+    ///   equivalent is `.localizedStandard`, which is numeric-aware — it orders `item2` before
+    ///   `item10` where this comparator does the reverse. Pushing the sort down would silently
+    ///   change the order the envelope's `offset` is defined against.
+    /// - **Half these candidate lists are not fetches at all.** T-384 deliberately moved
+    ///   container-scoped reads onto relationship edges (`area.tasks`, `context.notes`), and
+    ///   `listContainers` merges two entity types into one order (T-383). An array walked off a
+    ///   model and a merge across kinds have no descriptor to attach an offset to.
+    ///
+    /// What is bounded is the *fetch*, which is what actually cost: `CadenceReadService`
+    /// `fetchedRowCount` is asserted against bounded numbers, and status, kind, archived and date
+    /// filters are in the predicate. Materialising the survivors and slicing them is the last hop,
+    /// and closing it needs a stored sort key, not a smaller change.
     static func paging<Element>(
         _ candidates: [Element],
         offset: Int,
@@ -347,12 +374,18 @@ nonisolated struct CadenceGoalSummary: Codable, Sendable {
     /// `GoalContributionResolver.summary` dedupes a recursive task walk per goal, which is exactly
     /// the "cap the response, not the work" shape T-384 is removing elsewhere in this same file.
     ///
-    /// `subGoalCount` and `habitCount` beside them are own-only too and still generically named;
-    /// that is the same defect, filed as [[T-414]] rather than widened into this one.
+    /// **All four carry the prefix (T-414).** `subGoalCount` and `habitCount` kept their generic
+    /// names through T-388 so the breaking wire change stayed one rename rather than three, and
+    /// that is the state this ticket closes: they count `goal.subGoals` and `goal.habits` flat,
+    /// exactly as the other two counted their edges, so a milestone two levels down is no more
+    /// present in `subGoalCount` than its tasks were in `taskCount`. A half-applied convention is
+    /// worse than either end state — a reader who has learned that `own` marks "not rolled up"
+    /// reads the two unprefixed names as the totals the other two stopped claiming to be. The
+    /// arithmetic is unchanged again; only the names moved.
     let ownLinkedListCount: Int
     let ownTaskCount: Int
-    let subGoalCount: Int
-    let habitCount: Int
+    let ownSubGoalCount: Int
+    let ownHabitCount: Int
     let createdAt: String
 }
 

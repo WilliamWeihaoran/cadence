@@ -100,6 +100,14 @@ enum RootCommandEventSupport {
         }
     }
 
+    /// The app's Cmd-key table. A case returns `nil` when it consumed the key and `event` when it
+    /// did not, so anything absent from the switch falls through to the responder chain.
+    ///
+    /// **Cmd+Z (keyCode 6) is deliberately absent (T-367).** It used to be handled here: hand the
+    /// key to the responder chain if a text view had focus, otherwise drive
+    /// `modelContext.undoManager`. Global model undo is gone — `macOSRootLifecycleSupport` carries
+    /// the reasoning — and once it is gone the remaining branch is what `default` already does.
+    /// Re-adding a case to "pass Cmd+Z through" would be a no-op that reads like a feature.
     static func handleCommandKeyEvent(_ event: NSEvent, context: RootCommandContext) -> NSEvent? {
         switch event.keyCode {
         case 40:
@@ -151,17 +159,6 @@ enum RootCommandEventSupport {
         case 45:
             if context.hoveredKanbanColumnManager.triggerCreateTask() { return nil }
             return event
-        case 6:
-            let firstResponder = NSApp.keyWindow?.firstResponder
-            if firstResponder is NSTextView || firstResponder is NSTextField {
-                return event
-            }
-            if event.modifierFlags.contains(.shift) {
-                context.modelContext.undoManager?.redo()
-            } else {
-                context.modelContext.undoManager?.undo()
-            }
-            return nil
         case 42:
             RootCommandActionSupport.handleTimelineShortcut(context: context)
             return nil

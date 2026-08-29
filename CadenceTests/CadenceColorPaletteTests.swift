@@ -142,7 +142,7 @@ struct CadenceColorPaletteSourceTests {
 
     /// Self-check on the needle: it must match the literal these tests ban and must not match the
     /// token read that replaced it, so a typo in the pattern cannot quietly pass every scan.
-    @Test func theHexNeedleMatchesALiteralAndNotATokenRead() {
+    @Test func theHexNeedleMatchesALiteralAndNotATokenReadInColorPaletteSource() {
         // `##"..."##`, because a `#"..."#` raw string is terminated by the `"#` inside
         // `"#4ecb71"` itself — the needle and its delimiter are the same two characters.
         let banned = ##"        case .project: return "#4ecb71""##

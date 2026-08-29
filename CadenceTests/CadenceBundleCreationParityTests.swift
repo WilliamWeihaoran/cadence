@@ -304,7 +304,7 @@ struct CadenceBundleCreationParityTests {
     /// Non-vacuity. Every absence assertion above passes trivially against an empty string, so the
     /// reader itself is checked: a needle that is certainly present must be found, and a needle that
     /// is certainly absent must not be.
-    @Test func theSourceReaderActuallyReadsTheseFiles() throws {
+    @Test func theSourceReaderActuallyReadsTheseFilesInBundleCreationParity() throws {
         for path in [
             "Cadence/macOS/Services/SchedulingService.swift",
             "Cadence/iOS/iOSCalendarBoardView.swift",

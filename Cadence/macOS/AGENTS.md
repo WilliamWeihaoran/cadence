@@ -15,6 +15,13 @@ This is the main product surface. Most implemented functionality lives here.
 - Keep root/shell views thin. Move repeated UI sections into dedicated subview structs.
 - Keep service-like work out of SwiftUI views when it mutates SwiftData, talks to EventKit, handles deletion, or coordinates global app state.
 - Preserve keyboard shortcut behavior. Many commands are hover-driven via macOS service managers.
+- **Nothing installs an `UndoManager` on the model context (T-367).** There is one `ModelContext`
+  in this app, so a global Cmd+Z reverts whatever that context recorded last rather than what the
+  user last did, and every destructive path pairs its store write with effects no undo stack saw —
+  cancelled reminders, disposed bundles, repaired recurrence links, torn-down focus state. Two
+  sheets tell the user "This cannot be undone", and that is now true. Editor undo is the text
+  view's own and is reached through the responder chain; leave it alone. Pinned by
+  `CadenceGlobalUndoSurfaceTests`, and the reasoning is on `macOSRootLifecycleSupport.handleAppear`.
 - Preserve dark theme styling and shared hover treatments.
 - Avoid iOS-only modifiers in macOS views.
 - Use AppKit bridges narrowly and keep them isolated.

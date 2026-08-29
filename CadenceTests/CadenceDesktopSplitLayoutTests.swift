@@ -349,7 +349,7 @@ struct CadenceDesktopSplitLayoutTests {
     /// comment on `CadenceDesktopSplitLayout` names the arithmetic it no longer types, so raw
     /// source sees the literal and stripped source does not.
     @Test
-    func theCommentStrippingIsActuallyStripping() throws {
+    func theCommentStrippingIsActuallyStrippingInDesktopSplitLayout() throws {
         let path = "Cadence/Shared/CadenceRegularPaneLayout.swift"
         let raw = try desktopSplitSource(path)
         let stripped = try desktopSplitStrippingComments(raw)

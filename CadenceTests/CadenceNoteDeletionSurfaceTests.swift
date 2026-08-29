@@ -426,7 +426,7 @@ struct CadenceNoteDeletionSurfaceTests {
     /// Without this, every zero and every absence above could be passing because the reader
     /// returned an empty string — which is exactly what a `/tmp` against `/private/tmp` path
     /// mismatch produces on an isolated build tree.
-    @Test func theSourceScanActuallyReadsTheseFiles() throws {
+    @Test func theSourceScanActuallyReadsTheseFilesInNoteDeletionSurface() throws {
         #expect(try swiftFiles(under: "Cadence").count > 300)
         #expect(try swiftFiles(under: "Cadence/Shared").contains("Cadence/Shared/CadenceNoteActionSupport.swift"))
 
@@ -627,7 +627,10 @@ struct CadenceNoteDeletionSurfaceTests {
         #expect(sheet.contains("struct iOSNoteDeleteConfirmationSheet: View"))
 
         #expect(sheet.components(separatedBy: "summary.unknownImpactLine").count - 1 == 1)
-        #expect(sheet.contains("unknownImpactRow("))
+        // The row itself is now shared with the *list* confirmation (T-433) rather than private to
+        // this sheet — one sentence, one amber row, two screens. `CadenceListDeletionSurfaceTests`
+        // owns the pairing; this side just pins that the note sheet still draws it.
+        #expect(sheet.contains("iOSDeleteUnknownImpactRow(line: unknownImpactLine)"))
         // It is drawn beside the counts it qualifies, not as a second red failure line: the
         // refused-delete notice keeps `Theme.red` and this keeps `Theme.amber`.
         #expect(sheet.contains("Theme.amber"))

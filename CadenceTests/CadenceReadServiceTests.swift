@@ -158,7 +158,7 @@ struct CadenceReadServiceTests {
         #expect(parentSummary.id == parentGoal.id.uuidString)
         #expect(parentSummary.isTopLevel)
         #expect(parentSummary.kind == GoalKind.ongoing.rawValue)
-        #expect(parentSummary.subGoalCount == 1)
+        #expect(parentSummary.ownSubGoalCount == 1)
 
         let contexts = try fixture.service.listContexts()
         #expect(contexts.items.first { $0.id == fixture.context.id.uuidString }?.goalCount == 2)
@@ -1020,21 +1020,35 @@ struct CadenceReadServiceTests {
         #expect(documents.totalCount == 0)
     }
 
-    // MARK: - T-388, own counts under names that say so
+    // MARK: - T-388 and T-414, own counts under names that say so
 
     /// The assertion is on the **encoded keys**, not the Swift property names, because the wire
     /// contract is what T-388 is about — and because a client that read `taskCount` gets a missing
     /// key rather than a wrong shape, which is the quiet half of this break.
+    ///
+    /// **All four counts, because T-414 finished the rename.** T-388 moved two and left
+    /// `subGoalCount`/`habitCount` generic to keep one break small; this test now pins the end
+    /// state, so the half-renamed struct cannot come back and neither can a fifth generic name
+    /// arriving beside four prefixed ones.
     @Test func goalSummaryNamesItsOwnCountsAsOwnCountsOnTheWire() throws {
         let fixture = try Fixture()
         let direction = Goal(title: "Ship Cadence")
         let milestone = Goal(title: "Ship MCP")
         milestone.parentGoal = direction
+        let second = Goal(title: "Ship the iOS surface")
+        second.parentGoal = direction
         let owned = AppTask(title: "Write the router")
         owned.goal = milestone
+        // Owned by the direction, so `ownHabitCount` is a number rather than a zero that any
+        // spelling would satisfy — and a *different* number from `ownSubGoalCount`, so a pair of
+        // counts wired to each other's edge is a failure rather than a coincidence.
+        let ritual = Habit(title: "Ship something daily")
+        ritual.goal = direction
         fixture.modelContext.insert(direction)
         fixture.modelContext.insert(milestone)
+        fixture.modelContext.insert(second)
         fixture.modelContext.insert(owned)
+        fixture.modelContext.insert(ritual)
         try fixture.modelContext.save()
 
         let page = try fixture.service.listGoals(options: .init(limit: 50))
@@ -1044,13 +1058,19 @@ struct CadenceReadServiceTests {
 
         #expect(keys["ownTaskCount"] as? Int == 0)
         #expect(keys["ownLinkedListCount"] as? Int == 0)
+        #expect(keys["ownSubGoalCount"] as? Int == 2)
+        #expect(keys["ownHabitCount"] as? Int == 1)
         #expect(keys.keys.contains("taskCount") == false)
         #expect(keys.keys.contains("linkedListCount") == false)
+        #expect(keys.keys.contains("subGoalCount") == false)
+        #expect(keys.keys.contains("habitCount") == false)
 
         // The recursive answer still exists, under a name that has always said it recurses — and
         // it disagrees with the own-only number, which is the whole reason the own-only one could
-        // not keep a generic name. Asserted through `contribution`, whose spelling is unchanged,
-        // so this whole test compiles against pre-T-388 source and fails on the keys.
+        // not keep a generic name. Asserted through `contribution`, whose spelling is unchanged.
+        // Every assertion above is on a *string* key rather than a Swift property, so this test
+        // body still compiles against pre-rename source and fails on the keys — which is the
+        // failing-first evidence a renamed property cannot give from a call site.
         let detail = try fixture.service.getGoal(goalID: direction.id.uuidString)
         #expect(detail.contribution.directTaskCount == 1)
     }

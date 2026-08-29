@@ -16,9 +16,15 @@ per-agent boilerplate.
   a test cannot compile against unmodified source, say so and use a branch mutation instead — do not
   fake it. Report which tests each mutation killed **by name**; that is what shows the kill is
   attributable to your tests rather than collateral damage.
-- **Tests go in the right `struct`**, and on a green log `grep -c '✔ Test <name>()'` must be exactly
-  **1** per new name. A name shared with another suite makes mutation evidence ambiguous.
-- **Any source scan needs a non-vacuity assertion** that it actually read the files it claims to.
+- **Tests go in the right `struct`.** `scripts/test-suite-index.sh <name>` tells you which suite
+  actually declares a test, so scope a run to what the source says rather than to where you meant to
+  type it. Name uniqueness across suites is enforced by
+  `CadenceTestTargetHygieneTests.everyTestFunctionNameInTheTargetIsUniqueAcrossSuites`, so
+  `grep -c '✔ Test <name>()' == 1` is a property of the target now, not a manual check.
+- **Any source scan needs a non-vacuity assertion** that it actually read the files it claims to,
+  and any *sweep* goes through `CadenceScanInstrument` — its initializer runs the detector against a
+  positive and a negative fixture, so a blinded detector cannot reach a sweep at all, and its
+  `atLeast:`/`including:` arguments make the walk's non-vacuity a compile requirement.
 - **Never** launch or build the Cadence app, kill a process named `Cadence`, use a simulator, touch
   the real app-group store, or set `CADENCE_MCP_ENABLE_WRITES`.
 - **Delete your DerivedData when you finish** (~1.7 GB) and release the lock.

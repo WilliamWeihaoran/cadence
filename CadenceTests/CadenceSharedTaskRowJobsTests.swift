@@ -680,7 +680,7 @@ struct CadenceSharedTaskRowJobsTests {
     /// scan that silently returns nothing passes every one of them. This is the test that stops them
     /// going vacuous — the exact failure mode that let a `/tmp` against `/private/tmp` path mismatch
     /// look like real regressions while the scan was reading nothing at all.
-    @Test func theSourceScanActuallyReachesBothPlatformsSource() throws {
+    @Test func theSourceScanActuallyReachesBothPlatformsSourceInSharedTaskRowJobs() throws {
         let files = try swiftFiles(under: "Cadence")
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")

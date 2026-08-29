@@ -218,7 +218,7 @@ struct CadenceComposerContainerSurfaceTests {
 
     /// An untitled list is named, not blank: the badge used to render `area.name` straight through
     /// and drew a chip with a glyph and nothing beside it.
-    @Test func anUntitledListStillGetsAName() throws {
+    @Test func anUntitledListStillGetsANameInComposerContainerSurface() throws {
         let modelContext = try makeContext()
         let area = Area(name: "")
         modelContext.insert(area)

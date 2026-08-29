@@ -464,4 +464,133 @@ struct DataIntegrityRepairServiceTests {
         #expect(!HabitReminderTime.namesATimeOfDay(1440))
         #expect(!HabitReminderTime.namesATimeOfDay(-1))
     }
+
+    // MARK: - T-445, the stored report outlives the counter that was added after it
+
+    /// The concrete regression: a `lastReport.v1` blob written before [[T-428]] added
+    /// `habitRemindersCleared`. Synthesized decoding throws `keyNotFound` on it, `lastReport()`
+    /// turns that into `nil` with `try?`, and `repairAndRecordFailure` hands back nothing on the
+    /// one launch where the previous report was worth having.
+    ///
+    /// The JSON is spelled out rather than produced by deleting a key from a fresh encode, because
+    /// that is what is actually on disk — including `errorMessage` being absent rather than null,
+    /// which is the other thing synthesis is asked to tolerate here.
+    @Test func aReportStoredBeforeTheReminderCounterExistedStillDecodes() throws {
+        let legacy = """
+        {
+          "source": "app-startup",
+          "startedAt": 745200000.0,
+          "finishedAt": 745200001.0,
+          "success": true,
+          "duplicateContextsMerged": 2,
+          "duplicateAreasMerged": 0,
+          "duplicateProjectsMerged": 0,
+          "duplicateNotesMerged": 1,
+          "duplicateHabitCompletionsRemoved": 0,
+          "movedAreas": 0,
+          "movedProjects": 0,
+          "movedTasks": 3,
+          "movedGoals": 0,
+          "movedHabits": 0,
+          "movedNotes": 0,
+          "movedDocuments": 0,
+          "movedLinks": 0,
+          "movedGoalLinks": 0
+        }
+        """
+
+        let report = try JSONDecoder().decode(
+            DataIntegrityRepairReport.self,
+            from: Data(legacy.utf8)
+        )
+
+        #expect(report.source == "app-startup")
+        #expect(report.success)
+        #expect(report.errorMessage == nil)
+        // The counters that were written are read back, not defaulted along with the missing one.
+        #expect(report.duplicateContextsMerged == 2)
+        #expect(report.duplicateNotesMerged == 1)
+        #expect(report.movedTasks == 3)
+        // The key that did not exist yet reads as its default rather than as a decoding failure.
+        #expect(report.habitRemindersCleared == 0)
+        #expect(report.changed)
+    }
+
+    /// **The guard that does not need editing when a fourth counter is added.** It encodes a live
+    /// report, then removes each key in turn and requires the result to still decode — so the
+    /// counter list is re-derived from the struct rather than restated here. A new counter decoded
+    /// with `decode` instead of `decodeIfPresent` fails this the day it lands, which is the whole
+    /// reason T-445 is a second occurrence rather than a first.
+    ///
+    /// The four head fields are the deliberate exception: they carry no defaults, they have been
+    /// written by every version of this key, and a blob missing `success` is not an older report.
+    @Test func aStoredReportSurvivesEveryCounterThisStructWillEverGain() throws {
+        var report = DataIntegrityRepairReport(
+            source: "app-startup",
+            startedAt: Date(timeIntervalSince1970: 1_000),
+            finishedAt: Date(timeIntervalSince1970: 1_001),
+            success: true
+        )
+        report.duplicateContextsMerged = 1
+        report.habitRemindersCleared = 1
+        report.movedGoalLinks = 1
+
+        let encoded = try JSONEncoder().encode(report)
+        let object = try #require(
+            try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        let required: Set<String> = ["source", "startedAt", "finishedAt", "success"]
+        let optionalKeys = object.keys.filter { !required.contains($0) }
+
+        // Non-vacuity: the loop below is worthless if the encode produced a handful of keys.
+        #expect(optionalKeys.count >= 15, "expected every counter in the encoded report, got \(optionalKeys.count)")
+        #expect(optionalKeys.contains("habitRemindersCleared"))
+        #expect(optionalKeys.contains("duplicateContextsMerged"))
+
+        for key in optionalKeys {
+            var trimmed = object
+            trimmed.removeValue(forKey: key)
+            let data = try JSONSerialization.data(withJSONObject: trimmed)
+            #expect(
+                (try? JSONDecoder().decode(DataIntegrityRepairReport.self, from: data)) != nil,
+                "DataIntegrityRepairReport stops decoding when \(key) is missing, so every report stored before that key existed is lost"
+            )
+        }
+    }
+
+    /// The other half of the same failure: `lastReport()` is the reader that swallows it, and it is
+    /// the value `repairAndRecordFailure` falls back to. Asserted through the real `UserDefaults`
+    /// key so the archive round trip — encoder, key, decoder — is what is measured, and restored
+    /// afterwards so a test run cannot leave a fabricated report behind for the app to read.
+    @Test func lastReportReadsBackAReportStoredWithoutTheNewestCounter() throws {
+        let key = "dataIntegrityRepair.lastReport.v1"
+        let saved = UserDefaults.standard.data(forKey: key)
+        defer {
+            if let saved {
+                UserDefaults.standard.set(saved, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+
+        var report = DataIntegrityRepairReport(
+            source: "previous-launch",
+            startedAt: Date(timeIntervalSince1970: 2_000),
+            finishedAt: Date(timeIntervalSince1970: 2_002),
+            success: false
+        )
+        report.errorMessage = "store unavailable"
+        report.movedTasks = 4
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: JSONEncoder().encode(report)) as? [String: Any]
+        )
+        object.removeValue(forKey: "habitRemindersCleared")
+        UserDefaults.standard.set(try JSONSerialization.data(withJSONObject: object), forKey: key)
+
+        let read = try #require(DataIntegrityRepairService.lastReport())
+        #expect(read.source == "previous-launch")
+        #expect(read.errorMessage == "store unavailable")
+        #expect(read.movedTasks == 4)
+        #expect(read.habitRemindersCleared == 0)
+    }
 }

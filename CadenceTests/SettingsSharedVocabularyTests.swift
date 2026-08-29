@@ -289,7 +289,7 @@ struct SettingsSharedVocabularyTests {
 
     /// The scan itself works. Without this, a wrong repository root or a broken enumerator makes
     /// every absence assertion above pass by reading nothing at all.
-    @Test func theSourceScanIsNotVacuous() throws {
+    @Test func theSourceScanIsNotVacuousInSettingsSharedVocabulary() throws {
         let files = try t20SwiftFiles(under: "Cadence")
         #expect(files.count > 400, "walked \(files.count) files")
         #expect(files.contains("Cadence/Shared/Components/CadenceChoicePicker.swift"))

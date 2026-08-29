@@ -1130,8 +1130,8 @@ final class CadenceReadService {
             isTopLevel: goal.isTopLevel,
             ownLinkedListCount: (goal.listLinks ?? []).filter { $0.area != nil || $0.project != nil }.count,
             ownTaskCount: (goal.tasks ?? []).filter { !$0.isCancelled }.count,
-            subGoalCount: (goal.subGoals ?? []).count,
-            habitCount: (goal.habits ?? []).count,
+            ownSubGoalCount: (goal.subGoals ?? []).count,
+            ownHabitCount: (goal.habits ?? []).count,
             createdAt: format(goal.createdAt)
         )
     }

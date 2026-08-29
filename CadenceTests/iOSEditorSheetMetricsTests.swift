@@ -124,7 +124,7 @@ struct iOSEditorSheetMetricsTests {
         #expect(iOSTaskInspectorMetrics.titleSize == iOSEditorSheetMetrics.titleSize)
     }
 
-    @Test func aTitleWrapsToTheSameNumberOfLinesEverywhere() {
+    @Test func aTitleWrapsToTheSameNumberOfLinesEverywhereInIOSEditorSheetMetrics() {
         #expect(iOSEditorSheetMetrics.titleLineLimit == 3)
         #expect(iOSTaskInspectorMetrics.titleLineLimit == iOSEditorSheetMetrics.titleLineLimit)
     }
@@ -178,7 +178,7 @@ struct iOSEditorSheetMetricsTests {
     // MARK: - Sanity
 
     /// A zero anywhere in here draws as a collapsed sheet rather than as an error.
-    @Test func everyMeasurementIsPositive() {
+    @Test func everyMeasurementIsPositiveInIOSEditorSheetMetrics() {
         #expect(iOSEditorSheetMetrics.notesMinHeight > 0)
         #expect(iOSEditorSheetMetrics.groupSpacing > 0)
         #expect(iOSEditorSheetMetrics.cardPadding > 0)

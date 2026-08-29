@@ -527,7 +527,7 @@ struct CadenceNoteFolderSurfaceTests {
 
     /// The counts above are only worth anything if the scan actually reads files, and a scan that
     /// silently returns nothing passes every zero-count assertion.
-    @Test func theSourceScanActuallyReachesBothPlatformsSource() throws {
+    @Test func theSourceScanActuallyReachesBothPlatformsSourceInNoteFolderSurface() throws {
         let files = try folderSwiftFiles(under: "Cadence")
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")

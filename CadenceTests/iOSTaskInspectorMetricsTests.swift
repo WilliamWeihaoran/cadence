@@ -46,7 +46,7 @@ struct iOSTaskInspectorMetricsTests {
     }
 
     /// A long name is long on both devices, and past the gutter the card is the same width on both.
-    @Test func aTitleWrapsToTheSameNumberOfLinesEverywhere() {
+    @Test func aTitleWrapsToTheSameNumberOfLinesEverywhereInIOSTaskInspectorMetrics() {
         #expect(iOSTaskInspectorMetrics.titleLineLimit == 3)
     }
 
@@ -107,7 +107,7 @@ struct iOSTaskInspectorMetricsTests {
 
     /// A zero anywhere in here draws as a collapsed sheet rather than as an error — the failure
     /// mode a set of ternaries invites.
-    @Test func everyMeasurementIsPositive() {
+    @Test func everyMeasurementIsPositiveInIOSTaskInspectorMetrics() {
         #expect(iOSTaskInspectorMetrics.cardPadding > 0)
         #expect(iOSTaskInspectorMetrics.contentMaxWidth > 0)
         #expect(iOSTaskInspectorMetrics.sectionSpacing > 0)

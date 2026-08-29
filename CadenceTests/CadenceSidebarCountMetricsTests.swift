@@ -257,7 +257,7 @@ struct CadenceFeatureDestinationTintTests {
 
     /// Self-check on the needle, so a typo in the pattern cannot quietly pass every scan built on
     /// it: it must match the literal this test bans and must not match the token that replaced it.
-    @Test func theHexNeedleMatchesALiteralAndNotATokenRead() {
+    @Test func theHexNeedleMatchesALiteralAndNotATokenReadInFeatureDestinationTint() {
         let banned = "        case .today: return \"#FFB84D\""
         let wanted = "        case .today: return Theme.amberHex"
 

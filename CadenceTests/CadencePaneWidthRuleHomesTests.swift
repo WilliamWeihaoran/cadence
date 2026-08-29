@@ -285,7 +285,7 @@ struct CadencePaneWidthRuleHomesTests {
     /// `CadenceTodayLayoutSupport.swift` states its floor once in code and quotes it once in the
     /// prose explaining the divider bug. Raw source therefore sees two and stripped source one. If
     /// stripping ever silently became the identity function, every exact count above would drift.
-    @Test func theCommentStrippingIsActuallyStripping() throws {
+    @Test func theCommentStrippingIsActuallyStrippingInPaneWidthRuleHomes() throws {
         let path = "Cadence/Shared/CadenceTodayLayoutSupport.swift"
         let sum = "taskPaneMinWidth + inspectorPaneMinWidth + paneDividerWidth"
 

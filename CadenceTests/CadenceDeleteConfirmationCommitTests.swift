@@ -319,7 +319,7 @@ struct CadenceDeleteConfirmationCommitTests {
     /// Non-vacuity, and the one thing that would make every assertion above pass for the wrong
     /// reason: a reader returning an empty string, which is what a `/tmp` against `/private/tmp`
     /// path mismatch produces on an isolated build tree.
-    @Test func theSourceScanActuallyReadsTheseFiles() throws {
+    @Test func theSourceScanActuallyReadsTheseFilesInDeleteConfirmationCommit() throws {
         let note = try CadenceSourceScan.strippingComments(
             CadenceSourceScan.sourceFile("Cadence/iOS/iOSNoteDeletionSupport.swift")
         )

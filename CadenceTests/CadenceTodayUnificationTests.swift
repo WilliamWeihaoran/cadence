@@ -352,7 +352,7 @@ struct CadenceTodayUnificationTests {
     /// The absence assertions above are only worth anything if the scan actually reads files, and a
     /// scan that silently returns nothing passes every one of them. This is the test that stops
     /// them going vacuous.
-    @Test func theSourceScanActuallyReachesBothPlatformsSource() throws {
+    @Test func theSourceScanActuallyReachesBothPlatformsSourceInTodayUnification() throws {
         let files = try swiftFiles(under: "Cadence")
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")

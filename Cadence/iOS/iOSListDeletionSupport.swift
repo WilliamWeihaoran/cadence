@@ -56,11 +56,14 @@ enum iOSListDeletionTarget: Identifiable {
         }
     }
 
-    var summary: CadenceListDeletionSummary {
+    /// **Takes the context, because `images` is a question about the whole store** (T-433). The
+    /// other seven counts are walked off this model object; the image sweep the cascade ends in
+    /// asks what still references an asset once this delete lands, and no `Area` knows that.
+    func summary(in modelContext: ModelContext) -> CadenceListDeletionSummary {
         switch self {
-        case .area(let area): return .forArea(area)
-        case .project(let project): return .forProject(project)
-        case .context(let context): return .forContext(context)
+        case .area(let area): return .forArea(area, in: modelContext)
+        case .project(let project): return .forProject(project, in: modelContext)
+        case .context(let context): return .forContext(context, in: modelContext)
         }
     }
 }
@@ -83,7 +86,14 @@ private struct iOSListDeletionModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.sheet(item: $target) { target in
-            iOSListDeleteConfirmationSheet(target: target) { try perform(target) }
+            // Computed here rather than inside the sheet, the way `iOSNoteDeletionModifier` does
+            // it: the summary now reads the store, and the modifier is where the context is.
+            iOSListDeleteConfirmationSheet(
+                target: target,
+                summary: target.summary(in: modelContext)
+            ) {
+                try perform(target)
+            }
         }
     }
 
@@ -150,6 +160,8 @@ struct iOSListDeleteMenuButton: View {
 /// reading. So this confirmation is *more* informative than macOS's and no more ceremonious.
 struct iOSListDeleteConfirmationSheet: View {
     let target: iOSListDeletionTarget
+    /// Handed in already computed, because it reads the store and this view has no reason to.
+    let summary: CadenceListDeletionSummary
     /// Throwing, and that is the contract (T-320) — the same one
     /// `iOSNoteDeleteConfirmationSheet` states. This sheet used to `dismiss()` and *then*
     /// `onConfirm()`, so it closed before the cascade had even started; a confirmation that has
@@ -161,10 +173,6 @@ struct iOSListDeleteConfirmationSheet: View {
     /// Set when the cascade threw. The sheet stays open holding it, because this screen is the
     /// only one that knows a delete was asked for.
     @State private var failureNotice: String?
-
-    private var summary: CadenceListDeletionSummary {
-        target.summary
-    }
 
     var body: some View {
         NavigationStack {
@@ -246,6 +254,14 @@ struct iOSListDeleteConfirmationSheet: View {
                                         }
                                     }
                                 }
+                            }
+
+                            // Below the counts and above nothing else, the way the note sheet
+                            // places it: it is a caveat on the list that precedes it, and it shows
+                            // in the empty case too — "nothing else is filed here" is exactly the
+                            // sentence an unread image table can falsify.
+                            if let unknownImpactLine = summary.unknownImpactLine {
+                                iOSDeleteUnknownImpactRow(line: unknownImpactLine)
                             }
                         }
                     }

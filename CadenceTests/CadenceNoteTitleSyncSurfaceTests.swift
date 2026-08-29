@@ -293,7 +293,7 @@ struct CadenceNoteTitleSyncSurfaceTests {
     // MARK: - The scan itself
 
     /// A scan that silently reads nothing passes every zero-count assertion above.
-    @Test func theSourceScanActuallyReachesBothPlatformsSource() throws {
+    @Test func theSourceScanActuallyReachesBothPlatformsSourceInNoteTitleSyncSurface() throws {
         let files = try titleSyncSwiftFiles()
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")

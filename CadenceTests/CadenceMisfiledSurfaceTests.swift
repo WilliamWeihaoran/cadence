@@ -27,43 +27,41 @@ struct SharedComponentsPlatformFenceTests {
 
     /// The sweep. Whole-file means the first non-blank, non-import, non-comment line opens a
     /// platform fence that the file's last such line closes.
+    ///
+    /// It runs over a `CadenceScanInstrument` rather than over a bare predicate, and that is the
+    /// T-161 point rather than a style choice: blinding the detector to `false` used to leave
+    /// **this** test green — "no offenders" is what a clean repo and a dead instrument both look
+    /// like — and the only thing that noticed was the separate self-check below, which nothing
+    /// obliged anyone to write. Now the witnesses are a precondition of the sweep, so a blind
+    /// detector fails here too.
     @Test func sharedComponentsFolderHoldsNoWholeFilePlatformFence() throws {
-        let files = try misfiledSwiftFiles(under: "Cadence/Shared/Components")
-
-        // Non-vacuity: the folder held 22 files after T-288 moved four out. An empty walk is how a
-        // sweep like this passes forever.
-        #expect(files.count > 15, "walked only \(files.count) files under Shared/Components")
-        #expect(
-            files.contains("Cadence/Shared/Components/CadenceTagChip.swift"),
-            "non-vacuity: the walk did not reach a file known to be there"
+        let offenders = try misfiledFenceInstrument().sweep(
+            try misfiledSwiftFiles(under: "Cadence/Shared/Components"),
+            // The folder held 22 files after T-288 moved four out.
+            atLeast: 15,
+            including: "Cadence/Shared/Components/CadenceTagChip.swift",
+            read: misfiledSourceFile
         )
-
-        var offenders: [String] = []
-        for path in files {
-            if misfiledIsWholeFilePlatformFence(try misfiledSourceFile(path)) {
-                offenders.append(path)
-            }
-        }
         #expect(
             offenders.isEmpty,
-            "whole-file platform fence under Shared/Components: \(offenders.sorted())"
+            "whole-file platform fence under Shared/Components: \(offenders)"
         )
     }
 
-    /// The detector itself, against two files whose answer is known — because a
-    /// `isWholeFilePlatformFence` that always returns `false` passes the sweep above with nothing
-    /// in the repo being right.
+    /// The instrument's literal witnesses say it can still tell the two shapes apart; this says the
+    /// two shapes it was tuned on are the two shapes the *repo* actually holds. Both halves are
+    /// wanted — a fixture pair cannot be retuned by an edit to the tree, and a tree pair cannot go
+    /// stale against the fixtures without one of these failing.
     @Test func theWholeFileFenceDetectorAgreesWithTwoKnownFiles() throws {
+        let instrument = try misfiledFenceInstrument()
         // Yes: every line of it is macOS's, which is why T-288 moved it here.
         #expect(
-            misfiledIsWholeFilePlatformFence(
-                try misfiledSourceFile("Cadence/macOS/Views/CadenceButtons.swift")
-            )
+            instrument.fires(on: try misfiledSourceFile("Cadence/macOS/Views/CadenceButtons.swift"))
         )
         // No: shared, and it carries an *inner* `#if os(macOS)` — the case the rule must not catch.
         let chip = try misfiledSourceFile("Cadence/Shared/Components/CadenceTagChip.swift")
         #expect(chip.contains("#if os("), "non-vacuity: the chip no longer fences anything")
-        #expect(misfiledIsWholeFilePlatformFence(chip) == false)
+        #expect(instrument.fires(on: chip) == false)
     }
 
     /// Where the four went, and that they went whole. A move that dropped the fence would compile
@@ -338,6 +336,41 @@ private func misfiledSwiftFiles(under relativeDirectory: String) throws -> [Stri
         guard let name = element as? String, name.hasSuffix(".swift") else { return nil }
         return "\(relativeDirectory)/\(name)"
     }
+}
+
+/// The whole-file-fence detector, as an instrument that cannot be built once it has stopped
+/// discriminating. The witnesses are literals rather than repo files on purpose — see
+/// `CadenceScanInstrument`.
+private func misfiledFenceInstrument() throws -> CadenceScanInstrument {
+    try CadenceScanInstrument(
+        "whole-file platform fence",
+        fires: """
+        #if os(macOS)
+        import SwiftUI
+
+        struct Everything: View {
+            var body: some View { Text("every line of me is one platform's") }
+        }
+        #endif
+        """,
+        // The nearest miss, not a distant one: this file *does* open on `#if os(macOS)` and *does*
+        // close on `#endif`, so a detector that only looked at its first and last code lines would
+        // call it misfiled. It is shared code with two fenced branches in it.
+        andNotOn: """
+        #if os(macOS)
+        import AppKit
+        #endif
+
+        struct Shared {
+            var label: String { "shared" }
+        }
+
+        #if DEBUG
+        extension Shared { static let probe = Shared() }
+        #endif
+        """,
+        by: misfiledIsWholeFilePlatformFence
+    )
 }
 
 /// True when *every* line of code in the file sits inside one leading platform fence — i.e. the

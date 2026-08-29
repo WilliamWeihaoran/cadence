@@ -417,7 +417,7 @@ struct CadenceDataExportSurfaceTests {
 
     // MARK: - The wording both platforms show
 
-    @Test func theOutcomeSentenceIsSharedAndCountsCorrectly() {
+    @Test func theOutcomeSentenceIsSharedAndCountsCorrectlyInDataExportSurface() {
         #expect(
             CadenceDataExportPresentation.successMessage(recordCount: 1, filename: "a.json")
                 == "Exported 1 record to a.json."
@@ -516,7 +516,7 @@ struct CadenceDataExportSurfaceTests {
     // MARK: - The scan itself
 
     /// The absence assertions above are worth nothing if the scan reads no files.
-    @Test func theSourceScanActuallyReachesBothPlatformsSource() throws {
+    @Test func theSourceScanActuallyReachesBothPlatformsSourceInDataExportSurface() throws {
         let files = try exportSwiftFiles(under: "Cadence")
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")

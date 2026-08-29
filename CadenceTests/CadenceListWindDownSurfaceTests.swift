@@ -615,7 +615,7 @@ struct CadenceListWindDownSurfaceTests {
 
     /// Without this, every zero and every absence assertion above could be passing because the
     /// reader returned an empty string.
-    @Test func theSourceScanActuallyReadsTheseFiles() throws {
+    @Test func theSourceScanActuallyReadsTheseFilesInListWindDownSurface() throws {
         let files = try swiftFiles(under: "Cadence")
         #expect(files.count > 300)
         #expect(files.contains("Cadence/Services/CadenceTaskContainerLifecycleService.swift"))

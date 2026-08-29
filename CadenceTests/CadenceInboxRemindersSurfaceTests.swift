@@ -927,7 +927,7 @@ struct CadenceInboxRemindersSurfaceTests {
     /// vacuous — the same guard `CadenceSharedBoardChromeTests` carries, and for the same reason: a
     /// `/tmp` against `/private/tmp` path mismatch once made a scan that read nothing at all look
     /// like four clean results.
-    @Test func theSourceScanActuallyReachesBothPlatformsSource() throws {
+    @Test func theSourceScanActuallyReachesBothPlatformsSourceInInboxRemindersSurface() throws {
         let files = try swiftFiles(under: "Cadence")
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")

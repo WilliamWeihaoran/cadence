@@ -131,7 +131,7 @@ struct iOSNoteDeleteConfirmationSheet: View {
                             lostLines
 
                             if let unknownImpactLine = summary.unknownImpactLine {
-                                unknownImpactRow(unknownImpactLine)
+                                iOSDeleteUnknownImpactRow(line: unknownImpactLine)
                             }
 
                             if summary.retainedLine != nil || summary.brokenLinkLine != nil {
@@ -297,21 +297,6 @@ struct iOSNoteDeleteConfirmationSheet: View {
     ///
     /// It is above the kept-lines block, not among it: those lines say what this delete leaves
     /// alone, which is exactly the reassurance this line is warning may be incomplete.
-    private func unknownImpactRow(_ line: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.circle")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.amber)
-
-            Text(line)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.subdued)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Spacer(minLength: 0)
-        }
-    }
-
     private var keptLines: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let retainedLine = summary.retainedLine {
@@ -330,4 +315,29 @@ struct iOSNoteDeleteConfirmationSheet: View {
         }
     }
 }
+
+/// The "the counts below may be a floor" row, shared by both delete confirmations.
+///
+/// **One row because there is one sentence.** `CadenceNoteDeletionSummary.unknownImpactNotice` is
+/// the copy, and `CadenceListDeletionSummary.unknownImpactLine` reads it too (T-433) — a second
+/// amber row spelled beside the list sheet would be the near-copy this codebase keeps deleting.
+struct iOSDeleteUnknownImpactRow: View {
+    let line: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.amber)
+
+            Text(line)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.subdued)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+    }
+}
+
 #endif

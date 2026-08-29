@@ -335,7 +335,7 @@ struct CadenceTodayRolloverSurfaceTests {
 
     /// The comment stripper is load-bearing above — several of these files explain the rollover in
     /// prose that names the very strings being banned.
-    @Test func theCommentStripperStrips() throws {
+    @Test func theCommentStripperStripsInTodayRolloverSurface() throws {
         let stripped = try strippingComments("let a = 1 // \"Roll Over\"\n/* \"Roll Over\" */ let b = 2\n")
         #expect(!stripped.contains("Roll Over"))
         #expect(stripped.contains("let a = 1"))
@@ -348,7 +348,7 @@ struct CadenceTodayRolloverSurfaceTests {
     /// surface, so this recomputes the two values it changed with the *old* inline expressions and
     /// asserts the new ones are identical — order included, because both feed a sort whose
     /// tie-break is total and a reordering would be visible.
-    @Test func theMacDerivedStateStillDerivesExactlyWhatItUsedTo() throws {
+    @Test func theMacDerivedStateStillDerivesExactlyWhatItUsedToInTodayRolloverSurface() throws {
         let today = "2026-08-20"
         let allTasks = [
             task(title: "Past do", scheduled: "2026-08-19"),

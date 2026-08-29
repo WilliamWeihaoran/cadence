@@ -431,7 +431,7 @@ struct CadenceFocusBundleParityTests {
     /// Non-vacuity. Every absence assertion above passes trivially against an empty string, so the
     /// reader itself is checked: a needle that is certainly present must be found, and a needle that
     /// is certainly absent must not be.
-    @Test func theSourceReaderActuallyReadsTheseFiles() throws {
+    @Test func theSourceReaderActuallyReadsTheseFilesInFocusBundleParity() throws {
         for path in [
             "Cadence/iOS/iOSFocusView.swift",
             "Cadence/macOS/Views/FocusPickerSupportViews.swift",

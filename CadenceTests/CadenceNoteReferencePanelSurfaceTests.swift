@@ -610,7 +610,7 @@ struct CadenceNoteReferencePanelSurfaceTests {
     /// silently returns nothing passes every zero-count and empty-offenders assertion. This is the
     /// test that stops them going vacuous — the exact failure mode that let a `/tmp` against
     /// `/private/tmp` path mismatch look like real regressions while the scan read nothing at all.
-    @Test func theSourceScanActuallyReachesBothPlatformsSource() throws {
+    @Test func theSourceScanActuallyReachesBothPlatformsSourceInNoteReferencePanelSurface() throws {
         let all = try swiftFiles(under: "Cadence")
         let ios = try swiftFiles(under: "Cadence/iOS")
 

@@ -16,7 +16,20 @@ enum CadenceMCPToolDefinitions {
     // `.linkedListCount` are now `ownTaskCount` and `ownLinkedListCount` (T-388). It breaks a
     // reading client as hard as the two shape changes above and more quietly — the key is absent
     // rather than the value the wrong type — so it gets its own bump on the same argument.
-    private static let serverVersion = "0.5.0"
+    //
+    // 0.6.0 finishes that rename rather than riding on 0.5.0: `CadenceGoalSummary.subGoalCount` and
+    // `.habitCount` are now `ownSubGoalCount` and `ownHabitCount` (T-414). Same struct, same
+    // argument, same day — but a client that read the 0.5.0 release notes, moved two keys and
+    // pinned the version has no way to learn that two more moved afterwards. A bump is the only
+    // signal this protocol has; declining one because the previous break was recent is how a
+    // version stops meaning anything.
+    //
+    // **Bump `main.swift`'s `Server(version:)` in the same edit.** This constant is only what
+    // `mcp_diagnostics` answers with; the `initialize` handshake carries its own literal, and
+    // nothing derives one from the other. 0.6.0 was applied here first and the handshake kept
+    // saying 0.5.0 through a green MCP build, a green contract scan and a passing smoke test —
+    // `CadenceMCPToolContractTests.theTwoAdvertisedServerVersionsAreOneNumber` exists because of it.
+    private static let serverVersion = "0.6.0"
     private static let writeToolNames: Set<String> = [
         "create_task",
         "update_task",

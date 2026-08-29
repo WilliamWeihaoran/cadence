@@ -424,7 +424,7 @@ struct CadenceTaskInspectorHostTests {
 
     /// Without this, every zero above could be a scan reading an empty string — the failure mode a
     /// `/tmp` against `/private/tmp` path mismatch produces on an isolated build tree.
-    @Test func theSourceScanIsNotVacuous() throws {
+    @Test func theSourceScanIsNotVacuousInTaskInspectorHost() throws {
         let files = try swiftFiles(under: "Cadence")
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")

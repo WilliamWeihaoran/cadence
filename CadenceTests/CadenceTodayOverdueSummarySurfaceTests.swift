@@ -306,7 +306,7 @@ struct CadenceTodayOverdueSummarySurfaceTests {
     /// surface, so this recomputes both summary arrays with the *old* inline expressions and
     /// asserts the new ones are identical — member for member and in order, because both feed a
     /// rendered list where a reordering would be visible.
-    @Test func theMacDerivedStateStillDerivesExactlyWhatItUsedTo() throws {
+    @Test func theMacDerivedStateStillDerivesExactlyWhatItUsedToInTodayOverdueSummarySurface() throws {
         let today = "2026-08-20"
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
@@ -626,7 +626,7 @@ struct CadenceTodayOverdueSummarySurfaceTests {
 
     /// The comment stripper is load-bearing above — several of these files explain the feature in
     /// prose that names the very strings and types being banned.
-    @Test func theCommentStripperStrips() throws {
+    @Test func theCommentStripperStripsInTodayOverdueSummarySurface() throws {
         let stripped = try strippingComments("let a = 1 // \"Past Due Lists\"\n/* ListNavigationManager */ let b = 2\n")
         #expect(!stripped.contains("Past Due Lists"))
         #expect(!stripped.contains("ListNavigationManager"))

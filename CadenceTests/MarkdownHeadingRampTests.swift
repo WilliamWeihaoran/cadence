@@ -285,7 +285,7 @@ struct MarkdownHeadingRampTests {
     /// Non-vacuity. Every assertion above is an absence or a count over files read off disk through
     /// `#filePath`; if that read silently returned nothing they would all pass. This one fails if
     /// the scanner is not looking at real bytes.
-    @Test func theScannerIsReadingRealSource() throws {
+    @Test func theScannerIsReadingRealSourceInMarkdownHeadingRamp() throws {
         let ramp = try sourceFile("Cadence/Services/MarkdownHeadingRampSupport.swift")
 
         #expect(ramp.contains("case 1: return 28"))

@@ -74,7 +74,7 @@ struct CadenceTodaySectionMetricsTests {
 
     /// A zero anywhere in here draws as a collapsed list rather than as an error, which is the
     /// failure mode a metrics table invites.
-    @Test func everyMeasurementIsPositive() {
+    @Test func everyMeasurementIsPositiveInTodaySectionMetrics() {
         for layout in Self.layouts {
             let metrics = Self.metrics(layout)
             #expect(metrics.groupSpacing > 0, "\(layout)")

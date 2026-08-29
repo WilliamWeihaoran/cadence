@@ -275,7 +275,7 @@ struct CadencePrivacyDataResetSurfaceTests {
 
     /// macOS's two status strings were inline in the view. They are the outcome's now, so iOS says
     /// the same thing rather than inventing a third sentence.
-    @Test func theOutcomeSentenceIsSharedAndCountsCorrectly() {
+    @Test func theOutcomeSentenceIsSharedAndCountsCorrectlyInPrivacyDataResetSurface() {
         #expect(PrivacyDataResetOutcome(removedBackupCount: 0).statusMessage
             == "Cadence account and data were deleted.")
         #expect(PrivacyDataResetOutcome(removedBackupCount: 1).statusMessage
@@ -313,7 +313,7 @@ struct CadencePrivacyDataResetSurfaceTests {
     /// silently returns nothing passes every one of them. Same guard, same reason, as
     /// `CadenceInboxRemindersSurfaceTests`: a `/tmp` against `/private/tmp` path mismatch once made
     /// a scan that read nothing at all look like four clean results.
-    @Test func theSourceScanActuallyReachesBothPlatformsSource() throws {
+    @Test func theSourceScanActuallyReachesBothPlatformsSourceInPrivacyDataResetSurface() throws {
         let files = try swiftFiles(under: "Cadence")
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")

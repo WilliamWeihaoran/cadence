@@ -152,7 +152,7 @@ struct CadencePageHeaderMetricsTests {
 
     /// A header with a zero anywhere in it draws as a collapsed row rather than as an error, which
     /// is the failure mode a ramp built out of ternaries invites.
-    @Test func everyMeasurementIsPositive() {
+    @Test func everyMeasurementIsPositiveInPageHeaderMetrics() {
         for role in CadencePageHeaderRole.allCases {
             for surface in Self.surfaces {
                 let metrics = Self.metrics(role, surface)

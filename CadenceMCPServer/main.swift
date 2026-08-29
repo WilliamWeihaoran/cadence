@@ -31,9 +31,15 @@ do {
     } else {
         writeService = nil
     }
+    // **Two literals, one number, and they have to agree.** This is the version in the
+    // `initialize` handshake; `CadenceMCPToolDefinitions.serverVersion` is the one `mcp_diagnostics`
+    // answers with. A client reads whichever it happens to ask for, so a bump applied to one of
+    // them advertises two different protocol versions from one process. Found by the smoke test
+    // printing `0.5.0` from the handshake while the diagnostics tool already said `0.6.0` (T-414);
+    // `CadenceMCPToolContractTests.theTwoAdvertisedServerVersionsAreOneNumber` now pins the pair.
     let server = Server(
         name: "cadence-mcp",
-        version: "0.5.0",
+        version: "0.6.0",
         capabilities: .init(tools: .init(listChanged: false))
     )
     let router = CadenceMCPToolRouter(readService: readService, writeService: writeService, writesEnabled: writesEnabled)

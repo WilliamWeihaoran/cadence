@@ -627,7 +627,7 @@ struct CadenceCalendarBoardLayoutTests {
     /// tombstone left in `KanbanBoardSupport.swift` names the constants it no longer declares, so
     /// raw source sees them and stripped source does not.
     @Test
-    func theCommentStrippingIsActuallyStripping() throws {
+    func theCommentStrippingIsActuallyStrippingInCalendarBoardLayout() throws {
         let path = "Cadence/macOS/Views/KanbanBoardSupport.swift"
         let raw = try boardLayoutSource(path)
         let stripped = try boardLayoutStrippingComments(raw)

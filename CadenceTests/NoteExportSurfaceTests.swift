@@ -254,7 +254,7 @@ struct NoteExportSurfaceTests {
 
     /// Non-vacuity. Every assertion above is a count or an absence over files read off disk; if the
     /// read silently returned nothing they would all pass.
-    @Test func theScannerIsReadingRealSource() throws {
+    @Test func theScannerIsReadingRealSourceInNoteExportSurface() throws {
         let shared = try noteExportSource("Cadence/Services/CadenceNoteExportSupport.swift")
 
         #expect(shared.contains("enum NoteExportFormat"))

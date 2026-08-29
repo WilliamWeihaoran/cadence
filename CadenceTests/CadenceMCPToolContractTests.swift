@@ -354,7 +354,43 @@ struct CadenceMCPToolContractTests {
         #expect(factory.contains("func makeReadWriteContainer()"))
         #expect(factory.contains("enum CadenceMCPStorePreparation"))
     }
+    /// **The advertised version lives in two literals, and they must be the same number** (T-414).
+    ///
+    /// `main.swift` passes one to `Server(name:version:)` — that is what a client reads out of the
+    /// `initialize` handshake — and `CadenceMCPToolDefinitions.serverVersion` is what
+    /// `mcp_diagnostics` answers with. Nothing derives one from the other, and nothing compiles
+    /// worse when they disagree. Found the honest way: T-414's fourth breaking bump was applied to
+    /// the definitions constant, the MCP scheme stayed green, the contract scan stayed green, and
+    /// the smoke test printed `OK cadence-mcp 0.5.0` from a binary whose `mcp_diagnostics` already
+    /// said `0.6.0`. A client that pins on the handshake would have taken the renamed
+    /// `CadenceGoalSummary` keys believing nothing had moved — which is precisely the failure the
+    /// bump exists to prevent.
+    ///
+    /// Parsed rather than pinned by value, so the pair stays checked across every future bump
+    /// without this test needing an edit.
+    @Test func theTwoAdvertisedServerVersionsAreOneNumber() throws {
+        let main = strippingComments(try sourceFile(Self.mainPath))
+        let definitions = strippingComments(try sourceFile(Self.definitionsPath))
+
+        let handshake = try #require(
+            Self.quotedValue(after: "version: ", in: main),
+            "main.swift no longer passes a literal version to Server(name:version:)"
+        )
+        let diagnostics = try #require(
+            Self.quotedValue(after: "serverVersion = ", in: definitions),
+            "CadenceMCPToolDefinitions no longer declares serverVersion as a literal"
+        )
+
+        // Non-vacuity: both needles found a real version string, not an empty match.
+        #expect(handshake.contains("."), "handshake version read as \(handshake)")
+        #expect(diagnostics.contains("."), "diagnostics version read as \(diagnostics)")
+        #expect(
+            handshake == diagnostics,
+            "the handshake advertises \(handshake) and mcp_diagnostics advertises \(diagnostics)"
+        )
+    }
 }
+
 
 // MARK: - Extraction
 
@@ -367,6 +403,16 @@ private extension CadenceMCPToolContractTests {
     static let mainPath = "CadenceMCPServer/main.swift"
     static let containerFactoryPath = "Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift"
 
+    /// The first double-quoted run following `needle`, or `nil` when the needle is absent.
+    static func quotedValue(after needle: String, in source: String) -> String? {
+        guard let start = source.range(of: needle) else { return nil }
+        let rest = source[start.upperBound...]
+        guard rest.first == "\"" else { return nil }
+        let body = rest.dropFirst()
+        guard let end = body.firstIndex(of: "\"") else { return nil }
+        return String(body[body.startIndex..<end])
+    }
+
     /// The six `list_*` result-element DTOs `CadenceReadService` returns that T-269 found with no
     /// runtime coverage: `listTaskBundles` -> `CadenceTaskBundleSummary`, `listGoals` ->
     /// `CadenceGoalSummary`, `listHabits` -> `CadenceHabitSummary`, `listLinks` ->
@@ -375,6 +421,11 @@ private extension CadenceMCPToolContractTests {
     /// `list_notes` are excluded on purpose — the smoke test already asserts their DTOs
     /// (`TASK_SUMMARY_KEYS`, `TAG_SUMMARY_KEYS`/`TAG_DETAIL_KEYS`, `NOTE_SUMMARY_KEYS`) against real
     /// rows created through `create_task` and `append_core_note`, which is stronger than a scan.
+    ///
+    /// **Editing one of these sets is a breaking wire change.** A renamed key reads to an already
+    /// installed client as an absent one, which is quieter than a reshaped response and no less
+    /// broken — so `CadenceMCPToolDefinitions.serverVersion` gets a minor bump in the same commit.
+    /// 0.5.0 was two keys of `CadenceGoalSummary` (T-388) and 0.6.0 the other two (T-414).
     struct DTOFieldSpec {
         let structName: String
         let expectedFields: Set<String>
@@ -389,7 +440,7 @@ private extension CadenceMCPToolContractTests {
             "id", "title", "description", "startDate", "endDate", "progressType", "targetHours",
             "loggedHours", "colorHex", "icon", "kind", "status", "progress", "contextId",
             "contextName", "parentGoalId", "parentGoalTitle", "isTopLevel", "ownLinkedListCount",
-            "ownTaskCount", "subGoalCount", "habitCount", "createdAt",
+            "ownTaskCount", "ownSubGoalCount", "ownHabitCount", "createdAt",
         ]),
         DTOFieldSpec(structName: "CadenceHabitSummary", expectedFields: [
             "id", "title", "icon", "colorHex", "frequencyType", "frequencyDays", "targetCount",
