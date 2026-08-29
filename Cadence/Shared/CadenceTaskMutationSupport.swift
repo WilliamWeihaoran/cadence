@@ -385,6 +385,18 @@ enum CadenceTaskMutationSupport {
     /// nouns, one shape.
     static let deleteFailureNotice = "Couldn't delete this task. Nothing was removed."
 
+    /// The alert title that carries `deleteFailureNotice` on iOS (T-440).
+    ///
+    /// Beside the sentence rather than in the view, because two iOS surfaces raise this alert —
+    /// `iOSTaskRow` and `iOSTaskDetailSheet` — and both used to type the title out. The modifier
+    /// they now share, `iOSTaskDeleteFailureAlert`, reads it from here, so the title and the body
+    /// travel together and there is no arrangement in which one of them is updated alone.
+    ///
+    /// Title-case because it is an alert title; `deleteFailureNotice` is the sentence under it.
+    /// macOS does not use this: there the refusal lands inside the still-open confirmation overlay
+    /// (`DeleteConfirmationManager.failureNotice`), which has a title already.
+    static let deleteFailureAlertTitle = "Couldn't Delete Task"
+
     /// - Parameter commit: See `deleteTasks(withIDs:modelContext:commitsImmediately:commit:…)`.
     @discardableResult
     static func delete(

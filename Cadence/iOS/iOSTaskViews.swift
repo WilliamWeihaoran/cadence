@@ -127,16 +127,11 @@ struct iOSTaskRow: View {
             } message: {
                 Text("This removes the task and its subtasks.")
             }
-            // The other half of that confirmation. A destructive alert dismisses itself on the
-            // button tap, so — unlike the note and list sheets, which stay open and say why — this
-            // row reports the failure in a second alert. Same shape as
-            // `iOSTaskRowActionViews`'s "Couldn't Update the Series" beside it, and the same
-            // promise: the rollback put the task back, so nothing was removed.
-            .alert("Couldn't Delete Task", isPresented: $deleteFailed) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(CadenceTaskMutationSupport.deleteFailureNotice)
-            }
+            // The other half of that confirmation, and the same modifier `iOSTaskDetailSheet`
+            // applies — see `iOSTaskDeleteFailureAlert` for why the two are one call rather than
+            // two copies that a test asserts are equal. The promise it makes: the rollback put the
+            // task back, so nothing was removed.
+            .iOSTaskDeleteFailureAlert(isPresented: $deleteFailed)
             .onAppear(perform: handlePendingDeepLink)
             .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
                 handlePendingDeepLink()

@@ -370,14 +370,27 @@ struct TaskDeleteParityTests {
             "the row still throws away the delete's answer"
         )
         #expect(row.contains("@State private var deleteFailed = false"))
+        // T-440: the alert itself is `iOSTaskDeleteFailureAlert`, shared with
+        // `iOSTaskDetailSheet`. What the row owns is the flag and the call.
         #expect(
-            row.contains(#".alert("Couldn't Delete Task", isPresented: $deleteFailed)"#),
+            row.contains(".iOSTaskDeleteFailureAlert(isPresented: $deleteFailed)"),
             "the row has nowhere to report a failed delete"
         )
-        #expect(
-            row.contains("Text(CadenceTaskMutationSupport.deleteFailureNotice)"),
-            "the row words the failure itself instead of reading the shared sentence"
-        )
+    }
+
+    /// The title and the sentence travel together (T-440).
+    ///
+    /// Both are on `CadenceTaskMutationSupport` so that the iOS modifier reads one thing rather than
+    /// pairing a typed title with a shared body. This is behavioural — the strings are shared code,
+    /// which this target compiles — and it is what makes the source scan above cheap: the scan only
+    /// has to show the surfaces reach the modifier.
+    @Test func theRefusedDeleteAlertTitleSitsBesideItsSentence() {
+        #expect(CadenceTaskMutationSupport.deleteFailureAlertTitle == "Couldn't Delete Task")
+        #expect(CadenceTaskMutationSupport.deleteFailureAlertTitle
+                != CadenceTaskMutationSupport.deleteFailureNotice)
+        // A title, not a sentence: the body under it is the one that ends in a full stop.
+        #expect(!CadenceTaskMutationSupport.deleteFailureAlertTitle.hasSuffix("."))
+        #expect(CadenceTaskMutationSupport.deleteFailureNotice.hasSuffix("."))
     }
 
     // MARK: - Cross-platform parity

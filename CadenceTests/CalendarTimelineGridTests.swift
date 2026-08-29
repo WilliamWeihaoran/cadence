@@ -288,6 +288,136 @@ struct CadenceCalendarTimelineWindowTests {
         }
     }
 
+    // MARK: - Keeping the selected day on screen (T-439)
+
+    /// The rule this used to state inside `iOSCalendarView.keepSelectedDateInView()`, where no test
+    /// could reach it: the selection moves **only** when it has left the visible span, and it lands
+    /// on the leading day.
+    @Test
+    func theSelectionMovesOnlyOnceItHasLeftTheVisibleSpan() throws {
+        let leading = try date("2026-08-16")
+
+        // Inside a seven-column week: left alone, and said so as `nil` rather than as the same date
+        // handed back — a caller that wrote the answer into `@State` on every column is the write
+        // storm `CadenceCalendarDateMemory` records.
+        for key in ["2026-08-16", "2026-08-19", "2026-08-22"] {
+            let selected = try date(key)
+            let answer = CadenceCalendarTimelineWindow.selectionKeptInView(
+                selectedDate: selected,
+                leadingDate: leading,
+                visibleDayCount: 7,
+                calendar: calendar
+            )
+            #expect(answer == nil, "\(key) is on screen and was moved anyway")
+        }
+
+        // Off either end: snapped to the leading column.
+        for key in ["2026-08-15", "2026-08-01", "2026-08-23", "2026-09-30"] {
+            let selected = try date(key)
+            let moved = try #require(
+                CadenceCalendarTimelineWindow.selectionKeptInView(
+                    selectedDate: selected,
+                    leadingDate: leading,
+                    visibleDayCount: 7,
+                    calendar: calendar
+                ),
+                "\(key) is off screen and was left there"
+            )
+            #expect(calendar.isDate(moved, inSameDayAs: leading))
+        }
+    }
+
+    /// Both edges are *visible*, so neither is dragged to the leading column. `2026-08-22` is the
+    /// seventh day of a window starting on the sixteenth; an off-by-one either way shows up here
+    /// and nowhere else.
+    @Test
+    func aSelectionOnEitherEdgeOfTheSpanIsLeftWhereItIs() throws {
+        let leading = try date("2026-08-16")
+        #expect(CadenceCalendarTimelineWindow.selectionKeptInView(
+            selectedDate: leading, leadingDate: leading, visibleDayCount: 7, calendar: calendar
+        ) == nil)
+        let trailingEdge = try date("2026-08-22")
+        #expect(CadenceCalendarTimelineWindow.selectionKeptInView(
+            selectedDate: trailingEdge, leadingDate: leading, visibleDayCount: 7, calendar: calendar
+        ) == nil)
+        // One day past the trailing edge is not.
+        let pastTrailingEdge = try date("2026-08-23")
+        #expect(CadenceCalendarTimelineWindow.selectionKeptInView(
+            selectedDate: pastTrailingEdge, leadingDate: leading, visibleDayCount: 7, calendar: calendar
+        ) != nil)
+    }
+
+    /// 2 Weeks is fourteen columns, so a day that Week would have pulled back stays put. The span is
+    /// read from the count rather than assumed.
+    @Test
+    func theSpanIsAsWideAsTheGridSays() throws {
+        let leading = try date("2026-08-16")
+        let dayTen = try date("2026-08-25")
+        #expect(CadenceCalendarTimelineWindow.selectionKeptInView(
+            selectedDate: dayTen, leadingDate: leading, visibleDayCount: 7, calendar: calendar
+        ) != nil)
+        #expect(CadenceCalendarTimelineWindow.selectionKeptInView(
+            selectedDate: dayTen,
+            leadingDate: leading,
+            visibleDayCount: CadenceCalendarWeekGridLayout.visibleDayCount(for: .twoWeeks),
+            calendar: calendar
+        ) == nil)
+    }
+
+    /// Times of day are not part of the decision: both ends are snapped to the start of their day,
+    /// so an anchor carrying 23:59 does not push the last visible column back by one.
+    @Test
+    func theDecisionIsMadeOnDaysRatherThanOnInstants() throws {
+        let leadingDay = try date("2026-08-16")
+        let lastDay = try date("2026-08-22")
+        let leading = try #require(calendar.date(byAdding: .hour, value: 23, to: leadingDay))
+        let lastColumnLateAtNight = try #require(calendar.date(byAdding: .hour, value: 22, to: lastDay))
+        #expect(CadenceCalendarTimelineWindow.selectionKeptInView(
+            selectedDate: lastColumnLateAtNight,
+            leadingDate: leading,
+            visibleDayCount: 7,
+            calendar: calendar
+        ) == nil)
+    }
+
+    /// A **source scan**, because `iOSCalendarView` is under `Cadence/iOS/` and this target builds
+    /// for macOS. The behaviour above is pinned by the tests; this pins that the view reaches it,
+    /// which is the whole of what moving the rule bought.
+    @Test
+    func theCalendarPageNoLongerSpellsTheSpanArithmeticItself() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarView.swift")
+        #expect(raw.count > 400, "the calendar page read as \(raw.count) characters")
+        let source = CadenceSourceScan.strippingComments(raw)
+        #expect(source != raw, "the comment stripper removed nothing")
+        #expect(source.count == raw.count, "the stripper changed the length")
+        #expect(source.contains("struct iOSCalendarView: View"), "the calendar page moved")
+
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "keepSelectedDateInView", in: source),
+            "iOSCalendarView has no keepSelectedDateInView()"
+        )
+        #expect(body.contains("CadenceCalendarTimelineWindow.selectionKeptInView("),
+                "the view still decides the span itself")
+        // The gate stays: only the timed grids scroll their own days, and that is page state.
+        #expect(body.contains("guard isTimedGrid else { return }"))
+        #expect(body.contains("selectedDate = moved"))
+        #expect(CadenceSourceScan.matchCount(#"byAdding:\s*\.day"#, in: body) == 0,
+                "the view still does the day arithmetic")
+        #expect(CadenceSourceScan.matchCount(#"startOfDay"#, in: body) == 0,
+                "the view still snaps the dates itself")
+    }
+
+    /// Without this the two `== 0` assertions above are true of any text at all.
+    @Test
+    func theCalendarPageScanNeedlesAreNotVacuous() {
+        #expect(CadenceSourceScan.matchCount(#"byAdding:\s*\.day"#,
+                                             in: "calendar.date(byAdding: .day, value: 6, to: leading)") == 1)
+        #expect(CadenceSourceScan.matchCount(#"byAdding:\s*\.day"#,
+                                             in: "calendar.date(byAdding: .hour, value: 6, to: leading)") == 0)
+        #expect(CadenceSourceScan.matchCount(#"startOfDay"#, in: "calendar.startOfDay(for: anchorDate)") == 1)
+        #expect(CadenceSourceScan.matchCount(#"startOfDay"#, in: "calendar.isDate(a, inSameDayAs: b)") == 0)
+    }
+
     /// The anchor sits far enough inside the run that a user can scroll a long way in either
     /// direction before anything has to be rebuilt. Half of it, less the week snap.
     @Test

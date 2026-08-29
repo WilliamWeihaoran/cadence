@@ -225,28 +225,54 @@ struct IOSTaskDetailSheetResidueTests {
                 "the failure branch falls through into the dismiss")
     }
 
-    /// **T-376's pattern, not a third one.** A confirmation alert dismisses itself on the button
-    /// tap, so the failure lands on a second alert wording the shared sentence — the same shape
-    /// `iOSTaskRow` took, which is the only other surface with this problem.
-    @Test func theRefusedDeleteNoticeMatchesTheRowsRatherThanInventingAThirdShape() throws {
+    /// **T-376's pattern, and now literally one of it (T-440).**
+    ///
+    /// A confirmation alert dismisses itself on the button tap, so the refusal lands on a second
+    /// alert wording the shared sentence. The sheet and `iOSTaskRow` each carried their own copy of
+    /// that alert, and the test here read both files and asserted the two **agreed** — which is a
+    /// comparison standing in for a shared thing. There is one modifier now,
+    /// `iOSTaskDeleteFailureAlert`, and what each surface owns is the flag and the call.
+    @Test func bothRefusedDeleteSurfacesApplyTheOneSharedAlert() throws {
         let sheet = try sheetSource()
         #expect(sheet.contains("@State private var deleteFailed = false"))
-        #expect(sheet.contains(#".alert("Couldn't Delete Task", isPresented: $deleteFailed)"#),
+        #expect(sheet.contains(".iOSTaskDeleteFailureAlert(isPresented: $deleteFailed)"),
                 "the sheet has nowhere to report a failed delete")
-        #expect(sheet.contains("Text(CadenceTaskMutationSupport.deleteFailureNotice)"),
-                "the sheet words the failure itself instead of reading the shared sentence")
 
         let row = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift")
         )
         #expect(row.contains("struct iOSTaskRow: View"), "the scan read the wrong file")
-        for shared in [
-            "@State private var deleteFailed = false",
-            #".alert("Couldn't Delete Task", isPresented: $deleteFailed)"#,
-            "Text(CadenceTaskMutationSupport.deleteFailureNotice)"
-        ] {
-            #expect(row.contains(shared), "the row no longer carries \(shared), so this is not one pattern")
+        #expect(row.contains("@State private var deleteFailed = false"))
+        #expect(row.contains(".iOSTaskDeleteFailureAlert(isPresented: $deleteFailed)"),
+                "the row no longer applies the shared alert, so this is not one pattern")
+
+        // Neither surface may keep a copy beside the call. The title is the tell: it is on
+        // `CadenceTaskMutationSupport` now, so a literal here is a second alert being born.
+        for (name, source) in [("sheet", sheet), ("row", row)] {
+            #expect(CadenceSourceScan.matchCount(##""Couldn't Delete Task""##, in: source) == 0,
+                    "the \(name) still types the alert title")
+            #expect(CadenceSourceScan.matchCount(#"Text\(CadenceTaskMutationSupport\.deleteFailureNotice\)"#,
+                                                 in: source) == 0,
+                    "the \(name) still draws the sentence itself")
         }
+    }
+
+    /// The modifier the two of them apply, and the one place the alert is spelled.
+    @Test func theSharedRefusedDeleteAlertIsSpelledExactlyOnce() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskRowActionViews.swift")
+        #expect(raw.count > 400, "the row actions read as \(raw.count) characters")
+        let source = CadenceSourceScan.strippingComments(raw)
+        #expect(source != raw, "the comment stripper removed nothing")
+        #expect(source.count == raw.count, "the stripper changed the length")
+
+        #expect(source.contains("func iOSTaskDeleteFailureAlert(isPresented: Binding<Bool>)"),
+                "the shared modifier moved")
+        #expect(source.contains(".alert(CadenceTaskMutationSupport.deleteFailureAlertTitle, isPresented: $isPresented)"),
+                "the modifier types its own title instead of reading the shared one")
+        #expect(source.contains("Text(CadenceTaskMutationSupport.deleteFailureNotice)"),
+                "the modifier words the failure itself instead of reading the shared sentence")
+        #expect(CadenceSourceScan.matchCount(#"deleteFailureAlertTitle"#, in: source) == 1,
+                "the shared title is read more than once, so there is more than one alert again")
     }
 
     /// The needles fire on the shapes they hunt and stay silent on the ones they must not —
@@ -260,6 +286,20 @@ struct IOSTaskDetailSheetResidueTests {
                                              in: "CadenceTaskMutationSupport.normalizeCompletionState(for: t, modelContext: c)") == 1)
         #expect(CadenceSourceScan.matchCount(#"dismiss\(\)"#, in: "dismiss()\ndismiss()") == 2)
         #expect(CadenceSourceScan.matchCount(#"dismiss\(\)"#, in: "dismissed(x)") == 0)
+
+        // T-440's needles.
+        #expect(CadenceSourceScan.matchCount(##""Couldn't Delete Task""##,
+                                             in: ##".alert("Couldn't Delete Task", isPresented: $deleteFailed)"##) == 1)
+        #expect(CadenceSourceScan.matchCount(##""Couldn't Delete Task""##,
+                                             in: ".iOSTaskDeleteFailureAlert(isPresented: $deleteFailed)") == 0)
+        #expect(CadenceSourceScan.matchCount(#"Text\(CadenceTaskMutationSupport\.deleteFailureNotice\)"#,
+                                             in: "Text(CadenceTaskMutationSupport.deleteFailureNotice)") == 1)
+        #expect(CadenceSourceScan.matchCount(#"Text\(CadenceTaskMutationSupport\.deleteFailureNotice\)"#,
+                                             in: "CadenceTaskMutationSupport.deleteFailureNotice") == 0)
+        #expect(CadenceSourceScan.matchCount(#"deleteFailureAlertTitle"#,
+                                             in: "CadenceTaskMutationSupport.deleteFailureAlertTitle") == 1)
+        #expect(CadenceSourceScan.matchCount(#"deleteFailureAlertTitle"#,
+                                             in: "CadenceTaskMutationSupport.deleteFailureNotice") == 0)
 
         // The reader really returns the repository's text, and the sheet really is the file with
         // both problems' fixes in it.

@@ -61,6 +61,7 @@ struct EditAreaSheet: View {
                 if calendarManager.isAuthorized {
                     ListEditorCalendarRow(
                         calendars: calendarManager.availableCalendars,
+                        allCalendars: calendarManager.allCalendars,
                         selectedID: $selectedCalendarID
                     )
                     TaskInspectorFieldDivider()
@@ -281,6 +282,7 @@ struct EditProjectSheet: View {
                     TaskInspectorFieldDivider()
                     ListEditorCalendarRow(
                         calendars: calendarManager.availableCalendars,
+                        allCalendars: calendarManager.allCalendars,
                         selectedID: $selectedCalendarID
                     )
                 }

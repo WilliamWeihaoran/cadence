@@ -45,6 +45,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
+- [T-462] **`docs/TODO_DONE.md` had no `T-4xx` entry at all until `ca06ad1`+1.** Eighty-five tickets
+  closed in this session were removed from Open and never archived, and the same gap runs back to
+  T-01 — **284 in total**. Today's 85 are now reconstructed from git history; the older 199 are not.
+  Either backfill them the same way or state that the archive begins at this session and stop
+  implying otherwise.
+
+- [T-463] **`CadenceTests/CadenceCalendarLinkHealthTests.swift` was a directory containing a file of
+  the same name.** A staging error of mine, now flattened. It compiled and ran — the synchronized
+  root group descends into it — which is why nothing caught it. Worth a guard: a `.swift` path that
+  is a directory should fail the build, not quietly work.
+
+- [T-464] **The list-editor row can now say "(Hidden)" but the picker still offers only visible
+  calendars.** From [[T-441]]. So the row names the problem and the repair is in Settings. Putting
+  hidden calendars in the picker is a second decision, left deliberately.
+
 - [T-453] **`CadenceWidgetDateSupport.storageCalendar(inheritingTimeZoneFrom:)` has no callers.**
   Found by a mutation that **survived**: re-pointing it to return the caller's calendar changed
   nothing, because nothing calls it. Its sibling forwards to `DateFormatters.dateKey(from:calendar:)`,
@@ -134,12 +149,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   returns `nil` on exactly the launch that meant to hand back the last good report. **Second
   occurrence** — T-359 added the first counter, T-428 the second. One `init(from:)` using
   `decodeIfPresent` closes it. Not data loss; no user data lives in that key.
-
-- [T-441] **`ListEditorCalendarRow` renders unlinked, gone, and merely-hidden as one string.**
-  Residue from [[T-400]]. It shows `selectedTitle ?? "None"` sourced from `availableCalendars`, so a
-  link whose calendar was deleted looks identical to one that was never set — and the row is a live
-  binding that writes back on save, so opening the editor can quietly clear a link the user still
-  wants. The new health check knows the difference; this row does not ask it.
 
 - [T-442] **The macOS note-template editor is a bare `TextEditor` while iOS gets the full markdown
   surface.** An unrecorded parity gap, and the reason T-421's fix is iOS-only: macOS never had an

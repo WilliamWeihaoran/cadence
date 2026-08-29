@@ -63,8 +63,15 @@ struct iOSCalendarBoardEventItem: Identifiable {
 
     private init?(event: EKEvent, date: Date, calendar: Calendar) {
         let dateKey = DateFormatters.dateKey(from: date)
-        let rawIdentifier = event.eventIdentifier ?? event.calendarItemIdentifier
-        let eventIdentifier = rawIdentifier.isEmpty ? "\(dateKey)-\(event.hash)" : rawIdentifier
+        // **T-438.** `CadenceEventNoteSupport.rawIdentifier` is what an event's identifier
+        // *is*; this used to re-spell it, and the re-spelling was wrong in a way the composed `id`
+        // below could not survive. `event.eventIdentifier ?? event.calendarItemIdentifier` only
+        // catches a **nil** event identifier, not an empty one, so an event carrying `""` fell
+        // through to `"\(dateKey)-\(event.hash)"` — and `EKEvent.hash` is `NSObject`'s, derived
+        // from the instance's address. It is not a property of the event, so the same meeting read
+        // twice gets two ids, and none of them survives a relaunch. The shared rule tries the empty
+        // case too and ends on a content-derived fallback instead.
+        let eventIdentifier = CadenceEventNoteSupport.rawIdentifier(for: event)
         self.event = event
         title = iOSCalendarEventSupport.title(for: event)
         calendarTitle = event.calendar?.title ?? "Apple Calendar"

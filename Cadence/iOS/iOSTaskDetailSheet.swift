@@ -93,11 +93,8 @@ struct iOSTaskDetailSheet: View {
             } message: {
                 Text("This removes the task and its subtasks.")
             }
-            .alert("Couldn't Delete Task", isPresented: $deleteFailed) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(CadenceTaskMutationSupport.deleteFailureNotice)
-            }
+            // Shared with `iOSTaskRow`; see `iOSTaskDeleteFailureAlert`.
+            .iOSTaskDeleteFailureAlert(isPresented: $deleteFailed)
             .confirmationDialog(
                 "Change repeating task?",
                 isPresented: recurrenceScopeDialogPresentation,

@@ -329,22 +329,39 @@ struct ListEditorCheckRow: View {
 
 // MARK: - Apple Calendar row
 
+/// **T-441.** The row asks `CadenceCalendarLinkRowState` what the link is, rather than looking one
+/// title up in the pickable calendars and calling everything it misses "None".
+///
+/// It used to render `selectedTitle ?? "None"` over `calendars` alone — which is
+/// `CalendarManager.availableCalendars`, the visible subset — so a link to a calendar the user had
+/// merely hidden from Cadence was indistinguishable from no link at all, and so was a link whose
+/// calendar Apple Calendar had deleted. See that type for why the two lists are both parameters.
 struct ListEditorCalendarRow: View {
+    /// The calendars the picker offers: visible, and the same list every other calendar affordance
+    /// in Settings shows.
     let calendars: [EKCalendar]
+    /// Every calendar EventKit has, hidden ones included. Only the row's *value* reads this — the
+    /// picker deliberately keeps offering the visible set, because linking to a calendar Cadence is
+    /// not showing is a choice to make in calendar settings rather than by accident from here.
+    let allCalendars: [EKCalendar]
     @Binding var selectedID: String
 
     @State private var showPicker = false
 
-    private var selectedTitle: String? {
-        calendars.first { $0.calendarIdentifier == selectedID }?.title
+    private var linkState: CadenceCalendarLinkRowState {
+        CadenceCalendarLinkRowState.forLink(
+            linkedCalendarID: selectedID,
+            allCalendars: allCalendars,
+            visibleCalendars: calendars
+        )
     }
 
     var body: some View {
         TaskInspectorFieldButtonRow(
             label: "Apple Calendar",
             reservesIconSlot: false,
-            valueText: selectedTitle ?? "None",
-            isSet: selectedTitle != nil
+            valueText: linkState.valueText,
+            isSet: linkState.isSet
         ) {
             showPicker.toggle()
         }

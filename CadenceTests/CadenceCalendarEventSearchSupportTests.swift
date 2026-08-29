@@ -201,4 +201,85 @@ struct CadenceCalendarEventSearchSupportTests {
         let standup = event(title: "Standup", start: now.addingTimeInterval(3_600))
         #expect(CadenceCalendarEventSearchSupport.event(from: [standup], identifier: "not-an-event") == nil)
     }
+
+    // MARK: - The third spelling of the identity rule (T-438)
+
+    /// `iOSBoardCards` was the copy T-403 did not reach. It spelled
+    /// `event.eventIdentifier ?? event.calendarItemIdentifier` and, when that came back empty, fell
+    /// through to `"\(dateKey)-\(event.hash)"`.
+    ///
+    /// Two things were wrong with it, and this pins the second because the first is unarrangeable:
+    /// `??` only catches a **nil** event identifier, never an empty one, and `EKEvent.hash` is
+    /// `NSObject`'s — derived from the instance's address, so it is a property of the *object* and
+    /// not of the event. Two reads of one meeting are two objects.
+    @Test func anObjectHashIsNotAnEventIdentity() {
+        let one = event(title: "Standup", start: now.addingTimeInterval(3_600))
+        let other = event(title: "Standup", start: now.addingTimeInterval(3_600))
+
+        #expect(one.hash != other.hash,
+                "EKEvent.hash was content-derived after all, which this assertion assumed it is not")
+        #expect(CadenceEventNoteSupport.rawIdentifier(for: one)
+                != CadenceEventNoteSupport.rawIdentifier(for: other),
+                "two separate events collapsed onto one identity")
+    }
+
+    /// Why the `event.hash` branch was reachable-but-never-right: the shared rule already answers
+    /// for every shape the board can hand it, and never with an empty string. There is nothing left
+    /// for a fallback of last resort to do.
+    @Test func theSharedIdentityRuleAnswersForEveryEventShapeTheBoardSees() {
+        let shapes = [
+            event(title: "Standup", start: now.addingTimeInterval(3_600)),
+            event(title: "Conference", start: now.addingTimeInterval(86_400), isAllDay: true),
+            event(title: "", start: now.addingTimeInterval(7_200)),
+            EKEvent(eventStore: store)
+        ]
+
+        for (index, subject) in shapes.enumerated() {
+            let identity = CadenceEventNoteSupport.rawIdentifier(for: subject)
+            #expect(!identity.isEmpty, "shape \(index) has no identity, so a fallback is still needed")
+        }
+    }
+
+    /// The rule is stable for one object across repeated reads, which the `hash` fallback also was
+    /// **within** a launch — the difference is that this one is derived from the event.
+    @Test func theSharedIdentityRuleIsStableForOneEvent() {
+        let standup = event(title: "Standup", start: now.addingTimeInterval(3_600))
+        let first = CadenceEventNoteSupport.rawIdentifier(for: standup)
+        #expect(first == CadenceEventNoteSupport.rawIdentifier(for: standup))
+        #expect(first == standup.calendarItemIdentifier,
+                "an unsaved event has no eventIdentifier, so the rule should land on the item one")
+    }
+
+    /// A **source scan**: `iOSBoardCards.swift` is under `Cadence/iOS/`, behind `#if os(iOS)`, and
+    /// this target builds for macOS — so `iOSCalendarBoardEventItem` cannot be constructed here.
+    /// What is checkable is that the board card reads the rule above instead of re-typing it.
+    @Test func theBoardCardReadsTheSharedIdentityRuleRatherThanRespellingIt() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSBoardCards.swift")
+        #expect(raw.count > 400, "the board cards read as \(raw.count) characters")
+        let source = CadenceSourceScan.strippingComments(raw)
+        #expect(source != raw, "the comment stripper removed nothing")
+        #expect(source.count == raw.count, "the stripper changed the length")
+        #expect(source.contains("struct iOSCalendarBoardEventItem"), "the board event item moved")
+
+        #expect(source.contains("let eventIdentifier = CadenceEventNoteSupport.rawIdentifier(for: event)"),
+                "the board card does not read the shared identity rule")
+        #expect(CadenceSourceScan.matchCount(#"event\.hash"#, in: source) == 0,
+                "the board card still keys an identity off an object hash (T-438)")
+        #expect(CadenceSourceScan.matchCount(#"eventIdentifier\s*\?\?"#, in: source) == 0,
+                "the board card still spells its own identity fallback")
+        #expect(CadenceSourceScan.matchCount(#"calendarItemIdentifier"#, in: source) == 0,
+                "the board card still reaches for EventKit's identifiers directly")
+    }
+
+    /// Without this the three `== 0` assertions above are true of any text at all.
+    @Test func theBoardCardScanNeedlesAreNotVacuous() {
+        #expect(CadenceSourceScan.matchCount(#"event\.hash"#, in: ##"let id = "\(dateKey)-\(event.hash)""##) == 1)
+        #expect(CadenceSourceScan.matchCount(#"event\.hash"#, in: "eventHashes.count") == 0)
+        #expect(CadenceSourceScan.matchCount(#"eventIdentifier\s*\?\?"#,
+                                             in: "event.eventIdentifier ?? event.calendarItemIdentifier") == 1)
+        #expect(CadenceSourceScan.matchCount(#"eventIdentifier\s*\?\?"#,
+                                             in: "let eventIdentifier = CadenceEventNoteSupport.rawIdentifier(for: event)") == 0)
+        #expect(CadenceSourceScan.matchCount(#"calendarItemIdentifier"#, in: "event.calendarItemIdentifier") == 1)
+        #expect(CadenceSourceScan.matchCount(#"calendarItemIdentifier"#, in: "event.eventIdentifier") == 0)
+    }
 }

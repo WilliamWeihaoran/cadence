@@ -132,6 +132,97 @@ week by audits that had only seen the open list.
   semantics (`max` vs `sum`) before writing the repair.
   **Landed in `5b8d8bd`.** Removed from Open on 2026-08-29 — the work shipped but the entry was never retired.
 
+
+## Closed 2026-08-28/29 — the five-batch run
+
+Reconstructed from git history: these were removed from Open when their work landed but never
+archived. Each line names the commit that closed it; the reasoning lives in that commit message.
+
+- [T-281] **Two iOS note-editor sheet headers are one header, written twice.** Landed in `b05869d` — Six duplications closed, and one test that was guarding nothing
+- [T-283] **Three `iPad*` names for views that render on every device.** Landed in `b05869d` — Six duplications closed, and one test that was guarding nothing
+- [T-284] **Six spellings of one uppercase eyebrow label, at four kernings.** Landed in `0dd7258` — Deduplicate docs/TODO.md — an agent appended a stale copy of the whole file
+- [T-285] **(title not recovered)** Landed in `0dd7258` — Deduplicate docs/TODO.md — an agent appended a stale copy of the whole file
+- [T-286] **Seven macOS Settings sections are still outside the shared row vocabulary.** Landed in `0dd7258` — Deduplicate docs/TODO.md — an agent appended a stale copy of the whole file
+- [T-288] **Four whole-file `#if os(macOS)` components sit in `Shared/Components/`.** Landed in `0dd7258` — Deduplicate docs/TODO.md — an agent appended a stale copy of the whole file
+- [T-295] **`deleteBundle` leaves `calendarEventID` set; its sibling twelve lines above clears it.** Landed in `7efe81f` — An image in a task's note survives a delete, and the repair service says what it will not do
+- [T-298] **A failed fetch makes the note-delete summary understate the damage.** Landed in `610e42a` — Eight fixes, and two more tickets whose premise the evidence contradicted
+- [T-309] **Read-write MCP startup runs migration and repair more than once.** Landed in `bbb6ac2` — MCP reads stop fetching whole tables, and a goal count stops claiming to be a total
+- [T-313] **The milestone widget recomputes every goal summary two or three times per timeline.** Landed in `a7e58dc` — Batch 2: one navigation rule, one failure vocabulary, and one refusal
+- [T-314] **Widget intents re-implement task capture and habit toggling.** Landed in `a7e58dc` — Batch 2: one navigation rule, one failure vocabulary, and one refusal
+- [T-321] **Structural editors close without knowing whether the change persisted.** Landed in `45a8084` — Editors commit before they dismiss, and the MCP target compiles again
+- [T-328] **`DataIntegrityRepairService` cannot see four of the models that can be orphaned.** Landed in `7efe81f` — An image in a task's note survives a delete, and the repair service says what it will not do
+- [T-332] **macOS trims whitespace, iOS trims whitespace and newlines.** Landed in `859e270` — Nine fixes across four batches, verified together
+- [T-333] **(title not recovered)** Landed in `aaa0064` — Nine more, including one ticket whose premise turned out to be false
+- [T-334] **Resizing an iPad window can land you on the wrong screen.** Landed in `a7e58dc` — Batch 2: one navigation rule, one failure vocabulary, and one refusal
+- [T-335] **Settings forgets which category you were in when the window resizes.** Landed in `a7e58dc` — Batch 2: one navigation rule, one failure vocabulary, and one refusal
+- [T-338] **macOS adds a subtask by writing one side of the relationship; iOS writes both.** Landed in `aaa0064` — Nine more, including one ticket whose premise turned out to be false
+- [T-339] **iOS has three failure vocabularies for EventKit; macOS has one.** Landed in `a7e58dc` — Batch 2: one navigation rule, one failure vocabulary, and one refusal
+- [T-340] **Two more places a task keeps a context its owner no longer has.** Landed in `7efe81f` — An image in a task's note survives a delete, and the repair service says what it will not do
+- [T-341] **Restoring a cancelled task on macOS leaves its completion timestamp behind.** Landed in `1614339` — Ten fixes across three batches, and one decision that had been spelled two ways
+- [T-342] **(title not recovered)** Landed in `1614339` — Ten fixes across three batches, and one decision that had been spelled two ways
+- [T-343] **Six iOS paths change a task's status without reconciling its notifications.** Landed in `bc13be0` — Status changes reconcile, deleted embeds go quiet, and a refused delete says why
+- [T-344] **DECISION NEEDED: what does the completion circle mean on a cancelled task?** Landed in `1614339` — Ten fixes across three batches, and one decision that had been spelled two ways
+- [T-345] **The macOS sidebar can stay selected on a list that no longer exists.** Landed in `859e270` — Nine fixes across four batches, verified together
+- [T-346] **macOS Goals keeps a deleted goal selected whenever the search box is empty.** Landed in `859e270` — Nine fixes across four batches, verified together
+- [T-347] **Six local iOS sheets present a detail view without the deleted-model guard.** Landed in `859e270` — Nine fixes across four batches, verified together
+- [T-348] **(title not recovered)** Landed in `859e270` — Nine fixes across four batches, verified together
+- [T-349] **A deleted embedded task stays interactive in an open editor.** Landed in `bc13be0` — Status changes reconcile, deleted embeds go quiet, and a refused delete says why
+- [T-350] **An image can be garbage-collected out of a note that still references it.** Landed in `859e270` — Nine fixes across four batches, verified together
+- [T-351] **A list with an old remembered tab opens the global default instead of Tasks.** Landed in `1614339` — Ten fixes across three batches, and one decision that had been spelled two ways
+- [T-353] **The widgets keep their own definition of Today, and it is narrower than the app's.** Landed in `b2a0f53` — Four fixes that all had the same shape: a rule written once and obeyed in one place
+- [T-354] **(title not recovered)** Landed in `aaa0064` — Nine more, including one ticket whose premise turned out to be false
+- [T-355] **DECIDE: the milestone widget mixes directions with their own milestones.** Landed in `aaa0064` — Nine more, including one ticket whose premise turned out to be false
+- [T-356] **A recurring 10-minute task spawns its next occurrence as 30 minutes.** Landed in `d4bc391` — A recurring 10-minute task now spawns a 10-minute successor (T-356)
+- [T-357] **(title not recovered)** Landed in `1614339` — Ten fixes across three batches, and one decision that had been spelled two ways
+- [T-358] **(title not recovered)** Landed in `859e270` — Nine fixes across four batches, verified together
+- [T-360] **(title not recovered)** Landed in `c54cadb` — A failed task delete now says so, and a merged duplicate tag stops lying about its age
+- [T-361] **Turning reminders off cancels nothing until a scene-phase sweep.** Landed in `4354dec` — T-361 closed: the reminders toggle now cancels and reconciles immediately
+- [T-362] **(title not recovered)** Landed in `b2a0f53` — Four fixes that all had the same shape: a rule written once and obeyed in one place
+- [T-363] **(title not recovered)** Landed in `610e42a` — Eight fixes, and two more tickets whose premise the evidence contradicted
+- [T-364] **Task-creation surfaces that report success still bypass the rollback API.** Landed in `b2a0f53` — Four fixes that all had the same shape: a rule written once and obeyed in one place
+- [T-365] **Ordinary task deletes swallow the final save failure and return `true`.** Landed in `c54cadb` — A failed task delete now says so, and a merged duplicate tag stops lying about its age
+- [T-366] **The embed field popover calls `onChanged()` whether or not the write landed.** Landed in `45a8084` — Editors commit before they dismiss, and the MCP target compiles again
+- [T-368] **(title not recovered)** Landed in `0260e2d` — A stale task link no longer stays armed to fire on a later navigation (T-368)
+- [T-369] **The Calendar widget links to "the calendar", not to the date it was showing.** Landed in `aaa0064` — Nine more, including one ticket whose premise turned out to be false
+- [T-370] **(title not recovered)** Landed in `610e42a` — Eight fixes, and two more tickets whose premise the evidence contradicted
+- [T-371] **Schedule and bundle ordering stop before they reach a total order.** Landed in `84bc624` — Two audits recorded, plus a way a warning count can lie
+- [T-372] **MCP read APIs return order-only lists, so another agent sees nondeterministic order.** Landed in `e38621a` — MCP reads now return a total order, so an agent reading twice sees the same rows (T-372)
+- [T-373] **The EventKit and Reminders comparators both tie on realistic duplicates.** Landed in `aaa0064` — Nine more, including one ticket whose premise turned out to be false
+- [T-375] **(title not recovered)** Landed in `610e42a` — Eight fixes, and two more tickets whose premise the evidence contradicted
+- [T-376] **Five macOS surfaces can now read a failed delete and still say nothing.** Landed in `bc13be0` — Status changes reconcile, deleted embeds go quiet, and a refused delete says why
+- [T-377] **Searching "done" finds tasks on your Mac and nothing on your iPhone.** Landed in `aaa0064` — Nine more, including one ticket whose premise turned out to be false
+- [T-378] **(title not recovered)** Landed in `aaa0064` — Nine more, including one ticket whose premise turned out to be false
+- [T-379] **(title not recovered)** Landed in `859e270` — Nine fixes across four batches, verified together
+- [T-380] **(title not recovered)** Landed in `859e270` — Nine fixes across four batches, verified together
+- [T-381] **(title not recovered)** Landed in `610e42a` — Eight fixes, and two more tickets whose premise the evidence contradicted
+- [T-382] **(title not recovered)** Landed in `b2a0f53` — Four fixes that all had the same shape: a rule written once and obeyed in one place
+- [T-383] **(title not recovered)** Landed in `b2a0f53` — Four fixes that all had the same shape: a rule written once and obeyed in one place
+- [T-384] **`limit` caps the response, not the work.** Landed in `bbb6ac2` — MCP reads stop fetching whole tables, and a goal count stops claiming to be a total
+- [T-385] **(title not recovered)** Landed in `610e42a` — Eight fixes, and two more tickets whose premise the evidence contradicted
+- [T-386] **(title not recovered)** Landed in `610e42a` — Eight fixes, and two more tickets whose premise the evidence contradicted
+- [T-387] **(title not recovered)** Landed in `aaa0064` — Nine more, including one ticket whose premise turned out to be false
+- [T-388] **(title not recovered)** Landed in `bbb6ac2` — MCP reads stop fetching whole tables, and a goal count stops claiming to be a total
+- [T-389] **macOS edits a meeting note, fails to mirror it to Apple Calendar, and says nothing.** Landed in `1614339` — Ten fixes across three batches, and one decision that had been spelled two ways
+- [T-390] **(title not recovered)** Landed in `1614339` — Ten fixes across three batches, and one decision that had been spelled two ways
+- [T-391] **Habit day quantity split across rows now reads lower.** Landed in `cdb0130` — Images stay out of the places the sweep cannot see, and a dead calendar link says so
+- [T-392] **Settings reads the calendar zoom as `Int` while the calendar writes it as `Double`.** Landed in `1614339` — Ten fixes across three batches, and one decision that had been spelled two ways
+- [T-393] **(title not recovered)** Landed in `1614339` — Ten fixes across three batches, and one decision that had been spelled two ways
+- [T-394] **`ios.notes.activeCoreTab` is documented as orphaned and never purged.** Landed in `1614339` — Ten fixes across three batches, and one decision that had been spelled two ways
+- [T-399] **(title not recovered)** Landed in `610e42a` — Eight fixes, and two more tickets whose premise the evidence contradicted
+- [T-400] **A dead calendar link can be detected with no stored metadata at all.** Landed in `cdb0130` — Images stay out of the places the sweep cannot see, and a dead calendar link says so
+- [T-401] **(title not recovered)** Landed in `a7e58dc` — Batch 2: one navigation rule, one failure vocabulary, and one refusal
+- [T-402] **(title not recovered)** Landed in `a7e58dc` — Batch 2: one navigation rule, one failure vocabulary, and one refusal
+- [T-403] **(title not recovered)** Landed in `cdb0130` — Images stay out of the places the sweep cannot see, and a dead calendar link says so
+- [T-404] **Widget capture still bypasses the rest of `TaskCreationService`.** Landed in `a7e58dc` — Batch 2: one navigation rule, one failure vocabulary, and one refusal
+- [T-405] **The iOS half of T-369 is compile-checked only.** Landed in `cdb0130` — Images stay out of the places the sweep cannot see, and a dead calendar link says so
+- [T-406] **`TaskTitleShortcutParsing.normalized` is a guarded second copy of the app's trim rule.** Landed in `a7e58dc` — Batch 2: one navigation rule, one failure vocabulary, and one refusal
+- [T-407] **`iOSTaskDetailSheet` is the one task surface outside both wrappers.** Landed in `cdb0130` — Images stay out of the places the sweep cannot see, and a dead calendar link says so
+- [T-409] **(title not recovered)** Landed in `2bdc18d` — A guard that would have caught the four-commit MCP break, verified against it
+- [T-410] **The two habit editors disagree about what a corrupt reminder time looks like.** Landed in `a7e58dc` — Batch 2: one navigation rule, one failure vocabulary, and one refusal
+- [T-421] **(title not recovered)** Landed in `cdb0130` — Images stay out of the places the sweep cannot see, and a dead calendar link says so
+- [T-422] **Event notes bind the markdown editor to `EKEvent.notes`, outside the store.** Landed in `cdb0130` — Images stay out of the places the sweep cannot see, and a dead calendar link says so
+- [T-423] **`CadenceNoteDeletionSummary.forNote` now over-promises.** Landed in `a7e58dc` — Batch 2: one navigation rule, one failure vocabulary, and one refusal
+- [T-434] **(title not recovered)** Landed in `2bdc18d` — A guard that would have caught the four-commit MCP break, verified against it
 ## History corrections
 
 Found by an external commit-claim audit (Codex, 2026-08-28), not by the author. Recorded here

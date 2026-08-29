@@ -820,7 +820,39 @@ struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
     }
 }
 
+/// The one iOS spelling of "that delete did not land" (T-440).
+///
+/// Both surfaces that can refuse a task delete — `iOSTaskRow` and `iOSTaskDetailSheet` — used to
+/// carry their own copy of this alert: the same title, the same shared sentence, the same single
+/// `OK` button. The test that pinned them read both files and asserted the two **agreed**, which is
+/// the shape of a comparison standing in for a shared thing. Agreement that has to be asserted is
+/// duplication; there is one modifier now, and the test reads the one call each surface makes.
+///
+/// It is an alert rather than an inline notice for the reason both call sites already recorded: a
+/// destructive confirmation alert dismisses itself on the button tap, so — unlike the note and list
+/// sheets, which stay open and say why — there is no surface left to report into. macOS answers this
+/// differently on purpose (`DeleteConfirmationManager` holds its overlay open), which is why this
+/// lives here and not in `Shared/`; only the sentence and the title are shared, and those are on
+/// `CadenceTaskMutationSupport`.
+struct iOSTaskDeleteFailureAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .alert(CadenceTaskMutationSupport.deleteFailureAlertTitle, isPresented: $isPresented) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(CadenceTaskMutationSupport.deleteFailureNotice)
+            }
+    }
+}
+
 extension View {
+    /// See `iOSTaskDeleteFailureAlertModifier`.
+    func iOSTaskDeleteFailureAlert(isPresented: Binding<Bool>) -> some View {
+        modifier(iOSTaskDeleteFailureAlertModifier(isPresented: isPresented))
+    }
+
     func iOSTaskRowRecurrenceScopeDialog(
         task: AppTask,
         pendingRecurrenceRule: Binding<TaskRecurrenceRule?>

@@ -158,6 +158,49 @@ enum CadenceCalendarTimelineWindow {
         return recentered
     }
 
+    // MARK: Which day the surfaces below the grid describe
+
+    /// Where the selected day has to move so it is still on screen, or `nil` to leave it alone.
+    ///
+    /// **T-439.** The rule itself is unchanged; it was spelled inside
+    /// `iOSCalendarView.keepSelectedDateInView()`, which put a date decision in a view that
+    /// `CadenceTests` cannot see — the last one left after T-405 lifted the restore ordering out of
+    /// the same file. It is four dates and an integer, none of them a view, so it belongs where a
+    /// test can call it.
+    ///
+    /// The decision: the grid reports its leading column back into `anchorDate` as the user
+    /// scrolls, and the selected day is a separate thing — what a tap on a day header sets. Moving
+    /// the selection with every column would undo that tap; leaving it alone entirely means the day
+    /// inspector and the summary band describe a column a fortnight off screen. So the selection
+    /// moves **only** when it has actually left the visible span, and it lands on the leading day.
+    ///
+    /// Half-open at neither end: a selection sitting on the first or last visible column is still
+    /// visible and must not be dragged to the leading edge, which is why the guard tests `<` and
+    /// `>` rather than `<=` / `>=`.
+    ///
+    /// Returning `nil` rather than the unchanged date is what keeps a caller from writing the same
+    /// value back into `@State` on every scrolled column — see `CadenceCalendarDateMemory` for what
+    /// a write per column costs on this surface.
+    ///
+    /// Whether the rule applies at all stays with the caller: only the timed grids scroll their own
+    /// days, and `presentation`/`viewMode` are the page's state, not a date. `visibleDayCount` is
+    /// `CadenceRegularPaneLayout.visibleDayCount(for:)`, which is never below a week, so the span
+    /// below is never empty in practice.
+    static func selectionKeptInView(
+        selectedDate: Date,
+        leadingDate: Date,
+        visibleDayCount: Int,
+        calendar: Calendar = .current
+    ) -> Date? {
+        let leading = calendar.startOfDay(for: leadingDate)
+        guard let last = calendar.date(byAdding: .day, value: visibleDayCount - 1, to: leading) else {
+            return nil
+        }
+        let selected = calendar.startOfDay(for: selectedDate)
+        guard selected < leading || selected > last else { return nil }
+        return leading
+    }
+
     // MARK: Scroll position ↔ column index
 
     /// The column at the leading edge, for a horizontal content offset.

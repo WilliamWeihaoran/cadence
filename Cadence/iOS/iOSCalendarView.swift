@@ -402,18 +402,19 @@ struct iOSCalendarView: View {
 
     /// Keeps the day the inspector and the summary band are describing on screen.
     ///
-    /// The grid reports its leading column back into `anchorDate` as it scrolls, and the selected
-    /// day is a separate thing — it is what a tap on a day header sets. Scrolling a fortnight away
-    /// from the selected day used to be impossible, because the chevrons moved both; now it is a
-    /// flick, and an inspector describing a column nowhere near the screen is worse than one that
-    /// follows. So the selection only moves when it has actually left the visible span.
+    /// **T-439.** The span arithmetic is `CadenceCalendarTimelineWindow.selectionKeptInView`; this
+    /// is the gate and the write. Only the timed grids scroll their own days, so whether the rule
+    /// applies is a question about `presentation`/`viewMode` — page state, not a date — and it is
+    /// the one half that stays here.
     private func keepSelectedDateInView() {
         guard isTimedGrid else { return }
-        let leading = calendar.startOfDay(for: anchorDate)
-        guard let last = calendar.date(byAdding: .day, value: visibleDayCount - 1, to: leading) else { return }
-        let selected = calendar.startOfDay(for: selectedDate)
-        guard selected < leading || selected > last else { return }
-        selectedDate = leading
+        guard let moved = CadenceCalendarTimelineWindow.selectionKeptInView(
+            selectedDate: selectedDate,
+            leadingDate: anchorDate,
+            visibleDayCount: visibleDayCount,
+            calendar: calendar
+        ) else { return }
+        selectedDate = moved
     }
 
     private func openQuickCreate(on dateKey: String) {
