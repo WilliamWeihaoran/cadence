@@ -640,6 +640,56 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   reports zero warnings on broken code.
 
 
+- [T-467] **`CadenceCalendarPickerButton` collapses "hidden or read-only" into "No calendar"** — the
+  [[T-441]] bug on a second surface. It renders `selected?.title ?? "No calendar"` by looking
+  `selectedID` up in whatever `calendars` it was handed, and `TimelineEventBlockSupportViews.swift:195`
+  hands it `calendarManager.writableCalendars` (active AND `allowsContentModifications`). Events are
+  fetched from `availableCalendars`, which does not filter by writability, so an event on a subscribed
+  read-only calendar should reach the timeline and print its calendar name in `calendarLabel` while the
+  Calendar row directly beneath says "No calendar" — two contradictory readings in one card. Route it
+  through `CadenceCalendarLink` ([[T-464]]), which now exists for exactly this. **Confirm first that a
+  read-only event actually opens that card** — the agent that found this flagged the reachability as
+  inferred, not measured, and it is the one link in the chain nobody has read. The QuickCreate call
+  site (`QuickCreateChoiceSupportViews.swift:203`) is a create flow with `allowNone: false` and is not
+  affected.
+
+- [T-468] **macOS silent push registration has two launch callers** (Codex, P3, source drift measured;
+  the duplicate-OS-call risk is inferred). `CadenceApp.swift:13` and
+  `macOS/Services/CadenceAppDelegate.swift:10,27` both call the same registrar on a normal launch.
+  `registerIfNeeded()` checks `isRegisteredForRemoteNotifications`, so it may collapse to one OS call
+  depending on timing — the defect is that the launch wiring is duplicated while docs and history
+  describe the AppDelegate as *the* registration site, which is how a future launch audit or an App
+  Review explanation gets subtly wrong. Not a permission-prompt bug: the app still correctly avoids
+  `requestAuthorization()` on cold launch. Pick one owner (probably the AppDelegate), delete the other
+  call, and pin **exactly one production caller** with a source scan. Confirm:
+  `rg -n "registerIfNeeded\(|registerForRemoteNotifications\(" Cadence/CadenceApp.swift Cadence/macOS/Services/CadenceAppDelegate.swift`
+
+- [T-469] **The iOS empty list detail names a control that is not on the screen** (Codex, P3, measured).
+  `iOS/iOSListDetailView.swift:260` says "Add a task above or move one here from Inbox." There is no
+  inline field above; the page uses the floating `+`. This repo has already made and fixed this exact
+  mistake — `CadenceTodayPresentationSupport.emptySubtitle` says "Add a task with +..." and its comment
+  records the retired "Add a task above" wording as the failure. Copy naming a control that does not
+  exist is worse than no subtitle, and this is a *first* empty list. Fix the wording, consider one
+  shared list-detail empty-state constant if the two surfaces should stay pinned, and add a source scan
+  for the retired phrase.
+
+- [T-470] **iOS calendar quick-create swallows task-save failures and the button looks inert** (Codex,
+  P2, measured). `iOS/iOSCalendarQuickCreateSheet.swift:542` guards on
+  `try? CadenceTaskMutationSupport.insertScheduledTask(...)` and just returns, never writing the
+  visible `actionError` notice — while the *same sheet* has a working red `actionErrorNotice` that its
+  Event branch uses correctly (`:312`). The right pattern is already in
+  `iOSCreateTaskSheet.create()`: catch, set `actionError = TaskCreationService.saveFailureNotice`,
+  return before dismissing. Instance of [[T-322]]. Extend `CadenceCreateTaskCommitSurfaceTests` to
+  cover this file.
+
+- [T-471] **iOS calendar quick-create dismisses as success when a bundle insert fails** (Codex, P2,
+  measured). Worse than [[T-470]]: `iOSCalendarQuickCreateSheet.swift:595` does
+  `_ = try? CadenceTaskMutationSupport.insertBundle(...)` and dismisses regardless, so the sheet closes
+  as though a block was created. `CadenceTaskMutationSupport.swift:798` already does the right thing —
+  it deletes the pending bundle and rethrows — and the caller throws that signal away. `dismiss()` must
+  happen only after the `try` succeeds. Instance of [[T-322]].
+
+
 ## Done
 
 Moved to [`TODO_DONE.md`](TODO_DONE.md) on 2026-08-26 — 220 entries, with their reasoning and shipping SHAs intact.
