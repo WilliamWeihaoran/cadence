@@ -7,15 +7,6 @@ enum TaskTitleTildeMode {
     case list
 }
 
-struct TaskTitleTildeContainerItem: Identifiable {
-    let tag: TaskContainerSelection
-    let icon: String
-    let name: String
-    let color: Color
-
-    var id: TaskContainerSelection { tag }
-}
-
 struct TaskTitleInitialSelectionSuppressor: NSViewRepresentable {
     let expectedText: String
     @Binding var shouldCollapseSelection: Bool

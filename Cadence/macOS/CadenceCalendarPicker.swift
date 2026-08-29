@@ -9,6 +9,12 @@ import EventKit
 struct CadenceCalendarPickerList: View {
     let calendars: [EKCalendar]
     @Binding var selectedID: String
+    /// **T-464.** Identifiers among `calendars` that Cadence is not showing, which the list editor
+    /// fills from `CadenceCalendarLink.hiddenPickableCalendarIDs`. The picker does not work this out
+    /// for itself — it has never had the full calendar list to work it out *from*, and a second
+    /// opinion about which calendars are hidden is exactly what the ticket is about. Empty for every
+    /// caller that only ever offers visible calendars, which is the honest answer for them.
+    var hiddenCalendarIDs: Set<String> = []
     var allowNone: Bool = true
     /// Called after the user taps a row so the parent can dismiss the popover.
     var onPick: (() -> Void)? = nil
@@ -52,14 +58,22 @@ struct CadenceCalendarPickerList: View {
     private var flattenedItems: [PickerItem] {
         var items: [PickerItem] = []
         if allowNone {
-            items.append(PickerItem(id: "", label: "None", color: nil))
+            items.append(PickerItem(id: "", label: CadenceCalendarLinkRowState.unlinkedText, color: nil))
         }
         for group in groups {
             items.append(contentsOf: group.cals.map {
-                PickerItem(id: $0.calendarIdentifier, label: $0.title, color: Color(cgColor: $0.cgColor))
+                PickerItem(id: $0.calendarIdentifier, label: label(for: $0), color: Color(cgColor: $0.cgColor))
             })
         }
         return items
+    }
+
+    /// A calendar's name in this list. A hidden one carries the row's wording, so the calendar the
+    /// field row calls "Team (Hidden)" is the same words in the menu the row opens.
+    private func label(for calendar: EKCalendar) -> String {
+        hiddenCalendarIDs.contains(calendar.calendarIdentifier)
+            ? CadenceCalendarLinkRowState.hiddenTitle(calendar.title)
+            : calendar.title
     }
 
     var body: some View {
@@ -77,7 +91,7 @@ struct CadenceCalendarPickerList: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 if allowNone {
-                    row(id: "", label: "None", color: nil)
+                    row(id: "", label: CadenceCalendarLinkRowState.unlinkedText, color: nil)
                     Divider().background(Theme.borderSubtle).padding(.vertical, 2)
                 }
                 ForEach(groups, id: \.source) { group in
@@ -90,7 +104,7 @@ struct CadenceCalendarPickerList: View {
                     ForEach(group.cals, id: \.calendarIdentifier) { cal in
                         row(
                             id: cal.calendarIdentifier,
-                            label: cal.title,
+                            label: label(for: cal),
                             color: Color(cgColor: cal.cgColor)
                         )
                     }

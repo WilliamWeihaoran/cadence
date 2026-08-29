@@ -32,6 +32,67 @@ nonisolated struct NoteMigrationReport: Codable, Equatable {
     }
 }
 
+/// **In an extension, so the memberwise initializer survives.** An `init` in the struct body would
+/// suppress it, and `migrateIfNeeded` builds the report memberwise from its head fields and then
+/// fills counters in through `inout`.
+///
+/// **`nonisolated` is load-bearing and is not decoration.** The `nonisolated` on the struct itself
+/// does not reach an extension, and the app and widget targets set
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` — so without it the `Decodable` witness declared
+/// here is main-actor isolated while the conformance is not, which is
+/// *"conformance ... crosses into main actor-isolated code"*: a warning against a zero baseline
+/// under `-scheme Cadence`, and an error under the Swift 6 language mode `CadenceMCPServer`
+/// already builds in. That asymmetry is what makes it worth spelling out — the MCP scheme is the
+/// one target *without* the MainActor default, so an MCP-only build reports zero warnings on the
+/// broken spelling (T-445, and this is its second site).
+nonisolated extension NoteMigrationReport {
+    /// **Hand-written because synthesized decoding ignores property defaults (T-466).**
+    ///
+    /// This report is archived to `UserDefaults` under `noteMigration.lastReport.v1` and read back
+    /// on the next launch. Every counter above has an `= 0` default, which reads as "an older blob
+    /// missing this key still decodes" and is not what `Codable` synthesis does: the generated
+    /// `init(from:)` calls `decode(Int.self, forKey:)` for a non-optional `Int` and throws
+    /// `keyNotFound` when the key is absent. The default is applied by the *memberwise*
+    /// initializer only. So every counter added to this struct silently invalidated every stored
+    /// report written before it, and `lastReport()` swallows the throw with `try?`, so the failure
+    /// surfaces as `nil`: no crash, no log, and `migrateAndRecordFailure` handing back nothing on
+    /// exactly the launch where the migration failed and the previous report was the thing worth
+    /// having. `CadenceReadService` reads the same value for the MCP note-migration tool, so the
+    /// history reads as *never migrated* rather than as *unreadable*.
+    ///
+    /// `decodeIfPresent(…) ?? 0` per counter is the whole fix, and it is deliberately exhaustive
+    /// rather than clever. The four head fields stay `decode`: they have been written by every
+    /// version of this key, they have no defaults to apply, and a blob missing `success` is not an
+    /// older report — it is not this report.
+    ///
+    /// `NoteMigrationServiceTests.aStoredNoteMigrationReportSurvivesEveryCounterThisStructWillEverGain`
+    /// re-derives the counter list from an encoded report rather than restating it, so a
+    /// *fifteenth* counter added without a line here fails that test instead of being decoded as a
+    /// throw.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        source = try container.decode(String.self, forKey: .source)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        finishedAt = try container.decode(Date.self, forKey: .finishedAt)
+        success = try container.decode(Bool.self, forKey: .success)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        existingNoteCount = try container.decodeIfPresent(Int.self, forKey: .existingNoteCount) ?? 0
+        canonicalDuplicateCount = try container.decodeIfPresent(Int.self, forKey: .canonicalDuplicateCount) ?? 0
+        legacyDailyScanned = try container.decodeIfPresent(Int.self, forKey: .legacyDailyScanned) ?? 0
+        legacyWeeklyScanned = try container.decodeIfPresent(Int.self, forKey: .legacyWeeklyScanned) ?? 0
+        legacyPermanentScanned = try container.decodeIfPresent(Int.self, forKey: .legacyPermanentScanned) ?? 0
+        legacyDocumentScanned = try container.decodeIfPresent(Int.self, forKey: .legacyDocumentScanned) ?? 0
+        legacyEventNoteScanned = try container.decodeIfPresent(Int.self, forKey: .legacyEventNoteScanned) ?? 0
+        insertedDaily = try container.decodeIfPresent(Int.self, forKey: .insertedDaily) ?? 0
+        insertedWeekly = try container.decodeIfPresent(Int.self, forKey: .insertedWeekly) ?? 0
+        insertedPermanent = try container.decodeIfPresent(Int.self, forKey: .insertedPermanent) ?? 0
+        insertedList = try container.decodeIfPresent(Int.self, forKey: .insertedList) ?? 0
+        insertedMeeting = try container.decodeIfPresent(Int.self, forKey: .insertedMeeting) ?? 0
+        skippedAlreadyMigrated = try container.decodeIfPresent(Int.self, forKey: .skippedAlreadyMigrated) ?? 0
+        skippedCanonicalDuplicate = try container.decodeIfPresent(Int.self, forKey: .skippedCanonicalDuplicate) ?? 0
+    }
+}
+
 nonisolated struct NoteMigrationHealthReport: Codable, Equatable {
     var noteCount: Int = 0
     var canonicalDuplicateCount: Int = 0

@@ -955,7 +955,19 @@ final class CadenceReadService {
         }
 
         // Hits carry the score `matchScore` already produced above, so rank on it directly.
-        let ranked = CadenceSearchMatcher.rank(hits, score: { $0.score }, title: { $0.title })
+        //
+        // **T-372a: `identity` is what makes this a total order.** `entityType` has to be in it,
+        // not just `entityId`. This list is the merge of eleven scope loops over eight different
+        // tables, so two rows can share a title and a score *and* be different kinds of thing —
+        // and `entityId` alone would then order an area against a task by an id the caller cannot
+        // see or predict. Pairing it with the type makes the tie-break the same string the caller
+        // already reads back off the hit.
+        let ranked = CadenceSearchMatcher.rank(
+            hits,
+            score: { $0.score },
+            title: { $0.title },
+            identity: { "\($0.entityType):\($0.entityId)" }
+        )
         return CadencePage.paging(ranked, offset: offset, limit: limit) { $0 }
     }
 

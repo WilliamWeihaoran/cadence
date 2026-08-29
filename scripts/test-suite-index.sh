@@ -16,8 +16,13 @@
 #     names is enforced by CadenceTestTargetHygieneTests; this is how you see the collision.
 #
 # It reads `@Test ... func name` after blanking comments and string literals, and attributes each
-# to the nearest *top-level* type declaration — a nested `private struct Store` fixture is not the
-# suite its neighbours are in. Same rules as the Swift parser in
+# to the top-level type whose *braces enclose it* — a nested `private struct Store` fixture is not
+# the suite its neighbours are in, and a test appended past the last suite's closing brace is
+# `<file scope>` rather than a member of the suite it just escaped (T-465). That second case is the
+# one this script used to answer wrongly, which is worse than not answering: it named the suite the
+# author meant for the one input where the author is wrong.
+# `CadenceTestTargetHygieneTests.noTestInTheTargetIsDeclaredOutsideEverySuite` now fails on any
+# such test, so the `<file scope>` bucket should stay empty. Same rules as the Swift parser in
 # `CadenceTests/CadenceTestTargetHygieneTests.swift`; if they ever disagree, the Swift one is the
 # one a test can fail on.
 
@@ -41,6 +46,26 @@ def blank(src):
                 out[k] = ' '
     i = 0
     while i < n:
+        if src[i] == '#':
+            h = i
+            while h < n and src[h] == '#':
+                h += 1
+            hashes = h - i
+            if h < n and src[h] == '"':
+                # A raw string: `\` is content, and the terminator carries the same run of `#`.
+                # Reading that backslash as an escape is what desynchronised brace depth for
+                # `#"photo\"#` -- the masker ran past the closing quote and blanked the rest of
+                # the line, the `{` on it included (T-465).
+                multiline = src[h:h+3] == '"""'
+                quotes = 3 if multiline else 1
+                term = '"' * quotes + '#' * hashes
+                j = src.find(term, h + quotes)
+                j = n if j < 0 else j + len(term)
+                if not multiline:
+                    nl = src.find('\n', h)
+                    if 0 <= nl < j:
+                        j = nl
+                wipe(i, j); i = j; continue
         if src[i] == '"':
             if src[i:i+3] == '"""':
                 j = src.find('"""', i + 3)
@@ -79,12 +104,25 @@ for dirpath, _, filenames in os.walk(os.path.join(root, 'CadenceTests')):
             depth_at.append(depth)
             if ch == '{': depth += 1
             elif ch == '}': depth -= 1
-        types = [(m.start(), m.group(1)) for m in TYPE.finditer(code) if depth_at[m.start()] == 0]
+        types = []
+        for m in TYPE.finditer(code):
+            if depth_at[m.start()] != 0:
+                continue
+            open_brace = code.find('{', m.end())
+            if open_brace < 0:
+                continue
+            close = len(code)
+            for k in range(open_brace + 1, len(code)):
+                # depth_at[k] is the depth *before* code[k], so the brace closing this body is the
+                # first '}' seen back at depth 1.
+                if code[k] == '}' and depth_at[k] == 1:
+                    close = k
+                    break
+            types.append((open_brace, close, m.group(1)))
         for m in TEST.finditer(code):
             suite = None
-            for loc, name in types:
-                if loc < m.start(): suite = name
-                else: break
+            for open_brace, close, name in types:
+                if open_brace < m.start() < close: suite = name
             rows.append((suite or '<file scope>', m.group(1), filename))
 
 rows = [r for r in rows if not needle or needle in r[1]]

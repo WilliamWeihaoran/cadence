@@ -21,6 +21,25 @@ struct MarkdownEditor: View {
     /// Templates offered inside the `/` command menu, alongside the built-in commands. One of the
     /// three routes to a template now that they no longer take a row above the note.
     var slashTemplates: [NoteTemplate] = []
+    /// Whether this host may mint `MarkdownImageAsset` rows from the toolbar's photo button, the
+    /// `/image` slash command, a paste, or a drop.
+    ///
+    /// **T-442, and the same door `iOSMarkdownEditingSurface.allowsImageInsertion` closes.** Every
+    /// image path here writes a `cadence-image://` token into `text` and a row into the store; the
+    /// row survives only while `CadenceMarkdownSourceInventory` can still find that token in some
+    /// *stored* field. A host binding this editor to a `Note`, a `Document` or `AppTask.notes` is
+    /// fine — those are in the inventory. A host binding it to the note-template body is not: that
+    /// text is a JSON string in `UserDefaults` under `NoteTemplateLibrary.storageKey`, so the token
+    /// is somewhere no `ModelContext` fetch can look and the next note delete or list cascade
+    /// sweeps the asset. That is a *deletion* of `.externalStorage` bytes, not a leak, which is why
+    /// the door closes rather than the scan widening.
+    ///
+    /// **One flag reaches all four doors here, where iOS needed three guards.** The panel, the
+    /// paste and the drop all funnel through `onCreateMarkdownImages` — which is `createAssets`
+    /// below — and `CadenceTextView.insertMarkdownImages` no-ops on an empty asset list, so a
+    /// refused paste falls through to `super.paste(_:)` as ordinary text. The toolbar button and
+    /// the `/` entry are removed rather than offered and ignored.
+    var allowsImageInsertion = true
     var referenceNotes: [Note] = []
     var referenceTasks: [AppTask] = []
     var onOpenNoteReference: (UUID?, String) -> Void = { _, _ in }
@@ -82,6 +101,19 @@ struct MarkdownEditor: View {
         Dictionary(uniqueKeysWithValues: referenceTasks.map { ($0.id, MarkdownTaskEmbedRenderInfo.task($0)) })
     }
 
+    /// `nil` when this host refuses images, which is how the toolbar drops the photo button rather
+    /// than drawing one that declines the click.
+    private var chooseImagesAction: (() -> Void)? {
+        allowsImageInsertion ? { chooseImages() } : nil
+    }
+
+    /// The `/` menu without `/image` when images are refused, rather than with an entry whose
+    /// follow-up does nothing.
+    private var availableSlashCommands: [MarkdownSlashCommand] {
+        let all = MarkdownSlashCommand.all + MarkdownSlashCommand.templateCommands(for: slashTemplates)
+        return allowsImageInsertion ? all : MarkdownSlashCommand.refusingImageInsertion(all)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if showsToolbar {
@@ -89,7 +121,7 @@ struct MarkdownEditor: View {
                     textView: textView,
                     noteSuggestions: noteSuggestions,
                     taskSuggestions: taskSuggestions,
-                    onChooseImages: chooseImages,
+                    onChooseImages: chooseImagesAction,
                     accessory: toolbarAccessory
                 )
                 .zIndex(10)
@@ -97,7 +129,7 @@ struct MarkdownEditor: View {
 
             MarkdownEditorView(
                 text: $text,
-                slashCommands: MarkdownSlashCommand.all + MarkdownSlashCommand.templateCommands(for: slashTemplates),
+                slashCommands: availableSlashCommands,
                 imageAssets: imageAssets,
                 onCreateImages: createAssets,
                 onResizeImage: resizeImage,
@@ -125,6 +157,7 @@ struct MarkdownEditor: View {
     }
 
     private func createAssets(images: [NSImage], urls: [URL]) -> [MarkdownImageAsset] {
+        guard allowsImageInsertion else { return [] }
         var assets = MarkdownImageAssetService.createAssets(fromFileURLs: urls, in: modelContext)
         assets.append(contentsOf: images.compactMap {
             MarkdownImageAssetService.createAsset(from: $0, in: modelContext)
@@ -139,6 +172,7 @@ struct MarkdownEditor: View {
     }
 
     private func chooseImages() {
+        guard allowsImageInsertion else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = true
@@ -193,7 +227,10 @@ private struct MarkdownEditorToolbar: View {
     let textView: CadenceTextView?
     let noteSuggestions: [MarkdownReferenceSuggestion]
     let taskSuggestions: [MarkdownReferenceSuggestion]
-    let onChooseImages: () -> Void
+    /// `nil` at a host that refuses images. Dropped rather than disabled: a button drawn and then
+    /// declining the click advertises a capability the row does not have — the same rule
+    /// `iOSMarkdownFormatToolbar` follows.
+    let onChooseImages: (() -> Void)?
     let accessory: AnyView?
 
     var body: some View {
@@ -262,8 +299,10 @@ private struct MarkdownEditorToolbar: View {
                     MarkdownToolbarButton(systemName: "minus", help: "Divider") {
                         textView?.performMarkdownFormatCommand(.divider)
                     }
-                    MarkdownToolbarButton(systemName: "photo", help: "Image") {
-                        onChooseImages()
+                    if let onChooseImages {
+                        MarkdownToolbarButton(systemName: "photo", help: "Image") {
+                            onChooseImages()
+                        }
                     }
                 }
                 .padding(.horizontal, 10)

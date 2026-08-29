@@ -329,32 +329,41 @@ struct ListEditorCheckRow: View {
 
 // MARK: - Apple Calendar row
 
-/// **T-441.** The row asks `CadenceCalendarLinkRowState` what the link is, rather than looking one
-/// title up in the pickable calendars and calling everything it misses "None".
+/// **T-441.** The row asks `CadenceCalendarLink` what the link is, rather than looking one title up
+/// in the pickable calendars and calling everything it misses "None".
 ///
 /// It used to render `selectedTitle ?? "None"` over `calendars` alone — which is
 /// `CalendarManager.availableCalendars`, the visible subset — so a link to a calendar the user had
 /// merely hidden from Cadence was indistinguishable from no link at all, and so was a link whose
 /// calendar Apple Calendar had deleted. See that type for why the two lists are both parameters.
+///
+/// **T-464.** The value and the menu are now one decision instead of two. T-441 fixed the value and
+/// left the popover offering `calendars`, so the row could say "Team (Hidden)" over a menu with no
+/// Team in it: the user could read the state and could not act on it, and the only reachable move
+/// was "None" — the overwrite T-441 exists to prevent, performed by the user instead of by the
+/// code. Both halves now come off one `CadenceCalendarLink`, which is also what stops the two from
+/// forming separate opinions about which calendars are hidden.
 struct ListEditorCalendarRow: View {
-    /// The calendars the picker offers: visible, and the same list every other calendar affordance
-    /// in Settings shows.
+    /// The calendars Cadence is showing — `CalendarManager.availableCalendars`, the same visible
+    /// subset every other calendar affordance in Settings offers.
     let calendars: [EKCalendar]
-    /// Every calendar EventKit has, hidden ones included. Only the row's *value* reads this — the
-    /// picker deliberately keeps offering the visible set, because linking to a calendar Cadence is
-    /// not showing is a choice to make in calendar settings rather than by accident from here.
+    /// Every calendar EventKit has, hidden ones included. The row's value needs it to tell hidden
+    /// from missing, and the picker's offer needs it to hand back the hidden calendar already
+    /// linked. Feeding this the visible subset is the T-441 bug.
     let allCalendars: [EKCalendar]
     @Binding var selectedID: String
 
     @State private var showPicker = false
 
-    private var linkState: CadenceCalendarLinkRowState {
-        CadenceCalendarLinkRowState.forLink(
+    private var link: CadenceCalendarLink {
+        CadenceCalendarLink(
             linkedCalendarID: selectedID,
             allCalendars: allCalendars,
             visibleCalendars: calendars
         )
     }
+
+    private var linkState: CadenceCalendarLinkRowState { link.rowState }
 
     var body: some View {
         TaskInspectorFieldButtonRow(
@@ -368,8 +377,9 @@ struct ListEditorCalendarRow: View {
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
             ScrollView {
                 CadenceCalendarPickerList(
-                    calendars: calendars,
+                    calendars: link.pickableCalendars(from: allCalendars),
                     selectedID: $selectedID,
+                    hiddenCalendarIDs: link.hiddenPickableCalendarIDs,
                     onPick: { showPicker = false }
                 )
             }

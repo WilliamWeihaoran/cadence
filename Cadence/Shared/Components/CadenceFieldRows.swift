@@ -174,9 +174,21 @@ struct CadenceRowDivider: View {
 /// radius 7 with 8pt of padding. A modifier is what lets the titled field and the bare field be one
 /// rectangle rather than two that agree by hand.
 struct CadenceSettingsWell: ViewModifier {
+    /// Whether the well supplies the 12pt of leading air itself.
+    ///
+    /// **`false` is for content that already has a text inset, not for a tighter well (T-442).**
+    /// The note-template body is a `MarkdownEditor`, which is an `NSScrollView` drawing its own
+    /// background edge to edge and insetting its text by `MarkdownEditorMetrics.textInset`. Inside
+    /// the padded well that reads as a hard-edged rectangle floating in a 12pt gutter of
+    /// `surfaceElevated`, with the format toolbar's hairline stopping short of the border on both
+    /// sides. Every other property of the well — the row-height floor, the surface, the radius, the
+    /// `strokeBorder` — is the same rectangle, which is why this is a parameter rather than a
+    /// second well.
+    var insetsContent = true
+
     func body(content: Content) -> some View {
         content
-            .padding(.horizontal, 12)
+            .padding(.horizontal, insetsContent ? 12 : 0)
             .frame(minHeight: CadenceSettingsRowMetrics.rowHeight)
             .background(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
@@ -189,8 +201,8 @@ struct CadenceSettingsWell: ViewModifier {
 
 extension View {
     /// Draws this control inside the shared settings inset well. See `CadenceSettingsWell`.
-    func cadenceSettingsWell() -> some View {
-        modifier(CadenceSettingsWell())
+    func cadenceSettingsWell(insetsContent: Bool = true) -> some View {
+        modifier(CadenceSettingsWell(insetsContent: insetsContent))
     }
 }
 
@@ -292,10 +304,14 @@ struct CadenceFieldRow<Content: View>: View {
 /// spellings, each with its own radius and its own idea of the label's colour.
 struct CadenceSettingsField<Content: View>: View {
     let title: String
+    /// Forwarded to `CadenceSettingsWell`; see the note there. Defaulted, so the eleven typed-value
+    /// fields are unchanged and only a self-insetting editor has to say so.
+    var insetsContent = true
     @ViewBuilder let content: Content
 
-    init(title: String, @ViewBuilder content: () -> Content) {
+    init(title: String, insetsContent: Bool = true, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.insetsContent = insetsContent
         self.content = content()
     }
 
@@ -308,7 +324,7 @@ struct CadenceSettingsField<Content: View>: View {
                 .textFieldStyle(.plain)
                 .foregroundStyle(Theme.text)
                 .tint(Theme.blue)
-                .cadenceSettingsWell()
+                .cadenceSettingsWell(insetsContent: insetsContent)
         }
     }
 }

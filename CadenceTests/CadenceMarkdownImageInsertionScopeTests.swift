@@ -47,8 +47,30 @@ struct CadenceMarkdownImageInsertionScopeTests {
         #expect(code.contains("let chooseImagesAction: (() -> Void)? = allowsImageInsertion ? { chooseImages() } : nil"))
         #expect(code.contains("chooseImages: chooseImagesAction,"))
 
-        // The slash command is filtered out of the strip rather than offered and ignored.
-        #expect(code.contains("if !allowsImageInsertion, case .chooseImage = command.action { return false }"))
+        // The slash command is filtered out of the strip rather than offered and ignored. The
+        // predicate is `MarkdownSlashCommand.refusingImageInsertion` since T-442, because macOS's
+        // `/` menu had to make the identical refusal and open-coding `case .chooseImage` a second
+        // time is the shape T-374 exists to stop. What is pinned here is that this strip *reads*
+        // it; `theSlashMenuDropsTheImageCommandThroughOneSharedPredicate` pins what it returns.
+        #expect(
+            code.contains("MarkdownSlashCommand.refusingImageInsertion(MarkdownSlashCommand.all)"),
+            "the iOS slash strip no longer reads the shared refusal"
+        )
+        // Scoped to the one function, not the file: `applySlashCommand` legitimately switches on
+        // `.chooseImage` to run the follow-up, and a file-wide count would read that as the strip
+        // still filtering for itself. Scoping a scan to a function body is the standing rule here.
+        let choices = try #require(
+            CadenceSourceScan.functionBody(named: "slashCommandChoices", in: code),
+            "slashCommandChoices() could not be read; the assertion below would be measuring nothing"
+        )
+        #expect(
+            choices.contains("case .chooseImage") == false,
+            "the iOS strip re-tests the command's action itself instead of reading the shared predicate"
+        )
+        #expect(
+            choices.contains("refusingImageInsertion"),
+            "the shared refusal is read somewhere else in the file, not by the strip"
+        )
 
         // The picker presenter, which `/image` reaches directly rather than through the toolbar.
         let picker = try #require(
@@ -138,6 +160,166 @@ struct CadenceMarkdownImageInsertionScopeTests {
         #expect(restored.contains { $0.id == "checklist" && $0.body.contains("cadence-image") })
     }
 
+    // MARK: - T-442: the same door on macOS
+
+    /// **What the `/` refusal actually returns, as a value.**
+    ///
+    /// Everything else in this suite about slash commands is a source scan, because both call
+    /// sites are inside SwiftUI views (one of them in a file this target does not compile). The
+    /// predicate itself is shared, `nonisolated` and pure, so this half needs no scanning at all —
+    /// and it is the half that would silently stop working if `refusingImageInsertion` were ever
+    /// "simplified" into something that drops the wrong entry or reorders the menu.
+    @Test func theSlashMenuDropsTheImageCommandThroughOneSharedPredicate() {
+        let all = MarkdownSlashCommand.all
+        let isImage: (MarkdownSlashCommand) -> Bool = { command in
+            if case .chooseImage = command.action { return true }
+            return false
+        }
+
+        // Non-vacuity: there is exactly one image command to drop, so the counts below are not
+        // agreeing about an empty set.
+        #expect(all.filter(isImage).count == 1)
+
+        let refused = MarkdownSlashCommand.refusingImageInsertion(all)
+        #expect(refused.contains(where: isImage) == false, "the image command survived the refusal")
+        // Order-preserving and nothing else dropped — a `filter` that took the wrong side, or a
+        // `Set` round trip, passes the two assertions above and fails this one.
+        #expect(refused.map(\.id) == all.filter { !isImage($0) }.map(\.id))
+
+        // macOS appends its template commands *before* filtering, so the predicate has to be
+        // stated over an argument rather than over `all`.
+        let withTemplates = all + MarkdownSlashCommand.templateCommands(
+            for: [NoteTemplate(id: "probe", title: "Probe", subtitle: "Probe", body: "# Probe")]
+        )
+        let refusedWithTemplates = MarkdownSlashCommand.refusingImageInsertion(withTemplates)
+        #expect(refusedWithTemplates.map(\.id).contains("probe"))
+        #expect(refusedWithTemplates.count == withTemplates.count - 1)
+    }
+
+    /// **macOS has the same four doors, and one flag reaches all of them.**
+    ///
+    /// The panel, the paste and the drop all funnel through `onCreateMarkdownImages` — which is
+    /// `MarkdownEditor.createAssets` — where iOS needed a separate guard per path. So the guard
+    /// count here is smaller than iOS's on purpose, and the relation at the end is what says the
+    /// funnel is real rather than assumed.
+    ///
+    /// This file *is* compiled by this target, unlike the iOS ones above, but `MarkdownEditor`'s
+    /// image plumbing is `private` inside a SwiftUI view with no reachable seam, so the wiring is
+    /// still read as source. What the funnel does once it is handed nothing is behaviour, and it is
+    /// already pinned: `MarkdownImagePasteTests.aHostThatCreatesNoAssetDeclinesRatherThanSwallowingThePaste`
+    /// is the test that a refused paste leaves the text alone and falls through to AppKit.
+    @Test func everyImageDoorInTheMacOSEditorIsBehindTheFlag() throws {
+        let code = try strippedSource("Cadence/macOS/Editor/MarkdownEditorView.swift")
+
+        // Spelled exactly as iOS spells it, which is what lets the host sweep below count both
+        // platforms with one needle.
+        #expect(code.contains("var allowsImageInsertion = true"), "the flag is gone or renamed")
+
+        // Door 1 — the toolbar's photo button, removed rather than disabled.
+        #expect(code.contains("allowsImageInsertion ? { chooseImages() } : nil"))
+        #expect(code.contains("onChooseImages: chooseImagesAction,"))
+        #expect(code.contains("let onChooseImages: (() -> Void)?"))
+        #expect(code.contains("if let onChooseImages {"))
+        #expect(
+            CadenceSourceScan.matchCount("\\.disabled\\(onChooseImages", in: code) == 0,
+            "the image button is dimmed rather than dropped"
+        )
+
+        // Door 2 — the `/image` entry, dropped from the menu the editor is handed.
+        #expect(code.contains("MarkdownSlashCommand.refusingImageInsertion(all)"))
+        #expect(code.contains("slashCommands: availableSlashCommands,"))
+
+        // Door 3 — the open panel, which `/image` also reaches through the coordinator's follow-up.
+        let picker = try #require(
+            CadenceSourceScan.functionBody(named: "chooseImages", in: code),
+            "chooseImages() could not be read; the assertion below would be measuring nothing"
+        )
+        #expect(
+            picker.contains("guard allowsImageInsertion else { return }"),
+            "chooseImages() presents the panel without consulting the flag"
+        )
+
+        // Door 4 — paste and drop, which are the same door here.
+        #expect(code.contains("onCreateImages: createAssets,"))
+        let creator = try #require(
+            CadenceSourceScan.functionBody(named: "createAssets", in: code),
+            "createAssets() could not be read; the assertion below would be measuring nothing"
+        )
+        #expect(
+            creator.contains("guard allowsImageInsertion else { return [] }"),
+            "a pasted or dropped image mints an asset without consulting the flag"
+        )
+
+        // The relation behind "one funnel": every asset this file mints is minted inside
+        // `createAssets`, so a creator added anywhere else in the view is a fifth door and fails
+        // here rather than shipping unguarded.
+        let mintedInFile = CadenceSourceScan.matchCount("MarkdownImageAssetService\\.createAssets?\\(", in: code)
+        let mintedInCreator = CadenceSourceScan.matchCount("MarkdownImageAssetService\\.createAssets?\\(", in: creator)
+        #expect(mintedInCreator > 0, "the creator mints nothing; this scan is measuring nothing")
+        #expect(
+            mintedInFile == mintedInCreator,
+            "the editor mints assets outside createAssets; check that path is behind the flag too"
+        )
+    }
+
+    /// **The macOS note-template editor: the shared markdown surface, with the door shut.**
+    ///
+    /// It was a bare `TextEditor` in 12pt monospace while iOS bound the same `UserDefaults` string
+    /// to a full markdown editor — an unrecorded parity gap, and the reason T-421's fix was
+    /// iOS-only: macOS had no image door to close because it had no image path at all. Closing the
+    /// gap opens the door, so the two halves ship together.
+    @Test func theMacOSNoteTemplateEditorIsTheSharedSurfaceAndRefusesImages() throws {
+        let code = try strippedSource("Cadence/macOS/Views/SettingsTemplatesSection.swift")
+
+        #expect(code.contains("MarkdownEditor("), "the macOS template body is not the shared editor")
+        #expect(code.contains("allowsImageInsertion: false"), "the macOS template body accepts images")
+        #expect(
+            CadenceSourceScan.matchCount("TextEditor\\(", in: code) == 0,
+            "the plain TextEditor is back on the template body"
+        )
+
+        // The shared surface, not a port of the iOS one — that view's toolbar, `[[`/`/` strips and
+        // photos picker are phone chrome, and `Cadence/iOS/` does not compile on this platform
+        // anyway.
+        #expect(
+            CadenceSourceScan.matchCount("iOSMarkdownEditingSurface", in: code) == 0,
+            "the macOS pane names the iOS editor"
+        )
+
+        // The editor is an `NSScrollView` that insets its own text and draws its own background
+        // edge to edge, so it opts out of the shared well's 12pt gutter rather than being wrapped
+        // in a second, unpadded rectangle beside it.
+        #expect(
+            code.contains("insetsContent: false"),
+            "the template body sits in the padded well; the editor floats in a 12pt gutter"
+        )
+
+        // A stencil that names one particular note is not reusable, so no reference lists and no
+        // nested templates. These are absences of arguments, which is exactly the kind of claim
+        // that rots quietly — hence stated rather than assumed.
+        #expect(CadenceSourceScan.matchCount("referenceNotes:", in: code) == 0)
+        #expect(CadenceSourceScan.matchCount("referenceTasks:", in: code) == 0)
+        #expect(CadenceSourceScan.matchCount("slashTemplates:", in: code) == 0)
+    }
+
+    /// The premise both template refusals rest on, from the inventory's side.
+    ///
+    /// The brief for T-442 asked whether the template body is one of the fields
+    /// `CadenceMarkdownSourceInventory` enumerates. **It is not, and cannot be:** every case is a
+    /// stored property on a `CadenceSchema` model reached by a `ModelContext` fetch, and a template
+    /// body is a JSON string in `UserDefaults`. The file says so in prose; this says it in a form
+    /// that fails if a case is ever added for it without the sweep being taught to read defaults.
+    @Test func noInventorySourceIsTheTemplateBody() {
+        let entities = Set(CadenceMarkdownSourceInventory.Source.allCases.map(\.entityName))
+        #expect(entities.count == CadenceMarkdownSourceInventory.Source.allCases.count, "two cases name one entity")
+        #expect(entities.contains { $0.localizedCaseInsensitiveContains("template") } == false)
+
+        // Non-vacuity, and the shape of the thing that is in there: `Note.content` is a stored
+        // property on a model in the schema.
+        #expect(entities.contains("Note"))
+        #expect(CadenceMarkdownSourceInventory.Source.noteContent.propertyName == "content")
+    }
+
     // MARK: - T-422: the Apple Calendar note
 
     /// The event editor is always an event, so its Apple Calendar note is always `EKEvent.notes`
@@ -194,11 +376,18 @@ struct CadenceMarkdownImageInsertionScopeTests {
         let outOfStore = [
             "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift",
-            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift"
+            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
+            // T-442. The same template body, edited on the other platform — the macOS host
+            // arrived when its `TextEditor` became a `MarkdownEditor` and inherited the door.
+            "Cadence/macOS/Views/SettingsTemplatesSection.swift"
         ]
         for path in outOfStore {
             let code = try strippedSource(path)
+            // Two editors, one flag: iOS hosts draw `iOSMarkdownEditingSurface`, the macOS host
+            // draws `MarkdownEditor`, and the property is spelled identically on both so the
+            // relation below is one count rather than a per-platform branch.
             let editors = CadenceSourceScan.matchCount("iOSMarkdownEditingSurface\\(", in: code)
+                + CadenceSourceScan.matchCount("MarkdownEditor\\(", in: code)
             let flagged = CadenceSourceScan.matchCount("allowsImageInsertion:", in: code)
 
             #expect(editors > 0, "\(path) presents no editor at all; this scan is measuring nothing")
@@ -247,6 +436,8 @@ struct CadenceMarkdownImageInsertionScopeTests {
             "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift",
             "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
+            "Cadence/macOS/Editor/MarkdownEditorView.swift",
+            "Cadence/macOS/Views/SettingsTemplatesSection.swift",
             "Cadence/Services/CadenceMarkdownSourceInventory.swift"
         ] {
             let raw = try CadenceSourceScan.sourceFile(path)

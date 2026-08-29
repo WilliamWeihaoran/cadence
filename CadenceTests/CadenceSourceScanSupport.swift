@@ -217,6 +217,50 @@ extension CadenceSourceScan {
         while index < count {
             let character = characters[index]
 
+            // A *raw* string literal, before the ordinary one: inside `#"..."#` a backslash is
+            // content, not an escape, and the terminator carries the same run of `#`.
+            //
+            // Reading that backslash as an escape is not a cosmetic miss. On `#"photo\"#` the
+            // ordinary branch below skipped the closing quote, ran to the end of the line, and
+            // blanked live code with it — including the `{` that opened the enclosing `for` body.
+            // Brace depth for that whole file then came out one short, which is invisible to a
+            // scan that only counts needles and fatal to one that asks *which suite encloses this
+            // test*. One file in `CadenceTests` did exactly that, and it turned
+            // `noTestInTheTargetIsDeclaredOutsideEverySuite` into eleven false accusations before
+            // this branch existed (T-465).
+            if character == "#" {
+                var hashEnd = index
+                while hashEnd < count, characters[hashEnd] == "#" { hashEnd += 1 }
+                let hashes = hashEnd - index
+                if hashEnd < count, characters[hashEnd] == "\"" {
+                    let multiline = hashEnd + 2 < count
+                        && characters[hashEnd + 1] == "\""
+                        && characters[hashEnd + 2] == "\""
+                    let quotes = multiline ? 3 : 1
+                    var end = hashEnd + quotes
+                    var close = count
+                    while end < count {
+                        if characters[end] == "\"",
+                           end + quotes + hashes <= count,
+                           (end..<(end + quotes)).allSatisfy({ characters[$0] == "\"" }),
+                           ((end + quotes)..<(end + quotes + hashes)).allSatisfy({ characters[$0] == "#" }) {
+                            close = end + quotes + hashes
+                            break
+                        }
+                        // A single-line raw string cannot span a newline; stopping here keeps an
+                        // unterminated literal from blanking the rest of the file.
+                        if !multiline, characters[end].isNewline {
+                            close = end
+                            break
+                        }
+                        end += 1
+                    }
+                    blank(index..<close)
+                    index = close
+                    continue
+                }
+            }
+
             if character == "\"" {
                 if index + 2 < count, characters[index + 1] == "\"", characters[index + 2] == "\"" {
                     var end = index + 3

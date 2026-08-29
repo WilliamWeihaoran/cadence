@@ -146,10 +146,11 @@ struct SettingsTemplatesSection: View {
                 // `CadenceSettingsField` on this platform, after `SettingsAISection.settingsField`
                 // and `SettingsTagsSection`'s two. It is the shared component now (T-286).
                 //
-                // The three fields keep their own fonts: the shared well sets 14pt medium as a
+                // The two text fields keep their own fonts: the shared well sets 14pt medium as a
                 // default and each `content` overrides it closer to the leaf, which is the point of
                 // the well being chrome rather than a text style. The body editor keeps its 280pt
-                // floor for the same reason — `rowHeight` is a minimum, not a height.
+                // floor for the same reason — `rowHeight` is a minimum, not a height — and opts out
+                // of the well's 12pt gutter, because an `NSScrollView` insets its own text.
                 VStack(alignment: .leading, spacing: 8) {
                     CadenceSettingsField(title: "Title") {
                         TextField("Template title", text: titleBinding)
@@ -163,12 +164,30 @@ struct SettingsTemplatesSection: View {
                             .foregroundStyle(Theme.muted)
                     }
 
-                    CadenceSettingsField(title: "Body") {
-                        TextEditor(text: bodyBinding(for: selectedTemplate))
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(Theme.text)
-                            .scrollContentBackground(.hidden)
-                            .frame(minHeight: 280)
+                    // **T-442 — the body is markdown, and macOS now edits it as markdown.**
+                    // This was a bare `TextEditor` in 12pt monospace while iOS bound the same
+                    // `UserDefaults` string to `iOSMarkdownEditingSurface`: no live styling, no
+                    // format row, no `/` menu. The parity fix is the *macOS* shared surface —
+                    // `MarkdownEditor`, which five note hosts already draw — not a port of the iOS
+                    // view, whose toolbar, `[[`/`/` strips and photos picker are phone chrome.
+                    //
+                    // `allowsImageInsertion: false` for the reason iOS refuses it here: a template
+                    // body is a JSON string under `NoteTemplateLibrary.storageKey`, so an image
+                    // pasted into it is referenced by nothing `CadenceMarkdownSourceInventory` can
+                    // read and the next sweep deletes the asset.
+                    //
+                    // No `referenceNotes`/`referenceTasks`: a stencil that names one particular
+                    // note is not reusable, and iOS passes none either. `slashTemplates` stays
+                    // empty for the same reason — a template inserting a template.
+                    CadenceSettingsField(title: "Body", insetsContent: false) {
+                        MarkdownEditor(
+                            text: bodyBinding(for: selectedTemplate),
+                            allowsImageInsertion: false
+                        )
+                        // `MarkdownEditor` has no intrinsic content size — it fills exactly what it
+                        // is given — so this is the editor's height, as the 280pt floor under the
+                        // `TextEditor` was. The toolbar takes 44 of it.
+                        .frame(minHeight: 280)
                     }
                 }
             }

@@ -18,7 +18,11 @@ per-agent boilerplate.
   attributable to your tests rather than collateral damage.
 - **Tests go in the right `struct`.** `scripts/test-suite-index.sh <name>` tells you which suite
   actually declares a test, so scope a run to what the source says rather than to where you meant to
-  type it. Name uniqueness across suites is enforced by
+  type it. It attributes by suite **extent**, so a test appended past the last suite's closing brace
+  reads as `<file scope>` — the bucket that should always be empty, and is now held empty by
+  `CadenceTestTargetHygieneTests.noTestInTheTargetIsDeclaredOutsideEverySuite`. The residual case
+  it cannot see is a test declared inside the wrong *sibling* suite of a multi-suite file; that one
+  is still a read, not a guard (T-465). Name uniqueness across suites is enforced by
   `CadenceTestTargetHygieneTests.everyTestFunctionNameInTheTargetIsUniqueAcrossSuites`, so
   `grep -c '✔ Test <name>()' == 1` is a property of the target now, not a manual check.
 - **Any source scan needs a non-vacuity assertion** that it actually read the files it claims to,

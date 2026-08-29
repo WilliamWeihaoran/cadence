@@ -49,10 +49,18 @@ nonisolated enum CadenceCalendarLinkRowState: Equatable, Sendable {
         switch self {
         case .unlinked: Self.unlinkedText
         case .linked(let title): title
-        case .hidden(let title): "\(title) (Hidden)"
+        case .hidden(let title): Self.hiddenTitle(title)
         case .missing: CadenceCalendarLinkHealth.missingLinkTitle
         }
     }
+
+    /// "This calendar exists, and Cadence is not showing it", spelled once.
+    ///
+    /// **T-464.** The row and the picker both have to say this now — the row as its value, the
+    /// picker as the label on the one hidden calendar it offers — and two surfaces wording the same
+    /// state separately is how the pair drifts. `CadenceCalendarLinkHealth.missingLinkTitle` pins
+    /// the *missing* wording for the same reason; this is the hidden half of it.
+    static func hiddenTitle(_ title: String) -> String { "\(title) (Hidden)" }
 
     /// Whether the row draws its value as a set field.
     ///
@@ -110,5 +118,99 @@ nonisolated struct CadenceCalendarChoice: Equatable, Sendable {
     init(id: String, title: String) {
         self.id = id
         self.title = title
+    }
+}
+
+/// One list's calendar link as the row *and* the picker see it, from one set of inputs.
+///
+/// **T-464.** [[T-441]] taught the row to tell `.hidden` from `.missing`, and left the picker
+/// offering the visible subset alone — deliberately, on the reasoning that linking to a calendar
+/// Cadence is not showing should be a decision made in calendar settings rather than fallen into
+/// from a list editor. That reasoning is still right for calendars the user has *never* linked. It
+/// is wrong for the one already stored: the row says "Team (Hidden)", and the picker it opens has
+/// no Team in it. The user can read the state and cannot act on it — cannot re-pick the same
+/// calendar, cannot even confirm it, and the only exit is "None", which is the silent overwrite
+/// T-441 exists to prevent, now performed by hand.
+///
+/// So the offer is *visible, plus the linked one*. Exactly one hidden calendar can ever appear, and
+/// only because it is already stored — no new hidden link can be made from here, which keeps the
+/// T-441 decision intact where it applies.
+///
+/// The type exists so the two surfaces cannot disagree about which calendars are hidden. Before
+/// this, hiddenness was the row's private subtraction of two arrays and the picker knew nothing
+/// about it; now both read `rowState` and `pickableCalendars` off the same three stored values, and
+/// the picker is *told* which ids are hidden rather than deciding again.
+nonisolated struct CadenceCalendarLink: Equatable, Sendable {
+    /// What the list stores. Empty means never linked.
+    let linkedCalendarID: String
+    /// Every calendar EventKit has, **including** the ones hidden from Cadence.
+    let allCalendars: [CadenceCalendarChoice]
+    /// The calendars Cadence is currently showing.
+    let visibleCalendarIDs: Set<String>
+
+    init(
+        linkedCalendarID: String,
+        allCalendars: [CadenceCalendarChoice],
+        visibleCalendarIDs: Set<String>
+    ) {
+        self.linkedCalendarID = linkedCalendarID
+        self.allCalendars = allCalendars
+        self.visibleCalendarIDs = visibleCalendarIDs
+    }
+
+    /// The EventKit-shaped call, for the row. Same reason the row state has one: an `EKCalendar`'s
+    /// `calendarIdentifier` is read-only, so the decision is untestable in its EventKit shape.
+    init(linkedCalendarID: String, allCalendars: [EKCalendar], visibleCalendars: [EKCalendar]) {
+        self.init(
+            linkedCalendarID: linkedCalendarID,
+            allCalendars: allCalendars.map {
+                CadenceCalendarChoice(id: $0.calendarIdentifier, title: $0.title)
+            },
+            visibleCalendarIDs: Set(visibleCalendars.map(\.calendarIdentifier))
+        )
+    }
+
+    /// What the field row shows.
+    var rowState: CadenceCalendarLinkRowState {
+        CadenceCalendarLinkRowState.forLink(
+            linkedCalendarID: linkedCalendarID,
+            allCalendars: allCalendars,
+            visibleCalendarIDs: visibleCalendarIDs
+        )
+    }
+
+    /// Whether this identifier names a calendar Cadence is not showing.
+    ///
+    /// The single question both surfaces ask. A `.missing` identifier answers `true` here too and
+    /// that is harmless: it names no calendar, so it reaches no picker row and no label.
+    func isHidden(_ calendarID: String) -> Bool { !visibleCalendarIDs.contains(calendarID) }
+
+    /// The calendars the picker offers, in `allCalendars` order: everything visible, plus the
+    /// linked one when it is hidden.
+    ///
+    /// Nothing is appended for a `.missing` link — there is no calendar to offer — so a dead link
+    /// is still repaired by picking a live calendar, which is what T-400 wanted.
+    var pickableCalendars: [CadenceCalendarChoice] {
+        allCalendars.filter { choice in
+            visibleCalendarIDs.contains(choice.id)
+                || (!linkedCalendarID.isEmpty && choice.id == linkedCalendarID)
+        }
+    }
+
+    /// The same offer as `[EKCalendar]`, which is what the picker draws: it needs each calendar's
+    /// source for grouping and its `cgColor` for the dot, and neither survives the value type.
+    func pickableCalendars(from calendars: [EKCalendar]) -> [EKCalendar] {
+        let offered = Set(pickableCalendars.map(\.id))
+        return calendars.filter { offered.contains($0.calendarIdentifier) }
+    }
+
+    /// The identifiers the picker has to label as hidden — at most one, by construction.
+    var hiddenPickableCalendarIDs: Set<String> {
+        Set(pickableCalendars.map(\.id).filter(isHidden))
+    }
+
+    /// What a picker row is called. Reads the row's own spelling rather than a second one.
+    func pickerLabel(title: String, calendarID: String) -> String {
+        isHidden(calendarID) ? CadenceCalendarLinkRowState.hiddenTitle(title) : title
     }
 }

@@ -151,6 +151,60 @@ struct CadenceTestTargetHygieneTests {
         )
     }
 
+    /// **T-463.** A `.swift` path that is a *directory* has to be reported, not skipped.
+    ///
+    /// `CadenceTests/CadenceCalendarLinkHealthTests.swift` was a directory containing a file of the
+    /// same name — a staging error, flattened in `193f257`. Nothing caught it while it was there:
+    /// the target's synchronized root group descends into directories, so the suite inside compiled
+    /// and ran, and every walk over the tree either threw on the read or, like
+    /// `cadenceRepoSwiftFiles(under:)`, skipped it quietly. The shape was legible to the file system
+    /// the whole time and nothing was asking.
+    ///
+    /// This asks. It is deliberately the *only* reader that fails on the shape: the walks stay
+    /// forgiving so a recurrence does not scramble every unrelated sweep into a mystery, and this
+    /// one names it.
+    @Test func noSwiftPathInTheRepositoryIsADirectory() throws {
+        let fileManager = FileManager.default
+
+        // The witnesses first, on a tree this test builds: a real file and a directory wearing the
+        // suffix. A detector that has stopped telling them apart passes over the repo trivially.
+        let fixtureRoot = fileManager.temporaryDirectory
+            .appendingPathComponent("cadence-swift-path-shape-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: fixtureRoot) }
+        try fileManager.createDirectory(
+            at: fixtureRoot.appendingPathComponent("Impostor.swift", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try "// a real source file\n".write(
+            to: fixtureRoot.appendingPathComponent("Honest.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+        #expect(cadenceDirectoryShapedSwiftPaths(under: fixtureRoot) == ["Impostor.swift"],
+                "the detector cannot tell a directory from a file, so the sweep below proves nothing")
+
+        let root = cadenceTestRepositoryRoot()
+        let sourceRoots = ["Cadence", "CadenceTests", "CadenceUITests", "CadenceWidgets", "CadenceMCPServer"]
+        var offenders: [String] = []
+        var walked = 0
+        for directory in sourceRoots {
+            let files = cadenceRepoSwiftFiles(under: directory)
+            #expect(!files.isEmpty, "the walk reached no Swift file under \(directory)")
+            walked += files.count
+            offenders += cadenceDirectoryShapedSwiftPaths(
+                under: root.appendingPathComponent(directory)
+            ).map { "\(directory)/\($0)" }
+        }
+        #expect(walked > 600, "the sweep saw only \(walked) Swift files, so it walked the wrong tree")
+        #expect(
+            offenders.isEmpty,
+            """
+            .swift paths that are directories, which compile by accident and break every walk:
+            \(offenders.sorted().joined(separator: "\n"))
+            """
+        )
+    }
+
     /// The parser above is itself an instrument, so it is built like one.
     ///
     /// The negative witness is the case that matters: a bare `func` with no `@Test` in front of it
@@ -204,6 +258,163 @@ struct CadenceTestTargetHygieneTests {
         #expect(code.count == raw.count)
     }
 
+    /// Suite attribution is brace arithmetic, so it is only as good as the masking underneath it.
+    /// A file whose braces do not balance after masking has an offset the parser cannot trust,
+    /// and it fails as *eleven stray tests* rather than as one broken file — which is the wrong
+    /// message pointed at the wrong place.
+    ///
+    /// `CadenceTests/MarkdownImageAssetServiceTests.swift` was that file: `#"photo\"#` inside a
+    /// `for` header made the masker eat the `{` after it. Asserted target-wide rather than for
+    /// that file, because the next raw string is the one nobody will remember to add here.
+    @Test func everyTestFileBalancesItsBracesAfterMaskingSoSuiteExtentsCanBeTrusted() throws {
+        let instrument = try CadenceScanInstrument(
+            "unbalanced braces after masking",
+            fires: "struct Suite { func a() { }",
+            andNotOn: "struct Suite { func a() { } }",
+            by: { source in
+                let code = CadenceSourceScan.codeOnly(source)
+                return code.filter { $0 == "{" }.count != code.filter { $0 == "}" }.count
+            }
+        )
+        let files = try cadenceTestFiles()
+        let offenders = try instrument.sweep(
+            files,
+            atLeast: 200,
+            including: "CadenceTests/MarkdownImageAssetServiceTests.swift",
+            read: cadenceTestSource
+        )
+        #expect(
+            offenders.isEmpty,
+            """
+            braces do not balance after masking, so every offset a scan computes in these files is \
+            wrong and suite attribution cannot be trusted: \(offenders)
+            """
+        )
+    }
+
+    /// The masking defect underneath the test above, stated on its own so the fix is pinned rather
+    /// than implied by a target that happens to be clean.
+    ///
+    /// Both raw strings here end in a backslash. Reading it as an escape skips the closing quote,
+    /// runs to the end of the line, and takes the `{` with it — so the discriminating assertion is
+    /// the brace count *after* the literals, not whether the literals were masked.
+    @Test func theMaskerReadsARawStringsTrailingBackslashAsContentRatherThanAnEscape() throws {
+        let source = ##"""
+        let labels = [#"photo\"#, #"a\"#]; if labels.isEmpty { print("x") }
+        """##
+        let code = CadenceSourceScan.codeOnly(source)
+
+        // Equal length, so every offset a scan computes still points where it did.
+        #expect(code.count == source.count)
+        #expect(code != source)
+        // The literals are masked...
+        #expect(code.contains("photo") == false)
+        #expect(code.contains("isEmpty"), "non-vacuity: the masker blanked code either side of it")
+        // ...and the code sharing their line survives. This is the assertion that was false.
+        #expect(code.filter { $0 == "{" }.count == 1)
+        #expect(code.filter { $0 == "}" }.count == 1)
+    }
+
+    /// **T-465, the arm of the wrong-`struct` family that *is* mechanical.**
+    ///
+    /// A `@Test` appended past the closing brace of the last suite in a file is a free function.
+    /// It compiles, it runs in a full pass, and it is invisible to
+    /// `-only-testing:CadenceTests/ThatSuite` — so every mutation against it reads as a survivor,
+    /// which is the exact failure T-161 shipped `scripts/test-suite-index.sh` to make visible.
+    ///
+    /// Worse than invisible: until this test was written, the parser below answered *wrongly* for
+    /// it. `types.last { $0.location < start }` is "the nearest type declared above", which for a
+    /// trailing test is the suite it just escaped — so the index built to answer "where did my
+    /// test actually land?" named the suite the author meant, for the one case where the author is
+    /// wrong. Attribution is by suite **extent** now, and a test outside every extent is
+    /// `<file scope>`.
+    ///
+    /// The target currently holds zero of these, so this is a hard guard with no allowlist. It
+    /// does **not** catch the residual case — a test declared inside the wrong *sibling* suite of a
+    /// multi-suite file — and nothing here claims to; see the T-465 note in `docs/TODO.md`.
+    ///
+    /// One known way to trip it falsely: `extension SomeSuite { @Test ... }` at file scope. The
+    /// type regex above reads declarations, not extensions, so such a test lands in `<file scope>`
+    /// while `-only-testing:CadenceTests/SomeSuite` reaches it perfectly well. The target has none
+    /// today, which is why the regex is left alone rather than widened on speculation — if one
+    /// lands, add `extension` there rather than allowlisting the file.
+    @Test func noTestInTheTargetIsDeclaredOutsideEverySuite() throws {
+        let instrument = try CadenceScanInstrument(
+            "@Test declared outside every suite",
+            fires: """
+            struct Suite {
+                @Test func theInsideOne() throws {}
+            }
+
+            @Test func theStrayOne() throws {}
+            """,
+            andNotOn: """
+            struct Suite {
+                @Test func theInsideOne() throws {}
+                @Test func theOtherInsideOne() throws {}
+            }
+            """,
+            by: { source in
+                cadenceTestDeclarations(in: source, file: "fixture")
+                    .contains { $0.suite == CadenceTestDeclaration.fileScope }
+            }
+        )
+        let files = try cadenceTestFiles()
+        let offenders = try instrument.sweep(
+            files,
+            atLeast: 200,
+            including: "CadenceTests/CadenceTestTargetHygieneTests.swift",
+            read: cadenceTestSource
+        )
+        #expect(
+            offenders.isEmpty,
+            """
+            these files declare a @Test outside every suite, so `-only-testing:` cannot reach it \
+            and a mutation against it reads as a survivor: \(offenders)
+            """
+        )
+    }
+
+    /// The attribution rule stated directly, because the instrument above only asks whether *some*
+    /// file-scope declaration exists — it would be satisfied by a parser that called everything
+    /// file scope.
+    ///
+    /// The gap between the second and third cases is the whole point: the same `@Test`, moved four
+    /// lines down past a `}`, stops belonging to the suite above it.
+    @Test func theDeclarationParserAttributesByExtentRatherThanByWhatIsAboveIt() throws {
+        let source = """
+        struct FirstSuite {
+            @Test func theFirstOne() throws {}
+        }
+
+        @Test func theStrandedOne() throws {}
+
+        struct SecondSuite {
+            @Test func theSecondOne() throws {}
+
+            private struct Fixture {
+                @Test func theNestedOne() throws {}
+            }
+        }
+        """
+        let declarations = cadenceTestDeclarations(in: source, file: "fixture")
+        #expect(declarations.count == 4, "parsed \(declarations.count) declarations")
+
+        func suite(of name: String) -> String? {
+            declarations.first { $0.name == name }?.suite
+        }
+        #expect(suite(of: "theFirstOne") == "FirstSuite")
+        #expect(suite(of: "theSecondOne") == "SecondSuite")
+        // A nested fixture type is not a suite: the test inside it still belongs to the top-level
+        // type, which is the rule the index has always documented.
+        #expect(suite(of: "theNestedOne") == "SecondSuite")
+        // The one this test exists for. "Nearest type above" answers `FirstSuite`.
+        #expect(
+            suite(of: "theStrandedOne") == CadenceTestDeclaration.fileScope,
+            "a test past its suite's closing brace was attributed to that suite"
+        )
+    }
+
     /// One never-true spelling, pinned by name because it has been written here before and the
     /// stripper's contract guarantees it can never fail.
     ///
@@ -239,6 +450,10 @@ struct CadenceTestTargetHygieneTests {
 // MARK: - Reading the test target
 
 struct CadenceTestDeclaration: Equatable {
+    /// The suite name given to a `@Test` that is inside no top-level type at all. Spelled once,
+    /// because `scripts/test-suite-index.sh` prints the same string and both are read by eye.
+    static let fileScope = "<file scope>"
+
     let name: String
     let suite: String
     let file: String
@@ -265,10 +480,32 @@ func cadenceTestFiles() throws -> [String] {
 
 /// Every `.swift` **file** under a repo-relative directory, as repo-relative paths.
 ///
-/// The `isDirectory` check is not defensive tidiness: `CadenceTests` really does contain a
-/// *directory* called `CadenceCalendarLinkHealthTests.swift`, with the suite of that name inside
-/// it. A walk that trusts the suffix hands that path to a reader, the read throws, and every sweep
-/// written over the walk fails for a reason that has nothing to do with what it was checking.
+/// The `isDirectory` check is not defensive tidiness. `CadenceTests` once contained a *directory*
+/// called `CadenceCalendarLinkHealthTests.swift` with the suite of that name inside it — flattened
+/// in `193f257`, and recorded as [[T-463]]. A walk that trusts the suffix hands such a path to a
+/// reader, the read throws, and every sweep written over the walk fails for a reason that has
+/// nothing to do with what it was checking. Skipping it here keeps the sweeps honest; the shape
+/// itself is reported by `noSwiftPathInTheRepositoryIsADirectory`, because a walk that quietly
+/// skips one is how the original went unnoticed for a whole session.
+/// Every `.swift` path under `root` that is really a **directory**, relative to `root`.
+///
+/// The inverse of the filter above, and the thing the filter must never be the only reader of: one
+/// walk skipping these silently is exactly how [[T-463]] survived.
+func cadenceDirectoryShapedSwiftPaths(under root: URL) -> [String] {
+    guard let enumerator = FileManager.default.enumerator(atPath: root.path) else { return [] }
+    return enumerator
+        .compactMap { element -> String? in
+            guard let name = element as? String, name.hasSuffix(".swift") else { return nil }
+            var isDirectory: ObjCBool = false
+            let path = root.appendingPathComponent(name).path
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+                  isDirectory.boolValue
+            else { return nil }
+            return name
+        }
+        .sorted()
+}
+
 func cadenceRepoSwiftFiles(under relativeDirectory: String) -> [String] {
     let root = cadenceTestRepositoryRoot().appendingPathComponent(relativeDirectory)
     guard let enumerator = FileManager.default.enumerator(atPath: root.path) else { return [] }
@@ -310,13 +547,38 @@ func cadenceTestDeclarations(in source: String, file: String) -> [CadenceTestDec
         if unit == 0x7B { depth += 1 } else if unit == 0x7D { depth -= 1 }
     }
 
-    var types: [(location: Int, name: String)] = []
+    // Each top-level type's *extent*, not just where its name appears. "The nearest type
+    // declared above this test" is the wrong rule for a test appended past a closing brace: it
+    // reports the suite the author meant instead of the file scope the compiler sees (T-465).
+    var types: [(open: Int, close: Int, name: String)] = []
     if let typeRegex = try? NSRegularExpression(
         pattern: "\\b(?:struct|final class|class|actor|enum)\\s+([A-Za-z0-9_]+)"
     ) {
         for match in typeRegex.matches(in: code, range: NSRange(location: 0, length: nsCode.length))
         where depths[match.range.location] == 0 {
-            types.append((match.range.location, nsCode.substring(with: match.range(at: 1))))
+            let name = nsCode.substring(with: match.range(at: 1))
+            var open = NSNotFound
+            var cursor = match.range.location + match.range.length
+            while cursor < nsCode.length {
+                if nsCode.character(at: cursor) == 0x7B {
+                    open = cursor
+                    break
+                }
+                cursor += 1
+            }
+            guard open != NSNotFound else { continue }
+            var close = nsCode.length
+            var scan = open + 1
+            while scan < nsCode.length {
+                // `depths[scan]` is the depth *before* the character at `scan`, so the brace that
+                // closes this body is the first `}` seen back at depth 1.
+                if nsCode.character(at: scan) == 0x7D, depths[scan] == 1 {
+                    close = scan
+                    break
+                }
+                scan += 1
+            }
+            types.append((open, close, name))
         }
     }
 
@@ -327,7 +589,8 @@ func cadenceTestDeclarations(in source: String, file: String) -> [CadenceTestDec
         .matches(in: code, range: NSRange(location: 0, length: nsCode.length))
         .map { match in
             let start = match.range.location
-            let suite = types.last { $0.location < start }?.name ?? "<file scope>"
+            let suite = types.last { $0.open < start && start < $0.close }?.name
+                ?? CadenceTestDeclaration.fileScope
             return CadenceTestDeclaration(
                 name: nsCode.substring(with: match.range(at: 1)),
                 suite: suite,

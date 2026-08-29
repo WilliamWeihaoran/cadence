@@ -50,6 +50,24 @@ nonisolated struct MarkdownSlashCommand: Identifiable {
         .init(id: "task", title: "Task Reference", subtitle: "Insert [[task:]]", replacement: (indentation: "", text: "[[task:]]", caretOffset: 7))
     ]
 
+    /// `commands` with every entry that opens the image picker removed.
+    ///
+    /// **The `/` half of `allowsImageInsertion`, on both platforms (T-421, T-442).** A host whose
+    /// text is not a row in the store — the note-template body, an `EKEvent.notes` — refuses image
+    /// insertion, and a refused command is dropped from the menu rather than offered with a
+    /// follow-up that silently does nothing. iOS open-coded this predicate inside the `/` strip's
+    /// query filter and macOS was about to write it a second time; the platforms differ in where
+    /// the menu is drawn, not in which commands an out-of-store host may run.
+    ///
+    /// Order-preserving, and stated over an argument rather than over `all`, because macOS appends
+    /// `templateCommands(for:)` before filtering.
+    static func refusingImageInsertion(_ commands: [MarkdownSlashCommand]) -> [MarkdownSlashCommand] {
+        commands.filter { command in
+            if case .chooseImage = command.action { return false }
+            return true
+        }
+    }
+
     /// Note templates as `/` commands — one of the three places templates live now that they no
     /// longer take a row above every note.
     ///

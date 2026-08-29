@@ -329,4 +329,38 @@ struct CadenceSearchCandidateSupportTests {
             ) == 1
         )
     }
+
+    // MARK: - T-372a: Cmd+K's tie-break
+
+    /// **`Cmd+K` ranks two indistinguishable rows by id, not by whatever `@Query` handed over.**
+    ///
+    /// `rankedResults` is the one call site every macOS search section funnels through, and until
+    /// T-372a it called `CadenceSearchMatcher.rank` without an `identity`, so its order stopped at
+    /// title. Two tasks called "Admin" in two lists score the same and title the same, so the
+    /// comparator answered "neither" and the sort could only echo the order the index was built
+    /// in — which changes when an unrelated task is edited, moving the arrow-key target between
+    /// keystrokes.
+    ///
+    /// The fixture is handed over in *descending* id order on purpose: with the tie-break removed
+    /// the answer is the input, so an ascending fixture would pass either way.
+    @Test func cmdKRanksTwoIdenticalRowsByIdRatherThanTheOrderTheIndexWasBuiltIn() {
+        func result(id: String) -> GlobalSearchResult {
+            GlobalSearchResult(
+                id: id,
+                category: .tasks,
+                title: "Admin",
+                subtitle: "Inbox • Active",
+                icon: "checkmark.circle",
+                tintHex: Theme.blueHex,
+                destination: .goals
+            )
+        }
+        let descending = ["task-c", "task-b", "task-a"].map(result(id:))
+
+        let ranked = GlobalSearchIndexSupport.rankedResults(descending, query: "admin")
+
+        #expect(ranked.map(\.id) == ["task-a", "task-b", "task-c"])
+        // And it is the *set* that decides, not the arrival order.
+        #expect(GlobalSearchIndexSupport.rankedResults(descending.reversed(), query: "admin").map(\.id) == ranked.map(\.id))
+    }
 }

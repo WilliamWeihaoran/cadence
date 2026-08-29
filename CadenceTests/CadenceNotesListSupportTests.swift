@@ -421,6 +421,95 @@ struct CadenceNotesListSupportTests {
         }
     }
 
+    // MARK: - T-451: the group heading's letterspacing
+
+    /// **The heading reads the eyebrow's tracking rather than re-typing its number.**
+    ///
+    /// `NotesMonthHeader` is not an eyebrow — bold, sentence-case, `Theme.text`, 11pt on the
+    /// desktop and 12 on touch — and T-284 twice refused to fold a label like it into
+    /// `SectionEyebrowLabel`, because that would decide its *size* under cover of a refactor. What
+    /// it was nonetheless set in was the standard eyebrow tier's own `0.8`, typed out by hand: the
+    /// last hand-typed letterspacing in `Cadence/Shared/`.
+    ///
+    /// **This is deliberately not "the number is 0.8".** That assertion passes on the reverted call
+    /// site, which is the whole of [[T-161]] — a test that survives its own fix has pinned nothing.
+    /// The instrument below fails on any numeric letterspacing argument in this file and the
+    /// positive assertion beside it names the shared value, so reverting to a literal is red in two
+    /// places and deleting the modifier outright is red in one.
+    @Test func theNotesGroupHeadingReadsTheSharedTrackingRatherThanRetypingIt() throws {
+        let handTypedLetterspacing = try notesLetterspacingLiteralInstrument()
+
+        // `CadenceSourceScan.codeOnly` rather than this file's own `notesStrippingComments`, for
+        // the two reasons its doc comment gives: it masks string literals as well as comments, and
+        // it is one linear pass — the local stripper rescans from the start of the string after
+        // every match, which is fine for one file and quadratic over the 550-file sweep below.
+        let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceNotesListSupport.swift"))
+        #expect(code.contains("struct NotesMonthHeader"), "non-vacuity: this is no longer the heading's file")
+
+        #expect(
+            handTypedLetterspacing.fires(on: code) == false,
+            "the notes list re-types a letterspacing number instead of reading the shared one"
+        )
+        #expect(
+            code.contains(".kerning(SectionEyebrowLabel.Size.standard.kerning)"),
+            "the heading no longer reads the standard eyebrow tier's tracking"
+        )
+
+        // The premise, recorded rather than pinned: T-451 was value-preserving, so the heading
+        // renders exactly as it did. It reads the tier's *setting* and not
+        // `kerningRatio × headerLabelSize`, because the ratio answers how much air an uppercase run
+        // needs and this heading is sentence-case; deriving it here would retrack the heading to
+        // 0.88 and 0.96 with nobody having looked at it, which is what [[T-452]] is open for.
+        #expect(SectionEyebrowLabel.Size.standard.kerning == 0.8)
+        #expect(
+            SectionEyebrowLabel.Size.standard.kerning
+                == SectionEyebrowLabel.fontSize * SectionEyebrowLabel.kerningRatio
+        )
+    }
+
+    /// The same rule stated over the whole app, and the one site still breaking it.
+    ///
+    /// After T-451 exactly one hand-typed letterspacing survives in `Cadence/`: the `BODY` label
+    /// above the **iOS** note-template editor, which is a hand-rolled eyebrow (uppercase, 10pt,
+    /// `Theme.dim`) and so wants `SectionEyebrowLabel` rather than a shared constant — a component
+    /// swap that changes the label's weight from bold to semibold, and this target cannot render an
+    /// iOS view to look at the result. So it is named here, the way the settings-separator sweep
+    /// names its one skipped pane: the hole is one line of test source, and closing it turns this
+    /// list into `[]`.
+    @Test func exactlyOneHandTypedLetterspacingIsLeftInTheApp() throws {
+        let handTypedLetterspacing = try notesLetterspacingLiteralInstrument()
+        let paths = try notesSwiftFiles(under: "Cadence").sorted()
+
+        let hits = try handTypedLetterspacing.sweep(
+            paths,
+            atLeast: 400,
+            including: "Cadence/Shared/CadenceNotesListSupport.swift",
+            read: { CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0)) }
+        )
+
+        #expect(
+            hits == ["Cadence/iOS/iOSSettingsTemplateAndListSections.swift"],
+            "the hand-typed letterspacing sites changed: \(hits)"
+        )
+    }
+
+    /// Fires on a letterspacing modifier given a number, and not on one given a shared value.
+    ///
+    /// The witnesses are the two spellings of the *same line* — the nearest negative there is —
+    /// so a detector that has stopped telling a literal from a symbol cannot be constructed at all.
+    private func notesLetterspacingLiteralInstrument() throws -> CadenceScanInstrument {
+        try CadenceScanInstrument(
+            "hand-typed letterspacing",
+            fires: "Text(title)\n    .kerning(0.8)\n",
+            andNotOn: "Text(title)\n    .kerning(SectionEyebrowLabel.Size.standard.kerning)\n"
+        ) { source in
+            source.range(
+                of: "\\.(kerning|tracking)\\(\\s*[0-9.]",
+                options: .regularExpression
+            ) != nil
+        }
+    }
+
     // MARK: - Fixtures
 
     private func makeContext() throws -> ModelContext {

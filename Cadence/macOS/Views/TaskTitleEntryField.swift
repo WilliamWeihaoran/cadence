@@ -24,13 +24,11 @@ struct TaskTitleEntryField: View {
 
     @State private var tildeMode: TaskTitleTildeMode = .none
     @State private var tildeSearchQuery = ""
-    @State private var tildeHighlightIdx = 0
     @State private var isTagMode = false
     @State private var tagSearchQuery = ""
     @State private var tagHighlightIdx = 0
     @State private var shouldSuppressInitialTitleSelection = false
     @FocusState private var isTitleFocused: Bool
-    @FocusState private var isTildeSearchFocused: Bool
 
     private var priorityShortcutSegments: TaskTitlePriorityShortcutSegments? {
         guard priority != nil else { return nil }
@@ -148,11 +146,8 @@ struct TaskTitleEntryField: View {
             applyTitleShortcuts()
         }
         .onChange(of: tildeMode) { _, mode in
-            if mode == .none {
-                isTildeSearchFocused = false
-            } else {
-                focusTildeSearch()
-            }
+            guard mode != .none else { return }
+            focusTildeSearch()
         }
         .onChange(of: isTagMode) { _, active in
             guard active else { return }
@@ -170,37 +165,6 @@ struct TaskTitleEntryField: View {
 
     private var canUseTagRouting: Bool {
         selectedTags != nil && onCreateTag != nil
-    }
-
-    private var availableSections: [String] {
-        guard let containerSelection else { return [TaskSectionDefaults.defaultName] }
-        return TaskContainerResolver(areas: areas, projects: projects)
-            .availableSections(for: containerSelection.wrappedValue)
-    }
-
-    private var tildeFlatContainers: [TaskTitleTildeContainerItem] {
-        let query = tildeSearchQuery.lowercased()
-        func matches(_ name: String) -> Bool {
-            query.isEmpty || name.lowercased().hasPrefix(query)
-        }
-
-        var result: [TaskTitleTildeContainerItem] = []
-        if matches("Inbox") {
-            result.append(.init(tag: .inbox, icon: "tray", name: "Inbox", color: Theme.dim))
-        }
-        for context in contexts {
-            for area in areas.filter({ $0.isActive && $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
-                if matches(area.name) {
-                    result.append(.init(tag: .area(area.id), icon: area.icon, name: area.name, color: Color(hex: area.colorHex)))
-                }
-            }
-            for project in projects.filter({ $0.isActive && $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
-                if matches(project.name) {
-                    result.append(.init(tag: .project(project.id), icon: project.icon, name: project.name, color: Color(hex: project.colorHex)))
-                }
-            }
-        }
-        return result
     }
 
     private var activeTags: [Tag] {
@@ -225,28 +189,25 @@ struct TaskTitleEntryField: View {
         return !allTags.contains { $0.slug == slug }
     }
 
+    /// Cmd+Shift+= / Cmd+Shift+- nudge the do-date **while the title field is the thing on
+    /// screen**. When the `~` panel is open the same chord moves its highlight instead, and that
+    /// pair of buttons lives inside `TildeContainerPicker` — a `keyboardShortcut` declared out here
+    /// does not reach into a popover, which is why there were ever two.
     private var hiddenShortcutButtons: some View {
         ZStack {
-            Button("") {
-                if tildeMode == .list {
-                    moveTildeHighlight(by: 1)
-                } else if tildeMode == .none {
-                    onDateNudge?(1)
-                }
-            }
-            .keyboardShortcut("=", modifiers: [.command, .shift])
+            Button("") { nudgeDate(by: 1) }
+                .keyboardShortcut("=", modifiers: [.command, .shift])
 
-            Button("") {
-                if tildeMode == .list {
-                    moveTildeHighlight(by: -1)
-                } else if tildeMode == .none {
-                    onDateNudge?(-1)
-                }
-            }
-            .keyboardShortcut("-", modifiers: [.command, .shift])
+            Button("") { nudgeDate(by: -1) }
+                .keyboardShortcut("-", modifiers: [.command, .shift])
         }
         .frame(width: 0, height: 0)
         .clipped()
+    }
+
+    private func nudgeDate(by offset: Int) {
+        guard tildeMode == .none else { return }
+        onDateNudge?(offset)
     }
 
     private var tildePreview: some View {
@@ -278,86 +239,22 @@ struct TaskTitleEntryField: View {
         }
     }
 
+    /// The `~` panel, from `TildeContainerPicker` (T-287) — the same one
+    /// `QuickCreateChoicePopover` shows. The panel owns the search field, the focus, the highlight
+    /// and every key; this field owns only what committing a list means here.
     private var tildeListSearchView: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            hiddenShortcutButtons
-
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-                TextField("Search lists...", text: $tildeSearchQuery)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.text)
-                    .focused($isTildeSearchFocused)
-                    .onSubmit { selectTildeContainer() }
-                    .onKeyPress(.upArrow) {
-                        moveTildeHighlight(by: -1)
-                        return .handled
-                    }
-                    .onKeyPress(.downArrow) {
-                        moveTildeHighlight(by: 1)
-                        return .handled
-                    }
-                    .onKeyPress(.tab) {
-                        selectTildeContainer()
-                        return .handled
-                    }
-                    .onKeyPress(.escape) {
-                        restoreLiteralShortcut(marker: "~", query: tildeSearchQuery)
-                        return .handled
-                    }
-                    .onKeyPress(.delete) {
-                        guard tildeSearchQuery.isEmpty else { return .ignored }
-                        restoreLiteralShortcut(marker: "~", query: tildeSearchQuery)
-                        return .handled
-                    }
-                if !tildeSearchQuery.isEmpty {
-                    Button { tildeSearchQuery = "" } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.dim.opacity(0.5))
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-
-            Divider().background(Theme.borderSubtle)
-
-            let items = tildeFlatContainers
-            if items.isEmpty {
-                Text("No results")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-            } else {
-                VStack(spacing: 2) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        TildeContainerPickerRow(
-                            icon: item.icon,
-                            name: item.name,
-                            color: item.color,
-                            isHighlighted: index == clampedTildeHighlightIndex,
-                            isSelected: containerSelection.map { $0.wrappedValue == item.tag } ?? false,
-                            action: { selectTildeContainerItem(item.tag) }
-                        )
-                    }
-                }
-                .padding(.vertical, 6)
-            }
-        }
-        .frame(minWidth: 200)
-        .background(Theme.surfaceElevated)
-        .onAppear {
-            clampTildeHighlight()
-            DispatchQueue.main.async { isTildeSearchFocused = true }
-        }
-        .onChange(of: tildeSearchQuery) { _, _ in tildeHighlightIdx = 0 }
-        .onChange(of: tildeFlatContainers.map(\.id)) { _, _ in clampTildeHighlight() }
+        TildeContainerPicker(
+            query: $tildeSearchQuery,
+            items: TildeContainerPickerSupport.flatContainers(
+                query: tildeSearchQuery,
+                contexts: contexts,
+                areas: areas,
+                projects: projects
+            ),
+            selection: containerSelection?.wrappedValue,
+            onSelect: selectTildeContainerItem,
+            onRestoreLiteral: { restoreLiteralShortcut(marker: "~", query: tildeSearchQuery) }
+        )
     }
 
     private var tagPreview: some View {
@@ -440,25 +337,21 @@ struct TaskTitleEntryField: View {
             .fixedSize()
     }
 
-    private func moveTildeHighlight(by offset: Int) {
-        tildeHighlightIdx = movedHighlightIndex(tildeHighlightIdx, by: offset, count: tildeFlatContainers.count)
-    }
-
     private func moveTagHighlight(by offset: Int) {
         tagHighlightIdx = movedHighlightIndex(tagHighlightIdx, by: offset, count: tagPickerOptionCount)
     }
 
-    private func selectTildeContainer() {
-        let items = tildeFlatContainers
-        guard !items.isEmpty else { return }
-        selectTildeContainerItem(items[clampedTildeHighlightIndex].tag)
-    }
-
     private func selectTildeContainerItem(_ tag: TaskContainerSelection) {
-        containerSelection?.wrappedValue = tag
-        normalizeSelectedSection()
+        if let containerSelection {
+            TildeContainerPickerSupport.applySelection(
+                tag,
+                container: containerSelection,
+                sectionName: sectionName,
+                areas: areas,
+                projects: projects
+            )
+        }
         tildeSearchQuery = ""
-        tildeHighlightIdx = 0
         tildeMode = .none
         DispatchQueue.main.async { isTitleFocused = true }
     }
@@ -466,7 +359,6 @@ struct TaskTitleEntryField: View {
     private func enterTildeSearch(_ shortcut: TaskTitleInlineShortcut) {
         title = shortcut.prefix
         tildeSearchQuery = shortcut.query
-        tildeHighlightIdx = 0
         tildeMode = .list
         focusTildeSearch()
     }
@@ -479,9 +371,10 @@ struct TaskTitleEntryField: View {
         isTitleFocused = false
     }
 
+    /// Only releases the title. `TildeContainerPicker` focuses its own search field when it
+    /// appears, the way `TaskTitleInlineTagPicker` already did.
     private func focusTildeSearch() {
         isTitleFocused = false
-        DispatchQueue.main.async { isTildeSearchFocused = true }
     }
 
     private func selectInlineTag() {
@@ -496,14 +389,6 @@ struct TaskTitleEntryField: View {
 
     private var tagPickerOptionCount: Int {
         filteredTags.count + (canCreateInlineTag ? 1 : 0)
-    }
-
-    private var clampedTildeHighlightIndex: Int {
-        clampedHighlightIndex(tildeHighlightIdx, count: tildeFlatContainers.count)
-    }
-
-    private func clampTildeHighlight() {
-        tildeHighlightIdx = clampedTildeHighlightIndex
     }
 
     private func movedHighlightIndex(_ current: Int, by offset: Int, count: Int) -> Int {
@@ -546,19 +431,10 @@ struct TaskTitleEntryField: View {
         title += "\(marker)\(query)"
         tildeMode = .none
         tildeSearchQuery = ""
-        tildeHighlightIdx = 0
         isTagMode = false
         tagSearchQuery = ""
         tagHighlightIdx = 0
         DispatchQueue.main.async { isTitleFocused = true }
-    }
-
-    private func normalizeSelectedSection() {
-        guard let sectionName else { return }
-        let validSections = availableSections
-        if !validSections.contains(where: { $0.caseInsensitiveCompare(sectionName.wrappedValue) == .orderedSame }) {
-            sectionName.wrappedValue = validSections.first ?? TaskSectionDefaults.defaultName
-        }
     }
 
     private func applyTitleShortcuts() {

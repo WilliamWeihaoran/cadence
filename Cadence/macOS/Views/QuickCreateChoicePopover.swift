@@ -30,11 +30,9 @@ struct QuickCreateChoicePopover: View {
     @State private var selectedSectionName: String = TaskSectionDefaults.defaultName
     @State private var tildeMode: Bool = false
     @State private var tildeSearchQuery = ""
-    @State private var tildeHighlightIdx = 0
     @State private var bundleTaskSearch = ""
     @State private var selectedBundleTaskIDs: [UUID] = []
     @FocusState private var focused: Bool
-    @FocusState private var isTildeSearchFocused: Bool
 
     private var usesCalendarCreationPanel: Bool {
         !usesTaskPanelForTaskCreation
@@ -103,7 +101,6 @@ struct QuickCreateChoicePopover: View {
                             if prefix.isEmpty || prefix.hasSuffix(" ") {
                                 title = prefix
                                 tildeSearchQuery = ""
-                                tildeHighlightIdx = 0
                                 tildeMode = true
                             }
                         }
@@ -266,172 +263,60 @@ struct QuickCreateChoicePopover: View {
         }
     }
 
+    private var containerResolver: TaskContainerResolver {
+        TaskContainerResolver(areas: areas, projects: projects)
+    }
+
     private var availableSections: [String] {
-        switch selectedContainer {
-        case .inbox:
-            return [TaskSectionDefaults.defaultName]
-        case .area(let areaID):
-            return areas.first(where: { $0.id == areaID })?.sectionNames ?? [TaskSectionDefaults.defaultName]
-        case .project(let projectID):
-            return projects.first(where: { $0.id == projectID })?.sectionNames ?? [TaskSectionDefaults.defaultName]
-        }
-    }
-
-    private struct TildeContainerItem: Identifiable {
-        let tag: TaskContainerSelection
-        let icon: String
-        let name: String
-        let color: Color
-        var id: TaskContainerSelection { tag }
-    }
-
-    private var tildeFlatContainers: [TildeContainerItem] {
-        let query = tildeSearchQuery.lowercased()
-        func matches(_ name: String) -> Bool { query.isEmpty || name.lowercased().hasPrefix(query) }
-
-        var result: [TildeContainerItem] = []
-        if matches("Inbox") {
-            result.append(.init(tag: .inbox, icon: "tray", name: "Inbox", color: Theme.dim))
-        }
-        for context in contexts {
-            for area in areas.filter({ $0.isActive && $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
-                if matches(area.name) {
-                    result.append(.init(tag: .area(area.id), icon: area.icon, name: area.name, color: Color(hex: area.colorHex)))
-                }
-            }
-            for project in projects.filter({ $0.isActive && $0.context?.id == context.id }).sorted(by: { $0.order < $1.order }) {
-                if matches(project.name) {
-                    result.append(.init(tag: .project(project.id), icon: project.icon, name: project.name, color: Color(hex: project.colorHex)))
-                }
-            }
-        }
-        return result
+        containerResolver.availableSections(for: selectedContainer)
     }
 
     private func normalizeSelectedSection() {
-        let validSections = availableSections
-        if !validSections.contains(where: { $0.caseInsensitiveCompare(selectedSectionName) == .orderedSame }) {
-            selectedSectionName = validSections.first ?? TaskSectionDefaults.defaultName
-        }
-    }
-
-    private func selectTildeContainer() {
-        let items = tildeFlatContainers
-        guard !items.isEmpty else { return }
-        selectTildeContainerItem(items[clampedTildeHighlightIndex].tag)
+        selectedSectionName = containerResolver.normalizedSectionName(
+            selectedSectionName,
+            for: selectedContainer
+        )
     }
 
     private func selectTildeContainerItem(_ tag: TaskContainerSelection) {
-        selectedContainer = tag
-        normalizeSelectedSection()
+        TildeContainerPickerSupport.applySelection(
+            tag,
+            container: $selectedContainer,
+            sectionName: $selectedSectionName,
+            areas: areas,
+            projects: projects
+        )
         tildeSearchQuery = ""
-        tildeHighlightIdx = 0
         tildeMode = false
         DispatchQueue.main.async { focused = true }
     }
 
+    /// Puts the `~` and everything typed after it back in the title, the way the title field's
+    /// panel has always done. This copy of the panel had no way out at all before T-287: Escape
+    /// fell through to the enclosing popover and discarded the draft, and backspace on an empty
+    /// query did nothing.
+    private func restoreLiteralTildeShortcut() {
+        title += "~\(tildeSearchQuery)"
+        tildeSearchQuery = ""
+        tildeMode = false
+        DispatchQueue.main.async { focused = true }
+    }
+
+    /// The `~` panel, from `TildeContainerPicker` (T-287) — the same one `TaskTitleEntryField`
+    /// shows. This file used to carry a second copy of it under the same five names.
     private var tildeListSearchView: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ZStack {
-                Button("") {
-                    moveTildeHighlight(by: 1)
-                }
-                .keyboardShortcut("=", modifiers: [.command, .shift])
-                Button("") { moveTildeHighlight(by: -1) }
-                    .keyboardShortcut("-", modifiers: [.command, .shift])
-            }
-            .frame(width: 0, height: 0)
-            .clipped()
-
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-                TextField("Search lists…", text: $tildeSearchQuery)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.text)
-                    .focused($isTildeSearchFocused)
-                    .onSubmit { selectTildeContainer() }
-                    .onKeyPress(.upArrow) {
-                        moveTildeHighlight(by: -1)
-                        return .handled
-                    }
-                    .onKeyPress(.downArrow) {
-                        moveTildeHighlight(by: 1)
-                        return .handled
-                    }
-                    .onKeyPress(.tab) {
-                        selectTildeContainer()
-                        return .handled
-                    }
-                if !tildeSearchQuery.isEmpty {
-                    Button { tildeSearchQuery = "" } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.dim.opacity(0.5))
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-
-            Divider().background(Theme.borderSubtle)
-
-            let items = tildeFlatContainers
-            if items.isEmpty {
-                Text("No results")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-            } else {
-                VStack(spacing: 2) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        TildeContainerPickerRow(
-                            icon: item.icon,
-                            name: item.name,
-                            color: item.color,
-                            isHighlighted: index == clampedTildeHighlightIndex,
-                            isSelected: selectedContainer == item.tag,
-                            action: { selectTildeContainerItem(item.tag) }
-                        )
-                    }
-                }
-                .padding(.vertical, 6)
-            }
-        }
-        .frame(minWidth: 200)
-        .background(Theme.surfaceElevated)
-        .onAppear {
-            clampTildeHighlight()
-            DispatchQueue.main.async { isTildeSearchFocused = true }
-        }
-        .onChange(of: tildeSearchQuery) { _, _ in tildeHighlightIdx = 0 }
-        .onChange(of: tildeFlatContainers.map(\.id)) { _, _ in clampTildeHighlight() }
-    }
-
-    private var clampedTildeHighlightIndex: Int {
-        clampedHighlightIndex(tildeHighlightIdx, count: tildeFlatContainers.count)
-    }
-
-    private func moveTildeHighlight(by offset: Int) {
-        tildeHighlightIdx = movedHighlightIndex(tildeHighlightIdx, by: offset, count: tildeFlatContainers.count)
-    }
-
-    private func clampTildeHighlight() {
-        tildeHighlightIdx = clampedTildeHighlightIndex
-    }
-
-    private func movedHighlightIndex(_ current: Int, by offset: Int, count: Int) -> Int {
-        guard count > 0 else { return 0 }
-        return (clampedHighlightIndex(current, count: count) + offset + count) % count
-    }
-
-    private func clampedHighlightIndex(_ index: Int, count: Int) -> Int {
-        guard count > 0 else { return 0 }
-        return min(max(index, 0), count - 1)
+        TildeContainerPicker(
+            query: $tildeSearchQuery,
+            items: TildeContainerPickerSupport.flatContainers(
+                query: tildeSearchQuery,
+                contexts: contexts,
+                areas: areas,
+                projects: projects
+            ),
+            selection: selectedContainer,
+            onSelect: selectTildeContainerItem,
+            onRestoreLiteral: restoreLiteralTildeShortcut
+        )
     }
 
     @ViewBuilder

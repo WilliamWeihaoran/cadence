@@ -471,4 +471,125 @@ struct NoteMigrationServiceTests {
         #expect(second.skippedAlreadyMigrated == 1)
         #expect(try context.fetch(FetchDescriptor<Note>()).count == 1)
     }
+
+    /// **T-466: the same synthesized-`Codable` defect T-445 fixed in `DataIntegrityRepairReport`.**
+    /// Every counter above carries an `= 0` default, which reads as "an older blob missing this key
+    /// still decodes" and is not what `Codable` synthesis does — the generated `init(from:)` calls
+    /// `decode(Int.self, forKey:)` and throws `keyNotFound`. `lastReport()` swallows that with
+    /// `try?`, so the whole stored history reads as `nil` the day a counter is added.
+    ///
+    /// This is the guard that does not need editing when a fifteenth counter lands: it encodes a
+    /// live report and removes each key in turn, so the counter list is re-derived from the struct
+    /// rather than restated here.
+    ///
+    /// The four head fields are the deliberate exception: they carry no defaults, they have been
+    /// written by every version of this key, and a blob missing `success` is not an older report.
+    @Test func aStoredNoteMigrationReportSurvivesEveryCounterThisStructWillEverGain() throws {
+        var report = NoteMigrationReport(
+            source: "app-startup",
+            startedAt: Date(timeIntervalSince1970: 1_000),
+            finishedAt: Date(timeIntervalSince1970: 1_001),
+            success: true
+        )
+        report.existingNoteCount = 1
+        report.legacyEventNoteScanned = 1
+        report.insertedMeeting = 1
+        report.skippedCanonicalDuplicate = 1
+
+        let encoded = try JSONEncoder().encode(report)
+        let object = try #require(
+            try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        let required: Set<String> = ["source", "startedAt", "finishedAt", "success"]
+        let optionalKeys = object.keys.filter { !required.contains($0) }
+
+        // Non-vacuity: the loop below is worthless if the encode produced a handful of keys.
+        #expect(optionalKeys.count >= 14, "expected every counter in the encoded report, got \(optionalKeys.count)")
+        #expect(optionalKeys.contains("insertedMeeting"))
+        #expect(optionalKeys.contains("skippedCanonicalDuplicate"))
+        #expect(optionalKeys.contains("legacyEventNoteScanned"))
+
+        for key in optionalKeys {
+            var trimmed = object
+            trimmed.removeValue(forKey: key)
+            let data = try JSONSerialization.data(withJSONObject: trimmed)
+            #expect(
+                (try? JSONDecoder().decode(NoteMigrationReport.self, from: data)) != nil,
+                "NoteMigrationReport stops decoding when \(key) is missing, so every report stored before that key existed is lost"
+            )
+        }
+    }
+
+    /// The counters that *were* written still read back as themselves. Without this, a fix that
+    /// defaulted the whole struct on any missing key would pass the loop above while throwing the
+    /// stored numbers away.
+    @Test func aNoteMigrationReportMissingOneCounterKeepsTheOthers() throws {
+        let legacy = """
+        {
+          "source": "app-startup",
+          "startedAt": 1000,
+          "finishedAt": 1001,
+          "success": true,
+          "existingNoteCount": 2,
+          "legacyDailyScanned": 5,
+          "insertedDaily": 3,
+          "skippedAlreadyMigrated": 4
+        }
+        """
+
+        let report = try JSONDecoder().decode(
+            NoteMigrationReport.self,
+            from: Data(legacy.utf8)
+        )
+
+        #expect(report.source == "app-startup")
+        #expect(report.success)
+        #expect(report.errorMessage == nil)
+        // The counters that were written are read back, not defaulted along with the missing ones.
+        #expect(report.existingNoteCount == 2)
+        #expect(report.legacyDailyScanned == 5)
+        #expect(report.insertedDaily == 3)
+        #expect(report.skippedAlreadyMigrated == 4)
+        // The keys that did not exist yet read as their defaults rather than as a decoding failure.
+        #expect(report.insertedMeeting == 0)
+        #expect(report.skippedCanonicalDuplicate == 0)
+        #expect(report.insertedTotal == 3)
+        #expect(report.legacyScannedTotal == 5)
+    }
+
+    /// The other half of the same failure: `lastReport()` is the reader that swallows it, and it is
+    /// the value `migrateAndRecordFailure` falls back to on a throw. Asserted through the real
+    /// `UserDefaults` key so the archive round trip — encoder, key, decoder — is what is measured,
+    /// and restored afterwards so a test run cannot leave a fabricated report behind for the app.
+    @Test func noteMigrationLastReportReadsBackAReportStoredWithoutTheNewestCounter() throws {
+        let key = "noteMigration.lastReport.v1"
+        let saved = UserDefaults.standard.data(forKey: key)
+        defer {
+            if let saved {
+                UserDefaults.standard.set(saved, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+
+        var report = NoteMigrationReport(
+            source: "previous-launch",
+            startedAt: Date(timeIntervalSince1970: 2_000),
+            finishedAt: Date(timeIntervalSince1970: 2_002),
+            success: false
+        )
+        report.errorMessage = "store unavailable"
+        report.insertedDaily = 4
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: JSONEncoder().encode(report)) as? [String: Any]
+        )
+        object.removeValue(forKey: "skippedCanonicalDuplicate")
+        UserDefaults.standard.set(try JSONSerialization.data(withJSONObject: object), forKey: key)
+
+        let read = try #require(NoteMigrationService.lastReport())
+        #expect(read.source == "previous-launch")
+        #expect(read.errorMessage == "store unavailable")
+        #expect(read.insertedDaily == 4)
+        #expect(read.skippedCanonicalDuplicate == 0)
+    }
 }

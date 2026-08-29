@@ -472,11 +472,15 @@ struct CreateTaskSheet: View {
         if let dismissAction { dismissAction() } else { taskCreationManager.dismiss() }
     }
 
+    /// `TaskContainerResolver.normalizedSectionName`, not a fourth copy of it (T-287/T-374). This
+    /// file, `QuickCreateChoicePopover` and `TaskTitleEntryField` each open-coded the same four
+    /// lines; the resolver also canonicalises the *spelling* of a case-insensitive match, which
+    /// none of the three did.
     private func normalizeSelectedSection() {
-        let validSections = availableSections
-        if !validSections.contains(where: { $0.caseInsensitiveCompare(selectedSectionName) == .orderedSame }) {
-            selectedSectionName = validSections.first ?? TaskSectionDefaults.defaultName
-        }
+        selectedSectionName = containerResolver.normalizedSectionName(
+            selectedSectionName,
+            for: selectedContainer
+        )
     }
 
     private func createTag(_ name: String) -> Tag {

@@ -280,12 +280,18 @@ struct iOSMarkdownEditingSurface: View {
     }
 
     private func slashCommandChoices(for context: MarkdownSlashCommandContext) -> [MarkdownSlashCommand] {
-        MarkdownSlashCommand.all
+        // A command whose follow-up this host refuses is not offered. Leaving it in the strip and
+        // swallowing the tap is the worse half of a disabled feature. The predicate itself is
+        // `MarkdownSlashCommand.refusingImageInsertion` rather than a `case .chooseImage` written
+        // out here: macOS's `/` menu has to make the same refusal (T-442), and which commands an
+        // out-of-store host may run is not a per-platform decision. It is a separate pass from the
+        // query filter below because the two answer different questions.
+        let offered = allowsImageInsertion
+            ? MarkdownSlashCommand.all
+            : MarkdownSlashCommand.refusingImageInsertion(MarkdownSlashCommand.all)
+        return offered
             .filter { command in
-                // A command whose follow-up this host refuses is not offered. Leaving it in the
-                // strip and swallowing the tap is the worse half of a disabled feature.
-                if !allowsImageInsertion, case .chooseImage = command.action { return false }
-                return context.query.isEmpty ||
+                context.query.isEmpty ||
                     command.id.localizedCaseInsensitiveContains(context.query) ||
                     command.title.localizedCaseInsensitiveContains(context.query)
             }

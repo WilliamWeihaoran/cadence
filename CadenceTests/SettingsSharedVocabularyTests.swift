@@ -467,8 +467,13 @@ struct SettingsSevenPaneVocabularyTests {
 
         // The wells that stayed are helpers over the shared modifier rather than second
         // rectangles: placeholder-only fields have no eyebrow for the titled component to draw.
+        // The needle is `cadenceSettingsWell(` and not `cadenceSettingsWell()`: the modifier took
+        // an `insetsContent:` parameter in T-442, for content that draws its own text inset — the
+        // note-template body is a `MarkdownEditor`, an `NSScrollView` that would otherwise float
+        // inside a 12pt gutter of `surfaceElevated`. The counts are unchanged, which is the claim:
+        // one rectangle with a knob, not a second rectangle.
         try t20ExpectOccurrences(
-            of: "cadenceSettingsWell()",
+            of: "cadenceSettingsWell(",
             at: [
                 "Cadence/macOS/Views/SettingsTagsSection.swift": 2,
                 "Cadence/macOS/Views/SettingsSupportViews.swift": 1,

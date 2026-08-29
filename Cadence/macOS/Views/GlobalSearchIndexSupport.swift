@@ -323,12 +323,20 @@ enum GlobalSearchIndexSupport {
         }, query: query).prefix(query.isEmpty ? 8 : 12))
     }
 
+    /// **T-372a: `id` is the tie-break.** `GlobalSearchResult.id` is already the
+    /// category-prefixed entity id every row here is built with (`"task-<uuid>"`,
+    /// `"event-note-<uuid>"`), so it is both stable across rebuilds of the index and unique
+    /// across the categories this list merges. Two tasks called "Admin" in two lists score the
+    /// same and title the same, and without this leg `Cmd+K` listed them in whichever order the
+    /// `@Query` happened to hand over — so the arrow keys landed on a different one between
+    /// keystrokes.
     static func rankedResults(_ results: [GlobalSearchResult], query: String) -> [GlobalSearchResult] {
         CadenceSearchMatcher.rank(
             results,
             query: query,
             title: { $0.title },
-            fields: { [$0.title, $0.subtitle] }
+            fields: { [$0.title, $0.subtitle] },
+            identity: { $0.id }
         )
     }
 

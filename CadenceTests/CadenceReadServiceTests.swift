@@ -1206,6 +1206,42 @@ struct CadenceReadServiceTests {
         }
     }
 
+    // MARK: - T-372a: the MCP search tie-break
+
+    /// **`search_cadence` returns the same sequence twice for hits it cannot otherwise tell
+    /// apart.**
+    ///
+    /// `search()` merges eleven scope loops over eight tables into one `hits` array and ranks it.
+    /// Until T-372a it ranked without an `identity`, so the order stopped at title — and a task and
+    /// a saved link both called "Admin" score identically (exact-title 1000 + leading-token 260),
+    /// leaving the comparator with nothing to say. The array then kept the order the *loops* built
+    /// it in, which is tasks before links: an implementation detail of this method, invisible to
+    /// the agent reading the result, and one that moves the moment a scope is added or reordered.
+    ///
+    /// Both ids are pinned rather than left to `UUID()` so the expectation is a fact about the
+    /// ordering rule and not about which random id sorted first today. The link's is the lower of
+    /// the two, so `entityId`-only and `entityType:entityId` both put it first — while the *loop*
+    /// order puts the task first. That is the discrimination: this expectation is reachable only
+    /// if some identity leg is being applied.
+    @Test func mcpSearchOrdersASharedTitleByIdentityRatherThanByWhichScopeLoopRanFirst() throws {
+        let fixture = try Fixture()
+
+        let task = AppTask(title: "Admin")
+        task.id = try #require(UUID(uuidString: "FFFFFFFF-FFFF-4FFF-8FFF-FFFFFFFFFFFF"))
+        fixture.modelContext.insert(task)
+
+        let link = SavedLink(title: "Admin", url: "https://example.com/admin")
+        link.id = try #require(UUID(uuidString: "00000000-0000-4000-8000-000000000001"))
+        fixture.modelContext.insert(link)
+        try fixture.modelContext.save()
+
+        let hits = try fixture.service.search(query: "Admin", scopes: ["tasks", "links"]).items
+
+        #expect(hits.map(\.title) == ["Admin", "Admin"])
+        #expect(hits.map(\.score).first == hits.map(\.score).last)
+        #expect(hits.map(\.entityType) == ["saved_link", "task"])
+    }
+
     @MainActor
     private final class Fixture {
         let container: ModelContainer

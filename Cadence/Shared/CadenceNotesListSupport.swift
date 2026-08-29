@@ -653,7 +653,21 @@ struct NotesMonthHeader: View {
                 Text(title)
                     .font(.system(size: metrics.headerLabelSize, weight: .bold))
                     .foregroundStyle(Theme.text)
-                    .kerning(0.8)
+                    // **T-451 — the tracking is the eyebrow's decision, and is read rather than
+                    // re-typed.** This heading is not an eyebrow: it is bold, sentence-case,
+                    // `Theme.text`, at 11pt on the desktop and 12 on touch, and T-284 twice refused
+                    // to fold a label like it into `SectionEyebrowLabel` because that would be a
+                    // size decision dressed as a refactor. But the *number* it was set in was the
+                    // standard eyebrow tier's own 0.8, hand-typed, and a hand-typed copy of a
+                    // shared value is a copy whichever component it sits in.
+                    //
+                    // The standard tier's setting, not `kerningRatio × headerLabelSize`. The ratio
+                    // answers "how much air does an *uppercase* run need", derived over the
+                    // eyebrow's 10 and 9pt; re-deriving it here would apply it to sentence-case
+                    // type it was never measured on and silently retrack this heading on both
+                    // platforms (0.88 desktop, 0.96 touch) with nobody having looked at it —
+                    // exactly the un-inspected change [[T-452]] is still open for.
+                    .kerning(SectionEyebrowLabel.Size.standard.kerning)
                     .lineLimit(1)
 
                 if isCollapsed {

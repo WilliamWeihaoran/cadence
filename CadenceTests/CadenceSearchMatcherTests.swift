@@ -141,9 +141,84 @@ struct CadenceSearchMatcherTests {
             CadenceSearchHit(entityType: "task", entityId: "1", title: "Alpha", subtitle: "", excerpt: "", score: 100),
         ]
 
-        let ranked = CadenceSearchMatcher.rank(hits, score: { $0.score }, title: { $0.title })
+        let ranked = CadenceSearchMatcher.rank(
+            hits,
+            score: { $0.score },
+            title: { $0.title },
+            identity: { $0.entityId }
+        )
 
         #expect(ranked.map(\.title) == ["Alpha", "Beta", "Gamma"])
+    }
+
+    // MARK: - T-372a: the three tiers, and that each one is load-bearing
+
+    /// Pins **score, then title, then identity** as an ordered sequence of tiers rather than as a
+    /// set of three rules.
+    ///
+    /// The fixture is built so that every pair in it disagrees on exactly one tier while the tiers
+    /// *below* that one point the other way. That is what makes the expectation discriminating:
+    /// the previous tie-break test above ranked `Alpha/100`, `Beta/100`, `Gamma/80`, where score
+    /// order and title order happen to agree — so sorting by title first and score second produces
+    /// the same three names and the test cannot see the difference. Here every adjacent swap of two
+    /// tiers, and every reversal of one tier's direction, reorders the answer.
+    ///
+    /// Read the expectation as `title/identity` pairs:
+    /// - `Admin/a` before `Admin/b` — same score, same title, identity decides.
+    /// - `Admin/*` before `Zulu/a1` — same score, title decides, and it decides *against* identity
+    ///   (`a1` sorts before `b`).
+    /// - all of them before `AAA/a0`, whose title and identity both sort first and whose score
+    ///   does not.
+    @Test func rankPutsScoreAheadOfTitleAndTitleAheadOfIdentity() {
+        let hits = [
+            CadenceSearchHit(entityType: "task", entityId: "b", title: "Admin", subtitle: "", excerpt: "", score: 100),
+            CadenceSearchHit(entityType: "task", entityId: "a1", title: "Zulu", subtitle: "", excerpt: "", score: 100),
+            CadenceSearchHit(entityType: "task", entityId: "a0", title: "AAA", subtitle: "", excerpt: "", score: 50),
+            CadenceSearchHit(entityType: "task", entityId: "a", title: "Admin", subtitle: "", excerpt: "", score: 100),
+        ]
+
+        let ranked = CadenceSearchMatcher.rank(
+            hits,
+            score: { $0.score },
+            title: { $0.title },
+            identity: { $0.entityId }
+        )
+
+        #expect(ranked.map { "\($0.title)/\($0.entityId)" } == ["Admin/a", "Admin/b", "Zulu/a1", "AAA/a0"])
+    }
+
+    /// The property the identity tier exists for: ranking is a function of the *set* of hits, not
+    /// of the order the store happened to hand them over in.
+    ///
+    /// Twenty-four rows sharing a score and a title is the shape the ticket names — the same task
+    /// title under several lists, a saved link added twice. Without the identity leg the comparator
+    /// answers "neither" for every pair, and the sort can only echo its input, so the two calls
+    /// below disagree. This is the assertion the tier test above cannot make: a dropped tie-break
+    /// is invisible to a fixture whose ties are already in the expected order.
+    @Test func rankIsIndependentOfTheOrderTheStoreHandedTheHitsOver() {
+        let hits = (0..<24).map { index in
+            CadenceSearchHit(
+                entityType: "task",
+                entityId: String(format: "id-%02d", index),
+                title: "Admin",
+                subtitle: "",
+                excerpt: "",
+                score: 100
+            )
+        }
+
+        func ranked(_ input: [CadenceSearchHit]) -> [String] {
+            CadenceSearchMatcher.rank(
+                input,
+                score: { $0.score },
+                title: { $0.title },
+                identity: { $0.entityId }
+            )
+            .map(\.entityId)
+        }
+
+        #expect(ranked(hits) == ranked(hits.reversed()))
+        #expect(ranked(hits.reversed()) == hits.map(\.entityId))
     }
 
     @Test func rankByQueryScoresFieldsAndSinksNonMatchesToTheBottom() {
@@ -159,7 +234,8 @@ struct CadenceSearchMatcherTests {
             rows,
             query: "deep work",
             title: { $0.title },
-            fields: { [$0.title, $0.subtitle] }
+            fields: { [$0.title, $0.subtitle] },
+            identity: { $0.title }
         )
 
         #expect(ranked.map(\.title) == ["Deep Work Block", "Weekly review", "Deep dive", "Unrelated"])
@@ -173,7 +249,8 @@ struct CadenceSearchMatcherTests {
             rows,
             query: "",
             title: { $0.title },
-            fields: { [$0.title] }
+            fields: { [$0.title] },
+            identity: { $0.title }
         )
 
         #expect(ranked.map(\.title) == ["alpha", "Beta", "Gamma"])

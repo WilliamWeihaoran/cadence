@@ -51,14 +51,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Either backfill them the same way or state that the archive begins at this session and stop
   implying otherwise.
 
-- [T-463] **`CadenceTests/CadenceCalendarLinkHealthTests.swift` was a directory containing a file of
-  the same name.** A staging error of mine, now flattened. It compiled and ran — the synchronized
-  root group descends into it — which is why nothing caught it. Worth a guard: a `.swift` path that
-  is a directory should fail the build, not quietly work.
 
-- [T-464] **The list-editor row can now say "(Hidden)" but the picker still offers only visible
-  calendars.** From [[T-441]]. So the row names the problem and the repair is in Settings. Putting
-  hidden calendars in the picker is a second decision, left deliberately.
 
 - [T-453] **`CadenceWidgetDateSupport.storageCalendar(inheritingTimeZoneFrom:)` has no callers.**
   Found by a mutation that **survived**: re-pointing it to return the caller's calendar changed
@@ -114,12 +107,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   notice row grows an optional glyph or this row keeps its own spelling on purpose; it should not
   stay undecided.
 
-- [T-451] **`CadenceNotesListSupport` re-types the eyebrow's `0.8` as a literal.** Residue from
-  [[T-284]]. The notes group header (`.kerning(0.8)`, line ~656) is *not* an eyebrow — it is bold,
-  sentence-case, `Theme.text`, at 11/12pt — so folding it into `SectionEyebrowLabel` would be the
-  size-decision-dressed-as-a-refactor that ticket refused twice. But 0.8 is the standard tier's own
-  number, hand-typed, and it is now the only copy of it left outside `Theme`-adjacent metrics.
-  Decide whether that header's tracking is its own decision (and say so beside it) or the eyebrow's.
 
 - [T-452] **T-284's 9pt tier is pinned by value and by source, and has still never been looked at.**
   The ticket's remaining ask was "one screenshot pass over those 8 sites", and the subagent runbook
@@ -143,21 +130,10 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   mutation can make that assertion fire.
 
 
-- [T-442] **The macOS note-template editor is a bare `TextEditor` while iOS gets the full markdown
-  surface.** An unrecorded parity gap, and the reason T-421's fix is iOS-only: macOS never had an
-  image door to close.
 
 
 
 
-- [T-372a] **`CadenceSearchMatcher.rank` is the one ordering left partial after [[T-372]].** Found
-  while fixing T-372 and deliberately not fixed there: `rank` ends at score-then-title
-  (`Shared/CadenceSearchMatcher.swift` lines 27-30), so two hits with the same score and the same
-  title — two tasks called "Admin" in two contexts, a duplicated saved link — come back in fetch
-  order. It is the *shared* matcher, so the MCP `search()` tool and the macOS/iOS search surfaces
-  all inherit it, and closing it means threading an identity closure through every `rank` call
-  site rather than the one-file change T-372 was. Scoped out to keep the MCP fix reviewable; the
-  fix shape is the same `id` tail `CadenceMCPOrdering.precedes` now uses.
 
 
 - [T-374] **The most common defect shape in 21 audits is "a correct shared helper exists and call
@@ -611,33 +587,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   — and the `Button` wrapper of that name is gone, the name having moved down to the circle it
   always described.
 
-- [T-287] **The `~` list-search panel is implemented twice on macOS.** From the [[T-123]] split.
-  `CLAUDE.md` already records this as "a standing violation of the 'one shared component over
-  near-copies' rule, recorded here so it is not mistaken for a deliberate split" — and it has never
-  been a ticket, so it has stayed standing. `macOS/Views/QuickCreateChoicePopover.swift` carries
-  `tildeFlatContainers` (288), `selectTildeContainer` (318), `selectTildeContainerItem` (324),
-  `clampTildeHighlight` (416) and its own `TildeContainerItem`; `macOS/Views/TaskTitleEntryField.swift`
-  carries the same five under the same names plus `TaskTitleTildeContainerItem`. They share
-  `TildeContainerPickerRow` and nothing else — including the silent `normalizeSelectedSection()`
-  that both must perform after a container change, which is the half most likely to be fixed in one
-  copy only.
-  Done: one panel — the container list, the highlight arithmetic, the selection and the section
-  normalisation — read by both the title field and the drag-create popover, one item type, and a
-  test that fails if either file re-declares `tildeFlatContainers`.
-- [T-465] **A test can be declared in the wrong `struct` and no assertion can catch it.** This is the
-  one shape [[T-161]] did **not** close mechanically: a test that belongs to the calendar suite but
-  is declared inside the deletion suite compiles, runs, and passes. Nothing can compare a test's
-  location against its author's intent. `scripts/test-suite-index.sh` prints suite -> test names for
-  review; the ask here is a periodic read of that output, not a guard. Filed rather than solved so the
-  gap is written down instead of assumed closed by T-161.
 
-- [T-466] **`NoteMigrationReport` is [[T-445]] untouched.** Same synthesized-`Codable` shape: adding a
-  counter makes every previously stored report fail to decode, so the history silently empties. T-445
-  fixed `DataIntegrityRepairReport` with a `nonisolated extension` and `decodeIfPresent(...) ?? 0` per
-  counter, plus a test that removes each key in turn. Apply the identical treatment here. Note the
-  actor-isolation trap T-445 hit: the naive spelling warns only under
-  `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which the MCP scheme does not set, so an MCP-only build
-  reports zero warnings on broken code.
 
 
 - [T-467] **`CadenceCalendarPickerButton` collapses "hidden or read-only" into "No calendar"** — the
@@ -720,6 +670,58 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`dataOnlyStatusMessage` / `accountAndDataStatusMessage`). Pin both, and assert the iOS success state
   does not contain "account". This is the error-message-accuracy class that
   [[T-374]]'s brief called out: a notice promising something the code did not do.
+
+
+- [T-475] **`TaskSectionConfig` is the third [[T-445]] shape and the first that loses real user data.**
+  `Cadence/Models/AppTask.swift:9` — five defaulted properties (`uuid`, `colorHex`, `dueDate`,
+  `isCompleted`, `isArchived`), persisted as JSON in `Project.sectionConfigsRaw` /
+  `Area.sectionConfigsRaw`, decoded with `try?` at `Models/Project.swift:113` and
+  `Models/Area.swift:112`. Adding a sixth property makes every stored section list undecodable; the
+  getter then falls back to `sectionNamesRaw`, which keeps only the **names** — colour, due date,
+  completion and archive state are silently dropped — and the setter rewrites `sectionConfigsRaw` from
+  that degraded list on the next write, **making the loss permanent**. Unlike T-445 and [[T-466]] this
+  is user data, and it is in `Models/`, which compiles into every target. Wants the `init(from:)`
+  treatment plus a round-trip test *before* anyone adds a field. **Highest-priority open ticket.**
+
+- [T-476] **The iOS template editor's `BODY` label is the last hand-typed letterspacing in the app.**
+  `iOS/iOSSettingsTemplateAndListSections.swift:594` — a hand-rolled `SectionEyebrowLabel`, so the fix
+  is the component, which changes the weight from bold to semibold, and no macOS test target can render
+  an iOS view to check the result. `exactlyOneHandTypedLetterspacingIsLeftInTheApp` names this path;
+  closing it turns that expected list into `[]`. Also the last piece of [[T-442]]'s parity gap — macOS's
+  template Body label is already `CadenceSettingsField`'s eyebrow.
+
+- [T-477] **`SectionEyebrowLabel`'s doc comment names a type that does not exist.**
+  `Shared/Components/SectionEyebrowLabel.swift:18` explains its `nonisolated` members by reference to
+  "`CadenceEyebrowMetrics`' readers"; `rg CadenceEyebrowMetrics` returns exactly that one line in the
+  repo. Stale prose from [[T-284]]'s conversion — the reasoning is still right, the name is not.
+
+- [T-478] **The macOS editor shows a copy cursor for an image drop it will refuse.**
+  `MarkdownEditorView.updateNSView` calls `registerForDraggedTypes([.fileURL, .tiff, .png])`
+  unconditionally and `CadenceTextView.draggingEntered` answers `.copy` for any image payload, so at a
+  host with `allowsImageInsertion: false` ([[T-442]]) the cursor promises a capability the host has just
+  declined, then `performDragOperation` falls through to `super`. The fallthrough is the safe direction,
+  so this is cosmetic — but it is a control stating something untrue. Thread the flag into the
+  representable.
+
+- [T-479] **The iOS search surface never adopted `CadenceSearchMatcher.rank`.** Found while closing
+  [[T-372a]]. `iOSSearchView` scores through the shared `matchScore`, then sorts each of its seven
+  sections with a bare `.sorted { $0.score > $1.score }` (`:105,123,172,199,230,245,261`) — no title
+  leg, no identity leg. That is **more** partial than the state T-372 found macOS in, so two iPhone
+  results that merely tie on score come back in `@Query` order, and T-372a's fix does not reach them
+  because they never call `rank`. The shape is `GlobalSearchIndexSupport.rankedResults` — one funnel per
+  surface passing `title:` and `identity:` — not seven threaded closures.
+
+- [T-480] **`NoteMigrationServiceTests` leaves a fabricated migration report in the test host's
+  `UserDefaults`.** 20 call sites reach `migrateIfNeeded` / `migrateAndRecordFailure`, each calling
+  `record(...)` which writes `noteMigration.lastReport.v1`; only one test saves and restores it.
+  `DataIntegrityRepairServiceTests` already guards this ("so a test run cannot leave a fabricated report
+  behind for the app to read"), so the convention exists and this suite predates it.
+
+- [T-481] **DECIDE: one top-level suite per test file?** Raised and deliberately *not* landed while
+  closing [[T-465]]. It would provably stop the sibling-suite risk surface from growing and has zero
+  false positives — but it imposes a new authoring rule that **32 existing files already break**, so it
+  is a decision, not a fix. Options: adopt with those 32 allowlisted; adopt and split them; decline and
+  keep the periodic `scripts/test-suite-index.sh` read that T-465 settled on.
 
 
 ## Done
@@ -881,6 +883,90 @@ before filing**: this list has had the same ticket re-reported more than once.
   occurrence** — T-359 added the first counter, T-428 the second. One `init(from:)` using
   `decodeIfPresent` closes it. Not data loss; no user data lives in that key.
   **Closed 2026-08-29. `nonisolated extension DataIntegrityRepairReport { init(from:) }` with `decodeIfPresent(...) ?? 0` per counter; the four head fields stay `decode`. An extension rather than the struct body, so the memberwise init survives. `nonisolated` matters: the first spelling warned that the `Decodable` conformance crossed into main-actor code -- invisible to the MCP scheme, the one target without `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.**
+
+- [T-287] **The `~` list-search panel is implemented twice on macOS.** From the [[T-123]] split.
+  `CLAUDE.md` already records this as "a standing violation of the 'one shared component over
+  near-copies' rule, recorded here so it is not mistaken for a deliberate split" — and it has never
+  been a ticket, so it has stayed standing. `macOS/Views/QuickCreateChoicePopover.swift` carries
+  `tildeFlatContainers` (288), `selectTildeContainer` (318), `selectTildeContainerItem` (324),
+  `clampTildeHighlight` (416) and its own `TildeContainerItem`; `macOS/Views/TaskTitleEntryField.swift`
+  carries the same five under the same names plus `TaskTitleTildeContainerItem`. They share
+  `TildeContainerPickerRow` and nothing else — including the silent `normalizeSelectedSection()`
+  that both must perform after a container change, which is the half most likely to be fixed in one
+  copy only.
+  Done: one panel — the container list, the highlight arithmetic, the selection and the section
+  normalisation — read by both the title field and the drag-create popover, one item type, and a
+  test that fails if either file re-declares `tildeFlatContainers`.
+  **Closed 2026-08-29. The two copies had diverged and the difference was a **bug, not a distinction**: `TaskTitleEntryField` restored the literal `~query` on Escape and on backspace-at-empty, and `QuickCreateChoicePopover` had neither, so the only way out of the drag-create panel was to pick a list -- Escape fell through to the enclosing popover and discarded the draft. `TildeContainerPicker` is one panel, one item type, one `applySelection` carrying the section renormalisation, replacing ~400 lines across two hosts and following the `TaskTitleInlineTagPicker` precedent [[T-123]] set for `#` and never applied to `~`. A third open-coded `normalizeSelectedSection` in `CreateTaskSheet` went with it.**
+
+- [T-372a] **`CadenceSearchMatcher.rank` is the one ordering left partial after [[T-372]].** Found
+  while fixing T-372 and deliberately not fixed there: `rank` ends at score-then-title
+  (`Shared/CadenceSearchMatcher.swift` lines 27-30), so two hits with the same score and the same
+  title — two tasks called "Admin" in two contexts, a duplicated saved link — come back in fetch
+  order. It is the *shared* matcher, so the MCP `search()` tool and the macOS/iOS search surfaces
+  all inherit it, and closing it means threading an identity closure through every `rank` call
+  site rather than the one-file change T-372 was. Scoped out to keep the MCP fix reviewable; the
+  fix shape is the same `id` tail `CadenceMCPOrdering.precedes` now uses.
+  **Closed 2026-08-29. The ticket was one revision stale: T-372 had already added the `identity` leg, but as an **optional** parameter that neither remaining caller passed, so `search_cadence` and `Cmd+K` both still stopped at title. `identity` is non-optional on both overloads now -- an optional tie-break is one the next call site silently declines. MCP ties on `entityType:entityId` (eleven scope loops over eight tables, so the type has to be in it); macOS on the category-prefixed result id. The pre-existing tie-break test **could not see a score/title swap** -- its fixture agreed on both tiers -- so the new one uses a fixture where every pair disagrees on exactly one tier while the tiers below point the other way.**
+
+- [T-442] **The macOS note-template editor is a bare `TextEditor` while iOS gets the full markdown
+  surface.** An unrecorded parity gap, and the reason T-421's fix is iOS-only: macOS never had an
+  image door to close.
+  **Closed 2026-08-29. `SettingsTemplatesSection`'s Body field is `MarkdownEditor(allowsImageInsertion: false)` rather than a `TextEditor` -- macOS's own shared surface, not a port of the iOS view, whose format toolbar and photos picker are phone chrome. **One flag reaches all four macOS image doors where iOS needed three guards**, because the panel, paste and drop all funnel through `onCreateMarkdownImages`. The `/image` refusal became `MarkdownSlashCommand.refusingImageInsertion`, now read by both platforms instead of open-coded twice ([[T-374]]). Also answered the inventory question: the template body **cannot** be a `CadenceMarkdownSourceInventory` case -- all seven cases are stored `String`s on `CadenceSchema` models reached by a `ModelContext` fetch, and a template body is JSON in `UserDefaults`. That is now a value assertion rather than prose.**
+
+- [T-451] **`CadenceNotesListSupport` re-types the eyebrow's `0.8` as a literal.** Residue from
+  [[T-284]]. The notes group header (`.kerning(0.8)`, line ~656) is *not* an eyebrow — it is bold,
+  sentence-case, `Theme.text`, at 11/12pt — so folding it into `SectionEyebrowLabel` would be the
+  size-decision-dressed-as-a-refactor that ticket refused twice. But 0.8 is the standard tier's own
+  number, hand-typed, and it is now the only copy of it left outside `Theme`-adjacent metrics.
+  Decide whether that header's tracking is its own decision (and say so beside it) or the eyebrow's.
+  **Closed 2026-08-29. The heading reads `SectionEyebrowLabel.Size.standard.kerning`. It takes the tier's **setting**, not `kerningRatio x headerLabelSize`: the ratio was derived over 10/9pt uppercase runs and this heading is bold sentence-case at 11/12pt, so re-deriving would silently retrack it to 0.88/0.96 with nobody having looked -- the un-inspected change [[T-452]] is already open for. Value-preserving. The ticket's "only copy left" was off by one; see [[T-476]].**
+
+- [T-463] **`CadenceTests/CadenceCalendarLinkHealthTests.swift` was a directory containing a file of
+  the same name.** A staging error of mine, now flattened. It compiled and ran — the synchronized
+  root group descends into it — which is why nothing caught it. Worth a guard: a `.swift` path that
+  is a directory should fail the build, not quietly work.
+  **Closed 2026-08-29. Already flattened by `193f257`; verified at HEAD as a plain file, no directory-shaped `.swift` anywhere, and `project.pbxproj` never referenced the path. Two pieces of residue closed it out: the doc comment on `cadenceRepoSwiftFiles(under:)` still asserted in the present tense that the directory exists, and the guard the ticket actually asked for did not exist -- every walk skipped the shape *silently*, which is how the original survived a whole session. `noSwiftPathInTheRepositoryIsADirectory` now reports it across 688 files in five source roots.**
+
+- [T-464] **The list-editor row can now say "(Hidden)" but the picker still offers only visible
+  calendars.** From [[T-441]]. So the row names the problem and the repair is in Settings. Putting
+  hidden calendars in the picker is a second decision, left deliberately.
+  **Closed 2026-08-29. [[T-441]] taught the row four verdicts but left the popover over `availableCalendars`, so the row could say "Team (Hidden)" over a menu with no Team in it and the only reachable move was "None" -- the silent overwrite T-441 exists to prevent, performed by the user instead of the code. The offer is now visible-plus-the-linked-one: exactly one hidden calendar can appear, and only because it is already stored, so no new hidden link can be made here. `CadenceCalendarLink` holds the three inputs once and answers both `rowState` and `pickableCalendars`, and `hiddenTitle(_:)` is the one spelling of "(Hidden)", so the two surfaces cannot form separate opinions or word it differently.**
+
+- [T-465] **A test can be declared in the wrong `struct` and no assertion can catch it.** This is the
+  one shape [[T-161]] did **not** close mechanically: a test that belongs to the calendar suite but
+  is declared inside the deletion suite compiles, runs, and passes. Nothing can compare a test's
+  location against its author's intent. `scripts/test-suite-index.sh` prints suite -> test names for
+  review; the ask here is a periodic read of that output, not a guard. Filed rather than solved so the
+  gap is written down instead of assumed closed by T-161.
+  **Closed 2026-08-29 -- one arm mechanically, the other explicitly refused. **Closable:** a `@Test` past the last suite's closing brace is a free function, invisible to `-only-testing:`, so every mutation against it reads as a survivor -- and both `cadenceTestDeclarations` and `scripts/test-suite-index.sh` attributed it to the suite it had just escaped. Attribution is by suite **extent** now, held at zero by `noTestInTheTargetIsDeclaredOutsideEverySuite` through a `CadenceScanInstrument` sweep, no allowlist. **Not closable:** a test in the wrong *sibling* suite. Measured before deciding, so nobody re-derives it -- the best heuristic flags 13 tests on a clean target, all 13 hand-read as correctly placed, and catches 43.3% of 1,643 simulated misplacements (47.5% missed, 9.2% undecidable). Zero precision at under half recall is not a guard. That arm stays a periodic read of `scripts/test-suite-index.sh`. Known false-positive shape for the guard that did ship: `extension SomeSuite { @Test ... }`, of which the target has none -- widen the regex rather than allowlist a file.**
+
+- [T-466] **`NoteMigrationReport` is [[T-445]] untouched.** Same synthesized-`Codable` shape: adding a
+  counter makes every previously stored report fail to decode, so the history silently empties. T-445
+  fixed `DataIntegrityRepairReport` with a `nonisolated extension` and `decodeIfPresent(...) ?? 0` per
+  counter, plus a test that removes each key in turn. Apply the identical treatment here. Note the
+  actor-isolation trap T-445 hit: the naive spelling warns only under
+  `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which the MCP scheme does not set, so an MCP-only build
+  reports zero warnings on broken code.
+  **Closed 2026-08-29. `nonisolated extension NoteMigrationReport { init(from:) }` with `decodeIfPresent(...) ?? 0` for all fourteen counters; the four head fields stay `decode`. Impact was wider than the app: `CadenceMCPToolDefinitions.diagnostics` defaults `noteMigrationReport:` to `NoteMigrationService.lastReport()`, so an MCP client read *never migrated* instead of *unreadable*. The `nonisolated` trap was reproduced, not assumed -- dropping it warns that the `Decodable` conformance crosses into main-actor code, at 0 errors.**
+
+- [T-482] **Free-function `@Test` was misattributed by both [[T-161]] parsers.**
+  **Closed 2026-08-29, fixed as a prerequisite of [[T-465]].** `cadenceTestDeclarations` and
+  `scripts/test-suite-index.sh` both used "nearest top-level type declared above", so a `@Test` outside
+  every suite was reported as a member of the preceding suite — the index built to answer *"where did my
+  test actually land?"* gave a confidently wrong answer for the single case it exists to catch, and
+  `<file scope>` was unreachable in practice. **Did not affect**
+  `everyTestFunctionNameInTheTargetIsUniqueAcrossSuites` (name uniqueness does not depend on suite
+  attribution), and the target had zero such tests — a latent hole, not an active miss.
+
+- [T-483] **`CadenceSourceScan.codeOnly` read a raw string's trailing backslash as an escape.**
+  **Closed 2026-08-29, fixed as a prerequisite of [[T-465]].** On `#"photo\"#` the masker skipped the
+  closing quote, ran to end of line and blanked live code — including the `{` opening the enclosing
+  `for` body. Brace depth in `CadenceTests/MarkdownImageAssetServiceTests.swift` came out one short,
+  which is why T-465's new guard first produced 11 false accusations. 45 test files use raw strings;
+  exactly 1 desynced, because the desync needs a backslash immediately before the closing quote.
+  **Did not affect** needle-counting scans, which is every existing scan — no shipped assertion changed
+  verdict, and `scripts/test-suite-index.sh` output after both fixes is byte-identical to HEAD's.
 
 ## Cancelled
 

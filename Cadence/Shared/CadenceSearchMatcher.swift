@@ -15,13 +15,17 @@ nonisolated enum CadenceSearchMatcher {
     /// Rank pre-scored items: score descending, then title case-insensitive ascending, then
     /// `identity` ascending.
     ///
-    /// **T-372a.** With an `identity` this is a **total** order and the same set of hits ranks to
-    /// the same sequence on every call. Without one it stops at title, and two hits sharing a score
-    /// and a title — two tasks called "Admin" in two contexts, a saved link added twice — come back
-    /// in whatever order the store handed them over, which is a property of the store rather than
-    /// of this code. Pass one. The parameter is optional only because `rank` is called from files
-    /// this change was not allowed to touch; see the T-372a entry in `docs/TODO.md` for the two
-    /// that still need threading.
+    /// **T-372a.** All three legs are required, and that is the whole point: with `identity` this
+    /// is a **total** order, so the same set of hits ranks to the same sequence on every call.
+    /// Stopping at title leaves two hits that share a score and a title — two tasks called "Admin"
+    /// in two contexts, a saved link added twice — in whatever order the store handed them over,
+    /// which is a property of the store rather than of this code.
+    ///
+    /// T-372 threaded `identity` in as an *optional* parameter because the call sites lived in
+    /// files that change was not allowed to touch, and an optional tie-break is a tie-break that
+    /// the next call site silently declines. It is non-optional now: both remaining callers pass
+    /// one (`CadenceReadService.search` the `entityType:entityId` pair, `GlobalSearchIndexSupport`
+    /// the result id), and a third cannot be added without answering the question.
     ///
     /// Deliberately a closure rather than an `Item: Identifiable` constraint. `CadenceSearchHit` —
     /// the MCP `search()` row, and the case the ticket is about — is not `Identifiable`, and a
@@ -36,10 +40,10 @@ nonisolated enum CadenceSearchMatcher {
         _ items: [Item],
         score: (Item) -> Int,
         title: (Item) -> String,
-        identity: ((Item) -> String)? = nil
+        identity: (Item) -> String
     ) -> [Item] {
         items
-            .map { (item: $0, score: score($0), title: title($0), identity: identity?($0) ?? "") }
+            .map { (item: $0, score: score($0), title: title($0), identity: identity($0)) }
             .sorted { lhs, rhs in
                 if lhs.score != rhs.score { return lhs.score > rhs.score }
                 let titles = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
@@ -58,7 +62,7 @@ nonisolated enum CadenceSearchMatcher {
         query: String,
         title: (Item) -> String,
         fields: (Item) -> [String],
-        identity: ((Item) -> String)? = nil
+        identity: (Item) -> String
     ) -> [Item] {
         rank(
             items,
