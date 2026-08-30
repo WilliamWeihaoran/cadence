@@ -225,7 +225,7 @@ nonisolated struct CadenceArchive: Codable, Equatable, Sendable {
     /// `CadenceSchema.schema.entities` as a set: a model added to the schema and not to the export
     /// is then a **failing test**, not a silently incomplete backup. Same construction, and the
     /// same reason, as `CadencePrivacyDataResetSurfaceTests`' probe table.
-    nonisolated static let recordCountsByEntityName: [String: KeyPath<CadenceArchive, Int>] = [
+    nonisolated static let recordCountsByEntityName: [String: any KeyPath<CadenceArchive, Int> & Sendable] = [
         "Context": \.contexts.count,
         "Area": \.areas.count,
         "Project": \.projects.count,

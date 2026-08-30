@@ -88,8 +88,13 @@ Run these checks before an App Store upload:
 
 ```sh
 git diff --check
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' build
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' -only-testing:CadenceTests/AppStoreReviewReadinessTests
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' -derivedDataPath /tmp/cadence-release-$$ build
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' -derivedDataPath /tmp/cadence-release-$$ -only-testing:CadenceTests/AppStoreReviewReadinessTests
 ```
+
+The `-derivedDataPath` is required, not decorative: the default path is the one Xcode and any
+running debug build share, and a build into it deletes `Build/Products/` under them. If anything
+else may be running a macOS test at the same time, take `scripts/test-host-lock.sh` first — the
+private path isolates the build, not the app-group container the test host writes to.
 
 For direct distribution, also follow `docs/direct-distribution-runbook.md`.

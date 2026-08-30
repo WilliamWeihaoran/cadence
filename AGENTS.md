@@ -115,9 +115,9 @@ discarded by the next `rollback()`. Enforced by `CadenceSaveCommitDisciplineTest
 
 ## Build And Run Safety
 
-- Always build into a private `-derivedDataPath` when another build may be running.
-- A private DerivedData path isolates build output, not the macOS test host's app-group container.
-  Use `scripts/test-host-lock.sh` for macOS test runs.
+- Build through **`scripts/xcb.sh <id> build|test`**, or pass a private `-derivedDataPath` yourself:
+  it supplies one, refuses the shared path, takes `scripts/test-host-lock.sh` for `test` (the private
+  path isolates build output, not the app-group container), and names a silent T-117 stall.
 - The lock lives at **`${TMPDIR}/cadence-macos-test-host.lock`**, not `/private/tmp`. `$TMPDIR`
   resolves under `/var/folders/...` here, so checking `/private/tmp` reports the host free while a
   run is live. Ask the script (`test-host-lock.sh status`); do not stat a path you guessed.
@@ -132,8 +132,8 @@ discarded by the next `rollback()`. Enforced by `CadenceSaveCommitDisciplineTest
 - Launch the macOS app only through `scripts/run-macos-app.sh start <Cadence.app> <id>`, and pair it
   with `stop <id>` in the same turn.
 - Use one scratch directory per agent and clean only inside it.
-- For isolated verification, prefer `rsync` over `git archive`, then restore unrelated dirty paths
-  in the copy back to HEAD before testing.
+- Isolate with `git archive HEAD | tar -x -C <dir>`: 910 files in 0.2s and already exactly HEAD, so
+  no dirty-path restore step. `rsync` copies 8963 files / 464 MB and another agent's in-flight edits.
 - Long build/test runs should launch and poll in one shell invocation.
 - Confirm the build log names the tree you intended to test.
 

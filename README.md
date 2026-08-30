@@ -45,6 +45,7 @@ Command-line build:
   -project Cadence.xcodeproj \
   -scheme Cadence \
   -destination 'platform=macOS' \
+  -derivedDataPath /tmp/cadence-build-$$ \
   build
 ```
 
@@ -56,8 +57,14 @@ Run tests:
   -project Cadence.xcodeproj \
   -scheme Cadence \
   -destination 'platform=macOS' \
+  -derivedDataPath /tmp/cadence-test-$$ \
   -only-testing:CadenceTests
 ```
+
+`-derivedDataPath` is not optional here. Without it every invocation — including read-only ones
+like `-showBuildSettings` — writes into the shared `~/Library/Developer/Xcode/DerivedData` entry
+that Xcode uses for this project, and a build there deletes `Build/Products/` under anything
+already running from it.
 
 ## Repository Map
 

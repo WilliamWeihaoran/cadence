@@ -111,23 +111,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
-  Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes
-  `rsync` + `git show HEAD:<path>` restore instead. The workaround has a real ongoing cost: the
-  restore step is manual, and an agent that skips it verifies another agent's in-flight code while
-  believing it tested HEAD. That is worth removing, not just documenting.
-  Evidence: one file (`git archive --format=tar HEAD -- AGENTS.md`) is instant; the whole tree
-  sampled at 10s intervals gave 1259520 → 1310720 → 1372160 → 1484800 → 1525760 → 1576960 bytes,
-  ~25 min for a 15 MB tree, and emits a **0-byte file** for the first minutes so it reads as a hang
-  (two runs were killed at 2 and 3 minutes for that reason). The repo is healthy —
-  `git rev-parse HEAD` is 0.018s.
-  Prime suspect, **not confirmed**: a global `filter.lfs` with `required = true` while `git-lfs` is
-  not installed (`git lfs version` → "not a git command"). Against that theory,
-  `-c filter.lfs.process= -c filter.lfs.required=false` did not help, and the repo has no
-  `.gitattributes`. Next steps: `git config --global --get-regexp '^filter\.'`, then try
-  `GIT_TRACE=1 GIT_TRACE_PERFORMANCE=1 git archive HEAD > /dev/null` to see where the time goes, and
-  test whether the slowness follows the global config into a scratch repo. Fixing it restores a
-  one-command isolation step for every future agent.
 
 
 - [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
@@ -150,7 +133,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-122] **Flip `SWIFT_VERSION` to 6.0 — now an open question rather than a blocked one.** `D-95`
+- [T-122] *(rechecked 2026-08-30 at `a1556ae`: **do not flip, and the reason is now measured on both platforms.** macOS Swift 6 builds but costs **10 warnings** in 6 files against a zero-warning baseline — a flip that produces warnings is not done, so macOS fails on its own merits even setting iOS aside. **Step (1) is now solved**: the one blocking error was an erased `KeyPath` table, fixed with `& Sendable` — one word, **no `nonisolated(unsafe)`** — verified on macOS Swift 6, iOS Swift 5, macOS Swift 5 and the export suite, and it is the only `static let ... KeyPath<` in the app, so that is complete rather than a sample. Landed; inert under Swift 5. Steps (2)-(4) untouched.)* **Flip `SWIFT_VERSION` to 6.0 — now an open question rather than a blocked one.** `D-95`
   **DECIDED 2026-08-26: investigate and report, do not flip.** The user's call. Measure each target's
   error and warning count under Swift 6 and re-test whether the blocker is still real against the
   current toolchain, then bring a recommendation. A flip that adds concurrency warnings destroys the
@@ -229,19 +212,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   app target alone until both platforms can move together.
 
 
-- [T-117] **A project-file lock is a new disguise in the T-86 family — now confirmed twice.** Builds
-  deadlock in `NSFileCoordinator` reading `Cadence.xcodeproj`, 20+ minutes at 0% CPU, with an empty
-  derivedDataPath. A `sample` of a stalled process caught it in `_blockOnAccessClaim` on the project
-  file, with a concurrent agent's `xcodebuild` holding it and the user's Xcode — open six days —
-  also claiming it. **It produces no diagnostic at all**: the run simply sits at the "Command line
-  invocation" line, which reads as a broken checkout. Distinct from DerivedData contention.
-  Mitigations: quit Xcode when a batch of agents is running, and treat total silence as this rather
-  than as a failure to be debugged.
-  Related but *not* universal: one agent found a fresh private DerivedData could not start because
-  package resolution is sandbox-blocked, and worked around it with
-  `-clonedSourcePackagesDirPath` + `-disableAutomaticPackageResolution`. Recorded as situational
-  rather than as a rule — my own fresh-DD runs this session resolved packages fine, so do not add
-  those flags by default.
 
   **Re-checked 2026-08-24 under 14 concurrently-building agents: not reproduced, and the tell is now
   in `AGENTS.md`.** Live `ps` found no bare `xcodebuild` pinned at 0% CPU; every process that looked
@@ -261,7 +231,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   but there is nothing further to *fix* here — this is a recognition guide, not open work. See
   `AGENTS.md`'s new bullet (after the T-236 test-host mutex entry) for the exact tell command.
 
-- [T-115] **The iOS Swift 6 flip is blocked by a toolchain bug, not app code.** With `D-86`'s three
+- [T-115] *(re-confirmed 2026-08-30 at `a1556ae`: **still blocked, and the toolchain never moved** — Xcode 26.6/17F113, the same build the original measurement used, so there was nothing new to test against. The frontend abort reproduces in **both** compilation modes with a byte-identical stack. **Two conflicting reports from this session are now explained and neither was flaky**: the "IRGen abort in `iOSTaskRowActionViews.swift`" was a **mis-attribution** — that file never appears on an `IRGenRequest` or `While emitting` line and is not even a `-primary-file` of the crashing invocation; the crashing file is `iOSCalendarView.swift`. And the "clean, no abort" run was a **Swift 5** build, so it never tested this condition.)* **The iOS Swift 6 flip is blocked by a toolchain bug, not app code.** With `D-86`'s three
   **DECIDED 2026-08-26: investigate and report, do not flip.** The user's call. Measure each target's
   error and warning count under Swift 6 and re-test whether the blocker is still real against the
   current toolchain, then bring a recommendation. A flip that adds concurrency warnings destroys the
@@ -306,15 +276,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   sources. macOS emits IR for the same shared modules with no trouble, so it is iOS-only.
   Recheck on the next toolchain bump; there is nothing to fix in Cadence.
 
-- [T-86] **Agents building into the shared DerivedData can crash a running Mac app.** On 2026-08-17
-  the user hit "Cadence quit unexpectedly" — `EXC_BREAKPOINT` on the main thread, five seconds after
-  launch. **Not app code:** the whole backtrace is `dyld` → `libSystem_initializer` →
-  `_libsecinit_appsandbox`, i.e. App Sandbox setup failing *before `main()` runs*, and the app
-  bundle had vanished from `Build/Products/Debug/` by the time it was inspected — a concurrent agent
-  clean build wiped it under the running process. A fresh build into a private `derivedDataPath`
-  launched and stayed up. Two agents had already reported `build.db is locked` from the same
-  contention. **Mitigation:** every agent brief should require a private `-derivedDataPath`, which
-  most already do ad hoc; worth making standing in `AGENTS.md`. Nothing to fix in the app.
 
   **Mitigation shipped 2026-08-18** — the rule is standing in `AGENTS.md`. Left open because the
   underlying contention still exists and this keeps producing *new* disguises: the same day it
@@ -634,6 +595,20 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `UUID()`-derived suite name to `UserDefaults(suiteName:)` — since the helper's whole point is that the
   file count is bounded at one per test forever. **The existing 7,727 are the user's to delete**; do not
   remove files from that container without asking.
+
+
+- [T-517] **~1.7 GB of shared DerivedData belongs to scratch trees that no longer exist.** 13 of the 14
+  `Cadence-*` entries under `~/Library/Developer/Xcode/DerivedData/` are orphans from agent trees that
+  have been deleted. `scripts/xcb.sh audit` lists them with dates and sizes. **Deliberately not deleted
+  by any script — one of the fourteen is the user's own Xcode entry**, and telling them apart is a
+  judgement no cleanup script should make unattended.
+
+- [T-518] **The MCP plugin runner rebuilds into a path it may be executing from.**
+  `plugins/cadence-mcp/scripts/run-cadence-mcp.sh` defaults `DERIVED_DATA_PATH` to the repo-local
+  `.codex-build` and then `exec`s `$DD/Build/Products/Debug/CadenceMCPServer`. A rebuild into that path
+  while another plugin process is running the binary is [[T-86]] for the MCP server. **The warm reuse
+  looks deliberate** — the script's own comment says so — so this is a flag for a decision rather than
+  a defect to fix blind.
 
 
 ## Done
@@ -1353,6 +1328,51 @@ before filing**: this list has had the same ticket re-reported more than once.
   view at compact width. [[T-283]]'s test silently omitted the enum from its reachability check, which is
   why nothing said so. Either rename it or correct the comment.
   **Closed 2026-08-30 **by renaming, not by softening the comment**. `iPadTodaySidePanel` → `iOSTodaySidePanel` (5 references), value-preserving: the storage key was already the honest `ios.today.sidePanel` and the raw values are untouched, so nothing persisted moves. The argument for renaming: keeping the name required **three permanent pieces of machinery** — a carve-out paragraph, a by-name exclusion inside the sweep's detector, and a dedicated test recording the exception — to preserve four characters, and "iPad-only, except when it isn't" is not a meaning. **The general guard was cheap and precise, so it was built**: `everyIPadPrefixedTypeIsBuiltOnlyFromAWidthGatedHost` **derives** every `iPad`-prefixed declaration from source rather than reading a hand-typed list — which is exactly how [[T-283]] lost this one — and it immediately turned up a fourth uncovered type, `iPadMacStyleRootShell`, which passes but whose passing was not previously known. **Scope stated in the test's own doc**: it catches a *name* against a *gate*, so [[T-352]]'s family (prose inventing a mechanism for something that names no symbol) is still a read, not a guard.**
+
+- [T-86] **Agents building into the shared DerivedData can crash a running Mac app.** On 2026-08-17
+  the user hit "Cadence quit unexpectedly" — `EXC_BREAKPOINT` on the main thread, five seconds after
+  launch. **Not app code:** the whole backtrace is `dyld` → `libSystem_initializer` →
+  `_libsecinit_appsandbox`, i.e. App Sandbox setup failing *before `main()` runs*, and the app
+  bundle had vanished from `Build/Products/Debug/` by the time it was inspected — a concurrent agent
+  clean build wiped it under the running process. A fresh build into a private `derivedDataPath`
+  launched and stayed up. Two agents had already reported `build.db is locked` from the same
+  contention. **Mitigation:** every agent brief should require a private `-derivedDataPath`, which
+  most already do ad hoc; worth making standing in `AGENTS.md`. Nothing to fix in the app.
+  **Closed 2026-08-30. The contention itself cannot be removed — the shared DerivedData is one mutable directory by design — so what was removed is the **exposure**, and it was larger than the ticket knew: **the private-path rule was prose only, and the repo's own runbooks violated it in five invocations** (README build *and* test, apple-release-readiness build *and* test, the distribution archive). Anyone following the README was building into the shared DerivedData. Two measurements sharpen it: a read-only `xcodebuild -showBuildSettings` **also** creates a shared entry with `Logs/`, `SourcePackages/` and `PIFCache`, so "it was only a query" is not a defence; and the entry is keyed to the **project path**, so an unflagged run from the repo root shares the exact entry the user's Xcode uses. Now enforced by `CadenceBuildInvocationHygieneTests`, which sweeps every markdown fence and shell script, plus `scripts/xcb.sh`, which supplies a private path, refuses a shared one, and reports leakage afterwards. **Known hole, declared**: the guard matches a bare `build`/`test` token, so a script assembling its action in a variable would not be classified as a build action.**
+
+- [T-117] **A project-file lock is a new disguise in the T-86 family — now confirmed twice.** Builds
+  deadlock in `NSFileCoordinator` reading `Cadence.xcodeproj`, 20+ minutes at 0% CPU, with an empty
+  derivedDataPath. A `sample` of a stalled process caught it in `_blockOnAccessClaim` on the project
+  file, with a concurrent agent's `xcodebuild` holding it and the user's Xcode — open six days —
+  also claiming it. **It produces no diagnostic at all**: the run simply sits at the "Command line
+  invocation" line, which reads as a broken checkout. Distinct from DerivedData contention.
+  Mitigations: quit Xcode when a batch of agents is running, and treat total silence as this rather
+  than as a failure to be debugged.
+  Related but *not* universal: one agent found a fresh private DerivedData could not start because
+  package resolution is sandbox-blocked, and worked around it with
+  `-clonedSourcePackagesDirPath` + `-disableAutomaticPackageResolution`. Recorded as situational
+  rather than as a rule — my own fresh-DD runs this session resolved packages fine, so do not add
+  those flags by default.
+  **Closed 2026-08-30 **with a detector, because a preflight is impossible.** Measured: `lsof` on `Cadence.xcodeproj/project.pbxproj` returns **nothing** while a real `xcodebuild` holds it — an `NSFileCoordinator` claim is not an open fd — so any `lsof` preflight would report "clear" every time, which is worse than having none. The only observable is the stalled process's own stack, so `scripts/xcb.sh` runs a watchdog that samples its own child when the log stops growing and CPU sits at zero, printing `T-117 CONFIRMED: blocked in NSFileCoordinator` or the top frames of whatever else it is stuck in. **It never kills anything.** The hazard stops being silent, which is all this ticket had downgraded itself to asking for.**
+
+- [T-237] **`git archive HEAD` over the whole tree runs at ~5 KB/s here; root cause unconfirmed.**
+  Measured 2026-08-22 and worked around rather than fixed — `AGENTS.md` now prescribes
+  `rsync` + `git show HEAD:<path>` restore instead. The workaround has a real ongoing cost: the
+  restore step is manual, and an agent that skips it verifies another agent's in-flight code while
+  believing it tested HEAD. That is worth removing, not just documenting.
+  Evidence: one file (`git archive --format=tar HEAD -- AGENTS.md`) is instant; the whole tree
+  sampled at 10s intervals gave 1259520 → 1310720 → 1372160 → 1484800 → 1525760 → 1576960 bytes,
+  ~25 min for a 15 MB tree, and emits a **0-byte file** for the first minutes so it reads as a hang
+  (two runs were killed at 2 and 3 minutes for that reason). The repo is healthy —
+  `git rev-parse HEAD` is 0.018s.
+  Prime suspect, **not confirmed**: a global `filter.lfs` with `required = true` while `git-lfs` is
+  not installed (`git lfs version` → "not a git command"). Against that theory,
+  `-c filter.lfs.process= -c filter.lfs.required=false` did not help, and the repo has no
+  `.gitattributes`. Next steps: `git config --global --get-regexp '^filter\.'`, then try
+  `GIT_TRACE=1 GIT_TRACE_PERFORMANCE=1 git archive HEAD > /dev/null` to see where the time goes, and
+  test whether the slowness follows the global config into a scratch repo. Fixing it restores a
+  one-command isolation step for every future agent.
+  **Closed 2026-08-30 **as not reproducible — and the prime suspect is disproven, not merely unreproduced.** `git archive --format=tar HEAD` runs in **0.06s** for a 13.4 MB / 910-file tree (~220 MB/s), verified to `~/Desktop`, to `/private/tmp`, and under concurrent disk load; the ticket's ~25 min for 15 MB is a 20,000x discrepancy. The blamed `filter.lfs.required=true` is **still set**, `git-lfs` is **still absent**, and `~/.gitconfig` is unchanged since 2026-05-08 — byte-identical to the original measurement — so it cannot have been the cause. Also ruled out: the protected-`~/Desktop` theory (same APFS volume as `/private/tmp`, detached file provider), security software (0 system extensions), and repo shape (2 packs, 3.8 MB, `unpack_trees` at 0.006s). **The original numbers were real**: every sampled size is an exact multiple of the 10240-byte tar record, implying ~1.6s of per-file stall across 910 files. The mechanism is no longer observable (the unified log retains ~1 day) and was almost certainly a transient per-file check on the host. No maintenance was run and none is needed. **The workaround it justified is now retired** — see the closure note below.**
 
 ## Cancelled
 

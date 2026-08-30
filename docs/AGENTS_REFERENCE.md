@@ -190,6 +190,19 @@ code, and every one of them has been violated by a shipped change at least once.
   sees the others waiting and counts them as running hosts. Measured: one agent held the lock 23
   minutes with **zero** real hosts on the machine, and a `pgrep -f` returning 2 where only one process
   was xcodebuild. To count actual test hosts rather than build processes, `pgrep -x Cadence`.
+  **Mechanised 2026-08-30 (T-86).** The prose rule left three of this repository's own runbook
+  commands sitting on the default path: `README.md`'s build and test, `docs/apple-release-readiness.md`'s
+  two verification commands, and `docs/direct-distribution-runbook.md`'s `archive` — five invocations
+  that anyone following the docs would copy. They are fixed, and
+  `CadenceTests/CadenceBuildInvocationHygieneTests` now fails on any `xcodebuild` in a markdown code
+  fence or a shell script that names a build action without `-derivedDataPath`, or that points one at
+  the shared root. Two measurements sit behind it. A read-only `xcodebuild -showBuildSettings` with
+  no flag **also** creates the shared entry and resolves packages into it, so "it was only a query"
+  is not a defence. And the entry is keyed to the **project path**, so a scratch tree gets its own
+  while an unflagged run from the repository root shares the one Xcode uses — that sharing is the
+  T-86 mechanism, one `build` away. `./scripts/xcb.sh audit` lists them: 14 entries, ~1.8 GB, all
+  but one orphaned by scratch trees that no longer exist. Prefer `scripts/xcb.sh <id> build|test`,
+  which supplies the private path, refuses a shared one, and takes the test-host lock for `test`.
 - **A bare `xcodebuild` pinned at 0% CPU is a project-file lock, not a broken build.** `docs/TODO.md`
   T-117, confirmed twice by `sample`: `NSFileCoordinator` serializes reads of
   `Cadence.xcodeproj`/`project.pbxproj`, and a run can block in `_blockOnAccessClaim` behind another
@@ -211,6 +224,15 @@ code, and every one of them has been violated by a shipped change at least once.
   `58e20a4`'s "launch a background job and return" failure (four other agents confirmed the same
   night) far better than a project-file deadlock: a wrapper script outliving its launching agent,
   with nothing left to read its `DONE` file, is that failure's shape.
+  **You cannot detect the claimant in advance, and `lsof` is the wrong instrument.** A coordinated
+  access claim is not an open file descriptor: `lsof Cadence.xcodeproj/project.pbxproj` returns
+  nothing while a real `xcodebuild` is mid-run against it (measured 2026-08-30), so a preflight
+  written that way reports "clear" every time and is worse than none. The only observable is the
+  stalled process's own stack. `scripts/xcb.sh` therefore watches its child's log size and CPU and
+  runs `sample` itself when both stand still for `CADENCE_STALL_SECONDS` (default 180), printing
+  either "T-117 CONFIRMED: blocked in NSFileCoordinator" or the top frames of whatever else it is
+  stuck in. The deadlock cannot be prevented from outside the process; it can only be named, and
+  naming it is the difference between a two-minute wait and twenty minutes of debugging Swift.
 - **Never create a simulator device; launch the macOS app only through the wrapper.** Two recurring
   leaks the user has had to clear by hand.
   *Simulators:* agents kept running `simctl create` and naming devices after themselves

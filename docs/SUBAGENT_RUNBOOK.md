@@ -3,12 +3,27 @@
 Coordinator briefs point here instead of restating this. Read it once; it replaces ~600 words of
 per-agent boilerplate.
 
-- **Work in an isolated copy.** `rsync -a --exclude .git <repo>/ /private/tmp/cadence-<tag>/`, work
-  there, never edit the user's repo, never commit. The coordinator diffs your tree against **current
-  HEAD** and lands it.
+- **Work in an isolated copy.** `mkdir -p /private/tmp/cadence-<tag> && git archive HEAD | tar -x -C
+  /private/tmp/cadence-<tag>` — work there, never edit the user's repo, never commit. The coordinator
+  diffs your tree against **current HEAD** and lands it. **This is `git archive`, not `rsync`, and the
+  difference matters**: the archive is 910 files / 14 MB and *is* HEAD, so there is no "restore the
+  dirty paths" step to forget; `rsync -a --exclude .git` copies 8963 files / 464 MB including
+  `.codex-build` **and any other agent's in-flight edits**, which is how you end up verifying someone
+  else's uncommitted code and reporting it as HEAD. (T-237's slow-`git archive` claim was measured on
+  2026-08-30 at 0.06s and closed as not reproducible.)
 - **Scoped runs only.** Run `-only-testing:CadenceTests/<YourSuite>` for failing-first and every
   mutation. Do **not** run the full `CadenceTests` suite — the coordinator runs one integration pass
   for the whole batch, so a full run from you costs six minutes and duplicates it.
+- **Clean only inside your own scratch directory.** The session scratchpad
+  (`.../<session-id>/scratchpad/`) is **shared** — it holds the coordinator's integration runner and
+  batch plan. An agent emptied it during cleanup on 2026-08-30, deleting the runner mid-batch. Your
+  scratch is `/private/tmp/cadence-<your-tag>*` and your own private DerivedData; nothing else.
+- **A toolchain crash reads as 0 compile errors.** A crashed `swift-frontend` emits **no**
+  `.swift:line:col: error:` lines, so the strict error count returns **0 on a build that failed** — which
+  is exactly how a crash gets reported as a clean run. Always pair the error count with the exit code,
+  and detect a crash with `grep -ci 'please submit a bug report'`. Measured 2026-08-30: `Abort trap`
+  matches nothing, uppercase `PLEASE` matches nothing, and `IRGenRequest` appears in batch mode but not
+  whole-module — so those three are not usable detectors.
 - **`AGENTS.md` has a hard 200-line cap, enforced by `AgentContextBudgetTests`.** If your work earns a
   new always-read rule, you must remove or link out something else in the same change — that is the
   repo's stated convention, and it is a test, not a style note. Two agents in a row have landed a good

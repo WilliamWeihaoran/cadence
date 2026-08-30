@@ -18,7 +18,7 @@ Use this only for direct macOS distribution outside the Mac App Store. The Mac A
 Create an archive:
 
 ```sh
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild archive -project Cadence.xcodeproj -scheme Cadence -destination 'generic/platform=macOS' -archivePath build/Cadence.xcarchive
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild archive -project Cadence.xcodeproj -scheme Cadence -destination 'generic/platform=macOS' -derivedDataPath /tmp/cadence-archive-$$ -archivePath build/Cadence.xcarchive
 ```
 
 Export with a Developer ID export options plist:
