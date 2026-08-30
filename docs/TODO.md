@@ -540,18 +540,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-501] **`docs/TODO_DONE.md`'s "Landed in" SHAs record where a ticket was *removed*, not where it
-  shipped.** Found while applying [[T-462]]'s title recovery: T-285's entry reads "Landed in `0dd7258`",
-  whose subject is *"Deduplicate docs/TODO.md"* — a bookkeeping commit that changed no Swift.
-  [[T-462]]'s measurement explains why: **175 of 200 archived tickets were removed by commits that
-  touched only `docs/TODO.md`.** So an unknown share of the 177 existing entries attribute a fix to a
-  commit that did not contain it, which is worse than a missing SHA because it reads as authoritative.
-  Establish how many are wrong before deciding whether to re-derive them.
-
-
-
-
-
 
 - [T-497] **Tier 3 of the condemned `try? save()` sites — 2 left of the original 12.**
   **Tier 1 and Tier 2 closed 2026-08-30** (7 sites, each exemption entry deleted with its fix, pinned by
@@ -1335,6 +1323,15 @@ before filing**: this list has had the same ticket re-reported more than once.
   `Foundation` write whose failure the caller then reports success over. Measure the new hit count
   before shipping — the value of this rule so far has been that 86% of sites legitimately pass it.
   **Closed 2026-08-30 **with the measurement, and one carve-out**. Widened to the commit surface (`try?` on a `Cadence*Persistence` helper) and generalised `isPresented = false` to `is<Something> = false`. Measured over 552 files: **either half alone finds 0 new offenders; both together find exactly 1**, and that one is [[T-507]], now held in `reportExemptions` cross-referenced — whoever fixes it must delete the entry or the rot test fails. **`write(to:)` deliberately excluded**: measured at +0, and [[T-506]] is invisible not because of the needle but because nothing after that write reports success in source — the report is the *absence* of an error sheet. Out of the rule's shape, not hidden from it. Recorded in the rule so nobody re-derives it.**
+
+- [T-501] **`docs/TODO_DONE.md`'s "Landed in" SHAs record where a ticket was *removed*, not where it
+  shipped.** Found while applying [[T-462]]'s title recovery: T-285's entry reads "Landed in `0dd7258`",
+  whose subject is *"Deduplicate docs/TODO.md"* — a bookkeeping commit that changed no Swift.
+  [[T-462]]'s measurement explains why: **175 of 200 archived tickets were removed by commits that
+  touched only `docs/TODO.md`.** So an unknown share of the 177 existing entries attribute a fix to a
+  commit that did not contain it, which is worse than a missing SHA because it reads as authoritative.
+  Establish how many are wrong before deciding whether to re-derive them.
+  **Closed 2026-08-30 — **and the ticket's premise did not survive measurement. 5 of the 177 entries had a wrong SHA, not ~175.** I filed this by generalising one example (T-285 citing a "Deduplicate docs/TODO.md" commit); the generalisation was wrong. [[T-462]]'s 175/200 figure measured **removal** commits for the 200 tickets that were *never archived* — a different population. The archive mostly does not cite removal commits at all: 79 entries cite a deliberately different commit, and of the 85 that do cite their removal, 80 are large code batches that shipped the fix *and* closed the ticket together (the per-batch citation counts match the "N fixes" in each batch's own subject). **The bug was in T-462's reconstruction fallback, not in the archive's convention.** All five were recovered and corrected — T-284→`96b5583`, T-285/T-286/T-288→`b05869d`, T-361→`5d2c196` — plus six entries that had no SHA but did have code behind them, and T-279's entry, which still claimed "working tree, not committed" after `cb53c78` committed it. **The other 172 are deliberately not re-derived**: two independent channels corroborate them, and a blanket `git log -S` pass would replace correct attributions with first-touch SHAs, which for a symbol like `MarkdownHeadingRamp` lands on the wrong ticket entirely. Nine remaining SHA-less entries are correctly SHA-less — closed by splitting, audits that changed nothing, or shipped as `AGENTS.md`/`scripts/` changes where a docs SHA is the right answer.**
 
 ## Cancelled
 

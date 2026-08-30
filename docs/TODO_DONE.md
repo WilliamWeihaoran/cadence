@@ -140,10 +140,10 @@ archived. Each line names the commit that closed it; the reasoning lives in that
 
 - [T-281] **Two iOS note-editor sheet headers are one header, written twice.** Landed in `b05869d` — Six duplications closed, and one test that was guarding nothing
 - [T-283] **Three `iPad*` names for views that render on every device.** Landed in `b05869d` — Six duplications closed, and one test that was guarding nothing
-- [T-284] **Six spellings of one uppercase eyebrow label, at four kernings.** Landed in `0dd7258` — Deduplicate docs/TODO.md — an agent appended a stale copy of the whole file
-- [T-285] **macOS re-spells `CadenceEmptyStateCopy`, and hand-rolls `EmptyStateView` for the Inbox.** Landed in `0dd7258` — Deduplicate docs/TODO.md — an agent appended a stale copy of the whole file
-- [T-286] **Seven macOS Settings sections are still outside the shared row vocabulary.** Landed in `0dd7258` — Deduplicate docs/TODO.md — an agent appended a stale copy of the whole file
-- [T-288] **Four whole-file `#if os(macOS)` components sit in `Shared/Components/`.** Landed in `0dd7258` — Deduplicate docs/TODO.md — an agent appended a stale copy of the whole file
+- [T-284] **Six spellings of one uppercase eyebrow label, at four kernings.** Landed in `96b5583` — Four convergence tickets, green together, their agents gone before reporting. The judgement and the kerning-derivation pin followed in `b05869d`
+- [T-285] **macOS re-spells `CadenceEmptyStateCopy`, and hand-rolls `EmptyStateView` for the Inbox.** Landed in `b05869d` — Six duplications closed, and one test that was guarding nothing
+- [T-286] **Seven macOS Settings sections are still outside the shared row vocabulary.** Landed in `b05869d` — Six duplications closed, and one test that was guarding nothing
+- [T-288] **Four whole-file `#if os(macOS)` components sit in `Shared/Components/`.** Landed in `b05869d` — Six duplications closed, and one test that was guarding nothing
 - [T-295] **`deleteBundle` leaves `calendarEventID` set; its sibling twelve lines above clears it.** Landed in `7efe81f` — An image in a task's note survives a delete, and the repair service says what it will not do
 - [T-298] **A failed fetch makes the note-delete summary understate the damage.** Landed in `610e42a` — Eight fixes, and two more tickets whose premise the evidence contradicted
 - [T-309] **Read-write MCP startup runs migration and repair more than once.** Landed in `bbb6ac2` — MCP reads stop fetching whole tables, and a goal count stops claiming to be a total
@@ -176,7 +176,7 @@ archived. Each line names the commit that closed it; the reasoning lives in that
 - [T-357] **`TaskCompletionAnimationManager` bypasses the shared status path when it has no context — and that is now the second bypass found in that one file.** Landed in `1614339` — Ten fixes across three batches, and one decision that had been spelled two ways
 - [T-358] **Section state is one JSON blob, so two devices editing different sections clobber each other.** Landed in `859e270` — Nine fixes across four batches, verified together
 - [T-360] **Duplicate-tag merge keeps the newer timestamp and throws away the newer colour — and the guard that was supposed to prevent that is unreachable.** Landed in `c54cadb` — A failed task delete now says so, and a merged duplicate tag stops lying about its age
-- [T-361] **Turning reminders off cancels nothing until a scene-phase sweep.** Landed in `4354dec` — T-361 closed: the reminders toggle now cancels and reconciles immediately
+- [T-361] **Turning reminders off cancels nothing until a scene-phase sweep.** Landed in `5d2c196` — Restore the T-356 fix that d4bc391 lost, and land the reminders toggle (T-361)
 - [T-362] **Eleven macOS/iOS surfaces change a task's date or time without reconciling notifications.** Landed in `b2a0f53` — Four fixes that all had the same shape: a rule written once and obeyed in one place
 - [T-363] **An out-of-range `reminderMinuteOfDay` schedules a daily reminder at whatever time reconcile happened to run.** Landed in `610e42a` — Eight fixes, and two more tickets whose premise the evidence contradicted
 - [T-364] **Task-creation surfaces that report success still bypass the rollback API.** Landed in `b2a0f53` — Four fixes that all had the same shape: a rule written once and obeyed in one place
@@ -985,7 +985,7 @@ because the commits are already pushed and cannot be amended.
 > below" and was wrong within a day of being written, twice; the count is deleted rather than
 > corrected, because a number here is a claim every later agent has to re-check and nobody does.
 
-- [T-279] **Pasting an image into a note did nothing on macOS — DONE (working tree, not committed).**
+- [T-279] **Pasting an image into a note did nothing on macOS — DONE.** Landed in `cb53c78`.
   User-reported. The paste path was **built and correct**: `CadenceTextView.paste(_:)` →
   `insertMarkdownImages(from:)` → `MarkdownImageAssetService.images(from:)` / `imageFileURLs(from:)`
   → `createAsset` → `insertMarkdownImages(_:)`. Every link was measured working in isolation. The
@@ -1010,7 +1010,7 @@ because the commits are already pushed and cannot be amended.
   `NSPasteboard.general` would destroy whatever the person running it had copied. Four mutations of
   the fix each killed it. The iOS half is T-280.
 
-- [T-20] **macOS Settings speaks iOS's vocabulary — DONE, and iOS won on every contested point.**
+- [T-20] **macOS Settings speaks iOS's vocabulary — DONE, and iOS won on every contested point.** Landed in `6195536`.
   From the recovery branch, finished. iOS Settings was rebuilt in `775833d` on a category list plus
   value rows; macOS kept ad-hoc `VStack`s of bold titles over grey paragraphs, `Picker(.menu)` for
   work hours, a row of saturated filled pills for the default list page,
@@ -1062,7 +1062,7 @@ because the commits are already pushed and cannot be amended.
   is not the half-converted-category hazard; those panes simply stop painting the palette colour
   under the system separator.
 
-- [T-277] **The two weekday column headers were a fork — DONE, one shared band.**
+- [T-277] **The two weekday column headers were a fork — DONE, one shared band.** Landed in `5fc7844`.
   `Cadence/Shared/CadenceCalendarWeekdayHeaderMetrics.swift` states the whole band once —
   `labelSize` 10, `labelKerning` 0.5, `labelSpacing` 2, `dayNumberSize` 18, `dayCircleSize` 32 — and
   macOS's `CalDayHeaderView`, `iOSCalendarTimelineMetrics` and **both** iOS month grids read it.
@@ -1091,7 +1091,7 @@ because the commits are already pushed and cannot be amended.
   neither sets its own size, and exact per-file reference counts so a site that drops one of the
   five figures back to a literal fails rather than riding on the four it kept.
 
-- [T-194] **Note export on iOS: markdown *and* PDF — DONE, one page box and two renderers.**
+- [T-194] **Note export on iOS: markdown *and* PDF — DONE, one page box and two renderers.** Landed in `5fc7844`.
   iOS gets `iOSNoteExportService` (bytes for both formats) and `iOSNoteExportMenu` (the control,
   one view rendered by three headers: the Notes tab's regular-width header, `iOSListNotesView`'s,
   and the compact editor cover's navigation bar). `.fileExporter`, not `ShareLink` — this repo
@@ -1127,7 +1127,7 @@ because the commits are already pushed and cannot be amended.
   zero discriminating power, which is the same class of defect as a source scan that passes over a
   restored bug.
 
-- [T-211] **iOS H5/H6 rendered below the editor's body — DONE, the ramp is a ratio now.**
+- [T-211] **iOS H5/H6 rendered below the editor's body — DONE, the ramp is a ratio now.** Landed in `5fc7844`.
   `MarkdownHeadingRamp` quotes each surface's ramp against a reference body
   (`referenceBodyPointSize(for:)` — 17 mobile, 14 desktop) and
   `size(level:surface:bodyPointSize:)` scales that quotation to the body the caller actually draws
@@ -1144,7 +1144,7 @@ because the commits are already pushed and cannot be amended.
   that asking at the reference body returns the quoted figure exactly, and that both call sites
   state a `bodyPointSize` rather than falling through to the default.
 
-- [T-276] **iOS offered "Focus" on a settled task; macOS hid it — DONE, one predicate in `Shared/`.**
+- [T-276] **iOS offered "Focus" on a settled task; macOS hid it — DONE, one predicate in `Shared/`.** Landed in `8649cc1`.
   `CadenceFocusSupport.canFocus(_ task:)` (`Shared/CadenceFocusPlanningSupport.swift`) and
   `canFocus(_ bundle:)` (`Shared/CadenceFocusBundleSupport.swift`) are now the app's only spelling of
   "can this be the subject of a focus session", and all five entry points read them:
