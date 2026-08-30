@@ -79,6 +79,18 @@ let cadenceRetiredCopy: [CadenceRetiredPhrase] = [
         """
     ),
     CadenceRetiredPhrase(
+        "Today tasks will appear here.",
+        retiredBy: "T-519",
+        why: """
+        iOSFocusView's detail-pane placeholder, and false in both cases it was drawn in. \
+        `selectedItem` falls back to `pickItems.first`, so it appeared either while the picker \
+        pane beside it was showing the shared focus empty state about the same list, or while a \
+        deleted subject left the pane empty with today's tasks listed to the left. The pane says \
+        CadenceEmptyStateCopy.focusSubtitle in the first case and "Select an item from the list." \
+        in the second.
+        """
+    ),
+    CadenceRetiredPhrase(
         "Cadence account and data were deleted.",
         retiredBy: "T-474",
         why: """

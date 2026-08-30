@@ -117,8 +117,8 @@ private struct iOSTaskRowContainerPickerContent: View {
 
     var body: some View {
         iOSContainerChoicePopover(
-            activeAreas: areas.filter(\.isActive),
-            activeProjects: projects.filter(\.isActive),
+            areas: areas,
+            projects: projects,
             selection: Binding(get: { currentToken }, set: apply),
             isPresented: $isPresented
         )
@@ -496,12 +496,16 @@ struct iOSTaskRowContextMenu: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
-    private var activeAreas: [Area] {
-        areas.filter(\.isActive)
+    /// The same grouped three-way choice `iOSContainerChoicePopover` offers, in a menu instead of
+    /// a popover — so it narrows the same way (T-514): the list the task is already in stays
+    /// offered even once it is archived or finished, because otherwise this menu shows no
+    /// checkmark at all and has no row that means "where this task is".
+    private var offerableAreas: [Area] {
+        CadenceTaskComposerSupport.pickableAreas(areas, selectedID: task.area?.id)
     }
 
-    private var activeProjects: [Project] {
-        projects.filter(\.isActive)
+    private var offerableProjects: [Project] {
+        CadenceTaskComposerSupport.pickableProjects(projects, selectedID: task.project?.id)
     }
 
     private var availableSectionNames: [String] {
@@ -696,26 +700,26 @@ struct iOSTaskRowContextMenu: View {
                 Label("Inbox", systemImage: task.area == nil && task.project == nil ? "checkmark.circle.fill" : "tray.fill")
             }
 
-            if !activeAreas.isEmpty {
+            if !offerableAreas.isEmpty {
                 Divider()
 
-                ForEach(activeAreas) { area in
+                ForEach(offerableAreas) { area in
                     Button {
                         moveToContainer(area: area, project: nil)
                     } label: {
-                        Label(area.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : area.name, systemImage: task.area?.id == area.id && task.project == nil ? "checkmark.circle.fill" : area.icon)
+                        Label(CadenceAreaPickerSupport.title(for: area), systemImage: task.area?.id == area.id && task.project == nil ? "checkmark.circle.fill" : area.icon)
                     }
                 }
             }
 
-            if !activeProjects.isEmpty {
+            if !offerableProjects.isEmpty {
                 Divider()
 
-                ForEach(activeProjects) { project in
+                ForEach(offerableProjects) { project in
                     Button {
                         moveToContainer(area: nil, project: project)
                     } label: {
-                        Label(project.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : project.name, systemImage: task.project?.id == project.id ? "checkmark.circle.fill" : project.icon)
+                        Label(CadenceProjectPickerSupport.title(for: project), systemImage: task.project?.id == project.id ? "checkmark.circle.fill" : project.icon)
                     }
                 }
             }

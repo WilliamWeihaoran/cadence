@@ -34,18 +34,61 @@ enum NoteExportService {
             suggestedName: NoteExportSupport.suggestedFilename(title: title, format: format),
             contentType: format.contentType
         ) { url in
-            switch format {
-            case .markdown:
-                try? content.write(to: url, atomically: true, encoding: .utf8)
-            case .pdf:
-                guard let pdfData = renderedPDFData(
-                    content: content,
-                    imageAssets: imageAssets,
-                    taskEmbeds: taskEmbeds
-                ) else { return }
-                try? pdfData.write(to: url)
+            do {
+                switch format {
+                case .markdown:
+                    try content.write(to: url, atomically: true, encoding: .utf8)
+                case .pdf:
+                    guard let pdfData = renderedPDFData(
+                        content: content,
+                        imageAssets: imageAssets,
+                        taskEmbeds: taskEmbeds
+                    ) else {
+                        presentFailure(NoteExportSupport.renderFailureMessage(for: format))
+                        return
+                    }
+                    try pdfData.write(to: url)
+                }
+            } catch {
+                presentFailure(NoteExportSupport.writeFailureMessage(error.localizedDescription))
             }
         }
+    }
+
+    /// The failure sheet, on the window the save panel was a sheet on (T-506).
+    ///
+    /// **Why the service reports this and not its caller.** The note action picker dismisses itself
+    /// before calling `export`, and the write happens later still, in the save panel's completion —
+    /// so by the time there is anything to report, the view that started the export has no sheet of
+    /// its own left to put it in. The code that put the panel up is the code that can put the
+    /// failure up, on the same window, and that is why `export` stays fire-and-forget rather than
+    /// growing an `onFailure:` the one call site would have to keep alive.
+    ///
+    /// The `runModal()` fallback is **not** the blocking-`NSSavePanel` hazard this flow avoids
+    /// elsewhere: a picker held open modally blocks the app on a decision the user may not be ready
+    /// to make, while this is a terminal report with one button. Silence is the worse outcome, and
+    /// this branch only runs when the app has no window at all.
+    @MainActor
+    private static func presentFailure(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = NoteExportSupport.failureAlertTitle
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+
+        if let window = presentationWindow {
+            alert.beginSheetModal(for: window, completionHandler: nil)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    /// The window a sheet hangs from, asked once. Both the save panel and the failure above want
+    /// the same answer, and one hover/selection layer at one radius is the same rule as one window
+    /// lookup in one place.
+    @MainActor
+    private static var presentationWindow: NSWindow? {
+        NSApp.keyWindow ?? NSApp.mainWindow
     }
 
     @MainActor
@@ -79,7 +122,7 @@ enum NoteExportService {
             }
         }
 
-        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+        if let window = presentationWindow {
             panel.beginSheetModal(for: window, completionHandler: save)
         } else {
             panel.begin(completionHandler: save)

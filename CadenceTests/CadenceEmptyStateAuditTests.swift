@@ -383,7 +383,8 @@ struct CadenceEmptyStateAuditTests {
             CadenceEmptyStateCopy.listNotesSubtitle,
             CadenceEmptyStateCopy.completedTasksSubtitle,
             CadenceEmptyStateCopy.noteActionTasksSubtitle,
-            CadenceEmptyStateCopy.activeListsSubtitle,
+            CadenceEmptyStateCopy.activeListsSubtitle(hasArchived: true),
+            CadenceEmptyStateCopy.activeListsSubtitle(hasArchived: false),
             CadenceEmptyStateCopy.dailyNotesSubtitle,
             CadenceEmptyStateCopy.weeklyNotesSubtitle,
             CadenceEmptyStateCopy.notepadSubtitle,
@@ -392,6 +393,174 @@ struct CadenceEmptyStateAuditTests {
             #expect(sentence.hasSuffix("."), "\"\(sentence)\" is a sentence without a full stop")
             #expect(sentence.contains("\n") == false, "an empty state's line is one line")
         }
+    }
+
+    // MARK: T-526 — the Lists empty state, against the section it points at
+
+    /// **The clause that names Archived is only said when Archived is drawn.**
+    ///
+    /// Behavioural: `Cadence/Shared/` is compiled by this target, so these are the values the two
+    /// shells will render, not a reading of their source.
+    ///
+    /// The first-run half is the one the defect was about. The empty state shows only when there
+    /// are no *active* lists, and on a fresh or fully emptied store there is nothing archived
+    /// either — so the reader most certain to see this sentence was the reader for whom the
+    /// section it pointed at does not exist.
+    @Test func theListsEmptyStateOnlyOffersArchivedRestoreWhenArchivedIsOnScreen() {
+        #expect(
+            CadenceEmptyStateCopy.activeListsSubtitle(hasArchived: false)
+                == "Create an area or project here."
+        )
+        #expect(
+            CadenceEmptyStateCopy.activeListsSubtitle(hasArchived: true)
+                == "Create an area or project here, or restore one from Archived."
+        )
+
+        // Stated as an absence too, so a rewording that keeps the promise under different words
+        // fails rather than passing on a changed literal.
+        let firstRun = CadenceEmptyStateCopy.activeListsSubtitle(hasArchived: false)
+        #expect(firstRun.localizedCaseInsensitiveContains("archiv") == false)
+        #expect(firstRun.localizedCaseInsensitiveContains("restore") == false)
+
+        // And the half that is still true keeps saying it: the fix is a condition, not a deletion.
+        #expect(CadenceEmptyStateCopy.activeListsSubtitle(hasArchived: true).contains("Archived"))
+
+        // "here" survives on both, because iOSListCreateButtonsRow is directly above the panel on
+        // both shells — that clause was never the false one.
+        #expect(firstRun.contains("here"))
+    }
+
+    /// **Both shells ask the same predicate that draws the section, and each spells it once.**
+    ///
+    /// Source-shape, and stated as such: `Cadence/iOS/` is not compiled by this target, so nothing
+    /// here executes a `View`. What it can say is the thing the defect was made of — the sentence
+    /// and the section were deciding independently. Now `hasArchivedLists` is the single reader of
+    /// `archivedAreas`/`archivedProjects` emptiness in each file, and both the section and the
+    /// subtitle go through it.
+    @Test func bothListShellsAskTheSamePredicateThatDrawsTheArchivedSection() throws {
+        for path in [
+            "Cadence/iOS/iOSListViews.swift",
+            "Cadence/iOS/iOSListsRegularPane.swift",
+        ] {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            let code = CadenceSourceScan.strippingComments(raw)
+            #expect(code != raw, "\(path) carries comments and the stripper blanked none of them")
+
+            #expect(
+                code.contains("private var hasArchivedLists: Bool"),
+                "\(path) has no single predicate for whether Archived is on screen"
+            )
+            let body = try #require(
+                bodyOfComputedProperty("hasArchivedLists", in: code),
+                "\(path)'s hasArchivedLists has no body"
+            )
+            #expect(
+                body.contains("!archivedAreas.isEmpty || !archivedProjects.isEmpty"),
+                "\(path)'s hasArchivedLists is not the predicate the Archived section was drawn from"
+            )
+
+            // The section is drawn from it...
+            #expect(
+                code.contains("if hasArchivedLists {"),
+                "\(path)'s archivedSection no longer branches on the shared predicate"
+            )
+            // ...and the empty state asks it before offering to restore from it.
+            let empty = try #require(
+                CadenceEmptyStateAudit.callSegments(in: code)
+                    .first { $0.contains("CadenceEmptyStateCopy.activeListsTitle") },
+                "\(path) no longer draws the active-lists empty state"
+            )
+            #expect(
+                empty.contains("CadenceEmptyStateCopy.activeListsSubtitle(hasArchived: hasArchivedLists)"),
+                "\(path)'s empty state does not pass the section's own predicate"
+            )
+
+            // Spelled once. Two copies of this expression is how the sentence and the section came
+            // to disagree, so a second one is the regression rather than a style slip.
+            #expect(
+                CadenceSourceScan.matchCount(
+                    #"!archivedAreas\.isEmpty \|\| !archivedProjects\.isEmpty"#,
+                    in: code
+                ) == 1,
+                "\(path) spells the archived predicate more than once again"
+            )
+        }
+    }
+
+    // MARK: T-519 — the Focus detail pane, against the pane beside it
+
+    /// **The Focus detail pane no longer promises tasks that are already next to it.**
+    ///
+    /// It said "Ready when you are / Today tasks will appear here." for both of the two ways this
+    /// branch is reached, and `selectedItem` falls back to `pickItems.first`, so those two are:
+    /// nothing is ready — in which case the picker pane beside it is showing the shared focus
+    /// empty state and this was a second, differently worded promise about it — or a chosen
+    /// subject was deleted while the picker still lists others, in which case today's tasks are
+    /// literally on screen to the left.
+    ///
+    /// Source-shape: `Cadence/iOS/` is not compiled by this target. The retirement of the sentence
+    /// itself is enforced app-wide by `cadenceRetiredCopy`, not here.
+    @Test func theFocusDetailPaneNeverPromisesTasksThatAreAlreadyBesideIt() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFocusView.swift")
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(code.contains("struct iOSFocusView"), "non-vacuity: wrong file")
+        #expect(code != raw, "the stripper blanked no comments in a file that has them")
+
+        // The branch exists and is the thing `case nil` draws.
+        #expect(code.contains("private var unselectedDetail: some View"))
+        #expect(
+            CadenceSourceScan.matchCount(#"case nil:\s+unselectedDetail"#, in: code) == 1,
+            "focusDetailPane's nil case no longer draws unselectedDetail"
+        )
+
+        let body = try #require(
+            bodyOfComputedProperty("unselectedDetail", in: code),
+            "unselectedDetail has no body"
+        )
+        // It branches, on the same list the pane beside it is showing.
+        #expect(
+            body.contains("if pickItems.isEmpty {"),
+            "the placeholder does not ask whether there is anything to select"
+        )
+        // Empty: the same words the picker pane says, because it is one page and not two.
+        #expect(body.contains("CadenceEmptyStateCopy.focusTitle"))
+        #expect(body.contains("CadenceEmptyStateCopy.focusSubtitle"))
+        // Full: the house pattern for a detail pane with no selection, which Goals and Habits use.
+        #expect(body.contains("iOSFeatureEmptyDetail(systemImage: \"timer\", title: \"No session selected\")"))
+
+        // The picker pane really does say the shared sentence at the same moment — the claim that
+        // makes the empty half a convergence rather than a new spelling.
+        #expect(CadenceSourceScan.matchCount("CadenceEmptyStateCopy.focusTitle", in: code) == 3)
+
+        // And the house pattern is still the house pattern.
+        let components = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureComponents.swift")
+        )
+        #expect(components.contains("struct iOSFeatureEmptyDetail: View"))
+        #expect(components.contains("subtitle: \"Select an item from the list.\""))
+    }
+
+    /// The text between the braces of `var <name>` — the shape `CadenceSourceScan.functionBody`
+    /// cannot read, because a computed property has no parameter list to key on.
+    private func bodyOfComputedProperty(_ name: String, in source: String) -> String? {
+        guard let declaration = source.range(of: "var \(name)") else { return nil }
+        guard let open = source.range(of: "{", range: declaration.upperBound..<source.endIndex) else {
+            return nil
+        }
+        var depth = 0
+        var index = open.lowerBound
+        while index < source.endIndex {
+            if source[index] == "{" {
+                depth += 1
+            } else if source[index] == "}" {
+                depth -= 1
+                if depth == 0 {
+                    return String(source[source.index(after: open.lowerBound)..<index])
+                }
+            }
+            index = source.index(after: index)
+        }
+        return nil
     }
 
     /// Every screen that used to spell one of these now reads it. Counted by *file*, because the

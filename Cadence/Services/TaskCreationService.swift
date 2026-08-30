@@ -1,7 +1,13 @@
 import Foundation
 import SwiftData
 
-enum TaskContainerSelection: Hashable {
+/// `nonisolated` because the target defaults to `@MainActor`, which isolates the synthesised
+/// `Equatable`/`Hashable` conformances — and a `#expect` macro expands into a nonisolated context,
+/// so comparing two of these in a test warns "main actor-isolated conformance ... cannot be used in
+/// nonisolated context; this is an error in the Swift 6 language mode" (measured, r32, 2026-08-30).
+/// The cases carry only a `UUID`, so there is nothing here that needs the actor. Same shape as
+/// T-445's `nonisolated extension` and T-122's `& Sendable`: a Swift 6 prerequisite paid early.
+nonisolated enum TaskContainerSelection: Hashable {
     case inbox
     case area(UUID)
     case project(UUID)

@@ -690,7 +690,18 @@ struct NotesMonthHeader: View {
         .animation(.easeOut(duration: 0.16), value: isCollapsed)
         .accessibilityLabel(title)
         .accessibilityValue(isCollapsed ? "Collapsed, \(noteCount) notes" : "Expanded")
-        .accessibilityHint(isCollapsed ? "Double tap to expand" : "Double tap to collapse")
+        // **T-521 — a shared control may not name a touch gesture.** This read "Double tap to
+        // expand" / "Double tap to collapse", and `NotesGroupedListColumn` puts this exact header
+        // in macOS's `HSplitView` as well as the iPad pane and the iPhone screen — the `.onHover`
+        // two lines up is the tell. On the Mac, VoiceOver activates a control with
+        // Control-Option-Space, so the hint was reading out a gesture that surface does not have.
+        // A hint's job is the *outcome* of activating, which is true at every width;
+        // `CadenceStartupIssueBannerModel.accessibilityHint` — the app's other shared
+        // expand/collapse control — already words it that way, so this matches it rather than
+        // inventing a second style.
+        .accessibilityHint(
+            isCollapsed ? "Expands to show this month's notes." : "Collapses this month's notes."
+        )
     }
 }
 

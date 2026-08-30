@@ -36,6 +36,16 @@ struct iOSListsView: View {
         projects.filter(\.isArchived)
     }
 
+    /// **The one predicate that decides whether Archived exists on this screen** (T-526).
+    ///
+    /// Read by `archivedSection`, which draws it, *and* by `emptyStateSection`, whose subtitle
+    /// used to offer "restore one from Archived" unconditionally. Held once rather than spelled at
+    /// both sites: two copies of this expression is exactly how the sentence and the section came
+    /// to disagree in the first place.
+    private var hasArchivedLists: Bool {
+        !archivedAreas.isEmpty || !archivedProjects.isEmpty
+    }
+
     private var isCompact: Bool {
         horizontalSizeClass == .compact
     }
@@ -253,7 +263,7 @@ struct iOSListsView: View {
 
     @ViewBuilder
     private var archivedSection: some View {
-        if !archivedAreas.isEmpty || !archivedProjects.isEmpty {
+        if hasArchivedLists {
             Section {
                 ForEach(archivedAreas) { area in
                     archivedAreaRow(area)
@@ -298,7 +308,7 @@ struct iOSListsView: View {
             iOSEmptyPanel(
                 systemImage: "folder",
                 title: CadenceEmptyStateCopy.activeListsTitle,
-                subtitle: CadenceEmptyStateCopy.activeListsSubtitle
+                subtitle: CadenceEmptyStateCopy.activeListsSubtitle(hasArchived: hasArchivedLists)
             )
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)

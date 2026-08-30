@@ -22,6 +22,16 @@ struct iOSListsRegularPane: View {
     /// hosts this pane, so the iPhone list and the iPad pane cannot diverge on either.
     let requestDeletion: (iOSListDeletionTarget) -> Void
 
+    /// **The one predicate that decides whether Archived exists on this pane** (T-526).
+    ///
+    /// The iPad half of the same fix `iOSListsView` carries: `archivedSection` draws the section
+    /// from this, and the empty panel's subtitle asks the same question before offering to restore
+    /// from it. The two shells hold the expression separately because they hold their archived
+    /// rows separately — one computes them, one is handed them — but neither may spell it twice.
+    private var hasArchivedLists: Bool {
+        !archivedAreas.isEmpty || !archivedProjects.isEmpty
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             iOSListsPageHeader(areaCount: activeAreas.count, projectCount: activeProjects.count)
@@ -38,7 +48,7 @@ struct iOSListsRegularPane: View {
                         iOSEmptyPanel(
                             systemImage: "folder",
                             title: CadenceEmptyStateCopy.activeListsTitle,
-                            subtitle: CadenceEmptyStateCopy.activeListsSubtitle
+                            subtitle: CadenceEmptyStateCopy.activeListsSubtitle(hasArchived: hasArchivedLists)
                         )
                         .frame(minHeight: 260)
                     } else {
@@ -146,7 +156,7 @@ struct iOSListsRegularPane: View {
 
     @ViewBuilder
     private var archivedSection: some View {
-        if !archivedAreas.isEmpty || !archivedProjects.isEmpty {
+        if hasArchivedLists {
             iOSListSelectionSection(title: "Archived") {
                 ForEach(archivedAreas) { area in
                     iOSArchivedListSelectionRow(

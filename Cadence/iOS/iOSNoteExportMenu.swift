@@ -81,12 +81,12 @@ struct iOSNoteExportMenu: View {
             defaultFilename: exportFilename
         ) { result in
             if case .failure(let error) = result {
-                errorMessage = error.localizedDescription
+                errorMessage = NoteExportSupport.writeFailureMessage(error.localizedDescription)
             }
             exportDocument = nil
             exportFormat = nil
         }
-        .alert("Export Failed", isPresented: Binding(
+        .alert(NoteExportSupport.failureAlertTitle, isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
@@ -118,7 +118,7 @@ struct iOSNoteExportMenu: View {
             imageAssets: imageAssets,
             embeddedTasks: embeddedTasks
         ) else {
-            errorMessage = "Cadence could not render this note as a \(format.pathExtension.uppercased())."
+            errorMessage = NoteExportSupport.renderFailureMessage(for: format)
             return
         }
 

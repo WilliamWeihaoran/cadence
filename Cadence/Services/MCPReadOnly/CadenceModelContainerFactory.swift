@@ -22,15 +22,21 @@ import SwiftData
 nonisolated enum CadenceMCPStorePreparation {
     /// How many distinct operations `prepare(in:source:)` performs. The services report what they
     /// executed against this rather than against a literal.
-    static let stepCount = 4
+    static let stepCount = 3
 
-    /// Note migration, tag seeding, tag sync, integrity repair — in that order. The order is not
-    /// cosmetic: `syncAllNoteTagsFromMarkdown` resolves tags `seedDefaultTags` may have just
-    /// created, and the repair pass runs last so it sees the migrated shape.
+    /// Note migration, tag sync, integrity repair — in that order, the repair pass last so it sees
+    /// the migrated shape.
+    ///
+    /// **The tag seed used to be the second of four, and T-528 removed it.** This runs on the MCP
+    /// server's own launch against the user's real store, from a second process, with no user in
+    /// front of it — so it read "no tag carries this slug" exactly as wrongly as the app's launch
+    /// did, and re-seeded a renamed default through the back door of a store the app had already
+    /// stopped touching. Nothing downstream needs it: `TagSupport.resolveTags` mints a tag by name
+    /// when a write asks for one, so an MCP write that names a tag works against a store with no
+    /// tags in it at all. Seeding is a user action now, and this process has no user.
     @discardableResult
     static func prepare(in context: ModelContext, source: String) -> Int {
         NoteMigrationService.migrateAndRecordFailure(in: context, source: source)
-        TagSupport.seedDefaultTags(in: context)
         TagSupport.syncAllNoteTagsFromMarkdown(in: context)
         DataIntegrityRepairService.repairAndRecordFailure(in: context, source: source)
         return stepCount

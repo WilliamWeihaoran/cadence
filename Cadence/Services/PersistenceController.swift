@@ -83,12 +83,31 @@ struct PersistenceController {
         // manages its own saves because it deletes rows rather than just inserting them.
         PursuitToGoalMigration.runIfNeeded(modelContext: context)
 
+        // **No pass here seeds the default tags, and that is the point (T-528).**
+        //
+        // The seed's only signal was "no tag carries this slug", and at launch that sentence has
+        // two readings the store cannot tell apart: a user who has never had tags, and a user
+        // whose tags have not arrived yet — a reinstall, a second device, a restore, the first
+        // seconds of any CloudKit launch. Seeding on the second reading inserts an *active* `bug`
+        // beside the archived, recoloured `bug` still in flight; `deduplicateTags` then merges the
+        // pair and the tag the user archived is back, active, in the seed's colour, on every
+        // synced device. On one device with no CloudKit at all it was simpler and just as wrong:
+        // rename `bug` to `Defect` in Settings > Tags and the next launch re-seeded `bug` beside
+        // it. Measured against the built app on 2026-08-30 — seven tags in, eight tags out.
+        //
+        // There is no local signal that separates the two readings, so the fix is not a better
+        // guard on the insert; it is that a launch does not insert. `TagSupport.seedDefaultTags`
+        // is now reached only from the "Add Defaults" controls that already ship on both
+        // platforms, where "no tag carries this slug" has one reading because a person just said
+        // so. `CadenceFirstLaunchEmptyStoreTests` holds the launch path to it.
+        //
+        // This also restores the symmetry `DataIntegrityRepairService`'s own doc comment argues
+        // for twelve lines from here: every startup pass is now inert against a store that is
+        // empty only because sync has not landed.
         let migrationReport = NoteMigrationService.migrateAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
-        let seededDefaultTags = TagSupport.seedDefaultTags(in: context, saveChanges: false)
         let syncedNoteTags = TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
         let repairReport = DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
         let changedStore = (migrationReport?.insertedTotal ?? 0) > 0 ||
-            seededDefaultTags ||
             syncedNoteTags ||
             repairReport?.changed == true
 

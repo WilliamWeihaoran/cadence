@@ -33,14 +33,6 @@ struct iOSTaskDetailSheet: View {
         (task.subtasks ?? []).sorted { $0.order < $1.order }
     }
 
-    private var activeAreas: [Area] {
-        areas.filter(\.isActive)
-    }
-
-    private var activeProjects: [Project] {
-        projects.filter(\.isActive)
-    }
-
     private var availableGoals: [Goal] {
         let openGoals = goals.filter { $0.status != .done }
         guard let currentGoal = task.goal,
@@ -190,8 +182,8 @@ struct iOSTaskDetailSheet: View {
                 iOSTaskPlacementBreadcrumb(
                     task: task,
                     containerSelection: $containerSelection,
-                    activeAreas: activeAreas,
-                    activeProjects: activeProjects,
+                    areas: areas,
+                    projects: projects,
                     availableSectionNames: availableSectionNames
                 )
             }

@@ -81,7 +81,31 @@ nonisolated enum CadenceEmptyStateCopy {
     /// The Lists page, phone and iPad pane. Both draw `iOSListCreateButtonsRow` above this, so
     /// "here" is true on both.
     static let activeListsTitle = "No active lists"
-    static let activeListsSubtitle = "Create an area or project here, or restore one from Archived."
+
+    /// **The second clause is only true when the section it names is on screen** (T-526).
+    ///
+    /// This was one unconditional sentence ending "…, or restore one from Archived." — but both
+    /// shells draw the Archived section only when something is archived
+    /// (`!archivedAreas.isEmpty || !archivedProjects.isEmpty`), and the empty state itself only
+    /// shows when there are no *active* lists. On a fresh or fully emptied store both hold at
+    /// once, so the one reader guaranteed to see this sentence — someone who has never made a
+    /// list — is the one reader for whom the section it points at is not drawn. Same defect as
+    /// T-469's "Add a task above": copy naming something that is not on the screen is worse than
+    /// no copy. The pattern was already in the app one screen over — `iOSSettingsView`'s
+    /// "No active contexts" row says "Create one here" and stops.
+    ///
+    /// A function rather than two constants, in the shape `isNarrowedToEmpty` already uses, so a
+    /// call site cannot take a half without answering the question. The caller must pass the
+    /// **same** predicate that draws the section: `iOSListsView` and `iOSListsRegularPane` each
+    /// hold it once as `hasArchivedLists` and feed both the section and this.
+    ///
+    /// The first-run half keeps "here", which stays true — `iOSListCreateButtonsRow` is directly
+    /// above the panel on both shells.
+    static func activeListsSubtitle(hasArchived: Bool) -> String {
+        hasArchived
+            ? "Create an area or project here, or restore one from Archived."
+            : "Create an area or project here."
+    }
 
     // MARK: - The Notes page, tab for tab
 

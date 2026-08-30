@@ -263,6 +263,118 @@ struct NoteExportSurfaceTests {
         #expect(strippingNoteExportComments("let x = 1 // struct NotePDFRenderOptions").contains("NotePDFRenderOptions") == false)
     }
 
+    // MARK: - An export that produces no file (T-506)
+
+    /// `try?` over the write that produces the file, anywhere under `Cadence/`.
+    ///
+    /// **Why this is a sweep and not a line in the `try? save()` rule.** T-508 measured that rule's
+    /// needle against `write(to:)` and deliberately left it out: a swallowed file write has no
+    /// pending change to be left in, and nothing after it reports success in source, because the
+    /// report *is* the absence of an error sheet. So the shape is real and that rule cannot see it.
+    /// This is the guard that can.
+    private static let swallowedWrite = "try\\?[^\\n]*\\.write\\(to:"
+
+    private static func swallowedWriteInstrument() throws -> CadenceScanInstrument {
+        try CadenceScanInstrument(
+            "swallowedFileWrite",
+            fires: "try? content.write(to: url, atomically: true, encoding: .utf8)",
+            andNotOn: "try content.write(to: url, atomically: true, encoding: .utf8)",
+            by: { source in
+                CadenceSourceScan.matchCount(Self.swallowedWrite, in: CadenceSourceScan.codeOnly(source)) > 0
+            }
+        )
+    }
+
+    /// **The T-506 regression.** macOS wrote both formats with `try?` inside the save panel's
+    /// completion, so a refused write — a read-only folder, a full disk, a revoked sandbox extent —
+    /// left the user having chosen a destination and receiving neither a file nor a word about it.
+    ///
+    /// Swept over the whole app rather than pinned to the one file: the two sites were the only
+    /// swallowed writes in `Cadence/` when this was written, and a sweep is what keeps the third
+    /// one from being added quietly.
+    @Test func noExportSwallowsTheWriteThatProducesTheFile() throws {
+        let instrument = try Self.swallowedWriteInstrument()
+
+        let offenders = try instrument.sweep(
+            try CadenceSourceScan.swiftFiles(under: "Cadence"),
+            atLeast: 300,
+            including: "Cadence/macOS/Services/NoteExportService.swift",
+            read: { try CadenceSourceScan.sourceFile($0) }
+        )
+
+        #expect(offenders.isEmpty, "\(offenders)")
+    }
+
+    /// The detector reads **code**, and here that is load-bearing rather than hygienic: the fix's
+    /// own doc comment quotes the line it removed, and `CadenceSaveCommitDisciplineTests` carries
+    /// the same text as a fixture. A sweep that counted prose would accuse the files explaining the
+    /// rule.
+    @Test func theSwallowedWriteDetectorReadsCodeAndNotTheCommentDescribingIt() throws {
+        let instrument = try Self.swallowedWriteInstrument()
+
+        #expect(instrument.fires(on: "try? pdfData.write(to: url)"))
+        #expect(!instrument.fires(on: "// was try? pdfData.write(to: url)"))
+        #expect(!instrument.fires(on: "let sample = \"try? pdfData.write(to: url)\""))
+    }
+
+    /// An export can produce no file two ways, and macOS said nothing for **both**: the write was
+    /// swallowed, and a PDF that failed to render left through a bare `guard … else { return }`.
+    /// iOS reported both from the start, which is what made the asymmetry a defect rather than a
+    /// missing feature.
+    ///
+    /// **Scoped to `export`'s own body, and that is the whole care in this test.** The file holds a
+    /// second, entirely correct `else { return }` — the save panel's cancel guard, where a user who
+    /// pressed Cancel must be told nothing at all. A file-wide assertion could not tell the two
+    /// apart, so it would either pass on the defect or fail on the fix.
+    @Test func theMacExporterReportsBothWaysAnExportCanProduceNoFile() throws {
+        let code = strippingNoteExportComments(
+            try noteExportSource("Cadence/macOS/Services/NoteExportService.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "export", in: code),
+            "export() is not where this scan thinks it is"
+        )
+
+        #expect(body.contains("catch"), "the export has no failure branch at all")
+        #expect(body.contains("NoteExportSupport.writeFailureMessage("), "a refused write is not reported")
+        #expect(body.contains("NoteExportSupport.renderFailureMessage("), "a PDF that did not render is not reported")
+        #expect(!body.contains("else { return }"), "a failure still leaves through a bare guard")
+    }
+
+    /// The other half of the pair above: **cancelling** stays silent. An alert saying the export
+    /// failed because the user pressed Cancel would be a worse bug than the one T-506 fixed, and it
+    /// is the obvious way to overshoot the fix.
+    @Test func cancellingTheSavePanelReportsNothing() throws {
+        let code = strippingNoteExportComments(
+            try noteExportSource("Cadence/macOS/Services/NoteExportService.swift")
+        )
+        let body = try #require(CadenceSourceScan.functionBody(named: "presentSavePanel", in: code))
+
+        #expect(body.contains("guard response == .OK"), "the cancel guard is not where this scan thinks it is")
+        #expect(!body.contains("presentFailure("), "cancelling raises an export-failed alert")
+    }
+
+    /// The failure copy is shared, so the two platforms cannot come to describe the same failure two
+    /// ways — the same rule the page box, the filename and the title resolution already follow, and
+    /// the rule whose absence *was* the defect: macOS had no words for either failure.
+    @Test func neitherExporterSpellsTheFailureCopyItself() throws {
+        #expect(NoteExportSupport.failureAlertTitle == "Export Failed")
+        #expect(NoteExportSupport.renderFailureMessage(for: .pdf) == "Cadence could not render this note as a PDF.")
+        #expect(NoteExportSupport.renderFailureMessage(for: .markdown) == "Cadence could not render this note as a MD.")
+        #expect(NoteExportSupport.writeFailureMessage("Permission denied") == "Cadence could not write the file: Permission denied")
+
+        for path in ["Cadence/macOS/Services/NoteExportService.swift", "Cadence/iOS/iOSNoteExportMenu.swift"] {
+            let code = strippingNoteExportComments(try noteExportSource(path))
+
+            #expect(!code.contains("could not render this note"), "\(path) re-spells the render failure")
+            #expect(!code.contains("Export Failed"), "\(path) re-spells the alert title")
+            #expect(
+                code.contains("NoteExportSupport.writeFailureMessage("),
+                "\(path) does not report a refused write through the shared copy"
+            )
+        }
+    }
+
     private func imageAsset(_ byte: UInt8) -> MarkdownImageAsset {
         MarkdownImageAsset(
             data: Data([byte]),

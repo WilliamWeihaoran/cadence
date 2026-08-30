@@ -96,34 +96,49 @@ struct iOSTaskEditorTitleCard: View {
 struct iOSTaskPlacementBreadcrumb: View {
     @Bindable var task: AppTask
     let containerSelection: Binding<String>
-    let activeAreas: [Area]
-    let activeProjects: [Project]
+    /// **Every** list, not the active ones (T-514). The sheet's `loadContainerSelection()` seeds
+    /// this breadcrumb's token from `task.area` / `task.project` — the unfiltered relationship —
+    /// and `iOSTaskDetailSheet.selectedArea` resolves it against the unfiltered `@Query`, so a task
+    /// in an area that had since been archived saved and sectioned correctly while the segment
+    /// resolved the same id against `activeAreas`, missed, and said **"Inbox"**. Third instance of
+    /// the display/save split: T-446 fixed it for Context, T-488 for Area.
+    ///
+    /// The two halves are now one array and one resolver. The title reads
+    /// `CadenceTaskComposerSupport.containerName(for:areas:projects:)`, whose rule is *existence,
+    /// not activity* — the same rule the save uses — and the picker narrows for itself.
+    let areas: [Area]
+    let projects: [Project]
     let availableSectionNames: [String]
 
     @State private var showContainerPicker = false
     @State private var showSectionPicker = false
 
+    private var container: TaskContainerSelection {
+        CadenceTaskComposerSupport.selection(fromToken: containerSelection.wrappedValue)
+    }
+
+    /// The list the token names, resolved **once** and read by the segment's name, glyph and
+    /// unset-ness alike — the shape `iOSTaskComposerValueTiles` already settled on for T-318.
+    private var resolvedContainer: GoalLinkTarget? {
+        CadenceTaskComposerSupport.resolvedContainer(for: container, areas: areas, projects: projects)
+    }
+
     private var containerTitle: String {
-        if containerSelection.wrappedValue.hasPrefix("area:"),
-           let id = UUID(uuidString: String(containerSelection.wrappedValue.dropFirst(5))),
-           let area = activeAreas.first(where: { $0.id == id }) {
-            return area.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : area.name
-        }
-        if containerSelection.wrappedValue.hasPrefix("project:"),
-           let id = UUID(uuidString: String(containerSelection.wrappedValue.dropFirst(8))),
-           let project = activeProjects.first(where: { $0.id == id }) {
-            return project.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : project.name
-        }
-        return CadenceTaskInspectorSupport.inboxSegmentTitle
+        CadenceTaskComposerSupport.containerName(for: container, areas: areas, projects: projects)
     }
 
     private var containerIcon: String {
-        if containerSelection.wrappedValue.hasPrefix("project:") { return "checklist" }
-        return "tray.full.fill"
+        switch resolvedContainer {
+        case .project: return "checklist"
+        case .area, .none: return "tray.full.fill"
+        }
     }
 
+    /// A token naming a list that has been *deleted* reads as unset here for the same reason it
+    /// reads "Inbox" above: that is where the task is. An archived list is not deleted, so it
+    /// resolves and the segment stays set.
     private var isInbox: Bool {
-        containerSelection.wrappedValue == "inbox"
+        resolvedContainer == nil
     }
 
     private var showsSectionSegment: Bool {
@@ -141,8 +156,8 @@ struct iOSTaskPlacementBreadcrumb: View {
             }
             .popover(isPresented: $showContainerPicker) {
                 iOSContainerChoicePopover(
-                    activeAreas: activeAreas,
-                    activeProjects: activeProjects,
+                    areas: areas,
+                    projects: projects,
                     selection: containerSelection,
                     isPresented: $showContainerPicker
                 )

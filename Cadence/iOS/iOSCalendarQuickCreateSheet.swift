@@ -46,14 +46,6 @@ struct iOSCalendarQuickCreateSheet: View {
         _startTime = State(initialValue: iOSCalendarQuickCreateSheet.defaultStartTime(dateKey: dateKey, startMinute: initialStartMinute))
     }
 
-    private var activeAreas: [Area] {
-        areas.filter(\.isActive)
-    }
-
-    private var activeProjects: [Project] {
-        projects.filter(\.isActive)
-    }
-
     private var availableSectionNames: [String] {
         CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)
     }
@@ -393,8 +385,8 @@ struct iOSCalendarQuickCreateSheet: View {
                 }
                 .popover(isPresented: $showContainerPicker) {
                     iOSContainerChoicePopover(
-                        activeAreas: activeAreas,
-                        activeProjects: activeProjects,
+                        areas: areas,
+                        projects: projects,
                         selection: $containerSelection,
                         isPresented: $showContainerPicker
                     )

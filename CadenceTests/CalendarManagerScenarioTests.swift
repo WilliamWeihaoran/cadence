@@ -265,6 +265,9 @@ struct CalendarManagerScenarioTests {
 
     private struct FakeCalendarEventLookup: CalendarEventLookup {
         var isAuthorized: Bool
+        /// Defaulted `true` so every test written before T-529 keeps asking the question it was
+        /// written to ask. The tests that vary it are the ones about the guard itself.
+        var hasLoadedCalendars: Bool = true
         var eventsByLookupID: [String: EKEvent] = [:]
 
         func event(withIdentifier identifier: String) -> EKEvent? {
@@ -334,6 +337,99 @@ struct CalendarManagerScenarioTests {
         CalendarLinkedTaskSupport.clearMissingEventLinks(in: [task], modelContext: modelContext, calendarManager: fake)
 
         #expect(task.calendarEventID == "event-fallback|cal-123|2026-06-15|540|Team Sync")
+    }
+
+    // MARK: - 6b. T-529: an authorized store that has answered nothing is not a store saying "gone"
+
+    /// **The whole of T-529.** `event(withIdentifier:)` returns `nil` for an event that was deleted
+    /// *and* for one whose source EventKit has not produced yet, and this sweep runs unattended on
+    /// every `EKEventStoreChanged` — including the one posted when access is first granted and the
+    /// ones posted while an account reloads. `isAuthorized` alone cannot tell those apart: it is
+    /// `authorizationStatus`, which says the app may ask, not that an answer has arrived.
+    ///
+    /// Its sibling `CadenceCalendarLinkHealth` takes the opposite posture on the same question for
+    /// a *list*'s `linkedCalendarID` — it reports the break and lets the user re-pick — and it
+    /// guards on exactly this evidence for exactly this reason.
+    @Test func clearMissingEventLinksTreatsAStoreWithNoCalendarsAsUnansweredRatherThanAsProofOfDeletion() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let task = AppTask(title: "Sprint review")
+        task.calendarEventID = "still-syncing-id"
+        modelContext.insert(task)
+        try modelContext.save()
+
+        let fake = FakeCalendarEventLookup(
+            isAuthorized: true,
+            hasLoadedCalendars: false,
+            eventsByLookupID: [:]
+        )
+        CalendarLinkedTaskSupport.clearMissingEventLinks(in: [task], modelContext: modelContext, calendarManager: fake)
+
+        #expect(task.calendarEventID == "still-syncing-id")
+    }
+
+    /// The question, asked without the destructive answer attached. Split out in T-529 so the
+    /// reporting posture the sibling takes is reachable here at all — and so a caller that wants to
+    /// know cannot only find out by having the links cleared.
+    @Test func missingEventLinksReportsTheSameSetItWouldHaveClearedAndWritesNothing() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let deleted = AppTask(title: "Deleted externally")
+        deleted.calendarEventID = "missing-id"
+        let live = AppTask(title: "Still scheduled")
+        live.calendarEventID = "live-id"
+        for task in [deleted, live] { modelContext.insert(task) }
+        try modelContext.save()
+
+        let liveEvent = EKEvent(eventStore: EKEventStore())
+        liveEvent.title = "Live"
+        let fake = FakeCalendarEventLookup(
+            isAuthorized: true,
+            eventsByLookupID: ["live-id": liveEvent]
+        )
+
+        let reported = CalendarLinkedTaskSupport.missingEventLinks(in: [deleted, live], calendarManager: fake)
+
+        #expect(reported.map(\.id) == [deleted.id])
+        // Reporting is not clearing: both identifiers survive the call untouched.
+        #expect(deleted.calendarEventID == "missing-id")
+        #expect(live.calendarEventID == "live-id")
+    }
+
+    /// The reporter honours the same evidence guard, so the two postures cannot disagree about
+    /// which links are dead.
+    @Test func missingEventLinksReportsNothingWhileTheStoreHasProducedNoCalendars() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let task = AppTask(title: "Sprint review")
+        task.calendarEventID = "still-syncing-id"
+        modelContext.insert(task)
+        try modelContext.save()
+
+        let unanswered = FakeCalendarEventLookup(isAuthorized: true, hasLoadedCalendars: false)
+        #expect(CalendarLinkedTaskSupport.missingEventLinks(in: [task], calendarManager: unanswered).isEmpty)
+
+        let answered = FakeCalendarEventLookup(isAuthorized: true, hasLoadedCalendars: true)
+        #expect(CalendarLinkedTaskSupport.missingEventLinks(in: [task], calendarManager: answered).map(\.id) == [task.id])
+    }
+
+    /// The guard is a conjunction, and each half is load-bearing: authorization without loaded
+    /// calendars is the T-529 case, loaded calendars without authorization cannot happen through
+    /// `CalendarManager` but must not become the way the guard is satisfied if it ever does.
+    @Test func lookupMissesAreOnlyTrustedWhenTheStoreIsBothAuthorizedAndLoaded() {
+        #expect(CalendarLinkedTaskSupport.canTrustLookupMisses(
+            FakeCalendarEventLookup(isAuthorized: true, hasLoadedCalendars: true)
+        ))
+        #expect(!CalendarLinkedTaskSupport.canTrustLookupMisses(
+            FakeCalendarEventLookup(isAuthorized: true, hasLoadedCalendars: false)
+        ))
+        #expect(!CalendarLinkedTaskSupport.canTrustLookupMisses(
+            FakeCalendarEventLookup(isAuthorized: false, hasLoadedCalendars: true)
+        ))
+        #expect(!CalendarLinkedTaskSupport.canTrustLookupMisses(
+            FakeCalendarEventLookup(isAuthorized: false, hasLoadedCalendars: false)
+        ))
     }
 
     // MARK: - 7. Reconciling many tasks together evaluates each independently (no cross-task misattribution)

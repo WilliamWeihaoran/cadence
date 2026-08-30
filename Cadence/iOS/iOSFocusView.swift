@@ -285,16 +285,43 @@ struct iOSFocusView: View {
                 bundleMembers(bundle)
                 Spacer(minLength: 0)
             case nil:
-                iOSEmptyPanel(
-                    systemImage: "timer",
-                    title: "Ready when you are",
-                    subtitle: "Today tasks will appear here."
-                )
+                unselectedDetail
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(isCompact ? 16 : 22)
         .background(Theme.bg)
+    }
+
+    /// **What the detail pane says with nothing to run** (T-519).
+    ///
+    /// It used to say "Ready when you are / Today tasks will appear here." in both of the cases
+    /// below, and that sentence is wrong in each of them for a different reason.
+    ///
+    /// `selectedItem` falls back to `pickItems.first`, so this branch is reached only two ways,
+    /// and only at regular width — the compact layout draws one consolidated empty state above
+    /// instead and never gets here with an empty picker:
+    ///
+    /// 1. **Nothing is ready.** The picker pane *beside* this one is showing the shared focus
+    ///    empty state at the same moment, so "Today tasks will appear here" was a second, differently
+    ///    worded promise about the pane next door. It says the same thing that pane does now: the
+    ///    reader is looking at one page, not two.
+    /// 2. **A chosen subject stopped existing** — the focused task or block was deleted while the
+    ///    picker still lists others. Here the tasks are *already on screen* to the left, which is
+    ///    the plain falsehood the ticket names, and the house pattern for a detail pane with a full
+    ///    list and no selection is `iOSFeatureEmptyDetail` — the same "No X selected / Select an
+    ///    item from the list." Goals and Habits show.
+    @ViewBuilder
+    private var unselectedDetail: some View {
+        if pickItems.isEmpty {
+            iOSEmptyPanel(
+                systemImage: "timer",
+                title: CadenceEmptyStateCopy.focusTitle,
+                subtitle: CadenceEmptyStateCopy.focusSubtitle
+            )
+        } else {
+            iOSFeatureEmptyDetail(systemImage: "timer", title: "No session selected")
+        }
     }
 
     private func selectedTaskHeader(_ task: AppTask) -> some View {

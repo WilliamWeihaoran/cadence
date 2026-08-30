@@ -268,12 +268,48 @@ enum CadenceTaskComposerSupport {
     /// "which list does this selection name" are different questions, and a composer that takes
     /// two arrays for the first and two more for the second is a composer whose label and whose
     /// save can disagree. See `resolvedContainer(for:areas:projects:)`.
+    /// **T-514 added the `selectedID:` half**, and it is the one that matters for a picker rather
+    /// than a suggestion strip. "Which lists may be offered" is a rule about *fresh* choices; the
+    /// list a task is already in is not a fresh choice, and dropping it is how the container picker
+    /// came to be unable to move a task out of an archived list. That is `CadencePickerSupport`'s
+    /// `selectable(_:selectedID:)`, written once for `Context` (T-446), `Area` (T-488) and now
+    /// `Project` — the grouped three-way control needs it applied to **both** its arrays.
+    ///
+    /// The no-argument spelling below is the same rule with nothing assigned, kept because a
+    /// suggestion strip really is offering fresh choices only.
+    static func pickableAreas(_ areas: [Area], selectedID: UUID?) -> [Area] {
+        CadenceAreaPickerSupport.sorted(
+            CadenceAreaPickerSupport.selectable(areas, selectedID: selectedID)
+        )
+    }
+
+    static func pickableProjects(_ projects: [Project], selectedID: UUID?) -> [Project] {
+        CadenceProjectPickerSupport.sorted(
+            CadenceProjectPickerSupport.selectable(projects, selectedID: selectedID)
+        )
+    }
+
+    /// It forwards rather than restating the rule: written out separately it silently dropped the
+    /// sort, so the two overloads of one name returned the same elements in different orders.
     static func pickableAreas(_ areas: [Area]) -> [Area] {
-        areas.filter(\.isActive)
+        pickableAreas(areas, selectedID: nil)
     }
 
     static func pickableProjects(_ projects: [Project]) -> [Project] {
-        projects.filter(\.isActive)
+        pickableProjects(projects, selectedID: nil)
+    }
+
+    /// The area or project id a selection names, or `nil` for Inbox. What the two `pickable*`
+    /// overloads above are handed, so that a control holding one selection does not have to spell
+    /// the unwrapping twice.
+    static func selectedAreaID(_ selection: TaskContainerSelection) -> UUID? {
+        if case .area(let id) = selection { return id }
+        return nil
+    }
+
+    static func selectedProjectID(_ selection: TaskContainerSelection) -> UUID? {
+        if case .project(let id) = selection { return id }
+        return nil
     }
 
     /// The list a selection names, or `nil` when it names none — either because it is Inbox, or

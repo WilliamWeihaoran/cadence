@@ -673,11 +673,13 @@ enum CadenceSaveCommitRule {
     /// rather than on one method's name is what makes it visible.
     ///
     /// **Where this stops, measured rather than assumed.** `try? content.write(to:)` in
-    /// `NoteExportService.export` is the same swallow over a file rather than a store, and adding
+    /// `NoteExportService.export` was the same swallow over a file rather than a store, and adding
     /// `\.write\(to:` to this needle finds **nothing**: nothing after that write reports success
     /// in source, because the report is the *absence* of an error sheet. It is outside this rule's
     /// shape rather than hidden from it — a file write has no pending-change semantics to be left
-    /// in. Filed separately; do not widen this needle for it.
+    /// in. Do not widen this needle for it; that site was fixed as T-506 and the shape is now swept
+    /// by `NoteExportSurfaceTests.noExportSwallowsTheWriteThatProducesTheFile`, which is a separate
+    /// guard precisely because this rule cannot see it.
     private static let swallowedSave = "try\\?\\s+([\\w.?]+\\.save\\(\\)|Cadence\\w*Persistence\\.\\w+\\()"
     /// The vocabulary, and it is deliberately a closed list rather than a notion of "reports
     /// success". Four spellings, each of which means the screen moved on:

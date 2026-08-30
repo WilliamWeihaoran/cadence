@@ -122,8 +122,8 @@ struct iOSTaskComposerValueTiles: View {
         }
         .popover(isPresented: $showContainerPicker) {
             iOSContainerChoicePopover(
-                activeAreas: CadenceTaskComposerSupport.pickableAreas(areas),
-                activeProjects: CadenceTaskComposerSupport.pickableProjects(projects),
+                areas: areas,
+                projects: projects,
                 selection: containerToken,
                 isPresented: $showContainerPicker
             )

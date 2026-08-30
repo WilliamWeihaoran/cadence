@@ -503,14 +503,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (no user). See [[T-503]] for the hole this work found in the rule itself.
 
 
-- [T-506] **macOS note export can silently fail *after* the user picks a destination** (Codex, P2,
-  measured). `macOS/Services/NoteExportService.swift:39,46` write markdown and PDF bytes with `try?`;
-  a failed write is swallowed and no UI state records it, so the user picks a folder, sees nothing, and
-  has no file. **Three correct patterns already exist** — `iOS/iOSNoteExportMenu.swift:82-85` reports
-  `fileExporter` failure, and both data-export sections
-  (`macOS/Views/SettingsDataSafetySection.swift:118-126`, `iOS/iOSDataExportSettingsSection.swift:79-87`)
-  report theirs. Return/report the error through the macOS caller, then pin it. **Note this is a file
-  write, not a `save()`** — see [[T-508]].
 
 
 
@@ -551,15 +543,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   reads and neither is decidable from the literal**, so both were left visible rather than folded into a
   constant — which would have frozen the drift under a fix that looks like cleanup.
 
-- [T-514] **`iOSTaskPlacementBreadcrumb` is the third instance of the display/save split, and the
-  worst-reading one.** Found while closing [[T-488]]. `iOSTaskDetailSheet.loadContainerSelection()` sets
-  `"area:<id>"` from the task's real area and `selectedArea` resolves against unfiltered `areas`, but the
-  breadcrumb (`iOS/iOSTaskDetailComponents.swift:106`) resolves against `activeAreas` and falls through
-  to **"Inbox"**. So **a task in a completed or archived list claims to be in the Inbox**, and
-  `iOSContainerChoicePopover` offers only active lists so it cannot be moved out.
-  `iOSTaskRowActionViews.swift:500-504` feeds the same popover. **Not a `CadencePickerSupport` drop-in** —
-  it is a grouped three-way Inbox/Area/Project control, so it needs `selectable(_:selectedID:)` applied
-  to both arrays plus the breadcrumb reading unfiltered.
 
 - [T-515] **The rest of the "Untitled …" family, below [[T-505]]'s ≥2-files rule.** `"Untitled List"`
   (`TaskBundlePickerSupportViews.swift:179,211` — 2 sites, one file), `"Untitled subtask"`
@@ -584,12 +567,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   a defect to fix blind.
 
 
-- [T-519] **`iOSFocusView`'s detail pane says "Today tasks will appear here" while they are already
-  appearing beside it.** With nothing selected it draws "Ready when you are / Today tasks will appear
-  here." — but the tasks appear in the **list pane next to it**, and this shows at regular width while
-  that pane is full. A false statement in the common case. The house pattern for a detail pane with no
-  selection is "Select an item from the list." (`iOSFeatureComponents:529`) / "Select a note". Needs a
-  wording decision.
 
 - [T-520] **`CadenceTodayPresentationSupport.emptyScheduleHint` asks for a tap, from `Shared/`.** It ends
   "…tap an hour to schedule one." and lives in `Cadence/Shared/`, but has exactly **one** reader,
@@ -597,10 +574,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   iOS-only constant or reword it. [[T-528]]'s `noDesktopCopyAsksForATouchGesture` sweep covers
   `Cadence/macOS/` only and structurally cannot see this one.
 
-- [T-521] **A shared component tells macOS VoiceOver to double tap.** `CadenceNotesListSupport`'s folding
-  month header sets `.accessibilityHint("Double tap to expand")`, and it is a shared component with
-  `.onHover` — so on macOS VoiceOver reads a gesture that is not its activation gesture. Same family as
-  [[T-472]]/[[T-484]] but a *hint* rather than a missing label.
 
 - [T-522] **Converge `"List not found"` and its subtitle, then delete the allowlist entry.** They are
   duplicated in `ListDetailView.swift` and `iOSRootSidebar.swift` because
@@ -626,53 +599,10 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   creating one is sufficient. Copy deliberately preserved as-is by the empty-state work rather than
   reworded under a change that looked like cleanup.
 
-- [T-526] **The iOS Lists empty state points a fresh user at a section that is not on screen** (Codex,
-  P3, measured). `iOS/iOSListViews.swift:301` and `iOS/iOSListsRegularPane.swift:41` both say "Create an
-  area or project here, or **restore one from Archived**." unconditionally — but the Archived section is
-  only drawn when `!archivedAreas.isEmpty || !archivedProjects.isEmpty` (`iOSListViews.swift:256`). On a
-  fresh or fully emptied store there is nothing archived, so the copy names a section the user cannot
-  see. **The correct pattern is already in the same app**: `iOSSettingsView.swift:307-311` does not
-  mention archived restore. Make the clause conditional on the same predicate that draws the section,
-  in both shells, and pin the first-launch wording.
 
 
 
-- [T-528] **DECIDE: the default-tag seed reads "store is empty" as "this user has never had tags."**
-  (P2, measured.) `TagSupport.seedDefaultTags` has **no latch** — verified, zero `UserDefaults`/`hasSeeded`
-  references in the file — and `PersistenceController.swift:87` runs it on **every** launch. Its only
-  signal is whether a tag with each default slug is present. Two reachable symptoms from one cause:
-  **Rename — reachable today, one device, no CloudKit at all.** macOS Settings > Tags has a pencil on
-  every row, and `SettingsTagsSection.saveEdits` writes `tag.slug = TagSupport.slug(for: name)`. Rename
-  `bug` to `Defect` and the **next launch re-seeds `bug` beside it**: eight tags where the user curated
-  seven, the old name back in the `#` picker and every tag filter.
-  **Archive — reachable on a reinstall or a second device.** The store opens before CloudKit lands, so
-  the seed mints an *active* `bug` while the user's archived, recoloured one is in flight; when it
-  arrives `mergeTagMetadata` resolves `target.isArchived && source.isArchived` (`TagSupport.swift:314`)
-  with the fresh row as target, so the answer is `false`. **A tag the user archived comes back, active,
-  in the seed's colour, and syncs that to every device.**
-  **The sharp framing: this sits twelve lines from code that argues the opposite.**
-  `DataIntegrityRepairService`'s own doc comment refuses an orphan sweep precisely because
-  `performStartupMaintenance` runs with no gate on sync state and "it is the *empty* store that would
-  delete the most". Three of the four startup passes are written to be inert against a store that is
-  empty only because sync has not landed; **the fourth inserts because of it.**
-  Pinned by `renamingADefaultTagBringsTheOriginalBackOnTheNextLaunch` and
-  `theTagSeedCannotTellAnEmptyStoreFromOneCloudKitHasNotFilledYet`, which encode *current* behaviour and
-  go red the moment the seed learns to tell the two stores apart. Options: a `UserDefaults` seeded-latch,
-  a sync-state gate, or seed-on-demand. `mergeTagMetadata`'s `&&` is **not** independently wrong — an
-  active duplicate legitimately un-archives — so do not "fix" it there.
 
-- [T-529] **`clearMissingEventLinks` writes where its sibling only reports.** (P3, code path measured,
-  the race inferred.) `CalendarLinkedTaskSupport.swift:21-32` runs unattended on every
-  `EKEventStoreChanged` (`macOSRootStateSupport.swift:59`, `SchedulePanelDataSupport.swift:28`), fetches
-  every `AppTask`, clears `calendarEventID` wherever `event(withIdentifier:)` returns nil, and saves. Its
-  only guard is `isAuthorized` — so **"EventKit has not loaded this event yet" and "this event is gone"
-  are the same answer.** The neighbouring surface takes the opposite posture: `CadenceCalendarLinkHealth`
-  only *reports* a dead link and hands the user a re-pick, and
-  `withoutCalendarAccessNothingIsReportedMissing` exists for exactly this false positive.
-  **Reachability checked before filing**: `AppTask.calendarEventID` is documented as having no current
-  writer, so a new TestFlight tester cannot hit this — it is reachable **only from stores written by an
-  earlier build**. But those values are exactly what the reader is kept for, and the clearing is silent,
-  irreversible and CloudKit-propagating.
 
 
 - [T-530] **A stale mutation needle reads as a surviving mutant.** Found by the T-516 agent, on itself.
@@ -690,6 +620,48 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   gate, which requires the user's password. **The integration runner now defaults the UI stage off**
   (`run-ui` as arg 2 enables it) so batches are not blocked. Once authorised, turn it on and it becomes
   the third gate alongside the unit suite and the MCP build.
+
+
+- [T-532] **macOS tag pickers give a fresh store no route to the default set.** The direct consequence of
+  [[T-528]]'s seed-on-demand decision, and a parity gap: `TaskTitleInlineTagPicker.swift:40` and
+  `TagPickerPopoverViews.swift:114` both render a bare `"No tags"`, while
+  `iOSTaskDetailComponents.swift:400` offers **"Add Default Tags"** in exactly that state. So a brand-new
+  macOS user meets "No tags" with no affordance — they can type to create inline or go to Settings, but
+  **the iOS pattern is the better one and macOS should match it.** Worth doing before a TestFlight build
+  if T-528's decision stands.
+
+- [T-533] **Goals and Habits detail panes have [[T-519]]'s defect in its original form.**
+  `iOSFeatureViews.swift:225` and `:398` draw "Select an item from the list." **unconditionally**, while
+  the `listPane` beside them shows "No goals yet" / its habits equivalent on a fresh store. **At iPad
+  regular width a new user sees "Select an item from the list." next to a list with no items.** Same
+  one-line fix shape as `unselectedDetail`; not covered by the T-519 test, which is scoped to
+  `iOSFocusView`.
+
+- [T-534] **The macOS container picker is the other half of [[T-514]].**
+  `ContainerPickerFilterSupport.groups` (`macOS/Views/ContainerPickerSupportViews.swift:26-31`) filters
+  `$0.isActive`, so a task in an archived or completed list gets a popover with **no row for where it
+  is**. Milder than iOS — `ContainerPickerBadge.label` already resolves unfiltered, so the *name* is
+  right and only the correction affordance is missing. Same fix shape: `selectable(_:selectedID:)`,
+  which needs the picker to learn the current selection. **Also visible in the same function and
+  unmeasured**: the grouping is `contexts.compactMap { … $0.context?.id == context.id }` and
+  `Area.context` defaults to `nil`, so **a context-less area appears in no group at all.**
+
+- [T-535] **Nothing in the release gate ever compiles the iOS surface.** `apple-release-readiness.md` is
+  the stated readiness source of truth, mentions iOS **zero** times, and both its verification commands
+  are `-destination 'platform=macOS'`. The iOS minimum (26.2) is stated in exactly one prose line
+  (`app-review-notes.md:8`) and pinned by no test. Worth fixing whichever way [[T-510]] is decided.
+
+- [T-536] **Two iOS sheets still hand-spell the container token arithmetic.**
+  `iOSCalendarQuickCreateSheet.swift:53-65,417-422` and `iOSTaskDetailSheet.swift:48-65` re-derive
+  `dropFirst(5)`/`dropFirst(8)` and the untitled-name fallback instead of
+  `CadenceTaskComposerSupport.selection(fromToken:)` / `containerName(for:areas:projects:)`. **Not a
+  defect** — both already resolve against unfiltered arrays — but it is the [[T-374]] near-copy those
+  helpers now exist to remove, and the detail sheet's private members even share the helpers' names.
+
+- [T-537] **`clearMissingEventLinks` fetches every `AppTask` before its guard.**
+  `CalendarLinkedTaskSupport.swift:77-84` builds a full `FetchDescriptor<AppTask>` on **every**
+  `EKEventStoreChanged` and only then reaches `canTrustLookupMisses`. Hoisting the guard above the fetch
+  is one line.
 
 
 ## Done
@@ -1496,6 +1468,90 @@ before filing**: this list has had the same ticket re-reported more than once.
   parameter called `help` is what tells the next author the string is tooltip-only. Neither T-472 nor
   [[T-484]] covered this file. **Claim only that the label is set** — nothing has launched the app.
   **Closed 2026-08-30, folded into [[T-509]]'s change because it was cheap. New `cadenceControlLabel(_:)` beside `CadenceIconButton`, applied to the header add, row open and row delete buttons. **Correction to the audit**: the file has 4 `Image(systemName:)` but only **3 are buttons** — the fourth is `LinkRow`'s leading decorative glyph, sitting beside the title and URL it would otherwise repeat, and it is deliberately left alone. The inventory is pinned at 4 icons / 3 labels so the next author has to re-decide rather than drift. **Claim is only that the label is set**, in the shape SwiftUI reads it; nothing launched the app.**
+
+- [T-506] **macOS note export can silently fail *after* the user picks a destination** (Codex, P2,
+  measured). `macOS/Services/NoteExportService.swift:39,46` write markdown and PDF bytes with `try?`;
+  a failed write is swallowed and no UI state records it, so the user picks a folder, sees nothing, and
+  has no file. **Three correct patterns already exist** — `iOS/iOSNoteExportMenu.swift:82-85` reports
+  `fileExporter` failure, and both data-export sections
+  (`macOS/Views/SettingsDataSafetySection.swift:118-126`, `iOS/iOSDataExportSettingsSection.swift:79-87`)
+  report theirs. Return/report the error through the macOS caller, then pin it. **Note this is a file
+  write, not a `save()`** — see [[T-508]].
+  **Closed 2026-08-30, **and there were two silent failures, not one**: the writes used `try?`, *and* a PDF that failed to render left through a bare `guard … else { return }`. Both meant a user who had already chosen a destination got no file and no message. The **service** reports rather than the caller, because the note action picker calls `dismissPicker()` *before* `export` and the write happens later still inside the save-panel completion — by the time there is anything to report, the caller has no sheet left. New shared failure vocabulary in `CadenceNoteExportSupport`, adopted by iOS too. [[T-508]] deliberately excluded `write(to:)` from the `try? save()` rule, so this shape is swept separately — **and that sweep confirmed these two were the only swallowed writes in `Cadence/`.****
+
+- [T-514] **`iOSTaskPlacementBreadcrumb` is the third instance of the display/save split, and the
+  worst-reading one.** Found while closing [[T-488]]. `iOSTaskDetailSheet.loadContainerSelection()` sets
+  `"area:<id>"` from the task's real area and `selectedArea` resolves against unfiltered `areas`, but the
+  breadcrumb (`iOS/iOSTaskDetailComponents.swift:106`) resolves against `activeAreas` and falls through
+  to **"Inbox"**. So **a task in a completed or archived list claims to be in the Inbox**, and
+  `iOSContainerChoicePopover` offers only active lists so it cannot be moved out.
+  `iOSTaskRowActionViews.swift:500-504` feeds the same popover. **Not a `CadencePickerSupport` drop-in** —
+  it is a grouped three-way Inbox/Area/Project control, so it needs `selectable(_:selectedID:)` applied
+  to both arrays plus the breadcrumb reading unfiltered.
+  **Closed 2026-08-30, **observed on a simulator rather than inferred**. On `b8ad9b6` a task in the archived area "Old Ops" showed breadcrumb **"Inbox"** and a picker offering **only "Inbox"** — no row for where the task actually was; after, "Old Ops" and a checked "Old Ops" row. All four `iOSContainerChoicePopover` call sites take the unfiltered arrays and the control narrows itself via `selectable(_:selectedID:)` on **both**; the breadcrumb resolves through the same existence-not-activity resolver the save already used. `Project` is a `CadencePickable` now, so the rule is stated once for its third type — the mutation swapping its offerability to Context's `!isArchived` kills three tests by name. The row context menu's Move to List had the same hole and took the same narrowing.**
+
+- [T-519] **`iOSFocusView`'s detail pane says "Today tasks will appear here" while they are already
+  appearing beside it.** With nothing selected it draws "Ready when you are / Today tasks will appear
+  here." — but the tasks appear in the **list pane next to it**, and this shows at regular width while
+  that pane is full. A false statement in the common case. The house pattern for a detail pane with no
+  selection is "Select an item from the list." (`iOSFeatureComponents:529`) / "Select a note". Needs a
+  wording decision.
+  **Closed 2026-08-30, **and the ticket's stated case is the rarer of two**. Because `selectedItem` falls back to `pickItems.first`, the branch is reached either with nothing ready — and then the picker pane *beside* it was showing the shared focus sentence at the same moment, so **the page made two differently worded promises about itself**, which is the common case — or with a chosen subject deleted while the picker still lists others, which is the ticket's falsehood. Branch one now says the shared sentence; branch two uses the house `iOSFeatureEmptyDetail`. "Today tasks will appear here." retired app-wide. See [[T-533]] for the same defect in its original form on Goals and Habits.**
+
+- [T-521] **A shared component tells macOS VoiceOver to double tap.** `CadenceNotesListSupport`'s folding
+  month header sets `.accessibilityHint("Double tap to expand")`, and it is a shared component with
+  `.onHover` — so on macOS VoiceOver reads a gesture that is not its activation gesture. Same family as
+  [[T-472]]/[[T-484]] but a *hint* rather than a missing label.
+  **Closed 2026-08-30 **with the weaker claim kept honestly.** Hint reworded to state the outcome ("Expands to show this month's notes."), matching `CadenceStartupIssueBannerModel`, the app's other shared expand/collapse control; premise verified rather than assumed — `NotesFoldableListColumn` places this header on four macOS Notes pages plus the iPad pane and the iPhone list. **The announcement itself is still not measured**: the agent launched a debug build and found it vends **no AX window tree** (System Events sees only `AXMenuBar`, zero windows, via both a direct `exec` and `open -n --env`), and it refused to enable VoiceOver because that means changing the user's system settings. So the claim stays "the hint is set", as in [[T-472]]/[[T-484]].**
+
+- [T-526] **The iOS Lists empty state points a fresh user at a section that is not on screen** (Codex,
+  P3, measured). `iOS/iOSListViews.swift:301` and `iOS/iOSListsRegularPane.swift:41` both say "Create an
+  area or project here, or **restore one from Archived**." unconditionally — but the Archived section is
+  only drawn when `!archivedAreas.isEmpty || !archivedProjects.isEmpty` (`iOSListViews.swift:256`). On a
+  fresh or fully emptied store there is nothing archived, so the copy names a section the user cannot
+  see. **The correct pattern is already in the same app**: `iOSSettingsView.swift:307-311` does not
+  mention archived restore. Make the clause conditional on the same predicate that draws the section,
+  in both shells, and pin the first-launch wording.
+  **Closed 2026-08-30. `activeListsSubtitle(hasArchived:)` is a function now, in the shape `isNarrowedToEmpty` already uses, so a call site cannot take the sentence without answering the question. Both shells hold the predicate once as `hasArchivedLists`, read by **both** the empty state and the section that draws — the two-independent-copies shape that caused the drift is gone, and a test pins the expression appears exactly once per file.**
+
+- [T-528] **DECIDE: the default-tag seed reads "store is empty" as "this user has never had tags."**
+  (P2, measured.) `TagSupport.seedDefaultTags` has **no latch** — verified, zero `UserDefaults`/`hasSeeded`
+  references in the file — and `PersistenceController.swift:87` runs it on **every** launch. Its only
+  signal is whether a tag with each default slug is present. Two reachable symptoms from one cause:
+  **Rename — reachable today, one device, no CloudKit at all.** macOS Settings > Tags has a pencil on
+  every row, and `SettingsTagsSection.saveEdits` writes `tag.slug = TagSupport.slug(for: name)`. Rename
+  `bug` to `Defect` and the **next launch re-seeds `bug` beside it**: eight tags where the user curated
+  seven, the old name back in the `#` picker and every tag filter.
+  **Archive — reachable on a reinstall or a second device.** The store opens before CloudKit lands, so
+  the seed mints an *active* `bug` while the user's archived, recoloured one is in flight; when it
+  arrives `mergeTagMetadata` resolves `target.isArchived && source.isArchived` (`TagSupport.swift:314`)
+  with the fresh row as target, so the answer is `false`. **A tag the user archived comes back, active,
+  in the seed's colour, and syncs that to every device.**
+  **The sharp framing: this sits twelve lines from code that argues the opposite.**
+  `DataIntegrityRepairService`'s own doc comment refuses an orphan sweep precisely because
+  `performStartupMaintenance` runs with no gate on sync state and "it is the *empty* store that would
+  delete the most". Three of the four startup passes are written to be inert against a store that is
+  empty only because sync has not landed; **the fourth inserts because of it.**
+  Pinned by `renamingADefaultTagBringsTheOriginalBackOnTheNextLaunch` and
+  `theTagSeedCannotTellAnEmptyStoreFromOneCloudKitHasNotFilledYet`, which encode *current* behaviour and
+  go red the moment the seed learns to tell the two stores apart. Options: a `UserDefaults` seeded-latch,
+  a sync-state gate, or seed-on-demand. `mergeTagMetadata`'s `&&` is **not** independently wrong — an
+  active duplicate legitimately un-archives — so do not "fix" it there.
+  **Closed 2026-08-30 **by seed-on-demand, and confirmed by looking before the fix**: launched a private-store build, renamed `bug` to `Defect` exactly as `SettingsTagsSection.saveEdits` writes it, relaunched — **7 tags in, 8 out**, `bug` back beside `Defect`. The seed lost every unprompted caller (`performStartupMaintenance`, both Settings > Tags `.onAppear`s, and `CadenceMCPStorePreparation.prepare`, `stepCount` 4→3); `TagSupport.seedDefaultTags` is behaviourally unchanged and still reached from the "Add Defaults" controls that already ship. **Rejected with reasons: the `UserDefaults` latch fixes the rename only** — on a second device there is no latch and no data by construction, so it is absent exactly when it would need to fire, and it is invisible to the MCP server, a separate process opening the same store. **The sync-state gate is not reachable**: the only signal is a notification SwiftData does not expose, it never fires when iCloud is signed out, and the fallback reintroduces the race. `mergeTagMetadata`'s `&&` untouched — an active duplicate legitimately un-archives, so the bug was minting the duplicate. **Cost accepted, stated plainly: a new user's first `#` picker says "No tags"** until they type a name or press Add Defaults — see [[T-532]], which is the macOS half of that.**
+
+- [T-529] **`clearMissingEventLinks` writes where its sibling only reports.** (P3, code path measured,
+  the race inferred.) `CalendarLinkedTaskSupport.swift:21-32` runs unattended on every
+  `EKEventStoreChanged` (`macOSRootStateSupport.swift:59`, `SchedulePanelDataSupport.swift:28`), fetches
+  every `AppTask`, clears `calendarEventID` wherever `event(withIdentifier:)` returns nil, and saves. Its
+  only guard is `isAuthorized` — so **"EventKit has not loaded this event yet" and "this event is gone"
+  are the same answer.** The neighbouring surface takes the opposite posture: `CadenceCalendarLinkHealth`
+  only *reports* a dead link and hands the user a re-pick, and
+  `withoutCalendarAccessNothingIsReportedMissing` exists for exactly this false positive.
+  **Reachability checked before filing**: `AppTask.calendarEventID` is documented as having no current
+  writer, so a new TestFlight tester cannot hit this — it is reachable **only from stores written by an
+  earlier build**. But those values are exactly what the reader is kept for, and the clearing is silent,
+  irreversible and CloudKit-propagating.
+  **Closed 2026-08-30 **by requiring evidence, not by converting the sweep to a reporter.** `CalendarEventLookup` gains `hasLoadedCalendars`, and `canTrustLookupMisses` is that conjoined with `isAuthorized` — so a store that has produced no calendars, which is exactly the state an `EKEventStoreChanged` from a permission grant leaves you in, no longer reads as "every event is gone". The question is split out as `missingEventLinks(in:calendarManager:)`, which reports and writes nothing, so the sibling's posture is reachable from the same rule. **Residue left deliberately**: one account still syncing while others have loaded leaves `allCalendars` non-empty, so a link into that account is still clearable on a miss — per-source evidence is not cheap in EventKit, and no current writer produces a non-empty `calendarEventID`.**
 
 ## Cancelled
 

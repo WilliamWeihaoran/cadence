@@ -137,6 +137,36 @@ nonisolated enum NoteExportSupport {
         MarkdownTaskEmbedTitleCache.embeddedTasks(in: note.content, modelContext: modelContext)
     }
 
+    // MARK: - What the user is told when no file appears (T-506)
+
+    /// An export can produce no file two ways, and both platforms say so in these words.
+    ///
+    /// **Shared for the reason the page box is shared, and the same failure proves it.** macOS
+    /// wrote both formats with `try?` inside the save panel's completion and let a PDF that would
+    /// not render leave through a bare `guard … else { return }` — so a user who had already chosen
+    /// a destination got no file and no message, on the one path a TestFlight tester walks first.
+    /// iOS reported both from the beginning, in words it had spelled itself. Copy that exists on
+    /// one platform only is how the other platform comes to say nothing at all, so it lives here
+    /// where a test can read it and neither exporter may restate it.
+    ///
+    /// This is deliberately *not* `CadenceDataExportPresentation`: that type owns the archive
+    /// card's every word, including a description a view may not drop, and a note is not an
+    /// archive. Two vocabularies, each spelled once.
+    nonisolated static let failureAlertTitle = "Export Failed"
+
+    /// The renderer produced no bytes. Named by format, because "could not render this note" is
+    /// true of a PDF and never of markdown — encoding a Swift string as UTF-8 is total.
+    nonisolated static func renderFailureMessage(for format: NoteExportFormat) -> String {
+        "Cadence could not render this note as a \(format.pathExtension.uppercased())."
+    }
+
+    /// The bytes existed and did not reach the destination the user picked: a read-only folder, a
+    /// full disk, a sandbox extent that has gone away. `reason` is the underlying
+    /// `localizedDescription`, which is the only part that says *which*.
+    nonisolated static func writeFailureMessage(_ reason: String) -> String {
+        "Cadence could not write the file: \(reason)"
+    }
+
     /// The image assets a note references, and only those.
     ///
     /// `MarkdownImageAsset.data` is externally stored and can run to megabytes, so the fetch is

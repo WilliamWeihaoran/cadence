@@ -278,6 +278,212 @@ struct ControlAccessibilityLabelTests {
         return false
     }
 
+    // MARK: - T-521: a shared control's hint may not name a touch gesture
+
+    /// The offender, and the file the sweep below is anchored on.
+    private static let notesListPath = "Cadence/Shared/CadenceNotesListSupport.swift"
+
+    /// **A hint states the outcome of activating, not the gesture that activates.**
+    ///
+    /// `NotesMonthHeader` read "Double tap to expand" / "Double tap to collapse". It lives in
+    /// `Cadence/Shared/` and `NotesFoldableListColumn` places it on **four macOS Notes pages** as
+    /// well as the iPad pane and the iPhone list, so on the Mac the hint named a gesture that
+    /// surface does not have — VoiceOver activates a control there with Control-Option-Space, and
+    /// the `.onHover` on the same modifier chain is the tell that this is not a touch-only view.
+    ///
+    /// Swept over `Cadence/Shared` **and** `Cadence/macOS` rather than pinned to the one file, for
+    /// the reason `CadenceRetiredCopyTests` gives: a per-screen guard finds the screen you were
+    /// looking at. `Cadence/iOS/` is deliberately **out** of scope — a hint under `#if os(iOS)`
+    /// can name a touch gesture, because touch is the only way to reach it, and
+    /// `iOSCaptureRadialMenu` legitimately says "Double tap to capture a task."
+    @Test func noSharedOrDesktopAccessibilityHintNamesATouchGesture() throws {
+        let files = try CadenceSourceScan.swiftFiles(under: "Cadence/Shared")
+            + CadenceSourceScan.swiftFiles(under: "Cadence/macOS")
+        let read = CadenceSourceScan.strippedSourceReader()
+
+        let offenders = try gestureNamingHintInstrument().sweep(
+            files,
+            // 358 files across the two trees; the floor only rules out a walk that found one
+            // folder and called it both.
+            atLeast: 300,
+            including: Self.notesListPath,
+            read: read
+        )
+        #expect(
+            offenders.isEmpty,
+            """
+            \(offenders) set an accessibilityHint naming a touch gesture on a surface macOS \
+            draws. State what activating does, the way CadenceStartupIssueBannerModel does.
+            """
+        )
+    }
+
+    /// The hint itself, by value and in both directions.
+    ///
+    /// The sweep only knows that no gesture is named; it would stay green if the hint were deleted
+    /// outright or replaced with something that says nothing. These are the words, and they are the
+    /// shape the app's *other* shared expand/collapse control already uses — asserted here too, so
+    /// "match the banner" cannot quietly become two styles again.
+    @Test func theNotesMonthHeaderHintStatesWhatActivatingDoes() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile(Self.notesListPath)
+        )
+        #expect(source.contains("struct NotesMonthHeader: View"), "non-vacuity: wrong file")
+
+        let hint = try #require(
+            Self.accessibilityHintSegments(in: source).first,
+            "NotesMonthHeader no longer states a hint at all"
+        )
+        #expect(hint.contains("\"Expands to show this month's notes.\""))
+        #expect(hint.contains("\"Collapses this month's notes.\""))
+        #expect(hint.contains("isCollapsed ?"), "the hint no longer answers for both fold states")
+
+        // The header really is the shared, hoverable control the rule is about — both halves of
+        // the ticket's premise, read rather than assumed.
+        #expect(source.contains(".onHover { isHovered = $0 }"))
+        #expect(
+            source.contains("#if os(iOS)") == false && source.contains("#if os(macOS)") == false,
+            "the notes list column is no longer platform-neutral; recheck the scope of the sweep"
+        )
+
+        // The sibling it is modelled on, still worded the same way.
+        let banner = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceStartupIssueBanner.swift")
+        )
+        #expect(banner.contains("\"Expands to show what went wrong.\""))
+        #expect(banner.contains("\"Collapses to a compact badge.\""))
+    }
+
+    /// The detector against the tree, not only its own fixtures — and against the tree on **both**
+    /// sides, which is what makes the scope choice a claim rather than an accident.
+    ///
+    /// The positive is `iOSCaptureRadialMenu`, a real file whose "Double tap to capture a task."
+    /// is *correct* and which the sweep therefore must not walk. A detector that could not see it
+    /// would make the sweep's silence meaningless; a sweep that walked it would report a
+    /// non-defect. The negative is the shared banner, whose hint is the shape this rule wants.
+    @Test func theGestureHintDetectorSeparatesATouchOnlySurfaceFromASharedOne() throws {
+        let instrument = try gestureNamingHintInstrument()
+
+        let touchOnly = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCaptureRadialMenu.swift")
+        #expect(touchOnly.contains("Double tap to capture a task."), "non-vacuity: the copy moved")
+        #expect(instrument.fires(on: touchOnly), "the detector cannot see a hint that names a gesture")
+
+        let shared = try CadenceSourceScan.sourceFile(
+            "Cadence/Shared/Components/CadenceStartupIssueBanner.swift"
+        )
+        #expect(instrument.fires(on: shared) == false, "an outcome-worded hint is read as a gesture")
+
+        // And the scope: the walk the sweep runs must exclude the iOS tree, or the correct file
+        // above would be reported as an offence.
+        let files = try CadenceSourceScan.swiftFiles(under: "Cadence/Shared")
+            + CadenceSourceScan.swiftFiles(under: "Cadence/macOS")
+        #expect(files.contains("Cadence/iOS/iOSCaptureRadialMenu.swift") == false)
+        #expect(files.contains("Cadence/Shared/Components/CadenceStartupIssueBanner.swift"))
+    }
+
+    /// True when any accessibility hint in the file names a touch gesture.
+    ///
+    /// The negative witness is the nearest miss on purpose: the same control, the same fold, the
+    /// same two-branch hint — worded as an outcome instead of a gesture. A detector keyed on
+    /// anything else about these two would separate them for the wrong reason.
+    private func gestureNamingHintInstrument() throws -> CadenceScanInstrument {
+        try CadenceScanInstrument(
+            "accessibility hint naming a touch gesture",
+            fires: """
+            Button(action: toggle) { header }
+                .onHover { isHovered = $0 }
+                .accessibilityHint(isCollapsed ? "Double tap to expand" : "Double tap to collapse")
+            """,
+            andNotOn: """
+            Button(action: toggle) { header }
+                .onHover { isHovered = $0 }
+                .accessibilityHint(
+                    isCollapsed ? "Expands to show this month's notes." : "Collapses this month's notes."
+                )
+            """,
+            by: Self.namesAGestureInAHint
+        )
+    }
+
+    /// A gesture verb, as a word, and the phrase "double tap" — which "tap" alone already covers
+    /// but which is the exact spelling this rule was written for.
+    private static let gestureVerbPattern =
+        "(?i)\\b(double[ -]tap|tap|taps|tapped|tapping|swipe|swipes|swiped|pinch|pinches|touch and hold|long press)\\b"
+
+    private static func namesAGestureInAHint(_ source: String) -> Bool {
+        // Cheap reject before the expensive strip, the same guard `hasUnnamedVisibleToggle` uses:
+        // `strippingComments` rescans from the start after every match it replaces.
+        guard source.contains("accessibilityHint") else { return false }
+        let code = CadenceSourceScan.strippingComments(source)
+        return accessibilityHintSegments(in: code).contains { segment in
+            stringLiterals(in: segment).contains {
+                $0.range(of: gestureVerbPattern, options: .regularExpression) != nil
+            }
+        }
+    }
+
+    /// The text of every hint in `source`, in both shapes this repo writes them.
+    ///
+    /// Two shapes, because scoping to only the modifier would miss the app's other shared
+    /// expand/collapse control: `CadenceStartupIssueBannerModel` computes its hint in a
+    /// `var accessibilityHint: String` and the view passes that variable to the modifier, so a
+    /// reader keyed on `.accessibilityHint(` alone sees an identifier and no copy at all.
+    /// `theNotesMonthHeaderHintStatesWhatActivatingDoes` pins that this reader really does find
+    /// the banner's sentences, so the second shape cannot rot into decoration.
+    ///
+    /// Expects comments to be stripped already. Depth counting skips string literals, so a hint
+    /// containing a bracket cannot close its own segment early.
+    static func accessibilityHintSegments(in source: String) -> [String] {
+        segments(after: ".accessibilityHint(", open: "(", close: ")", in: source)
+            + segments(after: "var accessibilityHint: String {", open: "{", close: "}", in: source)
+    }
+
+    private static func segments(
+        after needle: String,
+        open: Character,
+        close: Character,
+        in source: String
+    ) -> [String] {
+        var found: [String] = []
+        var searchStart = source.startIndex
+        while let hit = source.range(of: needle, range: searchStart..<source.endIndex) {
+            searchStart = hit.upperBound
+            var depth = 1
+            var index = hit.upperBound
+            var inLiteral = false
+            while index < source.endIndex, depth > 0 {
+                let character = source[index]
+                if inLiteral {
+                    if character == "\\" {
+                        index = source.index(after: index)
+                    } else if character == "\"" || character.isNewline {
+                        inLiteral = false
+                    }
+                } else if character == "\"" {
+                    inLiteral = true
+                } else if character == open {
+                    depth += 1
+                } else if character == close {
+                    depth -= 1
+                    if depth == 0 { break }
+                }
+                guard index < source.endIndex else { break }
+                index = source.index(after: index)
+            }
+            found.append(String(source[hit.upperBound..<min(index, source.endIndex)]))
+        }
+        return found
+    }
+
+    private static func stringLiterals(in source: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: "\"([^\"\\\\\\n]*)\"") else { return [] }
+        let range = NSRange(source.startIndex..., in: source)
+        return regex.matches(in: source, range: range).compactMap { match in
+            guard let captured = Range(match.range(at: 1), in: source) else { return nil }
+            return String(source[captured])
+        }
+    }
+
     // MARK: - Reading Swift text
 
     enum ProbeFailure: Swift.Error, CustomStringConvertible {

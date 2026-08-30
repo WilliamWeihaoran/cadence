@@ -31,9 +31,18 @@ import SwiftUI
 /// `CadenceAreaPickerSupport.swift`, so `CadenceContextPickerSupport.items(...)` still reads the
 /// way its eight call sites already spell it.
 ///
-/// A third conformer is a five-line file. `Project` deliberately is not one yet: nothing picks a
-/// project on its own — `iOSContainerChoicePopover` picks Inbox-or-area-or-project as one grouped
-/// three-way control — and a conformance nothing reads is a claim nothing checks.
+/// A third conformer is a five-line file, and T-514 wrote it. `Project` was left out here on the
+/// grounds that "nothing picks a project on its own — `iOSContainerChoicePopover` picks
+/// Inbox-or-area-or-project as one grouped three-way control". True, and beside the point: the
+/// grouped control still has to answer *which projects may I offer* and *which project is this*,
+/// and it was answering the first with `projects.filter(\.isActive)` and the second against the
+/// same filtered array — the identical split, a third time. See `CadenceProjectPickerSupport`.
+///
+/// The grouped control is not a drop-in for `items(from:selectedID:noneTitle:)`: its "none" row is
+/// Inbox, a real destination rather than the absence of one, and its two arrays are two types under
+/// two group headings. What it takes from here is `selectable(_:selectedID:)` — applied to *both*
+/// arrays — while the breadcrumb above it resolves its title against the unfiltered ones. See
+/// `CadenceTaskComposerSupport.pickableAreas(_:selectedID:)`.
 protocol CadencePickable {
     var id: UUID { get }
     var name: String { get }

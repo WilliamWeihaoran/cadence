@@ -117,9 +117,10 @@ struct SettingsTagsSection: View {
                 }
             }
         }
-        .onAppear {
-            TagSupport.seedDefaultTags(in: modelContext)
-        }
+        // T-528: opening this screen no longer seeds. "The tag list is empty" is the same
+        // unreadable signal `PersistenceController.performStartupMaintenance` used to act on, one
+        // layer up — a second device whose tags have not synced yet renders exactly this. The
+        // "Add Defaults" button above is the one caller that may seed, because a person pressed it.
     }
 
     private func tagCatalog(_ list: [Tag], isArchivedList: Bool) -> some View {

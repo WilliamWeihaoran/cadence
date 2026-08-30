@@ -128,9 +128,9 @@ struct iOSTagsSettingsSection: View {
                 }
             }
         }
-        .onAppear {
-            TagSupport.seedDefaultTags(in: modelContext)
-        }
+        // T-528: the macOS twin is `SettingsTagsSection` and the two are fixed as one. An empty
+        // tag list is not evidence the user has never had tags, so appearing on screen does not
+        // seed; the "Add Defaults" button above is the one caller that may.
     }
 
     /// T-497, the existence half of the `try? save()` rule. The macOS twin is

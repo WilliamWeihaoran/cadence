@@ -88,6 +88,22 @@ nonisolated enum TagSupport {
         tags.sorted(by: precedes)
     }
 
+    /// Adds any default tag whose slug is not already in the store. **User-initiated only.**
+    ///
+    /// Its whole signal is "no tag carries this slug", and that sentence is only readable when a
+    /// person has just asked for the defaults. Unprompted — at launch, or when a tag screen
+    /// appears — it says the same thing about a user who has never had tags and a user whose tags
+    /// have not synced yet, and it resolves that ambiguity by *inserting*: an active `bug` beside
+    /// the archived, recoloured `bug` still in flight, which `deduplicateTags` then merges into
+    /// one active row and CloudKit propagates everywhere. On a single device with no CloudKit at
+    /// all, the same missing signal re-seeded `bug` next to a `bug` the user had renamed to
+    /// `Defect`, because renaming rewrites the slug.
+    ///
+    /// So T-528 removed every automatic caller rather than trying to guard the insert, and
+    /// `CadenceFirstLaunchEmptyStoreTests.noUnpromptedCodePathSeedsTheDefaultTags` keeps it that
+    /// way. The legitimate callers are the "Add Defaults" controls on both platforms and the iOS
+    /// task-detail tag picker's empty state; pressing one after a rename *is* meant to bring the
+    /// original back.
     @discardableResult
     static func seedDefaultTags(in context: ModelContext, saveChanges: Bool = true) -> Bool {
         var changed = deduplicateTags(in: context, save: false)

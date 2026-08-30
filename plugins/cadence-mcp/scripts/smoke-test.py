@@ -968,13 +968,18 @@ def main() -> int:
 
         # --- List DTO shapes -------------------------------------------------------------
         # The `list_*` arms this file already called ran against an empty store and returned
-        # `[]`, so no list payload's shape had ever been observed. Tags are seeded when the
-        # read-write container opens, and tasks and notes exist by now, so those three can be
-        # checked against real rows. Bundles, goals, habits, links, contexts and containers have
-        # no MCP creation path and stay empty here — that half of the gap is still open.
+        # `[]`, so no list payload's shape had ever been observed. Tags, tasks and notes all
+        # exist by now, so those three can be checked against real rows. Bundles, goals, habits,
+        # links, contexts and containers have no MCP creation path and stay empty here — that
+        # half of the gap is still open.
+        #
+        # The tags here are the two request 28 minted by name through `TagSupport.resolveTags`,
+        # not the default set. T-528 removed the seed from `CadenceMCPStorePreparation.prepare`:
+        # an empty store is not evidence the user has never had tags, and this process has no
+        # user to ask. Request 28 is why this arm still has rows to shape-check.
         tag_details = page_items(call_ok(78, "list_tags", {"limit": 50}), "list_tags")
         if not tag_details:
-            raise AssertionError("expected seeded default tags in the fixture store")
+            raise AssertionError("expected the tags request 28 resolved by name in the fixture store")
         check_keys(tag_details[0], TAG_DETAIL_KEYS, set(), "list_tags element")
         check_keys(tag_details[0]["summary"], TAG_SUMMARY_KEYS, set(), "list_tags summary")
 

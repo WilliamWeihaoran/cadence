@@ -11,6 +11,13 @@ import Testing
 /// *seconds*. Those two are the same store as far as every launch-time pass can tell, which is the
 /// thing this suite is here to record.
 ///
+/// **T-528 turned that record into a rule.** The suite used to state, as measured fact, that the
+/// tag seed could not tell the two stores apart — one launch pass that inserted *because* the
+/// store was empty, sitting among three written to be inert against exactly that. There is no
+/// local signal that separates "never had tags" from "tags have not arrived yet", so the seed did
+/// not get a better guard on the insert: it lost every unprompted caller. Seeding is a user action
+/// now, and the tests below say so instead of recording the defect.
+///
 /// `PersistenceController.performStartupMaintenance` is `private`, so the sequence is replayed
 /// rather than called. `theStartupSequenceThisSuiteReplaysIsTheOneLaunchActuallyRuns` reads the
 /// real function's body and fails if the replay drifts from it.
@@ -22,9 +29,12 @@ struct CadenceFirstLaunchEmptyStoreTests {
 
     /// The replay is only worth anything while it matches. This reads
     /// `performStartupMaintenance`'s own body — comments blanked, so the prose describing the
-    /// passes cannot stand in for the calls — and pins that the five calls are present *and* in
-    /// this order, because `syncAllNoteTagsFromMarkdown` resolves tags `seedDefaultTags` may have
-    /// just created and the repair pass is last so it sees the migrated shape.
+    /// passes cannot stand in for the calls — and pins that the four calls are present *and* in
+    /// this order, the repair pass last so it sees the migrated shape.
+    ///
+    /// The comment blanking earns its keep twice here since T-528: the body carries a long comment
+    /// naming `TagSupport.seedDefaultTags` and explaining why it is gone, and the absence check
+    /// below would match that prose and fail on a correct file if it read the raw source.
     @Test func theStartupSequenceThisSuiteReplaysIsTheOneLaunchActuallyRuns() throws {
         let source = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
@@ -38,7 +48,6 @@ struct CadenceFirstLaunchEmptyStoreTests {
         let expectedOrder = [
             "PursuitToGoalMigration.runIfNeeded",
             "NoteMigrationService.migrateAndRecordFailure",
-            "TagSupport.seedDefaultTags",
             "TagSupport.syncAllNoteTagsFromMarkdown",
             "DataIntegrityRepairService.repairAndRecordFailure",
         ]
@@ -55,14 +64,25 @@ struct CadenceFirstLaunchEmptyStoreTests {
         // would pass a set-membership check, so prove the reader can see order by looking for one
         // that is genuinely later than where the walk finished.
         #expect(body.range(of: "PursuitToGoalMigration.runIfNeeded", range: cursor..<body.endIndex) == nil)
+
+        // T-528. Stated on the launch path itself rather than left to the sweep below, because
+        // this is the one call site the ticket is about: whatever else `performStartupMaintenance`
+        // grows, it does not seed tags.
+        #expect(
+            !body.contains("TagSupport.seedDefaultTags"),
+            "startup maintenance seeds the default tags again; an empty store is not evidence the user has never had them"
+        )
     }
 
     // MARK: - What a first launch leaves in the store
 
-    /// **A first launch writes to the store, and the only thing it writes is the seven default
-    /// tags.** Schema-driven rather than a hand-list: a model added to `CadenceSchema` and not to
-    /// this count fails the first expectation instead of quietly going unchecked.
-    @Test func aFirstLaunchAgainstAnEmptyStoreCreatesTheDefaultTagsAndNothingElse() throws {
+    /// **A first launch writes nothing at all.** It used to write the seven default tags, and that
+    /// single insert was the whole of T-528: the launch cannot tell an empty store from an unsynced
+    /// one, so the only safe number of rows for it to create is zero.
+    ///
+    /// Schema-driven rather than a hand-list: a model added to `CadenceSchema` and not to this
+    /// count fails the first expectation instead of quietly going unchecked.
+    @Test func aFirstLaunchAgainstAnEmptyStoreCreatesNothingAtAll() throws {
         let context = try Self.makeEmptyContext()
 
         try withTemporaryDefaults("CadenceTests.firstLaunch") { defaults in
@@ -74,16 +94,23 @@ struct CadenceFirstLaunchEmptyStoreTests {
             Set(counts.keys) == Set(CadenceSchema.schema.entities.map(\.name)),
             "this test counts \(Set(counts.keys).symmetricDifference(Set(CadenceSchema.schema.entities.map(\.name))).sorted()) differently from the schema"
         )
-        #expect(counts["Tag"] == TagSupport.defaultTags.count)
-        for (name, count) in counts where name != "Tag" {
+        for (name, count) in counts {
             #expect(count == 0, "a first launch created a \(name) row")
         }
+
+        // Non-vacuity: the counter really can see a `Tag`, so the seven zeroes above are the
+        // launch's doing and not a reader that cannot count tags. This is what pressing
+        // "Add Defaults" would have left, and the launch left none of it.
+        context.insert(Cadence.Tag(name: "bug", slug: "bug"))
+        try context.save()
+        #expect(try Self.rowCountsByEntityName(in: context)["Tag"] == 1)
     }
 
-    /// Which pass makes the first launch dirty. Three of the four are written to do nothing to an
-    /// empty store; the tag seed is the one that inserts *because* the store is empty. That
-    /// asymmetry is the subject of `theTagSeedCannotTellAnEmptyStoreFromOneCloudKitHasNotFilledYet`.
-    @Test func onlyTheTagSeedReportsAChangeOnAFirstLaunch() throws {
+    /// Which pass makes the first launch dirty: **none of them.** All four are now written to be
+    /// inert against a store that is empty only because sync has not landed — the symmetry
+    /// `DataIntegrityRepairService`'s own doc comment argues for, and that the tag seed was the
+    /// single exception to.
+    @Test func noStartupPassReportsAChangeOnAFirstLaunch() throws {
         let context = try Self.makeEmptyContext()
 
         try withTemporaryDefaults("CadenceTests.firstLaunchPasses") { defaults in
@@ -91,38 +118,41 @@ struct CadenceFirstLaunchEmptyStoreTests {
             let migrationReport = NoteMigrationService.migrateAndRecordFailure(
                 in: context, source: "empty-store-test", saveChanges: false
             )
-            let seeded = TagSupport.seedDefaultTags(in: context, saveChanges: false)
             let synced = TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
             let repairReport = DataIntegrityRepairService.repairAndRecordFailure(
                 in: context, source: "empty-store-test", saveChanges: false
             )
 
             #expect(migrationReport?.insertedTotal == 0)
-            #expect(seeded)
             #expect(!synced)
             #expect(repairReport?.changed == false)
+            #expect(!context.hasChanges, "a first launch left the store dirty")
         }
     }
 
     // MARK: - The seed's reading of "empty"
 
-    /// **The seed treats "no tags in the store" as "this user has never had tags".** On a device
-    /// where CloudKit has not landed yet — a reinstall, a second device, a restore — those are the
-    /// same store, and the seed runs synchronously the instant the container opens.
+    /// **A launch on a device whose tags have not arrived yet leaves the user's archive alone.**
     ///
-    /// So the fresh device mints an *active* `bug` while the user's own archived, recoloured `bug`
-    /// is still in flight. When it arrives, `deduplicateTags` merges the pair and
-    /// `mergeTagMetadata` resolves the archive flag as `target.isArchived && source.isArchived`
-    /// with the freshly seeded row as the target — so the answer is `false`. The tag the user
-    /// archived is back, active, in its default colour, on every synced device.
+    /// This is the replacement for `theTagSeedCannotTellAnEmptyStoreFromOneCloudKitHasNotFilledYet`,
+    /// which stated the defect: launch 1 on a reinstall or a second device found an empty store,
+    /// minted an *active* `bug`, and when the user's own archived, recoloured `bug` landed,
+    /// `deduplicateTags` merged the pair. `mergeTagMetadata` resolves the flag as
+    /// `target.isArchived && source.isArchived` with the freshly seeded row as target, so the
+    /// answer was `false` — the tag came back active, in the seed's colour, and CloudKit carried
+    /// that to every device.
     ///
-    /// Measured here, not reasoned about: this test fails the moment the seed learns to tell the
-    /// two stores apart.
-    @Test func theTagSeedCannotTellAnEmptyStoreFromOneCloudKitHasNotFilledYet() throws {
+    /// The `&&` was never the bug and is untouched: an active duplicate legitimately un-archives.
+    /// The bug was minting the duplicate. So the launch inserts nothing, and the row that arrives
+    /// is the only `bug` there has ever been on this device — still archived, still `#123456`.
+    @Test func aLaunchBeforeCloudKitLandsLeavesTheUsersArchivedTagArchived() throws {
         let context = try Self.makeEmptyContext()
 
-        // Launch 1 on the fresh device: the store is empty, so the seed fills it.
-        #expect(TagSupport.seedDefaultTags(in: context, saveChanges: false))
+        // Launch 1 on the fresh device. The store is empty and stays empty.
+        try withTemporaryDefaults("CadenceTests.unsyncedLaunch") { defaults in
+            Self.replayStartupMaintenance(in: context, defaults: defaults)
+        }
+        #expect(try context.fetchCount(FetchDescriptor<Cadence.Tag>()) == 0)
 
         // CloudKit then delivers the row the user actually owns.
         let usersOwnTag = Cadence.Tag(
@@ -136,22 +166,32 @@ struct CadenceFirstLaunchEmptyStoreTests {
         )
         context.insert(usersOwnTag)
 
-        // Launch 2 — or any later call, the seed is not latched.
-        TagSupport.seedDefaultTags(in: context, saveChanges: false)
+        // Launch 2, and every launch after it.
+        try withTemporaryDefaults("CadenceTests.unsyncedLaunch2") { defaults in
+            Self.replayStartupMaintenance(in: context, defaults: defaults)
+            Self.replayStartupMaintenance(in: context, defaults: defaults)
+        }
 
         let bugTags = try context.fetch(FetchDescriptor<Cadence.Tag>()).filter { $0.slug == "bug" }
-        #expect(bugTags.count == 1, "the merge should leave exactly one row per slug")
+        #expect(bugTags.count == 1)
         let survivor = try #require(bugTags.first)
-        #expect(survivor.isArchived == false, "the user's archived tag came back active")
-        #expect(survivor.colorHex == "#ff6b6b", "and in the seed's colour, not the user's")
+        #expect(survivor.isArchived, "the user's archived tag came back active")
+        #expect(survivor.colorHex == "#123456", "and in the seed's colour, not the user's")
+        #expect(survivor.desc == "Retired last spring.")
     }
 
-    /// The same missing latch, reachable on a single device with no CloudKit at all: renaming a
-    /// default tag changes its slug, the seed finds the old slug absent, and the original is back
-    /// as an eighth tag on the next launch. Renaming is a first-class action in macOS
-    /// Settings > Tags (`SettingsTagsSection.saveEdits`).
-    @Test func renamingADefaultTagBringsTheOriginalBackOnTheNextLaunch() throws {
+    /// **A rename survives every later launch.** This is the replacement for
+    /// `renamingADefaultTagBringsTheOriginalBackOnTheNextLaunch`, the half of T-528 that needed no
+    /// CloudKit at all: renaming rewrites the slug (`SettingsTagsSection.saveEdits` writes both),
+    /// the seed found the old slug absent, and `bug` was back as an eighth tag on the next launch.
+    /// Confirmed against the built macOS app before the fix — seven tags in, eight tags out.
+    ///
+    /// The second half is what keeps this from being satisfiable by breaking the seed: pressing
+    /// **Add Defaults** after a rename still brings the original back, because that is what the
+    /// button means. The defect was never the seed's behaviour, only who was allowed to ask for it.
+    @Test func renamingADefaultTagSurvivesEveryLaterLaunch() throws {
         let context = try Self.makeEmptyContext()
+        // The store the user actually has: seven tags, because they once pressed Add Defaults.
         TagSupport.seedDefaultTags(in: context, saveChanges: false)
 
         let bug = try #require(
@@ -161,18 +201,29 @@ struct CadenceFirstLaunchEmptyStoreTests {
         bug.name = "Defect"
         bug.slug = TagSupport.slug(for: "Defect")
 
-        TagSupport.seedDefaultTags(in: context, saveChanges: false)
+        try withTemporaryDefaults("CadenceTests.renameSurvives") { defaults in
+            Self.replayStartupMaintenance(in: context, defaults: defaults)
+            Self.replayStartupMaintenance(in: context, defaults: defaults)
+        }
 
         let slugs = try context.fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug).sorted()
-        #expect(slugs.count == TagSupport.defaultTags.count + 1)
+        #expect(slugs.count == TagSupport.defaultTags.count)
         #expect(slugs.contains("defect"))
-        #expect(slugs.contains("bug"), "the renamed tag's original was re-seeded beside it")
+        #expect(!slugs.contains("bug"), "the renamed tag's original was re-seeded beside it")
+
+        // And the button still does its job, which is why the seed itself was left alone.
+        TagSupport.seedDefaultTags(in: context, saveChanges: false)
+        let afterPressingAddDefaults = try context.fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug).sorted()
+        #expect(afterPressingAddDefaults.count == TagSupport.defaultTags.count + 1)
+        #expect(afterPressingAddDefaults.contains("bug"))
+        #expect(afterPressingAddDefaults.contains("defect"))
     }
 
-    /// The counterexample that keeps the two tests above honest about *which* signal is wrong:
-    /// archiving a tag on a store the seed can already see is respected forever. It is only the
-    /// empty store that is misread.
-    @Test func archivingADefaultTagSurvivesEveryLaterLaunchOnADeviceThatCanSeeIt() throws {
+    /// The counterexample that keeps the two tests above honest about *which* signal was wrong.
+    /// Archiving is respected by the seed itself, on a store the seed can see — so pressing
+    /// **Add Defaults** repeatedly never resurrects an archived tag, and never has. It was only
+    /// the store the seed *could not* see that produced the resurrection.
+    @Test func pressingAddDefaultsNeverResurrectsATagTheUserArchived() throws {
         let context = try Self.makeEmptyContext()
         TagSupport.seedDefaultTags(in: context, saveChanges: false)
 
@@ -190,6 +241,65 @@ struct CadenceFirstLaunchEmptyStoreTests {
         #expect(all.count == TagSupport.defaultTags.count)
         #expect(polishRows.count == 1)
         #expect(everyPolishRowIsArchived)
+    }
+
+    /// **Nothing in the app seeds without being asked.** The launch path is pinned above, on
+    /// `performStartupMaintenance` itself; this is the general form, because the two Settings tag
+    /// screens made the same misreading one layer up — "the tag list is empty" is what a second
+    /// device renders for as long as sync takes, and both seeded from `.onAppear`.
+    ///
+    /// The instrument's negative witness is the call it must leave alone: the same call, in a
+    /// button's action. That is the whole distinction the rule draws, so the two fixtures differ
+    /// only by the enclosing hook.
+    @Test func noUnpromptedCodePathSeedsTheDefaultTags() throws {
+        let instrument = try CadenceScanInstrument(
+            "seedsDefaultTagsWithoutBeingAsked",
+            fires: """
+            var body: some View {
+                tagCatalog(activeTags)
+                    .onAppear {
+                        TagSupport.seedDefaultTags(in: modelContext)
+                    }
+            }
+            """,
+            andNotOn: """
+            var body: some View {
+                Button("Add Defaults") {
+                    TagSupport.seedDefaultTags(in: modelContext)
+                }
+            }
+            """
+        ) { source in
+            Self.seedCallOffsets(in: source).contains { offset in
+                let windowStart = source.index(offset, offsetBy: -200, limitedBy: source.startIndex)
+                    ?? source.startIndex
+                let window = source[windowStart..<offset]
+                return Self.unpromptedHooks.contains { window.contains($0) }
+            }
+        }
+
+        let read = CadenceSourceScan.strippedSourceReader()
+        let paths = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        let offenders = try instrument.sweep(
+            paths,
+            atLeast: 200,
+            including: "Cadence/macOS/Views/SettingsTagsSection.swift",
+            read: read
+        )
+        #expect(offenders.isEmpty, "these seed the default tags unprompted: \(offenders)")
+
+        // Non-vacuity for the *sweep*, not just the walk: the needle is genuinely present in the
+        // tree, so `offenders.isEmpty` is the hooks being absent rather than the call being gone.
+        // A rename of `seedDefaultTags` that left an unguarded caller behind would fail here.
+        let callers = try paths.filter { !Self.seedCallOffsets(in: try read($0)).isEmpty }.sorted()
+        #expect(
+            callers == [
+                "Cadence/iOS/iOSSettingsTagsSection.swift",
+                "Cadence/iOS/iOSTaskDetailComponents.swift",
+                "Cadence/macOS/Views/SettingsTagsSection.swift",
+            ],
+            "the set of files that may seed the default tags changed: \(callers)"
+        )
     }
 
     // MARK: - What the surfaces show
@@ -306,6 +416,36 @@ struct CadenceFirstLaunchEmptyStoreTests {
 
     // MARK: - Fixtures
 
+    /// The enclosing spellings that mean "nobody asked for this": a SwiftUI lifecycle hook.
+    ///
+    /// `.onAppear` is the one both shipped tag screens used, and `.task` is its async twin. The
+    /// list is deliberately this short — a longer one of plausible-looking hooks would widen a
+    /// 200-character lookbehind into false positives on dense SwiftUI, and two other checks in the
+    /// same test cover what it leaves out: the caller-set pin catches a seed appearing in any new
+    /// file, and `theStartupSequenceThisSuiteReplaysIsTheOneLaunchActuallyRuns` reads the launch
+    /// pass's own body directly.
+    ///
+    /// **`"performStartupMaintenance"` was in this list and could never have fired.** Comments are
+    /// blanked to spaces rather than removed, so that function's signature sits well over 200
+    /// characters behind the call it introduces — outside the window. Measured rather than
+    /// reasoned about: mutation M1 put the seed back at launch and this detector stayed silent
+    /// while the other two checks killed the run. A needle that cannot fire is worse than no
+    /// needle, because it reads like coverage.
+    private static let unpromptedHooks = [".onAppear", ".task {"]
+
+    /// Where `TagSupport.seedDefaultTags(` is called in `source`. Spelled fully qualified because
+    /// that is how every real call site spells it, and a bare `seedDefaultTags(` would also match
+    /// the declaration in `TagSupport` itself.
+    private static func seedCallOffsets(in source: String) -> [String.Index] {
+        var offsets: [String.Index] = []
+        var cursor = source.startIndex
+        while let found = source.range(of: "TagSupport.seedDefaultTags(", range: cursor..<source.endIndex) {
+            offsets.append(found.lowerBound)
+            cursor = found.upperBound
+        }
+        return offsets
+    }
+
     private static func makeEmptyContext() throws -> ModelContext {
         let container = try ModelContainer(
             for: CadenceSchema.schema,
@@ -319,7 +459,6 @@ struct CadenceFirstLaunchEmptyStoreTests {
     private static func replayStartupMaintenance(in context: ModelContext, defaults: UserDefaults) {
         PursuitToGoalMigration.runIfNeeded(modelContext: context, defaults: defaults)
         _ = NoteMigrationService.migrateAndRecordFailure(in: context, source: "empty-store-test", saveChanges: false)
-        _ = TagSupport.seedDefaultTags(in: context, saveChanges: false)
         _ = TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
         _ = DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "empty-store-test", saveChanges: false)
         try? context.save()

@@ -23,35 +23,62 @@ typealias iOSChoiceValueButton = CadenceChoiceValueButton
 // a thin layout over `iOSSegmentedPill` in `iOSDesignSystem.swift`, next to the pill group it draws.
 
 /// Container (Inbox / Area / Project) choice, grouped like macOS's `ContainerPickerBadge`.
+///
+/// **It takes every list, not the active ones (T-514).** Four call sites hand this control their
+/// lists, and all four used to hand it a pre-filtered `filter(\.isActive)` copy — so a task filed
+/// in an area or project that had since been archived or completed opened a picker with no row for
+/// where it actually was, no checkmark anywhere, and no way to move it out. Narrowing is this
+/// control's own job now, through `CadenceTaskComposerSupport.pickable*(_:selectedID:)`, which is
+/// `CadencePickerSupport.selectable(_:selectedID:)` applied to each array: it hides what you could
+/// newly pick and never the one already assigned. Passing a filtered array in would put the defect
+/// back, which is why the parameters are named for what they must be.
 struct iOSContainerChoicePopover: View {
-    let activeAreas: [Area]
-    let activeProjects: [Project]
+    let areas: [Area]
+    let projects: [Project]
     @Binding var selection: String
     @Binding var isPresented: Bool
+
+    private var containerSelection: TaskContainerSelection {
+        CadenceTaskComposerSupport.selection(fromToken: selection)
+    }
+
+    private var offerableAreas: [Area] {
+        CadenceTaskComposerSupport.pickableAreas(
+            areas,
+            selectedID: CadenceTaskComposerSupport.selectedAreaID(containerSelection)
+        )
+    }
+
+    private var offerableProjects: [Project] {
+        CadenceTaskComposerSupport.pickableProjects(
+            projects,
+            selectedID: CadenceTaskComposerSupport.selectedProjectID(containerSelection)
+        )
+    }
 
     var body: some View {
         iOSFittedPopover(width: 250, maxHeight: 340) {
             VStack(alignment: .leading, spacing: 10) {
                 choiceRow(title: "Inbox", tag: "inbox", systemImage: "tray.full.fill", color: Theme.blue)
 
-                if !activeAreas.isEmpty {
+                if !offerableAreas.isEmpty {
                     groupLabel("Areas")
-                    ForEach(activeAreas) { area in
+                    ForEach(offerableAreas) { area in
                         choiceRow(
-                            title: area.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : area.name,
-                            tag: "area:\(area.id.uuidString)",
+                            title: CadenceAreaPickerSupport.title(for: area),
+                            tag: CadenceTaskComposerSupport.token(for: .area(area.id)),
                             systemImage: "tray.full.fill",
                             color: Color(hex: area.colorHex)
                         )
                     }
                 }
 
-                if !activeProjects.isEmpty {
+                if !offerableProjects.isEmpty {
                     groupLabel("Projects")
-                    ForEach(activeProjects) { project in
+                    ForEach(offerableProjects) { project in
                         choiceRow(
-                            title: project.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : project.name,
-                            tag: "project:\(project.id.uuidString)",
+                            title: CadenceProjectPickerSupport.title(for: project),
+                            tag: CadenceTaskComposerSupport.token(for: .project(project.id)),
                             systemImage: "checklist",
                             color: Color(hex: project.colorHex)
                         )
