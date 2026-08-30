@@ -27,6 +27,13 @@ enum GoalStatusFilter: CaseIterable {
         case .done: return status == .done
         }
     }
+
+    /// Whether this selection can hide a goal that exists.
+    ///
+    /// Read by the Goals page and the roadmap to tell "you have no goals" apart from "the filter
+    /// matched none of them". The default is `.active`, so a reader whose only goals are finished
+    /// was being told to create their first one.
+    var narrowsResults: Bool { self != .all }
 }
 
 /// One top-level goal (a direction) plus the milestones nested under it. `parentGoal` is nil only

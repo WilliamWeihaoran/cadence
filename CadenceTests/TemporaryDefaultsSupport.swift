@@ -28,14 +28,50 @@ func withTemporaryDefaults<T>(
     test: String = #function,
     _ body: (UserDefaults) throws -> T
 ) throws -> T {
+    try withTemporaryDefaults(scope, test: test, opening: { UserDefaults(suiteName: $0) }, body)
+}
+
+/// The same, for a test whose store is a `UserDefaults` **subclass** — a counting or recording
+/// double, which is the only reason a suite here is ever opened by hand.
+///
+/// `opening` exists because a default argument cannot pin a generic parameter: spelling
+/// `UserDefaults(suiteName:)` as the default would fix `Store` to `UserDefaults` and make the
+/// overload above the only one anybody could call. It is the whole difference between this helper
+/// covering `CalendarDateMemoryWriterTests` and that suite keeping its own `UUID()` (T-516).
+func withTemporaryDefaults<Store: UserDefaults, T>(
+    _ scope: String,
+    test: String = #function,
+    opening open: (String) -> Store?,
+    _ body: (Store) throws -> T
+) throws -> T {
     let name = temporaryDefaultsSuiteName(scope: scope, test: test)
     let defaults = try #require(
-        UserDefaults(suiteName: name),
+        open(name),
         "Could not open the temporary UserDefaults suite \(name)"
     )
     defaults.removePersistentDomain(forName: name)
     defer { defaults.removePersistentDomain(forName: name) }
     return try body(defaults)
+}
+
+/// And the `async` spelling, for the two writer tests that await a scheduled write inside the
+/// scope. Sharing a name with the two above is deliberate and safe: overload resolution picks the
+/// `async` one only in an `async` context, so a synchronous caller cannot reach it by accident and
+/// an asynchronous one cannot silently get the version that would drop its `await`.
+func withTemporaryDefaults<Store: UserDefaults, T>(
+    _ scope: String,
+    test: String = #function,
+    opening open: (String) -> Store?,
+    _ body: (Store) async throws -> T
+) async throws -> T {
+    let name = temporaryDefaultsSuiteName(scope: scope, test: test)
+    let defaults = try #require(
+        open(name),
+        "Could not open the temporary UserDefaults suite \(name)"
+    )
+    defaults.removePersistentDomain(forName: name)
+    defer { defaults.removePersistentDomain(forName: name) }
+    return try await body(defaults)
 }
 
 /// `#function` arrives as `someTestName()`; the parentheses would land in the plist's filename.
@@ -200,5 +236,172 @@ nonisolated enum StoredLaunchReportSuiteRule {
             if !attributes.contains(traitSpelling) { offenders.append(extent.name) }
         }
         return offenders
+    }
+}
+
+// MARK: - Suites nobody can bound (T-516)
+
+/// Which `UserDefaults` suite names a test file derives from `UUID()`.
+///
+/// **The leak this exists to stop, measured in the app's own container:** 7,727 preference plists,
+/// ~30 MB, 316 of them written in 48 hours and growing every run. `removePersistentDomain(forName:)`
+/// empties a suite's domain; it does **not** delete the plist `cfprefsd` wrote to back it. So a
+/// suite name carrying a fresh `UUID()` strands one more file per test per run, forever, and the
+/// `defer { removePersistentDomain(…) }` beside it looks exactly like the cleanup that would have
+/// prevented it.
+///
+/// `withTemporaryDefaults` above is the fix and has been since [[T-480]] — its name comes from
+/// `#function`, so the file count is bounded at one per test rather than one per test per run.
+/// Four files kept rolling their own anyway, which is the half a helper cannot do by existing.
+///
+/// **What it reads, and why not `codeOnly`.** Two of the four spelled the name as
+/// `"prefix.\(UUID().uuidString)"`, and `CadenceSourceScan.codeOnly` blanks a string literal
+/// whole — interpolation included — so the `UUID()` inside one is invisible to it. This rule
+/// therefore reads ordinary literals and blanks only comments and triple-quoted blocks. Blanking
+/// the triple-quoted blocks is what keeps the sweep from reporting its own witnesses: every
+/// fixture in this target is a multi-line literal, and every real suite name is a single-line one.
+nonisolated enum TemporaryDefaultsSuiteRule {
+
+    /// The offending suite-name expressions in `source`, sorted. Empty is the state the target is
+    /// held in.
+    static func uuidDerivedSuiteNames(in source: String) -> [String] {
+        let text = readableSource(source)
+        let bindings = uuidDerivedBindings(in: text)
+        var offenders: Set<String> = []
+        for argument in suiteNameArguments(in: text) {
+            let expression = argument.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !expression.isEmpty else { continue }
+            if expression.contains("UUID(") || bindings.contains(expression) {
+                offenders.insert(expression)
+            }
+        }
+        return offenders.sorted()
+    }
+
+    /// Comments and *fixture* literals blanked, ordinary literals kept.
+    ///
+    /// A fixture in this target is written one of two ways — a triple-quoted block or a raw
+    /// `#"..."#` literal — and a real suite name is written as neither. That is what lets this rule
+    /// read literal *content*, which it must for the interpolated names, without reporting the
+    /// witnesses that quote the very line it hunts. Both forms are blanked and both were needed:
+    /// blanking only the blocks left the two single-line raw fixtures in
+    /// `CadenceTestTargetHygieneTests` as the sweep's own first offenders, measured.
+    static func readableSource(_ source: String) -> String {
+        blankingFixtureLiterals(CadenceSourceScan.strippingComments(source))
+    }
+
+    /// Every name bound to an expression that mentions `UUID(` — `let suite = UUID().uuidString`,
+    /// and the parameter default `_ name: String = UUID().uuidString` that hid the same thing
+    /// behind a helper in `CalendarDateMemoryTests`. File-scoped rather than statement-scoped: a
+    /// suite name is bound in one line and spent in another.
+    static func uuidDerivedBindings(in text: String) -> Set<String> {
+        var bindings: Set<String> = []
+        for match in captures(#"\b(\w+)\s*(?::\s*[A-Za-z0-9_.<>\[\]?, ]+?)?\s*=(?!=)([^\n]*)"#, in: text) {
+            if match.count == 2, match[1].contains("UUID(") { bindings.insert(match[0]) }
+        }
+        return bindings
+    }
+
+    /// Every expression that reaches a `suiteName:` argument: the ones written there directly, and
+    /// the ones handed to a local helper that writes one.
+    ///
+    /// The second half is not thoroughness for its own sake. Three of the four offending sites
+    /// passed their `UUID()` string *positionally* into a `freshDefaults(_:)` or
+    /// `countingDefaults(_:)` one line further up the file, so a rule that only read the literal
+    /// `suiteName:` argument would have named one file of the four. The `withTemporaryDefaults`
+    /// scope is there for the same reason from the other end: routing through the helper and then
+    /// handing it a `UUID()` scope looks like the fix and leaks like the bug.
+    static func suiteNameArguments(in text: String) -> [String] {
+        var arguments = captures(#"suiteName:\s*([^,)\n]*)"#, in: text).compactMap(\.first)
+        // The helper's own `scope`, because handing it a `UUID()` leaks exactly as hard as
+        // opening the suite by hand: `temporaryDefaultsSuiteName` appends the test's name to
+        // whatever it is given, so a unique scope is a unique suite is another stranded plist.
+        arguments += captures(#"withTemporaryDefaults\(\s*([^,)\n]*)"#, in: text).compactMap(\.first)
+        for sink in suiteNameSinks(in: text) {
+            arguments += captures("\\b\(sink)\\s*\\(([^()\n]*)\\)", in: text).compactMap(\.first)
+        }
+        return arguments
+    }
+
+    /// Functions declared in this file whose body opens a suite.
+    static func suiteNameSinks(in text: String) -> [String] {
+        captures(#"func\s+(\w+)\s*\("#, in: text)
+            .compactMap(\.first)
+            .filter { CadenceSourceScan.functionBody(named: $0, in: text)?.contains("suiteName:") == true }
+    }
+
+    /// The capture groups of every match, or `[]` when the pattern does not compile.
+    private static func captures(_ pattern: String, in text: String) -> [[String]] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let value = text as NSString
+        return regex.matches(in: text, range: NSRange(location: 0, length: value.length)).map { match in
+            (1..<match.numberOfRanges).map { group in
+                let range = match.range(at: group)
+                return range.location == NSNotFound ? "" : value.substring(with: range)
+            }
+        }
+    }
+
+    /// Triple-quoted blocks blanked to spaces of equal length, newlines kept — the same shape
+    /// `CadenceSourceScan`'s strippers use, so offsets and line numbers survive.
+    private static func blankingFixtureLiterals(_ source: String) -> String {
+        var characters = Array(source)
+        let count = characters.count
+
+        func blank(_ range: Range<Int>) {
+            for position in range where !characters[position].isNewline { characters[position] = " " }
+        }
+
+        var index = 0
+        while index < count {
+            // A raw literal, of any hash width, single-line or multi-line. Its terminator carries
+            // the same run of `#`, which is what tells a single-line one where it ends — the shape
+            // `CadenceSourceScan.codeOnly` already had to learn (T-465).
+            if characters[index] == "#" {
+                var hashEnd = index
+                while hashEnd < count, characters[hashEnd] == "#" { hashEnd += 1 }
+                let hashes = hashEnd - index
+                if hashEnd < count, characters[hashEnd] == "\"" {
+                    let quotes = isTripleQuote(characters, at: hashEnd, count: count) ? 3 : 1
+                    var end = hashEnd + quotes
+                    var close = count
+                    while end < count {
+                        if characters[end] == "\"",
+                           end + quotes + hashes <= count,
+                           (end..<(end + quotes)).allSatisfy({ characters[$0] == "\"" }),
+                           ((end + quotes)..<(end + quotes + hashes)).allSatisfy({ characters[$0] == "#" }) {
+                            close = end + quotes + hashes
+                            break
+                        }
+                        // A single-line raw literal cannot span a newline; stopping here keeps an
+                        // unterminated one from blanking the rest of the file.
+                        if quotes == 1, characters[end].isNewline { close = end; break }
+                        end += 1
+                    }
+                    blank(index..<close)
+                    index = close
+                    continue
+                }
+            }
+
+            if isTripleQuote(characters, at: index, count: count) {
+                var end = index + 3
+                while end + 2 < count, !isTripleQuote(characters, at: end, count: count) { end += 1 }
+                let close = end + 2 < count ? end + 3 : count
+                blank(index..<close)
+                index = close
+                continue
+            }
+
+            index += 1
+        }
+        return String(characters)
+    }
+
+    private static func isTripleQuote(_ characters: [Character], at index: Int, count: Int) -> Bool {
+        index + 2 < count
+            && characters[index] == "\""
+            && characters[index + 1] == "\""
+            && characters[index + 2] == "\""
     }
 }

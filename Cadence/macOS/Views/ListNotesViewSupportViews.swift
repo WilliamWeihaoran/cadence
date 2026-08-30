@@ -186,8 +186,8 @@ struct ListNotesEmptyState: View {
         if !hasAnyNotes {
             Spacer()
             EmptyStateView(
-                message: "No notes",
-                subtitle: "Tap + to create one",
+                message: CadenceEmptyStateCopy.listNotesTitle,
+                subtitle: CadenceEmptyStateCopy.listNotesSubtitle,
                 icon: "doc.text"
             )
             Spacer()

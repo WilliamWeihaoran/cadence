@@ -45,3 +45,45 @@ enum CadenceSavedLinkPersistence {
         try CadencePendingChangePersistence.commitDelete(in: modelContext)
     }
 }
+
+/// What a saved link stores, from what the user typed into the URL field.
+///
+/// **Why this is shared (T-509).** macOS and iOS each hand-rolled the same three lines — trim,
+/// then `hasPrefix("http://") || hasPrefix("https://")`, then prepend `https://` — and both got
+/// the same detail wrong, because `hasPrefix` is case-sensitive and a URI scheme is not. A user
+/// who pasted `HTTPS://example.com` out of an address bar matched neither prefix, so the "fix"
+/// prepended a second scheme and stored `https://HTTPS://example.com`: a string `URL(string:)`
+/// still accepts and nothing can open. Two copies, one defect, twice — [[T-374]]'s shape, and the
+/// reason the rule now has exactly one declaration.
+///
+/// What it deliberately does **not** do is re-case the scheme the user typed. `HTTP://example.com`
+/// is a valid URL and stays as it is; rewriting it would be a second guess stacked on the first,
+/// and the defect here was guessing, not casing.
+enum CadenceSavedLinkURL {
+    /// The schemes a typed link may already carry. Anything else — including a scheme this list
+    /// does not know, like `ftp://` — is treated as scheme-less and gets `https://`, which is what
+    /// both platforms already did.
+    static let recognisedSchemes = ["http://", "https://"]
+
+    /// The default for a link typed without one. Not `http://`: a link the user did not
+    /// scheme should not be downgraded to cleartext on their behalf.
+    static let assumedScheme = "https://"
+
+    /// The stored URL for `raw`, or `nil` when the field is empty once trimmed — which is the
+    /// `guard !url.isEmpty else { return }` both call sites already wrote, folded in here so the
+    /// blank case cannot be spelled two ways either.
+    static func normalized(_ raw: String) -> String? {
+        let trimmed = CadenceTitleNormalization.normalized(raw)
+        guard !trimmed.isEmpty else { return nil }
+        guard !hasRecognisedScheme(trimmed) else { return trimmed }
+        return assumedScheme + trimmed
+    }
+
+    /// `.anchored` is what makes this a prefix test rather than a search; `.caseInsensitive` is the
+    /// whole ticket.
+    static func hasRecognisedScheme(_ value: String) -> Bool {
+        recognisedSchemes.contains { scheme in
+            value.range(of: scheme, options: [.caseInsensitive, .anchored]) != nil
+        }
+    }
+}

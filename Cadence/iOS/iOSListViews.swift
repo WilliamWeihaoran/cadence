@@ -297,8 +297,8 @@ struct iOSListsView: View {
         if activeAreas.isEmpty && activeProjects.isEmpty {
             iOSEmptyPanel(
                 systemImage: "folder",
-                title: "No active lists",
-                subtitle: "Create an area or project here, or restore one from Archived."
+                title: CadenceEmptyStateCopy.activeListsTitle,
+                subtitle: CadenceEmptyStateCopy.activeListsSubtitle
             )
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)

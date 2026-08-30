@@ -21,9 +21,12 @@ struct CalendarDateMemoryTests {
         try #require(DateFormatters.date(from: key))
     }
 
-    private func freshDefaults(_ name: String = UUID().uuidString) throws -> UserDefaults {
-        try #require(UserDefaults(suiteName: name))
-    }
+    /// The suite name used to be a fresh `UUID()` per call, cleaned up by a
+    /// `removePersistentDomain(forName: defaults.description)` that named no suite which has ever
+    /// existed. Between them this file stranded a preference plist per test per run in the app's
+    /// own container (T-516) — `removePersistentDomain` empties a domain and never deletes the
+    /// file behind it. `withTemporaryDefaults` names the suite after the calling test, so the
+    /// footprint is one file per test rather than one per test per run.
 
     /// A user's saved position lives behind these exact strings. Renaming one loses where they
     /// were, and nothing about the app would look broken afterwards.
@@ -150,37 +153,40 @@ struct CalendarDateMemoryTests {
 
     @Test
     func theAnchorAndTheSelectionAreStoredSeparately() throws {
-        let defaults = try freshDefaults()
-        let memory = CadenceCalendarDateMemory(defaults: defaults)
+        try withTemporaryDefaults("CadenceTests.calendarDateMemory") { defaults in
+            let memory = CadenceCalendarDateMemory(defaults: defaults)
+            // Hoisted out of the `#expect`s below: a `try` inside a macro argument is checked in
+            // the expansion buffer, which does not inherit a *closure*'s inferred `throws`.
+            let anchor = try date("2026-08-19")
+            let selection = try date("2026-09-02")
 
-        #expect(memory.anchorDate(calendar: calendar) == nil)
-        #expect(memory.selectedDate(calendar: calendar) == nil)
+            #expect(memory.anchorDate(calendar: calendar) == nil)
+            #expect(memory.selectedDate(calendar: calendar) == nil)
 
-        memory.setAnchorDate(try date("2026-08-19"), calendar: calendar)
-        memory.setSelectedDate(try date("2026-09-02"), calendar: calendar)
+            memory.setAnchorDate(anchor, calendar: calendar)
+            memory.setSelectedDate(selection, calendar: calendar)
 
-        #expect(memory.anchorDate(calendar: calendar) == calendar.startOfDay(for: try date("2026-08-19")))
-        #expect(memory.selectedDate(calendar: calendar) == calendar.startOfDay(for: try date("2026-09-02")))
-        #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == "2026-08-19")
-        #expect(defaults.string(forKey: CadenceCalendarDateMemory.selectionKey) == "2026-09-02")
-
-        defaults.removePersistentDomain(forName: defaults.description)
+            #expect(memory.anchorDate(calendar: calendar) == calendar.startOfDay(for: anchor))
+            #expect(memory.selectedDate(calendar: calendar) == calendar.startOfDay(for: selection))
+            #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == "2026-08-19")
+            #expect(defaults.string(forKey: CadenceCalendarDateMemory.selectionKey) == "2026-09-02")
+        }
     }
 
     /// A position written by the shipped `@AppStorage` build has to still be there after the move.
     /// The keys and the `yyyy-MM-dd` spelling are unchanged, so it is; this is what says so.
     @Test
     func aPositionWrittenByTheOldAppStorageBuildIsStillRestored() throws {
-        let suite = UUID().uuidString
-        let defaults = try freshDefaults(suite)
-        defaults.set("2026-03-04", forKey: "ios.calendar.anchorDateKey")
-        defaults.set("2026-03-06", forKey: "ios.calendar.selectedDateKey")
+        try withTemporaryDefaults("CadenceTests.calendarDateMemory") { defaults in
+            defaults.set("2026-03-04", forKey: "ios.calendar.anchorDateKey")
+            defaults.set("2026-03-06", forKey: "ios.calendar.selectedDateKey")
 
-        let memory = CadenceCalendarDateMemory(defaults: defaults)
-        #expect(memory.anchorDate(calendar: calendar) == calendar.startOfDay(for: try date("2026-03-04")))
-        #expect(memory.selectedDate(calendar: calendar) == calendar.startOfDay(for: try date("2026-03-06")))
-
-        defaults.removePersistentDomain(forName: suite)
+            let anchor = try date("2026-03-04")
+            let selection = try date("2026-03-06")
+            let memory = CadenceCalendarDateMemory(defaults: defaults)
+            #expect(memory.anchorDate(calendar: calendar) == calendar.startOfDay(for: anchor))
+            #expect(memory.selectedDate(calendar: calendar) == calendar.startOfDay(for: selection))
+        }
     }
 }
 
@@ -296,22 +302,20 @@ struct CalendarRestoredPositionTests {
     /// Without this the pure decision above could be pinned perfectly while the caller handed it
     /// the wrong strings.
     @Test func therawStoredAccessorsReadTheSameKeysTheParsedOnesDo() throws {
-        let suite = UUID().uuidString
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        let memory = CadenceCalendarDateMemory(defaults: defaults)
+        try withTemporaryDefaults("CadenceTests.calendarRestoredPosition") { defaults in
+            let memory = CadenceCalendarDateMemory(defaults: defaults)
 
-        #expect(memory.storedSelectionKey == nil)
-        #expect(memory.storedAnchorKey == nil)
+            #expect(memory.storedSelectionKey == nil)
+            #expect(memory.storedAnchorKey == nil)
 
-        memory.setSelectedDate(try day("2026-03-06"), calendar: calendar)
-        memory.setAnchorDate(try day("2026-03-02"), calendar: calendar)
+            memory.setSelectedDate(try day("2026-03-06"), calendar: calendar)
+            memory.setAnchorDate(try day("2026-03-02"), calendar: calendar)
 
-        #expect(memory.storedSelectionKey == "2026-03-06")
-        #expect(memory.storedAnchorKey == "2026-03-02")
-        #expect(defaults.string(forKey: CadenceCalendarDateMemory.selectionKey) == memory.storedSelectionKey)
-        #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == memory.storedAnchorKey)
-
-        defaults.removePersistentDomain(forName: suite)
+            #expect(memory.storedSelectionKey == "2026-03-06")
+            #expect(memory.storedAnchorKey == "2026-03-02")
+            #expect(defaults.string(forKey: CadenceCalendarDateMemory.selectionKey) == memory.storedSelectionKey)
+            #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == memory.storedAnchorKey)
+        }
     }
 
     /// And the view is a thin caller of it. A source scan, because `Cadence/iOS/iOSCalendarView.swift`
@@ -417,71 +421,76 @@ struct CalendarDateMemoryWriterTests {
         try #require(DateFormatters.date(from: key))
     }
 
-    private func countingDefaults(_ suite: String) throws -> CountingDefaults {
-        try #require(CountingDefaults(suiteName: suite))
+    /// Handed to `withTemporaryDefaults(_:test:opening:_:)` rather than called: choosing the suite
+    /// name is the helper's job, and choosing it here is the whole of T-516. Each of the three
+    /// tests below used to mint a `UUID()` and strand another plist in the app's container.
+    private func countingDefaults(_ suite: String) -> CountingDefaults? {
+        CountingDefaults(suiteName: suite)
     }
 
     @MainActor
     @Test
     func aRunOfPositionsCollapsesToOneWriteOfTheLastOne() async throws {
-        let suite = UUID().uuidString
-        let defaults = try countingDefaults(suite)
-        let gate = SleepGate()
-        let writer = CadenceCalendarDateMemoryWriter(
-            memory: CadenceCalendarDateMemory(defaults: defaults),
-            quietPeriod: .milliseconds(60),
-            sleep: { _ in await gate.wait() }
-        )
-
-        // Thirty columns of fling. None of these may reach the store while the next is still coming.
-        for day in 1...30 {
-            writer.remember(
-                anchor: try date(String(format: "2026-09-%02d", day)),
-                selection: try date("2026-08-19"),
-                calendar: calendar
+        try await withTemporaryDefaults(
+            "CadenceTests.calendarDateMemoryWriter",
+            opening: countingDefaults
+        ) { defaults in
+            let gate = SleepGate()
+            let writer = CadenceCalendarDateMemoryWriter(
+                memory: CadenceCalendarDateMemory(defaults: defaults),
+                quietPeriod: .milliseconds(60),
+                sleep: { _ in await gate.wait() }
             )
+
+            // Thirty columns of fling. None of these may reach the store while the next is still coming.
+            for day in 1...30 {
+                writer.remember(
+                    anchor: try date(String(format: "2026-09-%02d", day)),
+                    selection: try date("2026-08-19"),
+                    calendar: calendar
+                )
+            }
+            #expect(defaults.writes == 0)
+
+            await gate.open()
+            await writer.awaitScheduledWrite()
+            // Two: the anchor and the selection, once each.
+            #expect(defaults.writes == 2)
+            #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == "2026-09-30")
+            #expect(defaults.string(forKey: CadenceCalendarDateMemory.selectionKey) == "2026-08-19")
         }
-        #expect(defaults.writes == 0)
-
-        await gate.open()
-        await writer.awaitScheduledWrite()
-        // Two: the anchor and the selection, once each.
-        #expect(defaults.writes == 2)
-        #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == "2026-09-30")
-        #expect(defaults.string(forKey: CadenceCalendarDateMemory.selectionKey) == "2026-08-19")
-
-        defaults.removePersistentDomain(forName: suite)
     }
 
     @MainActor
     @Test
     func flushWritesImmediatelyAndCancelsWhatWasPending() async throws {
-        let suite = UUID().uuidString
-        let defaults = try countingDefaults(suite)
-        let gate = SleepGate()
-        let writer = CadenceCalendarDateMemoryWriter(
-            memory: CadenceCalendarDateMemory(defaults: defaults),
-            quietPeriod: .milliseconds(60),
-            sleep: { _ in await gate.wait() }
-        )
+        try await withTemporaryDefaults(
+            "CadenceTests.calendarDateMemoryWriter",
+            opening: countingDefaults
+        ) { defaults in
+            let gate = SleepGate()
+            let writer = CadenceCalendarDateMemoryWriter(
+                memory: CadenceCalendarDateMemory(defaults: defaults),
+                quietPeriod: .milliseconds(60),
+                sleep: { _ in await gate.wait() }
+            )
 
-        writer.remember(anchor: try date("2026-09-01"), selection: try date("2026-09-01"), calendar: calendar)
-        writer.flush(anchor: try date("2026-10-05"), selection: try date("2026-10-06"), calendar: calendar)
+            writer.remember(anchor: try date("2026-09-01"), selection: try date("2026-09-01"), calendar: calendar)
+            writer.flush(anchor: try date("2026-10-05"), selection: try date("2026-10-06"), calendar: calendar)
 
-        // The page going away must not wait out a quiet period it will never see the end of — this
-        // reads the store well inside the 60ms one.
-        #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == "2026-10-05")
-        #expect(defaults.string(forKey: CadenceCalendarDateMemory.selectionKey) == "2026-10-06")
+            // The page going away must not wait out a quiet period it will never see the end of — this
+            // reads the store well inside the 60ms one.
+            #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == "2026-10-05")
+            #expect(defaults.string(forKey: CadenceCalendarDateMemory.selectionKey) == "2026-10-06")
 
-        // And the write it cancelled must not land afterwards and undo it. Opening the gate and
-        // then awaiting that very task is what makes this an assertion rather than a hope: the
-        // cancelled task has demonstrably run to completion before the store is read.
-        await gate.open()
-        await writer.awaitScheduledWrite()
-        #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == "2026-10-05")
-        #expect(defaults.writes == 2)
-
-        defaults.removePersistentDomain(forName: suite)
+            // And the write it cancelled must not land afterwards and undo it. Opening the gate and
+            // then awaiting that very task is what makes this an assertion rather than a hope: the
+            // cancelled task has demonstrably run to completion before the store is read.
+            await gate.open()
+            await writer.awaitScheduledWrite()
+            #expect(defaults.string(forKey: CadenceCalendarDateMemory.anchorKey) == "2026-10-05")
+            #expect(defaults.writes == 2)
+        }
     }
 
     /// Re-recording a position the store already holds is not a write. Settling oscillates across a
@@ -489,19 +498,20 @@ struct CalendarDateMemoryWriterTests {
     @MainActor
     @Test
     func rememberingWhereItAlreadyIsTouchesNothing() throws {
-        let suite = UUID().uuidString
-        let defaults = try countingDefaults(suite)
-        let writer = CadenceCalendarDateMemoryWriter(
-            memory: CadenceCalendarDateMemory(defaults: defaults),
-            quietPeriod: .milliseconds(10)
-        )
+        try withTemporaryDefaults(
+            "CadenceTests.calendarDateMemoryWriter",
+            opening: countingDefaults
+        ) { defaults in
+            let writer = CadenceCalendarDateMemoryWriter(
+                memory: CadenceCalendarDateMemory(defaults: defaults),
+                quietPeriod: .milliseconds(10)
+            )
 
-        writer.flush(anchor: try date("2026-10-05"), selection: try date("2026-10-06"), calendar: calendar)
-        #expect(defaults.writes == 2)
+            writer.flush(anchor: try date("2026-10-05"), selection: try date("2026-10-06"), calendar: calendar)
+            #expect(defaults.writes == 2)
 
-        writer.flush(anchor: try date("2026-10-05"), selection: try date("2026-10-06"), calendar: calendar)
-        #expect(defaults.writes == 2)
-
-        defaults.removePersistentDomain(forName: suite)
+            writer.flush(anchor: try date("2026-10-05"), selection: try date("2026-10-06"), calendar: calendar)
+            #expect(defaults.writes == 2)
+        }
     }
 }

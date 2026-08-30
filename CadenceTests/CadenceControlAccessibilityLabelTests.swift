@@ -111,6 +111,81 @@ struct ControlAccessibilityLabelTests {
         )
     }
 
+    // MARK: - The saved-links screen's icon-only buttons
+
+    /// Same defect as T-472, one screen over: `macOS/Views/LinksView.swift` drew three icon-only
+    /// buttons — add, open, delete — with **no `.accessibilityLabel` and no `.help` at all**, so
+    /// there was not even a tooltip for the sweep above to pair a name with.
+    ///
+    /// The fix is `cadenceControlLabel(_:)`, declared beside `CadenceIconButton`, which is the one
+    /// place in the repo that already passed a single string to both modifiers. Two claims here and
+    /// no third: **the name is set**, and it is set on the button rather than somewhere in the file.
+    /// What VoiceOver announces is not measured — see this suite's header.
+    @Test func everyIconOnlyButtonInTheSavedLinksScreenCarriesAName() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/LinksView.swift")
+        let source = CadenceSourceScan.strippingComments(raw)
+        #expect(source != raw, "the comment stripper removed nothing")
+        #expect(source.contains("struct LinksView: View"), "the scan read the wrong file")
+
+        // The three buttons, by the symbol each draws and the name it now carries. Stated as pairs
+        // rather than counted: a count stays green when two buttons share one name by accident.
+        for (symbol, label) in [
+            ("plus", #"showingAdd ? "Cancel adding a link" : "Add link""#),
+            ("arrow.up.right.square", #""Open link""#),
+            ("trash", #""Delete link""#),
+        ] {
+            #expect(
+                source.contains(#"Image(systemName: "\#(symbol)")"#),
+                "LinksView no longer draws the \(symbol) button"
+            )
+            #expect(
+                source.contains(".cadenceControlLabel(\(label))"),
+                "the \(symbol) button in LinksView has no accessible name"
+            )
+        }
+
+        // Every icon-only *button* is named. The fourth `Image(systemName:)` in the file is the
+        // row's leading "link" glyph, which is decorative — it sits beside the title and URL it
+        // would otherwise repeat — so it is deliberately not in the list above.
+        #expect(
+            CadenceSourceScan.matchCount(#"Image\(systemName:"#, in: source) == 4,
+            "LinksView's icon inventory changed; recheck which of them are buttons"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.cadenceControlLabel\("#, in: source) == 3,
+            "a button in LinksView was added or unnamed"
+        )
+    }
+
+    /// And the helper really does set both, from one string. Without this the test above pins a
+    /// spelling whose meaning lives in another file and could quietly become `.help` alone —
+    /// which is precisely the state T-472 found the markdown toolbar in.
+    @Test func theSharedControlLabelHelperSetsTheNameAndTheTooltipFromOneString() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CadenceButtons.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "cadenceControlLabel", in: source),
+            "cadenceControlLabel(_:) is gone"
+        )
+        #expect(body.contains(".accessibilityLabel(accessibilityLabel)"))
+        #expect(body.contains(".help(accessibilityLabel)"))
+        // The parameter is named for the accessible name, not for the tooltip. That is the durable
+        // half of T-472 rather than a style preference: `help:` is what told the previous author
+        // the string was for the pointer only.
+        #expect(
+            source.contains("func cadenceControlLabel(_ accessibilityLabel: String)"),
+            "the helper's parameter was renamed away from accessibilityLabel"
+        )
+        // Non-vacuity, and the tie back to the sweep above: this shape is one the T-472 detector
+        // must *not* report.
+        #expect(tooltipWithoutNameInstrumentFires(on: body) == false)
+    }
+
+    private func tooltipWithoutNameInstrumentFires(on source: String) -> Bool {
+        (try? tooltipWithoutNameInstrument())?.fires(on: source) ?? true
+    }
+
     // MARK: - T-484: visible settings toggles
 
     /// Every file the app compiles, both platforms. `Cadence/iOS/` is not built by this target, so

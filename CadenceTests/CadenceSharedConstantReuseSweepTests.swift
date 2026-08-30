@@ -74,6 +74,19 @@ let cadenceSharedLiteralExemptions: [CadenceSharedLiteralExemption] = [
         would have created rather than found.
         """
     ),
+    CadenceSharedLiteralExemption(
+        "No notes yet",
+        path: "Cadence/iOS/iOSMarkdownAccessoryViews.swift",
+        why: """
+        `CadenceEmptyStateCopy.notepadTitle` is the Notes page's Notepad tab with nothing in it. \
+        `iOSMarkdownReferencePickerKind.note.emptyTitle` is a picker with nothing to *link*, over \
+        every note the app holds rather than the notepad ones, and its subtitle says so \
+        ("Create or open a note first, then link it here."). Same English, two scopes — the same \
+        distinction `cadenceRetiredCopy` already carves this file out for with "No tasks yet", and \
+        T-285's `FocusPickerSupportViews` carve-out before that. Reading one off the other would \
+        make renaming a tab silently rename a picker.
+        """
+    ),
 ]
 
 /// A string constant declared in `Cadence/Shared/`, read out of source rather than listed here.
@@ -434,12 +447,21 @@ struct CadenceSharedConstantReuseSweepTests {
     /// positives, no exemption added.** That is the number that matters about this rule — its
     /// precision was never the limit, its *input* was, and the input is a declaration existing.
     ///
+    /// **Re-measured again at the empty-state audit.** Converging nine duplicated empty states into
+    /// `CadenceEmptyStateCopy` declared sixteen new shared constants, which is sixteen new needles
+    /// for this rule. Fifteen produced no hit outside their declaration; the sixteenth,
+    /// `notepadTitle` ("No notes yet"), collided with the phone's note reference picker — **one new
+    /// hit, one collision of ordinary English, no new true positives to fix.** That is the same
+    /// shape as `Completed Today` and is the second exemption below. The input grew and the
+    /// precision did not move.
+    ///
     /// This does not re-derive the numbers; it pins the shape of the claim, so the sweep cannot
     /// quietly become an empty rule with a paragraph attached.
     @Test func theSharedConstantSweepWasMeasuredBeforeItShipped() {
-        #expect(cadenceSharedLiteralExemptions.count == 1,
+        #expect(cadenceSharedLiteralExemptions.count == 2,
                 "the exemption list changed size; re-measure the precision claim above it")
         #expect(cadenceSharedLiteralExemptions.first?.literal == "Completed Today")
+        #expect(cadenceSharedLiteralExemptions.last?.literal == "No notes yet")
     }
 }
 

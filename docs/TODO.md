@@ -512,22 +512,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   report theirs. Return/report the error through the macOS caller, then pin it. **Note this is a file
   write, not a `save()`** — see [[T-508]].
 
-- [T-507] **iOS saved links throw away the shared persistence helper's failure signal** (Codex, P2,
-  measured). `iOS/iOSListSupportViews.swift:687` calls `try? CadenceSavedLinkPersistence.insert(...)`
-  then clears the title, clears the URL and closes the add form **regardless**; `:699` does the same for
-  delete. The helper (`Shared/CadenceSavedLinkPersistence.swift:35-45`) already commits and rolls back
-  correctly — the caller discards the answer. **macOS is already right**: `LinksView.swift:109-114`
-  catches insert failure and leaves the form open, `:125-130` catches delete. Mirror it, add an iOS
-  `actionError` notice near the saved-links section, and pin so iOS cannot reintroduce `try?`. Same
-  shape as [[T-470]]/[[T-471]].
 
 
-- [T-509] **Saved-link URL normalisation mangles an uppercase scheme, on both platforms** (Codex, P3,
-  measured). `macOS/Views/LinksView.swift:99` and `iOS/iOSListSupportViews.swift:677` both test
-  `hasPrefix("http://")`/`hasPrefix("https://")` **case-sensitively**, so `HTTPS://example.com` becomes
-  `https://HTTPS://example.com`. Two hand-rolled checks, one defect, twice — [[T-374]]'s shape. One
-  shared normalisation helper read by both, pinned on lowercase, uppercase, mixed case, leading/trailing
-  whitespace and scheme-less input.
 
 - [T-510] **Release packet and review notes disagree about which platforms ship** (Codex, P3, measured
   doc drift, **not a runtime bug**). `docs/app-store-submission-packet.md:13` says *Platforms: macOS*,
@@ -582,19 +568,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   name, not a de-duplication.** Recorded so the omission is a decision rather than an oversight.
 
 
-- [T-516] **Tests are stranding `UserDefaults` plists in the real app container, and it is live.**
-  [[T-480]] fixed `withTemporaryDefaults` to derive its suite name from `#function`, but four files still
-  roll their own `UUID()` suite name and bypass it. **Measured in the app's own container: 7,727
-  preference plists, 316 written in the last 48 hours** — bare `<UUID>.plist`,
-  `cadence.tests.external-write.<UUID>`, `cadence.tests.privacy-reset.<UUID>` and
-  `com.haoranwei.Cadence.tests.t15.<UUID>`, totalling ~30 MB and growing every run. Sites:
-  `CalendarDateMemoryTests.swift:24,174,299,427,459,492` (bare UUID, and `freshDefaults` never removes
-  the domain), `CadenceExternalWriteReconcileTests.swift:76,107,134`,
-  `CadencePrivacyDataResetSurfaceTests.swift:130`, `CadenceAccentPaletteTests.swift:324`. Each should
-  call `withTemporaryDefaults(_:)`. Pin it in [[T-485]]'s shape — no test file may pass a
-  `UUID()`-derived suite name to `UserDefaults(suiteName:)` — since the helper's whole point is that the
-  file count is bounded at one per test forever. **The existing 7,727 are the user's to delete**; do not
-  remove files from that container without asking.
 
 
 - [T-517] **~1.7 GB of shared DerivedData belongs to scratch trees that no longer exist.** 13 of the 14
@@ -609,6 +582,114 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   while another plugin process is running the binary is [[T-86]] for the MCP server. **The warm reuse
   looks deliberate** — the script's own comment says so — so this is a flag for a decision rather than
   a defect to fix blind.
+
+
+- [T-519] **`iOSFocusView`'s detail pane says "Today tasks will appear here" while they are already
+  appearing beside it.** With nothing selected it draws "Ready when you are / Today tasks will appear
+  here." — but the tasks appear in the **list pane next to it**, and this shows at regular width while
+  that pane is full. A false statement in the common case. The house pattern for a detail pane with no
+  selection is "Select an item from the list." (`iOSFeatureComponents:529`) / "Select a note". Needs a
+  wording decision.
+
+- [T-520] **`CadenceTodayPresentationSupport.emptyScheduleHint` asks for a tap, from `Shared/`.** It ends
+  "…tap an hour to schedule one." and lives in `Cadence/Shared/`, but has exactly **one** reader,
+  `iOSTodaySchedulePanel`. Correct today, wrong the moment a Mac surface picks it up. Move it to an
+  iOS-only constant or reword it. [[T-528]]'s `noDesktopCopyAsksForATouchGesture` sweep covers
+  `Cadence/macOS/` only and structurally cannot see this one.
+
+- [T-521] **A shared component tells macOS VoiceOver to double tap.** `CadenceNotesListSupport`'s folding
+  month header sets `.accessibilityHint("Double tap to expand")`, and it is a shared component with
+  `.onHover` — so on macOS VoiceOver reads a gesture that is not its activation gesture. Same family as
+  [[T-472]]/[[T-484]] but a *hint* rather than a missing label.
+
+- [T-522] **Converge `"List not found"` and its subtitle, then delete the allowlist entry.** They are
+  duplicated in `ListDetailView.swift` and `iOSRootSidebar.swift` because
+  `CadenceDeletedSelectionGuardTests.theMacMissingListStateReusesTheSentenceIOSAlreadyShips`
+  **deliberately pins them as matching literals**, so converging means rewriting that suite's assertion
+  to read the constant instead. Doing so removes the single entry in `CadenceEmptyStateAuditTests`'
+  `emptyStateDuplicateAllowance`.
+
+- [T-523] **`iOSGoalAttachListsSheet` branches on an untrimmed query.** It is the one *correct*
+  filter-aware empty state in the app, but a whitespace-only query still reports "No matching lists".
+  One line: `CadenceEmptyStateCopy.isNarrowedToEmpty(searchText: query, filterNarrows: false)`.
+
+- [T-524] **65 string literals are duplicated across two or more files under `Cadence/`** — measured,
+  beyond empty states. The Settings sections duplicate ~15 between
+  `iOSCalendarSettingsSection`/`SettingsListManagementSections` and
+  `iOSNotificationsSettingsSection`/`SettingsNotificationsSection`, and the recurrence/calendar-scope
+  alerts duplicate 4 across three files each. **The [[T-374]] sweep cannot see any of them, because no
+  constant exists yet** — that sweep catches a *shared constant re-typed*, not copy that never became
+  one. Same convergence job as [[T-528]] at roughly 7x the size.
+
+- [T-525] **`GoalTimelineView`'s first-run subtitle overstates what is required.** "Create a goal, then
+  set its date range." — but a goal with no end date still gets a roadmap row, rendered "No date", so
+  creating one is sufficient. Copy deliberately preserved as-is by the empty-state work rather than
+  reworded under a change that looked like cleanup.
+
+- [T-526] **The iOS Lists empty state points a fresh user at a section that is not on screen** (Codex,
+  P3, measured). `iOS/iOSListViews.swift:301` and `iOS/iOSListsRegularPane.swift:41` both say "Create an
+  area or project here, or **restore one from Archived**." unconditionally — but the Archived section is
+  only drawn when `!archivedAreas.isEmpty || !archivedProjects.isEmpty` (`iOSListViews.swift:256`). On a
+  fresh or fully emptied store there is nothing archived, so the copy names a section the user cannot
+  see. **The correct pattern is already in the same app**: `iOSSettingsView.swift:307-311` does not
+  mention archived restore. Make the clause conditional on the same predicate that draws the section,
+  in both shells, and pin the first-launch wording.
+
+
+
+- [T-528] **DECIDE: the default-tag seed reads "store is empty" as "this user has never had tags."**
+  (P2, measured.) `TagSupport.seedDefaultTags` has **no latch** — verified, zero `UserDefaults`/`hasSeeded`
+  references in the file — and `PersistenceController.swift:87` runs it on **every** launch. Its only
+  signal is whether a tag with each default slug is present. Two reachable symptoms from one cause:
+  **Rename — reachable today, one device, no CloudKit at all.** macOS Settings > Tags has a pencil on
+  every row, and `SettingsTagsSection.saveEdits` writes `tag.slug = TagSupport.slug(for: name)`. Rename
+  `bug` to `Defect` and the **next launch re-seeds `bug` beside it**: eight tags where the user curated
+  seven, the old name back in the `#` picker and every tag filter.
+  **Archive — reachable on a reinstall or a second device.** The store opens before CloudKit lands, so
+  the seed mints an *active* `bug` while the user's archived, recoloured one is in flight; when it
+  arrives `mergeTagMetadata` resolves `target.isArchived && source.isArchived` (`TagSupport.swift:314`)
+  with the fresh row as target, so the answer is `false`. **A tag the user archived comes back, active,
+  in the seed's colour, and syncs that to every device.**
+  **The sharp framing: this sits twelve lines from code that argues the opposite.**
+  `DataIntegrityRepairService`'s own doc comment refuses an orphan sweep precisely because
+  `performStartupMaintenance` runs with no gate on sync state and "it is the *empty* store that would
+  delete the most". Three of the four startup passes are written to be inert against a store that is
+  empty only because sync has not landed; **the fourth inserts because of it.**
+  Pinned by `renamingADefaultTagBringsTheOriginalBackOnTheNextLaunch` and
+  `theTagSeedCannotTellAnEmptyStoreFromOneCloudKitHasNotFilledYet`, which encode *current* behaviour and
+  go red the moment the seed learns to tell the two stores apart. Options: a `UserDefaults` seeded-latch,
+  a sync-state gate, or seed-on-demand. `mergeTagMetadata`'s `&&` is **not** independently wrong — an
+  active duplicate legitimately un-archives — so do not "fix" it there.
+
+- [T-529] **`clearMissingEventLinks` writes where its sibling only reports.** (P3, code path measured,
+  the race inferred.) `CalendarLinkedTaskSupport.swift:21-32` runs unattended on every
+  `EKEventStoreChanged` (`macOSRootStateSupport.swift:59`, `SchedulePanelDataSupport.swift:28`), fetches
+  every `AppTask`, clears `calendarEventID` wherever `event(withIdentifier:)` returns nil, and saves. Its
+  only guard is `isAuthorized` — so **"EventKit has not loaded this event yet" and "this event is gone"
+  are the same answer.** The neighbouring surface takes the opposite posture: `CadenceCalendarLinkHealth`
+  only *reports* a dead link and hands the user a re-pick, and
+  `withoutCalendarAccessNothingIsReportedMissing` exists for exactly this false positive.
+  **Reachability checked before filing**: `AppTask.calendarEventID` is documented as having no current
+  writer, so a new TestFlight tester cannot hit this — it is reachable **only from stores written by an
+  earlier build**. But those values are exactly what the reader is kept for, and the clearing is silent,
+  irreversible and CloudKit-propagating.
+
+
+- [T-530] **A stale mutation needle reads as a surviving mutant.** Found by the T-516 agent, on itself.
+  Its `assert old in s` went stale when it renamed a function; Python raised, the zsh runner had **no
+  `set -e`**, so the mutation silently never applied and the run reported `EXIT=0` — which reads exactly
+  as *"the mutant survived"*. Same family as the compiler-crash blind spot: **it fails quiet.** Every
+  mutation step must verify it applied (`grep -q` for the new text, loud if absent) before its result is
+  evidence. Two of this session's runners already do it; the runbook rule should be general.
+
+- [T-531] **macOS UI tests need a one-time system authorisation that no agent can grant.** Measured
+  2026-08-30 in integration run r31: `CadenceUITests` fails at launch with *"The test runner failed to
+  initialize for UI testing. (Underlying Error: Authentication canceled. System authentication…)"*. The
+  tests themselves are well built — they isolate their store per run with `CADENCE_LOCAL_STORE_ONLY`, a
+  fresh `CADENCE_UI_TEST_STORE_ID` and reset flags — so this is purely the macOS automation-permission
+  gate, which requires the user's password. **The integration runner now defaults the UI stage off**
+  (`run-ui` as arg 2 enables it) so batches are not blocked. Once authorised, turn it on and it becomes
+  the third gate alongside the unit suite and the MCP build.
 
 
 ## Done
@@ -1373,6 +1454,48 @@ before filing**: this list has had the same ticket re-reported more than once.
   test whether the slowness follows the global config into a scratch repo. Fixing it restores a
   one-command isolation step for every future agent.
   **Closed 2026-08-30 **as not reproducible — and the prime suspect is disproven, not merely unreproduced.** `git archive --format=tar HEAD` runs in **0.06s** for a 13.4 MB / 910-file tree (~220 MB/s), verified to `~/Desktop`, to `/private/tmp`, and under concurrent disk load; the ticket's ~25 min for 15 MB is a 20,000x discrepancy. The blamed `filter.lfs.required=true` is **still set**, `git-lfs` is **still absent**, and `~/.gitconfig` is unchanged since 2026-05-08 — byte-identical to the original measurement — so it cannot have been the cause. Also ruled out: the protected-`~/Desktop` theory (same APFS volume as `/private/tmp`, detached file provider), security software (0 system extensions), and repo shape (2 packs, 3.8 MB, `unpack_trees` at 0.006s). **The original numbers were real**: every sampled size is an exact multiple of the 10240-byte tar record, implying ~1.6s of per-file stall across 910 files. The mechanism is no longer observable (the unified log retains ~1 day) and was almost certainly a transient per-file check on the host. No maintenance was run and none is needed. **The workaround it justified is now retired** — see the closure note below.**
+
+- [T-507] **iOS saved links throw away the shared persistence helper's failure signal** (Codex, P2,
+  measured). `iOS/iOSListSupportViews.swift:687` calls `try? CadenceSavedLinkPersistence.insert(...)`
+  then clears the title, clears the URL and closes the add form **regardless**; `:699` does the same for
+  delete. The helper (`Shared/CadenceSavedLinkPersistence.swift:35-45`) already commits and rolls back
+  correctly — the caller discards the answer. **macOS is already right**: `LinksView.swift:109-114`
+  catches insert failure and leaves the form open, `:125-130` catches delete. Mirror it, add an iOS
+  `actionError` notice near the saved-links section, and pin so iOS cannot reintroduce `try?`. Same
+  shape as [[T-470]]/[[T-471]].
+  **Closed 2026-08-30. iOS `addLink` catches and leaves the form open with an `actionError`, mirroring `LinksView.swift:109-114`; `delete(_:)` reports too, **even though the rule cannot see it** — its mutation leaves `noSwallowedSaveIsFollowedByADismissOrACompletionHandler` silent, confirming the ticket's note that the report half is blind to a swallow with nothing after it. The `reportExemptions` entry is deleted in the same change, and the mutation that restores the `try?` kills that guard — proof the deletion was live rather than cosmetic.**
+
+- [T-509] **Saved-link URL normalisation mangles an uppercase scheme, on both platforms** (Codex, P3,
+  measured). `macOS/Views/LinksView.swift:99` and `iOS/iOSListSupportViews.swift:677` both test
+  `hasPrefix("http://")`/`hasPrefix("https://")` **case-sensitively**, so `HTTPS://example.com` becomes
+  `https://HTTPS://example.com`. Two hand-rolled checks, one defect, twice — [[T-374]]'s shape. One
+  shared normalisation helper read by both, pinned on lowercase, uppercase, mixed case, leading/trailing
+  whitespace and scheme-less input.
+  **Closed 2026-08-30. One `CadenceSavedLinkURL` in `Shared/` — which the macOS test target compiles, so **both platforms' rule is actually executed** rather than asserted by scan — read by both add forms, absorbing trim, blank-check and scheme so the guard cannot be spelled two ways. **It deliberately does not re-case what the user typed**: `HTTPS://example.com` stays as typed, because the defect was *guessing at a missing scheme*, not casing. `ftp://` remains treated as scheme-less, pinned as existing behaviour rather than quietly changed.**
+
+- [T-516] **Tests are stranding `UserDefaults` plists in the real app container, and it is live.**
+  [[T-480]] fixed `withTemporaryDefaults` to derive its suite name from `#function`, but four files still
+  roll their own `UUID()` suite name and bypass it. **Measured in the app's own container: 7,727
+  preference plists, 316 written in the last 48 hours** — bare `<UUID>.plist`,
+  `cadence.tests.external-write.<UUID>`, `cadence.tests.privacy-reset.<UUID>` and
+  `com.haoranwei.Cadence.tests.t15.<UUID>`, totalling ~30 MB and growing every run. Sites:
+  `CalendarDateMemoryTests.swift:24,174,299,427,459,492` (bare UUID, and `freshDefaults` never removes
+  the domain), `CadenceExternalWriteReconcileTests.swift:76,107,134`,
+  `CadencePrivacyDataResetSurfaceTests.swift:130`, `CadenceAccentPaletteTests.swift:324`. Each should
+  call `withTemporaryDefaults(_:)`. Pin it in [[T-485]]'s shape — no test file may pass a
+  `UUID()`-derived suite name to `UserDefaults(suiteName:)` — since the helper's whole point is that the
+  file count is bounded at one per test forever. **The existing 7,727 are the user's to delete**; do not
+  remove files from that container without asking.
+  **Closed 2026-08-30. Four files routed through `withTemporaryDefaults`; `CalendarDateMemoryTests`' `freshDefaults(_ name: String = UUID().uuidString)` and its `removePersistentDomain(forName: defaults.description)` — **which named a suite that has never existed** — are both gone. The helper gained a generic `opening:` overload so a `UserDefaults` *subclass* double can use it, which a default argument could not do. **The rule is wider than the ticket asked, and each widening was forced by a measurement**: three of the four sites passed the suite name **positionally** into a local helper, so a rule reading only the literal `suiteName:` argument would have named **one file of four**; the helper's own `scope` argument is covered too, because routing through the helper and then handing it a `UUID()` scope looks like the fix and leaks identically. **Not measured**: the container's file count — the existing ~7,700 files are untouched and are the user's to remove.**
+
+- [T-527] **macOS Saved Links has four icon-only buttons and zero accessible labels** (Codex, P3; source
+  measured, VoiceOver inferred). `macOS/Views/LinksView.swift` contains **4 `Image(systemName:)` buttons,
+  0 `.accessibilityLabel` and 0 `.help`** — verified. The header add button (`:34-40`), the row open-link
+  button (`:219-228`) and the row delete button (`:230-235`). Same shape as [[T-472]], which established
+  that the durable half is naming the parameter `accessibilityLabel` rather than `help`, since a
+  parameter called `help` is what tells the next author the string is tooltip-only. Neither T-472 nor
+  [[T-484]] covered this file. **Claim only that the label is set** — nothing has launched the app.
+  **Closed 2026-08-30, folded into [[T-509]]'s change because it was cheap. New `cadenceControlLabel(_:)` beside `CadenceIconButton`, applied to the header add, row open and row delete buttons. **Correction to the audit**: the file has 4 `Image(systemName:)` but only **3 are buttons** — the fourth is `LinkRow`'s leading decorative glyph, sitting beside the title and URL it would otherwise repeat, and it is deliberately left alone. The inventory is pinned at 4 icons / 3 labels so the next author has to re-decide rather than drift. **Claim is only that the label is set**, in the shape SwiftUI reads it; nothing launched the app.**
 
 ## Cancelled
 

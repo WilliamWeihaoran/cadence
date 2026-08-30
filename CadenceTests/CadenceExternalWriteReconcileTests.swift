@@ -73,30 +73,28 @@ struct CadenceExternalWriteReconcileTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let storeURL = directory.appendingPathComponent("default.store")
         let markerURL = CadenceStoreSupport.externalWriteMarkerURL(besideStoreAt: storeURL)
-        let suiteName = "cadence.tests.external-write.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        try withTemporaryDefaults("cadence.tests.external-write") { defaults in
+            let taskID = UUID()
+            let now = Date(timeIntervalSince1970: 1_700_000_000)
 
-        let taskID = UUID()
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
+            CadenceWidgetIntentWriteSupport.publish(
+                completedTaskID: taskID,
+                storeURL: storeURL,
+                userDefaults: defaults,
+                now: now
+            )
 
-        CadenceWidgetIntentWriteSupport.publish(
-            completedTaskID: taskID,
-            storeURL: storeURL,
-            userDefaults: defaults,
-            now: now
-        )
-
-        // The optimistic override the tapped row reads back.
-        #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now, userDefaults: defaults) == [taskID])
-        // The forced reload, which the 15-second throttle would otherwise swallow.
-        #expect(CadenceWidgetRefreshCenter.lastReloadDate(userDefaults: defaults) == now)
-        // And the marker that gets the app to reconcile the reminder this completion invalidated.
-        let posted = try String(contentsOf: markerURL, encoding: .utf8)
-        #expect(
-            posted == iso(now),
-            "a widget completion no longer tells the app its store changed (T-312)"
-        )
+            // The optimistic override the tapped row reads back.
+            #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now, userDefaults: defaults) == [taskID])
+            // The forced reload, which the 15-second throttle would otherwise swallow.
+            #expect(CadenceWidgetRefreshCenter.lastReloadDate(userDefaults: defaults) == now)
+            // And the marker that gets the app to reconcile the reminder this completion invalidated.
+            let posted = try String(contentsOf: markerURL, encoding: .utf8)
+            #expect(
+                posted == iso(now),
+                "a widget completion no longer tells the app its store changed (T-312)"
+            )
+        }
     }
 
     @Test func aHabitToggleFromAWidgetPublishesTheSameWay() throws {
@@ -104,24 +102,22 @@ struct CadenceExternalWriteReconcileTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let storeURL = directory.appendingPathComponent("default.store")
         let markerURL = CadenceStoreSupport.externalWriteMarkerURL(besideStoreAt: storeURL)
-        let suiteName = "cadence.tests.external-write.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        try withTemporaryDefaults("cadence.tests.external-write") { defaults in
+            let habitID = UUID()
+            let now = Date(timeIntervalSince1970: 1_700_000_000)
 
-        let habitID = UUID()
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
+            CadenceWidgetIntentWriteSupport.publish(
+                habitCompletion: (habitID, true),
+                storeURL: storeURL,
+                userDefaults: defaults,
+                now: now
+            )
 
-        CadenceWidgetIntentWriteSupport.publish(
-            habitCompletion: (habitID, true),
-            storeURL: storeURL,
-            userDefaults: defaults,
-            now: now
-        )
-
-        #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults) == [habitID: true])
-        #expect(CadenceWidgetRefreshCenter.lastReloadDate(userDefaults: defaults) == now)
-        let posted = try String(contentsOf: markerURL, encoding: .utf8)
-        #expect(posted == iso(now))
+            #expect(CadenceWidgetRefreshCenter.recentHabitCompletionStates(now: now, userDefaults: defaults) == [habitID: true])
+            #expect(CadenceWidgetRefreshCenter.lastReloadDate(userDefaults: defaults) == now)
+            let posted = try String(contentsOf: markerURL, encoding: .utf8)
+            #expect(posted == iso(now))
+        }
     }
 
     /// A capture has no optimistic override to write — but it is still a write, and the reminder
@@ -131,17 +127,15 @@ struct CadenceExternalWriteReconcileTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let storeURL = directory.appendingPathComponent("default.store")
         let markerURL = CadenceStoreSupport.externalWriteMarkerURL(besideStoreAt: storeURL)
-        let suiteName = "cadence.tests.external-write.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        try withTemporaryDefaults("cadence.tests.external-write") { defaults in
+            let now = Date(timeIntervalSince1970: 1_700_000_000)
+            CadenceWidgetIntentWriteSupport.publish(storeURL: storeURL, userDefaults: defaults, now: now)
 
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
-        CadenceWidgetIntentWriteSupport.publish(storeURL: storeURL, userDefaults: defaults, now: now)
-
-        #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now, userDefaults: defaults).isEmpty)
-        #expect(CadenceWidgetRefreshCenter.lastReloadDate(userDefaults: defaults) == now)
-        let posted = try String(contentsOf: markerURL, encoding: .utf8)
-        #expect(posted == iso(now))
+            #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: now, userDefaults: defaults).isEmpty)
+            #expect(CadenceWidgetRefreshCenter.lastReloadDate(userDefaults: defaults) == now)
+            let posted = try String(contentsOf: markerURL, encoding: .utf8)
+            #expect(posted == iso(now))
+        }
     }
 
     // MARK: - The wiring, where the value is out of reach

@@ -121,7 +121,11 @@ struct AITaskDraftReviewSheet: View {
             }
 
             if review.drafts.isEmpty {
-                EmptyStateView(message: "No tasks found", subtitle: "The note did not contain clear action items.", icon: "sparkles")
+                EmptyStateView(
+                    message: CadenceEmptyStateCopy.noteActionTasksTitle,
+                    subtitle: CadenceEmptyStateCopy.noteActionTasksSubtitle,
+                    icon: "sparkles"
+                )
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {

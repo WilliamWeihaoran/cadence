@@ -80,6 +80,14 @@ struct GoalTimelineView: View {
         CGFloat(scale.renderDays) * scale.dayWidth
     }
 
+    /// Whether the roadmap is empty because the filter popover is narrowing it.
+    private var isNarrowedToEmpty: Bool {
+        CadenceEmptyStateCopy.isNarrowedToEmpty(
+            searchText: searchText,
+            filterNarrows: statusFilter.narrowsResults
+        )
+    }
+
     private var rows: [GoalTimelineRow] {
         groups.flatMap { group in
             [GoalTimelineRow.group(group, height: groupRowHeight)] +
@@ -106,8 +114,13 @@ struct GoalTimelineView: View {
 
             if rows.isEmpty {
                 EmptyStateView(
-                    message: searchText.isEmpty ? "No goals yet" : "No matching goals",
-                    subtitle: searchText.isEmpty ? "Create a goal, then set its date range." : "Try a different filter.",
+                    // The roadmap is handed `GoalsView`'s already-filtered groups, so it is empty
+                    // under a narrowing `statusFilter` for the same reason the list is — and its
+                    // filter popover holds both controls.
+                    message: isNarrowedToEmpty ? "No matching goals" : "No goals yet",
+                    subtitle: isNarrowedToEmpty
+                        ? "Try a different filter."
+                        : "Create a goal, then set its date range.",
                     icon: "chart.bar.xaxis"
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

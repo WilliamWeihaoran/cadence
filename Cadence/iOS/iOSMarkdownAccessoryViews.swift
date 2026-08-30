@@ -81,6 +81,21 @@ enum iOSMarkdownReferencePickerKind: String, Identifiable {
         case .task: return "checklist"
         }
     }
+
+    /// **A search that matched nothing is not an empty library.** The three above are the picker's
+    /// *first-run* words — "No notes yet / Create or open a note first, then link it here." — and
+    /// the sheet showed them for a query that simply missed, telling a reader with two hundred
+    /// notes to go and make one. These are the other statement.
+    var noMatchTitle: String { "No matches" }
+
+    var noMatchSubtitle: String {
+        switch self {
+        case .note: return "No note title or body matches that search."
+        case .task: return "No task title, note or list matches that search."
+        }
+    }
+
+    var noMatchIcon: String { "magnifyingglass" }
 }
 
 struct iOSMarkdownReferencePickerSheet: View {
@@ -109,6 +124,23 @@ struct iOSMarkdownReferencePickerSheet: View {
         }
     }
 
+    /// The same candidate lists with the search field ignored, so the empty state can tell "there
+    /// is nothing to link" from "your search matched nothing". `isEmpty` above reads the
+    /// *filtered* lists, which is correct for deciding whether to draw a list at all and wrong as
+    /// the only input to what the empty state says.
+    ///
+    /// Asked of the same two functions rather than of `notes`/`tasks` directly: `candidateTasks`
+    /// drops cancelled tasks, and a cancelled task is genuinely unreferenceable rather than
+    /// filtered out by the reader.
+    private var hasNothingToOffer: Bool {
+        switch kind {
+        case .note:
+            return MarkdownReferenceCompletionSupport.candidateNotes(from: notes, query: "").isEmpty
+        case .task:
+            return MarkdownReferenceCompletionSupport.candidateTasks(from: tasks, query: "").isEmpty
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -117,9 +149,9 @@ struct iOSMarkdownReferencePickerSheet: View {
                     // icon/title/subtitle stack. Picker empty states keep their subtitle — it
                     // says something the screen does not.
                     iOSEmptyPanel(
-                        systemImage: kind.emptyIcon,
-                        title: kind.emptyTitle,
-                        subtitle: kind.emptySubtitle
+                        systemImage: hasNothingToOffer ? kind.emptyIcon : kind.noMatchIcon,
+                        title: hasNothingToOffer ? kind.emptyTitle : kind.noMatchTitle,
+                        subtitle: hasNothingToOffer ? kind.emptySubtitle : kind.noMatchSubtitle
                     )
                 } else {
                     referenceList

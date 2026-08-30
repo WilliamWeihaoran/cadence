@@ -453,22 +453,25 @@ struct iOSNotesView: View {
         selectedNoteID == note.id
     }
 
-    /// Same words macOS uses, tab for tab. "Exact same sidebar" is a claim about vocabulary before
-    /// it is one about point sizes.
+    /// Same words macOS uses, tab for tab — and now the *same strings*, not a second spelling of
+    /// them. This switch used to write all four pairs out under that claim, and the claim was
+    /// already false: the Events subtitle carried a full stop the Mac's did not. A comment cannot
+    /// hold two copies together; `CadenceEmptyStateCopy` can, and `NotesView` reads the same ones.
     private var emptyStateTitle: String {
         switch activeTab {
-        case .today, .week: return "Nothing written yet"
-        case .notepad: return "No notes yet"
-        case .events: return "No meeting notes yet"
+        case .today: return CadenceEmptyStateCopy.dailyNotesTitle
+        case .week: return CadenceEmptyStateCopy.weeklyNotesTitle
+        case .notepad: return CadenceEmptyStateCopy.notepadTitle
+        case .events: return CadenceEmptyStateCopy.meetingNotesTitle
         }
     }
 
     private var emptyStateSubtitle: String {
         switch activeTab {
-        case .today: return "Days you write on appear here. Pick a date above to open one."
-        case .week: return "Weeks you write in appear here. Pick a date above to open one."
-        case .notepad: return "Notepad holds notes that belong to no particular day."
-        case .events: return "Create one from a calendar event."
+        case .today: return CadenceEmptyStateCopy.dailyNotesSubtitle
+        case .week: return CadenceEmptyStateCopy.weeklyNotesSubtitle
+        case .notepad: return CadenceEmptyStateCopy.notepadSubtitle
+        case .events: return CadenceEmptyStateCopy.meetingNotesSubtitle
         }
     }
 

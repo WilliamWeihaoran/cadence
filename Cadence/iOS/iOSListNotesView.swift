@@ -205,8 +205,8 @@ struct iOSListNotesView: View {
             if groups.isEmpty {
                 iOSEmptyPanel(
                     systemImage: "doc.text",
-                    title: "No notes",
-                    subtitle: "Tap + to create one."
+                    title: CadenceEmptyStateCopy.listNotesTitle,
+                    subtitle: CadenceEmptyStateCopy.listNotesSubtitle
                 )
             } else {
                 ScrollView {

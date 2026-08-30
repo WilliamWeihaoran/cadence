@@ -127,28 +127,26 @@ struct CadencePrivacyDataResetSurfaceTests {
     /// has to force the reload, and force it *after* the clear: the clear removes the reload
     /// timestamp, so a reload that ran first would leave nothing behind.
     @Test func theResetForcesAWidgetReloadAfterClearingTheSnapshot() throws {
-        let suiteName = "cadence.tests.privacy-reset.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        try withTemporaryDefaults("cadence.tests.privacy-reset") { defaults in
+            let taskID = UUID()
+            let stale = Date(timeIntervalSince1970: 1_000)
+            CadenceWidgetRefreshCenter.reloadAllWidgets(force: true, now: stale, userDefaults: defaults)
+            CadenceWidgetRefreshCenter.markTaskCompleted(taskID, now: stale, userDefaults: defaults)
 
-        let taskID = UUID()
-        let stale = Date(timeIntervalSince1970: 1_000)
-        CadenceWidgetRefreshCenter.reloadAllWidgets(force: true, now: stale, userDefaults: defaults)
-        CadenceWidgetRefreshCenter.markTaskCompleted(taskID, now: stale, userDefaults: defaults)
+            // Positive controls: the state this is about to check for removal was really there.
+            #expect(CadenceWidgetRefreshCenter.lastReloadDate(userDefaults: defaults) == stale)
+            #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: stale, userDefaults: defaults) == [taskID])
 
-        // Positive controls: the state this is about to check for removal was really there.
-        #expect(CadenceWidgetRefreshCenter.lastReloadDate(userDefaults: defaults) == stale)
-        #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(now: stale, userDefaults: defaults) == [taskID])
+            let before = Date()
+            PrivacyDataResetService.clearWidgetState(userDefaults: defaults)
 
-        let before = Date()
-        PrivacyDataResetService.clearWidgetState(userDefaults: defaults)
-
-        #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(userDefaults: defaults).isEmpty)
-        let reload = try #require(
-            CadenceWidgetRefreshCenter.lastReloadDate(userDefaults: defaults),
-            "the reset cleared the widget snapshot and never asked WidgetKit for a new timeline (T-310)"
-        )
-        #expect(reload >= before)
+            #expect(CadenceWidgetRefreshCenter.suppressedTaskIDs(userDefaults: defaults).isEmpty)
+            let reload = try #require(
+                CadenceWidgetRefreshCenter.lastReloadDate(userDefaults: defaults),
+                "the reset cleared the widget snapshot and never asked WidgetKit for a new timeline (T-310)"
+            )
+            #expect(reload >= before)
+        }
     }
 
     // MARK: - iOS reaches the reset

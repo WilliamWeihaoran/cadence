@@ -495,6 +495,156 @@ struct CadenceTestTargetHygieneTests {
         )
     }
 
+    // MARK: - Suites the test host cannot clean up after (T-516)
+
+    /// No test file derives a `UserDefaults` suite name from `UUID()`.
+    ///
+    /// `removePersistentDomain(forName:)` empties a suite's domain and leaves the plist `cfprefsd`
+    /// wrote to back it, so a suite named after a fresh `UUID()` strands one more file per test per
+    /// run — **7,727 of them, ~30 MB, in the app's own container** by the time this was measured,
+    /// 316 written in the preceding 48 hours. `withTemporaryDefaults` has derived its name from
+    /// `#function` since [[T-480]] precisely so the count is bounded at one file per test forever;
+    /// four files kept rolling their own anyway, which is the half a helper cannot do by existing.
+    ///
+    /// Through `CadenceScanInstrument` for the reason every clean-repo sweep here is: once the four
+    /// are routed through the helper the offender list is empty, and empty is what a fixed repo and
+    /// a blind detector both look like. The witnesses are the same test with the suite name minted
+    /// two ways, so a rule that stopped reading the `UUID()` fails the constructor.
+    @Test func noTestInTheTargetNamesAUserDefaultsSuiteAfterAFreshUUID() throws {
+        let leaking = """
+        @Test func aStoredSelectionRoundTrips() throws {
+            let suite = "cadence.tests.palette.\\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            #expect(defaults.string(forKey: "k") == nil)
+        }
+        """
+        let bounded = """
+        @Test func aStoredSelectionRoundTrips() throws {
+            try withTemporaryDefaults("cadence.tests.palette") { defaults in
+                #expect(defaults.string(forKey: "k") == nil)
+            }
+        }
+        """
+        let instrument = try CadenceScanInstrument(
+            "a UserDefaults suite named after a fresh UUID",
+            fires: leaking,
+            andNotOn: bounded,
+            by: { !TemporaryDefaultsSuiteRule.uuidDerivedSuiteNames(in: $0).isEmpty }
+        )
+
+        let offenders = try instrument.sweep(
+            try cadenceTestFiles(),
+            atLeast: 200,
+            including: "CadenceTests/CalendarDateMemoryTests.swift",
+            read: cadenceTestSource
+        )
+        #expect(
+            offenders.isEmpty,
+            """
+            these files open a UserDefaults suite whose name carries a UUID, so every run strands \
+            another preference plist in the app's container that nothing ever deletes: \(offenders)
+            """
+        )
+    }
+
+    /// The three readings the rule turns on, none of which a clean sweep can demonstrate.
+    ///
+    /// The middle one is the reason the rule is not simply "a `suiteName:` argument that spells
+    /// `UUID`": **three of the four sites passed the name positionally into a local helper** a few
+    /// lines up, so a detector that only read the literal argument would have named one file of
+    /// four and left the leak at three-quarters strength.
+    @Test func theTemporaryDefaultsSuiteRuleFollowsANameIntoTheHelperThatOpensTheSuite() {
+        // 1. Written straight into the argument.
+        let inline = #"let defaults = UserDefaults(suiteName: "x.\(UUID().uuidString)")"#
+        #expect(!TemporaryDefaultsSuiteRule.uuidDerivedSuiteNames(in: inline).isEmpty)
+
+        // 2. Bound here, spent in a helper whose parameter has a different name entirely — so this
+        //    cannot pass by the two identifiers happening to match.
+        let throughAHelper = """
+        private func store(_ named: String) -> UserDefaults? {
+            UserDefaults(suiteName: named)
+        }
+
+        @Test func t() throws {
+            let chosen = UUID().uuidString
+            let defaults = try #require(store(chosen))
+        }
+        """
+        #expect(TemporaryDefaultsSuiteRule.uuidDerivedSuiteNames(in: throughAHelper) == ["chosen"])
+
+        // 2b. Routed through `withTemporaryDefaults` and *then* handed a unique scope. This is the
+        //     next mistake rather than a hypothetical one: it reads as the fix, and it leaks
+        //     identically, because the helper appends the test's name to whatever scope it is
+        //     given.
+        let uniqueScope = """
+        @Test func t() throws {
+            let scope = "cadence.tests.reset.\\(UUID().uuidString)"
+            try withTemporaryDefaults(scope) { defaults in
+                #expect(defaults.string(forKey: "k") == nil)
+            }
+        }
+        """
+        #expect(TemporaryDefaultsSuiteRule.uuidDerivedSuiteNames(in: uniqueScope) == ["scope"])
+
+        // 3. And the fixed suite the app really owns is not an offender. `CadenceAccentPaletteTests`
+        //    opens the app group by identifier, which is one file and always the same file.
+        let appGroup = """
+        @Test func t() throws {
+            let group = try #require(UserDefaults(suiteName: CadenceStoreSupport.appGroupIdentifier))
+            let probeKey = "cadence.tests.t15.\\(UUID().uuidString)"
+            group.set("x", forKey: probeKey)
+        }
+        """
+        #expect(TemporaryDefaultsSuiteRule.uuidDerivedSuiteNames(in: appGroup).isEmpty)
+    }
+
+    /// Why the rule reads ordinary string literals when every other structural scan here reads
+    /// `CadenceSourceScan.codeOnly`, and what it blanks instead.
+    ///
+    /// `codeOnly` blanks a literal whole, interpolation included — which is right for a scan
+    /// looking for *code shape* and fatal for this one, because two of the four sites spelled the
+    /// name as `"prefix.\(UUID().uuidString)"` and the `UUID()` lives inside the literal. So the
+    /// rule keeps ordinary literals and blanks the two forms a *fixture* takes — a triple-quoted
+    /// block and a raw `#"..."#` literal — because the witnesses above have to quote the very line
+    /// the rule hunts. Both halves were measured rather than assumed: with only the blocks blanked
+    /// the sweep's first and only offender was this file, named by its own two raw witnesses.
+    @Test func theTemporaryDefaultsSuiteRuleReadsLiteralsButNotItsOwnFixtures() {
+        let interpolated = #"UserDefaults(suiteName: "x.\(UUID().uuidString)")"#
+        #expect(
+            CadenceSourceScan.codeOnly(interpolated).contains("UUID(") == false,
+            "codeOnly stopped blanking interpolations, so this rule could read it after all"
+        )
+        #expect(TemporaryDefaultsSuiteRule.readableSource(interpolated).contains("UUID("))
+
+        // A fixture quoting the offending line is not the offending line.
+        let fixture = "let sample = \"\"\"\n" + interpolated + "\n\"\"\"\n"
+        #expect(TemporaryDefaultsSuiteRule.uuidDerivedSuiteNames(in: fixture).isEmpty)
+        #expect(
+            TemporaryDefaultsSuiteRule.readableSource(fixture).contains("suiteName") == false,
+            "the fixture block was not blanked"
+        )
+
+        // ...and so is a fixture written as a single-line raw literal, which is the form both
+        // witnesses in the test above take.
+        let rawFixture = """
+        let inline = #"UserDefaults(suiteName: "x.\\(UUID().uuidString)")"#
+        """
+        #expect(rawFixture.contains("UUID("), "the raw fixture interpolated instead of quoting")
+        #expect(TemporaryDefaultsSuiteRule.uuidDerivedSuiteNames(in: rawFixture).isEmpty)
+        #expect(
+            TemporaryDefaultsSuiteRule.readableSource(rawFixture).contains("suiteName") == false,
+            "the raw fixture was not blanked"
+        )
+
+        // ...and comments are gone the way they are everywhere else here.
+        #expect(
+            TemporaryDefaultsSuiteRule.uuidDerivedSuiteNames(
+                in: "// UserDefaults(suiteName: UUID().uuidString)"
+            ).isEmpty
+        )
+    }
+
     /// The rule's near misses, and the one that matters most: **the trait is attributed per suite.**
     ///
     /// A file-level spelling would have been shorter and is wrong for the same reason T-465's

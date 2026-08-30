@@ -38,6 +38,7 @@ struct LinksView: View {
                         .foregroundStyle(Theme.blue)
                 }
                 .buttonStyle(.cadencePlain)
+                .cadenceControlLabel(showingAdd ? "Cancel adding a link" : "Add link")
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
@@ -66,8 +67,8 @@ struct LinksView: View {
             if links.isEmpty {
                 Spacer()
                 EmptyStateView(
-                    message: "No saved links",
-                    subtitle: "Tap + to save a link",
+                    message: CadenceEmptyStateCopy.savedLinksTitle,
+                    subtitle: CadenceEmptyStateCopy.savedLinksSubtitle,
                     icon: "link"
                 )
                 Spacer()
@@ -94,11 +95,10 @@ struct LinksView: View {
 
     private func addLink() {
         let title = CadenceTitleNormalization.normalized(newTitle)
-        var urlStr = CadenceTitleNormalization.normalized(newURL)
-        guard !urlStr.isEmpty else { return }
-        if !urlStr.hasPrefix("http://") && !urlStr.hasPrefix("https://") {
-            urlStr = "https://" + urlStr
-        }
+        // Trim, blank-check and scheme are one shared decision now: the inline version here and
+        // the copy on iOS both read `hasPrefix` case-sensitively and turned `HTTPS://example.com`
+        // into `https://HTTPS://example.com` (T-509).
+        guard let urlStr = CadenceSavedLinkURL.normalized(newURL) else { return }
         let link = SavedLink(title: title.isEmpty ? urlStr : title, url: urlStr)
         link.area = area
         link.project = project
@@ -226,6 +226,7 @@ private struct LinkRow: View {
                         .foregroundStyle(Theme.blue)
                 }
                 .buttonStyle(.cadencePlain)
+                .cadenceControlLabel("Open link")
 
                 Button(role: .destructive) { onDelete() } label: {
                     Image(systemName: "trash")
@@ -233,6 +234,7 @@ private struct LinkRow: View {
                         .foregroundStyle(Theme.red)
                 }
                 .buttonStyle(.cadencePlain)
+                .cadenceControlLabel("Delete link")
             }
         }
         .padding(.horizontal, 16)

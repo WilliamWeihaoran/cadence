@@ -340,8 +340,8 @@ struct iOSListCompletedPanel: View {
             if tasks.isEmpty {
                 iOSEmptyPanel(
                     systemImage: "checkmark.circle",
-                    title: "No completed tasks",
-                    subtitle: "Completed work from this list will collect here."
+                    title: CadenceEmptyStateCopy.completedTasksTitle,
+                    subtitle: CadenceEmptyStateCopy.completedTasksSubtitle
                 )
             } else {
                 List {
@@ -593,6 +593,10 @@ struct iOSListLinksPanel: View {
     @State private var isAdding = false
     @State private var newTitle = ""
     @State private var newURL = ""
+    /// What the store refused, in the same two sentences macOS's list shows. Before T-507 the two
+    /// writes here were `try?` and this property did not exist, so a refused commit was reported
+    /// by the form closing.
+    @State private var actionError: String?
 
     private var links: [SavedLink] {
         if let area {
@@ -616,6 +620,7 @@ struct iOSListLinksPanel: View {
                     withAnimation(.easeInOut(duration: 0.18)) {
                         isAdding.toggle()
                     }
+                    actionError = nil
                 }
 
                 Spacer()
@@ -633,13 +638,25 @@ struct iOSListLinksPanel: View {
                 .padding(.bottom, 14)
             }
 
+            // Above the hairline rather than inside the add form: the delete reports here too, and
+            // a swipe-to-delete happens with the form closed.
+            if let actionError {
+                Text(actionError)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+            }
+
             iOSListHairline()
 
             if links.isEmpty {
                 iOSEmptyPanel(
                     systemImage: "link",
-                    title: "No saved links",
-                    subtitle: "Save URLs that belong with this list."
+                    title: CadenceEmptyStateCopy.savedLinksTitle,
+                    subtitle: CadenceEmptyStateCopy.savedLinksSubtitle
                 )
             } else {
                 List {
@@ -670,21 +687,28 @@ struct iOSListLinksPanel: View {
     }
 
     private func addLink() {
-        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        var url = newURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !url.isEmpty else { return }
-
-        if !url.hasPrefix("http://") && !url.hasPrefix("https://") {
-            url = "https://\(url)"
-        }
+        let title = CadenceTitleNormalization.normalized(newTitle)
+        // Trim, blank-check and scheme come from the shared helper. The three lines that used to
+        // sit here were a copy of macOS's, defect included: `hasPrefix` is case-sensitive, so a
+        // pasted `HTTPS://example.com` was stored as `https://HTTPS://example.com` (T-509).
+        guard let url = CadenceSavedLinkURL.normalized(newURL) else { return }
 
         let link = SavedLink(title: title.isEmpty ? url : title, url: url)
         link.area = area
         link.project = project
         link.order = (links.map(\.order).max() ?? -1) + 1
         // Same commit as macOS, through the one helper, so the two surfaces cannot drift on
-        // whether a saved link is actually saved (T-327).
-        try? CadenceSavedLinkPersistence.insert(link, in: modelContext)
+        // whether a saved link is actually saved (T-327) — and, since T-507, on whether a refused
+        // one is reported. The `try?` this replaces cleared both fields and closed the form over a
+        // commit that had already rolled the link back out, so the user watched what they typed
+        // disappear and was told it had worked.
+        do {
+            try CadenceSavedLinkPersistence.insert(link, in: modelContext)
+        } catch {
+            actionError = CadenceSavedLinkPersistence.saveFailureNotice
+            return
+        }
+        actionError = nil
         newTitle = ""
         newURL = ""
         isAdding = false
@@ -695,8 +719,17 @@ struct iOSListLinksPanel: View {
         openURL(url)
     }
 
+    /// The delete reports as well, even though `CadenceSaveCommitDisciplineTests`' report half
+    /// could never have named it: nothing followed the swallow, so there was no dismissal for the
+    /// scan to see. The helper rolls a refused delete back, which puts the row straight back into
+    /// the list — so without a notice the swipe simply looked like it had not registered.
     private func delete(_ link: SavedLink) {
-        try? CadenceSavedLinkPersistence.delete(link, in: modelContext)
+        do {
+            try CadenceSavedLinkPersistence.delete(link, in: modelContext)
+            actionError = nil
+        } catch {
+            actionError = CadenceSavedLinkPersistence.deleteFailureNotice
+        }
     }
 }
 

@@ -118,8 +118,8 @@ private struct DailyNotesPage: View {
                 if listedNotes.isEmpty {
                     Spacer()
                     EmptyStateView(
-                        message: "Nothing written yet",
-                        subtitle: "Days you write on appear here. Pick a date above to open one.",
+                        message: CadenceEmptyStateCopy.dailyNotesTitle,
+                        subtitle: CadenceEmptyStateCopy.dailyNotesSubtitle,
                         icon: "doc.text"
                     )
                     Spacer()
@@ -212,8 +212,8 @@ private struct WeeklyNotesPage: View {
                 if listedNotes.isEmpty {
                     Spacer()
                     EmptyStateView(
-                        message: "Nothing written yet",
-                        subtitle: "Weeks you write in appear here. Pick a date above to open one.",
+                        message: CadenceEmptyStateCopy.weeklyNotesTitle,
+                        subtitle: CadenceEmptyStateCopy.weeklyNotesSubtitle,
                         icon: "doc.text"
                     )
                     Spacer()
@@ -311,8 +311,8 @@ private struct NotepadPage: View {
                 if notes.isEmpty {
                     Spacer()
                     EmptyStateView(
-                        message: "No notes yet",
-                        subtitle: "Notepad holds notes that belong to no particular day.",
+                        message: CadenceEmptyStateCopy.notepadTitle,
+                        subtitle: CadenceEmptyStateCopy.notepadSubtitle,
                         icon: "doc.text"
                     )
                     Spacer()
@@ -426,8 +426,8 @@ private struct MeetingNotesPage: View {
                 if notes.isEmpty {
                     Spacer()
                     EmptyStateView(
-                        message: "No meeting notes yet",
-                        subtitle: "Create one from a calendar event",
+                        message: CadenceEmptyStateCopy.meetingNotesTitle,
+                        subtitle: CadenceEmptyStateCopy.meetingNotesSubtitle,
                         icon: "doc.text"
                     )
                     Spacer()

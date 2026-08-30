@@ -301,8 +301,8 @@ struct iOSAITaskDraftReviewSheet: View {
     private var content: some View {
         if review.drafts.isEmpty {
             EmptyStateView(
-                message: "No tasks found",
-                subtitle: "The note did not contain clear action items.",
+                message: CadenceEmptyStateCopy.noteActionTasksTitle,
+                subtitle: CadenceEmptyStateCopy.noteActionTasksSubtitle,
                 icon: "sparkles"
             )
             .padding(.vertical, 24)

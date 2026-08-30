@@ -111,6 +111,14 @@ struct HabitsView: View {
         }
     }
 
+    /// Whether the page is empty because the search field or the filter bar is narrowing it.
+    private var isNarrowedToEmpty: Bool {
+        CadenceEmptyStateCopy.isNarrowedToEmpty(
+            searchText: searchText,
+            filterNarrows: filter.narrowsResults
+        )
+    }
+
     private var leftPane: some View {
         VStack(spacing: 0) {
             CommitmentPageHeader(
@@ -145,8 +153,12 @@ struct HabitsView: View {
             if habitGroups.isEmpty {
                 Spacer()
                 EmptyStateView(
-                    message: searchText.isEmpty ? "No habits yet" : "No matching habits",
-                    subtitle: searchText.isEmpty ? "Create a habit, then link it to the goal it supports." : "Try a different search or filter.",
+                    // Not `searchText.isEmpty`: `filter` defaults to `.today`, so a habit that is
+                    // not due today is hidden rather than absent.
+                    message: isNarrowedToEmpty ? "No matching habits" : "No habits yet",
+                    subtitle: isNarrowedToEmpty
+                        ? "Try a different search or filter."
+                        : "Create a habit, then link it to the goal it supports.",
                     icon: "flame.fill"
                 )
                 Spacer()

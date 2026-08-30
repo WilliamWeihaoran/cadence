@@ -462,14 +462,12 @@ enum CadenceSaveCommitRule {
         // "Flush an in-place edit, then close." Both are live instances of half 2.
         "Cadence/iOS/iOSSearchSupportViews.swift": ["body"],
         "Cadence/iOS/iOSTaskDetailSheet.swift": ["finishEditingAndDismiss"],
-        // The third is neither of those: it is a live report-half defect — [[T-507]], found by an
-        // external audit and filed to a batch that owns this file. `addLink` swallows
-        // `CadenceSavedLinkPersistence.insert` — a helper that commits and rolls back correctly —
-        // and then clears the title, clears the URL and closes the add form regardless. macOS is
-        // already right in `LinksView.addLink`. Listed rather than fixed only to keep two agents
-        // out of one file; the entry fails this suite the moment somebody fixes it, which is how
-        // it gets deleted.
-        "Cadence/iOS/iOSListSupportViews.swift": ["addLink"],
+        // `Cadence/iOS/iOSListSupportViews.swift: ["addLink"]` was the third entry — [[T-507]],
+        // held here rather than fixed to keep two agents out of one file. It is fixed now:
+        // `addLink` catches the insert and leaves the form open with an `actionError`, the way
+        // macOS's `LinksView.addLink` already did. The entry is deleted in the same change,
+        // because `everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule` fails on a
+        // stale one — which is exactly how it was meant to leave.
     ]
 
     static func existenceInstrument() throws -> CadenceScanInstrument {

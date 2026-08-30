@@ -28,6 +28,12 @@ enum HabitListFilter: CaseIterable {
             return true
         }
     }
+
+    /// Whether this selection can hide a habit that exists.
+    ///
+    /// The default is `.today`, which is the narrowest of the four: a habit set to Mon/Wed/Fri is
+    /// filtered out on a Tuesday. Without this the page called that "No habits yet".
+    var narrowsResults: Bool { self != .all }
 }
 
 struct HabitGoalGroup: Identifiable {

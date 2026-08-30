@@ -247,4 +247,24 @@ struct CadencePillButton: View {
         .buttonStyle(.cadencePlain)
     }
 }
+
+extension View {
+    /// One string to both the accessible name and the tooltip — the pairing `CadenceIconButton`
+    /// above already makes internally, for the icon-only buttons that draw their own chrome and so
+    /// cannot use it.
+    ///
+    /// The parameter is `accessibilityLabel` and not `help`, which is the durable half of T-472: a
+    /// parameter called `help` tells the next author the string is tooltip-only, and tooltip-only
+    /// is exactly the state those buttons were already in. A pointer got a sentence and assistive
+    /// technology got the SF Symbol name.
+    ///
+    /// What this claims is that the label is **set**, in the shape SwiftUI reads it from. It does
+    /// not claim what VoiceOver announces; nothing in this repo can launch the app to find out, and
+    /// T-472 and T-484 both closed with that caveat stated rather than glossed.
+    func cadenceControlLabel(_ accessibilityLabel: String) -> some View {
+        self
+            .accessibilityLabel(accessibilityLabel)
+            .help(accessibilityLabel)
+    }
+}
 #endif

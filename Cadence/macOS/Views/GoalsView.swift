@@ -268,12 +268,25 @@ struct GoalsView: View {
         }
     }
 
+    /// Whether the page is empty because the search field or the status bar is narrowing it.
+    private var isNarrowedToEmpty: Bool {
+        CadenceEmptyStateCopy.isNarrowedToEmpty(
+            searchText: searchText,
+            filterNarrows: statusFilter.narrowsResults
+        )
+    }
+
     private func goalList(groups: [GoalMissionGroup], showsInspector: Bool) -> some View {
         Group {
             if groups.isEmpty {
                 EmptyStateView(
-                    message: searchText.isEmpty ? "No goals yet" : "No matching goals",
-                    subtitle: searchText.isEmpty ? "Create a goal for an ongoing direction, then nest milestones inside it." : "Try a different search or status.",
+                    // Not `searchText.isEmpty`: `statusFilter` defaults to `.active` and hides
+                    // paused and finished goals, so an empty page under it is a filter miss and
+                    // not a first run. See `CadenceEmptyStateCopy.isNarrowedToEmpty`.
+                    message: isNarrowedToEmpty ? "No matching goals" : "No goals yet",
+                    subtitle: isNarrowedToEmpty
+                        ? "Try a different search or status."
+                        : "Create a goal for an ongoing direction, then nest milestones inside it.",
                     icon: "flag.fill"
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -321,22 +321,20 @@ struct CadenceAccentPaletteSwitchTests {
 struct CadenceAccentPaletteStoreTests {
 
     @Test func aStoredSelectionRoundTripsAndAnUnknownOneFallsBack() throws {
-        let suite = "com.haoranwei.Cadence.tests.t15.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { UserDefaults().removePersistentDomain(forName: suite) }
+        try withTemporaryDefaults("com.haoranwei.Cadence.tests.t15") { defaults in
+            #expect(CadenceAccentPaletteStore.loadSelected(userDefaults: defaults) == .standard)
 
-        #expect(CadenceAccentPaletteStore.loadSelected(userDefaults: defaults) == .standard)
+            CadenceAccentPaletteStore.storeSelected(.glacier, userDefaults: defaults)
+            #expect(defaults.string(forKey: CadenceAccentPaletteStore.defaultsKey) == "glacier")
+            #expect(CadenceAccentPaletteStore.loadSelected(userDefaults: defaults) == .glacier)
 
-        CadenceAccentPaletteStore.storeSelected(.glacier, userDefaults: defaults)
-        #expect(defaults.string(forKey: CadenceAccentPaletteStore.defaultsKey) == "glacier")
-        #expect(CadenceAccentPaletteStore.loadSelected(userDefaults: defaults) == .glacier)
+            defaults.set("a-set-a-later-build-offered", forKey: CadenceAccentPaletteStore.defaultsKey)
+            #expect(CadenceAccentPaletteStore.loadSelected(userDefaults: defaults) == .standard)
 
-        defaults.set("a-set-a-later-build-offered", forKey: CadenceAccentPaletteStore.defaultsKey)
-        #expect(CadenceAccentPaletteStore.loadSelected(userDefaults: defaults) == .standard)
-
-        CadenceAccentPaletteStore.clearSelection(userDefaults: defaults)
-        #expect(defaults.string(forKey: CadenceAccentPaletteStore.defaultsKey) == nil)
-        #expect(CadenceAccentPaletteStore.loadSelected(userDefaults: defaults) == .standard)
+            CadenceAccentPaletteStore.clearSelection(userDefaults: defaults)
+            #expect(defaults.string(forKey: CadenceAccentPaletteStore.defaultsKey) == nil)
+            #expect(CadenceAccentPaletteStore.loadSelected(userDefaults: defaults) == .standard)
+        }
     }
 
     /// The widget verdict, as a value rather than as a claim in a comment.

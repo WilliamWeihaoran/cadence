@@ -364,7 +364,11 @@ struct ListLogView: View {
             Theme.bg
 
             if doneTasks.isEmpty {
-                EmptyStateView(message: "No completed tasks", subtitle: "Completed tasks will appear here", icon: "checkmark.circle")
+                EmptyStateView(
+                    message: CadenceEmptyStateCopy.completedTasksTitle,
+                    subtitle: CadenceEmptyStateCopy.completedTasksSubtitle,
+                    icon: "checkmark.circle"
+                )
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
