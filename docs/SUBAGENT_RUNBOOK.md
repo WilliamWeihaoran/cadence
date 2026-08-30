@@ -14,6 +14,10 @@ per-agent boilerplate.
   repo's stated convention, and it is a test, not a style note. Two agents in a row have landed a good
   rule and left the file over the cap, which turns a green batch into a rerun. Write the rule tight,
   put the detail here instead, and check `wc -l AGENTS.md` before you report.
+- **`pgrep -f 'foo/run-batch.sh'` does not match a script invoked as `./run-batch.sh`** — the process
+  command line is `/bin/zsh ./run-batch.sh`. A liveness check written that way reports a healthy run as
+  gone, which is how one agent came to launch a duplicate runner. Same family as the `pgrep -f
+  xcodebuild` warning: match on something the process actually spells.
 - **If you pass an id to `acquire`, pass the same id to `release`.** The trap idiom in the script's
   header defaults the id to `$PPID`; if you acquired under a name, that mismatches, `release` finds
   your own pid alive and **refuses**, and the lock strands until its lease expires. One agent lost 19
@@ -51,9 +55,9 @@ per-agent boilerplate.
   has no live children it can see, and a detached `nohup` runner is not one — three agents were reaped
   mid-batch this way, each costing a resume. Batch every run you need (failing-first, green, all
   mutations, restore) into **one** script that acquires the lock once and exits when the last one lands,
-  and wait on that single harness-managed task. Related: `acquire` waits with `sleep`, which this harness
-  blocks, so a *contended* acquire burns its whole timeout and returns 1 — do the waiting yourself in
-  that same background task.
+  and wait on that single harness-managed task. `acquire` waits with `sleep`, which **works** from a
+  backgrounded runner (the older "sleep is blocked everywhere" note was wrong), so a contended acquire
+  blocks correctly and you do **not** need a hand-rolled wait loop.
 - **The coordinator stages finished trees into the user's repo while the batch is still running.** So the
   repo going dirty mid-run is expected and is not another agent editing it in place. Diff against **your
   own base commit**, not against the repo's current state, and do not "restore" files you did not touch.

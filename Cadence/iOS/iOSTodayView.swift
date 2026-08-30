@@ -21,7 +21,7 @@ struct iOSTodayView: View {
     @Query(sort: \Context.order) private var contexts: [Context]
     @AppStorage("ios.today.sortMode") private var sortModeRaw = CadenceTaskSortMode.priority.rawValue
     @AppStorage("ios.today.showCompleted") private var showCompleted = false
-    @AppStorage("ios.today.sidePanel") private var sidePanelRaw = iPadTodaySidePanel.notes.rawValue
+    @AppStorage("ios.today.sidePanel") private var sidePanelRaw = iOSTodaySidePanel.notes.rawValue
     /// The **same** `UserDefaults` key macOS's Today reads — see
     /// `CadenceTodayRolloverSupport.dismissedDateStorageKey` for why one key rather than two.
     @AppStorage(CadenceTodayRolloverSupport.dismissedDateStorageKey) private var rolloverNoticeDismissedDate = ""
@@ -176,11 +176,11 @@ struct iOSTodayView: View {
         )
     }
 
-    private var sidePanel: iPadTodaySidePanel {
-        iPadTodaySidePanel(rawValue: sidePanelRaw) ?? .notes
+    private var sidePanel: iOSTodaySidePanel {
+        iOSTodaySidePanel(rawValue: sidePanelRaw) ?? .notes
     }
 
-    private var sidePanelBinding: Binding<iPadTodaySidePanel> {
+    private var sidePanelBinding: Binding<iOSTodaySidePanel> {
         Binding(
             get: { sidePanel },
             set: { sidePanelRaw = $0.rawValue }

@@ -20,6 +20,7 @@ import Testing
 /// `CadenceGoalListLinkSurfaceTests` — exact per-file counts rather than "contains",
 /// comment-stripping rather than allowlisting, and a non-vacuity test so a broken scan cannot make
 /// the absence assertions pass silently.
+@Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct CadenceNoteFolderSurfaceTests {
 

@@ -17,6 +17,7 @@ import Testing
 /// (two increments the product cannot produce) at the cost of mis-scoring the real case; `max`
 /// reads the duplicate as what it is, and leaves a genuine multi-count day alone because that day
 /// lives in one row's `count`.
+@Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct CadenceHabitCompletionDuplicateTests {
 

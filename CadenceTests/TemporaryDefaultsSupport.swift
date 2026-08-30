@@ -142,3 +142,63 @@ nonisolated struct PreservedLaunchReportsTrait: TestTrait, SuiteTrait, TestScopi
 nonisolated extension Trait where Self == PreservedLaunchReportsTrait {
     static var preservesTheStoredLaunchReports: Self { Self() }
 }
+
+// MARK: - Keeping the trait on the suites that need it
+
+/// Which top-level suites in a test file reach a launch-report writer **without** carrying
+/// `.preservesTheStoredLaunchReports` (T-485).
+///
+/// The trait above is a one-line fix that has to be remembered, and T-480 landed it on one suite
+/// while three siblings kept leaking — `DataIntegrityRepairServiceTests`,
+/// `CadenceHabitCompletionDuplicateTests` and `CadenceNoteFolderSurfaceTests`, 15 call sites
+/// between them. This is the half that makes it durable: the next suite to call `repairIfNeeded`
+/// without the trait is named by a test rather than found by whoever next reads the app's stored
+/// report and wonders why it says `{"source":"test"}`.
+///
+/// Attribution is **per suite, not per file**. A file-level rule would pass a two-suite file the
+/// moment either suite carried the trait, and a suite trait does not reach its sibling; the
+/// extents come from `cadenceTopLevelTypeExtents(inCodeOnly:)`, the same reader
+/// `noTestInTheTargetIsDeclaredOutsideEverySuite` uses.
+///
+/// Read through `CadenceSourceScan.codeOnly`, which blanks comments *and* string literals. Both
+/// halves are load-bearing here: this very file names both writers in prose above and spells both
+/// of them as literals below, and a scan that read either would report the guard's own definition
+/// as the thing that needs guarding.
+nonisolated enum StoredLaunchReportSuiteRule {
+    /// The two calls that write `StoredLaunchReports.keys` as a side effect of doing their job.
+    /// Neither takes an injectable store, which is the whole reason the trait exists.
+    static let writers = ["migrateIfNeeded(", "repairIfNeeded("]
+
+    /// Spelled as the trait is written at a use site, `@Suite(.preservesTheStoredLaunchReports)`,
+    /// rather than as the type name: the type name also appears in this file's own declarations.
+    static let traitSpelling = ".preservesTheStoredLaunchReports"
+
+    static func unguardedSuites(in source: String) -> [String] {
+        let code = CadenceSourceScan.codeOnly(source)
+        let text = code as NSString
+        var offenders: [String] = []
+        var previousClose = 0
+
+        for extent in cadenceTopLevelTypeExtents(inCodeOnly: code) {
+            defer { previousClose = min(extent.close + 1, text.length) }
+            guard extent.declaration >= previousClose else { continue }
+
+            let body = text.substring(
+                with: NSRange(location: extent.open, length: extent.close - extent.open)
+            )
+            guard writers.contains(where: { body.contains($0) }) else { continue }
+
+            // The attributes belong to this declaration only when they sit between it and the end
+            // of whatever came before it. Taking "the lines above" instead would let one annotated
+            // suite vouch for the sibling declared under it.
+            let attributes = text.substring(
+                with: NSRange(
+                    location: previousClose,
+                    length: extent.declaration - previousClose
+                )
+            )
+            if !attributes.contains(traitSpelling) { offenders.append(extent.name) }
+        }
+        return offenders
+    }
+}

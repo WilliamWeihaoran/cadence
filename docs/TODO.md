@@ -476,21 +476,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-485] **Three sibling suites still leave fabricated launch reports in the test host's `UserDefaults`.**
-  Demonstrated live by [[T-480]]'s own final run, which left `dataIntegrityRepair.lastReport.v1` =
-  `{"source":"test"}` behind. `DataIntegrityRepairServiceTests` (11 call sites, 1 guarded test),
-  `CadenceHabitCompletionDuplicateTests` (3, 0), `CadenceNoteFolderSurfaceTests` (1, 0). Each needs a
-  one-line `@Suite(.preservesTheStoredLaunchReports)`. To make it durable rather than a one-off cleanup,
-  a `CadenceScanInstrument` sweep asserting every suite that reaches `migrateIfNeeded`/`repairIfNeeded`
-  carries the trait.
 
-- [T-486] **Extension methods declared in non-member files are invisible to the membership guard.**
-  [[T-435]]'s own text named this alongside free functions; only the free-function half is closed.
-  Measured: **117** extension-method names are declared in files the MCP target does not compile. A crude
-  dot-qualified probe surfaced 2 candidates and **both are false positives** — one resolves to a member
-  file, one is inside a doc comment — so there is no live violation. A real check needs receiver-type
-  resolution, a different instrument from the two in that file, which is why this is separate rather than
-  a widening.
 
 - [T-487] **DECIDE: `TasksPanel`'s `.byDoDate` mode is unreachable.** No caller constructs it —
   `TodayView.swift:29` is the only construction and takes the `.todayOverview` default; the only
@@ -517,17 +503,10 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   judgement, so it needs a decision rather than a fix.
 
 
-- [T-493] **`iPadTodaySidePanel`'s kept prefix rests on a claim the code does not keep.**
-  `iPadTodaySupportViews.swift` says all three kept types are built only by the two-pane host and "a
-  compact width cannot reach any of them". True for two of the three. **False for `iPadTodaySidePanel`**:
-  `iOSTodayView.swift:24` names it in an `@AppStorage` default — a stored-property initialiser evaluated
-  at every width — and `iOSCompactTabShell`, `iOSTasksTabView` and `iOSSearchView` all construct that
-  view at compact width. [[T-283]]'s test silently omitted the enum from its reachability check, which is
-  why nothing said so. Either rename it or correct the comment.
 
 
 
-- [T-496] **One uppercase label size, three trackings.** `SectionEyebrowLabel.Size.standard` is 10/0.8
+- [T-496] *(narrowed 2026-08-30: role confirmed — all three are 10pt semibold uppercased, asserted at all four draw sites, and `CadencePageHeaderMetrics.eyebrowSize` is **not** a fourth tracking. **Conversions computed**: 0.08em leaves the eyebrow alone but **doubles** the board's; 0.05em cuts the eyebrow to 0.625x and lifts the board 1.25x; 0.04em halves the eyebrow. **No candidate moves fewer than two of the three roles, and the one the design system already derives has the largest single jump** — which confirms the earlier refusal. **Ticket correction**: the citation graph is 4 of 6 directed edges, not mutual — the calendar file cites both siblings, the eyebrow and board cite each other and neither cites the calendar, so the calendar's 0.5 is the only one chosen with both siblings in view and it still disagrees with both. Status quo frozen by `CadenceUppercaseLabelTrackingTests` (6 tests) so the disagreement cannot widen while the decision is pending. **Reviewer checklist**: a kanban and a section-board column header on both platforms, the collapsed calendar-board rail (its label is rotated -90 degrees, the one place tracking moves a layout slot rather than a line width), a macOS week day column, the iOS timed grid day header, and one 9pt compact eyebrow popover heading.)* **One uppercase label size, three trackings.** `SectionEyebrowLabel.Size.standard` is 10/0.8
   (0.08em, derived), `CadenceBoardColumnHeaderMetrics` is 10/0.4 (literal),
   `CadenceCalendarWeekdayHeaderMetrics` is 10/0.5 (literal). All three are uppercased semibold at 10pt,
   and **each file's doc cites the other two as the authority for its size while disagreeing on
@@ -640,6 +619,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`MarkdownTaskEmbedDrawingSupport.swift:429,511` — 2 sites, one file), `"Untitled Column"`
   (`iOSColumnWindDownSupport.swift:50` — 1 site). Real but weaker: **a constant with one call site is a
   name, not a de-duplication.** Recorded so the omission is a decision rather than an oversight.
+
+
+- [T-516] **Tests are stranding `UserDefaults` plists in the real app container, and it is live.**
+  [[T-480]] fixed `withTemporaryDefaults` to derive its suite name from `#function`, but four files still
+  roll their own `UUID()` suite name and bypass it. **Measured in the app's own container: 7,727
+  preference plists, 316 written in the last 48 hours** — bare `<UUID>.plist`,
+  `cadence.tests.external-write.<UUID>`, `cadence.tests.privacy-reset.<UUID>` and
+  `com.haoranwei.Cadence.tests.t15.<UUID>`, totalling ~30 MB and growing every run. Sites:
+  `CalendarDateMemoryTests.swift:24,174,299,427,459,492` (bare UUID, and `freshDefaults` never removes
+  the domain), `CadenceExternalWriteReconcileTests.swift:76,107,134`,
+  `CadencePrivacyDataResetSurfaceTests.swift:130`, `CadenceAccentPaletteTests.swift:324`. Each should
+  call `withTemporaryDefaults(_:)`. Pin it in [[T-485]]'s shape — no test file may pass a
+  `UUID()`-derived suite name to `UserDefaults(suiteName:)` — since the helper's whole point is that the
+  file count is bounded at one per test forever. **The existing 7,727 are the user's to delete**; do not
+  remove files from that container without asking.
 
 
 ## Done
@@ -1332,6 +1326,33 @@ before filing**: this list has had the same ticket re-reported more than once.
   commit that did not contain it, which is worse than a missing SHA because it reads as authoritative.
   Establish how many are wrong before deciding whether to re-derive them.
   **Closed 2026-08-30 — **and the ticket's premise did not survive measurement. 5 of the 177 entries had a wrong SHA, not ~175.** I filed this by generalising one example (T-285 citing a "Deduplicate docs/TODO.md" commit); the generalisation was wrong. [[T-462]]'s 175/200 figure measured **removal** commits for the 200 tickets that were *never archived* — a different population. The archive mostly does not cite removal commits at all: 79 entries cite a deliberately different commit, and of the 85 that do cite their removal, 80 are large code batches that shipped the fix *and* closed the ticket together (the per-batch citation counts match the "N fixes" in each batch's own subject). **The bug was in T-462's reconstruction fallback, not in the archive's convention.** All five were recovered and corrected — T-284→`96b5583`, T-285/T-286/T-288→`b05869d`, T-361→`5d2c196` — plus six entries that had no SHA but did have code behind them, and T-279's entry, which still claimed "working tree, not committed" after `cb53c78` committed it. **The other 172 are deliberately not re-derived**: two independent channels corroborate them, and a blanket `git log -S` pass would replace correct attributions with first-touch SHAs, which for a symbol like `MarkdownHeadingRamp` lands on the wrong ticket entirely. Nine remaining SHA-less entries are correctly SHA-less — closed by splitting, audits that changed nothing, or shipped as `AGENTS.md`/`scripts/` changes where a docs SHA is the right answer.**
+
+- [T-485] **Three sibling suites still leave fabricated launch reports in the test host's `UserDefaults`.**
+  Demonstrated live by [[T-480]]'s own final run, which left `dataIntegrityRepair.lastReport.v1` =
+  `{"source":"test"}` behind. `DataIntegrityRepairServiceTests` (11 call sites, 1 guarded test),
+  `CadenceHabitCompletionDuplicateTests` (3, 0), `CadenceNoteFolderSurfaceTests` (1, 0). Each needs a
+  one-line `@Suite(.preservesTheStoredLaunchReports)`. To make it durable rather than a one-off cleanup,
+  a `CadenceScanInstrument` sweep asserting every suite that reaches `migrateIfNeeded`/`repairIfNeeded`
+  carries the trait.
+  **Closed 2026-08-30. Three siblings annotated and `DataIntegrityRepairServiceTests`' now-redundant hand-rolled guard deleted — T-480's precedent is one spelling of the guard, not two. **The durable half is the sweep**: `everyTestSuiteReachingALaunchReportWriterPreservesTheStoredReports` attributes the trait **per suite**, using the extent reader extracted out of `cadenceTestDeclarations` rather than a second copy. Failing-first named exactly the three files; three mutations killed by name, **one of them inside `CadenceScanInstrument`'s own constructor** ("does not fire on its own positive witness"). Leakage re-proved from outside the process with a **full-value** `sha256` of the test host's plist, not a truncated digest — guarded run unchanged, unguarded 407→416 bytes and a different hash — so detection was shown to distinguish guarded from unguarded *before* the green was trusted. The unguarded run left a fabricated report on the real app state and the snapshotted bytes were restored and re-verified.**
+
+- [T-486] **Extension methods declared in non-member files are invisible to the membership guard.**
+  [[T-435]]'s own text named this alongside free functions; only the free-function half is closed.
+  Measured: **117** extension-method names are declared in files the MCP target does not compile. A crude
+  dot-qualified probe surfaced 2 candidates and **both are false positives** — one resolves to a member
+  file, one is inside a doc comment — so there is no live violation. A real check needs receiver-type
+  resolution, a different instrument from the two in that file, which is why this is separate rather than
+  a widening.
+  **Closed 2026-08-30 **by refusal, with numbers.** Receiver-blind dot-qualified matching: 138 candidate names, **0 hits in the target** (the ticket's 2 candidates were an unstripped comment and a name resolving to a member file — both vanish under proper stripping). On a 558-file precision corpus, 73 instance-receiver hits of which **≥12 are provably ambiguous inside the repo alone** — `badges.count(for:)` resolves to a nested `func count(for:)`, not to `extension CadenceSidebarLayout` — with framework collisions unbounded without a type-checker. **The sound subset exists and provably adds nothing**: type-qualified `T.m(` is 100% precise, but 85 of 94 candidate pairs have a receiver the existing type guard already rejects, and the 9 with a reachable receiver are all *instance* methods (`Goal.isOverdue`, `Habit.isDone`, …) that can never be spelled `T.m(`. Net new detections: **0**. Widgets identical (90/7/0). **The residual hole is real and named** — a member file writing `goal.isOverdue(...)` breaks `-scheme CadenceMCPServer` while `-scheme Cadence` stays green — and the instrument that resolves receivers already exists and is already shared: `CadenceMCPServer.xcscheme`. This measurement is the argument for [[T-435]]'s own honest close, building that scheme in CI, rather than for a third text scan.**
+
+- [T-493] **`iPadTodaySidePanel`'s kept prefix rests on a claim the code does not keep.**
+  `iPadTodaySupportViews.swift` says all three kept types are built only by the two-pane host and "a
+  compact width cannot reach any of them". True for two of the three. **False for `iPadTodaySidePanel`**:
+  `iOSTodayView.swift:24` names it in an `@AppStorage` default — a stored-property initialiser evaluated
+  at every width — and `iOSCompactTabShell`, `iOSTasksTabView` and `iOSSearchView` all construct that
+  view at compact width. [[T-283]]'s test silently omitted the enum from its reachability check, which is
+  why nothing said so. Either rename it or correct the comment.
+  **Closed 2026-08-30 **by renaming, not by softening the comment**. `iPadTodaySidePanel` → `iOSTodaySidePanel` (5 references), value-preserving: the storage key was already the honest `ios.today.sidePanel` and the raw values are untouched, so nothing persisted moves. The argument for renaming: keeping the name required **three permanent pieces of machinery** — a carve-out paragraph, a by-name exclusion inside the sweep's detector, and a dedicated test recording the exception — to preserve four characters, and "iPad-only, except when it isn't" is not a meaning. **The general guard was cheap and precise, so it was built**: `everyIPadPrefixedTypeIsBuiltOnlyFromAWidthGatedHost` **derives** every `iPad`-prefixed declaration from source rather than reading a hand-typed list — which is exactly how [[T-283]] lost this one — and it immediately turned up a fourth uncovered type, `iPadMacStyleRootShell`, which passes but whose passing was not previously known. **Scope stated in the test's own doc**: it catches a *name* against a *gate*, so [[T-352]]'s family (prose inventing a mechanism for something that names no symbol) is still a read, not a guard.**
 
 ## Cancelled
 

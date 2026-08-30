@@ -1112,3 +1112,227 @@ private func strippingComments(_ source: String) throws -> String {
     }
     return result
 }
+
+// MARK: - T-496: one uppercase label size, three trackings
+
+/// **Three labels with the same typographic role, one size, and three different trackings.**
+///
+/// `SectionEyebrowLabel.Size.standard` draws 10pt semibold uppercase kerned `0.8` — derived, as
+/// `fontSize * kerningRatio`, i.e. 0.08em. `CadenceBoardColumnHeaderMetrics` draws the same 10pt
+/// semibold uppercase kerned a literal `0.4` (0.04em). `CadenceCalendarWeekdayHeaderMetrics` draws
+/// it kerned a literal `0.5` (0.05em). The *sizes* converged across T-275, T-277 and T-284 and the
+/// trackings were never part of that argument, so the app now states one type size three times and
+/// three letterspacings for it.
+///
+/// **This suite deliberately does not pick a ratio, and that is the finding rather than a gap.**
+/// Adopting 0.08em doubles the tracking on every kanban, section-board, list-board and
+/// calendar-board column header and adds 60% to every weekday label on four calendar surfaces —
+/// an un-inspected visual change of exactly the kind T-452 is already open for, and one an
+/// agent correctly declined to make. Adopting 0.05em or 0.04em instead moves ~50 eyebrows and the
+/// 9pt sub-label tier, which is a larger blast radius for the same reason. All three are decisions
+/// a reviewer has to *look* at; none is a refactor.
+///
+/// So what is pinned here is the status quo, precisely enough that the disagreement cannot widen
+/// while the decision is pending:
+///
+/// - the three roles really are one role — same size, same weight, same uppercasing, asserted as
+///   values where the type is readable and as source where it is inside `Cadence/iOS/`;
+/// - the three trackings, by value *and* as em ratios, so a fourth spelling or a silent nudge to
+///   one of the three fails here;
+/// - the arithmetic a reviewer would be signing off under each candidate, so the conversion factors
+///   are checked rather than recomputed by hand in the ticket.
+///
+/// **What a reviewer needs to look at**, when the decision is taken: a kanban column header and a
+/// section-board column header (macOS and iOS, since both boards draw the shared component), the
+/// collapsed calendar-board rail — whose label is rotated -90°, which is the one place letterspacing
+/// changes a *layout* slot rather than a line width — a macOS week/2-week day column and the iOS
+/// timed grid's day header, and any 9pt `SectionEyebrowLabel(size: .compact)` popover heading, which
+/// moves under a re-derivation even though nobody proposed changing it.
+///
+/// **The citation graph is 4 of 6, not mutual**, which is worth writing down because the ticket
+/// recorded it as mutual: the calendar file cites both of the others, the board file and the eyebrow
+/// file each cite one — each other — and neither cites the calendar. So the calendar's `0.5` is the
+/// only one of the three chosen with both siblings in view, and it still disagrees with both.
+@MainActor
+struct CadenceUppercaseLabelTrackingTests {
+
+    /// One size, and it is the eyebrow's. This half is already true and is restated here so the
+    /// suite's premise — *same role* — is asserted rather than assumed by the tests below.
+    @Test func theThreeUppercaseLabelRolesAreOneSize() {
+        #expect(SectionEyebrowLabel.Size.standard.fontSize == 10)
+        #expect(CadenceBoardColumnHeaderMetrics.labelSize == SectionEyebrowLabel.Size.standard.fontSize)
+        #expect(CadenceCalendarWeekdayHeaderMetrics.labelSize == SectionEyebrowLabel.Size.standard.fontSize)
+        // The sub-label tier is one point smaller on purpose (T-284) and is not a fourth opinion
+        // about this size — but it does move under a re-derivation, which is why it is named here.
+        #expect(SectionEyebrowLabel.Size.compact.fontSize == 9)
+    }
+
+    /// **The disagreement, frozen.** Three trackings for one size, stated as values and as the em
+    /// ratios they work out to.
+    ///
+    /// If this goes red, one of two things happened. Either somebody nudged a tracking without
+    /// taking the decision — put it back — or the T-496 decision has been taken, in which case this
+    /// is the test to rewrite, and the ticket asks for a rendered pass over the sites listed in this
+    /// suite's doc *before* the numbers move, not after.
+    @Test func theThreeUppercaseTrackingsAreStillThreeAndStillTheseThree() {
+        #expect(SectionEyebrowLabel.Size.standard.kerning == 0.8)
+        #expect(CadenceBoardColumnHeaderMetrics.labelKerning == 0.4)
+        #expect(CadenceCalendarWeekdayHeaderMetrics.labelKerning == 0.5)
+
+        // As ratios of the one shared size — the form the decision will be taken in, since the
+        // eyebrow's is already spelled that way and the other two are literals.
+        let size = SectionEyebrowLabel.Size.standard.fontSize
+        #expect(SectionEyebrowLabel.kerningRatio == 0.08)
+        #expect(CadenceBoardColumnHeaderMetrics.labelKerning / size == 0.04)
+        #expect(CadenceCalendarWeekdayHeaderMetrics.labelKerning / size == 0.05)
+
+        // Pairwise distinct, which is the ticket's actual claim and the thing that must not become
+        // *more* true. Two of these collapsing is progress and would land as a rewrite of this test;
+        // a fourth value appearing is the regression.
+        #expect(SectionEyebrowLabel.Size.standard.kerning != CadenceBoardColumnHeaderMetrics.labelKerning)
+        #expect(SectionEyebrowLabel.Size.standard.kerning != CadenceCalendarWeekdayHeaderMetrics.labelKerning)
+        #expect(CadenceBoardColumnHeaderMetrics.labelKerning != CadenceCalendarWeekdayHeaderMetrics.labelKerning)
+    }
+
+    /// **What each candidate would cost, as arithmetic rather than as a sentence in a ticket.**
+    ///
+    /// The multipliers are the whole argument for not picking one here: no candidate moves fewer
+    /// than two of the three roles, and the cheapest-looking one (0.08em, the ratio the design
+    /// system already derives from) is the one with the largest single jump — a doubling on every
+    /// board column header in the app.
+    @Test func eachCandidateRatioMovesTheOtherTwoRolesByTheseFactors() {
+        let size = SectionEyebrowLabel.Size.standard.fontSize
+        let eyebrow = SectionEyebrowLabel.Size.standard.kerning
+        let board = CadenceBoardColumnHeaderMetrics.labelKerning
+        let calendar = CadenceCalendarWeekdayHeaderMetrics.labelKerning
+
+        // 0.08em — the eyebrow's own ratio. Board doubles, calendar +60%, ~50 eyebrows unmoved.
+        #expect(SectionEyebrowLabel.kerningRatio * size == board * 2)
+        #expect(SectionEyebrowLabel.kerningRatio * size == calendar * 1.6)
+
+        // 0.05em — the calendar's. Board +25%, every eyebrow loses 37.5% of its tracking, and the
+        // 9pt sub-label tier goes 0.72 -> 0.45.
+        #expect(0.05 * size == board * 1.25)
+        #expect(0.05 * size == eyebrow * 0.625)
+        #expect(0.05 * SectionEyebrowLabel.Size.compact.fontSize == 0.45)
+
+        // 0.04em — the board's, and the tightest. Calendar -20%, eyebrows halved, sub-labels to 0.36.
+        #expect(0.04 * size == calendar * 0.8)
+        #expect(0.04 * size == eyebrow * 0.5)
+        #expect(0.04 * SectionEyebrowLabel.Size.compact.fontSize == 0.36)
+    }
+
+    /// **The role claim, at the four places it is drawn.**
+    ///
+    /// Values cannot carry this half: uppercasing and weight are applied at the call site, and two
+    /// of the four sites are inside `Cadence/iOS/`, which this macOS-built target cannot see. Read
+    /// as source, with comments stripped and whitespace removed so a reformat is not a failure and
+    /// a rewrite is.
+    @Test func allFourDrawSitesSetTheSameUppercaseSemiboldLabel() throws {
+        let sites: [(path: String, needles: [String])] = [
+            (
+                "Cadence/Shared/Components/SectionEyebrowLabel.swift",
+                [
+                    "Text(text.uppercased()).font(size.font)",
+                    "varfont:Font{.system(size:fontSize,weight:.semibold)}",
+                    ".kerning(size.kerning)"
+                ]
+            ),
+            (
+                "Cadence/Shared/Components/CadenceBoardColumnHeader.swift",
+                [
+                    "Text(title.uppercased()).font(.system(size:CadenceBoardColumnHeaderMetrics.labelSize,weight:.semibold))",
+                    ".kerning(CadenceBoardColumnHeaderMetrics.labelKerning)"
+                ]
+            ),
+            (
+                "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift",
+                [
+                    "Text(DateFormatters.dayOfWeek.string(from:date).uppercased()).font(.system(size:CadenceCalendarWeekdayHeaderMetrics.labelSize,weight:.semibold))",
+                    ".kerning(CadenceCalendarWeekdayHeaderMetrics.labelKerning)"
+                ]
+            ),
+            (
+                "Cadence/iOS/iOSCalendarTimelineViews.swift",
+                [
+                    "Text(DateFormatters.dayOfWeek.string(from:date).uppercased()).font(.system(size:iOSCalendarTimelineMetrics.weekdaySize,weight:.semibold))",
+                    ".kerning(CadenceCalendarWeekdayHeaderMetrics.labelKerning)"
+                ]
+            )
+        ]
+
+        for site in sites {
+            let raw = try sourceFile(site.path)
+            let stripped = try strippingComments(raw)
+            #expect(stripped != raw, "non-vacuity: \(site.path) carries no comments to strip")
+            let dense = stripped.filter { !$0.isWhitespace }
+            for needle in site.needles {
+                #expect(dense.contains(needle), "\(site.path) no longer draws \(needle)")
+            }
+        }
+    }
+
+    /// **The two literals are still literals, and the derived one is still derived.**
+    ///
+    /// Which spelling each tracking has is the shape of the decision, not a detail: two hand-typed
+    /// numbers are what let the three drift in the first place, and a third file quietly deriving
+    /// its own ratio would be a fourth opinion wearing the design system's clothes. When T-496
+    /// lands, all three become one ratio and this test goes with it.
+    @Test func theTwoBoardAndCalendarTrackingsAreStillHandTypedAndTheEyebrowsIsNot() throws {
+        func dense(_ path: String) throws -> String {
+            let raw = try sourceFile(path)
+            let stripped = try strippingComments(raw)
+            #expect(stripped != raw, "non-vacuity: \(path) carries no comments to strip")
+            return stripped.filter { !$0.isWhitespace }
+        }
+
+        let board = try dense("Cadence/Shared/Components/CadenceBoardColumnHeader.swift")
+        #expect(board.contains("staticletlabelKerning:CGFloat=0.4"))
+        #expect(board.contains("kerningRatio") == false, "the board tracking is derived now — T-496 landed?")
+
+        let calendar = try dense("Cadence/Shared/CadenceCalendarWeekdayHeaderMetrics.swift")
+        #expect(calendar.contains("staticletlabelKerning:CGFloat=0.5"))
+        #expect(calendar.contains("kerningRatio") == false, "the calendar tracking is derived now — T-496 landed?")
+
+        let eyebrow = try dense("Cadence/Shared/Components/SectionEyebrowLabel.swift")
+        #expect(eyebrow.contains("varkerning:CGFloat{fontSize*SectionEyebrowLabel.kerningRatio}"))
+        #expect(eyebrow.contains("staticletkerningRatio:CGFloat=0.08"))
+    }
+
+    /// **The citation graph, as it actually is.**
+    ///
+    /// Each of the three files justifies its 10 by pointing at a sibling, which is why the "same
+    /// role" premise above is the codebase's own claim and not this suite's. It is not mutual: the
+    /// calendar cites both siblings, the eyebrow and the board cite each other, and neither cites
+    /// the calendar. Asserted over raw source rather than stripped, because the citations *are*
+    /// prose — that is the defect the ticket is about.
+    @Test func eachTrackingsFileCitesTheSiblingItAgreesWithOnSizeAndNotOnTracking() throws {
+        let eyebrow = try sourceFile("Cadence/Shared/Components/SectionEyebrowLabel.swift")
+        let board = try sourceFile("Cadence/Shared/Components/CadenceBoardColumnHeader.swift")
+        let calendar = try sourceFile("Cadence/Shared/CadenceCalendarWeekdayHeaderMetrics.swift")
+
+        // Non-vacuity: the three files are the three declarations, not three paths that read.
+        #expect(eyebrow.contains("struct SectionEyebrowLabel: View {"), "non-vacuity: wrong file read")
+        #expect(board.contains("struct CadenceBoardColumnHeaderMetrics"), "non-vacuity: wrong file read")
+        #expect(calendar.contains("struct CadenceCalendarWeekdayHeaderMetrics"), "non-vacuity: wrong file read")
+
+        #expect(eyebrow.contains("CadenceBoardColumnHeaderMetrics.labelSize"))
+        #expect(board.contains("`SectionEyebrowLabel`"))
+        #expect(calendar.contains("`SectionEyebrowLabel.fontSize`"))
+        #expect(calendar.contains("`CadenceBoardColumnHeaderMetrics.labelSize`"))
+        #expect(calendar.contains("`CadenceBoardColumnHeaderMetrics.labelKerning`"))
+
+        // The two edges that do *not* exist, which is the asymmetry the ticket recorded as
+        // symmetry. Adding either citation is an improvement, not a regression — if one of these
+        // fails because somebody wrote the missing cross-reference, delete the line and say so in
+        // T-496. It is asserted at all so the "4 of 6" in this suite's doc is a measurement.
+        #expect(
+            eyebrow.contains("CadenceCalendarWeekdayHeaderMetrics") == false,
+            "the eyebrow now cites the calendar too — the citation graph is no longer 4 of 6"
+        )
+        #expect(
+            board.contains("CadenceCalendarWeekdayHeaderMetrics") == false,
+            "the board header now cites the calendar too — the citation graph is no longer 4 of 6"
+        )
+    }
+}

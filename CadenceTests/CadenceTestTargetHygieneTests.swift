@@ -445,6 +445,118 @@ struct CadenceTestTargetHygieneTests {
             "`stripped.count < raw.count` is never true — the stripper blanks, it does not remove: \(offenders)"
         )
     }
+
+    // MARK: - Launch reports the test host leaves behind (T-485)
+
+    /// Every suite that reaches `migrateIfNeeded`/`repairIfNeeded` carries
+    /// `.preservesTheStoredLaunchReports`.
+    ///
+    /// Neither service takes an injectable store — `record(_:)` is a private static writing
+    /// `UserDefaults.standard` — so a suite that calls either one rewrites the report the *app*
+    /// reads on its next launch, whether or not the report is what the test is about. T-480 fixed
+    /// the suite whose subject it was and left three siblings leaking `{"source":"test"}` into the
+    /// test host's preferences, which is the shape this sweep exists to stop repeating: the fix is
+    /// one line, so the only hard part is noticing it is needed.
+    ///
+    /// Through `CadenceScanInstrument` because the repo has **zero** offenders once the three are
+    /// annotated, and "no offenders" is what a clean repo and a blind detector both look like. The
+    /// two witnesses are literal fixtures a line apart — the same suite with and without the
+    /// annotation — so a rule that stopped reading the annotation fails the constructor rather than
+    /// sweeping green.
+    @Test func everyTestSuiteReachingALaunchReportWriterPreservesTheStoredReports() throws {
+        let unguarded = """
+        @MainActor
+        struct ASuiteThatRepairs {
+            @Test func aRepairIsIdempotent() throws {
+                _ = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
+            }
+        }
+        """
+        let instrument = try CadenceScanInstrument(
+            "a suite reaches a launch-report writer without the preserving trait",
+            fires: unguarded,
+            andNotOn: "@Suite(.preservesTheStoredLaunchReports)\n" + unguarded,
+            by: { !StoredLaunchReportSuiteRule.unguardedSuites(in: $0).isEmpty }
+        )
+
+        let offenders = try instrument.sweep(
+            try cadenceTestFiles(),
+            atLeast: 200,
+            including: "CadenceTests/NoteMigrationServiceTests.swift",
+            read: cadenceTestSource
+        )
+        #expect(
+            offenders.isEmpty,
+            """
+            these suites call migrateIfNeeded/repairIfNeeded without \
+            @Suite(.preservesTheStoredLaunchReports), so running them overwrites the launch report \
+            the app reads back: \(offenders)
+            """
+        )
+    }
+
+    /// The rule's near misses, and the one that matters most: **the trait is attributed per suite.**
+    ///
+    /// A file-level spelling would have been shorter and is wrong for the same reason T-465's
+    /// "nearest declaration above" was wrong — a trait on one top-level type does not reach the
+    /// sibling declared beside it, and a file-level rule would let the annotated suite vouch for the
+    /// leaking one forever.
+    @Test func theLaunchReportSuiteRuleAttributesTheTraitToOneSuiteRatherThanTheWholeFile() throws {
+        let siblings = """
+        @Suite(.preservesTheStoredLaunchReports)
+        struct TheGuardedOne {
+            @Test func one() throws {
+                _ = try NoteMigrationService.migrateIfNeeded(in: context, source: "test")
+            }
+        }
+
+        struct TheLeakingOne {
+            @Test func two() throws {
+                _ = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
+            }
+        }
+        """
+        #expect(StoredLaunchReportSuiteRule.unguardedSuites(in: siblings) == ["TheLeakingOne"])
+
+        // ...and the annotation does not reach *upwards* either: a trait written below a suite
+        // belongs to whatever follows it.
+        let annotationBelow = """
+        struct TheLeakingOne {
+            @Test func two() throws {
+                _ = try DataIntegrityRepairService.repairIfNeeded(in: context, source: "test")
+            }
+        }
+
+        @Suite(.preservesTheStoredLaunchReports)
+        struct SomethingElse {}
+        """
+        #expect(StoredLaunchReportSuiteRule.unguardedSuites(in: annotationBelow) == ["TheLeakingOne"])
+
+        // A suite that only *mentions* a writer is not one that calls it. Both spellings below are
+        // blanked by `codeOnly`, and this file and `TemporaryDefaultsSupport.swift` are each full
+        // of them — without this the guard would report its own definition.
+        let mentionsOnly = """
+        /// Explains what repairIfNeeded(in:source:) does, at length.
+        struct TheProseOne {
+            @Test func three() throws {
+                #expect(name == "migrateIfNeeded(in:source:)")
+            }
+        }
+        """
+        #expect(StoredLaunchReportSuiteRule.unguardedSuites(in: mentionsOnly).isEmpty)
+
+        // Non-vacuity for the three negatives above: the same reader does fire when the call is
+        // real code, so their emptiness is the rule discriminating rather than the rule being dead.
+        #expect(
+            StoredLaunchReportSuiteRule.unguardedSuites(in: """
+            struct TheRealOne {
+                @Test func four() throws {
+                    _ = try NoteMigrationService.migrateIfNeeded(in: context, source: "test")
+                }
+            }
+            """) == ["TheRealOne"]
+        )
+    }
 }
 
 // MARK: - Reading the test target
@@ -529,15 +641,35 @@ func cadenceTestDeclarations() throws -> [CadenceTestDeclaration] {
     }
 }
 
-/// The parser. Literals are masked and comments blanked first, so neither a needle nor a doc
-/// comment can present itself as a declaration; both passes keep the source's length, so the
-/// offsets below still point at the code they came from.
-func cadenceTestDeclarations(in source: String, file: String) -> [CadenceTestDeclaration] {
-    let code = CadenceSourceScan.codeOnly(source)
+/// One top-level type's *extent* in a file whose comments and literals are already blanked.
+///
+/// UTF-16 offsets, because that is the unit `NSRegularExpression` and `NSString` count in and the
+/// parsers below index straight into a `[Int]` of brace depths.
+struct CadenceTopLevelTypeExtent: Equatable {
+    let name: String
+    /// Offset of the `struct`/`class`/`enum`/`actor` keyword that opens the declaration.
+    let declaration: Int
+    /// Offset of the `{` that opens its body.
+    let open: Int
+    /// Offset of the `}` that closes it, or the end of the file when the braces never balance.
+    let close: Int
+}
+
+/// Every top-level type in a file, with the span it encloses.
+///
+/// Extracted from `cadenceTestDeclarations(in:file:)` (T-485) rather than copied: two suites now
+/// ask "which top-level type is this offset inside", and this repo's most common defect is the
+/// second copy of an answer like that. Takes source with literals and comments **already blanked**
+/// — a caller that hands it raw text gets its own fixtures parsed as declarations.
+///
+/// "The nearest type declared above this offset" is the wrong rule and this is the right one: a
+/// test appended past a closing brace belongs to the file scope the compiler sees, not to the suite
+/// the author meant (T-465).
+func cadenceTopLevelTypeExtents(inCodeOnly code: String) -> [CadenceTopLevelTypeExtent] {
     let nsCode = code as NSString
 
-    // Brace depth per UTF-16 offset, so only *top-level* type declarations count as suites. A
-    // nested `private struct Store` fixture is not the suite its neighbours are declared in, and
+    // Brace depth per UTF-16 offset, so only *top-level* type declarations count. A nested
+    // `private struct Store` fixture is not the suite its neighbours are declared in, and
     // attributing tests to it produces a failure message that sends the reader to the wrong place.
     var depths = [Int](repeating: 0, count: nsCode.length)
     var depth = 0
@@ -547,40 +679,54 @@ func cadenceTestDeclarations(in source: String, file: String) -> [CadenceTestDec
         if unit == 0x7B { depth += 1 } else if unit == 0x7D { depth -= 1 }
     }
 
-    // Each top-level type's *extent*, not just where its name appears. "The nearest type
-    // declared above this test" is the wrong rule for a test appended past a closing brace: it
-    // reports the suite the author meant instead of the file scope the compiler sees (T-465).
-    var types: [(open: Int, close: Int, name: String)] = []
-    if let typeRegex = try? NSRegularExpression(
+    guard let typeRegex = try? NSRegularExpression(
         pattern: "\\b(?:struct|final class|class|actor|enum)\\s+([A-Za-z0-9_]+)"
-    ) {
-        for match in typeRegex.matches(in: code, range: NSRange(location: 0, length: nsCode.length))
-        where depths[match.range.location] == 0 {
-            let name = nsCode.substring(with: match.range(at: 1))
-            var open = NSNotFound
-            var cursor = match.range.location + match.range.length
-            while cursor < nsCode.length {
-                if nsCode.character(at: cursor) == 0x7B {
-                    open = cursor
-                    break
-                }
-                cursor += 1
+    ) else { return [] }
+
+    var extents: [CadenceTopLevelTypeExtent] = []
+    for match in typeRegex.matches(in: code, range: NSRange(location: 0, length: nsCode.length))
+    where depths[match.range.location] == 0 {
+        let name = nsCode.substring(with: match.range(at: 1))
+        var open = NSNotFound
+        var cursor = match.range.location + match.range.length
+        while cursor < nsCode.length {
+            if nsCode.character(at: cursor) == 0x7B {
+                open = cursor
+                break
             }
-            guard open != NSNotFound else { continue }
-            var close = nsCode.length
-            var scan = open + 1
-            while scan < nsCode.length {
-                // `depths[scan]` is the depth *before* the character at `scan`, so the brace that
-                // closes this body is the first `}` seen back at depth 1.
-                if nsCode.character(at: scan) == 0x7D, depths[scan] == 1 {
-                    close = scan
-                    break
-                }
-                scan += 1
-            }
-            types.append((open, close, name))
+            cursor += 1
         }
+        guard open != NSNotFound else { continue }
+        var close = nsCode.length
+        var scan = open + 1
+        while scan < nsCode.length {
+            // `depths[scan]` is the depth *before* the character at `scan`, so the brace that
+            // closes this body is the first `}` seen back at depth 1.
+            if nsCode.character(at: scan) == 0x7D, depths[scan] == 1 {
+                close = scan
+                break
+            }
+            scan += 1
+        }
+        extents.append(
+            CadenceTopLevelTypeExtent(
+                name: name,
+                declaration: match.range.location,
+                open: open,
+                close: close
+            )
+        )
     }
+    return extents
+}
+
+/// The parser. Literals are masked and comments blanked first, so neither a needle nor a doc
+/// comment can present itself as a declaration; both passes keep the source's length, so the
+/// offsets below still point at the code they came from.
+func cadenceTestDeclarations(in source: String, file: String) -> [CadenceTestDeclaration] {
+    let code = CadenceSourceScan.codeOnly(source)
+    let nsCode = code as NSString
+    let types = cadenceTopLevelTypeExtents(inCodeOnly: code)
 
     guard let testRegex = try? NSRegularExpression(pattern: "@Test\\b(?s:.)*?\\bfunc\\s+([A-Za-z0-9_]+)")
     else { return [] }

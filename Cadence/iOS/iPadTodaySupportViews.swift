@@ -1,12 +1,26 @@
 #if os(iOS)
 import SwiftUI
 
-// The three types here keep their `iPad` prefix on purpose. T-283 renamed `iPadInboxView`,
+// The two *views* here keep their `iPad` prefix on purpose. T-283 renamed `iPadInboxView`,
 // `iPadTodayView` and two file names because those render at every width and the prefix was a
-// claim about a device that was not true. These are the exception it left standing: the task
-// header, the inspector switcher and the side-panel selector are all built only by
-// `iOSTodayView.twoPaneTodayLayout`, which `CadenceTodayLayoutSupport.layout(...)` returns only at
-// regular width. A compact width cannot reach any of them, so here the prefix is information.
+// claim about a device that was not true. These two are the exception it left standing: the task
+// header and the inspector switcher are built only by `iOSTodayView.twoPaneTodayLayout`, which
+// `CadenceTodayLayoutSupport.layout(...)` returns only at regular width. A compact width cannot
+// reach either of them, so on those two the prefix is information.
+//
+// The enum below is `iOSTodaySidePanel`, and this paragraph used to count it as a third (T-493).
+// It was `iPadTodaySidePanel`, and the claim was false for it: `iOSTodayView` names it in the
+// default value of an `@AppStorage` stored property, which every construction of that view
+// evaluates — and `iOSCompactTabShell`, `iOSTasksTabView` and `iOSSearchView` all construct that
+// view at compact width. So a phone does reach the enum, and by T-283's own rule the prefix there
+// was the defect it exists to remove rather than an exception to it. Renaming was preferred to
+// softening this paragraph because the prefix has exactly one meaning in this repo and an
+// "iPad-only, except when it is not" is not a meaning; the storage key was already the honest
+// `ios.today.sidePanel`, and the raw values are untouched, so nothing persisted moved. It stays in
+// this file because the switcher above is its only view and the two belong beside each other.
+// `everyIPadPrefixedTypeIsBuiltOnlyFromAWidthGatedHost` is what now derives the prefixed names
+// from source instead of listing them, so the next one cannot be omitted from the check the way
+// this one was.
 
 /// Today's page header — and, since the layout picker left it, Today's *only* chrome row.
 ///
@@ -77,12 +91,12 @@ struct iPadTodayTaskHeader: View {
 /// duplicates go. The hosted panels draw no title of their own here, so this row is the pane's
 /// header rather than an extra one above it.
 struct iPadTodayInspectorSwitcher: View {
-    @Binding var selection: iPadTodaySidePanel
+    @Binding var selection: iOSTodaySidePanel
 
     var body: some View {
         HStack(spacing: 12) {
             iOSSegmentedPillGroup {
-                ForEach(iPadTodaySidePanel.allCases) { panel in
+                ForEach(iOSTodaySidePanel.allCases) { panel in
                     iOSSegmentedPill(
                         title: panel.title,
                         systemImage: panel.icon,
@@ -102,7 +116,7 @@ struct iPadTodayInspectorSwitcher: View {
     }
 }
 
-enum iPadTodaySidePanel: String, CaseIterable, Identifiable {
+enum iOSTodaySidePanel: String, CaseIterable, Identifiable {
     case notes
     case timeline
 

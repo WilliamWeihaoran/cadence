@@ -190,14 +190,25 @@ struct TodayAndInboxNamingTests {
         }
     }
 
-    /// The exception, kept deliberately. These three are built only by `iOSTodayView`'s two-pane
+    /// The exception, kept deliberately. These two are built only by `iOSTodayView`'s two-pane
     /// layout, which `CadenceTodayLayoutSupport.layout(...)` returns only at regular width — so the
     /// prefix is a fact about them rather than a leftover.
+    ///
+    /// **It was three (T-493).** The side-panel enum was counted here on the strength of the same
+    /// sentence and was never checked by the sweep below; it is `iOSTodaySidePanel` now, because a
+    /// stored property on a view that lives at both widths reaches it on a phone. The reachability
+    /// is still asserted — see `theRenamedSidePanelEnumIsReachedFromAWidthIndependentStoredProperty`
+    /// — and the list of prefixed names is derived from source rather than typed here, by
+    /// `everyIPadPrefixedTypeIsBuiltOnlyFromAWidthGatedHost`.
     @Test func theTwoPaneOnlyTypesKeepTheirIPadPrefix() throws {
         let support = try misfiledSourceFile("Cadence/iOS/iPadTodaySupportViews.swift")
-        for name in ["iPadTodayTaskHeader", "iPadTodayInspectorSwitcher", "iPadTodaySidePanel"] {
+        for name in ["iPadTodayTaskHeader", "iPadTodayInspectorSwitcher"] {
             #expect(support.contains(name), "iPadTodaySupportViews.swift no longer declares \(name)")
         }
+        #expect(
+            CadenceSourceScan.strippingComments(support).contains("enum iOSTodaySidePanel:"),
+            "the side panel enum is not declared under its renamed, width-honest name"
+        )
 
         // And they are reached from the two-pane branch only. `twoPaneTodayLayout` is the one
         // `CadenceTodayLayoutSupport.layout(...)` gates on width; the compact host must name none
@@ -255,38 +266,146 @@ struct TodayAndInboxNamingTests {
         #expect(CadenceSourceScan.matchCount("iPadTodayTaskHeader\\(", in: host) == 1)
     }
 
-    /// **The third kept name does not pass the test the other two do, and this is where that is
-    /// written down.**
+    /// **Why the third kept name stopped being kept (T-493).**
     ///
-    /// `iPadTodaySupportViews.swift` says all three types are "built only by
+    /// `iPadTodaySupportViews.swift` used to say all three types were "built only by
     /// `iOSTodayView.twoPaneTodayLayout`" and that "a compact width cannot reach any of them". For
-    /// the two views that is true and the sweep above holds it. For `iPadTodaySidePanel` it is
+    /// the two views that is true and the sweep above holds it. For the side-panel enum it was
     /// false: `iOSTodayView` names it in the **default value of a stored property**
     /// (`@AppStorage("ios.today.sidePanel")`), which every construction of that view evaluates —
     /// and `iOSCompactTabShell`, `iOSTasksTabView` and `iOSSearchView` all construct it at compact
-    /// width. So the enum is reached on an iPhone, and by T-283's own rule the prefix there is a
-    /// claim the code does not keep.
+    /// width. So the enum is reached on an iPhone.
     ///
-    /// Excluded from the sweep **by name** rather than quietly, on the T-449 pattern: the hole is
-    /// one line of test source, and whether the enum is renamed or the file's comment is corrected
-    /// is a decision that belongs to a ticket rather than to this file.
-    @Test func theSidePanelEnumIsReachedFromAWidthIndependentStoredProperty() throws {
+    /// The reach is what got the enum renamed rather than the sentence softened, so this test
+    /// outlives the rename: it is the reason. If the stored property ever moves into the two-pane
+    /// branch the enum becomes genuinely regular-width-only and this goes red, which is the right
+    /// moment to reconsider the name — not a silent pass. Nothing persisted moved: the key is
+    /// `ios.today.sidePanel` either way and the raw values are `notes` / `timeline`.
+    @Test func theRenamedSidePanelEnumIsReachedFromAWidthIndependentStoredProperty() throws {
         let host = CadenceSourceScan.strippingComments(
             try misfiledSourceFile("Cadence/iOS/iOSTodayView.swift")
         )
         #expect(host.contains("struct iOSTodayView: View {"), "non-vacuity: wrong file read")
         #expect(
             CadenceSourceScan.matchCount(
-                "@AppStorage\\(\"ios.today.sidePanel\"\\) private var sidePanelRaw = iPadTodaySidePanel",
+                "@AppStorage\\(\"ios.today.sidePanel\"\\) private var sidePanelRaw = iOSTodaySidePanel",
                 in: host
             ) == 1,
-            "the recorded exception no longer describes the source"
+            "the width-independent stored property no longer reads the way the rename assumed"
         )
         // A stored property's initialiser runs in `init`, not in a layout branch. That is the
         // difference from the two views, and it is what this asserts rather than assumes.
         let code = CadenceSourceScan.codeOnly(try misfiledSourceFile("Cadence/iOS/iOSTodayView.swift"))
         let twoPane = try #require(CadenceSourceScan.functionBody(named: "twoPaneTodayLayout", in: code))
-        #expect(twoPane.contains("iPadTodaySidePanel") == false)
+        #expect(twoPane.contains("iOSTodaySidePanel") == false)
+
+        // And the three compact hosts really do construct the view that carries it, so the reach
+        // above is a fact about the app rather than about one file.
+        for path in [
+            "Cadence/iOS/iOSCompactTabShell.swift",
+            "Cadence/iOS/iOSTasksTabView.swift",
+            "Cadence/iOS/iOSSearchView.swift"
+        ] {
+            let caller = CadenceSourceScan.codeOnly(try misfiledSourceFile(path))
+            #expect(
+                CadenceSourceScan.matchCount("iOSTodayView\\(", in: caller) >= 1,
+                "\(path) no longer constructs iOSTodayView"
+            )
+        }
+    }
+
+    /// **The prefix rule, enumerated from the source instead of typed into a list (T-493).**
+    ///
+    /// This is the general half. `nothingOutsideTheTwoPaneTodayHostBuildsATwoPaneOnlyView` holds
+    /// the rule for two names *somebody wrote down*, and that is exactly how the third one was
+    /// missed for a fortnight: T-283 listed the kept names by hand, the enum was not in the list,
+    /// and no test anywhere objected that a compact width reached it. So the names are read out of
+    /// the tree here. Every `iPad`-prefixed type declared under `Cadence/iOS/` must appear in the
+    /// table below with the host that builds it and the width test that gates that host — a new
+    /// one fails until somebody writes those down, which is the reading the missing check would
+    /// have forced.
+    ///
+    /// It found a fourth immediately: `iPadMacStyleRootShell`, which no reachability test had ever
+    /// covered. It passes — `iOSRootView` builds it inside `if horizontalSizeClass == .regular` —
+    /// but "passes" was not previously known.
+    ///
+    /// **What this cannot do**, and it is worth saying because this repo keeps finding comments
+    /// that assert mechanisms the code lacks: it checks a *name* against a *gate*. A comment that
+    /// invents a mechanism out of prose — T-352's "restored at launch" for a selection nothing
+    /// persists — names no symbol and trips nothing here. That family is still read, not guarded.
+    @Test func everyIPadPrefixedTypeIsBuiltOnlyFromAWidthGatedHost() throws {
+        // Per prefixed type: the one file besides its own that may name it, and a whitespace-free
+        // needle showing the build sits behind a width test in that file.
+        let gated: [String: (host: String, gate: String)] = [
+            "iPadMacStyleRootShell": (
+                "Cadence/iOS/iOSRootView.swift",
+                "ifhorizontalSizeClass==.regular{iPadMacStyleRootShell("
+            ),
+            "iPadTodayTaskHeader": (
+                "Cadence/iOS/iOSTodayView.swift",
+                "case.twoPane:twoPaneTodayLayout(width:width)"
+            ),
+            "iPadTodayInspectorSwitcher": (
+                "Cadence/iOS/iOSTodayView.swift",
+                "case.twoPane:twoPaneTodayLayout(width:width)"
+            )
+        ]
+
+        let paths = try misfiledSwiftFiles(under: "Cadence/iOS")
+        var declaredIn: [String: String] = [:]
+        for path in paths {
+            for name in misfiledIPadPrefixedDeclarations(in: try misfiledSourceFile(path)) {
+                declaredIn[name] = path
+            }
+        }
+        #expect(
+            Set(declaredIn.keys) == Set(gated.keys),
+            """
+            an iPad-prefixed type under Cadence/iOS/ is not recorded with the width-gated host that \
+            builds it: \(Set(declaredIn.keys).symmetricDifference(gated.keys).sorted())
+            """
+        )
+
+        for (name, expectation) in gated.sorted(by: { $0.key < $1.key }) {
+            let declaring = try #require(declaredIn[name])
+            let namers = try misfiledPrefixedNameInstrument(for: name).sweep(
+                paths,
+                // 93 files at the time of writing; the floor sits well under it so an added file is
+                // not a failure and a collapsed walk is.
+                atLeast: 80,
+                including: "Cadence/iOS/iOSTodayCompactViews.swift",
+                read: misfiledSourceFile
+            )
+            #expect(
+                namers == Set([declaring, expectation.host]).sorted(),
+                "\(name) is named in code outside \(expectation.host): \(namers)"
+            )
+
+            let host = CadenceSourceScan.strippingComments(try misfiledSourceFile(expectation.host))
+            #expect(
+                host.filter { !$0.isWhitespace }.contains(expectation.gate),
+                "\(expectation.host) no longer builds \(name) behind \(expectation.gate)"
+            )
+        }
+    }
+
+    /// The declaration extractor against text that is not the repository, so the sweep above cannot
+    /// pass by reading nothing. It must find a declaration, ignore a *use* of the same name, ignore
+    /// prose, and leave the renamed `iOS` neighbour alone.
+    @Test func theIPadDeclarationExtractorReadsDeclarationsAndNotUses() {
+        #expect(misfiledIPadPrefixedDeclarations(in: "struct iPadTodayTaskHeader: View {")
+            == ["iPadTodayTaskHeader"])
+        #expect(misfiledIPadPrefixedDeclarations(in: "enum iPadTodaySidePanel: String {")
+            == ["iPadTodaySidePanel"])
+        #expect(misfiledIPadPrefixedDeclarations(in: "nonisolated final class iPadThing: Sendable {")
+            == ["iPadThing"])
+        // The nearest misses: building one, extending one, and writing about one.
+        #expect(misfiledIPadPrefixedDeclarations(in: "var body: some View { iPadTodayTaskHeader() }")
+            .isEmpty)
+        #expect(misfiledIPadPrefixedDeclarations(in: "extension iPadTodayTaskHeader { }").isEmpty)
+        #expect(misfiledIPadPrefixedDeclarations(in: "/// struct iPadGhost: View {").isEmpty)
+        // And the prefix is `iPad`, not any `i`-something.
+        #expect(misfiledIPadPrefixedDeclarations(in: "enum iOSTodaySidePanel: String {").isEmpty)
     }
 
     // MARK: - T-494: the same sweep, over the docs that route agents
@@ -747,12 +866,12 @@ private func misfiledTwoPaneOnlyViewInstrument() throws -> CadenceScanInstrument
         }
         """,
         // The nearest miss: prose naming the view, which is how this file family records its own
-        // history, plus the *third* `iPad` name — the one that is genuinely reached at both widths
-        // and must not be swept up with the two that are not.
+        // history, plus the enum that used to be a third `iPad` name — genuinely reached at both
+        // widths, renamed by T-493, and still the thing this detector must not sweep up.
         andNotOn: """
         /// `iPadTodayTaskHeader` is the row this one replaced on macOS.
         struct Elsewhere: View {
-            @AppStorage("k") private var raw = iPadTodaySidePanel.notes.rawValue
+            @AppStorage("k") private var raw = iOSTodaySidePanel.notes.rawValue
             var body: some View { Text("iPadTodayInspectorSwitcher") }
         }
         """,
@@ -765,6 +884,50 @@ private func misfiledNamesATwoPaneOnlyView(_ source: String) -> Bool {
     return ["iPadTodayTaskHeader", "iPadTodayInspectorSwitcher"].contains {
         misfiledSpellsWord($0, in: code)
     }
+}
+
+/// Every `iPad`-prefixed **type declaration** in a file, read out of the source rather than listed.
+///
+/// The list is the point (T-493). T-283 wrote the kept prefixed names into a literal, one was left
+/// out, and the omission was invisible for as long as nobody re-derived it. Comments are stripped
+/// first, because this file family argues about the prefix in prose and an argument declares
+/// nothing; `extension` is deliberately not a keyword here, since extending a type does not
+/// introduce a name that could be wrong.
+private func misfiledIPadPrefixedDeclarations(in source: String) -> Set<String> {
+    let code = CadenceSourceScan.strippingComments(source)
+    guard let regex = try? NSRegularExpression(
+        pattern: "\\b(?:struct|enum|class|actor|protocol)\\s+(iPad[A-Za-z0-9_]*)"
+    ) else { return [] }
+
+    var names: Set<String> = []
+    for match in regex.matches(in: code, range: NSRange(code.startIndex..., in: code)) {
+        guard let captured = Range(match.range(at: 1), in: code) else { continue }
+        names.insert(String(code[captured]))
+    }
+    return names
+}
+
+/// "This file's **code** spells `name`", for one prefixed type at a time.
+///
+/// `codeOnly` rather than `strippingComments` because the negative witness is prose: three files
+/// under `Cadence/iOS/` discuss these names in doc comments while building none of them, and a
+/// detector that counted those would report every history note as a reachability failure.
+private func misfiledPrefixedNameInstrument(for name: String) throws -> CadenceScanInstrument {
+    try CadenceScanInstrument(
+        "code naming \(name)",
+        fires: """
+        struct Elsewhere: View {
+            var body: some View { \(name)() }
+        }
+        """,
+        andNotOn: """
+        /// `\(name)` is the row this one replaced on macOS.
+        struct Elsewhere: View {
+            var body: some View { EmptyView() }
+        }
+        """,
+        by: { misfiledSpellsWord(name, in: CadenceSourceScan.codeOnly($0)) }
+    )
 }
 
 private func misfiledSizeClassOverrideInstrument() throws -> CadenceScanInstrument {
@@ -796,14 +959,16 @@ private func misfiledWritesTheHorizontalSizeClass(_ source: String) -> Bool {
     ) > 0
 }
 
-/// The four names T-283 retired. One list, read by both the code sweep and the doc sweep — the
-/// second was written because the first covered `Cadence/**/*.swift` only, so a fifth name added
-/// to one copy and not the other is the exact way this pair would drift apart again.
+/// The names retired for claiming a device that reaches them anyway: four from T-283, and
+/// `iPadTodaySidePanel` from T-493. One list, read by both the code sweep and the doc sweep — the
+/// second was written because the first covered `Cadence/**/*.swift` only, so a name added to one
+/// copy and not the other is the exact way this pair would drift apart again.
 private let misfiledRetiredIPadNames = [
     "iPadInboxView",
     "iPadTodayView",
     "iPadTodayCompactViews",
-    "iPadTodayScheduleViews"
+    "iPadTodayScheduleViews",
+    "iPadTodaySidePanel"
 ]
 
 /// Every first-party markdown file an agent is routed through: the root guides, each scoped

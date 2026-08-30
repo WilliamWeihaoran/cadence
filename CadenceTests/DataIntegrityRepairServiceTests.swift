@@ -3,6 +3,7 @@ import SwiftData
 import Testing
 @testable import Cadence
 
+@Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct DataIntegrityRepairServiceTests {
     @Test func duplicateContextsAreMergedWithoutDroppingListsOrTasks() throws {
@@ -560,18 +561,14 @@ struct DataIntegrityRepairServiceTests {
 
     /// The other half of the same failure: `lastReport()` is the reader that swallows it, and it is
     /// the value `repairAndRecordFailure` falls back to. Asserted through the real `UserDefaults`
-    /// key so the archive round trip — encoder, key, decoder — is what is measured, and restored
-    /// afterwards so a test run cannot leave a fabricated report behind for the app to read.
+    /// key so the archive round trip — encoder, key, decoder — is what is measured.
+    ///
+    /// The hand-written `let saved = … defer { … }` this test used to carry is gone: the suite
+    /// trait above restores the same key for every test here, and two spellings of one guard is one
+    /// too many to keep working. `StoredLaunchReports.keys` names this key, and
+    /// `everyTestSuiteReachingALaunchReportWriterPreservesTheStoredReports` keeps the trait on.
     @Test func lastReportReadsBackAReportStoredWithoutTheNewestCounter() throws {
         let key = "dataIntegrityRepair.lastReport.v1"
-        let saved = UserDefaults.standard.data(forKey: key)
-        defer {
-            if let saved {
-                UserDefaults.standard.set(saved, forKey: key)
-            } else {
-                UserDefaults.standard.removeObject(forKey: key)
-            }
-        }
 
         var report = DataIntegrityRepairReport(
             source: "previous-launch",

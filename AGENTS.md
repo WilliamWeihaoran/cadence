@@ -167,9 +167,9 @@ Before treating a red run as a code regression, check:
   a source scan — matches the loose pattern, so a genuine mutation kill reads as a build break and
   gets thrown away. The loose pattern only ever over-counts, so it never launders a bad result into
   a good one; it discards good evidence, which is quieter and easier to miss.
-- `sleep` is blocked in this harness, including inside `nohup`'d background jobs — a poll loop
-  written with it burns every iteration instantly and exits 0 having watched nothing, which reads
-  exactly like "the condition never fired". Use the `Monitor` tool to wait on a condition.
+- `sleep` is blocked in a **foreground** tool call — a poll loop there burns every iteration instantly
+  and exits 0 having watched nothing, reading like "the condition never fired". It **works** in a
+  detached job and in a `Monitor` script (measured 2026-08-30), so `acquire` waits from a background runner.
 
 Full incident details are in `docs/AGENTS_REFERENCE.md`.
 
