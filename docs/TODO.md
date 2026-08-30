@@ -637,6 +637,48 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (no user). See [[T-503]] for the hole this work found in the rule itself.
 
 
+- [T-506] **macOS note export can silently fail *after* the user picks a destination** (Codex, P2,
+  measured). `macOS/Services/NoteExportService.swift:39,46` write markdown and PDF bytes with `try?`;
+  a failed write is swallowed and no UI state records it, so the user picks a folder, sees nothing, and
+  has no file. **Three correct patterns already exist** — `iOS/iOSNoteExportMenu.swift:82-85` reports
+  `fileExporter` failure, and both data-export sections
+  (`macOS/Views/SettingsDataSafetySection.swift:118-126`, `iOS/iOSDataExportSettingsSection.swift:79-87`)
+  report theirs. Return/report the error through the macOS caller, then pin it. **Note this is a file
+  write, not a `save()`** — see [[T-508]].
+
+- [T-507] **iOS saved links throw away the shared persistence helper's failure signal** (Codex, P2,
+  measured). `iOS/iOSListSupportViews.swift:687` calls `try? CadenceSavedLinkPersistence.insert(...)`
+  then clears the title, clears the URL and closes the add form **regardless**; `:699` does the same for
+  delete. The helper (`Shared/CadenceSavedLinkPersistence.swift:35-45`) already commits and rolls back
+  correctly — the caller discards the answer. **macOS is already right**: `LinksView.swift:109-114`
+  catches insert failure and leaves the form open, `:125-130` catches delete. Mirror it, add an iOS
+  `actionError` notice near the saved-links section, and pin so iOS cannot reintroduce `try?`. Same
+  shape as [[T-470]]/[[T-471]].
+
+- [T-508] **The `try? save()` rule keys on `save()` specifically, so it misses `try?` on commit helpers
+  and file writes.** Distinct from [[T-503]] and found the same way — by two real defects it could not
+  see. The sweep's patterns are `try? save()` and `try? modelContext.save()`, so
+  `try? CadenceSavedLinkPersistence.insert(...)` ([[T-507]]) and `try? content.write(to:)` ([[T-506]])
+  both pass all halves. **Widen the vocabulary to the commit surface rather than the method name**: any
+  `try?` on a `CadencePendingChangePersistence.commit*`, on a `Cadence*Persistence` helper, or on a
+  `Foundation` write whose failure the caller then reports success over. Measure the new hit count
+  before shipping — the value of this rule so far has been that 86% of sites legitimately pass it.
+
+- [T-509] **Saved-link URL normalisation mangles an uppercase scheme, on both platforms** (Codex, P3,
+  measured). `macOS/Views/LinksView.swift:99` and `iOS/iOSListSupportViews.swift:677` both test
+  `hasPrefix("http://")`/`hasPrefix("https://")` **case-sensitively**, so `HTTPS://example.com` becomes
+  `https://HTTPS://example.com`. Two hand-rolled checks, one defect, twice — [[T-374]]'s shape. One
+  shared normalisation helper read by both, pinned on lowercase, uppercase, mixed case, leading/trailing
+  whitespace and scheme-less input.
+
+- [T-510] **Release packet and review notes disagree about which platforms ship** (Codex, P3, measured
+  doc drift, **not a runtime bug**). `docs/app-store-submission-packet.md:13` says *Platforms: macOS*,
+  while `docs/app-review-notes.md:8` says Cadence targets macOS **plus iOS/iPadOS from one app target**,
+  and the project lists `iphoneos iphonesimulator macosx`. If the next submission is Mac-only the packet
+  should say so explicitly; if it includes iOS/iPadOS, the packet and its readiness tests need updating.
+  **Decide before submitting, not after.**
+
+
 ## Done
 
 Moved to [`TODO_DONE.md`](TODO_DONE.md) on 2026-08-26 — 220 entries, with their reasoning and shipping SHAs intact.
