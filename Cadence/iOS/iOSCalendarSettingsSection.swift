@@ -70,7 +70,7 @@ struct iOSCalendarSettingsSection: View {
                 // Above the calendar list, not inside it: these lists have no live calendar to
                 // hang off, which is exactly why they were invisible before T-400.
                 if !missingLinks.isEmpty {
-                    CadenceSettingsSectionLabel(text: "Broken Calendar Links")
+                    CadenceSettingsSectionLabel(text: CadenceCalendarLinkHealth.brokenLinksSectionTitle)
                     missingLinksCard
                 }
 
@@ -127,7 +127,7 @@ struct iOSCalendarSettingsSection: View {
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(calendarManager.isDenied ? "Calendar access denied" : "Calendar access required")
+                    Text(calendarManager.isDenied ? CadenceCalendarSettingsCopy.accessDeniedTitle : CadenceCalendarSettingsCopy.accessRequiredTitle)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
 
@@ -258,7 +258,7 @@ private struct iOSMissingCalendarLinkRow: View {
     private var repickMenu: some View {
         Menu {
             if calendars.isEmpty {
-                Text("No Apple calendars available")
+                Text(CadenceCalendarLinkHealth.noRelinkTargetsLabel)
             } else {
                 Section("Link To") {
                     ForEach(calendars, id: \.calendarIdentifier) { calendar in
@@ -319,7 +319,7 @@ private struct iOSCalendarWorkHoursSection: View {
                         )
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Workday boundary")
+                            Text(CadenceCalendarSettingsCopy.workdayBoundaryTitle)
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
                             Text("Calendar day columns gently highlight \(workHoursLabel).")
@@ -470,7 +470,7 @@ private struct iOSCalendarSettingsRow: View {
     private var connectionMenu: some View {
         Menu {
             if areas.isEmpty && projects.isEmpty {
-                Text("No active areas or projects")
+                Text(CadenceCalendarSettingsCopy.noConnectableListsLabel)
             } else {
                 if !areas.isEmpty {
                     Section("Areas") {
@@ -509,7 +509,7 @@ private struct iOSCalendarSettingsRow: View {
                 )
                 .contentShape(Rectangle())
         }
-        .accessibilityLabel("Connect to areas and projects")
+        .accessibilityLabel(CadenceCalendarSettingsCopy.connectMenuLabel)
     }
 
     private var calendarColor: Color {
@@ -531,7 +531,7 @@ private struct iOSCalendarSettingsRow: View {
     }
 
     private var connectionSummary: String {
-        guard !connectedNames.isEmpty else { return "Not connected to any area or project" }
+        guard !connectedNames.isEmpty else { return CadenceCalendarSettingsCopy.unconnectedSummary }
         return connectedNames.joined(separator: ", ")
     }
 }

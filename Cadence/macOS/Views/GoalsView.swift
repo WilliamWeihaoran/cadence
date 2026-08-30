@@ -283,7 +283,7 @@ struct GoalsView: View {
                     // Not `searchText.isEmpty`: `statusFilter` defaults to `.active` and hides
                     // paused and finished goals, so an empty page under it is a filter miss and
                     // not a first run. See `CadenceEmptyStateCopy.isNarrowedToEmpty`.
-                    message: isNarrowedToEmpty ? "No matching goals" : "No goals yet",
+                    message: CadenceEmptyStateCopy.goalsTitle(isNarrowed: isNarrowedToEmpty),
                     subtitle: isNarrowedToEmpty
                         ? "Try a different search or status."
                         : "Create a goal for an ongoing direction, then nest milestones inside it.",

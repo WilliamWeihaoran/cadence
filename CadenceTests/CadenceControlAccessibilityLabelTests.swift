@@ -208,10 +208,18 @@ struct ControlAccessibilityLabelTests {
     /// The five the ticket listed, by the name each switch now carries. Stated as values rather
     /// than left to the sweep: the sweep only knows that *some* name is present, and a revert that
     /// swapped in the wrong one would keep it green.
+    ///
+    /// **The two notifications switches name themselves from a constant now** ([[T-524]]), and that
+    /// is strictly stronger than the literal this used to pin: `remindersToggleTitle` is the *same*
+    /// constant the row's visible `title:` reads, so "the switch takes its name from its own row"
+    /// is true by construction rather than by two spellings agreeing. Both surfaces are still
+    /// listed here — the claim is about each file, and the phone's is not compiled by this target.
     @Test func theFiveNamedTogglesTakeTheirNameFromTheirOwnRow() throws {
         let expected = [
-            "Cadence/macOS/Views/SettingsNotificationsSection.swift": #"Toggle("Enable reminders", isOn: $notificationsEnabled)"#,
-            "Cadence/iOS/iOSNotificationsSettingsSection.swift": #"Toggle("Enable reminders", isOn: $notificationsEnabled)"#,
+            "Cadence/macOS/Views/SettingsNotificationsSection.swift":
+                #"Toggle(CadenceNotificationSettingsCopy.remindersToggleTitle, isOn: $notificationsEnabled)"#,
+            "Cadence/iOS/iOSNotificationsSettingsSection.swift":
+                #"Toggle(CadenceNotificationSettingsCopy.remindersToggleTitle, isOn: $notificationsEnabled)"#,
             "Cadence/macOS/Views/HabitsFormSupportViews.swift": #"Toggle("Remind me", isOn: $hasReminder)"#,
             "Cadence/macOS/Views/NoteActionReviewSheets.swift": #"Toggle("Include this task", isOn: $isSelected)"#,
             "Cadence/macOS/Views/SettingsSupportViews.swift": #"Toggle("Visible in Sidebar", isOn: $isVisible)"#,

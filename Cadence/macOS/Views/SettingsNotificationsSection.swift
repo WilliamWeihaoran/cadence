@@ -26,13 +26,13 @@ struct SettingsNotificationsSection: View {
         CadenceSettingsNoticeRow(
             systemImage: "bell.fill",
             tint: Theme.amber,
-            title: "Enable reminders",
-            detail: "A task's scheduled start and due date, and a habit's reminder time, notify you locally."
+            title: CadenceNotificationSettingsCopy.remindersToggleTitle,
+            detail: CadenceNotificationSettingsCopy.remindersToggleDetail
         ) {
             // Named rather than `Toggle("")`: `.labelsHidden()` hides the label from the layout,
             // not from the accessibility tree, so the switch keeps the row title as its own name
             // instead of borrowing nothing from the `Text` beside it (T-484).
-            Toggle("Enable reminders", isOn: $notificationsEnabled)
+            Toggle(CadenceNotificationSettingsCopy.remindersToggleTitle, isOn: $notificationsEnabled)
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
@@ -42,11 +42,11 @@ struct SettingsNotificationsSection: View {
         CadenceSettingsNoticeRow(
             systemImage: "exclamationmark.triangle.fill",
             tint: Theme.amber,
-            title: "Notification access required",
-            detail: "Allow Cadence to notify you about scheduled tasks, due dates, and habit reminders."
+            title: CadenceNotificationSettingsCopy.accessRequiredTitle,
+            detail: CadenceNotificationSettingsCopy.accessRequiredDetail
         ) {
             SettingsActionButton(tone: .filled(Theme.blue), action: requestAuthorization) {
-                Text("Enable Notifications")
+                Text(CadenceNotificationSettingsCopy.enableNotificationsAction)
             }
         }
     }

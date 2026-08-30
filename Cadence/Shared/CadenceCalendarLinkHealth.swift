@@ -44,6 +44,19 @@ nonisolated enum CadenceCalendarLinkHealth {
     /// The row title. One spelling, so the two platform surfaces cannot drift.
     static let missingLinkTitle = "Linked calendar is missing"
 
+    /// The eyebrow above the card, drawn only when `missingLinks` is non-empty — so it is a
+    /// heading the reader sees exactly when there is something under it.
+    ///
+    /// Here rather than beside the rest of the Settings copy ([[T-524]]) because it belongs to
+    /// this surface: the section exists only to hold the rows this type detects, and a rename that
+    /// left the two out of step would be a heading over a card describing something else.
+    static let brokenLinksSectionTitle = "Broken Calendar Links"
+
+    /// The re-pick menu with nothing to re-pick. Reachable in one situation only — a link is dead
+    /// *and* EventKit has no calendar at all — so it says the library is empty rather than telling
+    /// the reader to make one, which is not something Cadence can do for them.
+    static let noRelinkTargetsLabel = "No Apple calendars available"
+
     /// Every active list whose calendar link is dead, areas first, each group in the order given.
     ///
     /// - Parameter liveCalendarIDs: identifiers of **every** calendar EventKit has, including the

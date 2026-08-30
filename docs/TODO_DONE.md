@@ -9,6 +9,12 @@ week by audits that had only seen the open list.
 
 177 entries.
 
+**Coverage: this archive begins mid-project.** These entries are near-complete from ~T-200 on (96% of
+T-300..399 is accounted for here or in the open list) and near-empty before it (10-13% of T-1..199).
+Roughly 200 tickets closed earlier were removed from the open list and never archived; they are
+recoverable verbatim from this file's git history and were measured as not worth backfilling (T-462).
+**A search here that finds nothing is not evidence a ticket is new if its id is below ~T-200.**
+
 - [T-300] **The drag-and-drop date seed has the same lenient-parse bug.** From the same audit,
   premise verified verbatim: `CadenceTaskDropSupport.dateValue` does
   `guard DateFormatters.date(from: value) != nil` and then `return value`. Same class as [[T-299]],

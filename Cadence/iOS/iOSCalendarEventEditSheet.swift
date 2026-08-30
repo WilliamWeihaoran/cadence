@@ -206,7 +206,7 @@ struct iOSCalendarEventEditSheet: View {
                 Text("This removes the event from Apple Calendar.")
             }
             .confirmationDialog(
-                "Change recurring event?",
+                CadenceRecurrenceScopeCopy.eventScopeTitle,
                 isPresented: Binding(
                     get: { pendingAction != nil },
                     set: { if !$0 { pendingAction = nil } }
@@ -223,7 +223,7 @@ struct iOSCalendarEventEditSheet: View {
                     pendingAction = nil
                 }
             } message: {
-                Text("Choose whether this calendar change applies only to this occurrence or to this and future events.")
+                Text(CadenceRecurrenceScopeCopy.eventScopeMessage)
             }
             .onAppear(perform: ensureWritableCalendar)
             .onChange(of: calendarManager.storeVersion) { _, _ in

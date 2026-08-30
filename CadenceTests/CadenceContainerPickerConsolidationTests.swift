@@ -358,4 +358,147 @@ struct CadenceContainerPickerConsolidationTests {
         // Not vacuous: the file really was read and really does say something.
         #expect(projectSupport.count > 400)
     }
+
+    // MARK: - T-536 / T-542: the near-copies the shared helpers exist to remove
+
+    /// Every file under `Cadence/`, so a new near-copy is caught wherever it is written rather
+    /// than only at the three paths T-542 happened to name.
+    private static func allAppSources() throws -> [String] {
+        try CadenceSourceScan.swiftFiles(under: "Cadence")
+    }
+
+    /// The one file allowed to spell either shape: the file that declares them.
+    private static let composerSupportPath = "Cadence/Shared/CadenceTaskComposerSupport.swift"
+
+    /// **T-542.** `TasksPanelComponents`, `SchedulePanelComponents` and `TaskEmbedFieldEditorPopover`
+    /// each re-spelled `CadenceTaskComposerSupport.container(of:)` — correctly, which is why this
+    /// is convergence rather than a fix, and why the guard has to be a *shape* sweep. A fourth copy
+    /// would be correct too; the cost is that the next change to the rule reaches three sites and
+    /// misses one.
+    ///
+    /// The expected hit set is `[composerSupportPath]` rather than empty **on purpose**: the
+    /// declaration matches its own detector, so a set equal to exactly the declaring file proves
+    /// the sweep is live at the same time as it proves the copies are gone. An empty result here
+    /// would mean the detector had stopped seeing the shape at all.
+    @Test func noAppSurfaceReSpellsTheTaskToSelectionGetterTheComposerSupportDeclares() throws {
+        let reSpellsTheGetter = try CadenceScanInstrument(
+            "task-to-selection getter re-spelled",
+            fires: """
+            get: {
+                if let a = task.area    { return .area(a.id) }
+                if let p = task.project { return .project(p.id) }
+                return .inbox
+            },
+            """,
+            andNotOn: """
+            get: { CadenceTaskComposerSupport.container(of: task) },
+            """,
+            by: { source in
+                let collapsed = source.replacingOccurrences(
+                    of: "\\s+", with: " ", options: .regularExpression
+                )
+                return CadenceSourceScan.matchCount(
+                    #"(?:if let (\w+) = task\.area \{ return \.area\(\1\.id\) \})|(?:if let (\w+) = task\.project \{ return \.project\(\2\.id\) \})"#,
+                    in: collapsed
+                ) > 0
+            }
+        )
+
+        let hits = try reSpellsTheGetter.sweep(
+            Self.allAppSources(),
+            atLeast: 500,
+            including: Self.composerSupportPath,
+            read: { CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0)) }
+        )
+
+        #expect(hits == [Self.composerSupportPath])
+
+        // T-161: absence of the copy is not presence of the call. Pin the wiring too, so reverting
+        // a call site fails this test rather than only the sweep above.
+        for path in [
+            "Cadence/macOS/Views/TasksPanelComponents.swift",
+            "Cadence/macOS/Views/SchedulePanelComponents.swift",
+            "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift"
+        ] {
+            let source = try CadenceSourceScan.strippingComments(CadenceSourceScan.sourceFile(path))
+            #expect(
+                source.contains("CadenceTaskComposerSupport.container(of: task)"),
+                "\(path) no longer reads the shared task-to-selection accessor"
+            )
+        }
+    }
+
+    /// **T-536.** The `area:` / `project:` container token is one encoding, and `dropFirst(5)` /
+    /// `dropFirst(8)` are that encoding's prefix lengths written as numbers. Four files re-derived
+    /// them: the two iOS sheets T-536 named, plus `CreateGoalSheet`, whose seed tag is the same
+    /// vocabulary reached from macOS.
+    ///
+    /// The negative witness is the *nearest* one in this repo and not a strawman: eight sites parse
+    /// a `task:` or `note:` markdown payload with the very same `dropFirst(5)`, and a detector that
+    /// keyed on the number alone would condemn all of them. It is the pair — this prefix with that
+    /// length — that names the container encoding.
+    @Test func noAppSurfaceReDerivesTheContainerTokenPrefixArithmetic() throws {
+        let reDerivesTheToken = try CadenceScanInstrument(
+            "container token prefix arithmetic re-derived",
+            fires: """
+            guard containerSelection.hasPrefix("area:"),
+                  let id = UUID(uuidString: String(containerSelection.dropFirst(5)))
+            else { return nil }
+            """,
+            andNotOn: """
+            if trimmed.hasPrefix("task:") {
+                return target(kind: .task, payload: String(trimmed.dropFirst(5)))
+            }
+            """,
+            by: { source in
+                let area = source.contains("hasPrefix(\"area:\")") && source.contains("dropFirst(5)")
+                let project = source.contains("hasPrefix(\"project:\")") && source.contains("dropFirst(8)")
+                return area || project
+            }
+        )
+
+        let hits = try reDerivesTheToken.sweep(
+            Self.allAppSources(),
+            atLeast: 500,
+            including: Self.composerSupportPath,
+            read: CadenceSourceScan.strippedSourceReader()
+        )
+
+        #expect(hits == [Self.composerSupportPath])
+
+        for path in [
+            "Cadence/iOS/iOSTaskDetailSheet.swift",
+            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
+            "Cadence/macOS/Sheets/CreateGoalSheet.swift"
+        ] {
+            let source = try CadenceSourceScan.strippingComments(CadenceSourceScan.sourceFile(path))
+            #expect(
+                source.contains("CadenceTaskComposerSupport.selection(fromToken:"),
+                "\(path) no longer reads the shared token mapping"
+            )
+        }
+
+        // And the quick-create tile names its list through the shared resolver, whose `displayName`
+        // trims before it falls back — the one place the old copy genuinely differed.
+        let quickCreate = try CadenceSourceScan.strippingComments(
+            CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        )
+        #expect(quickCreate.contains("CadenceTaskComposerSupport.containerName(for: containerChoice"))
+        #expect(CadenceSourceScan.matchCount("defaultAreaName|defaultProjectName", in: quickCreate) == 0)
+    }
+
+    /// **The two sweeps above read the tree through different readers, and that has to stay true.**
+    /// `codeOnly` blanks string literals as well as comments, so the token sweep's `hasPrefix("area:")`
+    /// needle can never match there — it would be permanently, silently green. `strippingComments`
+    /// keeps literals, so the getter sweep would count this suite's own fixtures as code. Each sweep
+    /// takes the reader it needs; this pins that the pairing cannot collapse into one.
+    @Test func theTwoContainerSweepsReadTheTreeThroughGenuinelyDifferentReaders() throws {
+        let raw = try CadenceSourceScan.sourceFile(Self.composerSupportPath)
+        let literalsKept = CadenceSourceScan.strippingComments(raw)
+        let literalsBlanked = CadenceSourceScan.codeOnly(raw)
+
+        #expect(literalsKept.contains("hasPrefix(\"area:\")"))
+        #expect(!literalsBlanked.contains("hasPrefix(\"area:\")"))
+        #expect(literalsBlanked.contains("hasPrefix("))
+    }
 }

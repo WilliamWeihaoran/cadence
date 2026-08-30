@@ -161,4 +161,29 @@ nonisolated enum CadenceEmptyStateCopy {
     static func isNarrowedToEmpty(searchText: String, filterNarrows: Bool) -> Bool {
         filterNarrows || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+
+    /// **The Goals list and the Goals roadmap are one page in two view modes, so they get one
+    /// title** (T-540).
+    ///
+    /// `GoalsViewModeToggle` switches between them without changing the page's identity, and both
+    /// were spelling this pair out at their own call site. They agreed exactly at the point this
+    /// was written — which is luck rather than discipline: the sweep that exists to catch a
+    /// sentence spelled twice **could not see either of them**, because both are written as
+    /// `isNarrowedToEmpty ? … : …` and its reader matched only a literal placed directly after
+    /// `message:`. Widening that reader is what surfaced this pair, and these are the only two
+    /// duplicates it found.
+    ///
+    /// A function taking the predicate, in the shape `activeListsSubtitle(hasArchived:)` and
+    /// `isNarrowedToEmpty` already use, so a call site cannot take one half of the pair without
+    /// answering the question that decides which half is true.
+    ///
+    /// **The two subtitles stay at their call sites, and that is not an oversight.** They name
+    /// different controls because the two modes carry different ones: the list has a visible
+    /// search field beside a status picker ("Try a different search or status."), the roadmap has
+    /// a single popover button labelled *Filter* holding both ("Try a different filter."). Same
+    /// reasoning as `savedLinksSubtitle` naming no control at all — copy converges when the
+    /// surfaces really do show the same thing, not because two sentences sit next to each other.
+    static func goalsTitle(isNarrowed: Bool) -> String {
+        isNarrowed ? "No matching goals" : "No goals yet"
+    }
 }

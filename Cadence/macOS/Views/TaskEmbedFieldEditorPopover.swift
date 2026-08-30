@@ -42,7 +42,7 @@ struct TaskEmbedFieldEditorPopover: View {
         .background(Theme.surfaceElevated)
         .onAppear { resetDateState() }
         .confirmationDialog(
-            "Change repeating task?",
+            CadenceRecurrenceScopeCopy.taskScopeTitle,
             isPresented: Binding(
                 get: { pendingRecurrenceRule != nil },
                 set: { if !$0 { pendingRecurrenceRule = nil } }
@@ -59,7 +59,7 @@ struct TaskEmbedFieldEditorPopover: View {
                 pendingRecurrenceRule = nil
             }
         } message: {
-            Text("Choose whether this repeat change applies only here or to this task and future instances.")
+            Text(CadenceRecurrenceScopeCopy.taskScopeMessage)
         }
     }
 
@@ -241,9 +241,7 @@ struct TaskEmbedFieldEditorPopover: View {
     }
 
     private var currentContainerSelection: TaskContainerSelection {
-        if let area = task.area { return .area(area.id) }
-        if let project = task.project { return .project(project.id) }
-        return .inbox
+        CadenceTaskComposerSupport.container(of: task)
     }
 
     private var availableSections: [String] {

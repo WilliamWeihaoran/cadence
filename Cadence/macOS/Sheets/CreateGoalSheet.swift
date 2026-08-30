@@ -325,16 +325,18 @@ struct CreateGoalSheet: View {
         dismiss()
     }
 
+    /// The seed tag is the composer's container token, so it is read through the composer's own
+    /// mapping rather than re-spelled here. `selection(fromToken:)` answers `.inbox` for a
+    /// malformed id and `resolvedContainer` answers `nil` for a list that is not in the store —
+    /// which together are exactly the two ways the hand-rolled branch used to fall through to
+    /// attaching nothing.
     private func attachInitialList(to goal: Goal) {
-        if initialListTag.hasPrefix("area:"),
-           let id = UUID(uuidString: String(initialListTag.dropFirst(5))),
-           let area = areas.first(where: { $0.id == id }) {
-            modelContext.attachList(.area(area), to: goal)
-        } else if initialListTag.hasPrefix("project:"),
-                  let id = UUID(uuidString: String(initialListTag.dropFirst(8))),
-                  let project = projects.first(where: { $0.id == id }) {
-            modelContext.attachList(.project(project), to: goal)
-        }
+        guard let target = CadenceTaskComposerSupport.resolvedContainer(
+            for: CadenceTaskComposerSupport.selection(fromToken: initialListTag),
+            areas: areas,
+            projects: projects
+        ) else { return }
+        modelContext.attachList(target, to: goal)
     }
 }
 

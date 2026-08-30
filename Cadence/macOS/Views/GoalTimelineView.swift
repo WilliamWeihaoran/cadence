@@ -117,7 +117,7 @@ struct GoalTimelineView: View {
                     // The roadmap is handed `GoalsView`'s already-filtered groups, so it is empty
                     // under a narrowing `statusFilter` for the same reason the list is — and its
                     // filter popover holds both controls.
-                    message: isNarrowedToEmpty ? "No matching goals" : "No goals yet",
+                    message: CadenceEmptyStateCopy.goalsTitle(isNarrowed: isNarrowedToEmpty),
                     // T-525: this said "Create a goal, then set its date range.", and the second
                     // clause is not a requirement. `rows` is built from `groups` alone — every goal
                     // in them gets a rail row whatever its dates say, and an undated one draws a

@@ -45,14 +45,19 @@ struct iOSTaskDetailSheet: View {
         CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)
     }
 
+    /// The token this sheet holds, read through the one mapping that owns the prefix arithmetic.
+    /// `selection(fromToken:)` answers `.inbox` for anything it cannot parse — including a
+    /// well-formed prefix over a malformed id — which is what these two used to spell themselves.
+    private var containerChoice: TaskContainerSelection {
+        CadenceTaskComposerSupport.selection(fromToken: containerSelection)
+    }
+
     private var selectedAreaID: UUID? {
-        guard containerSelection.hasPrefix("area:") else { return nil }
-        return UUID(uuidString: String(containerSelection.dropFirst(5)))
+        CadenceTaskComposerSupport.selectedAreaID(containerChoice)
     }
 
     private var selectedProjectID: UUID? {
-        guard containerSelection.hasPrefix("project:") else { return nil }
-        return UUID(uuidString: String(containerSelection.dropFirst(8)))
+        CadenceTaskComposerSupport.selectedProjectID(containerChoice)
     }
 
     private var selectedArea: Area? {
@@ -88,7 +93,7 @@ struct iOSTaskDetailSheet: View {
             // Shared with `iOSTaskRow`; see `iOSTaskDeleteFailureAlert`.
             .iOSTaskDeleteFailureAlert(isPresented: $deleteFailed)
             .confirmationDialog(
-                "Change repeating task?",
+                CadenceRecurrenceScopeCopy.taskScopeTitle,
                 isPresented: recurrenceScopeDialogPresentation,
                 titleVisibility: .visible
             ) {
@@ -102,7 +107,7 @@ struct iOSTaskDetailSheet: View {
                     pendingRecurrenceChange = nil
                 }
             } message: {
-                Text("Choose whether this repeat change applies only here or to this task and future instances.")
+                Text(CadenceRecurrenceScopeCopy.taskScopeMessage)
             }
             .iOSMarkdownReferenceSheets(
                 selectedNote: $selectedReferenceNote,

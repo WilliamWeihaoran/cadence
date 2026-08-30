@@ -1,4 +1,5 @@
 import CloudKit
+import EventKit
 import Foundation
 import Testing
 @testable import Cadence
@@ -139,6 +140,190 @@ struct CadenceRecurrenceEndSurfaceTests {
                 "\(path) has its own \"Until <date>\" wording again"
             )
         }
+    }
+
+    // MARK: - T-524 — the two scope dialogs, worded once
+
+    /// **The words of the "which occurrences?" dialogs, by value.**
+    ///
+    /// Six call sites, four sentences, and — before this — six spellings. Two dialogs each raised
+    /// from three places: the calendar one from the Mac's timeline block, the Mac's block editor
+    /// popover and the phone's event sheet; the task one from the Mac's embed popover, the phone's
+    /// detail sheet and the phone's swipe tray.
+    ///
+    /// Asserted by value rather than only by call-site count, for the reason
+    /// `CadenceEmptyStateAuditTests.theConvergedEmptyStateCopySaysTheTrueHalfOfEachPair` gives: a
+    /// "convergence" that quietly adopts the wrong side of a drift still passes a count. Measured
+    /// at the point of the change the six agreed exactly, so these are the words all six shipped.
+    @Test func bothRecurrenceScopeDialogsKeepTheirConvergedWording() {
+        #expect(CadenceRecurrenceScopeCopy.eventScopeTitle == "Change recurring event?")
+        #expect(
+            CadenceRecurrenceScopeCopy.eventScopeMessage
+                == "Choose whether this calendar change applies only to this occurrence or to this and future events."
+        )
+        #expect(CadenceRecurrenceScopeCopy.taskScopeTitle == "Change repeating task?")
+        #expect(
+            CadenceRecurrenceScopeCopy.taskScopeMessage
+                == "Choose whether this repeat change applies only here or to this task and future instances."
+        )
+
+        // The two are not interchangeable: an event has occurrences, a task has instances, and
+        // `CadenceTaskRecurrenceWorkflowSupport` spawns the next one rather than owning a series.
+        #expect(CadenceRecurrenceScopeCopy.eventScopeMessage != CadenceRecurrenceScopeCopy.taskScopeMessage)
+        for sentence in [
+            CadenceRecurrenceScopeCopy.eventScopeTitle,
+            CadenceRecurrenceScopeCopy.taskScopeTitle,
+        ] {
+            #expect(sentence.hasSuffix("?"), "\"\(sentence)\" titles a dialog but asks nothing")
+        }
+    }
+
+    /// Every one of the six raises the dialog through the shared constants.
+    ///
+    /// Exact counts per file, so reverting *one* site back to a literal is red — the failure a
+    /// `contains` assertion cannot see.
+    ///
+    /// **Not `expectCallSites`, and the difference is not cosmetic.** That helper counts
+    /// `"\(name)("` — it is written for functions, and a constant is read without parentheses, so
+    /// it counts zero for every file and the test is red on a correct tree. It was, on the first
+    /// run: 12 issues, all `(actual → 0) == (expected → 1)`. Left the other way round — a helper
+    /// that matched loosely — it would have been green on every tree, which is the quieter half of
+    /// the same mistake.
+    @Test func allSixRecurrenceScopeDialogsReadTheSharedWording() throws {
+        try expectConstantReads(
+            of: "CadenceRecurrenceScopeCopy.eventScopeTitle",
+            at: [
+                "Cadence/iOS/iOSCalendarEventEditSheet.swift": 1,
+                "Cadence/macOS/Views/TimelineEventBlock.swift": 1,
+                "Cadence/macOS/Views/TimelineEventBlockSupportViews.swift": 1,
+            ]
+        )
+        try expectConstantReads(
+            of: "CadenceRecurrenceScopeCopy.eventScopeMessage",
+            at: [
+                "Cadence/iOS/iOSCalendarEventEditSheet.swift": 1,
+                "Cadence/macOS/Views/TimelineEventBlock.swift": 1,
+                "Cadence/macOS/Views/TimelineEventBlockSupportViews.swift": 1,
+            ]
+        )
+        try expectConstantReads(
+            of: "CadenceRecurrenceScopeCopy.taskScopeTitle",
+            at: [
+                "Cadence/iOS/iOSTaskDetailSheet.swift": 1,
+                "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
+                "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": 1,
+            ]
+        )
+        try expectConstantReads(
+            of: "CadenceRecurrenceScopeCopy.taskScopeMessage",
+            at: [
+                "Cadence/iOS/iOSTaskDetailSheet.swift": 1,
+                "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
+                "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": 1,
+            ]
+        )
+    }
+
+    /// Nothing outside the declaration types any of the four sentences again.
+    ///
+    /// The absence half, over the whole tree rather than the six files above: a seventh surface
+    /// raising this dialog with its own words is exactly the defect the convergence removed, and a
+    /// per-file check finds only the files somebody remembered to list. Comments are stripped, so
+    /// the design note in `CadenceEventNoteSupport` that quotes the title does not count as a
+    /// seventh spelling.
+    @Test func noSurfaceTypesARecurrenceScopeSentenceOutAgain() throws {
+        let declaration = "Cadence/Shared/CadenceRecurrenceScopeCopy.swift"
+        let files = try swiftFiles(under: "Cadence")
+        #expect(files.count > 300, "the scan found \(files.count) files and cannot be doing its job")
+        #expect(files.contains(declaration), "the scan never reaches the declaration itself")
+
+        for sentence in [
+            CadenceRecurrenceScopeCopy.eventScopeTitle,
+            CadenceRecurrenceScopeCopy.eventScopeMessage,
+            CadenceRecurrenceScopeCopy.taskScopeTitle,
+            CadenceRecurrenceScopeCopy.taskScopeMessage,
+        ] {
+            var typedIn: [String] = []
+            for path in files {
+                if try strippingComments(sourceFile(path)).contains("\"\(sentence)\"") {
+                    typedIn.append(path)
+                }
+            }
+            #expect(
+                typedIn == [declaration],
+                "\"\(sentence)\" is typed in \(typedIn.sorted()); it should be declared once and read"
+            )
+        }
+
+        // Non-vacuity with a real edge: the reader finds the declaration's own literals, and finds
+        // nothing for a sentence no file contains.
+        #expect(try strippingComments(sourceFile(declaration)).contains("nonisolated enum CadenceRecurrenceScopeCopy"))
+        #expect(try filesMentioning("thisRecurrenceSentenceIsInNoSourceFile").isEmpty)
+    }
+
+    /// **The buttons stay with the enum that decides what they do.**
+    ///
+    /// The obvious next step after converging the dialog's prose is to move its button labels too,
+    /// and it would be wrong: `CalendarRecurrenceEditScope.label` sits beside the `EKSpan` it
+    /// resolves to, and `CadenceTaskRecurrenceEditScope.label` beside the series semantics — so a
+    /// button's words and its effect come from one value and cannot disagree. This says so, so a
+    /// later pass has to argue with a test rather than with a comment.
+    @Test func theRecurrenceScopeButtonsStayOnTheEnumsAndNotInTheCopyHolder() throws {
+        #expect(CadenceTaskRecurrenceEditScope.thisTask.label == "Only This Task")
+        #expect(CadenceTaskRecurrenceEditScope.thisAndFuture.label == "This And Future Tasks")
+
+        let copy = try strippingComments(sourceFile("Cadence/Shared/CadenceRecurrenceScopeCopy.swift"))
+        for label in CadenceTaskRecurrenceEditScope.allCases.map(\.label) {
+            #expect(
+                copy.contains("\"\(label)\"") == false,
+                "\(label) moved off the scope enum into the copy holder"
+            )
+        }
+
+        // The calendar enum is macOS source, which this target compiles, so it is referenced.
+        #expect(CalendarRecurrenceEditScope.thisOccurrence.label == "Only This Event")
+        #expect(CalendarRecurrenceEditScope.futureOccurrences.label == "This And Future Events")
+        for label in CalendarRecurrenceEditScope.allCases.map(\.label) {
+            #expect(copy.contains("\"\(label)\"") == false, "\(label) moved into the copy holder")
+        }
+    }
+
+    /// **The phone's private copy of the calendar scope enum still says the same two things.**
+    ///
+    /// Found while converging the dialog around it, and reported rather than assumed:
+    /// `CalendarRecurrenceEditScope` is inside `CalendarManager.swift`, which is one whole
+    /// `#if os(macOS)`, so `iOSCalendarEventEditSheet` declares its own
+    /// `iOSCalendarRecurrenceEditScope` — the same two cases, the same two `rawValue`s, the same
+    /// two labels and the same two `EKSpan`s, byte for byte. **Measured at the point of this
+    /// change: the two had not drifted.** Nothing held them together, though, and that is exactly
+    /// the state [[T-200]] found the *task* scope enums in — `TaskWorkflowService` had its own
+    /// two-case copy with byte-identical labels, and the fix was one type plus a test on the
+    /// labels. This is the same shape one surface over, minus the merge: the enums cannot be
+    /// merged while the macOS one is fenced, so the labels get the test.
+    ///
+    /// The expected words are read off the macOS enum rather than typed here, so renaming a scope
+    /// re-points this check instead of silently emptying it.
+    @Test func thePhonesPrivateCalendarScopeEnumMatchesTheMacOne() throws {
+        let sheet = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarEventEditSheet.swift"))
+        #expect(
+            sheet.contains("private enum iOSCalendarRecurrenceEditScope"),
+            "non-vacuity: the phone's private scope enum is not in this file"
+        )
+
+        for scope in CalendarRecurrenceEditScope.allCases {
+            #expect(
+                sheet.contains("case .\(scope.rawValue): return \"\(scope.label)\""),
+                "the phone's \(scope.rawValue) button no longer says \"\(scope.label)\""
+            )
+        }
+
+        // And the span each case resolves to, which is what makes the labels true rather than
+        // merely equal: a phone whose "Only This Event" wrote `.futureEvents` would pass a
+        // label-only check while destroying the rest of somebody's series.
+        #expect(sheet.contains("case .thisOccurrence: return .thisEvent"))
+        #expect(sheet.contains("case .futureOccurrences: return .futureEvents"))
+        #expect(CalendarRecurrenceEditScope.thisOccurrence.eventSpan == .thisEvent)
+        #expect(CalendarRecurrenceEditScope.futureOccurrences.eventSpan == .futureEvents)
     }
 
     // MARK: - The shared presentation type
@@ -502,6 +687,29 @@ private func expectCallSites(
         #expect(
             actual == expected,
             "\(path) calls \(name) \(actual) times, expected \(expected)",
+            sourceLocation: sourceLocation
+        )
+    }
+}
+
+/// Fails unless `name` is **read** exactly `count` times in each listed file.
+///
+/// `expectCallSites` appends a `(` to its needle, which is right for a function and wrong for a
+/// constant — it counts zero everywhere and reads as six reverted call sites. This one bounds the
+/// needle on identifier characters instead, so `eventScopeTitle` does not also match a
+/// hypothetical `eventScopeTitleShort`.
+private func expectConstantReads(
+    of name: String,
+    at readers: [String: Int],
+    sourceLocation: SourceLocation = #_sourceLocation
+) throws {
+    let pattern = "(?<![A-Za-z0-9_])\(NSRegularExpression.escapedPattern(for: name))(?![A-Za-z0-9_])"
+    for (path, expected) in readers {
+        let code = try strippingComments(sourceFile(path))
+        let actual = CadenceSourceScan.matchCount(pattern, in: code)
+        #expect(
+            actual == expected,
+            "\(path) reads \(name) \(actual) times, expected \(expected)",
             sourceLocation: sourceLocation
         )
     }

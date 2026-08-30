@@ -84,7 +84,7 @@ struct CalendarEventEditPopover: View {
             }
         }
         .confirmationDialog(
-            "Change recurring event?",
+            CadenceRecurrenceScopeCopy.eventScopeTitle,
             isPresented: Binding(
                 get: { pendingAction != nil },
                 set: { if !$0 { pendingAction = nil } }
@@ -101,7 +101,7 @@ struct CalendarEventEditPopover: View {
                 pendingAction = nil
             }
         } message: {
-            Text("Choose whether this calendar change applies only to this occurrence or to this and future events.")
+            Text(CadenceRecurrenceScopeCopy.eventScopeMessage)
         }
     }
 

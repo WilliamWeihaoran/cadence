@@ -20,7 +20,10 @@ enum CadenceEmptyStateAudit {
     /// `CadenceDeletedSelectionGuardTests` records as deliberate.
     static let componentNames = ["EmptyStateView(", "iOSEmptyPanel("]
 
-    private static let argumentPattern = "(?:message|title|subtitle)\\s*:\\s*\"([^\"\\\\\\n]*)\""
+    /// The three argument labels an empty state's words arrive under.
+    private static let argumentLabels = ["message", "title", "subtitle"]
+
+    private static let literalPattern = "\"([^\"\\\\\\n]*)\""
 
     /// The text between the parentheses of each empty-state call, brace-matched over the call's own
     /// `(`…`)` so a later call's arguments cannot leak into an earlier one's segment.
@@ -63,19 +66,147 @@ enum CadenceEmptyStateAudit {
         return segments
     }
 
-    /// Every hand-spelled empty-state literal in `source`, in call order.
+    /// The **whole argument expression** written under each `message:` / `title:` / `subtitle:`
+    /// label in one call segment, in source order.
+    ///
+    /// **This is T-540's fix, and the reason it is an expression rather than a literal.** The
+    /// reader used to be one regex — `(?:message|title|subtitle)\s*:\s*"…"` — which matches a
+    /// literal placed *directly* after the colon and nothing else. Every filter-aware empty state
+    /// in the app is written the other way:
+    ///
+    /// ```swift
+    /// message: isNarrowedToEmpty ? "No matching goals" : "No goals yet",
+    /// ```
+    ///
+    /// so the copy that distinguishes "you have nothing" from "your filter matched nothing" — the
+    /// exact distinction the second half of this suite exists to enforce — was invisible to the
+    /// first half of it. `"No goals yet"` and `"No matching goals"` were spelled in both
+    /// `GoalsView` and `GoalTimelineView` while the duplicate sweep reported the tree clean.
+    ///
+    /// The expression ends at the first `,` written at the argument's own bracket depth, or at the
+    /// bracket that closes the call. Depth counts `(`, `[` and `{` alike — a subtitle built by a
+    /// closure or a subscript is still one argument — and literals are skipped while counting, so
+    /// a sentence containing a comma or a bracket cannot end its own argument early.
+    ///
+    /// The label is read at the **top level of the call only**, which is stricter than the regex
+    /// this replaces. That matters now in a way it did not then: the old reader's worst case for a
+    /// wrong match was one wrong sentence, and this one's is everything up to the next comma, so
+    /// `icon: symbol(for: .empty, title: "unused")` must not be read as a title. Measured over
+    /// `Cadence/` before the change: the top-level rule loses none of the 11 literals the regex
+    /// found, and adds 12 more.
+    static func argumentExpressions(in segment: String) -> [String] {
+        let characters = Array(segment)
+        var expressions: [String] = []
+        var index = 0
+        var depth = 0
+        while index < characters.count {
+            let character = characters[index]
+            if character == "\"" {
+                index = endOfLiteral(from: index, in: characters)
+                continue
+            }
+            if character == "(" || character == "[" || character == "{" {
+                depth += 1
+                index += 1
+                continue
+            }
+            if character == ")" || character == "]" || character == "}" {
+                depth -= 1
+                index += 1
+                continue
+            }
+            if depth == 0, let afterColon = endOfArgumentLabel(at: index, in: characters) {
+                let end = endOfArgument(from: afterColon, in: characters)
+                expressions.append(String(characters[afterColon..<end]))
+                index = afterColon
+                continue
+            }
+            index += 1
+        }
+        return expressions
+    }
+
+    /// Every hand-spelled empty-state literal in `source`, in call order — including the ones
+    /// behind a conditional. See `argumentExpressions(in:)`.
     static func literals(in source: String) -> [String] {
-        guard let regex = try? NSRegularExpression(pattern: argumentPattern) else { return [] }
+        guard let regex = try? NSRegularExpression(pattern: literalPattern) else { return [] }
         var found: [String] = []
         for segment in callSegments(in: source) {
-            let range = NSRange(segment.startIndex..., in: segment)
-            for match in regex.matches(in: segment, range: range) {
-                guard let captured = Range(match.range(at: 1), in: segment) else { continue }
-                let text = String(segment[captured])
-                if !text.trimmingCharacters(in: .whitespaces).isEmpty { found.append(text) }
+            for expression in argumentExpressions(in: segment) {
+                let range = NSRange(expression.startIndex..., in: expression)
+                for match in regex.matches(in: expression, range: range) {
+                    guard let captured = Range(match.range(at: 1), in: expression) else { continue }
+                    let text = String(expression[captured])
+                    if !text.trimmingCharacters(in: .whitespaces).isEmpty { found.append(text) }
+                }
             }
         }
         return found
+    }
+
+    /// The index just past the closing quote of the literal that opens at `start`.
+    private static func endOfLiteral(from start: Int, in characters: [Character]) -> Int {
+        var index = start + 1
+        while index < characters.count {
+            let character = characters[index]
+            if character == "\\" {
+                index += 2
+                continue
+            }
+            if character == "\"" { return index + 1 }
+            if character.isNewline { return index }
+            index += 1
+        }
+        return characters.count
+    }
+
+    /// The index just past the `:` when one of the three labels begins at `start`, else `nil`.
+    ///
+    /// The character before the label must not be able to continue an identifier, so
+    /// `kind.noMatchTitle:` and `emptyTitle:` are not read as `title:`. The old regex had no such
+    /// guard and did not need one — it is case-sensitive, and every such member in the tree
+    /// capitalises the word — but the widened reader hands back a whole expression rather than one
+    /// literal, so a wrong match now harvests more than a wrong sentence.
+    private static func endOfArgumentLabel(at start: Int, in characters: [Character]) -> Int? {
+        if start > 0 {
+            let previous = characters[start - 1]
+            if previous.isLetter || previous.isNumber || previous == "_" || previous == "." {
+                return nil
+            }
+        }
+        for label in argumentLabels {
+            let end = start + label.count
+            guard end <= characters.count, String(characters[start..<end]) == label else { continue }
+            var index = end
+            while index < characters.count, characters[index].isWhitespace { index += 1 }
+            guard index < characters.count, characters[index] == ":" else { continue }
+            return index + 1
+        }
+        return nil
+    }
+
+    /// The end of the argument that starts at `start`: the first top-level `,`, or the bracket
+    /// that closes the call around it.
+    private static func endOfArgument(from start: Int, in characters: [Character]) -> Int {
+        var index = start
+        var depth = 0
+        while index < characters.count {
+            let character = characters[index]
+            if character == "\"" {
+                index = endOfLiteral(from: index, in: characters)
+                continue
+            }
+            if character == "(" || character == "[" || character == "{" {
+                depth += 1
+            } else if character == ")" || character == "]" || character == "}" {
+                if depth == 0 { return index }
+                depth -= 1
+            } else if character == ",", depth == 0 {
+                return index
+            }
+            index += 1
+        }
+        return characters.count
     }
 
     /// String literals, comments already stripped. Used by the touch-verb rule so an identifier
@@ -198,6 +329,151 @@ struct CadenceEmptyStateAuditTests {
         #expect(CadenceEmptyStateAudit.literals(in: awkward) == ["Nothing (yet)", "Try again."])
 
         #expect(CadenceEmptyStateAudit.literals(in: "Text(\"Not an empty state\")").isEmpty)
+    }
+
+    // MARK: T-540 — the copy the reader could not see
+
+    /// **Both branches of a conditional argument are copy, and the reader now reads both.**
+    ///
+    /// The blind spot this closes: the old reader was one regex matching a literal placed
+    /// *directly* after `message:`, so `message: narrowed ? "A" : "B"` harvested nothing at all —
+    /// and every filter-aware empty state in the app is written in exactly that shape. The
+    /// duplicate sweep therefore reported the tree clean while `"No goals yet"` and
+    /// `"No matching goals"` were spelled in two files each.
+    ///
+    /// The fixtures are literals here rather than repo files, per `CadenceScanInstrument`'s rule:
+    /// one read out of the tree can be retuned by the same edit that breaks the rule.
+    @Test func theEmptyStateReaderSeesCopyBehindAConditionalBranch() {
+        let branched = """
+        EmptyStateView(
+            message: isNarrowedToEmpty ? "No matching goals" : "No goals yet",
+            subtitle: isNarrowedToEmpty
+                ? "Try a different filter."
+                : "Create a goal with New Goal.",
+            icon: "flag.fill"
+        )
+        """
+        #expect(
+            CadenceEmptyStateAudit.literals(in: branched) == [
+                "No matching goals",
+                "No goals yet",
+                "Try a different filter.",
+                "Create a goal with New Goal.",
+            ]
+        )
+
+        // A nested conditional is still one argument, and the argument still ends at its comma:
+        // the icon below is not copy and must not be harvested as any.
+        let nested = """
+        iOSEmptyPanel(
+            title: searching ? (matched ? "No matches" : "No results") : "Nothing yet",
+            icon: "tray"
+        )
+        """
+        #expect(
+            CadenceEmptyStateAudit.literals(in: nested) == ["No matches", "No results", "Nothing yet"]
+        )
+
+        // And the direct form still reads exactly as it did — this is a widening, not a rewrite.
+        #expect(
+            CadenceEmptyStateAudit.literals(in: "EmptyStateView(message: \"Only this\", icon: \"tray\")")
+                == ["Only this"]
+        )
+    }
+
+    /// The widened reader stays scoped to the *label*, not to the word.
+    ///
+    /// Handing back a whole expression is what makes this matter: under the old regex a wrong
+    /// match cost one wrong sentence, and under this one it costs everything up to the next comma.
+    /// `kind.noMatchTitle` and a member called `emptyTitle` are both live in
+    /// `iOSMarkdownAccessoryViews`, so a reader that matched `title:` inside an identifier would
+    /// harvest from the file this suite already reads.
+    @Test func theWidenedEmptyStateReaderDoesNotMatchALabelInsideAnIdentifier() throws {
+        let members = """
+        EmptyStateView(
+            message: hasNothingToOffer ? kind.emptyTitle : kind.noMatchTitle,
+            subtitle: kind.noMatchSubtitle,
+            icon: "tray"
+        )
+        """
+        #expect(CadenceEmptyStateAudit.literals(in: members).isEmpty)
+
+        // The argument expressions are found, though — the call is read, it simply holds no copy.
+        let segment = try #require(CadenceEmptyStateAudit.callSegments(in: members).first)
+        #expect(CadenceEmptyStateAudit.argumentExpressions(in: segment).count == 2)
+
+        // A `title:` belonging to a nested call is that call's argument, not this one's.
+        let nestedLabel = """
+        EmptyStateView(
+            message: "Nothing here",
+            icon: symbol(for: .empty, title: "unused"),
+            subtitle: "Add one."
+        )
+        """
+        #expect(CadenceEmptyStateAudit.literals(in: nestedLabel) == ["Nothing here", "Add one."])
+    }
+
+    /// **The widening is load-bearing on the tree, not only on its fixtures.**
+    ///
+    /// `HabitsView` is the one filter-aware desktop page whose copy did *not* turn out to be
+    /// duplicated, so it stays hand-spelled — which makes it the standing witness that this reader
+    /// still reaches conditional copy in real source. Narrow the reader back and this file reads
+    /// as an empty state with no words in it.
+    @Test func theDuplicateSweepReachesAFilterAwarePageInTheTree() throws {
+        let code = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/HabitsView.swift")
+        )
+        #expect(code.contains("struct HabitsView"), "non-vacuity: wrong file")
+
+        let found = CadenceEmptyStateAudit.literals(in: code)
+        #expect(found.contains("No matching habits"), "the reader cannot see a narrowed title again")
+        #expect(found.contains("No habits yet"), "the reader cannot see a first-run title again")
+        #expect(found.contains("Try a different search or filter."))
+
+        // The literals really are behind a branch, so the claim above is about the reader rather
+        // than about a file that happens to spell them plainly.
+        #expect(code.contains("message: isNarrowedToEmpty ? \"No matching habits\" : \"No habits yet\""))
+    }
+
+    /// **The two Goals view modes share one title.**
+    ///
+    /// The only duplicate the widened reader found, converged. It had *not* drifted — both files
+    /// spelled the same two sentences — which is the whole point: this pair was one edit away from
+    /// the drift that `savedLinksSubtitle` and `meetingNotesSubtitle` were found already in, and
+    /// nothing in the app could have reported it.
+    @Test func theTwoGoalsViewModesShareOneTitleAndKeepTheirOwnSubtitles() throws {
+        #expect(CadenceEmptyStateCopy.goalsTitle(isNarrowed: false) == "No goals yet")
+        #expect(CadenceEmptyStateCopy.goalsTitle(isNarrowed: true) == "No matching goals")
+
+        for path in [
+            "Cadence/macOS/Views/GoalsView.swift",
+            "Cadence/macOS/Views/GoalTimelineView.swift",
+        ] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            let empty = try #require(
+                CadenceEmptyStateAudit.callSegments(in: code).first,
+                "\(path) no longer draws an empty state"
+            )
+            #expect(
+                empty.contains("CadenceEmptyStateCopy.goalsTitle(isNarrowed: isNarrowedToEmpty)"),
+                "\(path) does not read the shared title, or does not pass it the page's own predicate"
+            )
+            #expect(
+                empty.contains("\"No goals yet\"") == false && empty.contains("\"No matching goals\"") == false,
+                "\(path) spells the goals title at its call site again"
+            )
+        }
+
+        // The subtitles stay apart, because the two modes carry different controls. Asserted as
+        // values so "converge the rest of it" is a decision somebody has to make on purpose.
+        let list = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalsView.swift")
+        )
+        let roadmap = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalTimelineView.swift")
+        )
+        #expect(list.contains("\"Try a different search or status.\""))
+        #expect(roadmap.contains("\"Try a different filter.\""))
     }
 
     // MARK: Copy that names a control that is there

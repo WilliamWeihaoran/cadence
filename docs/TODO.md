@@ -45,11 +45,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-462] *(narrowed 2026-08-30, measured by replaying all 210 revisions of the file: the gap is **200, not 284**. All 200 are recoverable verbatim, but that is ~33k tokens onto a file whose purpose is to be cheap to search — and **87.5% were removed by bookkeeping commits that changed no Swift**, so each entry's SHA would need its own bisect: 200 investigations for a file half of which would be blank. **Do not backfill.** The cheap half is done — 32 entries reading `(title not recovered)` were unsearchable and all 32 titles were recovered from the file's own revisions (the earlier reconstruction had searched commit *messages*), and the header count, which had never been true at any revision, now reads the real 177. Residue: [[T-501]].)* **`docs/TODO_DONE.md` had no `T-4xx` entry at all until `ca06ad1`+1.** Eighty-five tickets
-  closed in this session were removed from Open and never archived, and the same gap runs back to
-  T-01 — **284 in total**. Today's 85 are now reconstructed from git history; the older 199 are not.
-  Either backfill them the same way or state that the archive begins at this session and stop
-  implying otherwise.
 
 
 
@@ -536,12 +531,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   by any script — one of the fourteen is the user's own Xcode entry**, and telling them apart is a
   judgement no cleanup script should make unattended.
 
-- [T-518] **The MCP plugin runner rebuilds into a path it may be executing from.**
-  `plugins/cadence-mcp/scripts/run-cadence-mcp.sh` defaults `DERIVED_DATA_PATH` to the repo-local
-  `.codex-build` and then `exec`s `$DD/Build/Products/Debug/CadenceMCPServer`. A rebuild into that path
-  while another plugin process is running the binary is [[T-86]] for the MCP server. **The warm reuse
-  looks deliberate** — the script's own comment says so — so this is a flag for a decision rather than
-  a defect to fix blind.
 
 
 
@@ -549,13 +538,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-524] **65 string literals are duplicated across two or more files under `Cadence/`** — measured,
-  beyond empty states. The Settings sections duplicate ~15 between
-  `iOSCalendarSettingsSection`/`SettingsListManagementSections` and
-  `iOSNotificationsSettingsSection`/`SettingsNotificationsSection`, and the recurrence/calendar-scope
-  alerts duplicate 4 across three files each. **The [[T-374]] sweep cannot see any of them, because no
-  constant exists yet** — that sweep catches a *shared constant re-typed*, not copy that never became
-  one. Same convergence job as [[T-528]] at roughly 7x the size.
 
 
 
@@ -589,12 +571,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   are `-destination 'platform=macOS'`. The iOS minimum (26.2) is stated in exactly one prose line
   (`app-review-notes.md:8`) and pinned by no test. Worth fixing whichever way [[T-510]] is decided.
 
-- [T-536] **Two iOS sheets still hand-spell the container token arithmetic.**
-  `iOSCalendarQuickCreateSheet.swift:53-65,417-422` and `iOSTaskDetailSheet.swift:48-65` re-derive
-  `dropFirst(5)`/`dropFirst(8)` and the untitled-name fallback instead of
-  `CadenceTaskComposerSupport.selection(fromToken:)` / `containerName(for:areas:projects:)`. **Not a
-  defect** — both already resolve against unfiltered arrays — but it is the [[T-374]] near-copy those
-  helpers now exist to remove, and the detail sheet's private members even share the helpers' names.
 
 
 
@@ -613,12 +589,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the drift under a change that looks like cleanup. The real fix is "Task title". It is currently the
   first entry in `cadenceUndeclaredPlaceholderLabels`; **deleting that entry is part of the fix.**
 
-- [T-540] **The duplicate-copy audit cannot see any filter-aware empty state.** Found by [[T-522]]'s own
-  agent. `CadenceEmptyStateAuditTests`' regex matches a literal placed **directly** after
-  `message:`/`title:`/`subtitle:` — so copy behind a `?:` branch is invisible, **and every filter-aware
-  empty state in the app is written in exactly that shape.** Two live examples: `"No goals yet"` and
-  `"No matching goals"` are spelled in both `GoalsView.swift` and `GoalTimelineView.swift`. Same family as
-  the vacuous detectors this session keeps finding, and inside [[T-524]]'s scope.
 
 - [T-541] **A Goals detail pane can show a goal that has no row beside it.** `iOSFeatureViews.swift` gives
   `listPane` `count: activeGoals.count` where `activeGoals` filters `status != .done`, but `selected` ends
@@ -628,12 +598,64 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   fallback's unfiltered tail is load-bearing for the deleted-out-from-under-you case the code comments
   describe, so choosing between them is a decision.
 
-- [T-542] **Three exact near-copies of `CadenceTaskComposerSupport.container(of:)` remain.**
-  `TasksPanelComponents.swift:371-373`, `SchedulePanelComponents.swift:35-37`,
-  `TaskEmbedFieldEditorPopover.swift:244-246` each spell the same three-line task-to-selection getter.
-  [[T-534]] added the shared accessor and used it at the new site only, to keep that diff reviewable.
-  **Not a defect** — all three are correct — but it is the [[T-374]] near-copy the helper now exists to
-  remove, same family as [[T-536]].
+
+
+- [T-543] **Settings > Calendar's access card says two things and draws two glyphs.** macOS shows an
+  **amber warning triangle even in the not-yet-asked state** with "Allow Cadence to create and sync
+  calendar events."; iOS shows a neutral blue `calendar.badge.plus` with "Allow Cadence to show events and
+  connect Apple calendars to areas or projects." **iOS is right on the glyph** — "nobody has been asked
+  yet" is not an error state. The subtitle is a genuine copy decision (both sentences are true of both
+  platforms), which is why [[T-524]] converged the identical literals around it and left this pair alone.
+  Referenced from `CadenceSettingsSectionCopy.accessRequiredTitle`.
+
+- [T-544] **The macOS work-hours subtitle names the wrong surface, twice.** It says "**Weekly calendar
+  views** gently highlight…" but the highlight is applied per **day-column**, and its two call sites are
+  `CalendarPageMonthSupportViews` **and `SchedulePanelShellViews`** — and the Schedule panel is not a
+  calendar view at all. iOS says "Calendar day columns", which is closer but not fully right either.
+  [[T-524]] pins the two subtitles as *still different* so a later pass cannot collapse them silently.
+  Referenced from `CadenceSettingsSectionCopy.workdayBoundaryTitle`.
+
+- [T-545] **macOS's empty-calendar row is a one-liner where iOS is two.** macOS: `"No Apple calendars
+  found."` (trailing period, no subtitle). iOS: `"No Apple calendars found"` plus a subtitle saying what
+  will happen. **iOS is right** — it tells the user what to do — but macOS cannot converge without a
+  two-line row, and its three sibling empty rows all share the one-line house style. A small design
+  decision, not a defect.
+
+- [T-546] **Six lifecycle section labels duplicated between the Settings trees.** `"Active Contexts"`,
+  `"Archived Contexts"`, `"Completed Areas"`, `"Archived Areas"`, `"Completed Projects"`,
+  `"Archived Projects"` — all byte-identical between `SettingsListManagementSections.swift` and
+  `iOSSettingsView.swift` / `iOSSettingsTemplateAndListSections.swift`. All clean conversions;
+  [[T-524]]'s agent left them **only** because a sibling agent might have owned those files.
+
+- [T-547] **`"Apple Calendar"` is one literal serving at least two concepts across 7 files.** Sometimes the
+  integration section's label, sometimes a fallback for `calendar.source?.title` / `event.calendar?.title`.
+  **Declaring it makes 7 offenders at once**, so this is a whole-app naming decision rather than a
+  de-duplication. Same shape for `"Allow Access"` (12 sites, and also `RemindersAccessAction.requestAccess.title`,
+  so converging couples the calendar permission button to the reminders one) and `"Open Settings"` (13).
+
+- [T-548] **The duplicate sweep covers 2 of the app's 5 empty-state components, and the other 3 have
+  drifted.** `componentNames` lists only `EmptyStateView(` and `iOSEmptyPanel(`;
+  `iOSFeatureEmptyState(`, `iOSFeatureEmptyDetail(` and `CadenceInlineEmpty(` are invisible. Measured:
+  adding them surfaces **2 more duplicates, and unlike [[T-540]]'s these have already drifted** —
+  `"No goals yet"` in 3 files (macOS *"Create a goal for an ongoing direction, then nest milestones inside
+  it."* vs iOS *"Create a direction, then nest milestones and habits underneath it."*) and `"No habits
+  yet"` in 2. macOS's Goals page **does** show habit counts under a goal, so its sentence is *incomplete
+  rather than false*. Choosing the true sentence per platform is a copy decision — **and
+  `theGoalsAndHabitsDetailPanesNeverNameAListWithNoItems` pins the iOS spelling at exactly one occurrence,
+  so any convergence must edit that test in the same change.**
+
+- [T-549] **`CalendarRecurrenceEditScope` cannot be shared while `CalendarManager.swift` is one
+  `#if os(macOS)`.** `iOSCalendarEventEditSheet` privately re-declares it — same cases, raw values, labels
+  and `EKSpan`s, byte for byte — and until [[T-524]] **nothing pinned either copy**, which is the state
+  [[T-200]] found the *task* scope enums in. The real fix is moving the enum to `Cadence/Shared/`, which
+  deletes the private copy outright; `thePhonesPrivateCalendarScopeEnumMatchesTheMacOne` holds the line
+  meanwhile and **should be deleted as part of that move**. Note the pin asserts the `EKSpan` mapping too,
+  not just the labels — equal words over a wrong span would **destroy a series** while passing a
+  label-only check.
+
+- [T-550] **Two redundant `emptyText:` arguments.** `CreateGoalSheet.swift:139` and
+  `HabitsFormSupportViews.swift:49` pass `emptyText: "No matching goals"`, which is identical to
+  `GoalPickerViews`' own parameter default. Behaviour-neutral removal, [[T-374]] family.
 
 
 ## Done
@@ -1612,6 +1634,54 @@ before filing**: this list has had the same ticket re-reported more than once.
   `EKEventStoreChanged` and only then reaches `canTrustLookupMisses`. Hoisting the guard above the fetch
   is one line.
   **Closed 2026-08-30, guard hoisted above the fetch. [[T-529]]'s `hasLoadedCalendars` reasoning untouched and the array overload still guards, so this is the early check rather than the only one. **Pinned as source order, not behaviour, and deliberately**: the fetch is `modelContext.fetch` and no fake can count it. The assertion is scoped to that overload's own body and was validated against unmodified source first. The mutation removing the guard kills **only** that test — all six neighbouring behaviour tests stay green, which is what shows the change moved *when* the question is asked and not what it answers.**
+
+- [T-462] *(narrowed 2026-08-30, measured by replaying all 210 revisions of the file: the gap is **200, not 284**. All 200 are recoverable verbatim, but that is ~33k tokens onto a file whose purpose is to be cheap to search — and **87.5% were removed by bookkeeping commits that changed no Swift**, so each entry's SHA would need its own bisect: 200 investigations for a file half of which would be blank. **Do not backfill.** The cheap half is done — 32 entries reading `(title not recovered)` were unsearchable and all 32 titles were recovered from the file's own revisions (the earlier reconstruction had searched commit *messages*), and the header count, which had never been true at any revision, now reads the real 177. Residue: [[T-501]].)* **`docs/TODO_DONE.md` had no `T-4xx` entry at all until `ca06ad1`+1.** Eighty-five tickets
+  closed in this session were removed from Open and never archived, and the same gap runs back to
+  T-01 — **284 in total**. Today's 85 are now reconstructed from git history; the older 199 are not.
+  Either backfill them the same way or state that the archive begins at this session and stop
+  implying otherwise.
+  **Closed 2026-08-31 — **the last residue was one sentence, and it is now in the file.** Everything else measured as genuinely done: the header count is truthfully 177, all 32 `(title not recovered)` placeholders are gone, and [[T-501]] fixed the five wrong SHAs. What remained was the ticket's *other* branch: the archive silently implies completeness. Measured coverage is a **hard cliff, not diffuse thinning** — 96% of T-300..399 is accounted for, against **10–13% of T-1..199**, with 211 unaccounted ids below T-300 and 39 above it. Yet the header instructs *"Search here before filing anything that sounds familiar"*, which below ~T-200 **cannot work**: a search returns nothing whether or not the ticket was closed — precisely the re-filing failure the header exists to prevent. The header now states where the archive begins and that a miss below ~T-200 is not evidence a ticket is new.**
+
+- [T-518] **The MCP plugin runner rebuilds into a path it may be executing from.**
+  `plugins/cadence-mcp/scripts/run-cadence-mcp.sh` defaults `DERIVED_DATA_PATH` to the repo-local
+  `.codex-build` and then `exec`s `$DD/Build/Products/Debug/CadenceMCPServer`. A rebuild into that path
+  while another plugin process is running the binary is [[T-86]] for the MCP server. **The warm reuse
+  looks deliberate** — the script's own comment says so — so this is a flag for a decision rather than
+  a defect to fix blind.
+  **Closed 2026-08-30 — **the premise does not reproduce, and the mechanism explains why.** `otool -L` shows the binary links only `/usr/lib` and `/System/Library`: the SPM dependencies are **statically linked** and there is no `.dylib` or `.framework` under `Build/Products/`, so the image is self-contained at `exec`. All three failure modes tested twice: **rebuild while a server is live** — the link *replaces the file* (inode changed) and the live process kept answering `tools/list` correctly; **`xcodebuild clean` under a live server** — the binary is deleted from disk and the process is entirely unaffected; **concurrent rebuilds into one path** — both exit 0, no `build.db` lock. **None of corrupt / fail / silently-stale.** This differs from [[T-86]] because the app is a `.app` bundle whose dyld loads frameworks and resources lazily from paths under `Build/Products/`; this target is one self-contained executable. Keep the warm reuse. Residual, real but not what the ticket feared: `set -euo pipefail` means a failed build exits before `exec`, so a broken binary is never run.**
+
+- [T-524] **65 string literals are duplicated across two or more files under `Cadence/`** — measured,
+  beyond empty states. The Settings sections duplicate ~15 between
+  `iOSCalendarSettingsSection`/`SettingsListManagementSections` and
+  `iOSNotificationsSettingsSection`/`SettingsNotificationsSection`, and the recurrence/calendar-scope
+  alerts duplicate 4 across three files each. **The [[T-374]] sweep cannot see any of them, because no
+  constant exists yet** — that sweep catches a *shared constant re-typed*, not copy that never became
+  one. Same convergence job as [[T-528]] at roughly 7x the size.
+  **Closed 2026-08-30 across two agents. **Settings half**: 13 literals converged into 13 constants across 5 view files, all now inside the [[T-374]] sweep's harvest — three of six mutation kills came from that sweep rather than the new tests. **Alerts half**: 4 recurrence/calendar-scope sentences, 6 call sites, one `CadenceRecurrenceScopeCopy`. **The divergence check found four drifts behind byte-identical literals**: the macOS connect menu passed its name to `.help` where iOS used `.accessibilityLabel` (fixed — an icon-only Menu named only by a tooltip is [[T-472]] two screens outside the sweep that guards it); the macOS access card draws an **amber warning triangle for the not-yet-asked state** where iOS draws a neutral glyph (iOS is right, filed); the macOS work-hours subtitle names "Weekly calendar views" when the highlight is per day-column **and also appears in the Schedule panel** (filed); and macOS's empty-calendar row has no subtitle against iOS's two-line row (filed). **Exclusions are as load-bearing as the conversions**: `"Apple Calendar"` is one literal for **at least two concepts** across 7 files, so declaring it would create 7 offenders at once. See [[T-543]]–[[T-547]].**
+
+- [T-536] **Two iOS sheets still hand-spell the container token arithmetic.**
+  `iOSCalendarQuickCreateSheet.swift:53-65,417-422` and `iOSTaskDetailSheet.swift:48-65` re-derive
+  `dropFirst(5)`/`dropFirst(8)` and the untitled-name fallback instead of
+  `CadenceTaskComposerSupport.selection(fromToken:)` / `containerName(for:areas:projects:)`. **Not a
+  defect** — both already resolve against unfiltered arrays — but it is the [[T-374]] near-copy those
+  helpers now exist to remove, and the detail sheet's private members even share the helpers' names.
+  **Closed 2026-08-30, **and the divergence check found one**. Two of the sites were equivalent, but `iOSCalendarQuickCreateSheet.containerTitle` tested `name.isEmpty` while the shared helper **trims first** — so a whitespace-only list name rendered as a *blank tile* there and "Untitled Area" on every other surface, and a padded name kept its padding. **Latent, not live**: both list editors normalise on write, so no user could reach it — but adopting the helper closes it in the strictly-correct direction. A **fourth site the ticket did not name** (`CreateGoalSheet.attachInitialList`) was converged too, which is what let the guard assert "exactly the declaring file" instead of carrying an exemption list that would rot.**
+
+- [T-540] **The duplicate-copy audit cannot see any filter-aware empty state.** Found by [[T-522]]'s own
+  agent. `CadenceEmptyStateAuditTests`' regex matches a literal placed **directly** after
+  `message:`/`title:`/`subtitle:` — so copy behind a `?:` branch is invisible, **and every filter-aware
+  empty state in the app is written in exactly that shape.** Two live examples: `"No goals yet"` and
+  `"No matching goals"` are spelled in both `GoalsView.swift` and `GoalTimelineView.swift`. Same family as
+  the vacuous detectors this session keeps finding, and inside [[T-524]]'s scope.
+  **Closed 2026-08-30 — **measured before converging, which is the whole point.** The reader now takes the *whole argument expression* after `message:`/`title:`/`subtitle:` rather than a literal sitting directly after the colon, and matches the label only at the call's top level. Re-measured over `Cadence/`: the old reader saw **11 distinct empty-state literals and 0 duplicates**; the widened one sees **25 and 2** — **14 newly visible, 0 lost, 0 false positives.** Nothing to refuse. The old regex was wrong a second way too, proven by a failing test: it harvested `icon: symbol(for:title:"unused")` as a *title*. The 2 duplicates were `"No goals yet"`/`"No matching goals"`, **byte-identical — one edit from the drift two other pairs were already found in, and nothing in the app could have reported it.** The two *subtitles* stay apart deliberately and are pinned as values: the list has a search field and status picker, the roadmap has one popover button labelled *Filter*, so each sentence is true of its own toolbar.**
+
+- [T-542] **Three exact near-copies of `CadenceTaskComposerSupport.container(of:)` remain.**
+  `TasksPanelComponents.swift:371-373`, `SchedulePanelComponents.swift:35-37`,
+  `TaskEmbedFieldEditorPopover.swift:244-246` each spell the same three-line task-to-selection getter.
+  [[T-534]] added the shared accessor and used it at the new site only, to keep that diff reviewable.
+  **Not a defect** — all three are correct — but it is the [[T-374]] near-copy the helper now exists to
+  remove, same family as [[T-536]].
+  **Closed 2026-08-30. All three getters were logically identical to `container(of:)` — area tested before project in each — so this was pure convergence with no divergence to report. The wiring half of the guard is what catches a *differently-spelled* near-copy: a mutation rewriting one site in different words is killed by the wiring assertion while the shape sweep stays silent, which is [[T-161]]'s rule made mechanical rather than asserted.**
 
 ## Cancelled
 

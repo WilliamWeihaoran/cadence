@@ -158,7 +158,7 @@ struct TimelineEventBlock: View {
                 dragGrabOffset = 0
             }
             .confirmationDialog(
-                "Change recurring event?",
+                CadenceRecurrenceScopeCopy.eventScopeTitle,
                 isPresented: Binding(
                     get: { pendingMutation != nil },
                     set: { if !$0 { cancelPendingEventMutation() } }
@@ -175,7 +175,7 @@ struct TimelineEventBlock: View {
                     cancelPendingEventMutation()
                 }
             } message: {
-                Text("Choose whether this calendar change applies only to this occurrence or to this and future events.")
+                Text(CadenceRecurrenceScopeCopy.eventScopeMessage)
             }
     }
 

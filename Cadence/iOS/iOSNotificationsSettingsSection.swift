@@ -35,10 +35,10 @@ struct iOSNotificationsSettingsSection: View {
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Enable reminders")
+                    Text(CadenceNotificationSettingsCopy.remindersToggleTitle)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                    Text("A task's scheduled start and due date, and a habit's reminder time, notify you locally.")
+                    Text(CadenceNotificationSettingsCopy.remindersToggleDetail)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.subdued)
                         .fixedSize(horizontal: false, vertical: true)
@@ -48,7 +48,7 @@ struct iOSNotificationsSettingsSection: View {
 
                 // The macOS pane's own shape (T-484): the label is hidden from the layout by
                 // `.labelsHidden()` and kept as the control's accessible name.
-                Toggle("Enable reminders", isOn: $notificationsEnabled)
+                Toggle(CadenceNotificationSettingsCopy.remindersToggleTitle, isOn: $notificationsEnabled)
                     .labelsHidden()
                     .tint(Theme.blue)
             }
@@ -66,17 +66,17 @@ struct iOSNotificationsSettingsSection: View {
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Notification access required")
+                    Text(CadenceNotificationSettingsCopy.accessRequiredTitle)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
 
-                    Text("Allow Cadence to notify you about scheduled tasks, due dates, and habit reminders.")
+                    Text(CadenceNotificationSettingsCopy.accessRequiredDetail)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.subdued)
                         .fixedSize(horizontal: false, vertical: true)
 
                     iOSActionButton(
-                        title: "Enable Notifications",
+                        title: CadenceNotificationSettingsCopy.enableNotificationsAction,
                         systemImage: "checkmark.circle.fill",
                         role: .primary,
                         size: .compact,

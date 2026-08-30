@@ -772,7 +772,7 @@ struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.confirmationDialog(
-            "Change repeating task?",
+            CadenceRecurrenceScopeCopy.taskScopeTitle,
             isPresented: isPresented,
             titleVisibility: .visible
         ) {
@@ -786,7 +786,7 @@ struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
                 pendingRecurrenceRule = nil
             }
         } message: {
-            Text("Choose whether this repeat change applies only here or to this task and future instances.")
+            Text(CadenceRecurrenceScopeCopy.taskScopeMessage)
         }
         .alert("Couldn't Update the Series", isPresented: $seriesLookupFailed) {
             Button("OK", role: .cancel) {}

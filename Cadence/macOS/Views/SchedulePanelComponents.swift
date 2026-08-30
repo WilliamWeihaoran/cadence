@@ -31,11 +31,7 @@ struct TaskDetailPopover: View {
 
     private var taskContainerBinding: Binding<TaskContainerSelection> {
         Binding(
-            get: {
-                if let a = task.area    { return .area(a.id) }
-                if let p = task.project { return .project(p.id) }
-                return .inbox
-            },
+            get: { CadenceTaskComposerSupport.container(of: task) },
             set: { newSelection in
                 switch newSelection {
                 case .inbox:

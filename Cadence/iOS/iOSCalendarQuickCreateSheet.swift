@@ -50,17 +50,20 @@ struct iOSCalendarQuickCreateSheet: View {
         CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)
     }
 
+    /// The token this sheet holds, read through the one mapping that owns the prefix arithmetic.
+    /// `selection(fromToken:)` answers `.inbox` for anything it cannot parse — including a
+    /// well-formed prefix over a malformed id — which is what these two used to spell themselves.
+    private var containerChoice: TaskContainerSelection {
+        CadenceTaskComposerSupport.selection(fromToken: containerSelection)
+    }
+
     private var selectedArea: Area? {
-        guard containerSelection.hasPrefix("area:"),
-              let id = UUID(uuidString: String(containerSelection.dropFirst(5)))
-        else { return nil }
+        guard let id = CadenceTaskComposerSupport.selectedAreaID(containerChoice) else { return nil }
         return areas.first { $0.id == id }
     }
 
     private var selectedProject: Project? {
-        guard containerSelection.hasPrefix("project:"),
-              let id = UUID(uuidString: String(containerSelection.dropFirst(8)))
-        else { return nil }
+        guard let id = CadenceTaskComposerSupport.selectedProjectID(containerChoice) else { return nil }
         return projects.first { $0.id == id }
     }
 
@@ -414,11 +417,13 @@ struct iOSCalendarQuickCreateSheet: View {
         }
     }
 
+    /// What the List tile says. The shared resolver's rule is *existence*, and its `displayName`
+    /// **trims** before it falls back — where this sheet's own copy tested `name.isEmpty`, so a
+    /// name that is only whitespace rendered as a blank tile here and as "Untitled Area" on every
+    /// other surface. Both list editors normalise on write, so that gap was latent rather than
+    /// live; adopting the resolver closes it either way.
     private var containerTitle: String {
-        if containerSelection == "inbox" { return "Inbox" }
-        if let selectedArea { return selectedArea.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : selectedArea.name }
-        if let selectedProject { return selectedProject.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : selectedProject.name }
-        return "Inbox"
+        CadenceTaskComposerSupport.containerName(for: containerChoice, areas: areas, projects: projects)
     }
 
     private var timeSection: some View {

@@ -51,7 +51,7 @@ struct SettingsCalendarWorkHoursSection: View {
 
     private var description: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("Workday boundary")
+            Text(CadenceCalendarSettingsCopy.workdayBoundaryTitle)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.text)
             Text("Weekly calendar views gently highlight \(workHoursLabel).")

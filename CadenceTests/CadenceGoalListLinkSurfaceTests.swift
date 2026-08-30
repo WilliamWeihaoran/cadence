@@ -481,7 +481,11 @@ struct CadenceGoalListLinkSurfaceTests {
         try expectCallSites(of: "attachList", at: [
             // Declaration, plus the call inside `toggleGoalListLink`.
             "Cadence/Shared/GoalListLinkHelpers.swift": 2,
-            "Cadence/macOS/Sheets/CreateGoalSheet.swift": 2
+            // One, not two, since T-536 folded the `.area` / `.project` branches into a single
+            // call on the resolved `CadenceTaskComposerSupport.selection(fromToken:)` target.
+            // The property this test pins is that both platforms reach the shared path at all;
+            // the count fell because two branches became one, not because a caller was lost.
+            "Cadence/macOS/Sheets/CreateGoalSheet.swift": 1
         ])
 
         try expectCallSites(of: "candidateGroups", at: [
