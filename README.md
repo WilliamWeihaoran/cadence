@@ -5,11 +5,11 @@ Cadence is a native SwiftUI productivity app for planning work across tasks, not
 ## What Cadence Does
 
 - Capture and organize tasks across inbox, areas, projects, sections, kanban boards, and calendar timelines.
-- Schedule tasks on a day timeline and optionally mirror them to Apple Calendar.
+- Schedule tasks on a day timeline, and create Apple Calendar events alongside them. Scheduling a task does not create an event for it — the two are independent.
 - Write unified markdown notes for daily, weekly, permanent, list, and meeting contexts.
 - Track goals, habits, focus sessions, and progress signals.
 - Search across tasks, notes, lists, calendar-linked meeting notes, and other app content.
-- Use optional local AI actions with a user-provided OpenAI API key.
+- Use optional AI actions with a user-provided OpenAI API key. Requests go to OpenAI's API; nothing runs on device.
 - Expose read/write automation surfaces through the bundled Cadence MCP integration.
 
 ## Platform Status

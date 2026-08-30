@@ -196,9 +196,29 @@ struct SettingsSharedVocabularyTests {
             of: "NoteTemplateLibrary.overrides",
             at: ["Cadence/macOS/Views/SettingsView.swift": 0]
         )
-        // Non-vacuity in the direction that matters: the three names above are still live
-        // elsewhere, so zero here is a statement about this file and not about the scan.
-        #expect(!StoreBackupManager.listBackups().isEmpty || true)
+        // Non-vacuity in the direction that matters: the same scan finds two of the three names
+        // alive in the panes that do use them, so a zero above is a statement about
+        // `SettingsView.swift` rather than about a scan that read nothing.
+        //
+        // This line was `#expect(!StoreBackupManager.listBackups().isEmpty || true)`, which is an
+        // assertion no value can fail — `x || true` is `true` — so the non-vacuity claim the
+        // comment made was not being checked at all. (`NoteTemplateLibrary.overrides` is spelled
+        // nowhere under `Cadence/`, so it has no live witness to offer; its zero above is an
+        // absence claim and nothing more.)
+        let dataSafety = try t20StrippingComments(
+            t20SourceFile("Cadence/macOS/Views/SettingsDataSafetySection.swift")
+        )
+        #expect(
+            dataSafety.contains("StoreBackupManager"),
+            "the scan no longer finds StoreBackupManager anywhere, so the zero above proves nothing"
+        )
+        let tagsPane = try t20StrippingComments(
+            t20SourceFile("Cadence/macOS/Views/SettingsTagsSection.swift")
+        )
+        #expect(
+            tagsPane.contains("TagSupport.uniqueBySlug"),
+            "the scan no longer finds TagSupport.uniqueBySlug anywhere, so the zero above proves nothing"
+        )
         try t20ExpectOccurrences(
             of: "SettingsDetailHeader",
             at: ["Cadence/macOS/Views/SettingsView.swift": 1]
@@ -209,14 +229,37 @@ struct SettingsSharedVocabularyTests {
 
     /// The work-hours window was the last `Picker(.menu)` in Settings — AppKit's bezel and AppKit's
     /// accent, which no amount of `Theme` around it changes.
+    ///
+    /// **The two halves an absence sweep needs, and this one had neither.** The walk was counted
+    /// nowhere, and the needle had no witness: every file in this sweep's own corpus is required
+    /// *not* to contain it, so nothing in the corpus can show the spelling still matches anything.
+    /// Measured — blinding the needle to `.pickerStyleZZZ(` left this test, and the whole suite,
+    /// green. The needle is now one constant read by both the sweep and a positive witness outside
+    /// the corpus, so a typo in it fails the witness instead of silently emptying the sweep.
     @Test func noSettingsPaneStillDrawsAMenuPicker() throws {
+        let needle = ".pickerStyle("
+
+        var scanned = 0
         for path in try t20SwiftFiles(under: "Cadence/macOS/Views") where path.contains("/Settings") {
+            scanned += 1
             let code = try t20StrippingComments(t20SourceFile(path))
             #expect(
-                !code.contains(".pickerStyle("),
+                !code.contains(needle),
                 "\(path) still styles a native Picker"
             )
         }
+        #expect(scanned >= 15, "scanned only \(scanned) settings panes")
+
+        // `CreateGoalSheet` holds the app's one remaining styled `Picker`, and it is outside
+        // Settings — which is what makes it usable as the witness. If it goes, re-anchor this on
+        // whatever replaced it or delete the rule; do not leave a needle nothing can match.
+        let styledPickerElsewhere = try t20StrippingComments(
+            t20SourceFile("Cadence/macOS/Sheets/CreateGoalSheet.swift")
+        )
+        #expect(
+            styledPickerElsewhere.contains(needle),
+            "the needle no longer matches a live Picker anywhere; re-anchor it or drop the rule"
+        )
     }
 
     /// Both work-hours halves present the same control. macOS reads the shared type by name; iOS

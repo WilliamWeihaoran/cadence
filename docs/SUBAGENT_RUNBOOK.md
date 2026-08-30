@@ -28,6 +28,15 @@ per-agent boilerplate.
   fails and the script dies without running your build. One agent lost a 640-second lock wait to it.
   Dry-run your runner with the build stubbed out before you queue it; that is cheap insurance for a
   failure that looks exactly like "the lock never came free".
+- **`-only-testing:` takes a SUITE name, not a file name — and a name that does not exist is a green
+  run over zero tests.** Measured 2026-08-31: `-only-testing:CadenceTests/<NoSuchSuite>` returns
+  `Executed 0 tests`, `** TEST SUCCEEDED **`, `EXIT=0`, with no warning and no diagnostic. **42 of 256
+  test files declare more than one suite and 15 declare none matching their own basename**, so scoping
+  by filename against those silently runs nothing. One agent nearly reported a false "this sweep is
+  blind" finding from exactly this — the same mutation, re-scoped to the real suite name, killed a test.
+  **So: after every mutation run, assert the log actually contains the test you mutated**
+  (`grep -c '✔ Test <name>()\|✘ Test <name>()'`), not just the exit code. `scripts/test-suite-index.sh`
+  gives you the right identifier; nothing forces you to use it.
 - **`AGENTS.md` has a hard 200-line cap, enforced by `AgentContextBudgetTests`.** If your work earns a
   new always-read rule, you must remove or link out something else in the same change — that is the
   repo's stated convention, and it is a test, not a style note. Two agents in a row have landed a good

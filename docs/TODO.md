@@ -644,6 +644,22 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `theGoalsAndHabitsDetailPanesNeverNameAListWithNoItems` pins the iOS spelling at exactly one occurrence,
   so any convergence must edit that test in the same change.**
 
+
+  **Escalated 2026-08-31 by the batch-8 verification pass — this is live at HEAD with the suite green,
+  not hypothetical.** `componentNames` is `["EmptyStateView(", "iOSEmptyPanel("]`, and
+  `Cadence/iOS/iOSFeatureViews.swift` contains **zero occurrences of either** — verified — so that whole
+  file is invisible to `noEmptyStateSentenceIsSpelledInTwoFiles`. It reaches `iOSEmptyPanel` one hop away
+  through `iOSFeatureEmptyState` → `iOSFeatureEmptyDetail.body`, whose call carries only identifiers.
+  Three live consequences: **`"No habits yet"` is spelled in two files** (`HabitsView.swift:158` and
+  `iOSFeatureViews.swift:411`), byte-identical, with their subtitles **already diverged**;
+  **`"No goals yet"` is re-typed at `iOSFeatureViews.swift:221` after [[T-540]] converged it** into
+  `CadenceEmptyStateCopy.goalsTitle` — and `noCallSiteRetypesASharedStringConstant` cannot see that
+  either, because it harvests `static let` and `goalsTitle` is a `static func`; and `"Select a note"` is
+  spelled in `NotesView.swift` (via a fourth entry point, `NotesEditorPlaceholder`) and
+  `iOSListNotesView.swift:271`. **The suite already names `iOSFeatureEmptyState` at lines 820 and 890
+  without adding it to `componentNames`** — so this is an unnoticed gap between two same-session tickets,
+  not a recorded decision. [[T-533]]'s guard checks within `iOSFeatureViews.swift`; T-540's checks the two
+  macOS goals files; neither crosses.
 - [T-549] **`CalendarRecurrenceEditScope` cannot be shared while `CalendarManager.swift` is one
   `#if os(macOS)`.** `iOSCalendarEventEditSheet` privately re-declares it — same cases, raw values, labels
   and `EKSpan`s, byte for byte — and until [[T-524]] **nothing pinned either copy**, which is the state
@@ -656,6 +672,43 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 - [T-550] **Two redundant `emptyText:` arguments.** `CreateGoalSheet.swift:139` and
   `HabitsFormSupportViews.swift:49` pass `emptyText: "No matching goals"`, which is identical to
   `GoalPickerViews`' own parameter default. Behaviour-neutral removal, [[T-374]] family.
+
+
+- [T-551] **[[T-495]]'s verdict holds but one supporting clause did not reproduce — and it is the one that
+  made [[T-511]] look like a formality.** The batch-8 pass re-measured on a real offscreen
+  `CadenceTextView` built by the suite's own fixture. **Reproduced exactly:** registration-never-called
+  gives `registeredDraggedTypes == []` at every step, and `acceptableDragTypes` carries the legacy TIFF
+  and PNG names with `importsGraphics = false` — so the "unioning would undo half of [[T-478]]" argument
+  is sound and the closure stands. **Did not reproduce:** "AppKit's own re-registration unions rather
+  than replaces — toggling `isEditable` yields 22 types". Measured **3** after an `isEditable` toggle,
+  **3** after `isRichText = true`, **3** after `importsGraphics = true`; a refusing host stayed at **1**.
+  The construction is offscreen with no window, which may be why `updateDragTypeRegistration` never
+  fires — so the clause is **unverified rather than disproved**. But if it is false, the editor advertises
+  3 types where AppKit would have offered 19 text-ish ones, which makes **T-511 a live question rather
+  than a formality**. Re-read this before T-511 is closed cheaply.
+
+
+- [T-552] **`-only-testing:` with a suite name that does not exist is a green run over zero tests.**
+  Measured 2026-08-31: `-only-testing:CadenceTests/<NoSuchSuite>` returns `Executed 0 tests`,
+  `** TEST SUCCEEDED **`, `EXIT=0`, **with no warning and no diagnostic**. It takes a *suite* name, not a
+  *file* name — and **42 of 256 test files declare more than one suite while 15 declare none matching
+  their own basename**, so any run scoped by filename against those exercises nothing and reports
+  success. The batch-8 agent nearly filed a false "this sweep is blind" finding from exactly this: the
+  same mutation re-scoped to the real suite name killed a test. Rule added to the runbook (assert the log
+  contains the test you mutated, not just the exit code); **the durable fix would be a guard that every
+  test file declares a suite matching its basename, or a runner that refuses a zero-test run.**
+
+- [T-553] **Three more absence sweeps whose needle nothing can witness.** Same shape as the blind sweep
+  batch 8 fixed, smaller blast radius — each needs a `CadenceScanInstrument` with a literal fixture:
+  `CadenceColumnWindDownSurfaceTests.iOSWindsDownAColumnThroughTheSharedServiceFromOnePlaceOnly`
+  (`$draft.isArchived`/`$draft.isCompleted`, **0 occurrences repo-wide**),
+  `CadenceBundleInspectorHostTests.theBundleHostAsksTheOneSharedRuleAboutTheTwoFactsItCanSee`
+  (`CadenceTaskInspectorPresentation`, comment-only), and
+  `CadenceSharedBoardChromeTests.theMonthGridsWeekdayRowHasNoSizeKnobLeft` (`weekdaySymbolSize`,
+  comment-only). Also: `CadenceSidebarCountMetricsTests` spells its needle **twice** (sweep at `:507`,
+  self-check at `:545`), so a typo in the sweep's copy alone is invisible — one-constant fix. And
+  `noSettingsPaneStillPaintsUnderTheSystemSeparator` is dead weight, strictly subsumed by its
+  line-break sibling which counts the walk and has a detector test.
 
 
 ## Done
