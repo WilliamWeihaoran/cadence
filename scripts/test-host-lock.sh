@@ -22,6 +22,17 @@
 #   ./scripts/test-host-lock.sh acquire 5400 || exit 1
 #   trap './scripts/test-host-lock.sh release' EXIT INT TERM
 #   xcodebuild test ... ; echo "EXIT=$?"
+#
+# If you pass an explicit id to `acquire`, you MUST pass the same id to `release`.
+# Measured 2026-08-30: an agent acquired as `c1a`, released with the idiom above,
+# which defaults the id to $PPID -- that mismatched the recorded owner, the owner
+# pid was still alive, so release REFUSED and the lock sat stranded for 19 minutes
+# while later agents queued behind it. The refusal is correct (it stops one agent
+# freeing another's lock); passing no id to `acquire` or the same id to both is
+# what makes it a no-op:
+#
+#   ./scripts/test-host-lock.sh acquire 5400 "$MYID" || exit 1
+#   trap "./scripts/test-host-lock.sh release '$MYID'" EXIT INT TERM
 
 set -uo pipefail
 LOCK="${TMPDIR:-/tmp}/cadence-macos-test-host.lock"

@@ -17,6 +17,14 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     var onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)?
     var onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])?
     var onResizeImage: ((UUID, CGFloat) -> Void)?
+    /// `iOSMarkdownEditingSurface.allowsImageInsertion`, carried down to the text view so the edit
+    /// menu can refuse in the same breath as the toolbar button, the `/` strip and the creator
+    /// (T-504). The macOS twin is `MarkdownEditorView.allowsImageInsertion`.
+    ///
+    /// A separate value rather than `onCreatePastedImages == nil`: the handler is assigned
+    /// unconditionally in `makeUIView` on purpose, and passing `nil` for a refusing host would make
+    /// the paste *swallowed* instead of merely unoffered.
+    var allowsImageInsertion = true
 
     init(
         text: Binding<String>,
@@ -31,7 +39,8 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         onOpenEmbeddedTask: ((UUID) -> Void)? = nil,
         onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)? = nil,
         onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])? = nil,
-        onResizeImage: ((UUID, CGFloat) -> Void)? = nil
+        onResizeImage: ((UUID, CGFloat) -> Void)? = nil,
+        allowsImageInsertion: Bool = true
     ) {
         _text = text
         _isFocused = isFocused
@@ -46,11 +55,13 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         self.onOpenReference = onOpenReference
         self.onCreatePastedImages = onCreatePastedImages
         self.onResizeImage = onResizeImage
+        self.allowsImageInsertion = allowsImageInsertion
     }
 
     func makeUIView(context: UIViewRepresentableContext<iOSMarkdownEditor>) -> UITextView {
         let textView = iOSMarkdownTextView()
         textView.delegate = context.coordinator
+        textView.allowsMarkdownImageInsertion = allowsImageInsertion
         textView.formatCommandHandler = { [weak textView, weak coordinator = context.coordinator] command in
             guard let textView else { return }
             coordinator?.apply(command, to: textView)
@@ -179,6 +190,10 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
     func updateUIView(_ textView: UITextView, context: UIViewRepresentableContext<iOSMarkdownEditor>) {
         context.coordinator.parent = self
+        // Set on every pass, not only at creation: quick create flips its image policy with the
+        // sheet's mode (`kind != .event`) while the same text view stays alive, so a value written
+        // once in `makeUIView` would leave the edit menu offering whichever mode the sheet opened in.
+        (textView as? iOSMarkdownTextView)?.allowsMarkdownImageInsertion = allowsImageInsertion
 
         if textView.text != text {
             let selection = textView.selectedRange

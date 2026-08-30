@@ -16,6 +16,14 @@ import SwiftUI
 /// `horizontalSizeClass` is a scene trait, so the value is the same one the sheets branch their own
 /// layouts on — the regular layout's `.frame(width: 320)` around this view does not change it.
 ///
+/// **T-492 is why the horizontal margin is not a ramp here at all.** The extraction took the two
+/// sheets' `isRegularWidth ? 20 : 18` and re-typed it instead of taking it from
+/// `iOSEditorSheetMetrics.gutter(isRegularWidth:)`, which is the file that decides "the margin
+/// between an editor sheet's content and the edge of its host" for the task inspector, both
+/// calendar sheets and `iOSTrackingEditorShell` — and whose own comment says it exists so that
+/// figure is stated once. The vertical ramp below is genuinely this header's own: no other surface
+/// has an opinion about how tall a title block is.
+///
 /// `accessory` is the one thing the two sheets genuinely differ on: the event sheet puts its
 /// commit-failure notice inside the block, under the title. A sheet without one passes nothing.
 struct iOSNoteEditorSheetHeader<Accessory: View>: View {
@@ -42,7 +50,7 @@ struct iOSNoteEditorSheetHeader<Accessory: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxHeight: isRegularWidth ? .infinity : nil, alignment: .topLeading)
-        .padding(.horizontal, isRegularWidth ? 20 : 18)
+        .padding(.horizontal, iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))
         .padding(.vertical, isRegularWidth ? 20 : 14)
         .background(Theme.surface)
     }

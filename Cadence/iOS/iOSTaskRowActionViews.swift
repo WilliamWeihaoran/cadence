@@ -392,7 +392,7 @@ private struct iOSTaskRowGoalPickerContent: View {
                 + availableGoals.map { goal in
                     iOSChoiceRow(
                         value: Optional(goal.id),
-                        title: goal.title.isEmpty ? "Untitled Milestone" : goal.title,
+                        title: goal.title.isEmpty ? CadenceTitleNormalization.defaultMilestoneTitle : goal.title,
                         systemImage: goal.icon,
                         color: Color(hex: goal.colorHex)
                     )
@@ -703,7 +703,7 @@ struct iOSTaskRowContextMenu: View {
                     Button {
                         moveToContainer(area: area, project: nil)
                     } label: {
-                        Label(area.name.isEmpty ? "Untitled Area" : area.name, systemImage: task.area?.id == area.id && task.project == nil ? "checkmark.circle.fill" : area.icon)
+                        Label(area.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : area.name, systemImage: task.area?.id == area.id && task.project == nil ? "checkmark.circle.fill" : area.icon)
                     }
                 }
             }
@@ -715,7 +715,7 @@ struct iOSTaskRowContextMenu: View {
                     Button {
                         moveToContainer(area: nil, project: project)
                     } label: {
-                        Label(project.name.isEmpty ? "Untitled Project" : project.name, systemImage: task.project?.id == project.id ? "checkmark.circle.fill" : project.icon)
+                        Label(project.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : project.name, systemImage: task.project?.id == project.id ? "checkmark.circle.fill" : project.icon)
                     }
                 }
             }

@@ -13,6 +13,7 @@ struct CreateContextSheet: View {
     /// so this seed is the copy that can drift, and the one that must read the token (T-262).
     @State private var selectedColor = Theme.blueHex
     @State private var selectedIcon = "square.stack.fill"
+    @State private var createFailureNotice: String?
 
     var body: some View {
         ListEditorSheetShell(
@@ -27,9 +28,22 @@ struct CreateContextSheet: View {
                 icon: $selectedIcon,
                 placeholder: "e.g. Work, School, Personal"
             )
+
+            if let createFailureNotice {
+                CadenceInlineFailureNotice(text: createFailureNotice)
+            }
         }
     }
 
+    /// **T-503, half 3 of the `try? save()` rule.** This inserted the context and dismissed, with
+    /// no `save()` of any kind — so the rule's first two halves, which both key on the *presence*
+    /// of a swallowed save, could not see it. The cost is the one [[T-322]] names: the app has a
+    /// single `ModelContext`, so the new context stayed pending in it, to be committed by the next
+    /// unrelated save from any screen or discarded by the next unrelated `rollback()`.
+    ///
+    /// Closing the sheet is this screen's only report of success, so it happens on the committed
+    /// path alone; a refused insert is un-inserted by `commitInsert` and the sheet stays open on
+    /// the draft with the failure named beneath it.
     private func create() {
         let ctx = Context(
             name: CadenceTitleNormalization.normalized(name),
@@ -38,6 +52,13 @@ struct CreateContextSheet: View {
         )
         ctx.order = CadenceOrderAllocation.nextOrder(after: contexts, order: \.order)
         modelContext.insert(ctx)
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: ctx, in: modelContext)
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        createFailureNotice = nil
         dismiss()
     }
 }

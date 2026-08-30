@@ -255,6 +255,121 @@ struct CadenceSharedConstantReuseSweepTests {
         #expect(mcp.contains("\"Untitled Task\"") == false,
                 "the MCP read service re-types the task-title fallback again")
         #expect(mcp.contains("\"Untitled Context\"") == false)
+        // T-505's four in the same file, which the same subtraction hid for the same reason: the
+        // labels had no declaration at all, so the sweep had nothing to subtract *from*.
+        #expect(mcp.contains("CadenceTitleNormalization.defaultGoalTitle"))
+        #expect(mcp.contains("\"Untitled Goal\"") == false)
+        #expect(mcp.contains("\"Untitled Habit\"") == false)
+    }
+
+    // MARK: - The placeholder family
+
+    /// **Every "Untitled …" label a user can read has a declaration, in the one tree every target
+    /// compiles.**
+    ///
+    /// [[T-505]]. The sweep above reports *a shared constant re-typed*, so its blind spot is not a
+    /// weak detector but an absence upstream of it: seven of these labels were declared **nowhere**,
+    /// and with nothing to compare a literal against the sweep could not see 45 re-typings spanning
+    /// all three targets. That is a failure mode worth naming, because it looks exactly like a clean
+    /// tree from inside the sweep. The fix is a declaration, not a rule — no line of the sweep
+    /// changed.
+    ///
+    /// The two halves are different kinds of assertion, deliberately:
+    ///
+    /// - **The values are behavioural.** This target evaluates the constants, so renaming one label
+    ///   and not the surfaces that share its shape fails here with no source scan involved.
+    /// - **The declaration site is what arms the sweep**, and `Models/` is load-bearing rather than
+    ///   tidy: `CadenceReadService` is `CadenceMCPServer`'s and the two widget-support files are
+    ///   `CadenceWidgets`', and neither target compiles the whole of `Cadence/Shared/`.
+    @Test func everyUntitledPlaceholderHasOneDeclarationTheSweepCanSee() throws {
+        // Behavioural: the labels, as this target reads them.
+        #expect(CadenceTitleNormalization.defaultGoalTitle == "Untitled Goal")
+        #expect(CadenceTitleNormalization.defaultHabitTitle == "Untitled Habit")
+        #expect(CadenceTitleNormalization.defaultMilestoneTitle == "Untitled Milestone")
+        #expect(CadenceTitleNormalization.defaultNoteTitle == "Untitled Note")
+        #expect(CadenceTitleNormalization.defaultAreaName == "Untitled Area")
+        #expect(CadenceTitleNormalization.defaultProjectName == "Untitled Project")
+        #expect(CadenceTitleNormalization.defaultReminderTitle == "Untitled Reminder")
+
+        let harvested = Dictionary(grouping: try cadenceSharedStringConstants(), by: \.name)
+        #expect(harvested.count >= 30, "non-vacuity: the harvest returned \(harvested.count) names")
+
+        // Paired, not two lists: the point is that the value this target *evaluates* is the value
+        // the sweep *guards*. A name whose harvested literal has drifted from its runtime value is
+        // a constant with a guard pointed at the wrong string.
+        for (name, value) in [
+            ("defaultTaskTitle", CadenceTitleNormalization.defaultTaskTitle),
+            ("defaultContextName", CadenceTitleNormalization.defaultContextName),
+            ("defaultGoalTitle", CadenceTitleNormalization.defaultGoalTitle),
+            ("defaultHabitTitle", CadenceTitleNormalization.defaultHabitTitle),
+            ("defaultMilestoneTitle", CadenceTitleNormalization.defaultMilestoneTitle),
+            ("defaultNoteTitle", CadenceTitleNormalization.defaultNoteTitle),
+            ("defaultAreaName", CadenceTitleNormalization.defaultAreaName),
+            ("defaultProjectName", CadenceTitleNormalization.defaultProjectName),
+            ("defaultReminderTitle", CadenceTitleNormalization.defaultReminderTitle)
+        ] {
+            // The floor first, because it explains every other failure here: a label shortened
+            // below twelve characters leaves the harvest silently, taking its guard with it and
+            // leaving the declaration behind to look like coverage.
+            #expect(
+                value.count >= 12,
+                "\"\(value)\" is under the sweep's 12-character floor, so \(name) guards nothing"
+            )
+
+            let declarations = harvested[name] ?? []
+            #expect(
+                declarations.count == 1,
+                "\(name) reaches the sweep \(declarations.count) times, not once"
+            )
+            #expect(
+                declarations.first?.literal == value,
+                "\(name) is harvested as \(declarations.first?.literal ?? "nothing"), not \(value)"
+            )
+            #expect(
+                declarations.first?.declaredIn == "Cadence/Models/ModelEnums.swift",
+                "\(name) is declared in \(declarations.first?.declaredIn ?? "nowhere"), which is not the one tree CadenceMCPServer and CadenceWidgets both compile"
+            )
+        }
+
+        // The one placeholder that cannot join them, said out loud so the omission does not read as
+        // an oversight: `"Untitled"` is eight characters, under that floor. T-499 declared it for
+        // the shared *name*; it gets no sweep coverage and never will under this rule.
+        #expect(CadenceTitleNormalization.defaultCompactTitle == "Untitled")
+        #expect(CadenceTitleNormalization.defaultCompactTitle.count < 12)
+        #expect(harvested["defaultCompactTitle"] == nil)
+    }
+
+    /// Both non-app targets compile the file the labels are declared in.
+    ///
+    /// This is the half of [[T-505]] that fails as a **build break** rather than a red test, which
+    /// is why it is asserted rather than assumed: `-scheme Cadence` builds `CadenceWidgets`, so a
+    /// widget-support file reading a constant its own target cannot compile stops the build before
+    /// any test runs — and `CadenceMCPServer` is not in that scheme at all, so the same mistake
+    /// there is invisible until somebody builds it separately.
+    @Test func everyTargetThatDrawsAnUntitledLabelCompilesTheFileDeclaringThem() throws {
+        let declaration = "Cadence/Models/ModelEnums.swift"
+
+        let mcp = try cadenceMCPServerMemberFiles()
+        #expect(mcp.contains(declaration))
+        #expect(mcp.contains("Cadence/Services/MCPReadOnly/CadenceReadService.swift"))
+
+        let widgets = try TargetSourceGraph(
+            name: "CadenceWidgets",
+            // Widget-only file: no other target builds the intents.
+            phaseAnchor: "Cadence/Services/CadenceWidgetIntents.swift",
+            synchronizedRoots: ["CadenceWidgets"],
+            ownFolder: "CadenceWidgets"
+        ).memberFiles
+        #expect(widgets.count >= 40, "the widget source list parsed as \(widgets.count) files")
+        #expect(widgets.contains(declaration), "the widget target cannot read the labels it draws")
+        #expect(widgets.contains("Cadence/Services/CadenceHabitWidgetSupport.swift"))
+        #expect(widgets.contains("Cadence/Services/CadenceMilestoneWidgetSupport.swift"))
+
+        // And the boundary has both answers on today's tree, or it is a claim rather than a
+        // measurement: `GoalListLinkHelpers` types two of these same labels and is app-only, which
+        // is precisely why `Shared/` was not an option for the declaration.
+        #expect(widgets.contains("Cadence/Shared/GoalListLinkHelpers.swift") == false)
+        #expect(mcp.contains("Cadence/Shared/GoalListLinkHelpers.swift") == false)
     }
 
     // MARK: - The detector
@@ -314,7 +429,12 @@ struct CadenceSharedConstantReuseSweepTests {
     /// `CadenceUITestSupport`'s defaults reset, and 1 collision of ordinary English -- **22 true
     /// positives, 96% precision, one exemption**.
     ///
-    /// This does not re-derive the number; it pins the shape of the claim, so the sweep cannot
+    /// **Re-measured at [[T-505]].** Declaring the seven remaining "Untitled …" labels turned the
+    /// sweep's blind spot into hits: **45 more, in 20 files across all three targets, all 45 true
+    /// positives, no exemption added.** That is the number that matters about this rule — its
+    /// precision was never the limit, its *input* was, and the input is a declaration existing.
+    ///
+    /// This does not re-derive the numbers; it pins the shape of the claim, so the sweep cannot
     /// quietly become an empty rule with a paragraph attached.
     @Test func theSharedConstantSweepWasMeasuredBeforeItShipped() {
         #expect(cadenceSharedLiteralExemptions.count == 1,

@@ -1,11 +1,11 @@
 import Foundation
-import SwiftUI
 
-/// The one answer to "which contexts may I pick, in what order, called what".
+/// The context half of `CadencePickerSupport` — the two facts that are `Context`'s rather than the
+/// picker's, and the name its call sites read it by.
 ///
-/// **Why this exists (T-446, residue from T-288).** Four surfaces ask the user to pick a context —
-/// macOS's `CadenceContextPickerList`, the iOS project/area editor, and the iOS goal and habit
-/// sheets. T-288 looked at converging the *views* and correctly refused: the macOS control is
+/// **Why the shared list exists (T-446, residue from T-288).** Four surfaces ask the user to pick a
+/// context — macOS's `CadenceContextPickerList`, the iOS project/area editor, and the iOS goal and
+/// habit sheets. T-288 looked at converging the *views* and correctly refused: the macOS control is
 /// keyboard-first (`onMoveCommand`, a focused search field, an arrow-driven highlight, `onSubmit`)
 /// and the iOS sites are `CadenceChoicePopoverList` popovers. Those are two legitimate
 /// presentations. What was duplicated underneath them is the *list*: the sort, which contexts are
@@ -33,116 +33,21 @@ import SwiftUI
 ///
 /// So this type owns the facts and the two presentations stay two. A call site that re-derives any
 /// of them is what `CadenceContextPickerConsolidationTests` is red on.
-enum CadenceContextPickerSupport {
+///
+/// **T-488 made the list generic.** The Area row one line down the same `Form` had the identical
+/// defect, and a near-copy of this file to fix it would have been the [[T-374]] defect committed by
+/// the ticket meant to remove one. The rules moved to `CadencePickerSupport`; only the two facts
+/// below are `Context`'s. Nothing at a call site moved — `CadenceContextPickerSupport.items(...)`
+/// still resolves, because the name is now a typealias for the same rules with `Context` filled in.
+typealias CadenceContextPickerSupport = CadencePickerSupport<Context>
 
-    /// What a context with no name is called. One spelling, because it was previously two — and
-    /// declared in `CadenceTitleNormalization`, in `Models/`, because it was previously *three*:
-    /// `CadenceReadService` answers MCP with the same label and could not read this one from
-    /// `Shared/` (T-499).
-    static let untitledName = CadenceTitleNormalization.defaultContextName
+extension Context: CadencePickable {
+    /// Archiving retires a context from future choices. It does **not** hide the one a list is
+    /// already in; `CadencePickerSupport.selectable(_:selectedID:)` owns that half.
+    var isOfferableInPicker: Bool { !isArchived }
 
-    /// One row of a context picker, in either presentation. `id == nil` is the "none" row, whose
-    /// title is the caller's — "No context", "None", "Use Parent Context" and "Use Goal Context" all
-    /// mean different things and are legitimately per-site.
-    struct Item: Identifiable, Equatable {
-        let id: UUID?
-        let title: String
-        let icon: String?
-        let colorHex: String?
-
-        var isNone: Bool { id == nil }
-    }
-
-    /// `order`, then name case-insensitively.
-    ///
-    /// The tie-break is the load-bearing half; see the type's doc.
-    static func sorted(_ contexts: [Context]) -> [Context] {
-        contexts.sorted {
-            if $0.order == $1.order {
-                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }
-            return $0.order < $1.order
-        }
-    }
-
-    /// Every unarchived context, **plus the one currently assigned even when it is archived**.
-    ///
-    /// The second clause is not a softening of the archive rule: archiving retires a context from
-    /// future choices, and a picker that silently drops the value it is displaying reports the
-    /// wrong current state.
-    static func selectable(_ contexts: [Context], selectedID: UUID?) -> [Context] {
-        contexts.filter { !$0.isArchived || $0.id == selectedID }
-    }
-
-    /// Case-insensitive substring match on the name. An empty or whitespace-only query matches
-    /// everything. Only macOS's picker has a search field; the iOS popovers pass no query.
-    static func matching(_ contexts: [Context], query: String) -> [Context] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return contexts }
-        let needle = trimmed.localizedLowercase
-        return contexts.filter { $0.name.localizedLowercase.contains(needle) }
-    }
-
-    /// The context's display name, or `untitledName`.
-    static func title(for context: Context) -> String {
-        let trimmed = context.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? untitledName : trimmed
-    }
-
-    /// The rows a picker draws: the optional "none" row, then the selectable contexts that match
-    /// `query`, sorted.
-    ///
-    /// - Parameters:
-    ///   - noneTitle: `nil` on a picker that does not offer "no context" at all.
-    static func items(
-        from contexts: [Context],
-        selectedID: UUID?,
-        query: String = "",
-        noneTitle: String?
-    ) -> [Item] {
-        var items: [Item] = []
-        if let noneTitle {
-            items.append(Item(id: nil, title: noneTitle, icon: nil, colorHex: nil))
-        }
-        let offerable = matching(selectable(contexts, selectedID: selectedID), query: query)
-        items.append(contentsOf: sorted(offerable).map { item(for: $0) })
-        return items
-    }
-
-    /// The row for the current selection — the context's own if it resolves, the "none" row
-    /// otherwise. What a picker's trigger button shows.
-    static func selectedItem(
-        from contexts: [Context],
-        selectedID: UUID?,
-        noneTitle: String
-    ) -> Item {
-        guard let selectedID, let context = contexts.first(where: { $0.id == selectedID }) else {
-            return Item(id: nil, title: noneTitle, icon: nil, colorHex: nil)
-        }
-        return item(for: context)
-    }
-
-    /// `selectedItem(from:selectedID:noneTitle:).title`, for the call sites that only want the word.
-    static func selectionTitle(
-        from contexts: [Context],
-        selectedID: UUID?,
-        noneTitle: String
-    ) -> String {
-        selectedItem(from: contexts, selectedID: selectedID, noneTitle: noneTitle).title
-    }
-
-    private static func item(for context: Context) -> Item {
-        Item(
-            id: context.id,
-            title: title(for: context),
-            icon: context.icon,
-            colorHex: context.colorHex
-        )
-    }
-}
-
-extension CadenceContextPickerSupport.Item {
-    /// The context's own colour, or the quiet neutral the "none" row takes. Here rather than at
-    /// three call sites, which is what "shared item model" has to mean to be worth having.
-    var tint: Color { colorHex.map(Color.init(hex:)) ?? Theme.dim }
+    /// Declared in `CadenceTitleNormalization`, in `Models/`, because this label was previously
+    /// spelled *three* times: `CadenceReadService` answers MCP with the same words and could not
+    /// read a constant from `Shared/`, which `CadenceMCPServer` does not compile (T-499).
+    static var untitledPickerName: String { CadenceTitleNormalization.defaultContextName }
 }

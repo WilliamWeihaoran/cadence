@@ -1,4 +1,5 @@
 import Foundation
+import Testing
 
 /// Reading Swift source as text, for the handful of rules that live inside a private method on a
 /// SwiftUI view and can therefore never be called by a test.
@@ -342,5 +343,56 @@ extension CadenceSourceScan {
         }
 
         return String(characters)
+    }
+}
+
+// MARK: - Commit-surface scanning
+
+/// The three readers every "**only** on a committed X" source scan needs, in one place.
+///
+/// **Why they are here (T-503).** `CadenceTagAndNoteCommitSurfaceTests` wrote all three as private
+/// methods for T-497's seven sites; T-503's four sites are the same assertion about four more
+/// screens, and copying them would have made the second spelling that this file's own doc comment
+/// exists to prevent. The ordering helper in particular is the one every such test turns on, and
+/// two copies of it is two chances for one of them to stop discriminating.
+enum CadenceCommitSurfaceScan {
+
+    /// Whether `report` appears **after** the last `catch` in the body — i.e. below the failure
+    /// branch rather than above it.
+    ///
+    /// Deliberately crude and checkable: an offset comparison. Each calling suite pins that it
+    /// answers differently for the two orders.
+    static func reportFollowsTheCatch(_ report: String, in body: String) -> Bool {
+        guard let failure = body.range(of: "catch", options: .backwards),
+              let reported = body.range(of: report, options: .backwards) else { return false }
+        return reported.lowerBound > failure.upperBound
+    }
+
+    /// The body of the one declaration named `name`.
+    ///
+    /// `CadenceSourceScan.functionBody(named:)` cannot be used for these: a function taking
+    /// `commit: (ModelContext) throws -> Void = { try $0.save() }` puts a brace inside its
+    /// signature, and that reader takes the first `{` after the signature — so it would return
+    /// `try $0.save()` as the whole body and every `try?`-free assertion would pass vacuously.
+    /// `CadenceSaveCommitRule.declarations` skips a brace at non-zero paren depth, which is the
+    /// reason it exists, so the reader the rule uses is the reader these suites use.
+    static func declarationBody(named name: String, in source: String) throws -> String {
+        let matches = CadenceSaveCommitRule.declarations(in: source).filter { $0.name == name }
+        #expect(matches.count == 1, "expected one declaration named \(name), found \(matches.count)")
+        return try #require(matches.first?.body)
+    }
+
+    /// A file read as comment-stripped text, with the two checks that keep the read honest: it is
+    /// long enough to be the file, and the stripper preserved its length.
+    ///
+    /// **No `stripped != raw` here, deliberately.** That is an assertion about the *file* rather
+    /// than about the reader — a file carrying no comment at all would fail it for no reason. Each
+    /// suite pins the stripper's discrimination on a literal instead.
+    static func scanned(_ path: String) throws -> String {
+        let raw = try CadenceSourceScan.sourceFile(path)
+        #expect(raw.count > 400, "\(path) read as \(raw.count) characters")
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped.count == raw.count, "\(path): the stripper changed the length")
+        return stripped
     }
 }

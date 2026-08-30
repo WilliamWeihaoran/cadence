@@ -424,8 +424,8 @@ struct iOSCalendarQuickCreateSheet: View {
 
     private var containerTitle: String {
         if containerSelection == "inbox" { return "Inbox" }
-        if let selectedArea { return selectedArea.name.isEmpty ? "Untitled Area" : selectedArea.name }
-        if let selectedProject { return selectedProject.name.isEmpty ? "Untitled Project" : selectedProject.name }
+        if let selectedArea { return selectedArea.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : selectedArea.name }
+        if let selectedProject { return selectedProject.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : selectedProject.name }
         return "Inbox"
     }
 

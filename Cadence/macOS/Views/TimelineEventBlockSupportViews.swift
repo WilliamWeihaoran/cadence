@@ -21,6 +21,7 @@ struct CalendarEventEditPopover: View {
     @State private var selectedCalendarID: String
     @State private var presentedEventNote: Note?
     @State private var pendingAction: PendingAction?
+    @State private var noteFailureNotice: String?
 
     private enum PendingAction {
         case save
@@ -252,6 +253,10 @@ struct CalendarEventEditPopover: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.blue)
             }
+
+            if let noteFailureNotice {
+                CadenceInlineFailureNotice(text: noteFailureNotice)
+            }
         }
     }
 
@@ -345,9 +350,25 @@ struct CalendarEventEditPopover: View {
         return hour * 60 + m
     }
 
+    /// **T-503, and the macOS twin of the site [[T-497]] fixed on iOS** — one platform behind, and
+    /// worse: `iOSCalendarEventEditSheet.openEventNote` at least attempted a save, while this one
+    /// inserted the note and presented the editor over it with no `save()` of any kind. Opening the
+    /// editor *is* the report of success here, so the user landed in an editor on a row the store
+    /// had never been asked to take, and the row sat pending in the app's single `ModelContext`
+    /// until an unrelated save committed it or an unrelated `rollback()` discarded it.
+    ///
+    /// The trap T-497 found applies unchanged, because both platforms call the same
+    /// `CadenceEventNoteSupport.noteForEditing`: it returns an **existing** note as often as it
+    /// creates one, and only the second case has anything to un-insert. So the closure records what
+    /// it actually inserted rather than assuming — a blind `commitInsert(of: note)` would delete a
+    /// note the user already had. When nothing was inserted the commit is a plain flush of the
+    /// metadata reconciliation `noteForEditing` performs on the existing note; that is an in-place
+    /// field edit the next open recomputes, so it needs no undo, but its refusal still has to stop
+    /// the sheet from opening on it.
     private func openEventNote() {
         let metadata = EventNoteSupport.eventDateMetadata(from: item.ekEvent)
-        presentedEventNote = EventNoteSupport.noteForEditing(
+        var inserted: [any PersistentModel] = []
+        guard let note = EventNoteSupport.noteForEditing(
             calendarEventID: item.id,
             eventTitle: item.title,
             calendarID: item.ekEvent.calendar.calendarIdentifier,
@@ -355,8 +376,21 @@ struct CalendarEventEditPopover: View {
             eventStartMin: metadata.startMin,
             eventEndMin: metadata.endMin,
             nativeNotes: item.ekEvent.notes,
-            notes: eventNotes
-        ) { modelContext.insert($0) }
+            notes: eventNotes,
+            insert: {
+                modelContext.insert($0)
+                inserted.append($0)
+            }
+        ) else { return }
+
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: inserted, in: modelContext)
+        } catch {
+            noteFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        noteFailureNotice = nil
+        presentedEventNote = note
     }
 }
 #endif

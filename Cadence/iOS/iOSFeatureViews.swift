@@ -182,7 +182,7 @@ struct iOSGoalsView: View {
 
     private func goalRow(_ goal: Goal, isSelected: Bool) -> some View {
         iOSFeatureSummaryRow(
-            title: goal.title.isEmpty ? "Untitled Goal" : goal.title,
+            title: goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title,
             subtitle: rowSubtitle(for: goal),
             detail: GoalContributionResolver.summary(for: goal).percentLabel,
             icon: goal.icon,
@@ -193,7 +193,7 @@ struct iOSGoalsView: View {
 
     private func rowSubtitle(for goal: Goal) -> String {
         if let parent = goal.parentGoal {
-            return parent.title.isEmpty ? "Untitled Goal" : parent.title
+            return parent.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : parent.title
         }
         let summary = CadenceGoalGroupSupport.summary(for: goal)
         return "\(summary.activeGoalCount) milestones / \(summary.activeHabitCount) habits"

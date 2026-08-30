@@ -898,7 +898,7 @@ final class CadenceReadService {
                 return CadenceSearchHit(
                     entityType: "goal",
                     entityId: goal.id.uuidString,
-                    title: CadenceTitleNormalization.display(goal.title, fallback: "Untitled Goal"),
+                    title: CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultGoalTitle),
                     subtitle: [goal.context?.name ?? "No context", goal.statusRaw].joined(separator: " - "),
                     excerpt: excerpt(goal.desc),
                     score: score
@@ -912,7 +912,7 @@ final class CadenceReadService {
                 return CadenceSearchHit(
                     entityType: "habit",
                     entityId: habit.id.uuidString,
-                    title: CadenceTitleNormalization.display(habit.title, fallback: "Untitled Habit"),
+                    title: CadenceTitleNormalization.display(habit.title, fallback: CadenceTitleNormalization.defaultHabitTitle),
                     // The unit comes from the frequency, not from the sentence: `currentStreak`
                     // counts *weeks* for `.timesPerWeek`, so a hardcoded "day" turned eight kept
                     // weeks into "8 day streak" — a number an MCP client would then repeat back to
@@ -1123,7 +1123,7 @@ final class CadenceReadService {
     private func goalSummary(_ goal: Goal) -> CadenceGoalSummary {
         CadenceGoalSummary(
             id: goal.id.uuidString,
-            title: CadenceTitleNormalization.display(goal.title, fallback: "Untitled Goal"),
+            title: CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultGoalTitle),
             description: goal.desc,
             startDate: goal.startDate,
             endDate: goal.endDate,
@@ -1152,7 +1152,7 @@ final class CadenceReadService {
         let today = DateFormatters.todayKey()
         return CadenceHabitSummary(
             id: habit.id.uuidString,
-            title: CadenceTitleNormalization.display(habit.title, fallback: "Untitled Habit"),
+            title: CadenceTitleNormalization.display(habit.title, fallback: CadenceTitleNormalization.defaultHabitTitle),
             icon: habit.icon,
             colorHex: habit.colorHex,
             frequencyType: habit.frequencyTypeRaw,

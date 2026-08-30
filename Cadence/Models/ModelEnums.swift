@@ -98,6 +98,43 @@ nonisolated enum CadenceTitleNormalization {
 
     static let defaultContextName = "Untitled Context"
 
+    // MARK: - The rest of the placeholder family
+
+    /// **T-505.** T-499 moved the three labels above because `CadenceMCPServer` could not read
+    /// them where they were. These seven had a different problem, and a quieter one: they had no
+    /// declaration *anywhere*, so there was nothing for a call site to read and nothing for
+    /// `CadenceSharedConstantReuseSweepTests` to compare a literal against. That sweep reports a
+    /// **shared constant re-typed**; with no constant there is no comparison to make, so 45
+    /// re-typings across all three targets sat under a guard already running over this exact
+    /// defect shape.
+    ///
+    /// Declaring them here rather than in `Shared/` is the same T-354 boundary T-499 recorded:
+    /// `CadenceReadService` (MCP) and `CadenceHabitWidgetSupport` / `CadenceMilestoneWidgetSupport`
+    /// (widgets) belong to targets that do not compile `Cadence/Shared/`, and `Models/` is the one
+    /// tree all three compile. Declaring them at all is what arms the sweep; no edit to the sweep
+    /// was needed, because its harvest already reads this file.
+    ///
+    /// The values are exactly what the 45 call sites already showed — a de-duplication, not a copy
+    /// change. The two genuine copy defects found alongside them are deliberately **not** folded in
+    /// here: a milestone picker labelling an empty milestone "Untitled Goal", and `"Untitled task"`
+    /// lower-cased on three surfaces against `defaultTaskTitle`'s capital. Both change what a user
+    /// reads, and neither is decidable from the literal.
+    static let defaultGoalTitle = "Untitled Goal"
+
+    static let defaultHabitTitle = "Untitled Habit"
+
+    static let defaultMilestoneTitle = "Untitled Milestone"
+
+    static let defaultNoteTitle = "Untitled Note"
+
+    static let defaultAreaName = "Untitled Area"
+
+    static let defaultProjectName = "Untitled Project"
+
+    /// An Apple Reminder with no title, in the macOS Inbox and the iOS reminders section. The one
+    /// label here that names a row the app did not create.
+    static let defaultReminderTitle = "Untitled Reminder"
+
     /// The stored form of a user-entered title: trimmed at both ends, newlines included.
     static func normalized(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines)

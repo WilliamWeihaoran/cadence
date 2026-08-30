@@ -407,12 +407,18 @@ struct CadenceMarkdownImageInsertionScopeTests {
             .sorted()
         #expect(swiftFiles.count > 100, "walked \(swiftFiles.count) files; that is not the app source tree")
 
-        // The editor's own file mentions the flag because it *declares* it and threads it into
-        // the representable (T-478, so the drag cursor stops promising a drop the host refuses).
-        // That is the definition site, not a host: it presents no editor of its own, so it cannot
-        // satisfy the `editors > 0` relation above and does not belong in `outOfStore`. Excluded
-        // by name rather than by a pattern, so a real host in this file would still be caught.
-        let flagDefinitionSites = ["Cadence/macOS/Editor/MarkdownEditorView.swift"]
+        // The editors' own files mention the flag because they *declare* it and thread it into
+        // their representables — macOS since T-478 (so the drag cursor stops promising a drop the
+        // host refuses), iOS since T-504 (so the edit menu stops offering a Paste that does
+        // nothing). Those are definition sites, not hosts: none presents an editor of its own, so
+        // none can satisfy the `editors > 0` relation above and none belongs in `outOfStore`.
+        // Excluded by name rather than by a pattern, so a real host in one of these files would
+        // still be caught.
+        let flagDefinitionSites = [
+            "Cadence/iOS/iOSMarkdownEditingSurface.swift",
+            "Cadence/iOS/iOSMarkdownEditor.swift",
+            "Cadence/macOS/Editor/MarkdownEditorView.swift"
+        ]
 
         var hostsPassingTheFlag: [String] = []
         for path in swiftFiles where !flagDefinitionSites.contains(path) {
@@ -421,8 +427,9 @@ struct CadenceMarkdownImageInsertionScopeTests {
             }
         }
 
-        // The exclusion must stay load-bearing: if the editor ever stops threading the flag, this
-        // list is silently protecting nothing and should be deleted along with T-478's work.
+        // The exclusions must stay load-bearing: if an editor ever stops threading the flag, its
+        // entry is silently protecting nothing and should be deleted along with the work that
+        // added it (T-478 on macOS, T-504 on iOS).
         for path in flagDefinitionSites {
             #expect(
                 try strippedSource(path).contains("allowsImageInsertion:"),

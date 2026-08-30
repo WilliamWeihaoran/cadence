@@ -93,23 +93,25 @@ Long references, searchable only when needed:
 
 ### The `try? save()` rule
 
-`try? modelContext.save()` is the most-repeated line in this repo (108 of them under `Cadence/`).
-It is allowed, and it is allowed **only** when the save commits nothing but in-place field edits to
-objects the store already holds, and nothing after it tells the user it worked. A site breaks the
-rule if either half is true:
+`try? modelContext.save()` is allowed **only** when the save commits nothing but in-place field
+edits to objects the store already holds, and nothing after it tells the user it worked. A site
+breaks the rule if any of three halves is true:
 
 1. **Existence** — the function also calls `modelContext.insert(…)` or `modelContext.delete(…)`.
-2. **Report** — something in the save's own block, after it, dismisses or reports success:
-   `dismiss()`, `isPresented = false`, `onSave(…)`.
+2. **Report** — something in the swallowed commit's own block, after it, dismisses or reports success:
+   `dismiss()`, `is<Something> = false`, `presentedThing = …`, `onSave(…)`. A "swallowed commit" is
+   `try?` on a `save()` **or** a `Cadence*Persistence` helper — the commit surface, not the method name.
+3. **Commit reach** — the function inserts and reaches **no commit at all**. Halves 1 and 2 key on
+   the *presence* of a swallowed save, so one that never commits passed both. A declaration **handed**
+   a `ModelContext` is exempt by rule; one that reached for an ambient context must commit.
 
-Both are fixed the same way: commit through `CadencePendingChangePersistence`
-(`commitInsert` / `commitDelete` / `commitEdit(in:undo:)`), `throws`, take the `commit:` parameter,
-and let the caller name the failure where the user is already looking.
+All three are fixed the same way: commit through `CadencePendingChangePersistence`
+(`commitInsert` / `commitDelete` / `commitEdit(in:undo:)`), `throws`, take `commit:`, and let the
+caller name the failure where the user is already looking.
 
-Why it matters: this app has **one** `ModelContext`, so a swallowed failure does not mean "the
-change did not happen" — the change stays *pending*, committed by the next unrelated `save()` from
-any other screen or discarded by the next unrelated `rollback()`. Enforced by
-`CadenceSaveCommitDisciplineTests`; see the runbook for its exemption lists.
+Why it matters: one `ModelContext` app-wide, so a swallowed failure does not mean "it did not
+happen" — the change stays *pending*, committed by the next unrelated `save()` from any screen or
+discarded by the next `rollback()`. Enforced by `CadenceSaveCommitDisciplineTests`.
 
 ## Build And Run Safety
 
@@ -180,20 +182,18 @@ Full incident details are in `docs/AGENTS_REFERENCE.md`.
 - `Cadence/macOS/Views/Timeline*`, `SchedulePanel*`, `CalendarPage*` - timeline math, drag/drop,
   EventKit, schedule state.
 - `Cadence/macOS/Views/TasksPanel*`, `ListDetail*`, `Inbox*`, `Kanban*` - task surfaces, sorting,
-  grouping, drag reorder, completion animations.
+  grouping, drag reorder.
 - `Cadence/macOS/Services/CalendarManager.swift`, `SchedulingService.swift`,
-  `TaskWorkflowService.swift`, deletion helpers - data mutations and EventKit side effects.
+  `TaskWorkflowService.swift`, deletion helpers - mutations and EventKit side effects.
 - Model or shared-service changes must review the MCP boundary; build `CadenceMCPServer` separately
   when relevant.
 
 ## Refactor Guidance
 
-Keep SwiftUI roots thin. Split by responsibility: root view for state/orchestration, support views
-for rows/sections, support/state files for derived state and geometry, services for persistence
-mutations and external side effects. Keep edits scoped, follow existing patterns, and run
-`git diff --check` plus the relevant build/test command after structural changes.
+Keep SwiftUI roots thin: root view for state/orchestration, support views for rows/sections,
+support/state files for derived state and geometry, services for persistence and side effects. Keep
+edits scoped and run the relevant build/test command after structural changes.
 
 ## Subagent verification runbook
 
-Coordinators: point subagents at `docs/SUBAGENT_RUNBOOK.md` instead of restating the isolated-copy,
-lock, scoped-run, mutation-evidence and cleanup rules in every brief.
+Coordinators: point subagents at `docs/SUBAGENT_RUNBOOK.md` rather than restating its rules.

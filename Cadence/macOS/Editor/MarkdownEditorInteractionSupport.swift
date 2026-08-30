@@ -99,8 +99,18 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     /// Appended, never prepended: `readSelection(from:)` picks the first of *these* types the
     /// pasteboard carries, so text keeps resolving to RTF or string exactly as before and only a
     /// pasteboard with nothing else on it reaches an image type.
+    ///
+    /// **Widened only at a host that will mint an asset for it (T-504).** This was the last of the
+    /// four image doors still open at a refusing host, and it was open the same way the drop was
+    /// before T-478: `onCreateMarkdownImages` returned `[]`, so `paste(_:)` fell through to
+    /// `super.paste` — which, on a view whose `importsGraphics` is deliberately off, does nothing at
+    /// all. **Paste** was therefore enabled over a copied screenshot in the note-template editor,
+    /// and using it changed nothing. Refusing here disables the menu item instead, which is the
+    /// answer the toolbar button, the `/` menu and the drag cursor already give. The two neighbours
+    /// below read the same flag; this one did not.
     override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
         var types = super.readablePasteboardTypes
+        guard allowsMarkdownImageInsertion else { return types }
         for type in MarkdownImageAssetService.readableImagePasteboardTypes where !types.contains(type) {
             types.append(type)
         }

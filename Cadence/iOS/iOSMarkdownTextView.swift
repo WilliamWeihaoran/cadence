@@ -6,6 +6,13 @@ final class iOSMarkdownTextView: UITextView {
     var indentationCommandHandler: ((Bool) -> Void)?
     var imagePasteHandler: (([UIImage]) -> Bool)?
     var layoutInvalidationHandler: (() -> Void)?
+    /// The host's `iOSMarkdownEditingSurface.allowsImageInsertion`, threaded down so the *edit
+    /// menu* answer matches the one every other image door already gives (T-504).
+    ///
+    /// Spelled exactly as `CadenceTextView.allowsMarkdownImageInsertion` is on macOS, because the
+    /// two views close the identical door and a reader who has met one should recognise the other.
+    /// Read by `canPerformAction(_:withSender:)` below.
+    var allowsMarkdownImageInsertion = true
     private var lastMarkdownLayoutSize: CGSize = .zero
 
     /// TextKit 1, built explicitly — **this is what makes rendered blocks visible at all.**
@@ -122,9 +129,19 @@ final class iOSMarkdownTextView: UITextView {
     ///
     /// `hasImages` and not `.images`: reading the pasteboard's contents raises the system's
     /// "pasted from" banner, and asking whether a menu item should be enabled must not do that.
+    ///
+    /// **`allowsMarkdownImageInsertion` comes before the pasteboard (T-504).** The widening was
+    /// unconditional, so at a host that refuses images — the note template, the event-edit sheet,
+    /// quick create in event mode — **Paste** was enabled over a copied image and did nothing:
+    /// `createPastedImageAssets` returned `[]`, `paste(_:)` fell through to `super.paste`, and
+    /// `super` declines an image on a view whose `allowsEditingTextAttributes` is false. That is
+    /// the same defect T-478 fixed on the drag cursor, one door along. The flag is tested first
+    /// because it is a local `Bool` and `hasImages` is not: a refusing host must not raise the
+    /// banner to answer a question it has already answered.
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         if action == #selector(UIResponderStandardEditActions.paste(_:)),
            isEditable,
+           allowsMarkdownImageInsertion,
            UIPasteboard.general.hasImages {
             return true
         }

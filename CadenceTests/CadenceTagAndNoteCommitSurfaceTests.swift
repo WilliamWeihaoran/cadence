@@ -330,44 +330,18 @@ struct CadenceTagAndNoteCommitSurfaceTests {
 
     // MARK: - Helpers
 
-    /// Whether `report` appears **after** the last `catch` in the body — i.e. below the failure
-    /// branch rather than above it.
-    ///
-    /// This is the assertion the whole ticket turns on, so it is deliberately crude and checkable:
-    /// an offset comparison, with `thesourceScanActuallyReadsTheseTagAndNoteSurfaces` pinning that
-    /// it answers differently for the two orders.
-    private func reportFollowsTheCatch(_ report: String, in body: String) -> Bool {
-        guard let failure = body.range(of: "catch", options: .backwards),
-              let reported = body.range(of: report, options: .backwards) else { return false }
-        return reported.lowerBound > failure.upperBound
-    }
-
-    /// The body of the one declaration named `name`.
-    ///
-    /// `CadenceSourceScan.functionBody(named:)` cannot be used here: `createNote` takes
-    /// `commit: (ModelContext) throws -> Void = { try $0.save() }`, and that reader takes the first
-    /// `{` after the signature — which is the **default argument's** closure, so it would return
-    /// `try $0.save()` as the whole body and every `try?`-free assertion below would pass
-    /// vacuously. `CadenceSaveCommitRule.declarations` skips a brace at non-zero paren depth,
-    /// which is the reason it exists (`theDeclarationSplitSkipsBracesInsideADefaultArgument`), so
-    /// the same reader the rule uses is the reader this file uses.
-    private func declarationBody(named name: String, in source: String) throws -> String {
-        let matches = CadenceSaveCommitRule.declarations(in: source).filter { $0.name == name }
-        #expect(matches.count == 1, "expected one declaration named \(name), found \(matches.count)")
-        return try #require(matches.first?.body)
-    }
-
-    /// **No `stripped != raw` here, deliberately.** The neighbouring scan suites assert it per
-    /// file, and it is an assertion about the *file* rather than about the reader:
-    /// `TagPickerPopoverViews.swift` carried no comment at all before this ticket, so that
-    /// assertion would have passed only because the fix happened to add doc comments to it, and
-    /// would go red again for anyone who deleted one. The stripper's discrimination is pinned on a
-    /// literal instead, in `thesourceScanActuallyReadsTheseTagAndNoteSurfaces`.
+    /// The three readers this suite used to declare privately. They moved to
+    /// `CadenceCommitSurfaceScan` when T-503 needed the same three for four more screens; the
+    /// reasoning that used to live here is on them.
     private func scanned(_ path: String) throws -> String {
-        let raw = try CadenceSourceScan.sourceFile(path)
-        #expect(raw.count > 400, "\(path) read as \(raw.count) characters")
-        let stripped = CadenceSourceScan.strippingComments(raw)
-        #expect(stripped.count == raw.count, "\(path): the stripper changed the length")
-        return stripped
+        try CadenceCommitSurfaceScan.scanned(path)
+    }
+
+    private func declarationBody(named name: String, in source: String) throws -> String {
+        try CadenceCommitSurfaceScan.declarationBody(named: name, in: source)
+    }
+
+    private func reportFollowsTheCatch(_ report: String, in body: String) -> Bool {
+        CadenceCommitSurfaceScan.reportFollowsTheCatch(report, in: body)
     }
 }

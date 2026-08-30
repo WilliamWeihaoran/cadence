@@ -38,7 +38,7 @@ struct iOSContainerChoicePopover: View {
                     groupLabel("Areas")
                     ForEach(activeAreas) { area in
                         choiceRow(
-                            title: area.name.isEmpty ? "Untitled Area" : area.name,
+                            title: area.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : area.name,
                             tag: "area:\(area.id.uuidString)",
                             systemImage: "tray.full.fill",
                             color: Color(hex: area.colorHex)
@@ -50,7 +50,7 @@ struct iOSContainerChoicePopover: View {
                     groupLabel("Projects")
                     ForEach(activeProjects) { project in
                         choiceRow(
-                            title: project.name.isEmpty ? "Untitled Project" : project.name,
+                            title: project.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : project.name,
                             tag: "project:\(project.id.uuidString)",
                             systemImage: "checklist",
                             color: Color(hex: project.colorHex)

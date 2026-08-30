@@ -151,7 +151,7 @@ struct iOSGoalEditorSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     iOSChoiceValueButton(
-                        title: selectedParentGoal.map { $0.title.isEmpty ? "Untitled Goal" : $0.title } ?? "None \u{2014} top-level goal",
+                        title: selectedParentGoal.map { $0.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : $0.title } ?? "None \u{2014} top-level goal",
                         color: Theme.text
                     ) {
                         showParentGoalPicker = true
@@ -160,7 +160,7 @@ struct iOSGoalEditorSheet: View {
                         iOSChoicePopoverList(
                             rows: [iOSChoiceRow<UUID?>(value: nil, title: "None \u{2014} top-level goal", color: Theme.dim)]
                                 + parentChoices.map { goal in
-                                    iOSChoiceRow(value: Optional(goal.id), title: goal.title.isEmpty ? "Untitled Goal" : goal.title, systemImage: goal.icon, color: Color(hex: goal.colorHex))
+                                    iOSChoiceRow(value: Optional(goal.id), title: goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title, systemImage: goal.icon, color: Color(hex: goal.colorHex))
                                 },
                             selection: $parentGoalID,
                             isPresented: $showParentGoalPicker
@@ -191,8 +191,7 @@ struct iOSGoalEditorSheet: View {
                                 value: item.id,
                                 title: item.title,
                                 systemImage: item.icon,
-                                color: item.tint,
-                                id: AnyHashable(item.id)
+                                color: item.tint
                             )
                         },
                         selection: $contextID,
@@ -457,8 +456,7 @@ struct iOSHabitEditorSheet: View {
                                 value: item.id,
                                 title: item.title,
                                 systemImage: item.icon,
-                                color: item.tint,
-                                id: AnyHashable(item.id)
+                                color: item.tint
                             )
                         },
                         selection: $contextID,
@@ -523,9 +521,9 @@ struct iOSHabitEditorSheet: View {
     }
 
     private func goalMenuTitle(for goal: Goal) -> String {
-        let name = goal.title.isEmpty ? "Untitled Goal" : goal.title
+        let name = goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title
         guard let parent = goal.parentGoal else { return name }
-        let parentName = parent.title.isEmpty ? "Untitled Goal" : parent.title
+        let parentName = parent.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : parent.title
         return "\(parentName) › \(name)"
     }
 

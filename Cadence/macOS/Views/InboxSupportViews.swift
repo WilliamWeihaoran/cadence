@@ -157,7 +157,7 @@ private struct AppleReminderTaskRow: View {
             .help(reminder.allowsCompletion ? "Complete in Apple Reminders" : "This reminder list is read-only")
             .padding(.horizontal, 8)
 
-            Text(reminder.title.isEmpty ? "Untitled Reminder" : reminder.title)
+            Text(reminder.title.isEmpty ? CadenceTitleNormalization.defaultReminderTitle : reminder.title)
                 .font(.system(size: 15))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)

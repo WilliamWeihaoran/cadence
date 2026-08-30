@@ -107,12 +107,12 @@ struct iOSTaskPlacementBreadcrumb: View {
         if containerSelection.wrappedValue.hasPrefix("area:"),
            let id = UUID(uuidString: String(containerSelection.wrappedValue.dropFirst(5))),
            let area = activeAreas.first(where: { $0.id == id }) {
-            return area.name.isEmpty ? "Untitled Area" : area.name
+            return area.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : area.name
         }
         if containerSelection.wrappedValue.hasPrefix("project:"),
            let id = UUID(uuidString: String(containerSelection.wrappedValue.dropFirst(8))),
            let project = activeProjects.first(where: { $0.id == id }) {
-            return project.name.isEmpty ? "Untitled Project" : project.name
+            return project.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : project.name
         }
         return CadenceTaskInspectorSupport.inboxSegmentTitle
     }

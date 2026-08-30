@@ -9,6 +9,16 @@ per-agent boilerplate.
 - **Scoped runs only.** Run `-only-testing:CadenceTests/<YourSuite>` for failing-first and every
   mutation. Do **not** run the full `CadenceTests` suite — the coordinator runs one integration pass
   for the whole batch, so a full run from you costs six minutes and duplicates it.
+- **`AGENTS.md` has a hard 200-line cap, enforced by `AgentContextBudgetTests`.** If your work earns a
+  new always-read rule, you must remove or link out something else in the same change — that is the
+  repo's stated convention, and it is a test, not a style note. Two agents in a row have landed a good
+  rule and left the file over the cap, which turns a green batch into a rerun. Write the rule tight,
+  put the detail here instead, and check `wc -l AGENTS.md` before you report.
+- **If you pass an id to `acquire`, pass the same id to `release`.** The trap idiom in the script's
+  header defaults the id to `$PPID`; if you acquired under a name, that mismatches, `release` finds
+  your own pid alive and **refuses**, and the lock strands until its lease expires. One agent lost 19
+  minutes to this and queued everyone behind it. Either acquire with no id, or write the trap as
+  `trap "./scripts/test-host-lock.sh release '$MYID'" EXIT INT TERM`.
 - **One script holds the lock.** Put `acquire`, a foreground `xcodebuild`, and `release` (via
   `trap ... EXIT`) in one script and launch it with `nohup ... &`. Acquiring in one shell and
   backgrounding xcodebuild in another releases the lease immediately.

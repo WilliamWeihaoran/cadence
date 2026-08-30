@@ -360,6 +360,19 @@ struct NoteEditorSheetHeaderTests {
 
     /// The shared view exists, spells the ramp once, and reads the width itself so neither sheet
     /// has to name those numbers.
+    ///
+    /// **[[T-492]] changed one of those needles and what this test is.** The horizontal margin was
+    /// in the list as the literal `.padding(.horizontal, isRegularWidth ? 20 : 18)`, so this test
+    /// was *pinning the copy in place*: T-281 closed a duplication between two sheets and opened
+    /// one against `iOSEditorSheetMetrics.gutter(isRegularWidth:)`, then asserted the new copy was
+    /// present. The needle now names the shared figure instead.
+    ///
+    /// The rest of the list stays source-shape and has to: `Cadence/iOS/` is fenced out of this
+    /// target, so `iOSNoteEditorSheetHeader` cannot be named here, never mind rendered. The gutter
+    /// is the exception, and that is the second half of the fix — `iOSEditorSheetMetrics` sits
+    /// outside `#if os(iOS)` precisely so the macOS test target can read it, so the margin the
+    /// header draws is now a **value** this target can evaluate rather than characters it can only
+    /// match.
     @Test func oneSharedViewOwnsTheNoteEditorHeaderRamp() throws {
         let code = CadenceSourceScan.strippingComments(
             try misfiledSourceFile("Cadence/iOS/iOSNoteEditorSheetHeader.swift")
@@ -372,13 +385,28 @@ struct NoteEditorSheetHeaderTests {
             ".lineLimit(2)",
             ".frame(maxWidth: .infinity, alignment: .leading)",
             ".frame(maxHeight: isRegularWidth ? .infinity : nil, alignment: .topLeading)",
-            ".padding(.horizontal, isRegularWidth ? 20 : 18)",
+            ".padding(.horizontal, iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))",
             ".padding(.vertical, isRegularWidth ? 20 : 14)",
             ".background(Theme.surface)",
             "@Environment(\\.horizontalSizeClass)"
         ] {
             #expect(code.contains(needle), "the shared header does not spell \(needle)")
         }
+
+        // The copy is gone, not merely joined by the shared call — the pair is what makes this an
+        // assertion about the file rather than about one line of it.
+        #expect(
+            code.contains("isRegularWidth ? 20 : 18") == false,
+            "the shared header spells the host gutter ramp again"
+        )
+
+        // **The behavioural half.** 20 and 18 used to exist in this target only as characters in
+        // the needle above. They are a figure the header reads now, and one this target can
+        // evaluate, so a change to the margin the header actually draws is visible from macOS.
+        // `iOSEditorSheetMetricsTests` owns the figure; this states that the header is downstream
+        // of it, which is the thing T-492 changed.
+        #expect(iOSEditorSheetMetrics.gutter(isRegularWidth: true) == 20)
+        #expect(iOSEditorSheetMetrics.gutter(isRegularWidth: false) == 18)
 
         // The accessory slot is what lets the event sheet keep its commit notice inside the block
         // without the linked sheet growing an empty one.
@@ -460,8 +488,13 @@ struct NoteEditorSheetHeaderTests {
     /// The sweep is the instrument that was missing: nothing in this target looked for a
     /// hand-rolled copy of that ramp, which is how T-281 could close one duplication by opening an
     /// instance of another — and how its own sibling test came to assert the copy is there
-    /// (`oneSharedViewOwnsTheNoteEditorHeaderRamp`). The offender is excluded **by name**, on the
-    /// T-449 pattern, so the hole is one line of test source and one line of view source.
+    /// (`oneSharedViewOwnsTheNoteEditorHeaderRamp`).
+    ///
+    /// **[[T-492]] closed it and the allowlist is down to the definition.** The offender was
+    /// excluded **by name**, on the T-449 pattern, and that is what made the fix one line of view
+    /// source and one line of test source. `misfiledGutterRampAllowed` now holds one path — the
+    /// file that declares `gutter` — so the loop below over "everything excused" and the sweep's
+    /// own verdict have stopped being two different populations.
     @Test func noEditorSheetSurfaceSpellsTheHostGutterRampItself() throws {
         let instrument = try misfiledGutterRampInstrument()
         let offenders = try instrument.sweep(
@@ -472,9 +505,9 @@ struct NoteEditorSheetHeaderTests {
         ).filter { !misfiledGutterRampAllowed.contains($0) }
         #expect(offenders.isEmpty, "hand-rolled editor-sheet gutter ramp: \(offenders)")
 
-        // Both exclusions must still be what they are excused for being — the definition, and the
-        // open copy. An allowlist entry that has stopped spelling the ramp is one to delete, not
-        // one to keep carrying.
+        // The exclusion must still be what it is excused for being. An allowlist entry that has
+        // stopped spelling the ramp is one to delete, not one to keep carrying — which is exactly
+        // what happened to the second entry when T-492 fixed the file it named.
         for path in misfiledGutterRampAllowed.sorted() {
             #expect(
                 instrument.fires(on: try misfiledSourceFile(path)),
@@ -666,11 +699,15 @@ private func misfiledSpellsWord(_ word: String, in source: String) -> Bool {
     CadenceSourceScan.matchCount("\\b\(word)\\b(?![A-Za-z0-9_])", in: source) > 0
 }
 
-/// The two files allowed to spell the editor-sheet gutter ramp: the one that defines it, and the
-/// one that copied it. See `noEditorSheetSurfaceSpellsTheHostGutterRampItself`.
+/// The one file allowed to spell the editor-sheet gutter ramp: the one that **defines** it.
+///
+/// It held a second entry until [[T-492]] — `iOSNoteEditorSheetHeader`, the copy T-281 opened while
+/// closing a different duplication — and that entry is deleted rather than kept, which is the point
+/// of naming an offender instead of writing a general exclusion: the allowlist shrinks to nothing
+/// but the definition, and a set of exactly one is a set that cannot quietly absorb the next one.
+/// See `noEditorSheetSurfaceSpellsTheHostGutterRampItself`.
 private let misfiledGutterRampAllowed: Set<String> = [
-    "Cadence/iOS/iOSEditorSheetMetrics.swift",
-    "Cadence/iOS/iOSNoteEditorSheetHeader.swift"
+    "Cadence/iOS/iOSEditorSheetMetrics.swift"
 ]
 
 private func misfiledGutterRampInstrument() throws -> CadenceScanInstrument {

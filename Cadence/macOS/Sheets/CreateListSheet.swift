@@ -18,6 +18,7 @@ struct CreateListSheet: View {
     @State private var hasDueDate: Bool = false
     @State private var hideDueDateIfEmpty = true
     @State private var hideSectionDueDateIfEmpty = true
+    @State private var createFailureNotice: String?
 
     enum ListType: String, CaseIterable {
         case area = "Area"
@@ -98,6 +99,10 @@ struct CreateListSheet: View {
                     isOn: $hideSectionDueDateIfEmpty
                 )
             }
+
+            if let createFailureNotice {
+                CadenceInlineFailureNotice(text: createFailureNotice)
+            }
         }
     }
 
@@ -105,9 +110,20 @@ struct CreateListSheet: View {
     /// spelling iOS already used (T-332). `details` is deliberately trimmed by *neither*
     /// platform: iOS assigns `area.desc = details` raw, so macOS assigns raw too and the two
     /// round-trip a description identically.
+    ///
+    /// **T-503, half 3 of the `try? save()` rule.** Like `CreateContextSheet.create`, this inserted
+    /// and dismissed with no `save()` at all, which is why neither of the rule's first two halves
+    /// could see it: both key on the presence of a swallowed save. The new list stayed pending in
+    /// the app's single `ModelContext` until some unrelated screen's save committed it — or some
+    /// unrelated `rollback()` threw it away.
+    ///
+    /// `inserted` is the object the switch actually made, so the undo reaches the right one of the
+    /// two arms; committing "the area or the project" without recording which is how the wrong
+    /// half of a branch gets un-inserted.
     private func create() {
         let trimmed = CadenceTitleNormalization.normalized(name)
         guard !trimmed.isEmpty else { return }
+        let inserted: any PersistentModel
         switch listType {
         case .area:
             let area = Area(name: trimmed, context: context, colorHex: selectedColor, icon: selectedIcon)
@@ -116,6 +132,7 @@ struct CreateListSheet: View {
             area.hideDueDateIfEmpty = hideDueDateIfEmpty
             area.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
             modelContext.insert(area)
+            inserted = area
         case .project:
             let project = Project(name: trimmed, context: context, colorHex: selectedColor)
             project.desc = details
@@ -125,7 +142,15 @@ struct CreateListSheet: View {
             project.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
             if hasDueDate { project.dueDate = DateFormatters.dateKey(from: dueDate) }
             modelContext.insert(project)
+            inserted = project
         }
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: [inserted], in: modelContext)
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        createFailureNotice = nil
         dismiss()
     }
 

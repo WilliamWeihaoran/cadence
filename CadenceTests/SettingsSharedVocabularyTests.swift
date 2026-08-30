@@ -55,16 +55,21 @@ struct SettingsSharedVocabularyTests {
     // MARK: - One choice picker, not two
 
     /// The picker is a real value with real defaults, checked by reading them.
-    @Test func theSharedChoiceRowKeepsItsDefaultsAndTitleDerivedIdentity() {
+    ///
+    /// **T-490 changed what `id` is derived from, and this test with it.** It used to read
+    /// `AnyHashable("Comfort")` — the *title* — with an `id:` parameter to override when two
+    /// options shared one, and 32 of the 35 call sites took the default. The parameter is gone and
+    /// the identity is `value`; `CadenceChoiceRowIdentityTests` is where that rule is pinned.
+    @Test func theSharedChoiceRowKeepsItsDefaultsAndValueDerivedIdentity() {
         let row = CadenceChoiceRow(value: 3, title: "Comfort", color: Theme.amber)
-        #expect(row.id == AnyHashable("Comfort"))
+        #expect(row.id == AnyHashable(3))
         #expect(row.subtitle == nil)
         #expect(row.systemImage == nil)
         #expect(row.value == 3)
 
-        // An explicit id wins, which is what lets two options share a title.
-        let explicit = CadenceChoiceRow(value: 4, title: "Comfort", color: Theme.amber, id: AnyHashable(4))
-        #expect(explicit.id == AnyHashable(4))
+        // Two options sharing a title stay two rows without the call site being asked about it.
+        let sameTitle = CadenceChoiceRow(value: 4, title: "Comfort", color: Theme.amber)
+        #expect(sameTitle.id != row.id)
     }
 
     /// The trigger's touch floor is opt-in and off by default, so the rows that pair it with a

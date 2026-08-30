@@ -196,8 +196,15 @@ struct CadenceContextPickerConsolidationTests {
 
     // MARK: - The call sites
 
-    /// Every file that presents a context picker, plus the one file allowed to derive the list.
+    /// Every file that presents a context picker, plus the two that hold the list it reads.
+    ///
+    /// **T-488 moved the rules out of `CadenceContextPickerSupport.swift`.** They are generic now
+    /// — `CadencePickerSupport`, shared with the area picker — and that file keeps only `Context`'s
+    /// own two facts behind a typealias. So the sweep below, whose needle is a *context* array
+    /// being sorted or filtered, now expects no hits at all rather than one: the single remaining
+    /// derivation is written over `elements`, not `contexts`, and no longer answers to it.
     private static let pickerSources = [
+        "Cadence/Shared/CadencePickerSupport.swift",
         "Cadence/Shared/CadenceContextPickerSupport.swift",
         "Cadence/macOS/Views/CadenceContextPicker.swift",
         "Cadence/iOS/iOSListEditorViews.swift",
@@ -234,12 +241,15 @@ struct CadenceContextPickerConsolidationTests {
 
         let hits = try derives.sweep(
             Self.pickerSources,
-            atLeast: 4,
+            atLeast: 5,
             including: "Cadence/iOS/iOSTrackingEditorSheets.swift",
             read: readCodeOnly
         )
 
-        #expect(hits == ["Cadence/Shared/CadenceContextPickerSupport.swift"])
+        // Was `["Cadence/Shared/CadenceContextPickerSupport.swift"]`; see `pickerSources`. The
+        // claim is strictly stronger than it was, and the instrument plus `atLeast:` are what keep
+        // an empty result from being the shape a broken detector or an unread walk also produces.
+        #expect(hits.isEmpty)
     }
 
     /// **And all three presentations read it.** Absence of a private sort is not presence of the

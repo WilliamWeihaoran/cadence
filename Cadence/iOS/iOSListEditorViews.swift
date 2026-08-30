@@ -66,10 +66,6 @@ struct iOSListEditorSheet: View {
         }
     }
 
-    private var activeAreas: [Area] {
-        areas.filter(\.isActive)
-    }
-
     /// Read out of the same list the popover offers, which is the point: this used to resolve
     /// against `activeContexts` while `save()` resolved against the unfiltered query, so a project
     /// whose context had been archived showed "None" here and kept the archived context on save.
@@ -81,12 +77,17 @@ struct iOSListEditorSheet: View {
         )
     }
 
+    /// The same rule as `contextTitle`, one row down, and for the same reason (T-488): this used to
+    /// resolve against `areas.filter(\.isActive)` while `save()` resolved `selectedArea` against
+    /// the unfiltered query, so a project whose area had been completed or archived read "None"
+    /// here and wrote the inactive area back on Save. Both halves take `areas` now, so the label
+    /// and the saved value cannot name two different things.
     private var areaTitle: String {
-        guard selectedAreaID != "none",
-              let area = activeAreas.first(where: { $0.id.uuidString == selectedAreaID }),
-              !area.name.isEmpty
-        else { return "None" }
-        return area.name
+        CadenceAreaPickerSupport.selectionTitle(
+            from: areas,
+            selectedID: selectedArea?.id,
+            noneTitle: "None"
+        )
     }
 
     private var trimmedName: String {
@@ -148,8 +149,7 @@ struct iOSListEditorSheet: View {
                                         value: item.id?.uuidString ?? "none",
                                         title: item.title,
                                         systemImage: item.icon,
-                                        color: item.tint,
-                                        id: AnyHashable(item.id)
+                                        color: item.tint
                                     )
                                 },
                                 selection: $selectedContextID,
@@ -167,10 +167,18 @@ struct iOSListEditorSheet: View {
                             }
                             .popover(isPresented: $showAreaPicker) {
                                 iOSChoicePopoverList(
-                                    rows: [iOSChoiceRow(value: "none", title: "None", color: Theme.dim)]
-                                        + activeAreas.map { area in
-                                            iOSChoiceRow(value: area.id.uuidString, title: area.name.isEmpty ? "Untitled Area" : area.name, color: Color(hex: area.colorHex))
-                                        },
+                                    rows: CadenceAreaPickerSupport.items(
+                                        from: areas,
+                                        selectedID: selectedArea?.id,
+                                        noneTitle: "None"
+                                    ).map { item in
+                                        iOSChoiceRow(
+                                            value: item.id?.uuidString ?? "none",
+                                            title: item.title,
+                                            systemImage: item.icon,
+                                            color: item.tint
+                                        )
+                                    },
                                     selection: $selectedAreaID,
                                     isPresented: $showAreaPicker
                                 )

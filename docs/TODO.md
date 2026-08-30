@@ -501,12 +501,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   should go.
 
 
-- [T-488] **`iOSListEditorSheet`'s Area row has the defect [[T-446]] just fixed for Context.** Same file,
-  one row down the same `Form`: `areaTitle` (`iOS/iOSListEditorViews.swift:83`) resolves against
-  `areas.filter(\.isActive)` while `selectedArea` (`:510`), which `save()` uses, resolves against the
-  unfiltered `areas`, and the popover offers only active ones. So editing a project whose area was since
-  deactivated **shows "None" and saves the inactive area**. There is no shared support type for area
-  picking to route it through — `CadenceContextPickerSupport` is the model to copy.
 
 - [T-489] **DECIDE: `.stroke` vs `.strokeBorder` app-wide.** Withdrawn from [[T-449]] rather than done.
   `macOS/Views/SettingsListManagementSections.swift:381` draws a 28x28 glyph at radius 7 with `.stroke`,
@@ -515,11 +509,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   is a 1pt visual change nobody has looked at and **28 other sites spell it the same way**. Either an
   app-wide sweep or nothing.
 
-- [T-490] **`CadenceChoiceRow` defaults its `id` to `AnyHashable(title)`, and 32 call sites take the
-  default.** Two options with the same displayed title collide into one `ForEach` identity in
-  `CadenceChoicePopoverList`. [[T-446]] passed an explicit id at its three context sites; the other 32 in
-  `Cadence/iOS/` still default. Either make `id` non-defaulted or derive it from `value`, which is
-  already `Hashable`, rather than from the title.
 
 - [T-491] **The iPad capture palette's scrim stops at the detail pane.** Found while closing [[T-282]].
   `iPadMacStyleRootShell` clips `detail()` and the capture host is inside it, so an open palette **dims
@@ -527,15 +516,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   tab bar. The scrim's `.ignoresSafeArea()` is a no-op inside that clip. Placement-vs-capability
   judgement, so it needs a decision rather than a fix.
 
-- [T-492] **`iOSNoteEditorSheetHeader` hand-spells the editor-sheet host gutter.** Residue from
-  [[T-281]] — the fix that closed one duplication opened this one.
-  `.padding(.horizontal, isRegularWidth ? 20 : 18)` is exactly
-  `iOSEditorSheetMetrics.gutter(isRegularWidth:)`, which five surfaces read and whose own comment says it
-  exists so that figure is stated once. Worse, T-281's `oneSharedViewOwnsTheNoteEditorHeaderRamp`
-  **asserts the literal is present**, pinning the copy in place. Closing it is one line of view source
-  plus removing the named exclusion in `noEditorSheetSurfaceSpellsTheHostGutterRampItself`. Worth doing
-  for a second reason: `iOSEditorSheetMetrics` sits outside `#if os(iOS)` so `CadenceTests` can read it,
-  so routing the header through it converts that ramp into a behavioural assertion.
 
 - [T-493] **`iPadTodaySidePanel`'s kept prefix rests on a claim the code does not keep.**
   `iPadTodaySupportViews.swift` says all three kept types are built only by the two-pane host and "a
@@ -546,13 +526,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   why nothing said so. Either rename it or correct the comment.
 
 
-- [T-495] **`MarkdownEditorView` replaces `NSTextView`'s dragged-type registration rather than adding to
-  it.** `registerForDraggedTypes` sets the accepted-type list wholesale and `configure(_:context:)` has
-  called it unconditionally since before [[T-478]], so the macOS note editor may accept only the types
-  Cadence names — **plain-text and RTF drags into a note might silently do nothing**. **Not measured**: no
-  drag was performed, and `NSTextView` re-registers `acceptableDragTypes` on its own at various points,
-  which may already restore them. Cheap to settle by hand — drag selected text from another app into a
-  note. If real, union with `super`'s types in `CadenceTextView.registerMarkdownDraggedTypes()`.
 
 - [T-496] **One uppercase label size, three trackings.** `SectionEyebrowLabel.Size.standard` is 10/0.8
   (0.08em, derived), `CadenceBoardColumnHeaderMetrics` is 10/0.4 (literal),
@@ -576,43 +549,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Establish how many are wrong before deciding whether to re-derive them.
 
 
-- [T-503] **The `try? save()` rule is blind to "insert and never commit at all."** Found by [[T-497]]
-  while applying the rule. **Both halves key on the *presence* of a `try? ...save()`**, so a function
-  that inserts and never commits passes both sweeps. Measured over 552 files: **21 declarations call
-  `modelContext.insert(...)` and reach neither `save()` nor any `commit*`. Four of those also report
-  success in the same function** — [[T-471]]'s defect with the save missing entirely rather than
-  swallowed:
-  `CreateContextSheet.create` (`insert; dismiss()`), `CreateListSheet.create` (same),
-  `HabitsFormSheets.create` (`insert; scheduleReconcile; dismiss()`), and
-  `TimelineEventBlockSupportViews.openEventNote` — **the exact macOS twin of the site T-497 just fixed
-  on iOS, one platform behind, and worse: iOS at least attempted a save.** Cost is the one [[T-322]]
-  measured: the row stays *pending* in the single `ModelContext`, committed by the next unrelated save
-  from any screen or discarded by the next unrelated `rollback()`. Fix: route the four through
-  `commitInsert`, then add a **third half** to the rule (a declaration that inserts must reach a
-  commit), subtracting the 17 helper cases **by rule** — those are inserts whose *caller* owns the unit
-  of work. Also add `presented[A-Z]\w* =` to half 2's vocabulary.
 
-- [T-504] **An enabled Paste that does nothing, at the four hosts that refuse images.** Symmetric on
-  both platforms, confirmed by construction. iOS: `canPerformAction` returns `true` for any image-only
-  pasteboard, but `createPastedImageAssets` returns `[]` when `allowsImageInsertion` is false, so
-  `paste(_:)` falls through to `super.paste`, which does nothing on a view with
-  `allowsEditingTextAttributes = false`. macOS: `readablePasteboardTypes`
-  (`MarkdownEditorInteractionSupport.swift:101`) widens **unconditionally**, even though the same class
-  already carries `allowsMarkdownImageInsertion` — `registerMarkdownDraggedTypes` and
-  `markdownImageDropOperation` both consult it and this one does not. Affects the note-template editor
-  on both platforms, the calendar event-edit sheet, and quick-create in event mode. One clause on
-  macOS; thread the flag onto `iOSMarkdownTextView` for iOS.
 
-- [T-505] **Four "Untitled ..." labels have no declaration anywhere.** Found while closing [[T-499]].
-  Unlike the three labels that one moved, `"Untitled Goal"`, `"Untitled Habit"`,
-  `"Untitled Milestone"` and `"Untitled Note"` are re-typed with nowhere to read them from —
-  `CadenceReadService.swift:901,915,1126,1155`, `CadenceHabitWidgetSupport.swift:200`,
-  `CadenceMilestoneWidgetSupport.swift:284`, `CadenceNoteExportSupport.swift:107`,
-  `AIActionService.swift:86`, plus ~a dozen iOS sites. **The sweep structurally cannot see them**: it
-  reports a *shared constant* re-typed, and with no declaration there is nothing to compare against.
-  T-499 makes the fix cheap — declare them beside the other three in `CadenceTitleNormalization` and the
-  sweep picks them up automatically, since the harvest now reads `Cadence/Models/`. Spans all three
-  targets.
 
 
 - [T-497] **Tier 3 of the condemned `try? save()` sites — 2 left of the original 12.**
@@ -655,14 +593,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `actionError` notice near the saved-links section, and pin so iOS cannot reintroduce `try?`. Same
   shape as [[T-470]]/[[T-471]].
 
-- [T-508] **The `try? save()` rule keys on `save()` specifically, so it misses `try?` on commit helpers
-  and file writes.** Distinct from [[T-503]] and found the same way — by two real defects it could not
-  see. The sweep's patterns are `try? save()` and `try? modelContext.save()`, so
-  `try? CadenceSavedLinkPersistence.insert(...)` ([[T-507]]) and `try? content.write(to:)` ([[T-506]])
-  both pass all halves. **Widen the vocabulary to the commit surface rather than the method name**: any
-  `try?` on a `CadencePendingChangePersistence.commit*`, on a `Cadence*Persistence` helper, or on a
-  `Foundation` write whose failure the caller then reports success over. Measure the new hit count
-  before shipping — the value of this rule so far has been that 86% of sites legitimately pass it.
 
 - [T-509] **Saved-link URL normalisation mangles an uppercase scheme, on both platforms** (Codex, P3,
   measured). `macOS/Views/LinksView.swift:99` and `iOS/iOSListSupportViews.swift:677` both test
@@ -677,6 +607,51 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   and the project lists `iphoneos iphonesimulator macosx`. If the next submission is Mac-only the packet
   should say so explicitly; if it includes iOS/iPadOS, the packet and its readiness tests need updating.
   **Decide before submitting, not after.**
+
+
+- [T-511] **Does a plain-text drag reach the macOS note editor at all?** Residue from [[T-495]], which
+  disproved the clobbering mechanism. **Not answerable headless** — an offscreen `NSTextView` registers
+  no drag types under any sequence tried, which is either the real behaviour or an artifact of a test
+  host with no display server. **One manual drag settles it**: open a note on macOS, drag a text
+  selection from another app onto the editor, watch for the insertion caret following the pointer. If it
+  fails, the fix is a **deliberate registration of the text types — not** a union with
+  `acceptableDragTypes`, which would re-advertise bitmaps at a refusing host and undo half of [[T-478]].
+
+- [T-512] **Two functions build the labels [[T-505]] just declared, and no literal sweep can see them.**
+  `iOSListDeletionSupport.swift:40` and `iOSListWindDownSupport.swift:85` are near-identical `name`
+  properties returning `"Untitled \(kind.noun)"` / `"Untitled \(noun)"`, where `noun` is
+  `"Area"`/`"Project"`/`"Context"` — so **at runtime they produce exactly `defaultAreaName`,
+  `defaultProjectName` and `defaultContextName`.** Renaming any of those three constants leaves these
+  two behind, silently. This is the [[T-500]] shape (a duplicated *function*) doubled by the sweep's own
+  stated exclusion: interpolated literals are dropped by the harvest regex **by construction**. Both
+  files' comments already claim they use "the same 'Untitled …' fallback" as each other — the claim is
+  true and nothing holds it true.
+
+- [T-513] **Two copy defects [[T-505]] deliberately did not launder.** (1) `iOSFeatureDetailViews.swift:83`
+  labels an untitled **milestone** `"Untitled Goal"` — inside `iOSEditorSection(title: "Milestones")`,
+  iterating `milestones` — while `iOSTaskDetailSheetSections.swift:65,77` and
+  `iOSTaskRowActionViews.swift:395` say `"Untitled Milestone"` for the same kind of row. (2)
+  `"Untitled task"` is lower-cased at `SchedulePanelComponents.swift:88` and
+  `macOSRootSupportViews.swift:527` (and as a `TextField` placeholder at
+  `iOSTaskDetailComponents.swift:72`) against `defaultTaskTitle`'s capital. **Both change what a user
+  reads and neither is decidable from the literal**, so both were left visible rather than folded into a
+  constant — which would have frozen the drift under a fix that looks like cleanup.
+
+- [T-514] **`iOSTaskPlacementBreadcrumb` is the third instance of the display/save split, and the
+  worst-reading one.** Found while closing [[T-488]]. `iOSTaskDetailSheet.loadContainerSelection()` sets
+  `"area:<id>"` from the task's real area and `selectedArea` resolves against unfiltered `areas`, but the
+  breadcrumb (`iOS/iOSTaskDetailComponents.swift:106`) resolves against `activeAreas` and falls through
+  to **"Inbox"**. So **a task in a completed or archived list claims to be in the Inbox**, and
+  `iOSContainerChoicePopover` offers only active lists so it cannot be moved out.
+  `iOSTaskRowActionViews.swift:500-504` feeds the same popover. **Not a `CadencePickerSupport` drop-in** —
+  it is a grouped three-way Inbox/Area/Project control, so it needs `selectable(_:selectedID:)` applied
+  to both arrays plus the breadcrumb reading unfiltered.
+
+- [T-515] **The rest of the "Untitled …" family, below [[T-505]]'s ≥2-files rule.** `"Untitled List"`
+  (`TaskBundlePickerSupportViews.swift:179,211` — 2 sites, one file), `"Untitled subtask"`
+  (`MarkdownTaskEmbedDrawingSupport.swift:429,511` — 2 sites, one file), `"Untitled Column"`
+  (`iOSColumnWindDownSupport.swift:50` — 1 site). Real but weaker: **a constant with one call site is a
+  name, not a de-duplication.** Recorded so the omission is a decision rather than an oversight.
 
 
 ## Done
@@ -1274,6 +1249,92 @@ before filing**: this list has had the same ticket re-reported more than once.
   `CadenceTitleNormalization.display(_:fallback:)`. A [[T-374]] instance its string sweep **structurally
   cannot see**: that sweep detects a duplicated literal, not a duplicated function.
   **Closed 2026-08-30, **and the divergence check changed the answer: the four are two.** `CadenceMCPServiceSupport.resolvedTitle` is character-for-character `CadenceTitleNormalization.display`, and `CadenceReadService.resolvedTitle` was already a private *forwarder* to it, not a fourth implementation — both deleted, 11 call sites now call `display`. The two `sanitizedReferenceTitle`s are byte-identical to each other and **not** re-implementations of `display`: they are `display` composed with a five-character markdown escape. **Collapsing all four as the ticket asked would have dropped the escaping that keeps `[[task:UUID|Read [ch. 3]]]` from ending two characters early.** Consolidated as `CadenceTitleNormalization.referenceDisplay`, which had to live in `Models/`: the MCP target compiles `NoteReferenceSupport.swift` and not `MarkdownTaskEmbedSupport.swift`, so the two halves had no other file they could both reach.**
+
+- [T-488] **`iOSListEditorSheet`'s Area row has the defect [[T-446]] just fixed for Context.** Same file,
+  one row down the same `Form`: `areaTitle` (`iOS/iOSListEditorViews.swift:83`) resolves against
+  `areas.filter(\.isActive)` while `selectedArea` (`:510`), which `save()` uses, resolves against the
+  unfiltered `areas`, and the popover offers only active ones. So editing a project whose area was since
+  deactivated **shows "None" and saves the inactive area**. There is no shared support type for area
+  picking to route it through — `CadenceContextPickerSupport` is the model to copy.
+  **Closed 2026-08-30 **by generalising [[T-446]]'s list rather than copying it**. The two support types were diffed before choosing: everything was identical except offerability and the untitled label, so `CadencePickerSupport` is now generic over a `CadencePickable` and the Area and Context types are a typealias plus those two facts. **The offerability difference matters** — an area has three states, so copying Context's `!isArchived` rule would leave a *completed* area offerable; the mutation that swaps it in kills a test by name. `theAreaPickerSupportIsNotASecondCopyOfTheContextPicker` pins that exactly one file declares the rules, so the [[T-374]] near-copy cannot come back. `Project` is deliberately not conformed — nothing picks a project alone. Third instance of the split filed as [[T-514]].**
+
+- [T-490] **`CadenceChoiceRow` defaults its `id` to `AnyHashable(title)`, and 32 call sites take the
+  default.** Two options with the same displayed title collide into one `ForEach` identity in
+  `CadenceChoicePopoverList`. [[T-446]] passed an explicit id at its three context sites; the other 32 in
+  `Cadence/iOS/` still default. Either make `id` non-defaulted or derive it from `value`, which is
+  already `Hashable`, rather than from the title.
+  **Closed 2026-08-30, **more strongly than the ticket proposed**. Rather than making `id:` mandatory, the parameter is **removed** and identity is `AnyHashable(value)` as a computed property — checked across all 35 call sites, including the `["none"] + areas`, `[-1] + minutes` and `[nil] + goalIDs` concatenations, and `value` is already what `selection` compares against. That takes the decision away from authors instead of asking 35 of them to answer it.**
+
+- [T-492] **`iOSNoteEditorSheetHeader` hand-spells the editor-sheet host gutter.** Residue from
+  [[T-281]] — the fix that closed one duplication opened this one.
+  `.padding(.horizontal, isRegularWidth ? 20 : 18)` is exactly
+  `iOSEditorSheetMetrics.gutter(isRegularWidth:)`, which five surfaces read and whose own comment says it
+  exists so that figure is stated once. Worse, T-281's `oneSharedViewOwnsTheNoteEditorHeaderRamp`
+  **asserts the literal is present**, pinning the copy in place. Closing it is one line of view source
+  plus removing the named exclusion in `noEditorSheetSurfaceSpellsTheHostGutterRampItself`. Worth doing
+  for a second reason: `iOSEditorSheetMetrics` sits outside `#if os(iOS)` so `CadenceTests` can read it,
+  so routing the header through it converts that ramp into a behavioural assertion.
+  **Closed 2026-08-30. `iOSNoteEditorSheetHeader` reads `iOSEditorSheetMetrics.gutter(isRegularWidth:)`; the named exclusion is deleted so the allowlist is down to the file that defines the ramp. **The ticket's second reason is the one that paid**: [[T-281]]'s test listed the margin as the literal `isRegularWidth ? 20 : 18`, so it was *pinning the copy in place*. It names the shared call now and states the figure as a value, which `iOSEditorSheetMetrics` sitting outside `#if os(iOS)` makes possible — converting a source-shape assertion into a behavioural one. Proved by mutation rather than claimed: flattening `gutter` to `20 : 20` **never touches the header file's text** and the header's own test still fails, which the pre-T-492 version could not have done.**
+
+- [T-495] **`MarkdownEditorView` replaces `NSTextView`'s dragged-type registration rather than adding to
+  it.** `registerForDraggedTypes` sets the accepted-type list wholesale and `configure(_:context:)` has
+  called it unconditionally since before [[T-478]], so the macOS note editor may accept only the types
+  Cadence names — **plain-text and RTF drags into a note might silently do nothing**. **Not measured**: no
+  drag was performed, and `NSTextView` re-registers `acceptableDragTypes` on its own at various points,
+  which may already restore them. Cheap to settle by hand — drag selected text from another app into a
+  note. If real, union with `super`'s types in `CadenceTextView.registerMarkdownDraggedTypes()`.
+  **Closed 2026-08-30 **as not a defect, disproven by measurement.** On a real offscreen `CadenceTextView` built exactly as `makeNSView` builds it: with registration never called, `registeredDraggedTypes == []` at *every* step of the real sequence — so there was nothing for `registerForDraggedTypes` to displace; it adds 3 to an empty list. **AppKit's own re-registration unions rather than replaces**: toggling `isEditable` yields 22 types, `acceptableDragTypes`' 19 plus Cadence's 3. And the proposed union has a measured cost — `acceptableDragTypes` carries the legacy TIFF and PNG names **even with `importsGraphics` off**, so unioning would re-advertise bitmap drags at a refusing host and **undo half of [[T-478]]**. Residual, filed as [[T-511]]: whether a plain-text drag reaches the editor at all in the running app, which is not answerable headless and is not caused by Cadence's call either way.**
+
+- [T-503] **The `try? save()` rule is blind to "insert and never commit at all."** Found by [[T-497]]
+  while applying the rule. **Both halves key on the *presence* of a `try? ...save()`**, so a function
+  that inserts and never commits passes both sweeps. Measured over 552 files: **21 declarations call
+  `modelContext.insert(...)` and reach neither `save()` nor any `commit*`. Four of those also report
+  success in the same function** — [[T-471]]'s defect with the save missing entirely rather than
+  swallowed:
+  `CreateContextSheet.create` (`insert; dismiss()`), `CreateListSheet.create` (same),
+  `HabitsFormSheets.create` (`insert; scheduleReconcile; dismiss()`), and
+  `TimelineEventBlockSupportViews.openEventNote` — **the exact macOS twin of the site T-497 just fixed
+  on iOS, one platform behind, and worse: iOS at least attempted a save.** Cost is the one [[T-322]]
+  measured: the row stays *pending* in the single `ModelContext`, committed by the next unrelated save
+  from any screen or discarded by the next unrelated `rollback()`. Fix: route the four through
+  `commitInsert`, then add a **third half** to the rule (a declaration that inserts must reach a
+  commit), subtracting the 17 helper cases **by rule** — those are inserts whose *caller* owns the unit
+  of work. Also add `presented[A-Z]\w* =` to half 2's vocabulary.
+  **Closed 2026-08-30. **The 21 re-measured and confirmed at exactly 21.** Four sites routed through `commitInsert` — `CreateContextSheet.create`, `CreateListSheet.create` (which records *which* switch arm ran, so the undo cannot un-insert the wrong one), `HabitsFormSheets.create` (whose `scheduleReconcile` fetches the habit table back, so it would have scheduled a reminder for a row about to be un-inserted), and `TimelineEventBlockSupportViews.openEventNote`. **[[T-497]]'s trap does apply to the macOS twin**: `noteForEditing` forwards to the same shared function, so it returns an existing note as often as it creates one and a blind `commitInsert(of:)` would delete a note the user already had — pinned through the macOS *wrapper*, since a forwarder that dropped its `insert:` closure is how this platform could inherit the shape without the behaviour. **Half 3's exemption list is empty, and that emptiness is the claim**: 16 of 17 helpers subtract by signature (`: ModelContext` in the parameter list *is* "my caller owns the unit of work" — deliberately not bare `ModelContext`, since `commit: (ModelContext) throws -> Void` is a commit handed *in*), and the 17th owns its context and commits two hops away, so commit-reach follows same-file calls to a fixed point.**
+
+- [T-504] **An enabled Paste that does nothing, at the four hosts that refuse images.** Symmetric on
+  both platforms, confirmed by construction. iOS: `canPerformAction` returns `true` for any image-only
+  pasteboard, but `createPastedImageAssets` returns `[]` when `allowsImageInsertion` is false, so
+  `paste(_:)` falls through to `super.paste`, which does nothing on a view with
+  `allowsEditingTextAttributes = false`. macOS: `readablePasteboardTypes`
+  (`MarkdownEditorInteractionSupport.swift:101`) widens **unconditionally**, even though the same class
+  already carries `allowsMarkdownImageInsertion` — `registerMarkdownDraggedTypes` and
+  `markdownImageDropOperation` both consult it and this one does not. Affects the note-template editor
+  on both platforms, the calendar event-edit sheet, and quick-create in event mode. One clause on
+  macOS; thread the flag onto `iOSMarkdownTextView` for iOS.
+  **Closed 2026-08-30, both platforms. macOS: `readablePasteboardTypes` returns `super`'s list unchanged when the flag is false — it was the only one of that class's three image doors not reading a flag its two neighbours already read. iOS: a new `allowsMarkdownImageInsertion` consulted in `canPerformAction` **before** `UIPasteboard.general.hasImages`, so a refusing host never raises the "pasted from" banner to answer a question it has already answered; set in `makeUIView` **and** `updateUIView`, the second being load-bearing because quick create flips `kind != .event` on a live text view. `paste(_:)` is left unguarded on purpose — its fall-through to `super.paste` is already correct and pinned. **The advertisement was the door.****
+
+- [T-505] **Four "Untitled ..." labels have no declaration anywhere.** Found while closing [[T-499]].
+  Unlike the three labels that one moved, `"Untitled Goal"`, `"Untitled Habit"`,
+  `"Untitled Milestone"` and `"Untitled Note"` are re-typed with nowhere to read them from —
+  `CadenceReadService.swift:901,915,1126,1155`, `CadenceHabitWidgetSupport.swift:200`,
+  `CadenceMilestoneWidgetSupport.swift:284`, `CadenceNoteExportSupport.swift:107`,
+  `AIActionService.swift:86`, plus ~a dozen iOS sites. **The sweep structurally cannot see them**: it
+  reports a *shared constant* re-typed, and with no declaration there is nothing to compare against.
+  T-499 makes the fix cheap — declare them beside the other three in `CadenceTitleNormalization` and the
+  sweep picks them up automatically, since the harvest now reads `Cadence/Models/`. Spans all three
+  targets.
+  **Closed 2026-08-30. **The four labels were seven and the ~20 sites were 45**, in 20 files across all three targets — re-measured rather than inherited, under a stated rule (declare iff the literal appears at ≥2 sites in ≥2 files), which added `"Untitled Area"` (9), `"Untitled Project"` (8) and `"Untitled Reminder"` (2). **No line of the sweep changed** — [[T-499]]'s harvest already read `Models/`, so declaring the constants was the whole fix, and the sweep went from silent to naming all seven the instant a declaration existed. **Kept deliberately behaviour-preserving**: every site kept its own guard rather than being routed through `display(_:fallback:)`, because `display` trims and `isEmpty` does not — converting 45 sites would have been a silent behaviour change to whitespace-only titles smuggled in under a de-duplication. Residues filed as [[T-512]] and [[T-513]].**
+
+- [T-508] **The `try? save()` rule keys on `save()` specifically, so it misses `try?` on commit helpers
+  and file writes.** Distinct from [[T-503]] and found the same way — by two real defects it could not
+  see. The sweep's patterns are `try? save()` and `try? modelContext.save()`, so
+  `try? CadenceSavedLinkPersistence.insert(...)` ([[T-507]]) and `try? content.write(to:)` ([[T-506]])
+  both pass all halves. **Widen the vocabulary to the commit surface rather than the method name**: any
+  `try?` on a `CadencePendingChangePersistence.commit*`, on a `Cadence*Persistence` helper, or on a
+  `Foundation` write whose failure the caller then reports success over. Measure the new hit count
+  before shipping — the value of this rule so far has been that 86% of sites legitimately pass it.
+  **Closed 2026-08-30 **with the measurement, and one carve-out**. Widened to the commit surface (`try?` on a `Cadence*Persistence` helper) and generalised `isPresented = false` to `is<Something> = false`. Measured over 552 files: **either half alone finds 0 new offenders; both together find exactly 1**, and that one is [[T-507]], now held in `reportExemptions` cross-referenced — whoever fixes it must delete the entry or the rot test fails. **`write(to:)` deliberately excluded**: measured at +0, and [[T-506]] is invisible not because of the needle but because nothing after that write reports success in source — the report is the *absence* of an error sheet. Out of the rule's shape, not hidden from it. Recorded in the rule so nobody re-derives it.**
 
 ## Cancelled
 

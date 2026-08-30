@@ -69,8 +69,8 @@ enum GoalLinkTarget: Identifiable {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty else { return trimmed }
         switch self {
-        case .area: return "Untitled Area"
-        case .project: return "Untitled Project"
+        case .area: return CadenceTitleNormalization.defaultAreaName
+        case .project: return CadenceTitleNormalization.defaultProjectName
         }
     }
 

@@ -299,7 +299,7 @@ struct iOSListsLifecycleSettingsSection: View {
                 ForEach(Array(areas.enumerated()), id: \.element.id) { index, area in
                     iOSListLifecycleSettingsRow(
                         icon: area.icon,
-                        title: area.name.isEmpty ? "Untitled Area" : area.name,
+                        title: area.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : area.name,
                         subtitle: area.context?.name ?? "No context",
                         color: Color(hex: area.colorHex),
                         statusLabel: area.isDone ? "Completed" : "Archived",
@@ -316,7 +316,7 @@ struct iOSListsLifecycleSettingsSection: View {
                 ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
                     iOSListLifecycleSettingsRow(
                         icon: project.icon,
-                        title: project.name.isEmpty ? "Untitled Project" : project.name,
+                        title: project.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : project.name,
                         subtitle: projectSubtitle(project),
                         color: Color(hex: project.colorHex),
                         statusLabel: project.isDone ? "Completed" : "Archived",

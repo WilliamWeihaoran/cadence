@@ -104,7 +104,7 @@ nonisolated enum NoteExportSupport {
     /// from the next.
     nonisolated static func suggestedFilename(title: String, format: NoteExportFormat) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (trimmed.isEmpty ? "Untitled Note" : trimmed) + ".\(format.pathExtension)"
+        return (trimmed.isEmpty ? CadenceTitleNormalization.defaultNoteTitle : trimmed) + ".\(format.pathExtension)"
     }
 
     /// The text that is exported, with every `[[task:UUID|Title]]` embed named by its **live** task.

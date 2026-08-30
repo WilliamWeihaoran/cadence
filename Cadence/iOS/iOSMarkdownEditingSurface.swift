@@ -209,7 +209,8 @@ struct iOSMarkdownEditingSurface: View {
                     },
                     onOpenReference: onOpenReference,
                     onCreatePastedImages: createPastedImageAssets,
-                    onResizeImage: resizeImageAsset
+                    onResizeImage: resizeImageAsset,
+                    allowsImageInsertion: allowsImageInsertion
                 )
                 .background(Color.clear)
             }

@@ -18,8 +18,21 @@ import SwiftUI
 /// one `RoundedRectangle`, one `backgroundFill` — rather than as a second `.background()`.
 
 /// One option in a `CadenceChoicePopoverList`.
+///
+/// **`id` is derived from `value`, and there is no way to hand one in (T-490).** It used to default
+/// to `AnyHashable(title)` with an override parameter, and 32 of the 35 call sites took the
+/// default — so two options whose *displayed* titles happened to match collapsed into a single
+/// `ForEach` identity and one of them stopped drawing. That is not hypothetical copy: an area or
+/// goal with no name renders as "Untitled Area" / "Untitled Milestone", so two unnamed ones are two
+/// rows with one title.
+///
+/// The parameter is gone rather than made mandatory. A required `id:` is 35 authors answering a
+/// question the type can answer once, and the answer is always the same: `value` is already
+/// `Hashable`, it is already what `selection` is compared against, and a picker offering two rows
+/// with the same `value` is broken at the binding before it is broken at the identity. Deriving it
+/// here also makes identity *stable* across a rename — the row keeps its place when its title
+/// changes, which is what `ForEach` identity is for.
 struct CadenceChoiceRow<T: Hashable>: Identifiable {
-    let id: AnyHashable
     let value: T
     let title: String
     /// What this option *means*, where the option's name does not already say it.
@@ -33,20 +46,20 @@ struct CadenceChoiceRow<T: Hashable>: Identifiable {
     let systemImage: String?
     let color: Color
 
+    var id: AnyHashable { AnyHashable(value) }
+
     init(
         value: T,
         title: String,
         subtitle: String? = nil,
         systemImage: String? = nil,
-        color: Color,
-        id: AnyHashable? = nil
+        color: Color
     ) {
         self.value = value
         self.title = title
         self.subtitle = subtitle
         self.systemImage = systemImage
         self.color = color
-        self.id = id ?? AnyHashable(title)
     }
 }
 

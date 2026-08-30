@@ -423,7 +423,7 @@ struct iOSTaskComposerMarkerSuggestions: View {
 
         ForEach(matchingAreas) { area in
             suggestion(
-                title: area.name.isEmpty ? "Untitled Area" : area.name,
+                title: area.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : area.name,
                 systemImage: "tray.full.fill",
                 tint: Color(hex: area.colorHex)
             ) {
@@ -433,7 +433,7 @@ struct iOSTaskComposerMarkerSuggestions: View {
 
         ForEach(matchingProjects) { project in
             suggestion(
-                title: project.name.isEmpty ? "Untitled Project" : project.name,
+                title: project.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : project.name,
                 systemImage: "checklist",
                 tint: Color(hex: project.colorHex)
             ) {

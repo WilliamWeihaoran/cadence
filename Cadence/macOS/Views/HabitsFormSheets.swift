@@ -21,6 +21,7 @@ struct CreateHabitSheet: View {
     @State private var selectedGoalID: UUID? = nil
     @State private var hasReminder = false
     @State private var reminderMinuteOfDay = CadenceHabitReminderEditing.defaultMinuteOfDay
+    @State private var createFailureNotice: String?
 
     private let initialGoal: Goal?
 
@@ -72,9 +73,22 @@ struct CreateHabitSheet: View {
                 contexts: allContexts,
                 goals: goalChoices
             )
+
+            if let createFailureNotice {
+                CadenceInlineFailureNotice(text: createFailureNotice)
+            }
         }
     }
 
+    /// **T-503, half 3 of the `try? save()` rule.** The habit was inserted and never committed —
+    /// no `save()` at all, which is why the rule's existence and report halves both missed it —
+    /// and then two things happened that only a *saved* habit earns: the notification reconcile ran
+    /// over it, and the sheet closed. So a store that refused the row still got a reminder
+    /// scheduled for it, and the user was told the habit existed.
+    ///
+    /// Both now sit below the `catch`. The reconcile in particular has to: it reads the habit table
+    /// back out of the context, so running it over an insert that is about to be un-inserted would
+    /// schedule a notification for a habit nothing holds.
     private func create() {
         let trimmed = CadenceTitleNormalization.normalized(title)
         guard !trimmed.isEmpty else { return }
@@ -99,6 +113,13 @@ struct CreateHabitSheet: View {
         habit.reminderMinuteOfDay = hasReminder ? reminderMinuteOfDay : nil
 
         modelContext.insert(habit)
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: habit, in: modelContext)
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        createFailureNotice = nil
         HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
         dismiss()
     }

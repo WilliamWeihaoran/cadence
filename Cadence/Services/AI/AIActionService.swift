@@ -83,7 +83,7 @@ enum AIActionService {
         let content = note.content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty else { throw AIActionError.emptyNote }
         return AITextNoteContext(
-            title: title.isEmpty ? "Untitled Note" : title,
+            title: title.isEmpty ? CadenceTitleNormalization.defaultNoteTitle : title,
             content: content,
             containerName: container(area: area, project: project).name
         )

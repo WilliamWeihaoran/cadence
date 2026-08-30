@@ -281,6 +281,6 @@ nonisolated enum CadenceMilestoneWidgetSupport {
 
     private nonisolated static func normalizedTitle(_ title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Untitled Milestone" : trimmed
+        return trimmed.isEmpty ? CadenceTitleNormalization.defaultMilestoneTitle : trimmed
     }
 }

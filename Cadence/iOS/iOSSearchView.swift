@@ -145,7 +145,7 @@ struct iOSSearchView: View {
         let listItems = areas.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }.map { area in
             let count = CadenceTaskQuerySupport.openTaskCount(for: area)
             return iOSSearchListCandidate(
-                title: area.name.isEmpty ? "Untitled Area" : area.name,
+                title: area.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : area.name,
                 subtitle: area.context?.name ?? "Area",
                 detail: listDetail(lifecycle: CadenceListSearchSupport.lifecycle(of: area), openTaskCount: count),
                 icon: area.icon,
@@ -157,7 +157,7 @@ struct iOSSearchView: View {
         } + projects.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }.map { project in
             let count = CadenceTaskQuerySupport.openTaskCount(for: project)
             return iOSSearchListCandidate(
-                title: project.name.isEmpty ? "Untitled Project" : project.name,
+                title: project.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : project.name,
                 subtitle: [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " / "),
                 detail: listDetail(lifecycle: CadenceListSearchSupport.lifecycle(of: project), openTaskCount: count),
                 icon: project.icon,
@@ -235,7 +235,7 @@ struct iOSSearchView: View {
                     // `page-goals`.
                     id: CadenceSearchIdentity.goal(goal.id),
                     destination: .feature(.goals),
-                    title: goal.title.isEmpty ? "Untitled Goal" : goal.title,
+                    title: goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title,
                     subtitle: goal.parentGoal?.title ?? goal.context?.name ?? goal.kind.label,
                     detail: summary.percentLabel,
                     icon: goal.icon,
@@ -249,7 +249,7 @@ struct iOSSearchView: View {
                 result: iOSSearchResult(
                     id: CadenceSearchIdentity.habit(habit.id),
                     destination: .feature(.habits),
-                    title: habit.title.isEmpty ? "Untitled Habit" : habit.title,
+                    title: habit.title.isEmpty ? CadenceTitleNormalization.defaultHabitTitle : habit.title,
                     subtitle: habit.goal?.title ?? habit.context?.name ?? habit.frequencySummary,
                     detail: habit.isDueToday ? "Due today" : habit.frequencySummary,
                     icon: "flame.fill",

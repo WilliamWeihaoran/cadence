@@ -62,7 +62,7 @@ struct iOSTaskPropertiesSection: View {
     private var milestoneRow: some View {
         iOSEditorFieldRow(label: "Milestone", systemImage: "target", color: Theme.dim) {
             iOSChoiceValueButton(
-                title: selectedGoal.map { $0.title.isEmpty ? "Untitled Milestone" : $0.title } ?? "None",
+                title: selectedGoal.map { $0.title.isEmpty ? CadenceTitleNormalization.defaultMilestoneTitle : $0.title } ?? "None",
                 color: selectedGoal == nil ? Theme.dim : Theme.text,
                 minHeight: 44
             ) {
@@ -74,7 +74,7 @@ struct iOSTaskPropertiesSection: View {
                         + availableGoals.map { goal in
                             iOSChoiceRow(
                                 value: Optional(goal.id),
-                                title: goal.title.isEmpty ? "Untitled Milestone" : goal.title,
+                                title: goal.title.isEmpty ? CadenceTitleNormalization.defaultMilestoneTitle : goal.title,
                                 systemImage: goal.icon,
                                 // A goal's colour is the user's own, and it is what tells two
                                 // milestones apart in a list of them.
@@ -258,8 +258,7 @@ struct iOSTaskScheduleSection: View {
                             iOSChoiceRow(
                                 value: minute,
                                 title: TimeFormatters.timeString(from: minute),
-                                color: Theme.dim,
-                                id: AnyHashable(minute)
+                                color: Theme.dim
                             )
                         },
                     selection: scheduledStartSelection,
@@ -353,7 +352,7 @@ struct iOSTaskScheduleSection: View {
             .popover(isPresented: $showEndCountPicker) {
                 iOSChoicePopoverList(
                     rows: CadenceTaskRecurrenceEndPresentation.endCountChoices.map { count in
-                        iOSChoiceRow(value: count, title: "\(count)", color: Theme.blue, id: AnyHashable(count))
+                        iOSChoiceRow(value: count, title: "\(count)", color: Theme.blue)
                     },
                     selection: endCountSelection,
                     isPresented: $showEndCountPicker
