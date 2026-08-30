@@ -383,20 +383,23 @@ struct iOSNotesView: View {
             // `iOSMarkdownAccessoryViews` — the defect belonged to them, not to this host, and a
             // second host hit it independently. One mechanism, not one per host.
         } else {
-            // Title only, and macOS's exact wording. This is a "nothing selected" state, not an
-            // empty list — `NotesEditorPlaceholder` on macOS carries no subtitle for the same
-            // reason, and when the column beside it is *also* empty a subtitle here just prints the
-            // list's own empty-state line twice.
+            // Title only. This is a "nothing selected" state, not an empty list —
+            // `NotesEditorPlaceholder` on macOS carries no subtitle for the same reason, and when
+            // the column beside it is *also* empty a subtitle here just prints the list's own
+            // empty-state line twice.
             iOSEmptyPanel(systemImage: "doc.text", title: placeholderTitle, subtitle: "")
         }
     }
 
-    /// macOS's three placeholders, tab for tab.
+    /// macOS's three placeholders, tab for tab — read from `CadenceEmptyStateCopy` now rather
+    /// than re-typed. The claim was true when it was written, and a comment is not what keeps it
+    /// true: `"Select a note"` was spelled in four files (T-548), and the pair the duplicate sweep
+    /// could see is the pair that would have drifted first.
     private var placeholderTitle: String {
         switch activeTab {
-        case .today, .notepad: return "Select a note"
-        case .week: return "Select a week"
-        case .events: return "Select a meeting note"
+        case .today, .notepad: return CadenceEmptyStateCopy.selectNoteTitle
+        case .week: return CadenceEmptyStateCopy.selectWeekTitle
+        case .events: return CadenceEmptyStateCopy.selectMeetingNoteTitle
         }
     }
 

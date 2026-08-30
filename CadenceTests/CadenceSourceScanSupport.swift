@@ -47,7 +47,27 @@ enum CadenceSourceScan {
     /// after the signature. Returns `nil` when the function is absent or its braces never balance.
     static func functionBody(named name: String, in source: String) -> String? {
         guard let signature = source.range(of: "func \(name)(") else { return nil }
-        guard let open = source.range(of: "{", range: signature.upperBound..<source.endIndex) else {
+        return matchedBody(after: signature.upperBound, in: source, open: "{", close: "}")
+    }
+
+    /// The text between the first `open` at or after `start` and the `close` that balances it.
+    /// Returns `nil` when there is no `open` left or the pair never balances.
+    ///
+    /// Split out of `functionBody(named:)` rather than copied beside it: a *computed property* is
+    /// the same read with a different signature in front of it, and an *argument list* is the same
+    /// read with `(` and `)`. Two matchers is two chances for one of them to run off the end of the
+    /// file — see `codeOnly`'s raw-literal note for what an off-by-one in brace depth does to a
+    /// scan (T-465).
+    ///
+    /// `open` and `close` are not defaulted: a caller that wanted parentheses and got braces reads
+    /// the wrong span silently, and this is the repo's standing preference for saying which.
+    static func matchedBody(
+        after start: String.Index,
+        in source: String,
+        open opening: Character,
+        close closing: Character
+    ) -> String? {
+        guard let open = source.range(of: String(opening), range: start..<source.endIndex) else {
             return nil
         }
 
@@ -55,9 +75,9 @@ enum CadenceSourceScan {
         var index = open.lowerBound
         while index < source.endIndex {
             let character = source[index]
-            if character == "{" {
+            if character == opening {
                 depth += 1
-            } else if character == "}" {
+            } else if character == closing {
                 depth -= 1
                 if depth == 0 {
                     return String(source[source.index(after: open.lowerBound)..<index])
@@ -66,6 +86,28 @@ enum CadenceSourceScan {
             index = source.index(after: index)
         }
         return nil
+    }
+
+    /// Every match of `pattern`, as the text of capture group `group` paired with the match's own
+    /// range in `source`.
+    ///
+    /// `matchCount` answers "how many", which is all a needle-counting sweep needs. A sweep whose
+    /// *file set* or *symbol set* is derived from the tree needs the captured names themselves, and
+    /// that is the only thing this adds. Returns `[]` when the pattern does not compile — the same
+    /// convention `matchCount`'s `-1` follows, for the same reason.
+    static func captures(
+        _ pattern: String,
+        in source: String,
+        group: Int = 1
+    ) -> [(text: String, range: Range<String.Index>)] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        return regex.matches(in: source, range: NSRange(source.startIndex..., in: source))
+            .compactMap { match in
+                guard let whole = Range(match.range, in: source),
+                      match.numberOfRanges > group,
+                      let captured = Range(match.range(at: group), in: source) else { return nil }
+                return (String(source[captured]), whole)
+            }
     }
 
     /// Every `.swift` path under `relativeDirectory`, repo-relative.

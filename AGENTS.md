@@ -116,8 +116,8 @@ discarded by the next `rollback()`. Enforced by `CadenceSaveCommitDisciplineTest
 ## Build And Run Safety
 
 - Build through **`scripts/xcb.sh <id> build|test`**, or pass a private `-derivedDataPath` yourself:
-  it supplies one, refuses the shared path, takes `scripts/test-host-lock.sh` for `test` (the private
-  path isolates build output, not the app-group container), and names a silent T-117 stall.
+  it supplies one, refuses the shared path, takes `scripts/test-host-lock.sh` for `test`, names a
+  silent T-117 stall, and **fails a run that executed 0 tests** (T-552 — a wrong suite name exits 0).
 - The lock lives at **`${TMPDIR}/cadence-macos-test-host.lock`**, not `/private/tmp`. `$TMPDIR`
   resolves under `/var/folders/...` here, so checking `/private/tmp` reports the host free while a
   run is live. Ask the script (`test-host-lock.sh status`); do not stat a path you guessed.

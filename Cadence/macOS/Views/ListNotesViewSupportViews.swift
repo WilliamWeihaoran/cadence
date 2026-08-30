@@ -211,7 +211,7 @@ struct ListNotesEditorPlaceholder: View {
                 Image(systemName: "doc.text")
                     .font(.system(size: 32))
                     .foregroundStyle(Theme.dim)
-                Text("Select a note")
+                Text(CadenceEmptyStateCopy.selectNoteTitle)
                     .foregroundStyle(Theme.dim)
             }
         }

@@ -155,7 +155,7 @@ struct HabitsView: View {
                 EmptyStateView(
                     // Not `searchText.isEmpty`: `filter` defaults to `.today`, so a habit that is
                     // not due today is hidden rather than absent.
-                    message: isNarrowedToEmpty ? "No matching habits" : "No habits yet",
+                    message: CadenceEmptyStateCopy.habitsTitle(isNarrowed: isNarrowedToEmpty),
                     subtitle: isNarrowedToEmpty
                         ? "Try a different search or filter."
                         : "Create a habit, then link it to the goal it supports.",

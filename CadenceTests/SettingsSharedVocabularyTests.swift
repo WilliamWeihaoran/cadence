@@ -297,30 +297,18 @@ struct SettingsSharedVocabularyTests {
     }
 
     // MARK: - The hairline paints the palette colour and nothing else
-
-    /// `Divider().background(Theme.borderSubtle)` paints the palette colour *under* the system
-    /// separator, so the line is neither `borderSubtle` nor the same from pane to pane. iOS
-    /// replaced it with `iOSRowDivider`; macOS Settings was still spelling it in eight places.
-    @Test func noSettingsPaneStillPaintsUnderTheSystemSeparator() throws {
-        for path in try t20SwiftFiles(under: "Cadence/macOS/Views") where path.contains("/Settings") {
-            let code = try t20StrippingComments(t20SourceFile(path))
-            #expect(
-                !code.contains("Divider().background(Theme.borderSubtle)"),
-                "\(path) still paints borderSubtle under a system Divider"
-            )
-        }
-        try t20ExpectCallSites(
-            of: "CadenceRowDivider",
-            at: [
-                "Cadence/macOS/Views/SettingsAboutSection.swift": 2,
-                // 5 before T-449; the two calendar-row hairlines that were a two-line
-                // `Divider().background(Theme.borderSubtle)` are the other two.
-                "Cadence/macOS/Views/SettingsListManagementSections.swift": 7,
-                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 1,
-                "Cadence/macOS/Views/SettingsSectionViews.swift": 4
-            ]
-        )
-    }
+    //
+    // `Divider().background(Theme.borderSubtle)` paints the palette colour *under* the system
+    // separator, so the line is neither `borderSubtle` nor the same from pane to pane. iOS
+    // replaced it with `iOSRowDivider`; macOS Settings was still spelling it in eight places.
+    //
+    // **T-553: `noSettingsPaneStillPaintsUnderTheSystemSeparator` lived here and is gone.** It
+    // swept the same corpus for the *one-line* spelling of the same hairline, which is a strict
+    // subset of what `noSettingsPanePaintsUnderTheSystemSeparatorAtAnyLineBreak` below already
+    // catches — and it had none of that test's guards: it counted its walk nowhere, and it had no
+    // detector test, so a typo in its needle emptied it silently. Two sweeps for one rule, one of
+    // them the weaker, is a second place for the rule to rot. Its positive half was the only thing
+    // it held alone, so that moved down to the surviving sweep rather than being deleted with it.
 
     /// The one inset well, read by the pane that used to keep a private copy of it.
     @Test func theAIPaneReadsTheSharedInsetWell() throws {
@@ -467,7 +455,8 @@ private func t20StrippingComments(_ source: String) throws -> String {
 /// **Not in scope:** `SettingsListManagementSections.swift`. It is not one of the seven — T-20 gave
 /// it the hairline, and it is the pane with the most `CadenceRowDivider` call sites already. Its two
 /// stragglers, spelled across two lines and so invisible to T-20's one-line check, went in T-449;
-/// the count `noSettingsPaneStillPaintsUnderTheSystemSeparator` pins for it is seven, not five.
+/// the count `noSettingsPanePaintsUnderTheSystemSeparatorAtAnyLineBreak` pins for it is seven, not
+/// five.
 @MainActor
 struct SettingsSevenPaneVocabularyTests {
 
@@ -617,13 +606,14 @@ struct SettingsSevenPaneVocabularyTests {
         )
     }
 
-    /// **The hairline sweep, this time at any line break.**
+    /// **The hairline sweep, at any line break — and now the only one.**
     ///
-    /// `noSettingsPaneStillPaintsUnderTheSystemSeparator` above looks for the literal one-line
-    /// `Divider().background(Theme.borderSubtle)`, and three call sites walked straight past it by
-    /// being spelled across two lines — one of them a *vertical* column separator in the note
-    /// templates card, which is the same painted-under hairline turned ninety degrees. Removing
-    /// whitespace before the check is what makes the two spellings one.
+    /// The T-20 original looked for the literal one-line `Divider().background(Theme.borderSubtle)`,
+    /// and three call sites walked straight past it by being spelled across two lines — one of them
+    /// a *vertical* column separator in the note templates card, which is the same painted-under
+    /// hairline turned ninety degrees. Removing whitespace before the check is what makes the two
+    /// spellings one, which is why that original was deleted as a strict subset of this (T-553) and
+    /// why its positive half is now asserted here.
     @Test func noSettingsPanePaintsUnderTheSystemSeparatorAtAnyLineBreak() throws {
         var scanned = 0
         var offenders: [String] = []
@@ -641,6 +631,21 @@ struct SettingsSevenPaneVocabularyTests {
 
         #expect(scanned >= 15, "scanned only \(scanned) settings panes")
         #expect(offenders.isEmpty, "painted-under hairline(s) in: \(offenders.sorted().joined(separator: ", "))")
+
+        // The positive half, inherited from the one-line sweep this replaced: the hairlines those
+        // panes do draw read the shared component, at exact counts. An absence sweep whose corpus
+        // had simply stopped drawing hairlines at all would be just as empty.
+        try t20ExpectCallSites(
+            of: "CadenceRowDivider",
+            at: [
+                "Cadence/macOS/Views/SettingsAboutSection.swift": 2,
+                // 5 before T-449; the two calendar-row hairlines that were a two-line
+                // `Divider().background(Theme.borderSubtle)` are the other two.
+                "Cadence/macOS/Views/SettingsListManagementSections.swift": 7,
+                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 1,
+                "Cadence/macOS/Views/SettingsSectionViews.swift": 4
+            ]
+        )
     }
 
     /// The detector against text that is not the repository, so the sweep above is not one typo

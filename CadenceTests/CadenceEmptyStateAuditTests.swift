@@ -15,13 +15,71 @@ import Testing
 /// away.
 enum CadenceEmptyStateAudit {
 
-    /// Both shared empty-state components. `EmptyStateView` is the cross-platform one; the phone
-    /// draws `iOSEmptyPanel` because its pane chrome differs, which
-    /// `CadenceDeletedSelectionGuardTests` records as deliberate.
-    static let componentNames = ["EmptyStateView(", "iOSEmptyPanel("]
+    /// **Every empty-state component in the tree, read out of the declarations** (T-548).
+    ///
+    /// This used to be `["EmptyStateView(", "iOSEmptyPanel("]` — two of the app's five — and a
+    /// hardcoded list is exactly what went stale. `Cadence/iOS/iOSFeatureViews.swift` contained
+    /// zero occurrences of either name, so the whole file was invisible to the duplicate sweep
+    /// while it re-typed `"No goals yet"` and spelled `"No habits yet"` a second time. It reaches
+    /// `iOSEmptyPanel` one hop away, through `iOSFeatureEmptyState` → `iOSFeatureEmptyDetail.body`,
+    /// and that call carries only identifiers — so no widening of the *reader* could have found it.
+    ///
+    /// Adding the three missing names would have left the next component to be noticed by hand, so
+    /// the set is derived instead: **a `struct` whose name carries `Empty` or `Placeholder`.**
+    /// Measured over `Cadence/` — 23 components against the 2 that were listed, 21 files
+    /// hand-spelling copy against 10, 47 literals under audit against 23, and **no new duplicate
+    /// beyond the two real ones**, so the widening cost nothing in false positives.
+    ///
+    /// Two things stop this from being a quieter version of the same staleness:
+    ///
+    /// - `everyEmptyStateShapedViewIsOneTheSweepReads` derives the family a **second** way, from
+    ///   the shape of the declaration rather than its name, and fails when the two disagree. A
+    ///   component called `NothingHereView` is caught there.
+    /// - An empty derivation cannot reach a sweep. `emptyStateLiteralInstrument`'s positive witness
+    ///   spells `EmptyStateView(`, so `try?` returning `[]` here throws `Failure.blind` at the
+    ///   instrument's initialiser rather than passing a walk over nothing.
+    static let componentNames: [String] = (try? declaredComponentNames()) ?? []
 
-    /// The three argument labels an empty state's words arrive under.
-    private static let argumentLabels = ["message", "title", "subtitle"]
+    /// A `struct` declaration whose name carries `Empty` or `Placeholder`.
+    static let componentDeclarationPattern =
+        "struct +([A-Za-z0-9_]*(?:Empty|Placeholder)[A-Za-z0-9_]*) *[:{]"
+
+    /// The empty-state component names declared under `relativeDirectory`, each with its `(`.
+    ///
+    /// Read through `codeOnly`, which blanks string literals as well as comments: this is a scan
+    /// for a *declaration shape*, so a file quoting `"struct FooEmpty {"` must not be harvested.
+    /// The copy assertions elsewhere in this suite need the opposite reader, which
+    /// `theCopyReaderKeepsLiteralsAndTheStructuralReaderDoesNot` pins.
+    static func declaredComponentNames(under relativeDirectory: String = "Cadence") throws -> [String] {
+        let regex = try NSRegularExpression(pattern: componentDeclarationPattern)
+        var names: Set<String> = []
+        for path in try CadenceSourceScan.swiftFiles(under: relativeDirectory) {
+            let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            let range = NSRange(source.startIndex..., in: source)
+            for match in regex.matches(in: source, range: range) {
+                guard let captured = Range(match.range(at: 1), in: source) else { continue }
+                names.insert(String(source[captured]))
+            }
+        }
+        return names.sorted().map { "\($0)(" }
+    }
+
+    /// The argument labels an empty state's words arrive under.
+    ///
+    /// `text` and `placeholder` are T-548's: `CadenceInlineEmpty` takes `text:` and
+    /// `iOSMarkdownEmptyPrompt` takes `placeholder:`, so listing those components without their
+    /// labels would have re-made the same defect one level down — a component the sweep names and
+    /// reads nothing out of. `everyCopyBearingArgumentOfAnEmptyStateComponentIsReadable` fails when
+    /// a component carries a `String` the reader has no label for.
+    static let argumentLabels = ["message", "title", "subtitle", "text", "placeholder"]
+
+    /// `String` parameters of an empty-state component that are **not** copy, so the label rule
+    /// above does not have to list them one by one.
+    ///
+    /// `icon` and `systemImage` are SF Symbol names — a picture, not a sentence, the same
+    /// distinction `CadenceSharedConstantReuseSweepTests` makes when it drops glyph names from its
+    /// harvest. `query` is what the reader typed.
+    static let nonCopyArgumentLabels = ["icon", "systemImage", "query"]
 
     private static let literalPattern = "\"([^\"\\\\\\n]*)\""
 
@@ -36,6 +94,14 @@ enum CadenceEmptyStateAudit {
             var searchStart = source.startIndex
             while let found = source.range(of: name, range: searchStart..<source.endIndex) {
                 searchStart = found.upperBound
+                // The name must start an identifier. With the set derived rather than listed
+                // (T-548), one component's name can be the tail of another's — `EmptyStateView(`
+                // inside a hypothetical `GoalsEmptyStateView(` — and a substring match would then
+                // read the same call twice under two names.
+                if found.lowerBound > source.startIndex {
+                    let previous = source[source.index(before: found.lowerBound)]
+                    if previous.isLetter || previous.isNumber || previous == "_" { continue }
+                }
                 var depth = 1
                 var index = found.upperBound
                 var inLiteral = false
@@ -219,6 +285,93 @@ enum CadenceEmptyStateAudit {
             return String(source[captured])
         }
     }
+
+    // MARK: The second derivation — shape rather than name
+
+    /// One `struct` declaration: its name, what it conforms to, and its brace-matched body.
+    struct Declaration {
+        let name: String
+        let path: String
+        let conformances: String
+        let body: String
+
+        /// The names of its `let`/`var` stored properties of type `String`, which for a component
+        /// of this family are the words it is handed.
+        var stringProperties: [String] {
+            guard let regex = try? NSRegularExpression(pattern: #"\b(?:let|var) +(\w+) *: *String\b"#)
+            else { return [] }
+            let range = NSRange(body.startIndex..., in: body)
+            return regex.matches(in: body, range: range).compactMap { match in
+                guard let captured = Range(match.range(at: 1), in: body) else { return nil }
+                return String(body[captured])
+            }
+        }
+    }
+
+    /// Every `struct` declared under `relativeDirectory`, read structurally.
+    static func declarations(under relativeDirectory: String = "Cadence") throws -> [Declaration] {
+        let regex = try NSRegularExpression(pattern: "\\bstruct +([A-Za-z0-9_]+) *([^{]*)\\{")
+        var found: [Declaration] = []
+        for path in try CadenceSourceScan.swiftFiles(under: relativeDirectory) {
+            let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            let characters = Array(source)
+            let range = NSRange(source.startIndex..., in: source)
+            for match in regex.matches(in: source, range: range) {
+                guard let nameRange = Range(match.range(at: 1), in: source),
+                      let conformanceRange = Range(match.range(at: 2), in: source),
+                      let matchRange = Range(match.range, in: source) else { continue }
+                let open = source.distance(from: source.startIndex, to: matchRange.upperBound) - 1
+                found.append(
+                    Declaration(
+                        name: String(source[nameRange]),
+                        path: path,
+                        conformances: String(source[conformanceRange]),
+                        body: bracedBody(from: open, in: characters)
+                    )
+                )
+            }
+        }
+        return found
+    }
+
+    /// The text between the `{` at `open` and the `}` that closes it.
+    private static func bracedBody(from open: Int, in characters: [Character]) -> String {
+        var depth = 0
+        var index = open
+        while index < characters.count {
+            if characters[index] == "{" {
+                depth += 1
+            } else if characters[index] == "}" {
+                depth -= 1
+                if depth == 0 { return String(characters[(open + 1)..<index]) }
+            }
+            index += 1
+        }
+        return String(characters[min(open + 1, characters.count)...])
+    }
+
+    /// **A view shaped like an empty state**: an icon, a headline and a sentence under it.
+    ///
+    /// The name-derived set above and this one are two readings of the same family, and
+    /// `everyEmptyStateShapedViewIsOneTheSweepReads` fails when they disagree — which is what makes
+    /// a component named outside the family a red test rather than an invisible one.
+    ///
+    /// **`…Row` is subtracted as a rule, not as an allowlist.** A row is a list *item*: its title
+    /// and subtitle describe something that is there, not the absence of everything. Nine views
+    /// have this exact shape and are rows (`iOSListPickerRow`, `AttachListCandidateRow`,
+    /// `ListLifecycleRow`, …). The two rows that really are empty states — `iOSSettingsEmptyRow`
+    /// and `iOSSettingsEmptyInlineRow` — are carried by the *name* derivation, which is the point
+    /// of running two.
+    static func emptyStateShapedViews(among declarations: [Declaration]) -> [Declaration] {
+        declarations.filter { declaration in
+            guard declaration.conformances.contains("View") else { return false }
+            guard !declaration.name.hasSuffix("Row") else { return false }
+            let properties = Set(declaration.stringProperties)
+            let hasHeadline = properties.contains("title") || properties.contains("message")
+            let hasGlyph = properties.contains("icon") || properties.contains("systemImage")
+            return hasHeadline && properties.contains("subtitle") && hasGlyph
+        }
+    }
 }
 
 // MARK: - The audit
@@ -283,6 +436,158 @@ struct CadenceEmptyStateAuditTests {
             """
             \(duplicates.joined(separator: "; ")) — an empty-state sentence spelled in two files \
             drifts. Move it to CadenceEmptyStateCopy and read it from both.
+            """
+        )
+    }
+
+    // MARK: T-548 — the sweep cannot lose a component again
+
+    /// **The component set is derived from the tree, and the derivation is not empty.**
+    ///
+    /// `componentNames` is a `static let` over a `try?`, so a walk that failed would leave it `[]`
+    /// and every sweep above green over nothing. Two things stop that, and this is the louder one:
+    /// the instrument's positive witness is the quiet one, and both are cheaper than finding out
+    /// the way T-548 was found.
+    @Test func theEmptyStateComponentSetIsDerivedFromTheDeclarations() throws {
+        let derived = try CadenceEmptyStateAudit.declaredComponentNames()
+        #expect(
+            derived == CadenceEmptyStateAudit.componentNames,
+            "componentNames is not what the derivation returns — the walk failed and was swallowed"
+        )
+
+        // The five the app actually has, plus the fourth entry point T-548 found. Named rather
+        // than counted so a derivation that silently stopped matching `iOS…` cannot pass on volume.
+        for name in [
+            "EmptyStateView(",
+            "iOSEmptyPanel(",
+            "iOSFeatureEmptyState(",
+            "iOSFeatureEmptyDetail(",
+            "CadenceInlineEmpty(",
+            "NotesEditorPlaceholder(",
+        ] {
+            #expect(derived.contains(name), "the derivation no longer finds \(name)")
+        }
+        // Measured at 23. A floor rather than an equality, because adding a component should not
+        // fail a test that is about the derivation working.
+        #expect(derived.count >= 20, "the derivation found only \(derived.count) components")
+    }
+
+    /// **A view shaped like an empty state is one the sweep reads** — the guard that makes an
+    /// uncovered component a failure rather than a silence.
+    ///
+    /// The set above is derived from the *name*, which leaves one way to escape it: a component
+    /// called something else. So the family is derived a second time from the declaration's shape —
+    /// a glyph, a headline and a sentence — and the two readings have to agree. `NothingHereView`
+    /// would fail here on the day it was written.
+    @Test func everyEmptyStateShapedViewIsOneTheSweepReads() throws {
+        let declarations = try CadenceEmptyStateAudit.declarations()
+        // 1226 `struct` declarations under `Cadence/` when this was written.
+        #expect(declarations.count >= 500, "the declaration walk read \(declarations.count) structs")
+
+        let shaped = CadenceEmptyStateAudit.emptyStateShapedViews(among: declarations)
+        // Non-vacuity: the shape reader finds the components it is meant to, on both platforms and
+        // in both the shared and the feature layers.
+        for name in ["EmptyStateView", "iOSEmptyPanel", "iOSFeatureEmptyDetail", "CommitmentEmptyDetail"] {
+            #expect(shaped.contains { $0.name == name }, "the shape reader no longer finds \(name)")
+        }
+
+        let uncovered = shaped
+            .filter { !CadenceEmptyStateAudit.componentNames.contains("\($0.name)(") }
+            .map { "\($0.name) in \($0.path)" }
+            .sorted()
+        #expect(
+            uncovered.isEmpty,
+            """
+            \(uncovered.joined(separator: "; ")) — a view with an empty state's shape that the \
+            duplicate sweep does not read. Name it in the Empty/Placeholder family, or say here \
+            why its title and subtitle are not empty-state copy.
+            """
+        )
+
+        // The `…Row` subtraction is doing work rather than being decorative, and everything it
+        // drops really is a row: nine views have this shape and describe an item that is there.
+        let droppedRows = declarations.filter { declaration in
+            guard declaration.conformances.contains("View"), declaration.name.hasSuffix("Row") else {
+                return false
+            }
+            let properties = Set(declaration.stringProperties)
+            return (properties.contains("title") || properties.contains("message"))
+                && properties.contains("subtitle")
+                && (properties.contains("icon") || properties.contains("systemImage"))
+        }
+        #expect(droppedRows.count >= 5, "the row subtraction dropped \(droppedRows.count) views")
+        #expect(droppedRows.allSatisfy { $0.name.hasSuffix("Row") })
+    }
+
+    /// **Every `String` an empty-state component is handed is one the reader has a label for.**
+    ///
+    /// The other half of T-548's shape, one level down: a component can be in the swept set and
+    /// still be read as having no words in it, if its argument label is not one of the three the
+    /// reader knew. `CadenceInlineEmpty(text:)` was exactly that, and would have joined the sweep
+    /// as a name with nothing behind it.
+    @Test func everyCopyBearingArgumentOfAnEmptyStateComponentIsReadable() throws {
+        let known = Set(CadenceEmptyStateAudit.argumentLabels)
+            .union(CadenceEmptyStateAudit.nonCopyArgumentLabels)
+        let components = try CadenceEmptyStateAudit.declarations()
+            .filter { CadenceEmptyStateAudit.componentNames.contains("\($0.name)(") }
+
+        // Non-vacuity: components with words in them were found at all.
+        let withStrings = components.filter { !$0.stringProperties.isEmpty }
+        #expect(withStrings.count >= 8, "only \(withStrings.count) components carry a String")
+        #expect(withStrings.contains { $0.name == "CadenceInlineEmpty" })
+
+        let unreadable = withStrings
+            .flatMap { declaration in
+                declaration.stringProperties
+                    .filter { !known.contains($0) }
+                    .map { "\(declaration.name).\($0) in \(declaration.path)" }
+            }
+            .sorted()
+        #expect(
+            unreadable.isEmpty,
+            """
+            \(unreadable.joined(separator: "; ")) — an empty-state component takes a String the \
+            copy reader has no label for, so its call sites are swept and read as wordless. Add \
+            the label to argumentLabels, or to nonCopyArgumentLabels if it is not a sentence.
+            """
+        )
+    }
+
+    /// **No empty-state call site re-types a sentence `CadenceEmptyStateCopy` already declares.**
+    ///
+    /// T-540 converged the goals title into `goalsTitle(isNarrowed:)` and
+    /// `Cadence/iOS/iOSFeatureViews.swift` went on spelling `"No goals yet"` anyway. Neither sweep
+    /// could see it: the duplicate sweep above counts *files*, and after the convergence there was
+    /// only one file left spelling it; `CadenceSharedConstantReuseSweepTests` harvests `static let`
+    /// and `goalsTitle` is a `static func`.
+    ///
+    /// So this asks the narrower question the audit can answer exactly — every literal declared in
+    /// `CadenceEmptyStateCopy`, against every empty-state call site in the app — without widening
+    /// the app-wide harvest to function bodies, which is a bigger measurement than this ticket.
+    @Test func noEmptyStateCallSiteRetypesTheSharedCopy() throws {
+        let declaringFile = "Cadence/Shared/CadenceEmptyStateCopy.swift"
+        let read = CadenceSourceScan.strippedSourceReader()
+        let declared = Set(
+            CadenceEmptyStateAudit
+                .stringLiterals(in: try read(declaringFile))
+                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        )
+        // Non-vacuity: the harvest read the constants rather than an empty file.
+        #expect(declared.count >= 25, "the shared copy harvest found \(declared.count) sentences")
+        #expect(declared.contains("No goals yet"), "the harvest misses a static func's literals")
+
+        var offenders: [String] = []
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") where path != declaringFile {
+            for literal in Set(CadenceEmptyStateAudit.literals(in: try read(path)))
+            where declared.contains(literal) {
+                offenders.append("\"\(literal)\" in \(path)")
+            }
+        }
+        #expect(
+            offenders.sorted().isEmpty,
+            """
+            \(offenders.sorted().joined(separator: "; ")) — CadenceEmptyStateCopy already declares \
+            this sentence. Read it instead of typing it again.
             """
         )
     }
@@ -415,10 +720,14 @@ struct CadenceEmptyStateAuditTests {
 
     /// **The widening is load-bearing on the tree, not only on its fixtures.**
     ///
-    /// `HabitsView` is the one filter-aware desktop page whose copy did *not* turn out to be
-    /// duplicated, so it stays hand-spelled — which makes it the standing witness that this reader
-    /// still reaches conditional copy in real source. Narrow the reader back and this file reads
-    /// as an empty state with no words in it.
+    /// `HabitsView`'s **subtitles** are the one filter-aware desktop pair whose copy did not turn
+    /// out to be shareable — the two surfaces genuinely say different things — so they stay
+    /// hand-spelled, which makes this file the standing witness that the reader still reaches
+    /// conditional copy in real source. Narrow the reader back and it reads as an empty state with
+    /// no words in it.
+    ///
+    /// Its *title* was the witness until T-548, and it is the shared constant now: the phone spelled
+    /// `"No habits yet"` too, in a file no version of this sweep could see.
     @Test func theDuplicateSweepReachesAFilterAwarePageInTheTree() throws {
         let code = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/HabitsView.swift")
@@ -426,13 +735,23 @@ struct CadenceEmptyStateAuditTests {
         #expect(code.contains("struct HabitsView"), "non-vacuity: wrong file")
 
         let found = CadenceEmptyStateAudit.literals(in: code)
-        #expect(found.contains("No matching habits"), "the reader cannot see a narrowed title again")
-        #expect(found.contains("No habits yet"), "the reader cannot see a first-run title again")
-        #expect(found.contains("Try a different search or filter."))
+        #expect(
+            found.contains("Try a different search or filter."),
+            "the reader cannot see a narrowed subtitle again"
+        )
+        #expect(
+            found.contains("Create a habit, then link it to the goal it supports."),
+            "the reader cannot see a first-run subtitle again"
+        )
 
         // The literals really are behind a branch, so the claim above is about the reader rather
         // than about a file that happens to spell them plainly.
-        #expect(code.contains("message: isNarrowedToEmpty ? \"No matching habits\" : \"No habits yet\""))
+        #expect(code.contains("subtitle: isNarrowedToEmpty"))
+        #expect(code.contains("? \"Try a different search or filter.\""))
+
+        // And the title above them is read, not typed.
+        #expect(code.contains("CadenceEmptyStateCopy.habitsTitle(isNarrowed: isNarrowedToEmpty)"))
+        #expect(found.contains("No habits yet") == false, "HabitsView spells the title again")
     }
 
     /// **The two Goals view modes share one title.**
@@ -575,14 +894,20 @@ struct CadenceEmptyStateAuditTests {
             "Cadence/macOS/Views/HabitsView.swift",
         ] {
             let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            // Exactly one *filter-aware* empty state per page. It used to be exactly one empty
+            // state, full stop, but T-548's widened component set also sees each page's own
+            // detail-pane component (`GoalsEmptyDetail()`, `HabitsEmptyDetail()`) — which carries
+            // no arguments and is a different situation, "nothing selected" rather than "the
+            // filter matched nothing". The claim that matters is unchanged: one page, one
+            // narrowing question.
             let segments = CadenceEmptyStateAudit.callSegments(in: code)
-            #expect(segments.count == 1, "\(path) draws \(segments.count) empty states")
-            let empty = try #require(segments.first)
-
-            #expect(
-                empty.contains("isNarrowedToEmpty"),
+                .filter { $0.contains("isNarrowedToEmpty") }
+            #expect(segments.count == 1, "\(path) draws \(segments.count) filter-aware empty states")
+            let empty = try #require(
+                segments.first,
                 "\(path)'s empty state does not ask whether a filter is narrowing the page"
             )
+
             #expect(
                 empty.contains("searchText.isEmpty") == false,
                 "\(path)'s empty state is back to reading the search field alone"
@@ -650,6 +975,26 @@ struct CadenceEmptyStateAuditTests {
 
         // The Notes page's Events tab, which is the pair that had drifted by a full stop.
         #expect(CadenceEmptyStateCopy.meetingNotesSubtitle == "Create one from a calendar event.")
+
+        // T-548's pairs. The habits title had not drifted — it was byte-identical in two files,
+        // which is the state T-540 found the goals pair in and one edit away from drifting.
+        #expect(CadenceEmptyStateCopy.habitsTitle(isNarrowed: false) == "No habits yet")
+        #expect(CadenceEmptyStateCopy.habitsTitle(isNarrowed: true) == "No matching habits")
+        #expect(CadenceEmptyStateCopy.selectNoteTitle == "Select a note")
+        #expect(CadenceEmptyStateCopy.selectWeekTitle == "Select a week")
+        #expect(CadenceEmptyStateCopy.selectMeetingNoteTitle == "Select a meeting note")
+
+        // A title is not a sentence: the full-stop rule below is about subtitles, and these three
+        // are the whole empty state on a pane with nothing selected.
+        for title in [
+            CadenceEmptyStateCopy.selectNoteTitle,
+            CadenceEmptyStateCopy.selectWeekTitle,
+            CadenceEmptyStateCopy.selectMeetingNoteTitle,
+            CadenceEmptyStateCopy.habitsTitle(isNarrowed: false),
+            CadenceEmptyStateCopy.goalsTitle(isNarrowed: false),
+        ] {
+            #expect(title.hasSuffix(".") == false, "\"\(title)\" is a title with a full stop")
+        }
 
         // Every shared sentence ends in a full stop. The drift this file exists to stop was a
         // missing one, twice.
@@ -854,10 +1199,37 @@ struct CadenceEmptyStateAuditTests {
 
         // And they read it from the same value the chooser does, so the two panes cannot drift.
         #expect(emptyStateOccurrences(of: "empty: Self.emptyState", in: code) == 2)
+
+        // **The titles are read, not typed** (T-548). This used to pin each of the four sentences
+        // at exactly one occurrence in this file, which held the two panes of *this* page level
+        // and said nothing about the Mac — and the Mac was spelling `"No habits yet"` too, while
+        // `"No goals yet"` had been re-typed here after T-540 moved it into a shared constant.
+        // Both titles are `CadenceEmptyStateCopy` functions now, and the pin is that this file
+        // reads each once and spells neither.
+        for reader in [
+            "CadenceEmptyStateCopy.goalsTitle(isNarrowed: false)",
+            "CadenceEmptyStateCopy.habitsTitle(isNarrowed: false)",
+        ] {
+            #expect(
+                emptyStateOccurrences(of: reader, in: code) == 1,
+                "\(reader) is not read exactly once in this file"
+            )
+        }
+        for title in ["No goals yet", "No habits yet"] {
+            #expect(
+                emptyStateOccurrences(of: title, in: code) == 0,
+                "\(title) is spelled at a call site again instead of read"
+            )
+        }
+
+        // **The subtitles stay at their call sites and are pinned as they were, because they have
+        // already drifted from the Mac's** — "Create a goal for an ongoing direction, then nest
+        // milestones inside it." against the first below, and "Create a habit, then link it to the
+        // goal it supports." against the second. Which sentence is true of which surface is a copy
+        // decision (the Mac's Goals page *does* show habit counts, so its wording is incomplete
+        // rather than false), so the pair is left visible rather than collapsed.
         for sentence in [
-            "No goals yet",
             "Create a direction, then nest milestones and habits underneath it.",
-            "No habits yet",
             "Create repeating commitments and track today.",
         ] {
             #expect(
@@ -1115,6 +1487,47 @@ struct CadenceEmptyStateAuditTests {
                 #expect(
                     code.contains("CadenceEmptyStateCopy.\(constant)Subtitle"),
                     "\(path) does not read CadenceEmptyStateCopy.\(constant)Subtitle"
+                )
+            }
+        }
+
+        // **Titles with no subtitle beside them** — the pairs T-540 and T-548 converged. A title
+        // alone is the whole empty state on a "nothing selected" pane, and on Goals and Habits the
+        // subtitles are deliberately *not* shared, so these cannot go in the map above.
+        let titleOnly: [String: [String]] = [
+            // T-540 converged the two Mac view modes; T-548 added the phone, which had re-typed it.
+            "goalsTitle(isNarrowed:": [
+                "Cadence/macOS/Views/GoalsView.swift",
+                "Cadence/macOS/Views/GoalTimelineView.swift",
+                "Cadence/iOS/iOSFeatureViews.swift",
+            ],
+            "habitsTitle(isNarrowed:": [
+                "Cadence/macOS/Views/HabitsView.swift",
+                "Cadence/iOS/iOSFeatureViews.swift",
+            ],
+            // Four entry points, two of them on the Mac: the Notes page's own placeholder and the
+            // list-detail notes column's.
+            "selectNoteTitle": [
+                "Cadence/macOS/Views/NotesView.swift",
+                "Cadence/macOS/Views/ListNotesViewSupportViews.swift",
+                "Cadence/iOS/iOSNotesView.swift",
+                "Cadence/iOS/iOSListNotesView.swift",
+            ],
+            "selectWeekTitle": [
+                "Cadence/macOS/Views/NotesView.swift",
+                "Cadence/iOS/iOSNotesView.swift",
+            ],
+            "selectMeetingNoteTitle": [
+                "Cadence/macOS/Views/NotesView.swift",
+                "Cadence/iOS/iOSNotesView.swift",
+            ],
+        ]
+        for (constant, paths) in titleOnly.sorted(by: { $0.key < $1.key }) {
+            for path in paths {
+                let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+                #expect(
+                    code.contains("CadenceEmptyStateCopy.\(constant)"),
+                    "\(path) does not read CadenceEmptyStateCopy.\(constant)"
                 )
             }
         }

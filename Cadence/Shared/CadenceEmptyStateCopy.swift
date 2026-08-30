@@ -144,6 +144,20 @@ nonisolated enum CadenceEmptyStateCopy {
     static let meetingNotesTitle = "No meeting notes yet"
     static let meetingNotesSubtitle = "Create one from a calendar event."
 
+    /// **"Nothing selected" is not "nothing exists", so these three carry no subtitle** (T-548).
+    ///
+    /// The editor pane beside a notes column that *has* rows in it. Both surfaces already said the
+    /// same three words in four places — `NotesEditorPlaceholder` on the Mac's Notes page,
+    /// `ListNotesEditorPlaceholder` in its list-detail notes column, `iOSNotesView.placeholderTitle`
+    /// and `iOSListNotesView` on the phone — and `iOSNotesView`'s copy was annotated "macOS's three
+    /// placeholders, tab for tab", which is the comment-instead-of-a-constant shape this file's own
+    /// doc comment opens by describing. `"Select a note"` is the pair the widened duplicate sweep
+    /// could see; its two siblings are here because they are the same sentence one tab over and
+    /// would have drifted the same way.
+    static let selectNoteTitle = "Select a note"
+    static let selectWeekTitle = "Select a week"
+    static let selectMeetingNoteTitle = "Select a meeting note"
+
     // MARK: - "You have nothing" is not "your filter matched nothing"
 
     /// Whether a list came up empty **because something is narrowing it**.
@@ -185,5 +199,26 @@ nonisolated enum CadenceEmptyStateCopy {
     /// surfaces really do show the same thing, not because two sentences sit next to each other.
     static func goalsTitle(isNarrowed: Bool) -> String {
         isNarrowed ? "No matching goals" : "No goals yet"
+    }
+
+    /// **The Habits page's title, on both surfaces** (T-548).
+    ///
+    /// Same shape as `goalsTitle(isNarrowed:)` and found the same way, one widening later: the Mac
+    /// spelled `"No habits yet"` in `HabitsView` and the phone spelled it again in
+    /// `iOSFeatureViews`, byte for byte, while the sweep that exists to catch that could see
+    /// neither — `iOSFeatureViews` names no empty-state component at all, reaching `iOSEmptyPanel`
+    /// through `iOSFeatureEmptyState` → `iOSFeatureEmptyDetail`.
+    ///
+    /// **The phone passes `false` because its Habits chooser holds no search field and no filter**,
+    /// so `nil` there means the collection is empty. That is the question the parameter exists to
+    /// make a caller answer, rather than a formality: the Mac's page defaults to *Due Today*, and
+    /// answering it wrong is exactly the defect `isNarrowedToEmpty` was written for.
+    ///
+    /// **The subtitles stay apart, and unlike the goals pair they have already drifted** — the Mac
+    /// says "Create a habit, then link it to the goal it supports.", the phone "Create repeating
+    /// commitments and track today.". Which one is true of which surface is a copy decision, not a
+    /// de-duplication, so it is left where a reader can see both.
+    static func habitsTitle(isNarrowed: Bool) -> String {
+        isNarrowed ? "No matching habits" : "No habits yet"
     }
 }

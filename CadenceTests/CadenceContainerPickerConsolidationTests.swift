@@ -501,4 +501,226 @@ struct CadenceContainerPickerConsolidationTests {
         #expect(!literalsBlanked.contains("hasPrefix(\"area:\")"))
         #expect(literalsBlanked.contains("hasPrefix("))
     }
+
+    // MARK: - The fifth surface, caught before it is written
+
+    /// A **list's** narrowing on its own **lifecycle**, which is the only filter that is this class
+    /// of defect.
+    ///
+    /// Two constraints, and both were found by the needle getting them wrong:
+    ///
+    /// - Not "any `.filter`". `ContainerPickerFilterSupport.groups` narrows its already-offerable
+    ///   arrays by the *search query*, and a picker filtering what it offers by what the user typed
+    ///   is the control working. What retires something from fresh choices — and so what must never
+    ///   reach a picker pre-narrowed — is `isActive` / `isArchived`.
+    /// - Not "any receiver". `Tag` carries an `isArchived` too, and five surfaces legitimately
+    ///   spell `allTags.filter { !$0.isArchived }` — including two that also read a picker list, so
+    ///   an unconstrained receiver made the second test below permanently red on a correct tree.
+    ///   That fixture is now its negative witness, which is why it cannot come back.
+    private static let lifecycleNarrowing =
+        #"[A-Za-z]*(?:[Aa]reas|[Pp]rojects|[Cc]ontexts)\s*\.\s*filter\s*(\(\s*\\\.\s*(isActive|isArchived)|\{\s*!?\s*\$0\s*\.\s*(isActive|isArchived))"#
+
+    /// `codeOnly`, cached. Comments **and** string literals blanked: `let areas: [Area]` spelled
+    /// inside a literal would otherwise derive a control that does not exist.
+    private static func codeOnlyReader() -> (String) throws -> String {
+        var cache: [String: String] = [:]
+        return { path in
+            if let hit = cache[path] { return hit }
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            cache[path] = code
+            return code
+        }
+    }
+
+    /// Every `struct … : View` under `Cadence/` that takes a whole list array by parameter — i.e.
+    /// every control that could be handed a pre-narrowed one.
+    ///
+    /// **Derived, not listed, and that is the entire point of this pair of tests.** T-446, T-488,
+    /// T-514 and T-534 were four instances of one defect, each found by a user and each fixed at
+    /// its own call site; the sweeps that hold those fixes name the five, three and four paths that
+    /// were known to be involved. A *fifth* surface — a control written next month in a file none
+    /// of those lists names — is swept by none of them, which is the shape in which the first four
+    /// each arrived. Deriving the control set from the tree is what makes the fifth one fail a run
+    /// on the day it is written instead of on the day someone reports it, and it is the same move
+    /// T-512 made for a sweep's needle and T-542 for a sweep's file set.
+    ///
+    /// **Known limit: it reads `struct X: View {`.** A generic or multi-conformance declaration is
+    /// not derived, so the two non-vacuity claims below — a floor on the count and three names the
+    /// walk must contain — are what stop this quietly deriving nothing.
+    private static func listControlNames(read: (String) throws -> String) throws -> Set<String> {
+        var names: Set<String> = []
+        for path in try allAppSources() {
+            let source = try read(path)
+            for declaration in CadenceSourceScan.captures(#"struct\s+(\w+)\s*:\s*View\s*\{"#, in: source) {
+                guard let body = CadenceSourceScan.matchedBody(
+                    after: declaration.range.lowerBound, in: source, open: "{", close: "}"
+                ) else { continue }
+                let takesAWholeList = CadenceSourceScan.matchCount(
+                    #"let\s+(areas|projects|contexts)\s*:\s*\[(Area|Project|Context)\]"#,
+                    in: body
+                ) > 0
+                if takesAWholeList { names.insert(declaration.text) }
+            }
+        }
+        return names
+    }
+
+    /// The names in one file that are already a lifecycle-narrowed list.
+    ///
+    /// The indirection is not optional. T-514's four call sites spelled the same mistake two ways —
+    /// `areas.filter(\.isActive)` inline at some, a `private var activeAreas` at others — so a
+    /// detector that only reads the argument expression sees half of them.
+    private static func narrowedListProperties(in source: String) -> Set<String> {
+        var names: Set<String> = []
+        for declaration in CadenceSourceScan.captures(
+            #"var\s+(\w+)\s*:\s*\[(?:Area|Project|Context)\]\s*\{"#, in: source
+        ) {
+            guard let body = CadenceSourceScan.matchedBody(
+                after: declaration.range.lowerBound, in: source, open: "{", close: "}"
+            ) else { continue }
+            if CadenceSourceScan.matchCount(lifecycleNarrowing, in: body) > 0 {
+                names.insert(declaration.text)
+            }
+        }
+        return names
+    }
+
+    /// One alternation over every derived control name rather than one pattern per name: the sweep
+    /// runs this over 550-odd files, and 44 separately compiled regexes per file is the same walk
+    /// done 44 times.
+    private static func callPattern(forAnyOf controls: Set<String>) -> String {
+        "\\b(" + controls.sorted().joined(separator: "|") + ")\\s*\\("
+    }
+
+    private static func handsANarrowedList(_ source: String, matching callPattern: String) -> Bool {
+        let narrowed = narrowedListProperties(in: source)
+        for call in CadenceSourceScan.captures(callPattern, in: source) {
+            guard let arguments = CadenceSourceScan.matchedBody(
+                after: call.range.lowerBound, in: source, open: "(", close: ")"
+            ) else { continue }
+            for argument in CadenceSourceScan.captures(
+                #"\b(?:areas|projects|contexts)\s*:\s*([^,\n)]+)"#, in: arguments
+            ) {
+                let value = argument.text.trimmingCharacters(in: .whitespaces)
+                if narrowed.contains(value) { return true }
+                if CadenceSourceScan.matchCount(lifecycleNarrowing, in: value) > 0 { return true }
+            }
+        }
+        return false
+    }
+
+    /// **No surface hands a list control an array it has already narrowed** — anywhere under
+    /// `Cadence/`, to any control, on either platform.
+    ///
+    /// This is T-514's `noCallSitePreFiltersTheListsItHandsTheContainerPicker` with both hand-kept
+    /// lists taken out of it: that test names four iOS paths and one control, so it holds the fix it
+    /// was written for and says nothing about the five macOS call sites of `ContainerPickerBadge`,
+    /// nothing about `CadenceContextPickerButton`, and nothing at all about a control that does not
+    /// exist yet. Both halves are derived here, so a new control and a new call site are covered by
+    /// having been written rather than by being remembered.
+    ///
+    /// **The expected hit set is the two calendar-link connect menus, not empty**, for the same
+    /// reason `noAppSurfaceReSpellsTheTaskToSelectionGetter…` expects its declaring file: a set that
+    /// matches exactly the known deliberate sites proves the sweep is live at the same time as it
+    /// proves there are no others, where an empty set is also what a blinded detector returns.
+    ///
+    /// Those two are deliberate and are the app's one documented exception:
+    /// `CadenceCalendarLinkHealth.missingLinks` states the policy — "the connect menu offers active
+    /// lists only, so a row here for a list the menu cannot reach would be a break with no repair
+    /// beside it" — and applies the same narrowing to the broken-link card, so the menu, the
+    /// summary and the health card agree. That is a consistent policy rather than the split this
+    /// test is about. **If a fix ever makes the connect menu offer a retired-but-linked list, delete
+    /// its entry here in the same change**; a stale entry fails this test, exactly as the `try?
+    /// save()` exemption lists do.
+    private static let deliberatelyNarrowedConnectMenus = [
+        "Cadence/iOS/iOSCalendarSettingsSection.swift",
+        "Cadence/macOS/Views/SettingsListManagementSections.swift"
+    ]
+
+    @Test func noAppSurfaceHandsAListControlAnArrayItHasAlreadyNarrowed() throws {
+        let controls = try Self.listControlNames(read: Self.codeOnlyReader())
+
+        // The derivation is checked here rather than in a neighbouring test, for the reason
+        // `CadenceScanInstrument` exists: a derived set that has quietly become empty is how a
+        // whole-tree sweep passes forever.
+        #expect(controls.count > 20, "derived \(controls.count) list controls")
+        for known in ["ContainerPickerBadge", "iOSContainerChoicePopover", "CadenceContextPickerButton"] {
+            #expect(controls.contains(known), "the walk did not derive \(known)")
+        }
+        #expect(!controls.contains("iOSListsRegularPane"), "a control taking only narrowed lists was derived")
+
+        let callPattern = Self.callPattern(forAnyOf: controls)
+        let handsANarrowedArray = try CadenceScanInstrument(
+            "list control handed a pre-narrowed array",
+            fires: """
+            struct HostView: View {
+                let areas: [Area]
+                private var activeAreas: [Area] { areas.filter(\\.isActive) }
+                var body: some View {
+                    iOSContainerChoicePopover(areas: activeAreas, projects: projects, selection: $token, isPresented: $shown)
+                }
+            }
+            """,
+            andNotOn: """
+            struct HostView: View {
+                let areas: [Area]
+                private var activeAreas: [Area] { areas.filter(\\.isActive) }
+                var body: some View {
+                    iOSContainerChoicePopover(areas: areas, projects: projects, selection: $token, isPresented: $shown)
+                }
+            }
+            """,
+            by: { Self.handsANarrowedList($0, matching: callPattern) }
+        )
+
+        let hits = try handsANarrowedArray.sweep(
+            Self.allAppSources(),
+            atLeast: 500,
+            including: "Cadence/iOS/iOSChoicePicker.swift",
+            read: { CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0)) }
+        )
+
+        #expect(hits == Self.deliberatelyNarrowedConnectMenus.sorted())
+    }
+
+    /// **And no surface that reads a shared picker list narrows the array it reads it from.**
+    ///
+    /// The other half of the same class, and the half `noContextPickerDerivesItsOwnList` and
+    /// `noAreaPickerDerivesItsOwnList` already hold — for the six paths those two between them
+    /// name. The file set here is derived from the tree instead: every file that calls one of the
+    /// shared list entry points is swept, so a picker written in a file none of them names is
+    /// covered without anyone adding it to a list. It is deliberately weaker than those suites on
+    /// the files they do name — the needle is the lifecycle filter rather than any
+    /// `sorted`/`filter`/`map` — so it adds reach rather than replacing them, and both of their
+    /// sweeps stay exactly as they are.
+    @Test func noSurfaceThatReadsASharedPickerListNarrowsTheArrayItReadsItFrom() throws {
+        let read = Self.codeOnlyReader()
+        // `\s*` around the dots on purpose: `ContainerPickerSupportViews` spells
+        // `CadenceTaskComposerSupport\n    .pickableAreas(` across a line break, and a contiguous
+        // needle silently left the one macOS container surface out of the derived set.
+        let readsAPickerList = #"Cadence(Context|Area|Project)PickerSupport\s*\.\s*(items|selectedItem|selectionTitle)\s*\(|CadenceTaskComposerSupport\s*\.\s*pickable(Areas|Projects)\s*\("#
+
+        let pickerSurfaces = try Self.allAppSources().filter { path in
+            CadenceSourceScan.matchCount(readsAPickerList, in: try read(path)) > 0
+        }
+
+        #expect(pickerSurfaces.count >= 6, "derived \(pickerSurfaces.count) picker surfaces")
+        #expect(pickerSurfaces.contains("Cadence/macOS/Views/CadenceContextPicker.swift"))
+
+        let narrowsItsOwnList = try CadenceScanInstrument(
+            "picker surface narrows the list it also resolves against",
+            fires: "private var activeContexts: [Context] { contexts.filter { !$0.isArchived } }",
+            andNotOn: "private var activeTags: [Tag] { allTags.filter { !$0.isArchived } }",
+            by: { CadenceSourceScan.matchCount(Self.lifecycleNarrowing, in: $0) > 0 }
+        )
+
+        let hits = try narrowsItsOwnList.sweep(
+            pickerSurfaces,
+            atLeast: 6,
+            including: "Cadence/iOS/iOSListEditorViews.swift",
+            read: { CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0)) }
+        )
+
+        #expect(hits.isEmpty)
+    }
 }

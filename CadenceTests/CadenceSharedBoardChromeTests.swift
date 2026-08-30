@@ -685,11 +685,44 @@ struct CadenceCalendarWeekdayHeaderConvergenceTests {
     /// same row at two sizes, and the timed grid's day header named "the month grid" as the reason
     /// for *its* 11. The parameter is gone rather than merely unified: a knob with one caller is how
     /// the disagreement gets rebuilt.
+    ///
+    /// **The needle is retired, so this corpus can never witness it** (T-553). `weekdaySymbolSize`
+    /// survives under `Cadence/` in two doc comments and nowhere else, and comments are what this
+    /// reader blanks — so every file the sweep walks is *required* not to contain it, and nothing
+    /// in the walk could show the spelling still matches anything. Blinding the needle to
+    /// `weekdaySymbolSizeZZZ` left this test green. The instrument supplies the witness the corpus
+    /// cannot: two literal fixtures, checked when it is built, so a detector that has stopped
+    /// discriminating cannot reach the walk.
     @Test func theMonthGridsWeekdayRowHasNoSizeKnobLeft() throws {
-        for path in try swiftFiles(under: "Cadence") {
-            let code = try strippingComments(sourceFile(path))
-            #expect(!code.contains("weekdaySymbolSize"), "\(path) still carries a weekday size knob")
-        }
+        let carriesTheKnob = try CadenceScanInstrument(
+            "a weekday-row size knob",
+            fires: "iOSCalendarMonthScrollingGrid(month: month, weekdaySymbolSize: 10)",
+            andNotOn: "iOSCalendarMonthScrollingGrid(month: month)",
+            by: { CadenceSourceScan.codeOnly($0).contains("weekdaySymbolSize") }
+        )
+
+        let offenders = try carriesTheKnob.sweep(
+            try swiftFiles(under: "Cadence"),
+            // 558 files when this was written.
+            atLeast: 300,
+            including: "Cadence/iOS/iOSCalendarMonthViews.swift",
+            read: sourceFile
+        )
+        #expect(
+            offenders.isEmpty,
+            "weekday size knob(s) in: \(offenders.joined(separator: ", "))"
+        )
+
+        // The two readers genuinely differ, pinned rather than assumed: the grid's own file still
+        // names the retired parameter in the prose explaining why it went, so a raw read finds it
+        // and the scanned read must not. Without this the zero above is equally satisfied by a
+        // reader that returned nothing at all.
+        let grid = try sourceFile("Cadence/iOS/iOSCalendarMonthViews.swift")
+        #expect(
+            grid.contains("weekdaySymbolSize"),
+            "the prose naming the retired knob is gone; re-anchor this witness or drop the sweep"
+        )
+        #expect(!carriesTheKnob.fires(on: grid))
     }
 }
 

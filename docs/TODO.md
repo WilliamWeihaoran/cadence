@@ -633,16 +633,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   de-duplication. Same shape for `"Allow Access"` (12 sites, and also `RemindersAccessAction.requestAccess.title`,
   so converging couples the calendar permission button to the reminders one) and `"Open Settings"` (13).
 
-- [T-548] **The duplicate sweep covers 2 of the app's 5 empty-state components, and the other 3 have
-  drifted.** `componentNames` lists only `EmptyStateView(` and `iOSEmptyPanel(`;
-  `iOSFeatureEmptyState(`, `iOSFeatureEmptyDetail(` and `CadenceInlineEmpty(` are invisible. Measured:
-  adding them surfaces **2 more duplicates, and unlike [[T-540]]'s these have already drifted** —
-  `"No goals yet"` in 3 files (macOS *"Create a goal for an ongoing direction, then nest milestones inside
-  it."* vs iOS *"Create a direction, then nest milestones and habits underneath it."*) and `"No habits
-  yet"` in 2. macOS's Goals page **does** show habit counts under a goal, so its sentence is *incomplete
-  rather than false*. Choosing the true sentence per platform is a copy decision — **and
-  `theGoalsAndHabitsDetailPanesNeverNameAListWithNoItems` pins the iOS spelling at exactly one occurrence,
-  so any convergence must edit that test in the same change.**
 
 
   **Escalated 2026-08-31 by the batch-8 verification pass — this is live at HEAD with the suite green,
@@ -688,27 +678,42 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   than a formality**. Re-read this before T-511 is closed cheaply.
 
 
-- [T-552] **`-only-testing:` with a suite name that does not exist is a green run over zero tests.**
-  Measured 2026-08-31: `-only-testing:CadenceTests/<NoSuchSuite>` returns `Executed 0 tests`,
-  `** TEST SUCCEEDED **`, `EXIT=0`, **with no warning and no diagnostic**. It takes a *suite* name, not a
-  *file* name — and **42 of 256 test files declare more than one suite while 15 declare none matching
-  their own basename**, so any run scoped by filename against those exercises nothing and reports
-  success. The batch-8 agent nearly filed a false "this sweep is blind" finding from exactly this: the
-  same mutation re-scoped to the real suite name killed a test. Rule added to the runbook (assert the log
-  contains the test you mutated, not just the exit code); **the durable fix would be a guard that every
-  test file declares a suite matching its basename, or a runner that refuses a zero-test run.**
 
-- [T-553] **Three more absence sweeps whose needle nothing can witness.** Same shape as the blind sweep
-  batch 8 fixed, smaller blast radius — each needs a `CadenceScanInstrument` with a literal fixture:
-  `CadenceColumnWindDownSurfaceTests.iOSWindsDownAColumnThroughTheSharedServiceFromOnePlaceOnly`
-  (`$draft.isArchived`/`$draft.isCompleted`, **0 occurrences repo-wide**),
-  `CadenceBundleInspectorHostTests.theBundleHostAsksTheOneSharedRuleAboutTheTwoFactsItCanSee`
-  (`CadenceTaskInspectorPresentation`, comment-only), and
-  `CadenceSharedBoardChromeTests.theMonthGridsWeekdayRowHasNoSizeKnobLeft` (`weekdaySymbolSize`,
-  comment-only). Also: `CadenceSidebarCountMetricsTests` spells its needle **twice** (sweep at `:507`,
-  self-check at `:545`), so a typo in the sweep's copy alone is invisible — one-constant fix. And
-  `noSettingsPaneStillPaintsUnderTheSystemSeparator` is dead weight, strictly subsumed by its
-  line-break sibling which counts the walk and has a detector test.
+
+
+- [T-554] **R1 refused: the resolve-for-display / resolve-for-save split cannot be made unrepresentable
+  in Swift — the sweep holding it is derived instead.** Investigated 2026-08-31 as the first refactor
+  target, on the evidence of four independent bugs ([[T-446]], [[T-488]], [[T-514]], [[T-534]]).
+  **The abstraction would not have prevented three of them.** All three narrowed the array *at the call
+  site*, before any helper was reached — and Swift cannot express "this array is the whole collection", so
+  `Resolver(areas.filter(\.isActive), selectedID:)` **reproduces T-488 exactly and compiles**. Every
+  candidate shape has such an initializer. The invariant a resolver would add **already holds** given the
+  same two arguments; what is missing is *argument agreement*, which is not a type property. T-534 was
+  already closed the compile-forced way, by making `selection:` non-defaulted. **What shipped instead**:
+  the four sweeps holding those fixes named six and four hardcoded paths, so a fifth surface in a new file
+  was swept by nobody — both the control set (44 `View` types taking a whole list array) and the
+  picker-surface file set are derived from the tree now. Mutation A is the evidence: pre-filtering at a
+  macOS call site kills **only** the new sweep while all four pinning tests stay green. **Recorded as a
+  closed investigation so the abstraction is not proposed again without new evidence.**
+
+- [T-555] **`cadenceSharedStringConstants` harvests `static let` only, so a `static func` constant is
+  unguarded app-wide.** Found while closing [[T-548]], whose `goalsTitle(isNarrowed:)` and
+  `habitsTitle(isNarrowed:)` are exactly that shape — the empty-state family is covered by a new guard,
+  but the general case is open. Measured over `Shared/` + `Models/`: a `static func` harvest would surface
+  `"No goals yet"` in `GoalPickerViews.swift` and `"No matching goals"` in `CreateGoalSheet.swift`,
+  `GoalPickerViews.swift` and `HabitsFormSupportViews.swift` — **the last two are already [[T-550]]'s
+  redundant `emptyText:` arguments, so sequence the two tickets together.**
+
+- [T-556] **`CadenceControlAccessibilityLabelTests.swift` declares `ControlAccessibilityLabelTests`** — the
+  only single-suite basename mismatch in the whole target (the other 13 are multi-suite files where a
+  rename would mean a restructure). A one-file rename, worth doing **precisely because it is the only
+  one**, so it is cheap and it does not need a rule behind it.
+
+- [T-557] **An archived-but-linked area keeps its `linkedCalendarID` and no Settings surface names it.**
+  The connect menu, the summary and the broken-link card all narrow to active, by the policy stated in
+  `CadenceCalendarLinkHealth.missingLinks` — so this is **consistent, not the [[T-554]] class of defect**.
+  But the link survives where the user cannot see or clear it, which is a product question worth an
+  answer.
 
 
 ## Done
@@ -1735,6 +1740,42 @@ before filing**: this list has had the same ticket re-reported more than once.
   **Not a defect** — all three are correct — but it is the [[T-374]] near-copy the helper now exists to
   remove, same family as [[T-536]].
   **Closed 2026-08-30. All three getters were logically identical to `container(of:)` — area tested before project in each — so this was pure convergence with no divergence to report. The wiring half of the guard is what catches a *differently-spelled* near-copy: a mutation rewriting one site in different words is killed by the wiring assertion while the shape sweep stays silent, which is [[T-161]]'s rule made mechanical rather than asserted.**
+
+- [T-548] **The duplicate sweep covers 2 of the app's 5 empty-state components, and the other 3 have
+  drifted.** `componentNames` lists only `EmptyStateView(` and `iOSEmptyPanel(`;
+  `iOSFeatureEmptyState(`, `iOSFeatureEmptyDetail(` and `CadenceInlineEmpty(` are invisible. Measured:
+  adding them surfaces **2 more duplicates, and unlike [[T-540]]'s these have already drifted** —
+  `"No goals yet"` in 3 files (macOS *"Create a goal for an ongoing direction, then nest milestones inside
+  it."* vs iOS *"Create a direction, then nest milestones and habits underneath it."*) and `"No habits
+  yet"` in 2. macOS's Goals page **does** show habit counts under a goal, so its sentence is *incomplete
+  rather than false*. Choosing the true sentence per platform is a copy decision — **and
+  `theGoalsAndHabitsDetailPanesNeverNameAListWithNoItems` pins the iOS spelling at exactly one occurrence,
+  so any convergence must edit that test in the same change.**
+  **Closed 2026-08-31. **The component set is derived, not listed** — every `struct` under `Cadence/` whose name carries `Empty` or `Placeholder`, harvested through `codeOnly`. Adding names was rejected as the weak fix: the list is exactly what went stale. **2 → 23 components, 0 false positives**, measured *before* converging: HEAD saw 23 literals and **0** duplicates; widened saw 47 and **2**. Both predicted duplicates were live (`"No habits yet"`, `"Select a note"`), plus the `"No goals yet"` **retype** a file-counting sweep structurally cannot see. **Three fail-closed guards** so an uncovered component is a failure rather than a silence — including a *second, structural* derivation (a `View` with glyph + headline + subtitle, `…Row` subtracted **as a rule with zero allowlist entries**) that fails when the two derivations disagree. **M1 reproduces the ticket mechanically**: with the hardcoded two restored, the three coverage guards go red while `noEmptyStateSentenceIsSpelledInTwoFiles` stays **green**. Titles converged; **subtitles reported, not picked** — Goals is a *three-way* split (macOS list, macOS roadmap, iOS) and macOS's is **incomplete rather than false**, since its Goals page does show habit counts.**
+
+- [T-552] **`-only-testing:` with a suite name that does not exist is a green run over zero tests.**
+  Measured 2026-08-31: `-only-testing:CadenceTests/<NoSuchSuite>` returns `Executed 0 tests`,
+  `** TEST SUCCEEDED **`, `EXIT=0`, **with no warning and no diagnostic**. It takes a *suite* name, not a
+  *file* name — and **42 of 256 test files declare more than one suite while 15 declare none matching
+  their own basename**, so any run scoped by filename against those exercises nothing and reports
+  success. The batch-8 agent nearly filed a false "this sweep is blind" finding from exactly this: the
+  same mutation re-scoped to the real suite name killed a test. Rule added to the runbook (assert the log
+  contains the test you mutated, not just the exit code); **the durable fix would be a guard that every
+  test file declares a suite matching its basename, or a runner that refuses a zero-test run.**
+  **Closed 2026-08-31 **by a runner that refuses, not a naming rule.** `scripts/xcb.sh` now exits **4** on a `test` run that executed no test, with a diagnostic naming the filter; `check-test-log <log>` applies the same check to an existing log — verified by hand: real green log → 0, zero-test log → 4. **The basename guard was rejected on measurement**, and the numbers are the argument: **486 of 3750 tests live outside their file's basename suite**, so making `-only-testing:<basename>` *valid* would convert today's **loud zero into a quiet subset** — a run that passes, looks normal, and silently skipped most of the file. It also cannot catch a typo and leaves [[T-465]]'s wrong-sibling case untouched. **The ticket's own figures did not reproduce**: actual is 257 files, 33 multi-suite, **14** basename-mismatched — 13 of them multi-suite, so "rename the 15" was really "rename one, restructure thirteen". The detector counts per-test result lines and **deliberately not** the `Executed N tests` summary, because a run that dies before any test never prints that line — keying on it would read total silence as a full run.**
+
+- [T-553] **Three more absence sweeps whose needle nothing can witness.** Same shape as the blind sweep
+  batch 8 fixed, smaller blast radius — each needs a `CadenceScanInstrument` with a literal fixture:
+  `CadenceColumnWindDownSurfaceTests.iOSWindsDownAColumnThroughTheSharedServiceFromOnePlaceOnly`
+  (`$draft.isArchived`/`$draft.isCompleted`, **0 occurrences repo-wide**),
+  `CadenceBundleInspectorHostTests.theBundleHostAsksTheOneSharedRuleAboutTheTwoFactsItCanSee`
+  (`CadenceTaskInspectorPresentation`, comment-only), and
+  `CadenceSharedBoardChromeTests.theMonthGridsWeekdayRowHasNoSizeKnobLeft` (`weekdaySymbolSize`,
+  comment-only). Also: `CadenceSidebarCountMetricsTests` spells its needle **twice** (sweep at `:507`,
+  self-check at `:545`), so a typo in the sweep's copy alone is invisible — one-constant fix. And
+  `noSettingsPaneStillPaintsUnderTheSystemSeparator` is dead weight, strictly subsumed by its
+  line-break sibling which counts the walk and has a detector test.
+  **Closed 2026-08-31. All three sweeps go through `CadenceScanInstrument` with literal fixtures and non-vacuous walks; two also pin that the comment-blanking reader genuinely differs from a raw read. `CadenceSidebarCountMetricsTests`' needle collapsed to one constant read by both the sweep and its self-check. `noSettingsPaneStillPaintsUnderTheSystemSeparator` **deleted** as a strict subset of its line-break sibling, with its positive `CadenceRowDivider` table moved into the survivor. **Proved both ways**: blinding each detector kills it with `.blind`, and planting each needle as live code makes each sweep name the planted file. The instructive one is the tint needle — **the blinded sweep still passes, because it inherently cannot detect its own blinding, while the witness reading the same constant fails.** That asymmetry is the entire fix.**
 
 ## Cancelled
 

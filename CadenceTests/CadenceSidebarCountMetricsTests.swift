@@ -503,8 +503,11 @@ struct GlobalSearchDestinationTintTests {
         #expect(source.contains("CadenceSidebarTint.hex(for: destination, overridesRaw: sidebarTabColorsRaw)"))
         #expect(source.contains("CadencePreferenceKeys.sidebarTabColors"))
         // The specific spelling that ignores the override, and only that — `tint:` arguments
-        // elsewhere in this file are unrelated controls, so the needle is qualified.
-        #expect(!source.contains("color: destination.tint"))
+        // elsewhere in this file are unrelated controls, so the needle is qualified. Read from the
+        // one constant rather than retyped: this file is the only place the needle appears, so a
+        // typo in a second copy of it would empty this check in silence while the self-check below
+        // went on passing against its own correct copy (T-553).
+        #expect(!source.contains(t244UnoverriddenTintSpelling))
     }
 
     /// **The relation the value assertions above cannot make: one resolver, not two.**
@@ -541,12 +544,17 @@ struct GlobalSearchDestinationTintTests {
 
     /// Self-check on that last needle, so a typo cannot quietly pass the scan: it must match the
     /// spelling this test bans and must not match the one that replaced it.
+    ///
+    /// **It checks the same constant the sweep reads.** It used to spell the needle a second time,
+    /// which made it a self-check on a copy: a typo in the sweep's spelling alone left the sweep
+    /// matching nothing and this test still green, because it was witnessing its own literal
+    /// rather than the one in use (T-553).
     @Test func theIOSNeedleMatchesTheOldSpellingAndNotTheNewOne() {
         let banned = "                color: destination.tint,"
         let wanted = "                color: Color(hex: CadenceSidebarTint.hex(for: destination, overridesRaw: sidebarTabColorsRaw)),"
 
-        #expect(banned.contains("color: destination.tint"))
-        #expect(!wanted.contains("color: destination.tint"))
+        #expect(banned.contains(t244UnoverriddenTintSpelling))
+        #expect(!wanted.contains(t244UnoverriddenTintSpelling))
     }
 }
 
@@ -569,6 +577,12 @@ private func regexMatches(_ pattern: String, in source: String) -> [String] {
 /// requires the quotes, so a `Theme.amberHex` read cannot match it and the needle is not a
 /// substring of the correct post-fix text.
 private let hexLiteralPattern = "\"#[0-9A-Fa-f]{3,8}\""
+
+/// The T-244 spelling that reads a destination's *default* tint and so ignores the user's
+/// override. Spelled **once**, because the sweep that bans it and the self-check that proves it
+/// still matches something are the only two readers, and a needle spelled twice is a self-check on
+/// a copy — the sweep can go blind while the witness stays green.
+private let t244UnoverriddenTintSpelling = "color: destination.tint"
 
 /// The body of `CadenceFeatureDestination.defaultColorHex`'s `switch`, comments blanked out.
 private func tintSwitchBody() throws -> String {

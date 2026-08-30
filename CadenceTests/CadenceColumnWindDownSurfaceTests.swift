@@ -244,17 +244,44 @@ struct CadenceColumnWindDownSurfaceTests {
         // shape half stated as a sweep: `Toggle(isOn: $draft.isArchived)` is the bug, and it is the
         // `$` that makes it one — `applyColumnWindDown` writes `draft.isArchived` unprefixed to
         // keep the row in step with a flag already committed to the model.
-        for path in try swiftFiles(under: "Cadence/iOS") {
-            let code = try strippingComments(sourceFile(path))
-            #expect(
-                !code.contains("$draft.isArchived"),
-                "\(path) drafts a column's archived flag instead of acting on it"
-            )
-            #expect(
-                !code.contains("$draft.isCompleted"),
-                "\(path) drafts a column's completed flag instead of acting on it"
-            )
-        }
+        //
+        // **The needle has no witness in this corpus and cannot have one** (T-553): every file the
+        // sweep reads is required *not* to contain it, and it is spelled nowhere else in the
+        // repository either, so a typo in it would empty the sweep in perfect silence. The
+        // instrument is what supplies the missing witness — its two literal fixtures are checked
+        // when it is built, so a detector that has stopped discriminating cannot reach the walk at
+        // all. The negative fixture is the nearest neighbour on purpose: the same two flags,
+        // written the way `applyColumnWindDown` writes them, beside a `$draft.` binding that is
+        // legitimate.
+        let draftsALifecycleFlag = try CadenceScanInstrument(
+            "a column lifecycle flag bound as a draft",
+            fires: """
+            Toggle("Archived", isOn: $draft.isArchived)
+            Toggle("Completed", isOn: $draft.isCompleted)
+            """,
+            andNotOn: """
+            TextField("Column name", text: $draft.name)
+            case .archive: draft.isArchived = true
+            case .complete: draft.isCompleted = true
+            """,
+            by: { source in
+                let code = CadenceSourceScan.codeOnly(source)
+                return code.contains("$draft.isArchived") || code.contains("$draft.isCompleted")
+            }
+        )
+
+        let offenders = try draftsALifecycleFlag.sweep(
+            try swiftFiles(under: "Cadence/iOS"),
+            // 105 files when this was written; a walk that collapses is how an absence sweep
+            // passes forever.
+            atLeast: 80,
+            including: "Cadence/iOS/iOSListEditorViews.swift",
+            read: sourceFile
+        )
+        #expect(
+            offenders.isEmpty,
+            "column lifecycle flag(s) bound as a draft in: \(offenders.joined(separator: ", "))"
+        )
     }
 
     /// The shape half of the ticket. The two `Toggle`s are gone, the decision is asked once, and it

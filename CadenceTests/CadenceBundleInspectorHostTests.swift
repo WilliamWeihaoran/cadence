@@ -387,13 +387,47 @@ struct CadenceBundleInspectorHostTests {
         )
         // The rule kept its old name in no file at all — a second copy under the old noun is the one
         // outcome this consolidation exists to prevent.
-        for path in try swiftFiles(under: "Cadence") {
-            let code = try strippingComments(sourceFile(path))
-            #expect(
-                !code.contains("CadenceTaskInspectorPresentation"),
-                "\(path) still names the pre-T-217 spelling of the shared rule"
-            )
-        }
+        //
+        // **The needle is retired, so the corpus can never witness it** (T-553): `CadenceTaskInspectorPresentation`
+        // survives under `Cadence/` only inside one doc comment, and a comment is exactly what this
+        // reader blanks. Nothing here could tell the spelling still matches anything, so a typo in
+        // it would leave the loop green over a repository where the rule was enforced nowhere. The
+        // instrument carries the witness instead, against the nearest possible negative: the name
+        // that replaced it, in the same call.
+        let namesTheRetiredRule = try CadenceScanInstrument(
+            "the pre-T-217 spelling of the shared panel rule",
+            fires: "let phase = CadenceTaskInspectorPresentation.resolveHeldSubject(isDeleted: bundle.isDeleted)",
+            andNotOn: "let phase = CadenceDetailPanelPresentation.resolveHeldSubject(isDeleted: bundle.isDeleted)",
+            by: { source in
+                CadenceSourceScan.matchCount(
+                    "(?<![A-Za-z0-9_])CadenceTaskInspectorPresentation(?![A-Za-z0-9_])",
+                    in: CadenceSourceScan.codeOnly(source)
+                ) > 0
+            }
+        )
+
+        let offenders = try namesTheRetiredRule.sweep(
+            try swiftFiles(under: "Cadence"),
+            // 558 files when this was written.
+            atLeast: 300,
+            including: "Cadence/iOS/iOSBundleInspectorHost.swift",
+            read: sourceFile
+        )
+        #expect(
+            offenders.isEmpty,
+            "still naming the pre-T-217 spelling: \(offenders.joined(separator: ", "))"
+        )
+
+        // And the reader really is blanking comments rather than the name having left the tree:
+        // the shared rule's own file explains the rename in prose, so the raw text holds the old
+        // spelling and the scanned text must not. Without this the zero above is equally happy
+        // with a `codeOnly` that returned "".
+        let sharedRule = try sourceFile("Cadence/Shared/CadenceDetailPanelPresentation.swift")
+        #expect(
+            sharedRule.contains("CadenceTaskInspectorPresentation"),
+            "the old spelling is gone from prose too; re-anchor this witness or drop the sweep"
+        )
+        #expect(!namesTheRetiredRule.fires(on: sharedRule))
     }
 
     /// Without this, every zero above could be a scan reading an empty string — the failure mode a

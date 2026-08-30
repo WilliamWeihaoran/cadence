@@ -267,8 +267,9 @@ struct iOSListNotesView: View {
             )
             .id(note.id)
         } else {
-            // Title only, macOS's exact wording — a "nothing selected" state, not an empty list.
-            iOSEmptyPanel(systemImage: "doc.text", title: "Select a note", subtitle: "")
+            // Title only, and the shared wording rather than a second copy of it (T-548) — a
+            // "nothing selected" state, not an empty list.
+            iOSEmptyPanel(systemImage: "doc.text", title: CadenceEmptyStateCopy.selectNoteTitle, subtitle: "")
         }
     }
 

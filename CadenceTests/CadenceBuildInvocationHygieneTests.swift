@@ -116,6 +116,129 @@ struct CadenceBuildInvocationHygieneTests {
         #expect(CadenceBuildInvocation.parse(export).first?.isBuildAction == false)
     }
 
+    // MARK: - T-552: the runner refuses a green run over zero tests
+
+    /// **`-only-testing:` takes a suite name, not a file name, and a name that matches nothing is
+    /// not an error.** Measured 2026-08-31: `-only-testing:CadenceTests/<NoSuchSuite>` prints
+    /// `Executed 0 tests`, `** TEST SUCCEEDED **` and exits 0, with no warning and no diagnostic.
+    /// 33 of this target's 255 test files declare more than one suite and 14 declare none named
+    /// after the file, so a run scoped by *filename* against any of those exercises nothing and
+    /// reports success — which is character for character what a surviving mutation looks like.
+    /// An agent nearly filed a false "this sweep is blind" finding from exactly that; re-scoped to
+    /// the suite the source actually declares, the same mutation killed a test.
+    ///
+    /// **Why the runner and not a naming guard.** The other candidate was a rule that every test
+    /// file declare a suite matching its basename, which would make `-only-testing:<basename>`
+    /// always valid. It is the worse fix on three counts: it costs 14 files today; it does not
+    /// touch the failure, because a *typo* still returns green-over-zero and so does scoping to a
+    /// multi-suite file's basename when the test you meant lives in a sibling suite (the residual
+    /// T-465 case, which nothing can see from the filename); and it buys a convention rather than
+    /// a guard. Refusing the empty run catches every route into it at once, including the ones
+    /// nobody has thought of, and costs nothing today.
+    ///
+    /// This test pins that `scripts/xcb.sh` still carries the refusal. It is a source scan and
+    /// says so: it cannot run the script from a sandboxed test host, so it checks the two things a
+    /// scan honestly can — that the postflight still counts, branches and fails, and that the
+    /// pattern it counts with still tells a real result line apart from an empty run's log.
+    @Test func theGuardedRunnerStillRefusesATestRunThatExecutedNothing() throws {
+        let instrument = try CadenceScanInstrument(
+            "a runner that lets a zero-test run report success",
+            fires: Self.unguardedPostflightWitness,
+            andNotOn: Self.guardedPostflightWitness,
+            by: CadenceTestRunGuard.letsAnEmptyTestRunPass
+        )
+
+        let runner = try CadenceSourceScan.sourceFile("scripts/xcb.sh")
+        // Non-vacuity: this is the runner, read whole. A scan of an empty string would satisfy the
+        // detector's own definition of "unguarded" and so could only ever fail loudly — but a scan
+        // of the *wrong file* could not, so pin which file this is.
+        #expect(runner.count > 4_000, "scripts/xcb.sh read as \(runner.count) characters")
+        #expect(runner.contains("Guarded xcodebuild"), "scripts/xcb.sh is not the runner any more")
+
+        #expect(
+            !instrument.fires(on: runner),
+            "scripts/xcb.sh no longer turns a test run that executed nothing into a failure"
+        )
+    }
+
+    /// The other half, and the one a text scan usually cannot give: the runner's detector still
+    /// *discriminates*. The pattern is lifted out of the script and run against two literal logs —
+    /// the empty run xcodebuild calls a success, and a real one — so a typo inside the shell
+    /// quotes fails here instead of silently matching nothing and passing every run.
+    ///
+    /// The pattern is written in the intersection of POSIX ERE and ICU on purpose: alternation, a
+    /// bracket class, `+` and an escaped paren, and nothing else. **No `^`** — grep anchors it to
+    /// each line and `NSRegularExpression` anchors it to the whole string unless told otherwise,
+    /// so a `^` here would mean two different things and this test would stop being evidence about
+    /// the script. If the pattern ever needs a construct the two spell differently, replace this
+    /// test rather than relax it.
+    @Test func theRunnersTestResultPatternStillTellsAnEmptyRunFromARealOne() throws {
+        let runner = try CadenceSourceScan.sourceFile("scripts/xcb.sh")
+        let pattern = try #require(
+            CadenceTestRunGuard.testResultPattern(in: runner),
+            "scripts/xcb.sh declares no TEST_RESULT_PATTERN"
+        )
+
+        // The pattern is a real regex, not `-1`-returning rubble.
+        #expect(CadenceSourceScan.matchCount(pattern, in: Self.swiftTestingRunLog) == 2)
+        #expect(CadenceSourceScan.matchCount(pattern, in: Self.xctestRunLog) == 1)
+        #expect(CadenceSourceScan.matchCount(pattern, in: Self.emptyRunLog) == 0)
+
+        // And the empty log really is the green-over-nothing shape, not just any text: it carries
+        // both of the lines that make this hazard invisible.
+        #expect(Self.emptyRunLog.contains("Executed 0 tests"))
+        #expect(Self.emptyRunLog.contains("** TEST SUCCEEDED **"))
+    }
+
+    // MARK: - T-552 witnesses
+
+    /// The postflight as it stood before T-552: exit code, error count, warning count, leak check.
+    /// Nothing in it can tell a suite that passed from a filter that matched nothing.
+    private static let unguardedPostflightWitness = """
+    say "  XCODEBUILD_EXIT=$STATUS"
+    say "  compile errors:  $(grep -cE '\\.swift:[0-9]+:[0-9]+: error:' "$LOG" | tr -d ' ')"
+    say "  warnings:        $(grep -c 'warning:' "$LOG" | tr -d ' ')"
+    exit $STATUS
+    """
+
+    /// The nearest guarded shape: the same postflight, plus a count of per-test result lines, a
+    /// branch on that count being zero, and a non-zero exit assigned inside it.
+    private static let guardedPostflightWitness = """
+    tests_seen() { grep -acE "$TEST_RESULT_PATTERN" "$1" 2>/dev/null | tr -d ' '; }
+    say "  XCODEBUILD_EXIT=$STATUS"
+    say "  warnings:        $(grep -c 'warning:' "$LOG" | tr -d ' ')"
+    if (( IS_TEST_RUN )); then
+      RAN=$(tests_seen "$LOG")
+      if (( RAN == 0 )); then
+        empty_run_diagnostic "$LOG"
+        (( STATUS == 0 )) && STATUS=4
+      fi
+    fi
+    exit $STATUS
+    """
+
+    /// A run that was filtered to a suite name matching nothing. Every line of it is a success.
+    private static let emptyRunLog = """
+    Test Suite 'Selected tests' started at 2026-08-31 10:00:00.000
+    Test Suite 'Selected tests' passed at 2026-08-31 10:00:00.001.
+    \t Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+    ** TEST SUCCEEDED **
+    """
+
+    /// A real swift-testing run: one pass and one failure, so the pattern is pinned on both.
+    private static let swiftTestingRunLog = """
+    ◇ Test theRowStillDraws() started.
+    ✔ Test theRowStillDraws() passed after 0.001 seconds.
+    ✘ Test theRowDoesNot() recorded an issue at Foo.swift:12:5
+    ** TEST FAILED **
+    """
+
+    /// The XCTest shape, which this target still emits for its `XCTestCase` subclasses.
+    private static let xctestRunLog = """
+    Test Case '-[CadenceTests.FooTests testBar]' started.
+    Test Case '-[CadenceTests.FooTests testBar]' passed (0.002 seconds).
+    """
+
     // MARK: - Witnesses
 
     /// The README shape as it stood before this suite: continued across lines, action last, no flag.
@@ -248,5 +371,51 @@ struct CadenceBuildInvocation {
         if bare.contains("=") { return false }
         if bare == "$XCODEBUILD" || bare == "${XCODEBUILD}" { return true }
         return bare == "xcodebuild" || bare.hasSuffix("/xcodebuild")
+    }
+}
+
+
+/// The two readable facts about `scripts/xcb.sh`'s zero-test guard (T-552).
+///
+/// Separated from the suite because both are statements about *shell text* rather than about
+/// Swift, and because the pattern extractor is the piece that makes the pinning worth more than
+/// "the words are still in the file".
+enum CadenceTestRunGuard {
+
+    /// Whether a runner would let a test run that executed nothing report success.
+    ///
+    /// Three things have to be present, and the conjunction is the point: counting result lines
+    /// with nothing branching on the count is a report, and branching with nothing assigning a
+    /// failing status is a warning. Only all three make the empty run an error.
+    ///
+    /// Read over the script's commands, with `#` comment lines dropped — prose describing the
+    /// guard must not be able to stand in for the guard, which is the exact substitution this
+    /// whole ticket is about.
+    static func letsAnEmptyTestRunPass(_ shell: String) -> Bool {
+        let commands = commandLines(shell)
+        let counts = commands.contains("tests_seen()")
+        let branchesOnZero = CadenceSourceScan.matchCount("RAN == 0", in: commands) > 0
+        let failsOnIt = CadenceSourceScan.matchCount("STATUS=4", in: commands) > 0
+        return !(counts && branchesOnZero && failsOnIt)
+    }
+
+    /// The value of the script's `TEST_RESULT_PATTERN='...'` assignment, unquoted.
+    static func testResultPattern(in shell: String) -> String? {
+        for line in commandLines(shell).split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("TEST_RESULT_PATTERN='"), trimmed.hasSuffix("'") else { continue }
+            return String(trimmed.dropFirst("TEST_RESULT_PATTERN='".count).dropLast())
+        }
+        return nil
+    }
+
+    /// The script with whole-line `#` comments blanked, newlines kept. Deliberately crude: a
+    /// trailing `#` inside a command is left alone, because dropping from it would eat the `#`
+    /// in a `${TMPDIR}` idiom or a quoted path and shorten lines the checks above read.
+    static func commandLines(_ shell: String) -> String {
+        shell
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces).hasPrefix("#") ? "" : String($0) }
+            .joined(separator: "\n")
     }
 }

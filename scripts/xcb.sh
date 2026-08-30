@@ -5,6 +5,7 @@
 #   ./scripts/xcb.sh <id> test  [extra xcodebuild args...]     # takes the test-host lock
 #   ./scripts/xcb.sh <id> raw   <every arg, including the action>
 #   ./scripts/xcb.sh audit                                     # report shared-DerivedData leaks
+#   ./scripts/xcb.sh check-test-log <log>                      # the zero-test guard, on its own
 #
 # `-project Cadence.xcodeproj` is supplied for you; pass `-scheme` and `-destination` yourself.
 #
@@ -31,6 +32,16 @@
 #    process's own stack, so the watchdog below takes it: if the log stops advancing while the
 #    process is idle, it samples and prints the verdict instead of leaving you with silence.
 #
+# 3. A GREEN RUN OVER ZERO TESTS (T-552). `-only-testing:` takes a SUITE name, not a file name,
+#    and a name matching nothing is not an error: xcodebuild prints `Executed 0 tests`,
+#    `** TEST SUCCEEDED **` and exits 0, with no warning and no diagnostic. Measured 2026-08-31,
+#    33 of this repository's 255 test files declare more than one suite and 14 declare none named
+#    after the file, so scoping a run by *filename* against any of those exercises nothing and
+#    reports success -- which is character for character what "the mutation survived" looks like.
+#    The prose rule for it lives in docs/SUBAGENT_RUNBOOK.md and is exactly the kind of step an
+#    agent under time pressure skips, so the runner enforces it instead: a `test` action that
+#    xcodebuild called successful while running no test at all exits 4 from here.
+#
 # It never kills anything. The user's Cadence, the user's Xcode and other agents' builds are all
 # off limits; a stall is reported, and the decision to wait or abandon stays with the caller.
 
@@ -49,6 +60,60 @@ TMP_BASE="${TMPDIR:-/private/tmp/}"; [[ "$TMP_BASE" != */ ]] && TMP_BASE="$TMP_B
 shared_cadence_entries() {
   print -rn -- "$(ls -d "$SHARED_DD"/Cadence-* 2>/dev/null | sort)"
 }
+
+# --- the zero-test guard (T-552) ---------------------------------------------
+# Evidence that a test RAN, in the two shapes this repository's logs use: swift-testing's
+# `✔ Test name()` / `✘ Test name()`, and XCTest's `Test Case '-[Suite testName]' passed`.
+#
+# The `Executed N tests` summary is deliberately NOT the signal. It is the line a run that died
+# before reaching any test never prints at all, so keying on it would read total silence as a full
+# run; and its own text is what a filtered-to-nothing run reports zero on. Counting per-test result
+# lines answers the only question that matters -- did anything actually execute -- from evidence
+# that has to be produced rather than from a summary that has to be absent.
+#
+# No `^` in the pattern, deliberately: grep anchors it per line and ICU anchors it to the whole
+# string, and CadenceBuildInvocationHygieneTests lifts this exact pattern out of this file and runs
+# it against literal log fixtures to prove it still discriminates. An anchor the two engines read
+# differently would make that check evidence about something other than this script.
+TEST_RESULT_PATTERN='(✔|✘) Test [A-Za-z0-9_]+\(\)|Test Case .*(passed|failed)'
+
+tests_seen() { grep -acE "$TEST_RESULT_PATTERN" "$1" 2>/dev/null | tr -d ' '; }
+
+# Everything the caller needs to fix an empty run, printed where the empty run happened.
+empty_run_diagnostic() {
+  local log="$1"
+  say ""
+  say "!! REFUSING: this test run executed 0 tests, and xcodebuild called that a success."
+  say "   ** TEST SUCCEEDED ** over an empty filter is indistinguishable from a passing suite,"
+  say "   and from a surviving mutation. It is being reported as a failure here instead (T-552)."
+  # The filter is read back off xcodebuild's own "Command line invocation" line, which quotes its
+  # arguments -- so the character class stops at a quote as well as at a space, or the identifier
+  # is reported with a stray `"` glued to it and reads like part of the suite name.
+  local requested=(${(f)"$(grep -oE -- '-only-testing:[^ "'"'"']*' "$log" 2>/dev/null | sort -u)"})
+  if (( ${#requested} )); then
+    say "   the run was filtered to:"
+    for f in $requested; do say "     $f"; done
+    say "   \`-only-testing:\` takes a SUITE name, not a file name. Ask the source which suite"
+    say "   declares your test:  ./scripts/test-suite-index.sh <testName>"
+  else
+    say "   the run named no -only-testing: filter, so this is not a mis-scoped suite --"
+    say "   the test target built but nothing ran. Read $log from the top."
+  fi
+}
+
+if [[ "${1:-}" == "check-test-log" ]]; then
+  CHECK_LOG="${2:-}"
+  if [[ ! -f "$CHECK_LOG" ]]; then
+    say "usage: ./scripts/xcb.sh check-test-log <logfile>"; exit 2
+  fi
+  CHECK_RAN=$(tests_seen "$CHECK_LOG")
+  if (( CHECK_RAN == 0 )); then
+    empty_run_diagnostic "$CHECK_LOG"
+    exit 4
+  fi
+  say "$CHECK_RAN test result(s) in $CHECK_LOG"
+  exit 0
+fi
 
 if [[ "${1:-}" == "audit" ]]; then
   say "== shared DerivedData entries for this project =="
@@ -155,6 +220,14 @@ case "$ACTION" in
   *) say "unknown action '$ACTION'"; exit 2 ;;
 esac
 
+# `raw` is how a caller reaches `test-without-building`, so the guard keys on the actions that
+# execute tests rather than on `$ACTION` alone -- otherwise the one route that skips the build,
+# and so the one most likely to be re-run in a mutation loop, is the one route with no guard.
+IS_TEST_RUN=0
+for a in "${run_args[@]}"; do
+  [[ "$a" == "test" || "$a" == "test-without-building" ]] && IS_TEST_RUN=1
+done
+
 "$XCODEBUILD" -project "$ROOT_DIR/Cadence.xcodeproj" "${run_args[@]}" > "$LOG" 2>&1 &
 XCB_PID=$!
 watchdog "$XCB_PID" &
@@ -170,6 +243,14 @@ say "  XCODEBUILD_EXIT=$STATUS"
 # test failure whose message contains the word and reads a real kill as a build break.
 say "  compile errors:  $(grep -cE '\.swift:[0-9]+:[0-9]+: error:' "$LOG" | tr -d ' ')"
 say "  warnings:        $(grep -c 'warning:' "$LOG" | tr -d ' ')"
+if (( IS_TEST_RUN )); then
+  RAN=$(tests_seen "$LOG")
+  say "  tests executed:  $RAN"
+  if (( RAN == 0 )); then
+    empty_run_diagnostic "$LOG"
+    (( STATUS == 0 )) && STATUS=4
+  fi
+fi
 if [[ "$(shared_cadence_entries)" != "$before_entries" ]]; then
   say ""
   say "!! LEAK: a shared DerivedData entry appeared during this run, despite the private path."

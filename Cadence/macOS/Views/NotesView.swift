@@ -155,7 +155,7 @@ private struct DailyNotesPage: View {
                 // leaking into the next note.
                 .id(note.id)
             } else {
-                NotesEditorPlaceholder(title: "Select a note")
+                NotesEditorPlaceholder(title: CadenceEmptyStateCopy.selectNoteTitle)
             }
         }
         .onAppear { openNote(forDateKey: DateFormatters.todayKey()) }
@@ -249,7 +249,7 @@ private struct WeeklyNotesPage: View {
                 // leaking into the next note.
                 .id(note.id)
             } else {
-                NotesEditorPlaceholder(title: "Select a week")
+                NotesEditorPlaceholder(title: CadenceEmptyStateCopy.selectWeekTitle)
             }
         }
         .onAppear { openNote(forWeekKey: DateFormatters.currentWeekKey()) }
@@ -343,7 +343,7 @@ private struct NotepadPage: View {
                 // Per-note text view, so undo history does not leak between notes.
                 .id(note.id)
             } else {
-                NotesEditorPlaceholder(title: "Select a note")
+                NotesEditorPlaceholder(title: CadenceEmptyStateCopy.selectNoteTitle)
             }
         }
         .onAppear { loadOrCreateNotepad() }
@@ -471,7 +471,7 @@ private struct MeetingNotesPage: View {
                     EventNoteCommitNoticeBanner(notice: commitNotice)
                 }
             } else {
-                NotesEditorPlaceholder(title: "Select a meeting note")
+                NotesEditorPlaceholder(title: CadenceEmptyStateCopy.selectMeetingNoteTitle)
             }
         }
         .onAppear {

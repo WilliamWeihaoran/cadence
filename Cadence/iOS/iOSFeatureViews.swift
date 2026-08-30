@@ -218,7 +218,7 @@ struct iOSGoalsView: View {
     /// The one empty state this screen has, read by **both** panes. See `iOSFeatureEmptyState`.
     private static let emptyState = iOSFeatureEmptyState(
         systemImage: "sparkles",
-        title: "No goals yet",
+        title: CadenceEmptyStateCopy.goalsTitle(isNarrowed: false),
         subtitle: "Create a direction, then nest milestones and habits underneath it."
     )
 
@@ -408,7 +408,7 @@ struct iOSHabitsView: View {
     /// The one empty state this screen has, read by **both** panes. See `iOSFeatureEmptyState`.
     private static let emptyState = iOSFeatureEmptyState(
         systemImage: "flame.fill",
-        title: "No habits yet",
+        title: CadenceEmptyStateCopy.habitsTitle(isNarrowed: false),
         subtitle: "Create repeating commitments and track today."
     )
 
