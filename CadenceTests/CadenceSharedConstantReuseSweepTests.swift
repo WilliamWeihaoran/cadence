@@ -89,6 +89,120 @@ let cadenceSharedLiteralExemptions: [CadenceSharedLiteralExemption] = [
     ),
 ]
 
+/// A placeholder label typed inline with **no** declaration anywhere, and the measured reason it
+/// stays that way.
+///
+/// **T-515.** [[T-505]] declared a label iff its literal appeared at **≥2 sites in ≥2 files**, and
+/// recorded the four that fell below that bar in a ticket so the omission would read as a decision.
+/// A ticket is not a guard. This list is the same decision held mechanically: the rule does *not*
+/// widen — a constant with one call site is a name, not a de-duplication, and widening to "≥2 sites
+/// in ≥1 file" would still never reach `"Untitled Column"`, which has exactly one — but every
+/// undeclared member of the family now has to be written down with a reason, and
+/// `everyPlaceholderLabelInTheAppIsDeclaredOrRecorded` fails on a **new** one nobody listed.
+///
+/// That is strictly stronger than widening: it covers the one-site case, it costs no constant in
+/// `Models/` for a label one macOS view file uses, and the next `"Untitled …"` typed anywhere in
+/// the product has to justify itself at the point it is added rather than at the next audit.
+struct CadenceUndeclaredPlaceholderLabel {
+    let literal: String
+    let path: String
+    let why: String
+
+    init(_ literal: String, path: String, why: String) {
+        self.literal = literal
+        self.path = path
+        self.why = why
+    }
+}
+
+let cadenceUndeclaredPlaceholderLabels: [CadenceUndeclaredPlaceholderLabel] = [
+    CadenceUndeclaredPlaceholderLabel(
+        "Untitled task",
+        path: "Cadence/iOS/iOSTaskDetailComponents.swift",
+        why: """
+        The one survivor of [[T-513]]'s lower-cased trio, and deliberately: it is a `TextField` \
+        prompt, not a label over a value. The other two were `Text(...)` rows showing a \
+        blank-titled task the way ~18 other surfaces show it, so they now read \
+        `TaskTitleSupport.defaultDisplayTitle`. A prompt is a different piece of copy — every other \
+        title prompt in the app is a noun phrase ("Task title", "Note title", "Column name"), so \
+        raising this one to "Untitled Task" would make it the only prompt phrased as a placeholder \
+        *value*. Filed rather than changed, because the fix is "say Task title", not "capitalise".
+        """
+    ),
+    CadenceUndeclaredPlaceholderLabel(
+        "Untitled subtask",
+        path: "Cadence/macOS/Editor/MarkdownTaskEmbedDrawingSupport.swift",
+        why: """
+        Two sites in one file, both inside the same embed drawing. Below [[T-505]]'s bar and \
+        staying there: a reader editing one of the two has the other on screen. Lower-cased like \
+        the "Untitled task" rows [[T-513]] fixed, but unlike those it has no capitalised twin \
+        anywhere to disagree with — there is no `defaultSubtaskTitle`.
+        """
+    ),
+    CadenceUndeclaredPlaceholderLabel(
+        "Untitled List",
+        path: "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift",
+        why: """
+        Two sites in one file, the picker row and the chip beside it. Same reason as \
+        "Untitled subtask": one file, both visible at once, and no second target needs to read it.
+        """
+    ),
+    CadenceUndeclaredPlaceholderLabel(
+        "Untitled Column",
+        path: "Cadence/iOS/iOSColumnWindDownSupport.swift",
+        why: """
+        One site, one file. The case that shows why widening [[T-505]]'s rule was the wrong answer \
+        to [[T-515]]: no threshold on *repetition* reaches a label used once, so only a \
+        completeness rule over the whole family can hold it at all.
+        """
+    ),
+]
+
+/// The three roots that make up the shipped product: the app, the widget extension and the MCP
+/// server. The shared-constant sweep above walks only `Cadence/` because that is where every
+/// call site it can act on lives; the placeholder-family rules below walk all three, because
+/// "every `Untitled …` a user can read" is a claim about the product, not about one target.
+let cadencePlaceholderScanRoots = ["Cadence", "CadenceWidgets", "CadenceMCPServer"]
+
+/// Every whole `"Untitled …"` string literal in the product, mapped to the files that type it.
+///
+/// The needle is derived from `CadenceTitleNormalization.defaultCompactTitle` rather than spelled
+/// here, so renaming the family re-points this harvest instead of silently emptying it.
+/// Interpolated and escaped literals are excluded by the pattern — those are
+/// `noSourceFileBuildsAPlaceholderLabelByInterpolation`'s half of the family.
+func cadencePlaceholderLabelSites() throws -> (sites: [String: Set<String>], filesRead: Int) {
+    let family = NSRegularExpression.escapedPattern(for: CadenceTitleNormalization.defaultCompactTitle)
+    let pattern = try NSRegularExpression(pattern: "\"(\(family)[^\"\\\\]*)\"")
+    let read = CadenceSourceScan.strippedSourceReader()
+    var sites: [String: Set<String>] = [:]
+    var filesRead = 0
+    for root in cadencePlaceholderScanRoots {
+        for path in try CadenceSourceScan.swiftFiles(under: root) {
+            let source = try read(path)
+            filesRead += 1
+            let range = NSRange(source.startIndex..., in: source)
+            for match in pattern.matches(in: source, range: range) {
+                guard let literalRange = Range(match.range(at: 1), in: source) else { continue }
+                sites[String(source[literalRange]), default: []].insert(path)
+            }
+        }
+    }
+    return (sites, filesRead)
+}
+
+/// Every placeholder label with a declaration behind it, whether or not the sweep can guard it.
+///
+/// `defaultCompactTitle` is unioned in by hand for the one reason
+/// `everyUntitledPlaceholderHasOneDeclarationTheSweepCanSee` already states out loud: `"Untitled"`
+/// is eight characters, under the harvest's twelve-character floor. It is declared; it is simply
+/// not swept. Leaving it out here would report the app's most common placeholder as undeclared.
+func cadenceDeclaredPlaceholderLabels() throws -> Set<String> {
+    let family = CadenceTitleNormalization.defaultCompactTitle
+    var declared = Set(try cadenceSharedStringConstants().map(\.literal).filter { $0.hasPrefix(family) })
+    declared.insert(family)
+    return declared
+}
+
 /// A string constant declared in `Cadence/Shared/`, read out of source rather than listed here.
 ///
 /// Harvested rather than declared on purpose: a hand-kept list of constants is a census that goes
@@ -383,6 +497,228 @@ struct CadenceSharedConstantReuseSweepTests {
         // is precisely why `Shared/` was not an option for the declaration.
         #expect(widgets.contains("Cadence/Shared/GoalListLinkHelpers.swift") == false)
         #expect(mcp.contains("Cadence/Shared/GoalListLinkHelpers.swift") == false)
+    }
+
+    // MARK: - The shape the sweep cannot see
+
+    /// **No file in the product builds a placeholder label out of a prefix and a noun.**
+    ///
+    /// [[T-512]]. This is the sweep's structural blind spot, not a weakness in its detector:
+    /// `cadenceSharedStringConstants` excludes interpolated literals **by construction** — a
+    /// `"\(title) (Hidden)"` is not something a call site could re-type verbatim — so a label
+    /// *assembled* at the call site is invisible to it no matter how exactly the assembled text
+    /// matches a declared constant. Two files did exactly that: `"Untitled \(kind.noun)"` and
+    /// `"Untitled \(noun)"`, where the noun is `Area`/`Project`/`Context`, so at runtime they
+    /// produced `defaultAreaName`, `defaultProjectName` and `defaultContextName` character for
+    /// character. Renaming any of those three left both builders behind with nothing going red.
+    ///
+    /// The needle is **derived**, not spelled: it is `defaultCompactTitle` plus a space, so
+    /// renaming the family re-points this rule instead of quietly emptying it. That is the whole
+    /// point — a guard whose needle is a literal has the same defect as the code it guards.
+    ///
+    /// It is the interpolation half of a pair. The concatenation spelling — `"Untitled " + noun` —
+    /// leaves a whole literal `"Untitled "` behind, which is not a declared label, so
+    /// `everyPlaceholderLabelInTheAppIsDeclaredOrRecorded` below catches it instead. Between them
+    /// there is no way left to build one of these labels without either reading a constant or
+    /// writing down why not.
+    @Test func noSourceFileBuildsAPlaceholderLabelByInterpolation() throws {
+        let prefix = "\(CadenceTitleNormalization.defaultCompactTitle) "
+        // The family is one prefix and a noun. Asserted rather than assumed, because it is what
+        // makes the derived needle above the right needle.
+        for label in [
+            CadenceTitleNormalization.defaultTaskTitle,
+            CadenceTitleNormalization.defaultContextName,
+            CadenceTitleNormalization.defaultGoalTitle,
+            CadenceTitleNormalization.defaultHabitTitle,
+            CadenceTitleNormalization.defaultMilestoneTitle,
+            CadenceTitleNormalization.defaultNoteTitle,
+            CadenceTitleNormalization.defaultAreaName,
+            CadenceTitleNormalization.defaultProjectName,
+            CadenceTitleNormalization.defaultReminderTitle
+        ] {
+            #expect(label.hasPrefix(prefix), "\"\(label)\" is not \"\(prefix)\" plus a noun")
+        }
+
+        let instrument = try CadenceScanInstrument(
+            "placeholder label built by interpolation",
+            fires: """
+            struct Row {
+                let name = "\(prefix)\\(kind.noun)"
+            }
+            """,
+            // The nearest miss, and both halves of it matter: the same text in a comment, and a
+            // *whole* declared label as a literal. A detector that fired on either would report
+            // the declaration file and every doc comment in the repo.
+            andNotOn: """
+            struct Row {
+                // Was "\(prefix)\\(kind.noun)".
+                let fallback = "\(CadenceTitleNormalization.defaultAreaName)"
+                let name = kind.untitledName
+            }
+            """,
+            by: { CadenceSourceScan.strippingComments($0).contains("\"\(prefix)\\(") }
+        )
+
+        let files = try cadencePlaceholderScanRoots.flatMap { try CadenceSourceScan.swiftFiles(under: $0) }
+        let hits = try instrument.sweep(
+            files,
+            // 555 under `Cadence/` alone when this shipped, plus the widget and MCP roots.
+            atLeast: 500,
+            // One of the two files that held a hit, so a walk that skipped the iOS tree cannot
+            // report the product clean.
+            including: "Cadence/iOS/iOSListDeletionSupport.swift",
+            read: CadenceSourceScan.strippedSourceReader()
+        )
+
+        #expect(
+            hits.isEmpty,
+            """
+            \(hits) build a "\(prefix)…" label by interpolation. The shared-constant sweep cannot \
+            see that shape, so read the declared label instead — `CadenceListDeletionKind\
+            .untitledName` is the model.
+            """
+        )
+    }
+
+    /// The two confirmations [[T-512]] was about, from both sides of the target boundary.
+    ///
+    /// The delete confirmation's mapping lives in `Shared/`, so this target *evaluates* it: the
+    /// labels are the constants, and they are still what the old interpolation produced. The
+    /// wind-down sheet is `Cadence/iOS/`, which the macOS test target does not compile, so its half
+    /// is a source assertion — the weaker claim, said as the weaker claim.
+    @Test func theListConfirmationsReadThePlaceholderLabelsTheyUsedToInterpolate() throws {
+        #expect(CadenceListDeletionKind.area.untitledName == CadenceTitleNormalization.defaultAreaName)
+        #expect(CadenceListDeletionKind.project.untitledName == CadenceTitleNormalization.defaultProjectName)
+        #expect(CadenceListDeletionKind.context.untitledName == CadenceTitleNormalization.defaultContextName)
+
+        // Behaviour-preserving, stated as an equation rather than as a promise: every kind's label
+        // is still exactly the text `"Untitled \(kind.noun)"` used to build. This is also the
+        // assertion that goes red if one constant is renamed out of the family.
+        #expect(CadenceListDeletionKind.allCases.count == 3, "non-vacuity: no kinds to check")
+        for kind in CadenceListDeletionKind.allCases {
+            #expect(
+                kind.untitledName == "\(CadenceTitleNormalization.defaultCompactTitle) \(kind.noun)",
+                "\(kind.noun)'s placeholder no longer matches the label it replaced"
+            )
+        }
+
+        // `strippingComments`, not `codeOnly`: `codeOnly` blanks string literals too, so a quoted
+        // needle there can never match and the absence assertions would be permanently green.
+        let deletion = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListDeletionSupport.swift")
+        )
+        #expect(deletion.contains("enum iOSListDeletionTarget"), "non-vacuity: file unread")
+        #expect(deletion.contains("kind.untitledName"))
+
+        let windDown = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListWindDownSupport.swift")
+        )
+        #expect(windDown.contains("enum iOSListWindDownList"), "non-vacuity: file unread")
+        #expect(windDown.contains("CadenceTitleNormalization.defaultAreaName"))
+        #expect(windDown.contains("CadenceTitleNormalization.defaultProjectName"))
+    }
+
+    // MARK: - The rest of the family
+
+    /// **Every `"Untitled …"` a user can read is either declared or written down.**
+    ///
+    /// [[T-515]], answered by a completeness rule rather than by widening [[T-505]]'s threshold —
+    /// see `cadenceUndeclaredPlaceholderLabels` for why that is the stronger of the two.
+    ///
+    /// This is the *dual* of the sweep at the top of this file, and the pairing is the point. The
+    /// sweep asks "is a declared constant re-typed?", which cannot see a label that was never
+    /// declared — the absence [[T-505]] was about. This asks "is every label of this family
+    /// declared?", which cannot see a declared label re-typed. Neither alone closes it.
+    @Test func everyPlaceholderLabelInTheAppIsDeclaredOrRecorded() throws {
+        let (sites, filesRead) = try cadencePlaceholderLabelSites()
+        #expect(filesRead >= 500, "the placeholder harvest read \(filesRead) files")
+        // Non-vacuity with real edges: the harvest finds the declarations themselves and finds a
+        // call site far from them, so a pattern that stopped matching cannot pass as a clean tree.
+        #expect(sites[CadenceTitleNormalization.defaultTaskTitle] != nil)
+        #expect(sites[CadenceTitleNormalization.defaultAreaName] != nil)
+        #expect(sites[CadenceTitleNormalization.defaultCompactTitle]?.count ?? 0 >= 10,
+                "the harvest stopped reading the app's most common placeholder")
+
+        let declared = try cadenceDeclaredPlaceholderLabels()
+        #expect(declared.count >= 9, "non-vacuity: \(declared.count) declared placeholder labels")
+        // Keyed by **site**, not by literal. A literal-keyed rule would let a recorded label
+        // spread to a fourth file for free, which is the [[T-505]] shape all over again — the
+        // recorded ones are recorded because they sit below a repetition threshold, so the
+        // threshold has to be what the rule watches.
+        let recorded = Dictionary(
+            grouping: cadenceUndeclaredPlaceholderLabels,
+            by: \.literal
+        ).mapValues { Set($0.map(\.path)) }
+
+        for (literal, paths) in sites.sorted(by: { $0.key < $1.key }) where !declared.contains(literal) {
+            let unrecorded = paths.subtracting(recorded[literal] ?? [])
+            #expect(
+                unrecorded.isEmpty,
+                """
+                "\(literal)" is typed in \(unrecorded.sorted()) with no declaration behind it. \
+                Either declare it beside the rest of the family in \
+                `Cadence/Models/ModelEnums.swift` — the one tree all three targets compile — or add \
+                a `CadenceUndeclaredPlaceholderLabel` saying why it stays inline.
+                """
+            )
+        }
+    }
+
+    /// Each recorded label claims a specific file still types a specific undeclared placeholder.
+    /// When that stops being true the entry is dead weight that can only hide the next one.
+    ///
+    /// The second assertion is the one that matters most: an entry whose literal has since *gained*
+    /// a declaration is worse than stale, because it forgives a re-typing the sweep would now have
+    /// caught.
+    @Test func everyUndeclaredPlaceholderLabelIsStillUndeclaredAndStillTyped() throws {
+        let declared = try cadenceDeclaredPlaceholderLabels()
+        let family = CadenceTitleNormalization.defaultCompactTitle
+
+        #expect(cadenceUndeclaredPlaceholderLabels.count == 4,
+                "the recorded list changed size; re-read T-515's decision before adding to it")
+
+        for entry in cadenceUndeclaredPlaceholderLabels {
+            #expect(entry.literal.hasPrefix(family),
+                    "\"\(entry.literal)\" is not a member of the \"\(family) …\" family this rule covers")
+            #expect(
+                declared.contains(entry.literal) == false,
+                """
+                "\(entry.literal)" is a declared constant now, so \(entry.path) should read it \
+                rather than be forgiven for typing it.
+                """
+            )
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(entry.path))
+            #expect(
+                code.contains("\"\(entry.literal)\""),
+                """
+                \(entry.path) no longer types "\(entry.literal)" — delete the entry rather than \
+                leaving it to cover the next one.
+                """
+            )
+            #expect(entry.why.count > 40, "\"\(entry.literal)\" does not say why")
+        }
+    }
+
+    /// [[T-513]]'s one unambiguous copy defect, pinned where this target can read it.
+    ///
+    /// `iOSGoalDetail` models a milestone as a nested `Goal`, so both labels are in scope in the
+    /// same file and the wrong one is a plausible edit rather than a typo. The section is titled
+    /// "Milestones" and iterates `milestones`; the three other rows that name a nested goal already
+    /// say "Untitled Milestone".
+    @Test func theMilestoneRowsAllNameAMilestone() throws {
+        let detail = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureDetailViews.swift")
+        )
+        #expect(detail.contains("struct iOSGoalDetail"), "non-vacuity: file unread")
+        #expect(detail.contains("iOSEditorSection(title: \"Milestones\")"),
+                "non-vacuity: the Milestones section moved, so this scan pins nothing")
+        #expect(
+            detail.contains("milestone.title.isEmpty ? CadenceTitleNormalization.defaultMilestoneTitle"),
+            "the Milestones section labels an untitled milestone with something other than the milestone label"
+        )
+        // The goal label is still used in the same file, for the rows that really are about a
+        // goal — so this is a fix, not a blanket substitution.
+        #expect(detail.contains("CadenceTitleNormalization.defaultGoalTitle"))
     }
 
     // MARK: - The detector

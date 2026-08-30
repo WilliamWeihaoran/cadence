@@ -85,9 +85,11 @@ enum CadenceTodayPresentationSupport {
     /// control that is not on screen is worse than none.
     static let emptySubtitle = "Add a task with +, or schedule one from Inbox."
 
-    /// The schedule pane's whole empty state: one line, and the one line teaches the gesture.
-    ///
-    /// It was a floating card — glyph, heading, explanation — laid over the middle of the hour
-    /// grid in a `ZStack`, covering two hours of rows. See `iOSSchedulePanel`.
-    static let emptyScheduleHint = "No timed blocks yet — tap an hour to schedule one."
+    // `emptyScheduleHint` used to sit here (T-520). It ends "…tap an hour to schedule one", which
+    // is a sentence only a touch surface can say, and it had exactly one reader —
+    // `iOSSchedulePanel`. macOS's own `SchedulePanel` draws no empty state at all, so nothing about
+    // it was ever shared: it was iOS copy filed under `Shared/`, one Mac reader away from telling a
+    // desktop user to tap. It lives in `Cadence/iOS/iOSSchedulePanelCopy.swift` now, and
+    // `CadenceEmptyStateAuditTests.noMacReachableCopyAsksForATouchGesture` walks this folder as
+    // well as `Cadence/macOS/`, so the next one cannot land here quietly.
 }

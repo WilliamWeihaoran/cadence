@@ -501,5 +501,49 @@ struct CalendarManagerScenarioTests {
             #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty)
         }
     }
+
+    // MARK: - 6c. T-537: the evidence question is asked before every task is fetched
+
+    /// **T-537.** The store-level overload built a full `FetchDescriptor<AppTask>` and only then
+    /// reached `canTrustLookupMisses`, inside the array overload below it. That runs on **every**
+    /// `EKEventStoreChanged` — a notification EventKit posts while an account reloads, not only when
+    /// the user changed something — so the launch state T-529 exists to make inert (authorized, no
+    /// calendars produced yet) still paid a whole-store fetch in order to decide to do nothing.
+    ///
+    /// It is an ordering fact inside a static function with no seam: the fetch is
+    /// `modelContext.fetch`, which no fake can count. So it is pinned as source order, scoped to
+    /// that overload's own body rather than to the file — the array overload above it is a
+    /// different function and already guards in the right place. What must **not** change is the
+    /// neighbouring behaviour: guarding earlier may not clear a link that survived before, nor
+    /// spare one that did not, and those tests are the ones that say so.
+    @Test func clearMissingEventLinksAnswersTheEvidenceQuestionBeforeItFetchesEveryTask() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarLinkedTaskSupport.swift")
+        let source = CadenceSourceScan.strippingComments(raw)
+        // Non-vacuity: the file really was read, and the stripper really did blank something.
+        #expect(source.contains("enum CalendarLinkedTaskSupport"))
+        #expect(source != raw)
+
+        // The store-level overload is the *last* `clearMissingEventLinks` in the file.
+        let tail = try #require(
+            source.range(of: "func clearMissingEventLinks(", options: .backwards),
+            "the overload this test is about is not declared here any more"
+        )
+        let body = try #require(
+            CadenceSourceScan.functionBody(
+                named: "clearMissingEventLinks",
+                in: String(source[tail.lowerBound...])
+            ),
+            "the store-level overload's braces do not balance"
+        )
+        let evidenceGuard = try #require(
+            body.range(of: "guard canTrustLookupMisses("),
+            "the store-level overload fetches every task before asking whether a miss means anything"
+        )
+        let fetch = try #require(
+            body.range(of: "FetchDescriptor<AppTask>"),
+            "the overload no longer fetches, so this test is pinning nothing"
+        )
+        #expect(evidenceGuard.upperBound < fetch.lowerBound)
+    }
 }
 #endif

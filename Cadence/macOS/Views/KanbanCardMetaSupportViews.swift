@@ -59,7 +59,15 @@ struct KanbanContainerPickerPopover: View {
     @Query private var allTasks: [AppTask]
 
     var body: some View {
-        ContainerPickerPopoverContent(contexts: contexts, areas: areas, projects: projects) { picked in
+        ContainerPickerPopoverContent(
+            contexts: contexts,
+            areas: areas,
+            projects: projects,
+            // The card has the task itself rather than a binding, so the placement is read off it
+            // through the shared accessor `select(_:)` below writes back through. Without it a
+            // card sitting in an archived list opened a picker with no row for that list.
+            selection: CadenceTaskComposerSupport.container(of: task)
+        ) { picked in
             select(picked)
         }
     }

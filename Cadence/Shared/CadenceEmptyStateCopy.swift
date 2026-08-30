@@ -42,6 +42,27 @@ nonisolated enum CadenceEmptyStateCopy {
     /// same one `CadenceTodayPresentationSupport.emptySubtitle` already records.
     static let listDetailSubtitle = "Add a task with +, or move one here from Inbox."
 
+    /// The same page when the list it was showing is not there any more — the Mac's
+    /// `MissingListDetailView` and the phone's `iOSMissingListView`, which are one situation
+    /// explained on two devices.
+    ///
+    /// **The last pair the app held together with a test instead of a constant** (T-522).
+    /// `CadenceDeletedSelectionGuardTests.theMacMissingListStateReusesTheSentenceIOSAlreadyShips`
+    /// asserted the two files carried the *same literals*, deliberately: macOS borrowed the
+    /// sentence iOS had already shipped rather than writing a second one, and pinning the pair was
+    /// how that borrowing was kept honest. It pinned the drift without removing the second copy,
+    /// and it cost `CadenceEmptyStateAuditTests` a standing `emptyStateDuplicateAllowance` entry
+    /// saying so. Both are gone: the guard still fails if either surface stops saying this, and it
+    /// reads the constant to do it.
+    ///
+    /// The glyph stays spelled at both call sites. `questionmark.folder` is a picture rather than a
+    /// sentence, which is the same distinction `CadenceSharedConstantReuseSweepTests` makes when it
+    /// drops SF Symbol names from its harvest.
+    static let missingListTitle = "List not found"
+    /// Names all three ways a list goes missing, including the one that happens where this reader
+    /// cannot see it: another device. "Deleted" on its own would be a guess about which.
+    static let missingListSubtitle = "This list may have been archived, deleted, or changed on another device."
+
     // MARK: - Pages that exist at two widths
 
     /// The saved-links panel on a list, area or project detail page.

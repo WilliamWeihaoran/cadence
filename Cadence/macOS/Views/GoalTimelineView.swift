@@ -118,9 +118,17 @@ struct GoalTimelineView: View {
                     // under a narrowing `statusFilter` for the same reason the list is — and its
                     // filter popover holds both controls.
                     message: isNarrowedToEmpty ? "No matching goals" : "No goals yet",
+                    // T-525: this said "Create a goal, then set its date range.", and the second
+                    // clause is not a requirement. `rows` is built from `groups` alone — every goal
+                    // in them gets a rail row whatever its dates say, and an undated one draws a
+                    // "No date" chip (`GoalTimelineDeadlineChip`) beside an empty track. So one
+                    // goal is enough to leave this state, and the old sentence told a reader who
+                    // had made one that the page they were still looking at needed dates. What
+                    // dates actually buy is the bar, which `timelineBody` skips unless both are
+                    // set — so that is what the second sentence now says.
                     subtitle: isNarrowedToEmpty
                         ? "Try a different filter."
-                        : "Create a goal, then set its date range.",
+                        : "Create a goal with New Goal. Add dates to draw its bar.",
                     icon: "chart.bar.xaxis"
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

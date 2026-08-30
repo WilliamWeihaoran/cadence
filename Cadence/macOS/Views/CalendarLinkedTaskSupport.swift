@@ -74,10 +74,18 @@ enum CalendarLinkedTaskSupport {
         try? modelContext.save()
     }
 
+    /// The store-level overload. **The evidence guard is asked before the fetch, not after it
+    /// (T-537).** Both callers fire this off an `EKEventStoreChanged` bump, and EventKit posts that
+    /// while an account reloads as well as when something actually changed — so the state T-529
+    /// exists to make inert is also the state this runs in most often, and it used to build a
+    /// whole-store `FetchDescriptor<AppTask>` before finding out it had nothing to decide.
+    ///
+    /// The array overload guards too, so the check below is not the only one: it is the early one.
     static func clearMissingEventLinks(
         modelContext: ModelContext,
         calendarManager: CalendarEventLookup
     ) {
+        guard canTrustLookupMisses(calendarManager) else { return }
         let descriptor = FetchDescriptor<AppTask>()
         let tasks = (try? modelContext.fetch(descriptor)) ?? []
         clearMissingEventLinks(in: tasks, modelContext: modelContext, calendarManager: calendarManager)

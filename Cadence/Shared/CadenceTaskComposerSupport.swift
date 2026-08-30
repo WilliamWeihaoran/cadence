@@ -312,6 +312,18 @@ enum CadenceTaskComposerSupport {
         return nil
     }
 
+    /// The selection a task's **current** placement names — the inverse of the two accessors above,
+    /// and what a picker opened on an existing task has to be told so `selectable(_:selectedID:)`
+    /// can keep the row for where that task already is (T-514, T-534).
+    ///
+    /// A task cannot hold both: every writer that sets one nils the other, so the order the two are
+    /// tested in is not load-bearing.
+    static func container(of task: AppTask) -> TaskContainerSelection {
+        if let area = task.area { return .area(area.id) }
+        if let project = task.project { return .project(project.id) }
+        return .inbox
+    }
+
     /// The list a selection names, or `nil` when it names none — either because it is Inbox, or
     /// because the list it named is no longer in the store.
     ///

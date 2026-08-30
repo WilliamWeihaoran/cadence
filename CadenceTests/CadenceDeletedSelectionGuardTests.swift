@@ -392,12 +392,23 @@ struct CadenceDeletedSelectionGuardTests {
         }
     }
 
-    /// **macOS says what iOS says.** `iOSMissingListView` has shipped this state for as long as iOS
-    /// has had the `else` macOS was missing, so the copy is borrowed rather than written again —
-    /// two platforms explaining one situation in two different sentences is exactly the drift the
-    /// root guide's one-style rule names. Asserted as string equality across the two files rather
-    /// than as two literals here, so editing one and not the other fails instead of silently
-    /// diverging.
+    /// **macOS says what iOS says — and since T-522 both read it from one declaration.**
+    /// `iOSMissingListView` has shipped this state for as long as iOS has had the `else` macOS was
+    /// missing, so the copy is borrowed rather than written again; two platforms explaining one
+    /// situation in two different sentences is exactly the drift the root guide's one-style rule
+    /// names.
+    ///
+    /// This used to assert the two files carried the **same literals**, chosen deliberately over a
+    /// shared constant so that editing one and not the other failed. It worked, and it was the
+    /// weaker of the two available mechanisms: it pinned the pair rather than removing the second
+    /// copy, and it cost `CadenceEmptyStateAuditTests` a standing `emptyStateDuplicateAllowance`
+    /// entry pointing here. What it was really enforcing was convergence, so it asserts convergence
+    /// — each surface reads `CadenceEmptyStateCopy.missingList*`, neither keeps a private spelling
+    /// beside it, and the constant still says the sentence iOS shipped.
+    ///
+    /// The glyph stays a literal in both. An SF Symbol name is a picture rather than a sentence,
+    /// which is the same distinction `CadenceSharedConstantReuseSweepTests` draws when it refuses to
+    /// harvest symbol names.
     @Test func theMacMissingListStateReusesTheSentenceIOSAlreadyShips() throws {
         let mac = try strippingComments(sourceFile("Cadence/macOS/Views/ListDetailView.swift"))
         let phone = try strippingComments(sourceFile("Cadence/iOS/iOSRootSidebar.swift"))
@@ -405,13 +416,31 @@ struct CadenceDeletedSelectionGuardTests {
         let phoneState = try cadenceFunctionBody("struct iOSMissingListView: View", in: phone)
 
         for copy in [
-            "List not found",
-            "This list may have been archived, deleted, or changed on another device.",
+            "CadenceEmptyStateCopy.missingListTitle",
+            "CadenceEmptyStateCopy.missingListSubtitle",
             "questionmark.folder"
         ] {
             #expect(phoneState.contains(copy), "iOS no longer says \(copy); macOS is now the only one that does")
             #expect(macState.contains(copy), "macOS no longer says \(copy)")
         }
+
+        // Neither surface keeps the words themselves next to the constant it reads. That is the
+        // state this test used to describe, and the state T-522 removed.
+        for retyped in [
+            CadenceEmptyStateCopy.missingListTitle,
+            CadenceEmptyStateCopy.missingListSubtitle
+        ] {
+            #expect(macState.contains("\"\(retyped)\"") == false, "macOS spells \"\(retyped)\" out again")
+            #expect(phoneState.contains("\"\(retyped)\"") == false, "iOS spells \"\(retyped)\" out again")
+        }
+
+        // Reading one constant twice is not a convergence if the constant has quietly become
+        // something else, so the sentence is pinned by value too — and it is iOS's, unchanged.
+        #expect(CadenceEmptyStateCopy.missingListTitle == "List not found")
+        #expect(
+            CadenceEmptyStateCopy.missingListSubtitle
+                == "This list may have been archived, deleted, or changed on another device."
+        )
 
         // The panel component is allowed to differ — `iOSEmptyPanel` is behind `#if os(iOS)` — and
         // this is the line that records *why*, so a later reader does not "unify" it into a build

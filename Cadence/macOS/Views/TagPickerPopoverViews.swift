@@ -110,12 +110,14 @@ struct TagPickerPopover: View {
                         .cadenceHoverHighlight(cornerRadius: 6)
                     }
 
-                    if filteredTags.isEmpty && !canCreate {
-                        Text("No tags")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.dim)
-                            .padding(10)
-                    }
+                    TagPickerPlaceholderRow(
+                        placeholder: TagPickerPlaceholder.resolve(
+                            hasActiveTags: !activeTags.isEmpty,
+                            matchCount: filteredTags.count,
+                            canCreate: canCreate,
+                            canRestore: archivedQueryMatch != nil
+                        )
+                    )
                 }
                 .padding(6)
             }

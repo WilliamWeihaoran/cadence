@@ -309,8 +309,10 @@ struct iOSFocusView: View {
     /// 2. **A chosen subject stopped existing** — the focused task or block was deleted while the
     ///    picker still lists others. Here the tasks are *already on screen* to the left, which is
     ///    the plain falsehood the ticket names, and the house pattern for a detail pane with a full
-    ///    list and no selection is `iOSFeatureEmptyDetail` — the same "No X selected / Select an
-    ///    item from the list." Goals and Habits show.
+    ///    list and no selection is `iOSFeatureEmptyDetail`'s default, "No X selected / Select an
+    ///    item from the list." (Goals and Habits used to be cited here as the other users of that
+    ///    default; T-533 moved them off it, because *their* detail panes are reachable only with an
+    ///    empty list beside them. This one is not — that is what branch 2 is.)
     @ViewBuilder
     private var unselectedDetail: some View {
         if pickItems.isEmpty {

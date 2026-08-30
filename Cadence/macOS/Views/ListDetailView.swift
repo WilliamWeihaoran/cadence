@@ -47,14 +47,19 @@ struct ProjectDetailLoader: View {
 /// branch. Two platforms explaining one situation in two different sentences is the drift the
 /// root guide's "one style, differing by layout" rule is about.
 ///
+/// Both sentences are `CadenceEmptyStateCopy.missingList*` now (T-522). They used to be typed out
+/// here and again in `iOSRootSidebar`, held level only by a test asserting the two files matched —
+/// which is a weaker mechanism than one declaration, and it was the last thing keeping an
+/// allowance in `CadenceEmptyStateAuditTests`.
+///
 /// The panel component differs because it has to: `iOSEmptyPanel` is inside `#if os(iOS)` and
-/// `EmptyStateView` is the shared one macOS pages already use. The glyph and both strings are
-/// `iOSMissingListView`'s.
+/// `EmptyStateView` is the shared one macOS pages already use. The glyph is still spelled at both
+/// call sites, because a symbol name is a picture and not a sentence.
 struct MissingListDetailView: View {
     var body: some View {
         EmptyStateView(
-            message: "List not found",
-            subtitle: "This list may have been archived, deleted, or changed on another device.",
+            message: CadenceEmptyStateCopy.missingListTitle,
+            subtitle: CadenceEmptyStateCopy.missingListSubtitle,
             icon: "questionmark.folder"
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)

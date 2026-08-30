@@ -24,6 +24,10 @@ per-agent boilerplate.
   and detect a crash with `grep -ci 'please submit a bug report'`. Measured 2026-08-30: `Abort trap`
   matches nothing, uppercase `PLEASE` matches nothing, and `IRGenRequest` appears in batch mode but not
   whole-module — so those three are not usable detectors.
+- **`local status=$?` silently aborts a zsh runner** — `status` is read-only in zsh, so the assignment
+  fails and the script dies without running your build. One agent lost a 640-second lock wait to it.
+  Dry-run your runner with the build stubbed out before you queue it; that is cheap insurance for a
+  failure that looks exactly like "the lock never came free".
 - **`AGENTS.md` has a hard 200-line cap, enforced by `AgentContextBudgetTests`.** If your work earns a
   new always-read rule, you must remove or link out something else in the same change — that is the
   repo's stated convention, and it is a test, not a style note. Two agents in a row have landed a good

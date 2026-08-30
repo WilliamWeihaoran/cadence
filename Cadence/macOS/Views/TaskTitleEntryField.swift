@@ -292,6 +292,7 @@ struct TaskTitleEntryField: View {
             highlightIndex: $tagHighlightIdx,
             filteredTags: filteredTags,
             selectedTags: selectedTags?.wrappedValue ?? [],
+            hasActiveTags: !activeTags.isEmpty,
             canCreate: canCreateInlineTag,
             onSelect: selectInlineTagItem,
             onCreate: createInlineTag,

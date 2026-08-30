@@ -5,7 +5,34 @@ import SwiftUI
 /// prefix match, the context grouping, and the flat order the arrow keys walk can be exercised
 /// without SwiftUI.
 enum ContainerPickerFilterSupport {
-    typealias Group = (context: Context, areas: [Area], projects: [Project])
+
+    /// A context heading and the rows drawn under it.
+    ///
+    /// **`contextID == nil` is the catch-all heading, and it is why this is a struct rather than
+    /// the tuple it used to be (T-534).** The grouping is a `contexts.compactMap`, so a list that
+    /// belongs to no context was reached by no iteration and drawn under no heading — not hidden,
+    /// *absent*, with no row to file a task into and no row naming where a task already filed there
+    /// is. `Area.context` and `Project.context` both default to `nil` and iOS's list editor offers a
+    /// "None" context row in every mode, so that list is one a shipping surface makes.
+    ///
+    /// The bucket is keyed on the **offered** contexts rather than on `context == nil`, so a list
+    /// whose context exists but was not handed to the picker lands in the same place. That is the
+    /// rule `CadenceSidebarLists.sections` already applies to these two models on the iPad sidebar,
+    /// and the heading's wording is taken from there rather than respelled.
+    struct Group: Identifiable {
+        let contextID: UUID?
+        let title: String
+        /// `nil` on the catch-all, which has no context and so no colour of its own.
+        let colorHex: String?
+        let areas: [Area]
+        let projects: [Project]
+
+        var id: String { contextID?.uuidString ?? CadenceSidebarLists.Section.ungroupedID }
+
+        /// The context's own colour, or the quiet neutral the catch-all takes — the pairing
+        /// `CadencePickerItem.tint` makes for a row with no colour of its own.
+        var tint: Color { colorHex.map(Color.init(hex:)) ?? Theme.dim }
+    }
 
     /// Forwards to the shared rule so the `~` suggestions in the iOS composer and this picker
     /// cannot disagree about what `des` matches.
@@ -17,22 +44,70 @@ enum ContainerPickerFilterSupport {
         matches("Inbox", query: query)
     }
 
+    /// The rows the picker offers, grouped by context.
+    ///
+    /// **`selection` is the whole of T-534.** "Which lists may I offer" is a rule about *fresh*
+    /// choices, and the list a task is already in is not a fresh choice — so filtering on
+    /// `isActive` alone gave a task in an archived or completed list a popover with no row for
+    /// where it is, and the one correction the user needed was the one the control would not draw.
+    /// The rule that fixes it is `CadencePickerSupport.selectable(_:selectedID:)`: hide what you
+    /// could newly pick, never the one already assigned. A picker that is never told the
+    /// assignment cannot apply it, which is why the parameter is the work and the filter change
+    /// follows from it. Reached here through the same `pickableAreas` / `pickableProjects` pair
+    /// T-514 gave the iOS three-way control, so the two platforms cannot drift.
+    ///
+    /// Membership is `context?.id`, matching `CadenceSidebarLists`' bridge and deliberately not
+    /// `Project.resolvedContext` — that answers which context a *task* inherits, not where a list
+    /// is filed.
     static func groups(
         contexts: [Context],
         areas: [Area],
         projects: [Project],
+        selection: TaskContainerSelection,
         query: String
     ) -> [Group] {
-        contexts.compactMap { context in
-            let matchingAreas = areas
-                .filter { $0.isActive && $0.context?.id == context.id && matches($0.name, query: query) }
-                .sorted { $0.order < $1.order }
-            let matchingProjects = projects
-                .filter { $0.isActive && $0.context?.id == context.id && matches($0.name, query: query) }
-                .sorted { $0.order < $1.order }
-            guard !matchingAreas.isEmpty || !matchingProjects.isEmpty else { return nil }
-            return (context, matchingAreas, matchingProjects)
+        let offerableAreas = CadenceTaskComposerSupport
+            .pickableAreas(areas, selectedID: CadenceTaskComposerSupport.selectedAreaID(selection))
+            .filter { matches($0.name, query: query) }
+        let offerableProjects = CadenceTaskComposerSupport
+            .pickableProjects(projects, selectedID: CadenceTaskComposerSupport.selectedProjectID(selection))
+            .filter { matches($0.name, query: query) }
+
+        let offered = Set(contexts.map(\.id))
+        var groups = contexts.compactMap { context -> Group? in
+            let ownedAreas = offerableAreas.filter { $0.context?.id == context.id }
+            let ownedProjects = offerableProjects.filter { $0.context?.id == context.id }
+            guard !ownedAreas.isEmpty || !ownedProjects.isEmpty else { return nil }
+            return Group(
+                contextID: context.id,
+                title: context.name,
+                colorHex: context.colorHex,
+                areas: ownedAreas,
+                projects: ownedProjects
+            )
         }
+
+        let looseAreas = offerableAreas.filter { !isOffered($0.context, among: offered) }
+        let looseProjects = offerableProjects.filter { !isOffered($0.context, among: offered) }
+        if !looseAreas.isEmpty || !looseProjects.isEmpty {
+            groups.append(
+                Group(
+                    contextID: nil,
+                    title: CadenceSidebarLists.ungroupedTitle,
+                    colorHex: nil,
+                    areas: looseAreas,
+                    projects: looseProjects
+                )
+            )
+        }
+        return groups
+    }
+
+    /// Whether a list's context is one of the ones this picker was handed. `nil` is not offered,
+    /// and neither is a context the caller left out — both belong under the catch-all.
+    private static func isOffered(_ context: Context?, among offered: Set<UUID>) -> Bool {
+        guard let context else { return false }
+        return offered.contains(context.id)
     }
 
     /// The flat order the arrow-key highlight walks. Must stay in the order the rows render.
@@ -61,6 +136,14 @@ struct ContainerPickerPopoverContent: View {
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
+    /// Where the task being filed already is.
+    ///
+    /// **Not for drawing a checkmark** — the checkmark tracks the keyboard highlight, deliberately,
+    /// and `ContainerPickerRow` still carries no `isSelected`. This is what lets the list narrow
+    /// without dropping the row that names where the task is *now*; see
+    /// `ContainerPickerFilterSupport.groups`. Composers pass the container their draft is holding,
+    /// which is the same question asked before the task exists.
+    let selection: TaskContainerSelection
     /// Selecting a row does not dismiss on its own: the presenting surface owns its
     /// `isPresented` state and closes as part of writing the selection.
     let onSelect: (TaskContainerSelection) -> Void
@@ -74,6 +157,7 @@ struct ContainerPickerPopoverContent: View {
             contexts: contexts,
             areas: areas,
             projects: projects,
+            selection: selection,
             query: searchQuery
         )
     }
@@ -111,11 +195,11 @@ struct ContainerPickerPopoverContent: View {
                     if !groups.isEmpty {
                         Divider().background(Theme.borderSubtle).padding(.vertical, 2)
 
-                        ForEach(groups, id: \.context.id) { group in
+                        ForEach(groups) { group in
                             SectionEyebrowLabel(
-                                text: group.context.name,
+                                text: group.title,
                                 size: .compact,
-                                tint: Color(hex: group.context.colorHex)
+                                tint: group.tint
                             )
                                 .padding(.horizontal, 12)
                                 .padding(.top, 6)

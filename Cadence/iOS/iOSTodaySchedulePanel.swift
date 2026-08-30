@@ -89,7 +89,7 @@ struct iOSSchedulePanel: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         if hasNoBlocks {
-                            Text(CadenceTodayPresentationSupport.emptyScheduleHint)
+                            Text(iOSSchedulePanelCopy.emptyScheduleHint)
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(Theme.dim)
                                 .frame(maxWidth: .infinity, alignment: .leading)

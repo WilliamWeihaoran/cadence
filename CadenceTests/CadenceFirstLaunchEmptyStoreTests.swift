@@ -297,9 +297,142 @@ struct CadenceFirstLaunchEmptyStoreTests {
                 "Cadence/iOS/iOSSettingsTagsSection.swift",
                 "Cadence/iOS/iOSTaskDetailComponents.swift",
                 "Cadence/macOS/Views/SettingsTagsSection.swift",
+                // T-532: the macOS pickers' shared placeholder row, in a Button action.
+                "Cadence/macOS/Views/TagPickerSupportViews.swift",
             ],
             "the set of files that may seed the default tags changed: \(callers)"
         )
+    }
+
+    // MARK: - The route back to the default set
+
+    /// **The cost T-528 accepted, paid off on macOS** (T-532).
+    ///
+    /// Seeding is a user action now, so a brand-new store's first `#` picker is genuinely empty —
+    /// and both macOS pickers answered that with a bare `"No tags"`, which offers the reader
+    /// nothing. iOS already had the better answer in the same place: `iOSTaskTagPickerPopover`
+    /// offers **Add Default Tags** whenever its catalogue is empty.
+    ///
+    /// `TagPickerPlaceholder.resolve` is the decision both macOS pickers now ask, and the reason it
+    /// is a function rather than a condition spelled twice is the distinction it draws: **an empty
+    /// catalogue is not a query that matched nothing.** The old condition read the *filtered* list
+    /// and so could not tell them apart.
+    @Test func anEmptyTagCatalogueOffersTheDefaultSetAndANarrowQueryDoesNot() {
+        // A fresh store, picker just opened: no tags, nothing typed.
+        #expect(
+            TagPickerPlaceholder.resolve(hasActiveTags: false, matchCount: 0, canCreate: false)
+                == .offerDefaultTags
+        )
+
+        // Tags exist and this query reached none of them. "No tags" was false here.
+        #expect(
+            TagPickerPlaceholder.resolve(hasActiveTags: true, matchCount: 0, canCreate: false)
+                == .noMatches
+        )
+
+        // The picker is already drawing something: rows, a create row, or a restore row. In
+        // particular a fresh store where the user has started typing gets the create row, not an
+        // offer stacked on top of it.
+        #expect(
+            TagPickerPlaceholder.resolve(hasActiveTags: true, matchCount: 3, canCreate: false)
+                == .none
+        )
+        #expect(
+            TagPickerPlaceholder.resolve(hasActiveTags: false, matchCount: 0, canCreate: true)
+                == .none
+        )
+        #expect(
+            TagPickerPlaceholder.resolve(
+                hasActiveTags: false,
+                matchCount: 0,
+                canCreate: false,
+                canRestore: true
+            ) == .none,
+            "the picker drew Restore \"…\" and No tags one above the other"
+        )
+    }
+
+    /// The same decision driven by a real store rather than by hand, closing the loop the ticket
+    /// is actually about: **the offer appears on an empty store, the button's own call fills it,
+    /// and the offer goes away.**
+    ///
+    /// The two `hasActiveTags:` arguments are computed the way both pickers compute them — from
+    /// `TagSupport.uniqueBySlug(allTags.filter { !$0.isArchived })` — so this fails if the seed
+    /// stops producing unarchived tags as much as if `resolve` stops answering.
+    @Test func pressingTheOfferOnAFreshStoreLeavesThePickerWithNothingToOffer() throws {
+        let context = try Self.makeEmptyContext()
+
+        func hasActiveTags() throws -> Bool {
+            let all = try context.fetch(FetchDescriptor<Cadence.Tag>())
+            return !TagSupport.uniqueBySlug(all.filter { !$0.isArchived }).isEmpty
+        }
+
+        #expect(try hasActiveTags() == false)
+        #expect(
+            TagPickerPlaceholder.resolve(
+                hasActiveTags: try hasActiveTags(),
+                matchCount: 0,
+                canCreate: false
+            ) == .offerDefaultTags
+        )
+
+        // Exactly what the row's Button action runs.
+        TagSupport.seedDefaultTags(in: context, saveChanges: false)
+
+        let seeded = try context.fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(seeded.count == TagSupport.defaultTags.count)
+        #expect(try hasActiveTags())
+        #expect(
+            TagPickerPlaceholder.resolve(
+                hasActiveTags: try hasActiveTags(),
+                matchCount: seeded.count,
+                canCreate: false
+            ) == .none
+        )
+    }
+
+    /// Both macOS pickers go through the one placeholder, and neither keeps its own copy of the
+    /// sentence. The bare `"No tags"` was already two spellings that had to stay in step.
+    ///
+    /// Source-shape: a SwiftUI `body` is not callable from here, so what a picker *renders* is read
+    /// rather than run. The decision it renders is covered behaviourally above.
+    @Test func bothMacOSTagPickersRouteTheirEmptyStateThroughTheOnePlaceholder() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+
+        for path in [
+            "Cadence/macOS/Views/TagPickerPopoverViews.swift",
+            "Cadence/macOS/Views/TaskTitleInlineTagPicker.swift",
+        ] {
+            let code = try read(path)
+            #expect(code.count > 400, "non-vacuity: \(path) read as \(code.count) characters")
+            #expect(
+                code.contains("TagPickerPlaceholderRow("),
+                "\(path) does not draw the shared placeholder"
+            )
+            #expect(
+                code.contains("TagPickerPlaceholder.resolve("),
+                "\(path) does not ask the shared decision"
+            )
+            #expect(
+                code.contains("\"No tags\"") == false,
+                "\(path) kept its own copy of the retired sentence"
+            )
+        }
+
+        // The offer, and the seed call it owns, live in exactly one place.
+        let host = try read("Cadence/macOS/Views/TagPickerSupportViews.swift")
+        #expect(host.contains("struct TagPickerPlaceholderRow: View"))
+        #expect(host.contains("case offerDefaultTags"))
+        #expect(host.contains("Text(\"Add Default Tags\")"))
+        #expect(
+            Self.seedCallOffsets(in: host).count == 1,
+            "the placeholder row is not the only seed call in its file"
+        )
+
+        // `TaskTitleInlineTagPicker` is handed the catalogue's emptiness rather than inferring it
+        // from the filtered list, which is the whole distinction `resolve` exists to make.
+        let entry = try read("Cadence/macOS/Views/TaskTitleEntryField.swift")
+        #expect(entry.contains("hasActiveTags: !activeTags.isEmpty"))
     }
 
     // MARK: - What the surfaces show

@@ -85,7 +85,10 @@ struct TaskDetailPopover: View {
                     TaskDetailScheduleGroupSection(task: task)
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(task.title.isEmpty ? "Untitled task" : task.title)
+                        // **T-513.** `TaskTitleSupport.defaultDisplayTitle`, so the compact
+                        // inspector's title agrees with the ~18 other surfaces that show a
+                        // blank-titled task. It read "Untitled task" against the constant's capital.
+                        Text(task.title.isEmpty ? TaskTitleSupport.defaultDisplayTitle : task.title)
                             .font(.system(size: 16, weight: .bold))
                             .foregroundStyle(Theme.text)
                             .lineLimit(2)

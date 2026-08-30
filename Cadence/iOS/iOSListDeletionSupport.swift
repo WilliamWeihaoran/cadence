@@ -30,6 +30,12 @@ enum iOSListDeletionTarget: Identifiable {
 
     /// The real name, or the same "Untitled …" fallback the settings rows use — a confirmation
     /// with a blank name in it does not say what is about to be deleted.
+    ///
+    /// **T-512.** The fallback is `kind.untitledName`, not `"Untitled \(kind.noun)"`. The two
+    /// produced identical text, and that was the problem: an interpolated label is dropped by the
+    /// shared-constant sweep's harvest by construction, so this line was a third spelling of
+    /// `CadenceTitleNormalization.defaultAreaName` / `defaultProjectName` / `defaultContextName`
+    /// that no rename could reach.
     var name: String {
         let raw: String
         switch self {
@@ -37,7 +43,7 @@ enum iOSListDeletionTarget: Identifiable {
         case .project(let project): raw = project.name
         case .context(let context): raw = context.name
         }
-        return raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled \(kind.noun)" : raw
+        return raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? kind.untitledName : raw
     }
 
     var icon: String {

@@ -524,7 +524,9 @@ struct HoveredTaskDatePickerOverlay: View {
                             Text(request.kind.title)
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundStyle(Theme.text)
-                            Text(request.task.title.isEmpty ? "Untitled task" : request.task.title)
+                            // **T-513.** Same label as every other surface that names a
+                            // blank-titled task; this one read "Untitled task", lower-cased.
+                            Text(request.task.title.isEmpty ? TaskTitleSupport.defaultDisplayTitle : request.task.title)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .lineLimit(2)

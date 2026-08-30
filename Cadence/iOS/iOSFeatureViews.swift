@@ -136,9 +136,7 @@ struct iOSGoalsView: View {
             eyebrow: shapeEyebrow,
             title: "Goals",
             count: activeGoals.count,
-            emptyTitle: "No goals yet",
-            emptySubtitle: "Create a direction, then nest milestones and habits underneath it.",
-            emptyIcon: "sparkles",
+            empty: Self.emptyState,
             actionTitle: "New Goal",
             actionSystemImage: "plus",
             action: { editorMode = .new(nil) },
@@ -217,12 +215,31 @@ struct iOSGoalsView: View {
         detailView(for: goal, showsBackControl: true)
     }
 
+    /// The one empty state this screen has, read by **both** panes. See `iOSFeatureEmptyState`.
+    private static let emptyState = iOSFeatureEmptyState(
+        systemImage: "sparkles",
+        title: "No goals yet",
+        subtitle: "Create a direction, then nest milestones and habits underneath it."
+    )
+
+    /// **What the detail pane says with nothing selected** (T-533).
+    ///
+    /// It said "No goal selected / Select an item from the list." unconditionally, next to a
+    /// chooser that says "No goals yet" — a list with no items to select from.
+    ///
+    /// T-519's `unselectedDetail` needed a branch because its picker could be full while nothing
+    /// was selected. **This pane has no such case.** `selected` falls back through
+    /// `topLevelGoals.first ?? activeGoals.first ?? goals.first`, so it is `nil` exactly when
+    /// `goals` is empty, and an empty `goals` makes `activeGoals.count` zero — which is the
+    /// condition `iOSFeatureListPane` draws its empty panel on. So every reader of this branch is
+    /// looking at the chooser's empty panel at the same moment, and a `pickItems.isEmpty` guard
+    /// copied from Focus would be a branch that never takes its other side.
     @ViewBuilder
     private var detailPane: some View {
         if let goal = selected {
             detailView(for: goal)
         } else {
-            iOSFeatureEmptyDetail(systemImage: "sparkles", title: "No goal selected")
+            iOSFeatureEmptyDetail(matching: Self.emptyState)
         }
     }
 }
@@ -334,9 +351,7 @@ struct iOSHabitsView: View {
             eyebrow: todayEyebrow,
             title: "Habits",
             count: habits.count,
-            emptyTitle: "No habits yet",
-            emptySubtitle: "Create repeating commitments and track today.",
-            emptyIcon: "flame.fill",
+            empty: Self.emptyState,
             actionTitle: "New Habit",
             actionSystemImage: "plus",
             action: { editorMode = .new(nil) },
@@ -390,12 +405,23 @@ struct iOSHabitsView: View {
         )
     }
 
+    /// The one empty state this screen has, read by **both** panes. See `iOSFeatureEmptyState`.
+    private static let emptyState = iOSFeatureEmptyState(
+        systemImage: "flame.fill",
+        title: "No habits yet",
+        subtitle: "Create repeating commitments and track today."
+    )
+
+    /// As on Goals, and for the same reason (T-533): `selected` falls back through
+    /// `dueToday.first ?? habits.first`, so `nil` means `habits` is empty — the same emptiness
+    /// `count: habits.count` puts the chooser's own empty panel on screen for. "Select an item
+    /// from the list." named a list with no items.
     @ViewBuilder
     private var detailPane: some View {
         if let habit = selected {
             detailView(for: habit)
         } else {
-            iOSFeatureEmptyDetail(systemImage: "flame.fill", title: "No habit selected")
+            iOSFeatureEmptyDetail(matching: Self.emptyState)
         }
     }
 

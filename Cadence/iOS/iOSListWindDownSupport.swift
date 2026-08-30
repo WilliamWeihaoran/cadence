@@ -76,13 +76,26 @@ enum iOSListWindDownList {
 
     /// The real name, or the same "Untitled …" fallback the delete confirmation uses — a
     /// confirmation with a blank name in it does not say what is about to be wound down.
+    ///
+    /// **T-512.** The fallback is read off `CadenceTitleNormalization`, not built as
+    /// `"Untitled \(noun)"`. Interpolating it produced exactly `defaultAreaName` /
+    /// `defaultProjectName` at runtime while being invisible to the shared-constant sweep, whose
+    /// harvest drops interpolated literals by construction — so the claim this comment makes about
+    /// matching the delete confirmation was true and nothing held it true. It is one switch rather
+    /// than a second `untitledName` property beside `noun`, so there is no parallel list of cases
+    /// to keep in step.
     var name: String {
         let raw: String
+        let untitled: String
         switch self {
-        case .area(let area): raw = area.name
-        case .project(let project): raw = project.name
+        case .area(let area):
+            raw = area.name
+            untitled = CadenceTitleNormalization.defaultAreaName
+        case .project(let project):
+            raw = project.name
+            untitled = CadenceTitleNormalization.defaultProjectName
         }
-        return raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled \(noun)" : raw
+        return raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? untitled : raw
     }
 
     var icon: String {

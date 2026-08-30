@@ -193,4 +193,93 @@ struct TagFilterBar: View {
     }
 }
 
+/// What a macOS tag picker draws **where its rows would go**, when it has no rows to draw.
+///
+/// Both macOS pickers — `TagPickerPopover` and `TaskTitleInlineTagPicker` — reached one bare
+/// `"No tags"` for two unrelated situations, and it was the wrong sentence in each (T-532):
+///
+/// - **The catalogue is empty.** After [T-528] the default tags are seeded only when someone asks,
+///   so a brand-new store's first `#` picker is genuinely empty and the user's only routes to the
+///   default set were typing each name or finding Settings > Tags. iOS already answers this in the
+///   same place: `iOSTaskTagPickerPopover` offers **Add Default Tags** whenever its catalogue is
+///   empty. This is macOS reaching parity with it.
+/// - **A query matched nothing.** Here tags exist, so "No tags" was simply false. The house
+///   spelling for a list narrowed to nothing is "No matching …" — `GoalsView` and `HabitsView`
+///   both draw it.
+///
+/// Held as a value the two pickers *resolve* rather than a condition each spells out, because the
+/// bare `"No tags"` was already two copies that had to stay in step and did not.
+nonisolated enum TagPickerPlaceholder: Equatable {
+    /// The picker is drawing rows of its own — tags, a create row, or a restore row. Nothing here.
+    case none
+    /// No unarchived tag exists at all. Offer the default set.
+    case offerDefaultTags
+    /// Tags exist; this query reaches none of them and offers no other row.
+    case noMatches
+
+    /// - Parameters:
+    ///   - hasActiveTags: whether the store holds **any** unarchived tag, not whether this query
+    ///     found one. That distinction is the whole point: the two callers previously keyed the
+    ///     placeholder off the *filtered* list, which cannot tell an empty store from a narrow
+    ///     query.
+    ///   - matchCount: rows the picker is about to draw for the current query.
+    ///   - canCreate: whether a create row is about to be drawn.
+    ///   - canRestore: whether a restore row is about to be drawn. `TaskTitleInlineTagPicker` has
+    ///     no restore affordance and leaves this at its default; `TagPickerPopover` used to draw
+    ///     "Restore \"bug\"" and "No tags" one above the other, which contradicted itself.
+    static func resolve(
+        hasActiveTags: Bool,
+        matchCount: Int,
+        canCreate: Bool,
+        canRestore: Bool = false
+    ) -> TagPickerPlaceholder {
+        guard matchCount == 0, !canCreate, !canRestore else { return .none }
+        return hasActiveTags ? .noMatches : .offerDefaultTags
+    }
+}
+
+/// The one rendering of `TagPickerPlaceholder`, in the row language both macOS tag pickers already
+/// use for their create and restore rows.
+///
+/// This view owns the seed call. It is a `Button` action and nothing else — see
+/// `CadenceFirstLaunchEmptyStoreTests.noUnpromptedCodePathSeedsTheDefaultTags`, which exists
+/// because "the tag list is empty" is also what a second device renders while CloudKit is still
+/// arriving. Do not move this call to `.onAppear`.
+struct TagPickerPlaceholderRow: View {
+    let placeholder: TagPickerPlaceholder
+    @Environment(\.modelContext) private var modelContext
+
+    var body: some View {
+        switch placeholder {
+        case .none:
+            EmptyView()
+        case .offerDefaultTags:
+            Button {
+                TagSupport.seedDefaultTags(in: modelContext)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "tag.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.blue)
+                    Text("Add Default Tags")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.text)
+                    Spacer()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.cadencePlain)
+            .cadenceHoverHighlight(cornerRadius: 6)
+            .help("Add Cadence's starter tags")
+        case .noMatches:
+            Text("No matching tags")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.dim)
+                .padding(10)
+        }
+    }
+}
+
 #endif

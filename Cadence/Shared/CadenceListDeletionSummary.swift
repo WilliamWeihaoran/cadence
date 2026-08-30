@@ -21,6 +21,25 @@ enum CadenceListDeletionKind: String, CaseIterable, Sendable {
         }
     }
 
+    /// The placeholder label for a list of this kind with a blank name.
+    ///
+    /// **T-512.** This used to be `"Untitled \(kind.noun)"`, built at the call site — which is the
+    /// one shape `CadenceSharedConstantReuseSweepTests` cannot see: its harvest excludes
+    /// interpolated literals *by construction*, so a label assembled from a prefix and a noun is
+    /// invisible to a sweep that compares whole strings. The label it produced was
+    /// character-for-character `CadenceTitleNormalization.defaultAreaName` and friends, so renaming
+    /// one of those constants left the interpolated copy behind with nothing going red.
+    ///
+    /// Reading the constants is the fix; `noSourceFileBuildsAPlaceholderLabelByInterpolation` is
+    /// what stops the shape coming back.
+    var untitledName: String {
+        switch self {
+        case .area: return CadenceTitleNormalization.defaultAreaName
+        case .project: return CadenceTitleNormalization.defaultProjectName
+        case .context: return CadenceTitleNormalization.defaultContextName
+        }
+    }
+
     /// Shown **inside** the still-open confirmation when the delete could not be completed
     /// (T-320). It names the kind for the same reason `cascadeSentence` does: the sheet is one
     /// view used for three deletes, and "Couldn't delete this list" is not a thing the app calls

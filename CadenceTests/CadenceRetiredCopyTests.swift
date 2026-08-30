@@ -91,6 +91,17 @@ let cadenceRetiredCopy: [CadenceRetiredPhrase] = [
         """
     ),
     CadenceRetiredPhrase(
+        "Create a goal, then set its date range.",
+        retiredBy: "T-525",
+        why: """
+        The Goals roadmap's first-run subtitle, and the second clause was not a requirement. \
+        `GoalTimelineView.rows` is built from `GoalMissionGrouping.groups` alone, which reads no \
+        date, so one undated goal already fills the page — with a rail row and a "No date" chip. \
+        The sentence told a reader who had made a goal that the page in front of them was waiting \
+        on dates. What dates actually buy is the bar, and the copy says that instead.
+        """
+    ),
+    CadenceRetiredPhrase(
         "Cadence account and data were deleted.",
         retiredBy: "T-474",
         why: """

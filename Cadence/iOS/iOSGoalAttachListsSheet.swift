@@ -26,6 +26,18 @@ struct iOSGoalAttachListsSheet: View {
     @Query(sort: \Project.order) private var projects: [Project]
     @State private var query = ""
 
+    /// Whether the sheet came up empty **because the search field is narrowing it** (T-523).
+    ///
+    /// Not `query.isEmpty`. `GoalLinkPresentation.candidateGroups` trims before it matches, so a
+    /// field holding only spaces returns every list rather than none — which means the only reader
+    /// a whitespace-only query can put this empty state in front of is one who has no lists at all,
+    /// and they were being told "No matching lists / Nothing matches that search." on a first run.
+    /// The sheet carries no status filter, so the search half is the whole question; the shared
+    /// rule is asked anyway rather than re-rolled, because trimming is the part that was wrong.
+    private var isNarrowedToEmpty: Bool {
+        CadenceEmptyStateCopy.isNarrowedToEmpty(searchText: query, filterNarrows: false)
+    }
+
     private var groups: [GoalLinkCandidateGroup] {
         GoalLinkPresentation.candidateGroups(
             contexts: contexts,
@@ -43,10 +55,10 @@ struct iOSGoalAttachListsSheet: View {
                     // not.
                     iOSEmptyPanel(
                         systemImage: "folder.badge.questionmark",
-                        title: query.isEmpty ? "No lists yet" : "No matching lists",
-                        subtitle: query.isEmpty
-                            ? "Create an area or project first, then attach it here."
-                            : "Nothing matches that search."
+                        title: isNarrowedToEmpty ? "No matching lists" : "No lists yet",
+                        subtitle: isNarrowedToEmpty
+                            ? "Nothing matches that search."
+                            : "Create an area or project first, then attach it here."
                     )
                 } else {
                     candidateList

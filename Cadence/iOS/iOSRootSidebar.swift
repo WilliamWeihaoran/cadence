@@ -895,8 +895,8 @@ struct iOSMissingListView: View {
     var body: some View {
         iOSEmptyPanel(
             systemImage: "questionmark.folder",
-            title: "List not found",
-            subtitle: "This list may have been archived, deleted, or changed on another device."
+            title: CadenceEmptyStateCopy.missingListTitle,
+            subtitle: CadenceEmptyStateCopy.missingListSubtitle
         )
         .background(Theme.bg.ignoresSafeArea())
     }

@@ -233,7 +233,12 @@ struct ContainerPickerBadge: View {
         }
         .modifier(TaskPickerTriggerStyle(breadcrumbSegment: breadcrumbSegment))
         .popover(isPresented: $showPicker) {
-            ContainerPickerPopoverContent(contexts: contexts, areas: areas, projects: projects) { picked in
+            ContainerPickerPopoverContent(
+                contexts: contexts,
+                areas: areas,
+                projects: projects,
+                selection: selection
+            ) { picked in
                 selection = picked
                 showPicker = false
             }

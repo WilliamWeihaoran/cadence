@@ -101,9 +101,10 @@ nonisolated enum TagSupport {
     ///
     /// So T-528 removed every automatic caller rather than trying to guard the insert, and
     /// `CadenceFirstLaunchEmptyStoreTests.noUnpromptedCodePathSeedsTheDefaultTags` keeps it that
-    /// way. The legitimate callers are the "Add Defaults" controls on both platforms and the iOS
-    /// task-detail tag picker's empty state; pressing one after a rename *is* meant to bring the
-    /// original back.
+    /// way. The legitimate callers are the "Add Defaults" controls on both platforms and the tag
+    /// pickers' own empty states — iOS's `iOSTaskTagPickerPopover` and, since T-532, the macOS
+    /// pickers' shared `TagPickerPlaceholderRow`. Pressing one after a rename *is* meant to bring
+    /// the original back.
     @discardableResult
     static func seedDefaultTags(in context: ModelContext, saveChanges: Bool = true) -> Bool {
         var changed = deduplicateTags(in: context, save: false)

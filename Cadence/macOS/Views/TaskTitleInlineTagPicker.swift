@@ -6,6 +6,10 @@ struct TaskTitleInlineTagPicker: View {
     @Binding var highlightIndex: Int
     let filteredTags: [Tag]
     let selectedTags: [Tag]
+    /// Whether the store holds **any** unarchived tag. `filteredTags` cannot answer this — it is
+    /// already narrowed by the query — and the placeholder below needs the difference. See
+    /// `TagPickerPlaceholder`.
+    let hasActiveTags: Bool
     let canCreate: Bool
     let onSelect: (Tag) -> Void
     let onCreate: () -> Void
@@ -36,12 +40,13 @@ struct TaskTitleInlineTagPicker: View {
                         createRow(isHighlighted: highlightIndex == filteredTags.count)
                     }
 
-                    if filteredTags.isEmpty && !canCreate {
-                        Text("No tags")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.dim)
-                            .padding(10)
-                    }
+                    TagPickerPlaceholderRow(
+                        placeholder: TagPickerPlaceholder.resolve(
+                            hasActiveTags: hasActiveTags,
+                            matchCount: filteredTags.count,
+                            canCreate: canCreate
+                        )
+                    )
                 }
                 .padding(6)
             }

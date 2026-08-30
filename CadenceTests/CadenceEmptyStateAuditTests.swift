@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -137,40 +138,22 @@ struct CadenceEmptyStateAuditTests {
             }
         }
 
-        for (sentence, paths) in spellings.sorted(by: { $0.key < $1.key }) where paths.count > 1 {
-            let sorted = paths.sorted()
-            #expect(
-                emptyStateDuplicateAllowance[sentence] == sorted,
-                """
-                "\(sentence)" is written out in \(sorted). Move it to CadenceEmptyStateCopy and \
-                read it from both, or add it to emptyStateDuplicateAllowance with the guard that \
-                already holds the pair together.
-                """
-            )
-        }
-    }
-
-    /// Exemptions rot, so each one is checked the way `CadenceRetiredCopyTests` checks its own: the
-    /// files named must still say the thing, and the suite claimed to be holding them together must
-    /// still exist and still name them.
-    @Test func theOneAllowedDuplicatePairIsStillHeldTogetherElsewhere() throws {
-        for (sentence, paths) in emptyStateDuplicateAllowance {
-            #expect(paths.count > 1, "\"\(sentence)\" is allowed as a duplicate but names one file")
-            for path in paths {
-                let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
-                #expect(
-                    CadenceEmptyStateAudit.literals(in: code).contains(sentence),
-                    "\(path) no longer spells \"\(sentence)\" — delete the allowance"
-                )
-            }
-        }
-
-        // The guard the allowance defers to. It asserts both files carry the same three strings,
-        // which is a weaker mechanism than a shared constant but is a real one — and if it goes
-        // away the allowance has nothing behind it.
-        let guardSuite = try CadenceSourceScan.sourceFile("CadenceTests/CadenceDeletedSelectionGuardTests.swift")
-        #expect(guardSuite.contains("theMacMissingListStateReusesTheSentenceIOSAlreadyShips"))
-        #expect(guardSuite.contains("\"List not found\""))
+        // No allowance any more (T-522). The one entry there had ever been was "List not found"
+        // and its subtitle, deferred to a guard in `CadenceDeletedSelectionGuardTests` that pinned
+        // the two files as matching literals rather than removing the second copy; both now read
+        // `CadenceEmptyStateCopy.missingList*`, so the exemption and its staleness check went with
+        // the duplication they were describing.
+        let duplicates = spellings
+            .filter { $0.value.count > 1 }
+            .map { "\"\($0.key)\" in \($0.value.sorted())" }
+            .sorted()
+        #expect(
+            duplicates.isEmpty,
+            """
+            \(duplicates.joined(separator: "; ")) — an empty-state sentence spelled in two files \
+            drifts. Move it to CadenceEmptyStateCopy and read it from both.
+            """
+        )
     }
 
     /// The detector the sweep turns on, checked against the tree rather than only its fixtures: a
@@ -227,14 +210,30 @@ struct CadenceEmptyStateAuditTests {
     ///
     /// Swept over the whole desktop tree rather than the two files it was found in, for the reason
     /// `CadenceRetiredCopyTests` gives: a per-screen guard finds the screen you were looking at.
-    @Test func noDesktopCopyAsksForATouchGesture() throws {
-        let files = try CadenceSourceScan.swiftFiles(under: "Cadence/macOS")
+    ///
+    /// **And over `Cadence/Shared/` too, which is T-520's half.** The sweep used to walk
+    /// `Cadence/macOS/` alone, so it could not see the shape that ticket found:
+    /// `CadenceTodayPresentationSupport.emptyScheduleHint` ended "…tap an hour to schedule one" and
+    /// sat in `Shared/` with exactly one reader, `iOSSchedulePanel`. Correct on the day, and wrong
+    /// the moment any Mac surface read it — which is a defect a desktop-only walk finds only after
+    /// somebody has shipped it. A shared folder is every platform's folder, so copy in it has to be
+    /// true on the desktop whether or not the desktop reads it yet. The hint is
+    /// `iOSSchedulePanelCopy`'s now.
+    @Test func noMacReachableCopyAsksForATouchGesture() throws {
+        let desktop = try CadenceSourceScan.swiftFiles(under: "Cadence/macOS")
+        let shared = try CadenceSourceScan.swiftFiles(under: "Cadence/Shared")
+        let files = (desktop + shared).sorted()
         let read = CadenceSourceScan.strippedSourceReader()
+
+        // Both halves of the union are named, because `including:` can only witness one and a walk
+        // that lost either folder would still clear the floor on the other.
+        #expect(files.contains("Cadence/macOS/Views/LinksView.swift"))
+        #expect(files.contains("Cadence/Shared/CadenceTodayPresentationSupport.swift"))
 
         let offenders = try touchGestureInstrument().sweep(
             files,
-            atLeast: 100,
-            including: "Cadence/macOS/Views/LinksView.swift",
+            atLeast: 300,
+            including: "Cadence/Shared/CadenceEmptyStateCopy.swift",
             read: read
         )
         #expect(
@@ -382,6 +381,7 @@ struct CadenceEmptyStateAuditTests {
             CadenceEmptyStateCopy.savedLinksSubtitle,
             CadenceEmptyStateCopy.listNotesSubtitle,
             CadenceEmptyStateCopy.completedTasksSubtitle,
+            CadenceEmptyStateCopy.missingListSubtitle,
             CadenceEmptyStateCopy.noteActionTasksSubtitle,
             CadenceEmptyStateCopy.activeListsSubtitle(hasArchived: true),
             CadenceEmptyStateCopy.activeListsSubtitle(hasArchived: false),
@@ -537,7 +537,255 @@ struct CadenceEmptyStateAuditTests {
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureComponents.swift")
         )
         #expect(components.contains("struct iOSFeatureEmptyDetail: View"))
-        #expect(components.contains("subtitle: \"Select an item from the list.\""))
+        // The house line is the component's *default* now (T-533): a screen whose detail pane is
+        // only reachable beside an empty list passes its own copy through `init(matching:)`
+        // instead. `iOSFocusView` is not one of those, so it takes the default, above.
+        #expect(components.contains("subtitle: String = \"Select an item from the list.\""))
+        #expect(components.contains("init(matching empty: iOSFeatureEmptyState)"))
+    }
+
+    /// **A detail pane may not tell the reader to pick from a list that has nothing in it**
+    /// (T-533). Goals and Habits both drew `iOSFeatureEmptyDetail` — "No goal selected / Select an
+    /// item from the list." — unconditionally, and at iPad regular width the chooser beside it was
+    /// saying "No goals yet" about the same emptiness.
+    ///
+    /// **It is not T-519's shape, and the difference is the reachability.** `unselectedDetail`
+    /// needed `if pickItems.isEmpty` because its picker can be full while nothing is selected.
+    /// These two panes cannot reach that state: `selected` falls back through the *whole*
+    /// collection, so `nil` means the collection is empty — and `iOSFeatureListPane` draws its own
+    /// empty panel on exactly that. So the fix is unconditional, and the two fallback expressions
+    /// are pinned below because they are what makes it correct: restore either one to something
+    /// that can return `nil` beside a full list and this pane needs a branch again.
+    ///
+    /// Source-shape, not behavioural: `Cadence/iOS/` is fed to this target but sits entirely
+    /// inside `#if os(iOS)`, so there is no declaration to call and scanning is the only reader.
+    @Test func theGoalsAndHabitsDetailPanesNeverNameAListWithNoItems() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureViews.swift")
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(code.contains("struct iOSGoalsView"), "non-vacuity: wrong file")
+        #expect(code.contains("struct iOSHabitsView"), "non-vacuity: wrong file")
+        #expect(code != raw, "the stripper blanked no comments in a file that has them")
+
+        // Both detail panes render the chooser's own empty state rather than the house line.
+        #expect(
+            emptyStateOccurrences(of: "iOSFeatureEmptyDetail(matching: Self.emptyState)", in: code) == 2,
+            "a detail pane no longer repeats its own list's empty state"
+        )
+        #expect(
+            emptyStateOccurrences(of: "iOSFeatureEmptyDetail(systemImage:", in: code) == 0,
+            "a detail pane on this page still takes the \"Select an item from the list.\" default"
+        )
+
+        // And they read it from the same value the chooser does, so the two panes cannot drift.
+        #expect(emptyStateOccurrences(of: "empty: Self.emptyState", in: code) == 2)
+        for sentence in [
+            "No goals yet",
+            "Create a direction, then nest milestones and habits underneath it.",
+            "No habits yet",
+            "Create repeating commitments and track today.",
+        ] {
+            #expect(
+                emptyStateOccurrences(of: sentence, in: code) == 1,
+                "\(sentence) is spelled more than once in this file"
+            )
+        }
+
+        // The retired titles named a selection the reader could not make.
+        #expect(emptyStateOccurrences(of: "No goal selected", in: code) == 0)
+        #expect(emptyStateOccurrences(of: "No habit selected", in: code) == 0)
+
+        // What makes the unconditional branch correct: `nil` here means "nothing exists".
+        #expect(
+            emptyStateOccurrences(
+                of: "return topLevelGoals.first ?? activeGoals.first ?? goals.first",
+                in: code
+            ) == 1,
+            "the goals fallback no longer resolves through the whole collection"
+        )
+        #expect(
+            emptyStateOccurrences(of: "return dueToday.first ?? habits.first", in: code) == 1,
+            "the habits fallback no longer resolves through the whole collection"
+        )
+
+        // The chooser really does draw its empty panel on the same emptiness.
+        let components = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureComponents.swift")
+        )
+        #expect(components.contains("struct iOSFeatureEmptyState"))
+        #expect(components.contains("if count == 0 {"))
+        #expect(emptyStateOccurrences(of: "count: activeGoals.count", in: code) == 1)
+        #expect(emptyStateOccurrences(of: "count: habits.count", in: code) == 1)
+    }
+
+    /// Literal occurrences of `needle` in `haystack`. `CadenceSourceScan.matchCount` takes a
+    /// regular expression, and these needles carry `?`, `(` and `.`.
+    private func emptyStateOccurrences(of needle: String, in haystack: String) -> Int {
+        guard !needle.isEmpty else { return -1 }
+        var count = 0
+        var cursor = haystack.startIndex
+        while let found = haystack.range(of: needle, range: cursor..<haystack.endIndex) {
+            count += 1
+            cursor = found.upperBound
+        }
+        return count
+    }
+
+    // MARK: T-520 — a shared hint only one platform could act on
+
+    /// **The schedule hint is iOS's copy, and lives where iOS's copy lives.**
+    ///
+    /// Behavioural in its first line: `iOSSchedulePanelCopy` is deliberately outside
+    /// `#if os(iOS)`, like the four `Cadence/iOS/*Metrics.swift` files, so this target reads the
+    /// value rather than inferring it from source. The rest is source-shape and stated as such.
+    ///
+    /// The sweep above is the general half — nothing in `Shared/` may ask for a touch gesture
+    /// again. This is the particular half: the sentence did not merely lose the word "tap", it
+    /// stopped being a shared constant, because macOS's `SchedulePanel` draws no empty state at all
+    /// and there was never a second reader for it to be shared with.
+    @Test func theScheduleHintIsAnIOSConstantAndNoLongerASharedOne() throws {
+        #expect(
+            iOSSchedulePanelCopy.emptyScheduleHint == "No timed blocks yet — tap an hour to schedule one."
+        )
+
+        let shared = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTodayPresentationSupport.swift")
+        )
+        #expect(shared.contains("static let emptySubtitle"), "non-vacuity: wrong file")
+        #expect(
+            shared.contains("emptyScheduleHint") == false,
+            "the schedule hint is declared in Shared/ again"
+        )
+
+        let panel = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
+        )
+        #expect(panel.contains("struct iOSSchedulePanel: View"), "non-vacuity: wrong file")
+        #expect(panel.contains("iOSSchedulePanelCopy.emptyScheduleHint"))
+        #expect(panel.contains("CadenceTodayPresentationSupport.emptyScheduleHint") == false)
+    }
+
+    // MARK: T-523 — the one filter-aware empty state, and the space bar
+
+    /// **A whitespace-only query is not a search on the phone's Attach Lists sheet either.**
+    ///
+    /// Behavioural, in both halves that decide the branch.
+    /// `GoalLinkPresentation.candidateGroups` trims before it matches, so a field holding only
+    /// spaces returns the whole library rather than none of it — which means the only reader a
+    /// whitespace query can put this empty state in front of is one who has no lists at all, and
+    /// `query.isEmpty` greeted that reader's first run with "No matching lists / Nothing matches
+    /// that search."
+    @Test func theAttachListsSheetTreatsAWhitespaceQueryAsNoSearch() throws {
+        // The question the sheet used to ask, and the one it asks now, disagreeing.
+        #expect("   ".isEmpty == false)
+        #expect(CadenceEmptyStateCopy.isNarrowedToEmpty(searchText: "   ", filterNarrows: false) == false)
+        #expect(CadenceEmptyStateCopy.isNarrowedToEmpty(searchText: "Home", filterNarrows: false))
+
+        // And the reason they disagree is a fact about the sheet's own candidate builder rather
+        // than an argument about whitespace: the same query narrows nothing there.
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let area = Area(name: "Home")
+        modelContext.insert(area)
+
+        let spaces = GoalLinkPresentation.candidateGroups(
+            contexts: [], areas: [area], projects: [], query: "   "
+        )
+        #expect(GoalLinkPresentation.candidateCount(in: spaces) == 1, "a whitespace query narrowed the sheet")
+
+        let miss = GoalLinkPresentation.candidateGroups(
+            contexts: [], areas: [area], projects: [], query: "zzz"
+        )
+        #expect(miss.isEmpty, "non-vacuity: the candidate builder never narrows")
+    }
+
+    /// The sheet asks the shared rule, and no longer branches on the raw field.
+    ///
+    /// Source-shape, and stated as such: `Cadence/iOS/` is not compiled by this target.
+    @Test func theAttachListsSheetAsksTheSharedNarrowingRule() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSGoalAttachListsSheet.swift")
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(code.contains("struct iOSGoalAttachListsSheet: View"), "non-vacuity: wrong file")
+        #expect(code != raw, "the file carries comments and the stripper blanked none of them")
+
+        #expect(
+            code.contains("CadenceEmptyStateCopy.isNarrowedToEmpty(searchText: query, filterNarrows: false)"),
+            "the sheet re-rolls the narrowing rule instead of asking the shared one"
+        )
+
+        let empty = try #require(
+            CadenceEmptyStateAudit.callSegments(in: code).first,
+            "the sheet no longer draws an empty state"
+        )
+        #expect(empty.contains("isNarrowedToEmpty"), "the sheet's empty state does not ask the rule")
+        #expect(
+            empty.contains("query.isEmpty") == false,
+            "the sheet's empty state is back to reading the search field alone"
+        )
+        // Both branches survive: this was a fix to *which* branch is reached, not a deletion.
+        #expect(empty.contains("\"No matching lists\""))
+        #expect(empty.contains("\"No lists yet\""))
+    }
+
+    // MARK: T-525 — the roadmap's first run, against what a roadmap row needs
+
+    /// **One undated goal is enough to leave the roadmap's empty state.**
+    ///
+    /// Behavioural, and the reason the reword is a measurement rather than a reading:
+    /// `GoalTimelineView.rows` is `groups.flatMap { group row + group.goals }`, so it is empty
+    /// exactly when `GoalMissionGrouping.groups` is — and nothing in that grouping looks at a date.
+    /// "Create a goal, then set its date range." therefore told a reader who had already created a
+    /// goal that the page still in front of them was waiting on dates. It was not; it was waiting
+    /// on nothing.
+    @Test func anUndatedGoalIsEnoughToLeaveTheRoadmapEmptyState() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let goal = Goal(title: "Learn to sail")
+        modelContext.insert(goal)
+        #expect(goal.startDateDate == nil, "the fixture is not the undated goal this is about")
+        #expect(goal.endDateDate == nil, "the fixture is not the undated goal this is about")
+
+        // Under the default filter, which is the selection a reader who has touched nothing is in.
+        let groups = GoalMissionGrouping.groups(from: [goal]) {
+            GoalStatusFilter.active.matches($0.status)
+        }
+        #expect(groups.count == 1, "an undated goal does not reach the roadmap at all")
+
+        // `rows`, rebuilt the one way the view builds it.
+        let rows = groups.flatMap { group in
+            [GoalTimelineRow.group(group, height: 48)]
+                + group.goals.map { GoalTimelineRow.goal($0, height: 42) }
+        }
+        #expect(rows.isEmpty == false, "the roadmap would still be drawing its empty state")
+        // And it is a real row rather than a placeholder: the rail hangs its chip off `row.goal`,
+        // which is what renders "No date" for this one.
+        #expect(rows.first?.goal?.id == goal.id)
+    }
+
+    /// The reworded sentence, read off the page that draws it.
+    @Test func theRoadmapFirstRunCopyAsksForAGoalAndNotForADateRange() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalTimelineView.swift")
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(code.contains("struct GoalTimelineView: View"), "non-vacuity: wrong file")
+        #expect(code != raw, "the file carries comments and the stripper blanked none of them")
+
+        let empty = try #require(
+            CadenceEmptyStateAudit.callSegments(in: code).first,
+            "the roadmap no longer draws an empty state"
+        )
+        #expect(empty.contains("\"Create a goal with New Goal. Add dates to draw its bar.\""))
+        // Stated as an absence as well, so a revert wearing different words fails rather than
+        // passing on a changed literal. The retired sentence itself is swept app-wide by
+        // `cadenceRetiredCopy`.
+        #expect(empty.localizedCaseInsensitiveContains("date range") == false)
+        // The narrowed half is untouched: this was a truth fix, not a rewrite of the branch.
+        #expect(empty.contains("\"Try a different filter.\""))
+
+        // And the control the new sentence names is on this page, at the one width it has.
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceActionButton\(\s*title: "New Goal""#, in: code) == 1,
+            "the roadmap's copy names a New Goal button its own toolbar does not draw"
+        )
     }
 
     /// The text between the braces of `var <name>` — the shape `CadenceSourceScan.functionBody`
@@ -573,6 +821,9 @@ struct CadenceEmptyStateAuditTests {
             "noteActionTasks": ["Cadence/macOS/Views/NoteActionReviewSheets.swift", "Cadence/iOS/iOSAINoteActionsViews.swift"],
             "activeLists": ["Cadence/iOS/iOSListViews.swift", "Cadence/iOS/iOSListsRegularPane.swift"],
             "meetingNotes": ["Cadence/macOS/Views/NotesView.swift", "Cadence/iOS/iOSNotesView.swift"],
+            // T-522. The last pair that was held level by a test asserting two files matched,
+            // rather than by there being one declaration for them to read.
+            "missingList": ["Cadence/macOS/Views/ListDetailView.swift", "Cadence/iOS/iOSRootSidebar.swift"],
             "notepad": ["Cadence/macOS/Views/NotesView.swift", "Cadence/iOS/iOSNotesView.swift"],
             "dailyNotes": ["Cadence/macOS/Views/NotesView.swift", "Cadence/iOS/iOSNotesView.swift"],
             "weeklyNotes": ["Cadence/macOS/Views/NotesView.swift", "Cadence/iOS/iOSNotesView.swift"],
@@ -612,26 +863,6 @@ struct CadenceEmptyStateAuditTests {
 }
 
 // MARK: - Fixtures
-
-/// The one sentence still written out in two places, and the guard that holds those two together.
-///
-/// `CadenceDeletedSelectionGuardTests.theMacMissingListStateReusesTheSentenceIOSAlreadyShips`
-/// asserts the Mac's missing-list state and the phone's carry the *same three literals*, chosen
-/// deliberately over a shared constant so that editing one and not the other fails. That is a
-/// weaker mechanism than `CadenceEmptyStateCopy` — it pins the pair rather than removing the second
-/// copy — but it is a real one, and duplicating the enforcement here would give the next reader two
-/// places to update. Checked for staleness by
-/// `theOneAllowedDuplicatePairIsStillHeldTogetherElsewhere`.
-let emptyStateDuplicateAllowance: [String: [String]] = [
-    "List not found": [
-        "Cadence/iOS/iOSRootSidebar.swift",
-        "Cadence/macOS/Views/ListDetailView.swift",
-    ],
-    "This list may have been archived, deleted, or changed on another device.": [
-        "Cadence/iOS/iOSRootSidebar.swift",
-        "Cadence/macOS/Views/ListDetailView.swift",
-    ],
-]
 
 /// Fires on a file that writes an empty state's words at the call site; silent on one that reads
 /// them from the shared constants.

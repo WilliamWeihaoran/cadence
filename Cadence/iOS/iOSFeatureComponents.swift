@@ -68,9 +68,10 @@ struct iOSFeatureListPane<Content: View>: View {
     let eyebrow: String
     let title: String
     let count: Int
-    let emptyTitle: String
-    let emptySubtitle: String
-    let emptyIcon: String
+    /// The one empty state this screen has. See `iOSFeatureEmptyState` — it is a value rather than
+    /// three loose strings so the detail pane beside this one cannot describe the same empty list
+    /// differently (T-533).
+    let empty: iOSFeatureEmptyState
     var actionTitle: String? = nil
     var actionSystemImage = "plus"
     var action: (() -> Void)? = nil
@@ -116,7 +117,11 @@ struct iOSFeatureListPane<Content: View>: View {
             }
 
             if count == 0 {
-                iOSEmptyPanel(systemImage: emptyIcon, title: emptyTitle, subtitle: emptySubtitle)
+                iOSEmptyPanel(
+                    systemImage: empty.systemImage,
+                    title: empty.title,
+                    subtitle: empty.subtitle
+                )
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
@@ -521,15 +526,51 @@ struct iOSMetricTile: View {
     }
 }
 
+/// The one empty state a chooser-plus-detail screen has, carried as a value so its two panes
+/// cannot say different things about the same empty list.
+///
+/// T-533 was exactly that disagreement: at iPad regular width a new user saw "No goals yet /
+/// Create a direction…" in the chooser and "No goal selected / Select an item from the list."
+/// beside it, naming a list with no items to select. `iOSFeatureListPane` takes one of these and
+/// `iOSFeatureEmptyDetail(matching:)` renders the same value on the detail side.
+struct iOSFeatureEmptyState {
+    let systemImage: String
+    let title: String
+    let subtitle: String
+}
+
+/// A detail pane with nothing selected. **Two spellings, and the difference is whether there is
+/// anything to select.**
+///
+/// - `init(systemImage:title:)` keeps the house line, "Select an item from the list." It is true
+///   only while the chooser beside it has rows — `iOSFocusView.unselectedDetail` reaches it on its
+///   second branch, where a chosen subject was deleted out from under a list that still has others
+///   (T-519).
+/// - `init(matching:)` repeats the chooser's own empty state, for a pane that is reachable **only**
+///   with an empty list beside it. Goals and Habits are both that shape: their `selected` falls
+///   back through the whole collection, so `nil` means the collection is empty, and the chooser is
+///   then drawing its own empty panel. One page, one sentence — the resolution T-519 chose for its
+///   first branch.
 struct iOSFeatureEmptyDetail: View {
     let systemImage: String
     let title: String
+    let subtitle: String
+
+    init(systemImage: String, title: String, subtitle: String = "Select an item from the list.") {
+        self.systemImage = systemImage
+        self.title = title
+        self.subtitle = subtitle
+    }
+
+    init(matching empty: iOSFeatureEmptyState) {
+        self.init(systemImage: empty.systemImage, title: empty.title, subtitle: empty.subtitle)
+    }
 
     var body: some View {
         iOSEmptyPanel(
             systemImage: systemImage,
             title: title,
-            subtitle: "Select an item from the list."
+            subtitle: subtitle
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg)

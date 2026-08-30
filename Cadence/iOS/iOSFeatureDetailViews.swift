@@ -80,7 +80,11 @@ struct iOSGoalDetail: View {
                     iOSEditorSection(title: "Milestones") {
                         rows(milestones) { milestone in
                             iOSEditorFieldRow(
-                                label: milestone.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : milestone.title,
+                                // **T-513.** `defaultMilestoneTitle`, not `defaultGoalTitle`: this
+                                // section is titled "Milestones" and iterates `milestones`, and the
+                                // three other rows that show a nested goal — the task sheet's
+                                // milestone row and its two pickers — already call it a milestone.
+                                label: milestone.title.isEmpty ? CadenceTitleNormalization.defaultMilestoneTitle : milestone.title,
                                 systemImage: milestone.icon,
                                 color: Color(hex: milestone.colorHex)
                             ) {

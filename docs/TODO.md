@@ -523,32 +523,9 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   fails, the fix is a **deliberate registration of the text types — not** a union with
   `acceptableDragTypes`, which would re-advertise bitmaps at a refusing host and undo half of [[T-478]].
 
-- [T-512] **Two functions build the labels [[T-505]] just declared, and no literal sweep can see them.**
-  `iOSListDeletionSupport.swift:40` and `iOSListWindDownSupport.swift:85` are near-identical `name`
-  properties returning `"Untitled \(kind.noun)"` / `"Untitled \(noun)"`, where `noun` is
-  `"Area"`/`"Project"`/`"Context"` — so **at runtime they produce exactly `defaultAreaName`,
-  `defaultProjectName` and `defaultContextName`.** Renaming any of those three constants leaves these
-  two behind, silently. This is the [[T-500]] shape (a duplicated *function*) doubled by the sweep's own
-  stated exclusion: interpolated literals are dropped by the harvest regex **by construction**. Both
-  files' comments already claim they use "the same 'Untitled …' fallback" as each other — the claim is
-  true and nothing holds it true.
-
-- [T-513] **Two copy defects [[T-505]] deliberately did not launder.** (1) `iOSFeatureDetailViews.swift:83`
-  labels an untitled **milestone** `"Untitled Goal"` — inside `iOSEditorSection(title: "Milestones")`,
-  iterating `milestones` — while `iOSTaskDetailSheetSections.swift:65,77` and
-  `iOSTaskRowActionViews.swift:395` say `"Untitled Milestone"` for the same kind of row. (2)
-  `"Untitled task"` is lower-cased at `SchedulePanelComponents.swift:88` and
-  `macOSRootSupportViews.swift:527` (and as a `TextField` placeholder at
-  `iOSTaskDetailComponents.swift:72`) against `defaultTaskTitle`'s capital. **Both change what a user
-  reads and neither is decidable from the literal**, so both were left visible rather than folded into a
-  constant — which would have frozen the drift under a fix that looks like cleanup.
 
 
-- [T-515] **The rest of the "Untitled …" family, below [[T-505]]'s ≥2-files rule.** `"Untitled List"`
-  (`TaskBundlePickerSupportViews.swift:179,211` — 2 sites, one file), `"Untitled subtask"`
-  (`MarkdownTaskEmbedDrawingSupport.swift:429,511` — 2 sites, one file), `"Untitled Column"`
-  (`iOSColumnWindDownSupport.swift:50` — 1 site). Real but weaker: **a constant with one call site is a
-  name, not a de-duplication.** Recorded so the omission is a decision rather than an oversight.
+
 
 
 
@@ -568,23 +545,9 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-520] **`CadenceTodayPresentationSupport.emptyScheduleHint` asks for a tap, from `Shared/`.** It ends
-  "…tap an hour to schedule one." and lives in `Cadence/Shared/`, but has exactly **one** reader,
-  `iOSTodaySchedulePanel`. Correct today, wrong the moment a Mac surface picks it up. Move it to an
-  iOS-only constant or reword it. [[T-528]]'s `noDesktopCopyAsksForATouchGesture` sweep covers
-  `Cadence/macOS/` only and structurally cannot see this one.
 
 
-- [T-522] **Converge `"List not found"` and its subtitle, then delete the allowlist entry.** They are
-  duplicated in `ListDetailView.swift` and `iOSRootSidebar.swift` because
-  `CadenceDeletedSelectionGuardTests.theMacMissingListStateReusesTheSentenceIOSAlreadyShips`
-  **deliberately pins them as matching literals**, so converging means rewriting that suite's assertion
-  to read the constant instead. Doing so removes the single entry in `CadenceEmptyStateAuditTests`'
-  `emptyStateDuplicateAllowance`.
 
-- [T-523] **`iOSGoalAttachListsSheet` branches on an untrimmed query.** It is the one *correct*
-  filter-aware empty state in the app, but a whitespace-only query still reports "No matching lists".
-  One line: `CadenceEmptyStateCopy.isNarrowedToEmpty(searchText: query, filterNarrows: false)`.
 
 - [T-524] **65 string literals are duplicated across two or more files under `Cadence/`** — measured,
   beyond empty states. The Settings sections duplicate ~15 between
@@ -594,10 +557,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   constant exists yet** — that sweep catches a *shared constant re-typed*, not copy that never became
   one. Same convergence job as [[T-528]] at roughly 7x the size.
 
-- [T-525] **`GoalTimelineView`'s first-run subtitle overstates what is required.** "Create a goal, then
-  set its date range." — but a goal with no end date still gets a roadmap row, rendered "No date", so
-  creating one is sufficient. Copy deliberately preserved as-is by the empty-state work rather than
-  reworded under a change that looked like cleanup.
 
 
 
@@ -622,29 +581,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the third gate alongside the unit suite and the MCP build.
 
 
-- [T-532] **macOS tag pickers give a fresh store no route to the default set.** The direct consequence of
-  [[T-528]]'s seed-on-demand decision, and a parity gap: `TaskTitleInlineTagPicker.swift:40` and
-  `TagPickerPopoverViews.swift:114` both render a bare `"No tags"`, while
-  `iOSTaskDetailComponents.swift:400` offers **"Add Default Tags"** in exactly that state. So a brand-new
-  macOS user meets "No tags" with no affordance — they can type to create inline or go to Settings, but
-  **the iOS pattern is the better one and macOS should match it.** Worth doing before a TestFlight build
-  if T-528's decision stands.
 
-- [T-533] **Goals and Habits detail panes have [[T-519]]'s defect in its original form.**
-  `iOSFeatureViews.swift:225` and `:398` draw "Select an item from the list." **unconditionally**, while
-  the `listPane` beside them shows "No goals yet" / its habits equivalent on a fresh store. **At iPad
-  regular width a new user sees "Select an item from the list." next to a list with no items.** Same
-  one-line fix shape as `unselectedDetail`; not covered by the T-519 test, which is scoped to
-  `iOSFocusView`.
 
-- [T-534] **The macOS container picker is the other half of [[T-514]].**
-  `ContainerPickerFilterSupport.groups` (`macOS/Views/ContainerPickerSupportViews.swift:26-31`) filters
-  `$0.isActive`, so a task in an archived or completed list gets a popover with **no row for where it
-  is**. Milder than iOS — `ContainerPickerBadge.label` already resolves unfiltered, so the *name* is
-  right and only the correction affordance is missing. Same fix shape: `selectable(_:selectedID:)`,
-  which needs the picker to learn the current selection. **Also visible in the same function and
-  unmeasured**: the grouping is `contexts.compactMap { … $0.context?.id == context.id }` and
-  `Area.context` defaults to `nil`, so **a context-less area appears in no group at all.**
 
 - [T-535] **Nothing in the release gate ever compiles the iOS surface.** `apple-release-readiness.md` is
   the stated readiness source of truth, mentions iOS **zero** times, and both its verification commands
@@ -658,10 +596,44 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   defect** — both already resolve against unfiltered arrays — but it is the [[T-374]] near-copy those
   helpers now exist to remove, and the detail sheet's private members even share the helpers' names.
 
-- [T-537] **`clearMissingEventLinks` fetches every `AppTask` before its guard.**
-  `CalendarLinkedTaskSupport.swift:77-84` builds a full `FetchDescriptor<AppTask>` on **every**
-  `EKEventStoreChanged` and only then reaches `canTrustLookupMisses`. Hoisting the guard above the fetch
-  is one line.
+
+
+- [T-538] **The macOS sidebar drops a context-less list entirely — worse than [[T-534]]'s picker.**
+  `SidebarContextSection` derives rows from the relationship (`(context.areas ?? []).filter(\.isActive)`,
+  `macOS/Views/SidebarComponents.swift:96-97`), iterated per `Context`, and `sidebarListItem(contextID:)`
+  takes a **non-optional** id. So a list with `context == nil` is not merely un-grouped — **it is invisible
+  in the macOS sidebar.** iPad draws the same region through `CadenceSidebarLists.sections` and gives it
+  "Other". Same cause, same fix shape and same iOS-creates/macOS-inherits reachability as T-534's second
+  defect: iOS offers "None" unconditionally, macOS can neither create nor correct that state.
+
+- [T-539] **`iOSTaskDetailComponents.swift:72` prompts with a placeholder value, not a noun phrase.** Its
+  title `TextField` prompts `"Untitled task"`, where every other title prompt in the app is a noun phrase
+  ("Task title", "Note title", "Column name", "Event title"). [[T-513]] left it deliberately: capitalising
+  it would make it the only prompt phrased as a value, and folding it into `defaultTaskTitle` would freeze
+  the drift under a change that looks like cleanup. The real fix is "Task title". It is currently the
+  first entry in `cadenceUndeclaredPlaceholderLabels`; **deleting that entry is part of the fix.**
+
+- [T-540] **The duplicate-copy audit cannot see any filter-aware empty state.** Found by [[T-522]]'s own
+  agent. `CadenceEmptyStateAuditTests`' regex matches a literal placed **directly** after
+  `message:`/`title:`/`subtitle:` — so copy behind a `?:` branch is invisible, **and every filter-aware
+  empty state in the app is written in exactly that shape.** Two live examples: `"No goals yet"` and
+  `"No matching goals"` are spelled in both `GoalsView.swift` and `GoalTimelineView.swift`. Same family as
+  the vacuous detectors this session keeps finding, and inside [[T-524]]'s scope.
+
+- [T-541] **A Goals detail pane can show a goal that has no row beside it.** `iOSFeatureViews.swift` gives
+  `listPane` `count: activeGoals.count` where `activeGoals` filters `status != .done`, but `selected` ends
+  `?? goals.first`, **unfiltered**. With every goal completed the chooser says "No goals yet" while the
+  detail pane renders a done goal in full. The mirror image of [[T-514]]/[[T-534]] — there the list had no
+  row for where you are; here the detail shows what the list filtered away. **Not fixed deliberately**: the
+  fallback's unfiltered tail is load-bearing for the deleted-out-from-under-you case the code comments
+  describe, so choosing between them is a decision.
+
+- [T-542] **Three exact near-copies of `CadenceTaskComposerSupport.container(of:)` remain.**
+  `TasksPanelComponents.swift:371-373`, `SchedulePanelComponents.swift:35-37`,
+  `TaskEmbedFieldEditorPopover.swift:244-246` each spell the same three-line task-to-selection getter.
+  [[T-534]] added the shared accessor and used it at the new site only, to keep that diff reviewable.
+  **Not a defect** — all three are correct — but it is the [[T-374]] near-copy the helper now exists to
+  remove, same family as [[T-536]].
 
 
 ## Done
@@ -1552,6 +1524,94 @@ before filing**: this list has had the same ticket re-reported more than once.
   earlier build**. But those values are exactly what the reader is kept for, and the clearing is silent,
   irreversible and CloudKit-propagating.
   **Closed 2026-08-30 **by requiring evidence, not by converting the sweep to a reporter.** `CalendarEventLookup` gains `hasLoadedCalendars`, and `canTrustLookupMisses` is that conjoined with `isAuthorized` — so a store that has produced no calendars, which is exactly the state an `EKEventStoreChanged` from a permission grant leaves you in, no longer reads as "every event is gone". The question is split out as `missingEventLinks(in:calendarManager:)`, which reports and writes nothing, so the sibling's posture is reachable from the same rule. **Residue left deliberately**: one account still syncing while others have loaded leaves `allCalendars` non-empty, so a link into that account is still clearable on a miss — per-source evidence is not cheap in EventKit, and no current writer produces a non-empty `calendarEventID`.**
+
+- [T-512] **Two functions build the labels [[T-505]] just declared, and no literal sweep can see them.**
+  `iOSListDeletionSupport.swift:40` and `iOSListWindDownSupport.swift:85` are near-identical `name`
+  properties returning `"Untitled \(kind.noun)"` / `"Untitled \(noun)"`, where `noun` is
+  `"Area"`/`"Project"`/`"Context"` — so **at runtime they produce exactly `defaultAreaName`,
+  `defaultProjectName` and `defaultContextName`.** Renaming any of those three constants leaves these
+  two behind, silently. This is the [[T-500]] shape (a duplicated *function*) doubled by the sweep's own
+  stated exclusion: interpolated literals are dropped by the harvest regex **by construction**. Both
+  files' comments already claim they use "the same 'Untitled …' fallback" as each other — the claim is
+  true and nothing holds it true.
+  **Closed 2026-08-30 — **and the fix is the smaller half**. Both builders read the constants now, but the shape is held by `noSourceFileBuildsAPlaceholderLabelByInterpolation`, whose needle is **derived** from `defaultCompactTitle` rather than spelled, so renaming the family **re-points the rule instead of emptying it**. A mutation renaming `defaultAreaName` turns four tests red — the property the ticket said nothing held. Putting the mapping on `CadenceListDeletionKind` in `Shared/` was load-bearing: it is what let the macOS test target **evaluate** the labels rather than only scan for them.**
+
+- [T-513] **Two copy defects [[T-505]] deliberately did not launder.** (1) `iOSFeatureDetailViews.swift:83`
+  labels an untitled **milestone** `"Untitled Goal"` — inside `iOSEditorSection(title: "Milestones")`,
+  iterating `milestones` — while `iOSTaskDetailSheetSections.swift:65,77` and
+  `iOSTaskRowActionViews.swift:395` say `"Untitled Milestone"` for the same kind of row. (2)
+  `"Untitled task"` is lower-cased at `SchedulePanelComponents.swift:88` and
+  `macOSRootSupportViews.swift:527` (and as a `TextField` placeholder at
+  `iOSTaskDetailComponents.swift:72`) against `defaultTaskTitle`'s capital. **Both change what a user
+  reads and neither is decidable from the literal**, so both were left visible rather than folded into a
+  constant — which would have frozen the drift under a fix that looks like cleanup.
+  **Closed 2026-08-30. (1) fixed: the milestone row said `defaultGoalTitle` inside a "Milestones" section iterating `milestones` — the residue was the wrong **constant**, since [[T-505]] had already de-literalised the line. (2) **decided rather than deferred**: the two `Text(...)` sites are labels over a *value*, and 18 other surfaces render that value as "Untitled Task", so they read `defaultDisplayTitle` now. `iOSTaskDetailComponents.swift:72` is a `TextField` **prompt** — a different piece of copy, and every other title prompt in the app is a noun phrase — so it stays, recorded with its reason. See [[T-539]].**
+
+- [T-515] **The rest of the "Untitled …" family, below [[T-505]]'s ≥2-files rule.** `"Untitled List"`
+  (`TaskBundlePickerSupportViews.swift:179,211` — 2 sites, one file), `"Untitled subtask"`
+  (`MarkdownTaskEmbedDrawingSupport.swift:429,511` — 2 sites, one file), `"Untitled Column"`
+  (`iOSColumnWindDownSupport.swift:50` — 1 site). Real but weaker: **a constant with one call site is a
+  name, not a de-duplication.** Recorded so the omission is a decision rather than an oversight.
+  **Closed 2026-08-30 **by declining to widen the rule**. A constant with one call site is a name, not a de-duplication, and **no repetition threshold ever reaches `"Untitled Column"`'s single site** — so widening was the wrong instrument for the case that motivated the ticket. Replaced with the sweep's **dual**: `everyPlaceholderLabelInTheAppIsDeclaredOrRecorded` requires every `"Untitled …"` in all three targets to be declared or listed with a reason, keyed by **site** so a recorded label cannot spread. The existing sweep asks "is a declared constant re-typed?"; this asks "is every label declared?" — together there is no way left to produce one without reading a constant or writing down why not.**
+
+- [T-520] **`CadenceTodayPresentationSupport.emptyScheduleHint` asks for a tap, from `Shared/`.** It ends
+  "…tap an hour to schedule one." and lives in `Cadence/Shared/`, but has exactly **one** reader,
+  `iOSTodaySchedulePanel`. Correct today, wrong the moment a Mac surface picks it up. Move it to an
+  iOS-only constant or reword it. [[T-528]]'s `noMacReachableCopyAsksForATouchGesture` sweep covers
+  `Cadence/macOS/` only and structurally cannot see this one.
+  **Closed 2026-08-30 — **it was never actually shared**. macOS's `SchedulePanel` draws no empty state at all, so the sentence had one reader and was correct only because no Mac surface had picked it up yet. Moved to `Cadence/iOS/iOSSchedulePanelCopy.swift`, wording unchanged, deliberately outside `#if os(iOS)` so the macOS target pins the value rather than reading source. **The gap is closed generally**: `noDesktopCopyAsksForATouchGesture` is now `noMacReachableCopyAsksForATouchGesture` and walks `Cadence/Shared/` too — a shared folder's copy must be true on the desktop whether or not the desktop reads it yet. It was the only live offender there.**
+
+- [T-522] **Converge `"List not found"` and its subtitle, then delete the allowlist entry.** They are
+  duplicated in `ListDetailView.swift` and `iOSRootSidebar.swift` because
+  `CadenceDeletedSelectionGuardTests.theMacMissingListStateReusesTheSentenceIOSAlreadyShips`
+  **deliberately pins them as matching literals**, so converging means rewriting that suite's assertion
+  to read the constant instead. Doing so removes the single entry in `CadenceEmptyStateAuditTests`'
+  `emptyStateDuplicateAllowance`.
+  **Closed 2026-08-30, **allowance and its staleness check both deleted**. `missingListTitle`/`missingListSubtitle` read by both views; the glyph stays a literal because a symbol name is a picture, not a sentence. `theMacMissingListStateReusesTheSentenceIOSAlreadyShips` was **rewritten rather than removed** — it asserts convergence, which is what pinning matching literals was standing in for. `noEmptyStateSentenceIsSpelledInTwoFiles` is unconditional now and the tree has zero duplicates.**
+
+- [T-523] **`iOSGoalAttachListsSheet` branches on an untrimmed query.** It is the one *correct*
+  filter-aware empty state in the app, but a whitespace-only query still reports "No matching lists".
+  One line: `CadenceEmptyStateCopy.isNarrowedToEmpty(searchText: query, filterNarrows: false)`.
+  **Closed 2026-08-30, and the behavioural reason is sharper than the ticket's: `GoalLinkPresentation.candidateGroups` **trims before matching**, so a whitespace query returns the whole library — meaning the only reader `query.isEmpty` could mislead was one with **no lists at all**, greeted on a first run with "No matching lists / Nothing matches that search."**
+
+- [T-525] **`GoalTimelineView`'s first-run subtitle overstates what is required.** "Create a goal, then
+  set its date range." — but a goal with no end date still gets a roadmap row, rendered "No date", so
+  creating one is sufficient. Copy deliberately preserved as-is by the empty-state work rather than
+  reworded under a change that looked like cleanup.
+  **Closed 2026-08-30, **premise verified by running rather than reading**. `rows` is built from `GoalMissionGrouping.groups`, which reads no date at all, so one undated goal already leaves the empty state — it draws a rail row with a "No date" chip; only the *bar* needs both dates. New copy names a button this page's own toolbar draws, pinned by regex, and the old sentence is a `cadenceRetiredCopy` entry so it is swept app-wide rather than only here.**
+
+- [T-532] **macOS tag pickers give a fresh store no route to the default set.** The direct consequence of
+  [[T-528]]'s seed-on-demand decision, and a parity gap: `TaskTitleInlineTagPicker.swift:40` and
+  `TagPickerPopoverViews.swift:114` both render a bare `"No tags"`, while
+  `iOSTaskDetailComponents.swift:400` offers **"Add Default Tags"** in exactly that state. So a brand-new
+  macOS user meets "No tags" with no affordance — they can type to create inline or go to Settings, but
+  **the iOS pattern is the better one and macOS should match it.** Worth doing before a TestFlight build
+  if T-528's decision stands.
+  **Closed 2026-08-30. Both macOS pickers ask one `TagPickerPlaceholder.resolve` and render one row, offering **Add Default Tags** — iOS's wording — when the catalogue is empty. **The old condition read the *filtered* list**, which is why one sentence covered two unrelated states; `TaskTitleInlineTagPicker` is handed `hasActiveTags` now rather than inferring it, and the mutation reverting that inference kills a test by name. Two truths fixed in passing: a query that matched nothing says "No matching tags" (tags exist, so "No tags" was false), and the restore row no longer draws "No tags" beneath itself. **The seed call is in a Button action and nowhere else** — [[T-528]]'s `noUnpromptedCodePathSeedsTheDefaultTags` gains this file, and the mutation adding an `.onAppear` beside it kills that guard, so it demonstrably still bites. **Cost stated: the offer is click-only**, as the sentence it replaces was.**
+
+- [T-533] **Goals and Habits detail panes have [[T-519]]'s defect in its original form.**
+  `iOSFeatureViews.swift:225` and `:398` draw "Select an item from the list." **unconditionally**, while
+  the `listPane` beside them shows "No goals yet" / its habits equivalent on a fresh store. **At iPad
+  regular width a new user sees "Select an item from the list." next to a list with no items.** Same
+  one-line fix shape as `unselectedDetail`; not covered by the T-519 test, which is scoped to
+  `iOSFocusView`.
+  **Closed 2026-08-30, **observed on an iPad Pro simulator before and after** — "No goals yet" beside "No goal selected / Select an item from the list.", then both panes saying the chooser's own sentence. **The ticket's fix shape was right but its analogy was wrong**: [[T-519]] needed `if pickItems.isEmpty` because its picker can be full with nothing selected, and these two panes **cannot reach that state** — `selected` falls back through the whole collection, so `nil` means the collection is empty, which is the same `count == 0` the chooser already draws its empty panel on. A copied guard would have been a branch with a dead side. Both fallback expressions are pinned so that stops being true loudly. Copy is now one `iOSFeatureEmptyState` per screen read by **both** panes.**
+
+- [T-534] **The macOS container picker is the other half of [[T-514]].**
+  `ContainerPickerFilterSupport.groups` (`macOS/Views/ContainerPickerSupportViews.swift:26-31`) filters
+  `$0.isActive`, so a task in an archived or completed list gets a popover with **no row for where it
+  is**. Milder than iOS — `ContainerPickerBadge.label` already resolves unfiltered, so the *name* is
+  right and only the correction affordance is missing. Same fix shape: `selectable(_:selectedID:)`,
+  which needs the picker to learn the current selection. **Also visible in the same function and
+  unmeasured**: the grouping is `contexts.compactMap { … $0.context?.id == context.id }` and
+  `Area.context` defaults to `nil`, so **a context-less area appears in no group at all.**
+  **Closed 2026-08-30, **and the ticket's unmeasured second defect is the larger half**. Headline took the [[T-514]] shape: `groups` learns a **required** `selection:` and narrows both arrays through `selectable(_:selectedID:)`; mutations neutering the areas and the projects halves kill *different* tests, so the fix demonstrably reaches both. **The context-less defect is real — there is no fallback bucket in this control** (the body draws Inbox then `ForEach(groups)` and nothing else) **but the app already ships one**: `CadenceSidebarLists.sections` gives these models an "Other" section on iPad, and its doc comment already named the macOS gap. The bucket reuses that constant, keyed on the *offered* context set, which also catches a list whose context was never handed to the picker. **The reachability is asymmetric and that is the sharp part**: iOS offers "None" unconditionally in every mode and writes it; macOS's create sheet requires a context and its edit sheet has **no context control at all** — so the Mac inherits by sync a list it can neither file into nor correct. **Not observed on screen**, and deliberately: a debug build vends no AX tree, so there is no way to open the popover and a screenshot would be zero evidence. See [[T-538]] for the sidebar, which is worse.**
+
+- [T-537] **`clearMissingEventLinks` fetches every `AppTask` before its guard.**
+  `CalendarLinkedTaskSupport.swift:77-84` builds a full `FetchDescriptor<AppTask>` on **every**
+  `EKEventStoreChanged` and only then reaches `canTrustLookupMisses`. Hoisting the guard above the fetch
+  is one line.
+  **Closed 2026-08-30, guard hoisted above the fetch. [[T-529]]'s `hasLoadedCalendars` reasoning untouched and the array overload still guards, so this is the early check rather than the only one. **Pinned as source order, not behaviour, and deliberately**: the fetch is `modelContext.fetch` and no fake can count it. The assertion is scoped to that overload's own body and was validated against unmodified source first. The mutation removing the guard kills **only** that test — all six neighbouring behaviour tests stay green, which is what shows the change moved *when* the question is asked and not what it answers.**
 
 ## Cancelled
 
