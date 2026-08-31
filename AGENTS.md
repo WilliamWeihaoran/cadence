@@ -31,8 +31,11 @@ Tests must be scoped to `CadenceTests`:
   -derivedDataPath /tmp/cadence-test-$$ -only-testing:CadenceTests
 ```
 
-Unscoped tests pull in `CadenceUITests`. It launches now (automation granted 2026-08-31) but flakes
-on activation unless run via `scripts/xcb.sh`, which takes the test-host lock. Baseline: zero warnings.
+Scope unit runs to `CadenceTests` to keep them fast and deterministic — **not** because the UI target
+cannot run. `CadenceUITests` **does** run on macOS since the one-time automation grant on 2026-08-31
+(4 tests, 2 skipped behind `CADENCE_RUN_INTERACTIVE_UI_TESTS=1`). It launches a real `Cadence.app`, so
+it MUST hold the test-host lock: run `scripts/xcb.sh <id> test -only-testing:CadenceUITests`, never a
+bare `xcodebuild`. Warning baseline is zero; any new warning is a regression.
 
 ## Where Things Live
 
@@ -145,15 +148,16 @@ Before treating a red run as a code regression, check:
   builds. Re-run.
 - Thousands of zero-second test failures and multiple `My Mac - Cadence (...)` host PIDs: concurrent
   macOS test hosts. Re-run under `scripts/test-host-lock.sh`.
-    **The 2026-08-28 reason here is stale**: it spawned 2 hosts then; on Xcode 26.6 it spawns **one**
-    and parallelises in-process (re-measured 2026-08-31, twice). `parallelizable = "NO"` stays anyway —
-    parallel still fails one test deterministically (a store assertion across a 60ms suspension in a
-    `@MainActor` suite) and buys only 1.27x wall clock for ~9x the CPU. Do not re-enable per-invocation.
-  It also changes the log format from `✘ Test name()` to `Test case 'Suite/name()' failed`, so
-  failure greps written for the serial format silently match nothing.
+    Keep `parallelizable = "NO"`; it also changes the log format, so serial-format failure greps
+    silently match nothing. Measurements and reasoning: `docs/AGENTS_REFERENCE.md`.
 - A few zero-second failures and one host PID: inspect the `.xcresult`; the test runner may have
   exited early.
 - UI-test failures in an ordinary test run: the run was not scoped to `CadenceTests`.
+- **`CadenceUITests` is flaky — roughly 1 run in 4 fails at `app.wait(for: .runningForeground, timeout: 10)`**
+  (`CadenceUITests.swift:74` in `launchApp`, and `CadenceUITestsLaunchTests.swift:30`). The app never
+  reaches the foreground, so nothing downstream runs and the failure gets misattributed to whatever the
+  test was about to assert — that cost a whole ticket on 2026-08-31. **A red UI run is not by itself
+  evidence of a regression. Re-run before believing it**, and re-run under the lock.
 - Compile failures that name your file are real until proven otherwise.
 - **Count test hosts with `pgrep -f '^/Applications/.*/xcodebuild test'`.** A loose
   `pgrep -f xcodebuild` matches any script whose own command text contains the word — including the
@@ -163,13 +167,9 @@ Before treating a red run as a code regression, check:
   introduced warnings. Only trust a warning count from a run that actually rebuilt the file you
   edited — check the log for its `SwiftCompile`/`CompileSwift` line before quoting the number.
 - **Count compile errors with `grep -cE '\.swift:[0-9]+:[0-9]+: error:'`, not `grep -c 'error:'`.**
-  A failing test whose message contains the word "error" — e.g. `Caught error: .notFound(...)` from
-  a source scan — matches the loose pattern, so a genuine mutation kill reads as a build break and
-  gets thrown away. The loose pattern only ever over-counts, so it never launders a bad result into
-  a good one; it discards good evidence, which is quieter and easier to miss.
-- `sleep` is blocked in a **foreground** tool call — a poll loop there burns every iteration instantly
-  and exits 0 having watched nothing, reading like "the condition never fired". It **works** in a
-  detached job and in a `Monitor` script (measured 2026-08-30), so `acquire` waits from a background runner.
+  The loose pattern over-counts and discards good evidence quietly — why, in `docs/AGENTS_REFERENCE.md`.
+- `sleep` is blocked in a **foreground** tool call (a poll loop there exits 0 having watched nothing);
+  it works in a detached job or `Monitor` script, so `acquire` waits from a background runner.
 
 Full incident details are in `docs/AGENTS_REFERENCE.md`.
 

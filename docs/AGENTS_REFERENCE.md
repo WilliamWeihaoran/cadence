@@ -478,3 +478,33 @@ Good refactor targets are files that combine orchestration, state, row rendering
 - service: persistence mutations, deletion flows, EventKit interactions, migrations
 
 After structural refactors, run `git diff --check` and the macOS build command above.
+
+## Why `parallelizable = "NO"` stays (moved out of AGENTS.md, 2026-08-31)
+
+The original 2026-08-28 reason — "it spawns 2 test hosts" — is **stale**. Re-measured twice on
+2026-08-31 against Xcode 26.6: it spawns **one** host and parallelises in-process.
+
+The ban stays for two other reasons that are still true:
+
+- Parallel still fails one test **deterministically** — a store assertion across a 60ms suspension in
+  a `@MainActor` suite.
+- It buys only **1.27x** wall clock for roughly **9x** the CPU.
+
+It also changes the log format from `✘ Test name()` to `Test case 'Suite/name()' failed`, so any
+failure grep written for the serial format silently matches nothing — a green-looking run that
+counted zero results. Do not re-enable it per-invocation.
+
+## Why the strict compile-error pattern (moved out of AGENTS.md, 2026-08-31)
+
+Use `grep -cE '\.swift:[0-9]+:[0-9]+: error:'`, never `grep -c 'error:'`.
+
+A failing test whose message merely contains the word "error" — e.g. `Caught error: .notFound(...)`
+from a source scan — matches the loose pattern. A genuine mutation kill then reads as a build break
+and gets thrown away.
+
+The direction of the bias matters: the loose pattern only ever **over**-counts, so it never launders
+a bad result into a good one. It discards good evidence instead, which is quieter and easier to miss
+than a false green.
+
+Companion rule, same section: a crashed `swift-frontend` emits **no** `error:` lines at all, so a
+strict count of 0 does not mean success. Also grep for `please submit a bug report`.

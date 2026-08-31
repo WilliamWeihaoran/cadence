@@ -72,10 +72,21 @@ Tests must be scoped to `CadenceTests`:
   -derivedDataPath /tmp/cadence-test-$$ -only-testing:CadenceTests
 ```
 
-Unscoped tests pull in `CadenceUITests`. That target could not run until 2026-08-31, when the
-one-time macOS automation grant was given; it runs now, but flakes on app activation unless
-launched through `scripts/xcb.sh`, which takes the test-host lock. The expected warning
-baseline is zero; any new warning is a regression.
+Scope unit runs to `CadenceTests` to keep them fast and deterministic. That is the whole reason —
+the old claim that `CadenceUITests` "cannot launch headless" is **false as of 2026-08-31**, when the
+one-time macOS automation authorisation was granted. That target now runs to completion: 4 tests, 2
+of them skipped behind `CADENCE_RUN_INTERACTIVE_UI_TESTS=1`.
+
+A UI-test run launches a real `Cadence.app`, so it must hold the test-host lock. Run it as
+`scripts/xcb.sh <id> test -only-testing:CadenceUITests` — **never** a bare `xcodebuild`, which takes
+no lock and will contend with any other run in flight.
+
+`CadenceUITests` is currently **flaky**: about 1 run in 4 fails at
+`app.wait(for: .runningForeground, timeout: 10)` (`CadenceUITests.swift:74`,
+`CadenceUITestsLaunchTests.swift:30`). A red UI-test run is therefore not by itself evidence of a code
+regression — re-run before believing it.
+
+The expected warning baseline is zero; any new warning is a regression.
 
 ## When To Read The Long Reference
 
