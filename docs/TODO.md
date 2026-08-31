@@ -807,29 +807,31 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Use `strippingComments`, never `codeOnly` — `codeOnly` blanks string literals too, which is what
   made an earlier copy scan permanently and silently green.
 
-- [T-574] **macOS: pressing "Save API Key" with the field empty DELETES your saved key.**
-  `Cadence/macOS/Views/SettingsSectionViews.swift:220` → `Services/AI/AISettingsManager.swift:123-128`
-  (an empty string routes to `removeAPIKey()`). **When a key is already saved the field is empty by
-  design** — placeholder "Saved in Keychain" — so this is the *default state of the screen*. No
-  confirmation; the status line then reads "API key removed." **iOS is already correct**
-  (`iOSSettingsTemplateAndListSections.swift:428` disables Save on an empty draft). Copy the guard.
-  Highest-severity finding of the 2026-08-31 sweep: silent credential loss, one-line fix.
+- [T-574] **CLOSED 2026-08-31 (`54cc616`).** Premise reproduced exactly. `saveAPIKey` now throws
+  `AISettingsError.emptyAPIKey` on an empty/whitespace draft instead of falling through to
+  `removeAPIKey()`; macOS's Save button is additionally disabled and dimmed on a blank draft, matching
+  what `iOSActionButton(isDisabled:)` already did. **Both halves were fixed deliberately** — a disabled
+  button is not testable in isolation, and the credential loss lived in the manager, so fixing only the
+  button would have left the hazard reachable from any other caller. `AIAPIKeySaveGuardTests` pins the
+  stored key surviving `""`, `"   "` and `"\n\t "`, that `saveAPIKey`'s body never reaches the removal
+  path, and that neither platform offers a live Save on a blank draft. Two mutations, three tests
+  killed, each confirmed compiled.
 
-- [T-575] **"Delete everything" needs a typed phrase on iPhone and one click on the Mac — and the Mac
-  deletes more.** `SettingsDataSafetySection.swift:150-161` (plain `confirmationDialog`, destructive
-  button live immediately) vs `iOSDataResetSettingsSection.swift:104-172` (modal + typed "DELETE").
-  The shared gate `PrivacyDataResetConfirmation` (`CadencePrivacyDataResetService.swift:56-67`) has
-  **exactly one caller**. macOS additionally signs the Apple account out (`:239`), so **the less
-  guarded path is the more destructive one.** iOS is right; route macOS through the same gate.
+- [T-575] **CLOSED 2026-08-31 (`e509ae2`).** macOS's one-click `confirmationDialog` replaced by
+  `SettingsDataResetConfirmationSheet` behind `PrivacyDataResetConfirmation.authorizes` — **the shared
+  gate now has two callers instead of one.** iOS untouched, so the guarded path was raised to meet the
+  unguarded one rather than the reverse. The doc comment calling the split deliberate, and the matching
+  sentence in `docs/app-review-notes.md`, were corrected rather than left asserting machinery the code
+  no longer has — the exact defect class [[T-565]] exists to catch. `AppStoreReviewReadinessTests`' pin
+  on "requires the word DELETE to be typed" still passes. One mutation, one test killed.
 
-- [T-576] **macOS Settings > Notifications can say "access required" forever after you grant it.**
-  `SettingsNotificationsSection.swift:15-22` has no refresh hook of any kind; iOS has
-  `.onAppear { refreshAuthorizationState() }`. Flow: denied -> "Enable Notifications" -> system won't
-  re-prompt -> app opens System Settings -> user enables -> returns -> card unchanged until relaunch.
-  **Neither platform is fully right.** The correct pattern is one file over:
-  `.remindersAuthorizationLifecycle(...)` (`CadenceRemindersPresentationSupport.swift:549-554`)
-  refreshes on appear **and** on foreground, and both Reminders panes use it. Give Notifications the
-  same two-half modifier on both platforms; macOS is the urgent half.
+- [T-576] **CLOSED 2026-08-31 (`19fd461`).** Premise reproduced on **both** platforms. T-253's
+  hook was **generalised rather than copied**: new `Cadence/Shared/CadenceAuthorizationLifecycle.swift`
+  takes a refresh *closure* instead of a `RemindersManager`, because the two managers share no protocol
+  and disagree on async-ness — but agree on *when*. That is the right seam. All four reminders call
+  sites are unchanged; `notificationsAuthorizationLifecycle` is new on both platforms, so both panes now
+  re-derive on appear **and** on foreground. Reminders file keeps a tombstone. Two mutations, three
+  tests killed.
 
 - [T-577] **macOS Settings > Lists shows a nameless row with a blank second line.**
   `SettingsListManagementSections.swift:540,555,557`. Two gaps: (a) macOS passes `area.name`/
