@@ -260,6 +260,43 @@ struct CadenceOrderReassignmentTests {
         )
         #expect(source.contains("CadenceInlineFailureNotice(text: contextOrderFailureNotice)"))
     }
+
+    // MARK: - The contexts pane commits everything it writes
+
+    /// **Archiving a context is a write, so it commits (T-583).**
+    ///
+    /// macOS handed the section `{ $0.isArchived = true }` and `{ $0.isArchived = false }` — two
+    /// field writes with no commit anywhere in reach — twelve lines above `moveContext`,
+    /// `reopenArea` and `reopenProject`, which all save. Autosave is not the answer that makes both
+    /// halves right: `CadenceSavedLinkPersistence` records what "flushes eventually" costs when the
+    /// app quits first (T-327), and iOS's own `archive(_:)`/`restore(_:)` already commit.
+    ///
+    /// The `try?` is deliberate and is what `AGENTS.md`'s rule leaves alone: no insert, no delete,
+    /// nothing after it claiming success. `CadenceSaveCommitDisciplineTests` is what would fail if
+    /// that ever stopped being true, which is why this test asserts the commit exists rather than
+    /// re-deriving the rule.
+    @Test func theMacOSContextsPaneCommitsItsArchiveAndRestore() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/SettingsView.swift")
+
+        for name in ["archiveContext", "restoreContext"] {
+            let body = try CadenceCommitSurfaceScan.declarationBody(named: name, in: source)
+            #expect(body.contains("isArchived = "), "non-vacuity: \(name) no longer writes the field")
+            #expect(
+                body.contains("try? modelContext.save()"),
+                "\(name) leaves its write for autosave to flush"
+            )
+        }
+
+        // Reached from the section, by name rather than by a closure that could grow a body again.
+        #expect(source.contains("onArchiveContext: archiveContext(_:)"))
+        #expect(source.contains("onRestoreContext: restoreContext(_:)"))
+        // And those two functions are the *only* places the field is written here, so an inline
+        // closure cannot come back beside them in any spelling.
+        #expect(
+            CadenceSourceScan.matchCount("isArchived = ", in: source) == 2,
+            "a context is archived somewhere other than archiveContext/restoreContext"
+        )
+    }
 }
 
 /// A bare `Identifiable` row, so the arithmetic is tested without a `ModelContext` in the way.

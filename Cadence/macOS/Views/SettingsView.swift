@@ -181,9 +181,9 @@ struct SettingsView: View {
                 activeContexts: contexts.filter { !$0.isArchived },
                 archivedContexts: contexts.filter(\.isArchived),
                 onMoveContext: moveContext(_:before:),
-                onArchiveContext: { $0.isArchived = true },
+                onArchiveContext: archiveContext(_:),
                 onDeleteContext: { pendingDeleteContext = $0 },
-                onRestoreContext: { $0.isArchived = false },
+                onRestoreContext: restoreContext(_:),
                 onCreateContext: { showCreateContext = true }
             )
         case .tags:
@@ -264,6 +264,14 @@ struct SettingsView: View {
     /// iPhone: the same "insert before" is `toIndex` upwards and `toIndex - 1` downwards, and a
     /// second hand-written copy of that on the other platform is how two lists come to disagree
     /// about where a dropped row lands.
+    ///
+    /// **The swallowed commit here is the deliberate one** (T-581 left the question open, T-583
+    /// answered it): `order` is a field on rows the store already holds, nothing after the save
+    /// tells the user it worked, so this is the case the `try? save()` rule leaves alone — the same
+    /// answer `archiveContext` below gets, for the same reason. iOS's `moveContext(_:by:)` does
+    /// commit its reorder through `CadencePendingChangePersistence` and shows a notice; that
+    /// divergence is known and is a question about the *rule*, not about this pane, so it is not
+    /// settled by making this one file disagree with its own four neighbours.
     private func moveContext(_ draggedID: UUID, before targetID: UUID) {
         guard let ordered = CadenceOrderReassignment.moved(contexts, draggedID, before: targetID) else { return }
 
@@ -271,6 +279,36 @@ struct SettingsView: View {
             context.order = index
         }
 
+        try? modelContext.save()
+    }
+
+    /// Archive a context, and commit it.
+    ///
+    /// **The convention these panes follow, stated once (T-583).** Every mutation made here commits
+    /// where it happens; existence changes report, field edits commit quietly.
+    ///
+    /// - *Commit where it happens.* These two used to be inline `{ $0.isArchived = true }` closures
+    ///   with no save at all, twelve lines above four siblings that all save. Autosave is not a
+    ///   defence: no `autosaveEnabled` is set anywhere, so the default `true` does apply, but
+    ///   "eventually" is the whole problem — `CadenceSavedLinkPersistence` measured it in T-327,
+    ///   where a delete flushed by nobody came back on next launch.
+    /// - *Quietly.* `try?` rather than `CadencePendingChangePersistence` because neither site
+    ///   inserts, deletes, or claims success afterwards — the case `AGENTS.md`'s `try? save()` rule
+    ///   explicitly leaves alone. `reopenArea`, `reopenProject` and `moveContext` are the same
+    ///   shape, and so are iOS's `archive(_:)`/`restore(_:)` and macOS's own
+    ///   `SettingsTagsSection.archive(_:)`/`restore(_:)`; a fifth spelling here would be the
+    ///   deviation, not the fix.
+    /// - *Existence changes report.* Deleting a context is not a field edit, so it goes through
+    ///   `report(.context)` and says so under the header. That contrast is the point: the panes are
+    ///   consistent, not uniformly silent.
+    private func archiveContext(_ context: Context) {
+        context.isArchived = true
+        try? modelContext.save()
+    }
+
+    /// Unarchive a context. See `archiveContext(_:)` for why the commit is here and why it is `try?`.
+    private func restoreContext(_ context: Context) {
+        context.isArchived = false
         try? modelContext.save()
     }
 
