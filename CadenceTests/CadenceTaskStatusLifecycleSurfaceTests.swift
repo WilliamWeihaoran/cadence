@@ -124,16 +124,31 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
 
     /// Four places name what a tap or a swipe on the completion control will do. All four now ask
     /// `isFinishedTask`, so none of them can promise "Done" on a task the tap will restore.
+    ///
+    /// **`iOSTaskViews` no longer asks the predicate, and that is an upgrade rather than a regression
+    /// (T-611).** Its circle now reads `CadenceTaskCompletionState.accessibilityActionLabel`, whose
+    /// five branches mirror `handleTap()` — including the two this binary predicate cannot express:
+    /// mid-fill, a second tap *cancels*, so `isFinishedTask` would name the wrong action. macOS's
+    /// circle made the same move in T-594. The rule this test exists to enforce is "the label names
+    /// what the gesture will do"; a state keyed on the gesture serves that strictly better than a
+    /// predicate keyed on the outcome, so the file is pinned against the shared property below
+    /// instead of being dragged back to the predicate.
+    ///
+    /// It stays in the `isDone`-branching sweep further down — that half is still exactly right.
     @Test func everyLabelForTheCompletionGestureReadsTheSamePredicate() throws {
         try expectOccurrences(
             of: "CadenceTaskQuerySupport.isFinishedTask(task)",
             at: [
                 // One `let isFinished`, read by the swipe's title, image and tint.
                 "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
-                "Cadence/iOS/iOSTaskViews.swift": 1,
                 "Cadence/iOS/iOSTaskDetailComponents.swift": 1,
                 "Cadence/iOS/iOSBoardCards.swift": 1
             ]
+        )
+        // The file that left the predicate must be reading the shared answer, not spelling its own.
+        try expectOccurrences(
+            of: "glyph.state.accessibilityActionLabel",
+            at: ["Cadence/iOS/iOSTaskViews.swift": 1]
         )
         try expectOccurrences(of: "isFinished ?", at: ["Cadence/iOS/iOSTaskRowActionViews.swift": 3])
 
