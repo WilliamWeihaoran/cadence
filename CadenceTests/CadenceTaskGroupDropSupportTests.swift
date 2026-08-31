@@ -531,4 +531,76 @@ struct CadenceTaskGroupDropSupportTests {
         #expect(coordinator.handleSectionDrop(payload: payload, dropKey: "list:inbox|date:today"))
         #expect(task.scheduledDate == todayKey)
     }
+
+    /// **All Tasks and Inbox carried the same silent accept, one screen over (T-607).**
+    ///
+    /// `TasksListView` wrote its own copy of `handleSectionDrop` inside its body, and the copy is
+    /// exactly how the defect outlived T-591: it discarded what `assignTask` answered and returned
+    /// `true` unconditionally, so a header whose list is gone highlighted, took the row and left it
+    /// where it was. Both surfaces route through the coordinator above now.
+    ///
+    /// The key is built the way the page builds it — `"list:\(group.id)"` over
+    /// `TasksPanelSupport.listGroups` — rather than typed out here. A test that invents its own
+    /// vocabulary cannot notice the page changing its.
+    @Test func anAllTasksListHeaderRefusesADropWhoseListIsNoLongerThere() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let project = Project(name: "Website")
+        let task = AppTask(title: "Draft")
+        task.project = project
+        context.insert(project)
+        context.insert(task)
+
+        let group = try #require(TasksPanelSupport.listGroups(from: [task], contexts: []).first)
+        let dropKey = "list:\(group.id)"
+        #expect(dropKey == "list:p_\(project.id.uuidString)", "the page's own key vocabulary moved")
+
+        func coordinator(projects: [Project]) -> TasksPanelDropCoordinator {
+            TasksPanelDropCoordinator(
+                allTasks: [task],
+                taskIDFromPayload: { TasksPanelSupport.taskID(from: $0) },
+                assignTask: { dropped, key in
+                    TasksPanelSupport.assignTask(
+                        dropped,
+                        for: key,
+                        todayKey: self.todayKey,
+                        areas: [],
+                        projects: projects,
+                        modelContext: context
+                    )
+                },
+                reorderTask: { _, _, _ in }
+            )
+        }
+        let payload = TasksPanelSupport.taskDragPayload(for: task)
+
+        // The list is still there: the drop lands, so "refuses" cannot be satisfied by refusing
+        // everything.
+        #expect(coordinator(projects: [project]).handleSectionDrop(payload: payload, dropKey: dropKey))
+        // And gone — the state a stale header holds after a list is deleted out from under it.
+        #expect(coordinator(projects: []).handleSectionDrop(payload: payload, dropKey: dropKey) == false)
+    }
+
+    /// The other half of T-607, and the half a value test cannot reach: **the page must not keep
+    /// its own copy of the decision.**
+    ///
+    /// The copy is what made the bug invisible — `TasksPanelDropCoordinator` was fixed by T-591 and
+    /// All Tasks did not read it. So this reads the call site: the section handler is the
+    /// coordinator's, and there is no second `assignTask(droppedTask` in the file to answer over.
+    @Test func theMergedTasksListRoutesBothDropsThroughTheSharedCoordinator() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksListView.swift")
+        )
+        #expect(source.contains("struct TasksListView: View"), "non-vacuity: wrong file read")
+
+        #expect(
+            source.contains("onDropOnSectionPayload: coordinator.sectionDropHandler(for: section.dropKey)"),
+            "All Tasks / Inbox no longer take the coordinator's section handler"
+        )
+        #expect(source.contains("coordinator.handleTaskDrop("))
+        #expect(
+            CadenceSourceScan.matchCount(#"assignTask\(droppedTask"#, in: source) == 0,
+            "the page is deciding a drop for itself again — that is the T-607 copy"
+        )
+    }
 }

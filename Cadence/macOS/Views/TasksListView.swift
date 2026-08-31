@@ -125,8 +125,27 @@ struct TasksListView: View {
         }
     }
 
-    private var tasksByID: [UUID: AppTask] {
-        Dictionary(uniqueKeysWithValues: visibleTaskUniverse.map { ($0.id, $0) })
+    /// **Both drop decisions, on the tested type rather than in this body (T-607).**
+    ///
+    /// These two closures were written out here, and they were a line-for-line copy of
+    /// `TasksPanelDropCoordinator.handleSectionDrop` / `handleTaskDrop` — with one difference that
+    /// the copy is exactly how it survived: the section handler ignored what `assignTask` answered
+    /// and returned `true` unconditionally, which is the silent accept T-591 removed from Today's
+    /// headers. A drop key this surface cannot resolve now bounces the row here too.
+    ///
+    /// `allTasks:` is this page's **own** universe, not the store's, which is what `taskLookup`
+    /// bought: the decode is the lenient one (a bare UUID, as the kanban card and the month-grid
+    /// chip emit), so a task from some other surface has to fail *some* check, and failing the
+    /// membership lookup is a stronger check than the payload prefix was.
+    private var dropCoordinator: TasksPanelDropCoordinator {
+        TasksPanelDropCoordinator(
+            allTasks: visibleTaskUniverse,
+            taskIDFromPayload: { taskID(from: $0) },
+            assignTask: { task, dropKey in assignTask(task, for: dropKey) },
+            reorderTask: { droppedID, targetID, scopeTasks in
+                reorderTask(droppedID: droppedID, targetID: targetID, scopeTasks: scopeTasks)
+            }
+        )
     }
 
     /// The Reminders strip is Inbox's and only Inbox's. It is what makes an inbox an *inbox* —
@@ -217,7 +236,7 @@ struct TasksListView: View {
         let visibleTasks = activeTasks
         let completedCount = completedTaskCount
         let visibleCompletedTasks = isCompletedCollapsed ? [] : completedTasks
-        let taskLookup = tasksByID
+        let coordinator = dropCoordinator
 
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -234,22 +253,14 @@ struct TasksListView: View {
                         dragOverTaskID: $dragOverTaskID,
                         onToggle: { toggleSection(section.id) },
                         taskDragPayload: taskDragPayload,
-                        onDropOnSectionPayload: { payload in
-                            guard let dropKey = section.dropKey,
-                                  let droppedID = taskID(from: payload),
-                                  let droppedTask = taskLookup[droppedID] else { return false }
-                            assignTask(droppedTask, for: dropKey)
-                            return true
-                        },
+                        onDropOnSectionPayload: coordinator.sectionDropHandler(for: section.dropKey),
                         onDropOnTaskPayload: { payload, targetTask in
-                            guard let droppedID = taskID(from: payload),
-                                  droppedID != targetTask.id,
-                                  let droppedTask = taskLookup[droppedID] else { return false }
-                            if let dropKey = section.dropKey {
-                                assignTask(droppedTask, for: dropKey)
-                            }
-                            reorderTask(droppedID: droppedID, targetID: targetTask.id, scopeTasks: section.tasks)
-                            return true
+                            coordinator.handleTaskDrop(
+                                payload: payload,
+                                targetTask: targetTask,
+                                scopeTasks: section.tasks,
+                                dropKey: section.dropKey
+                            )
                         }
                     )
                 }
@@ -398,7 +409,9 @@ struct TasksListView: View {
         )
     }
 
-    private func assignTask(_ task: AppTask, for dropKey: String) {
+    /// Answers whether anything resolved — see `dropCoordinator`. Was `Void`, which threw away the
+    /// only signal a header has that the key it handed out named nothing.
+    private func assignTask(_ task: AppTask, for dropKey: String) -> Bool {
         TasksPanelSupport.assignTask(
             task,
             for: dropKey,
@@ -438,7 +451,10 @@ private struct TasksListSectionView: View {
     @Binding var dragOverTaskID: UUID?
     let onToggle: () -> Void
     let taskDragPayload: (AppTask) -> String
-    let onDropOnSectionPayload: (String) -> Bool
+    /// `nil` when the section names nothing a task can be moved *into* — see
+    /// `TasksListSection.dropKey`. Optional rather than a `dropKey` guard written out a second
+    /// time here, which is the shape `TasksPanelIntentSectionView` already takes.
+    let onDropOnSectionPayload: ((String) -> Bool)?
     let onDropOnTaskPayload: (String, AppTask) -> Bool
 
     var body: some View {
@@ -472,7 +488,7 @@ private struct TasksListSectionView: View {
             .padding(.top, section.listGroup == nil ? 16 : 20)
             .padding(.bottom, 8)
             .dropDestination(for: String.self) { items, _ in
-                guard let payload = items.first else { return false }
+                guard let onDropOnSectionPayload, let payload = items.first else { return false }
                 return onDropOnSectionPayload(payload)
             }
 
