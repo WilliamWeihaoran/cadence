@@ -156,6 +156,17 @@ struct iOSSchedulePanel: View {
             .padding(.trailing, 4)
             .padding(.bottom, 12)
             .id(Self.quickCreateAnchorID)
+            // **T-589.** "Add a title first." used to stay red under the field while you typed the
+            // title it was asking for. `selectQuickCreateStart` and `cancelQuickCreate` were the
+            // only two clears, so the one edit that answers the complaint — typing — did not.
+            // The notice is about the field's *current* contents; the moment they change it is
+            // stating something that is no longer true, whichever of the two messages it is
+            // carrying. Attached to the composer rather than to the pane because the title can
+            // only change while the composer is up, and a clear that outlives its own field is the
+            // shape this is fixing.
+            .onChange(of: quickCreateTitle) { _, _ in
+                quickCreateError = nil
+            }
         }
     }
 
@@ -291,6 +302,13 @@ private struct iOSScheduleQuickCreateBar: View {
                     .foregroundStyle(Theme.text)
                     .focused($isFocused)
                     .submitLabel(.done)
+                    // **Deliberately not guarded the way the `+` beside it is disabled** (T-589).
+                    // The button can refuse in a way you can see: it greys out, so an empty title
+                    // has already been answered before you reach for it. Return has no such
+                    // affordance, so guarding it would make the key do nothing at all and look
+                    // broken — the "inert control, no word on it" failure T-470/T-471 went through
+                    // this app removing. `create` reports instead, and the notice now clears on
+                    // the next keystroke.
                     .onSubmit(create)
                     .padding(.horizontal, 10)
                     .frame(height: 44)

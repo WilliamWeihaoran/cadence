@@ -643,3 +643,79 @@ struct CadenceCreateTaskCommitSurfaceTests {
         ) == 0)
     }
 }
+
+/// **T-589.** An inline notice that outlives the thing it is complaining about.
+///
+/// `iOSSchedulePanel`'s timed-task composer draws `quickCreateError` under its title field, and
+/// the two clears it had — `selectQuickCreateStart` and `cancelQuickCreate` — are both about the
+/// *composer*, not about the field. So "Add a title first." sat there in red while you typed the
+/// title, which is the one edit that answers it. Reachable in one keystroke: the `+` is disabled
+/// on a whitespace-only title, but `.onSubmit(create)` on the field is not, so Return with an
+/// empty field posts the notice and nothing takes it down.
+///
+/// Same family as the tests above and the same reason for being a scan: `Cadence/iOS/` is behind
+/// `#if os(iOS)` and this target builds for macOS, so the view cannot be compiled here.
+///
+/// **Return stays unguarded, deliberately**, and that is the other half of the fix. Disabling the
+/// button is a visible refusal; silently swallowing Return is an inert control with no word on it,
+/// which is exactly what T-470 and T-471 went through this app removing. Return reports, and the
+/// report now goes away by itself.
+struct CadenceScheduleComposerNoticeTests {
+    private func panelSource() throws -> String {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
+        #expect(raw.count > 400, "iOSTodaySchedulePanel.swift read as \(raw.count) characters")
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped != raw, "the comment stripper removed nothing")
+        #expect(stripped.count == raw.count, "the stripper changed the length")
+        return stripped
+    }
+
+    @Test func typingTheTitleClearsTheNoticeThatAsksForOne() throws {
+        let source = try panelSource()
+
+        #expect(
+            source.contains("\"Add a title first.\""),
+            "the notice this is about is no longer spelled here — re-point the test or delete it"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"onChange\(of: quickCreateTitle\)[^}]*quickCreateError = nil"#,
+                in: source
+            ) == 1,
+            "nothing clears quickCreateError when the title changes"
+        )
+    }
+
+    /// The notice is still posted rather than swallowed: Return on an empty field says something.
+    @Test func returnOnAnEmptyFieldStillReportsRatherThanDoingNothing() throws {
+        let source = try panelSource()
+
+        #expect(source.contains(".onSubmit(create)"), "the field no longer submits")
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "createScheduledTask", in: source),
+            "could not find createScheduledTask()"
+        )
+        #expect(body.contains("quickCreateError = \"Add a title first.\""))
+        #expect(
+            CadenceSourceScan.matchCount(#"trimmedTitle\.isEmpty"#, in: body) == 0,
+            "createScheduledTask() grew its own empty-title guard, which makes the notice unreachable"
+        )
+    }
+
+    /// The needles match the spelling they hunt and miss the one they protect.
+    @Test func theComposerNoticeNeedlesMatchTheOldSpellingOnly() {
+        let clearPattern = #"onChange\(of: quickCreateTitle\)[^}]*quickCreateError = nil"#
+        #expect(CadenceSourceScan.matchCount(
+            clearPattern,
+            in: ".onChange(of: quickCreateTitle) { _, _ in\n quickCreateError = nil\n }"
+        ) == 1)
+        #expect(CadenceSourceScan.matchCount(
+            clearPattern,
+            in: ".onChange(of: quickCreateStartMin) { _, _ in\n quickCreateError = nil\n }"
+        ) == 0)
+        #expect(CadenceSourceScan.matchCount(
+            clearPattern,
+            in: ".onChange(of: quickCreateTitle) { _, _ in\n didPlaceInitialScroll = false\n }"
+        ) == 0)
+    }
+}
