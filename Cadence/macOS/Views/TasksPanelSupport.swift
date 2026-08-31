@@ -83,6 +83,23 @@ enum TaskPickerHighlightSupport {
     }
 }
 
+/// One field a drop key asks `TasksPanelSupport.assignTask` to set.
+///
+/// It exists so the parse and the mutation are separable. A drop key is compound — Today's list
+/// headers say `list:p_<uuid>|date:today` — and reading the whole of one as a single `list:` value
+/// was a bug nothing could catch, because the only way to observe the parse was to drag a row in
+/// the running app and notice it had not moved (T-591). Resolving to these first makes the parse a
+/// value a test can read.
+enum TasksPanelDropAssignment: Equatable {
+    case inbox
+    case area(UUID)
+    case project(UUID)
+    case scheduleToday
+    case pushToScheduled
+    case clearSchedule
+    case priority(TaskPriority)
+}
+
 enum TasksPanelSupport {
     /// `CadenceTaskQuerySupport.listGroupOrder`, not a second copy of it. Today groups by list too
     /// now (T-305), and two by-list surfaces that ordered their groups differently is exactly the
@@ -233,6 +250,23 @@ enum TasksPanelSupport {
         try? modelContext.save()
     }
 
+    /// Moves `task` to everything `dropKey` names, and reports whether any of it landed.
+    ///
+    /// **A drop key is compound.** Today's group headers hand out `list:p_<uuid>|date:today` — the
+    /// list *and* the day, because a task dropped on a Today list group has to be filed in that
+    /// list without vanishing off the page it was dropped on
+    /// (`CadenceTaskDropSupport.dropKey(forGroup:)` explains why the header says both). This read
+    /// the whole string as one `list:` value, hunted for a project whose `uuidString` was
+    /// `"<uuid>|date:today"`, found none, and fell out of every branch — every Today list header
+    /// accepted drops and moved nothing (T-591). Parts are split on
+    /// `CadenceTaskDropSupport.separator` and applied one at a time now, the same way
+    /// `CadenceTaskDropSupport.seed(forDropKey:)` has always read them for the *seed* path.
+    ///
+    /// **The return value is what stops that going quiet again.** A key that resolves to nothing —
+    /// an unknown vocabulary, or a list id no longer in `areas`/`projects` — must not be reported
+    /// as a drop that happened; see `TasksPanelDropCoordinator.handleSectionDrop`, which used to
+    /// answer `true` unconditionally and is the reason this was invisible for so long.
+    @discardableResult
     static func assignTask(
         _ task: AppTask,
         for dropKey: String,
@@ -240,31 +274,91 @@ enum TasksPanelSupport {
         areas: [Area],
         projects: [Project],
         modelContext: ModelContext
-    ) {
-        if dropKey.hasPrefix("list:") {
-            let listID = String(dropKey.dropFirst(5))
-            if listID == "inbox" {
-                task.area = nil
-                task.project = nil
-                task.context = nil
-            } else if listID.hasPrefix("a_") {
-                let areaID = String(listID.dropFirst(2))
-                if let target = areas.first(where: { $0.id.uuidString == areaID }) {
-                    task.area = target
-                    task.project = nil
-                    task.context = target.context
-                }
-            } else if listID.hasPrefix("p_") {
-                let projectID = String(listID.dropFirst(2))
-                if let target = projects.first(where: { $0.id.uuidString == projectID }) {
-                    task.project = target
-                    task.area = nil
-                    task.context = target.resolvedContext
-                }
+    ) -> Bool {
+        var applied = false
+        for assignment in dropAssignments(forDropKey: dropKey) {
+            let didApply = apply(
+                assignment,
+                to: task,
+                todayKey: todayKey,
+                areas: areas,
+                projects: projects,
+                modelContext: modelContext
+            )
+            applied = applied || didApply
+        }
+        guard applied else { return false }
+        try? modelContext.save()
+        return true
+    }
+
+    /// What a drop key asks for, resolved before anything is touched.
+    ///
+    /// Pure on purpose: the parse is the whole of T-591 and it needs to be pinnable without a
+    /// `ModelContext`, a task, or a live store. Parts the macOS assign vocabulary does not speak —
+    /// `section:`, `due:` — are dropped rather than failing the key, so a compound key that also
+    /// names something this surface *can* apply still applies it.
+    static func dropAssignments(forDropKey dropKey: String) -> [TasksPanelDropAssignment] {
+        dropKey
+            .split(separator: CadenceTaskDropSupport.separator)
+            .map(String.init)
+            .compactMap { assignment(fromDropKeyPart: $0) }
+    }
+
+    private static func assignment(fromDropKeyPart part: String) -> TasksPanelDropAssignment? {
+        if part.hasPrefix("list:") {
+            let listID = String(part.dropFirst(5))
+            if listID == "inbox" { return .inbox }
+            if listID.hasPrefix("a_"), let id = UUID(uuidString: String(listID.dropFirst(2))) {
+                return .area(id)
             }
-        } else if dropKey == "date:today" {
+            if listID.hasPrefix("p_"), let id = UUID(uuidString: String(listID.dropFirst(2))) {
+                return .project(id)
+            }
+            return nil
+        }
+        switch part {
+        case "date:today": return .scheduleToday
+        case "date:scheduled": return .pushToScheduled
+        case "date:unscheduled": return .clearSchedule
+        default: break
+        }
+        if part.hasPrefix("priority:"), let priority = TaskPriority(rawValue: String(part.dropFirst(9))) {
+            return .priority(priority)
+        }
+        return nil
+    }
+
+    /// `false` means the assignment named a list that is not here any more — the one case the
+    /// parse cannot see and the caller still needs to know about.
+    private static func apply(
+        _ assignment: TasksPanelDropAssignment,
+        to task: AppTask,
+        todayKey: String,
+        areas: [Area],
+        projects: [Project],
+        modelContext: ModelContext
+    ) -> Bool {
+        switch assignment {
+        case .inbox:
+            task.area = nil
+            task.project = nil
+            task.context = nil
+        case .area(let areaID):
+            guard let target = areas.first(where: { $0.id == areaID }) else { return false }
+            task.area = target
+            task.project = nil
+            task.context = target.context
+        case .project(let projectID):
+            guard let target = projects.first(where: { $0.id == projectID }) else { return false }
+            task.project = target
+            task.area = nil
+            task.context = target.resolvedContext
+        case .scheduleToday:
             CadenceTaskDateEditing.setScheduledDate(todayKey, for: task, in: modelContext)
-        } else if dropKey == "date:scheduled" {
+        case .pushToScheduled:
+            // Already scheduled past today: the drop resolved, and leaving the later date alone is
+            // the assignment, not a failure to make one. Still `true` — see `assignTask`.
             if task.scheduledDate.isEmpty || task.scheduledDate == todayKey {
                 let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
                 CadenceTaskDateEditing.setScheduledDate(
@@ -273,15 +367,12 @@ enum TasksPanelSupport {
                     in: modelContext
                 )
             }
-        } else if dropKey == "date:unscheduled" {
+        case .clearSchedule:
             CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
-        } else if dropKey.hasPrefix("priority:") {
-            let raw = String(dropKey.dropFirst(9))
-            if let priority = TaskPriority(rawValue: raw) {
-                task.priority = priority
-            }
+        case .priority(let priority):
+            task.priority = priority
         }
-        try? modelContext.save()
+        return true
     }
 }
 #endif

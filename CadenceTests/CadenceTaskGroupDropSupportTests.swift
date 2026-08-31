@@ -386,4 +386,149 @@ struct CadenceTaskGroupDropSupportTests {
         #expect(all.map(\.title) == names)
         #expect(all.map(\.tasks.count) == [0, 1, 0])
     }
+
+    // MARK: - What the mover reads back
+
+    /// **The other end of the same key.** Everything above pins what a header *offers* a dropped
+    /// `+`; this pins what the header's key means to the code that *moves an existing row*, which
+    /// is a second reader of one vocabulary and drifted away from it unnoticed.
+    ///
+    /// `TasksPanelSupport.assignTask` took the whole key as one `list:` value, so a Today list
+    /// header's `list:p_<uuid>|date:today` sent it looking for a project whose `uuidString` was
+    /// `"<uuid>|date:today"`. It matched nothing, fell out of every branch, and the drop was
+    /// accepted anyway (T-591). Only a running app could see that, which is why the parse is a
+    /// value now.
+    @Test func aTodayListHeadersKeyResolvesToBothTheListAndTheDay() throws {
+        let projectID = UUID()
+        let key = try #require(
+            CadenceTaskDropSupport.dropKey(forGroup: .todayList(key: "p_\(projectID.uuidString)", name: "Website"))
+        )
+
+        #expect(key == "list:p_\(projectID.uuidString)|date:today")
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: key) == [.project(projectID), .scheduleToday])
+    }
+
+    /// Inbox is the case that hides best: the key still *parses*, it just resolves the compound
+    /// string as a list id, and `"inbox|date:today" != "inbox"` fails silently rather than loudly.
+    @Test func aTodayInboxHeadersKeyResolvesToInboxAndTheDay() throws {
+        let key = try #require(
+            CadenceTaskDropSupport.dropKey(forGroup: .todayList(key: "inbox", name: "Inbox"))
+        )
+
+        #expect(key == "list:inbox|date:today")
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: key) == [.inbox, .scheduleToday])
+    }
+
+    @Test func aTodayAreaHeadersKeyResolvesToTheAreaAndTheDay() throws {
+        let areaID = UUID()
+        let key = try #require(
+            CadenceTaskDropSupport.dropKey(forGroup: .todayList(key: "a_\(areaID.uuidString)", name: "Home"))
+        )
+
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: key) == [.area(areaID), .scheduleToday])
+    }
+
+    /// The bare forms every other macOS task surface still hands it. Splitting on the separator
+    /// must not have cost the single-part keys anything — a key with no separator is one part.
+    @Test func theBareKeysEveryOtherSurfaceSendsStillResolve() {
+        let areaID = UUID()
+        let projectID = UUID()
+
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "list:inbox") == [.inbox])
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "list:a_\(areaID.uuidString)") == [.area(areaID)])
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "list:p_\(projectID.uuidString)") == [.project(projectID)])
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "date:today") == [.scheduleToday])
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "date:scheduled") == [.pushToScheduled])
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "date:unscheduled") == [.clearSchedule])
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "priority:high") == [.priority(.high)])
+    }
+
+    /// A key naming something this surface cannot apply keeps the parts it can. `section:` is the
+    /// live case: `dropKey(forGroup: .section(...))` mints `list:<key>|section:<name>`, and the
+    /// mover has no column assignment — dropping the column must not cost the list with it.
+    @Test func aPartTheMoverCannotApplyDoesNotDiscardTheRestOfTheKey() throws {
+        let projectID = UUID()
+        let key = try #require(
+            CadenceTaskDropSupport.dropKey(
+                forGroup: .section(listKey: "p_\(projectID.uuidString)", listName: "Website", name: "Doing")
+            )
+        )
+
+        #expect(key == "list:p_\(projectID.uuidString)|section:Doing")
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: key) == [.project(projectID)])
+    }
+
+    /// Nothing at all, and it must read as nothing rather than as an unfilled `list:` value.
+    @Test func aKeyTheMoverCannotReadResolvesToNoAssignment() {
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "").isEmpty)
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "list:").isEmpty)
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "list:p_not-a-uuid").isEmpty)
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "due:today").isEmpty)
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "priority:High").isEmpty)
+        #expect(TasksPanelSupport.dropAssignments(forDropKey: "|").isEmpty)
+    }
+
+    /// End to end, because the parse being right is only half of it: the row has to arrive.
+    @Test func droppingOnATodayListHeaderFilesTheTaskAndKeepsItOnToday() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let project = Project(name: "Website")
+        let task = AppTask(title: "Draft")
+        context.insert(project)
+        context.insert(task)
+
+        let key = try #require(
+            CadenceTaskDropSupport.dropKey(forGroup: .todayList(key: "p_\(project.id.uuidString)", name: "Website"))
+        )
+        let moved = TasksPanelSupport.assignTask(
+            task,
+            for: key,
+            todayKey: todayKey,
+            areas: [],
+            projects: [project],
+            modelContext: context
+        )
+
+        #expect(moved)
+        #expect(task.project?.id == project.id)
+        #expect(task.area == nil)
+        #expect(task.scheduledDate == todayKey)
+    }
+
+    /// **A drop that applied nothing must not report success.** This is the half that matters more
+    /// than the parse: for as long as `handleSectionDrop` answered `true` unconditionally, the
+    /// header lit up, swallowed the row and left it exactly where it was, and no amount of using
+    /// the app told you which of the two had happened.
+    @Test func aHeaderWhoseListIsGoneRefusesTheDropRatherThanSwallowingIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Draft")
+        context.insert(task)
+
+        let coordinator = TasksPanelDropCoordinator(
+            allTasks: [task],
+            taskIDFromPayload: { TasksPanelSupport.taskID(from: $0) },
+            assignTask: { dropped, dropKey in
+                TasksPanelSupport.assignTask(
+                    dropped,
+                    for: dropKey,
+                    todayKey: self.todayKey,
+                    areas: [],
+                    projects: [],
+                    modelContext: context
+                )
+            },
+            reorderTask: { _, _, _ in }
+        )
+        let payload = TasksPanelSupport.taskDragPayload(for: task)
+
+        #expect(coordinator.handleSectionDrop(payload: payload, dropKey: "list:p_\(UUID().uuidString)") == false)
+        #expect(coordinator.handleSectionDrop(payload: payload, dropKey: "somebody:elses-vocabulary") == false)
+        #expect(task.scheduledDate.isEmpty)
+
+        // And the live key still succeeds, so "returns false" cannot be satisfied by refusing
+        // everything.
+        #expect(coordinator.handleSectionDrop(payload: payload, dropKey: "list:inbox|date:today"))
+        #expect(task.scheduledDate == todayKey)
+    }
 }
