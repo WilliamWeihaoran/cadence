@@ -158,7 +158,7 @@ struct CadenceStartupIssueBannerTests {
     }
 
     /// Collapse, never dismiss. macOS Settings has no sync or iCloud row — only iOS Settings →
-    /// Account & Sync renders `CadenceSyncHealth` — so a banner a Mac user could dismiss outright
+    /// iCloud Sync renders `CadenceSyncHealth` — so a banner a Mac user could dismiss outright
     /// would leave the failure with no durable indicator anywhere in the app.
     @Test func theControlNeverOffersToDismiss() {
         for issue in allIssues {

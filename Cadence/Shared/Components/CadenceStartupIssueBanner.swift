@@ -72,7 +72,7 @@ struct CadenceStartupIssueBannerModel: Equatable {
     }
 
     /// Never "dismiss". There is no other durable indicator on macOS — only iOS Settings →
-    /// Account & Sync renders `CadenceSyncHealth` — so this control collapses and nothing more.
+    /// iCloud Sync renders `CadenceSyncHealth` — so this control collapses and nothing more.
     var accessibilityHint: String {
         isCollapsed ? "Expands to show what went wrong." : "Collapses to a compact badge."
     }

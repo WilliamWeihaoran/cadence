@@ -612,7 +612,7 @@ struct CadenceSyncSurfaceTests {
     @Test func theSyncCategoryIsFiledInTheMacOSRail() throws {
         let group = try #require(
             SettingsCategoryGroup.all.first { $0.categories.contains(.sync) },
-            "Settings > Account & Sync is defined but filed in no rail group, so nothing can open it"
+            "Settings > iCloud Sync is defined but filed in no rail group, so nothing can open it"
         )
 
         // Filed with the system services the app talks to, not beside `.account`: the two adjacent
@@ -634,7 +634,7 @@ struct CadenceSyncSurfaceTests {
         let source = try strippingComments(sourceFile("Cadence/macOS/Views/SettingsView.swift"))
         _ = try #require(
             source.range(of: "case\\s*\\.sync:\\s*SettingsSyncSection\\(", options: .regularExpression),
-            "Settings > Account & Sync no longer routes to the section that draws it"
+            "Settings > iCloud Sync no longer routes to the section that draws it"
         )
     }
 

@@ -24,7 +24,12 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
         case .appearance: return "Appearance"
         case .navigation: return "Navigation"
         case .sidebar: return "Sidebar"
-        case .sync: return "Account & Sync"
+        // T-580: "Account & Sync" for a category that is one iCloud status card on both
+        // platforms, and — on macOS, where `.account` also exists — a second row reading
+        // "Account" two groups below it. Neither screen shows an account here: iOS has no
+        // Sign in with Apple at all, and macOS's is the `.account` pane. "iCloud Sync" is what
+        // both actually draw, and what iOS's own card eyebrow has always said.
+        case .sync: return "iCloud Sync"
         case .dataSafety: return "Data Safety"
         case .calendar: return "Calendar"
         case .reminders: return "Reminders"

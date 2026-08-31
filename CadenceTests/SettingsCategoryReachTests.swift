@@ -312,6 +312,52 @@ struct MacSettingsAboutAndHabitMetricsTests {
     }
 }
 
+/// **T-580: no two settings categories are called the same thing, and `.sync` is not called
+/// "Account".**
+///
+/// macOS's rail drew `.sync` as "Account & Sync" and `.account` as "Account", two groups apart,
+/// with only one of them about an account — the other is a single iCloud status card whose own
+/// eyebrow on iOS already read "iCloud". iOS, which has no Sign in with Apple at all, drew the
+/// word "Account" on a platform with no account to show.
+///
+/// The uniqueness half is the general rule and is what a future retitle has to keep: two rows in
+/// one settings rail bearing one label is unopenable-by-name whatever the two happen to be.
+@MainActor
+struct SettingsCategoryTitleTests {
+
+    /// The title itself, on the shared kind that both platforms read through.
+    @Test func theSyncCategoryIsTitledForTheOneThingItShows() {
+        #expect(CadenceSettingsCategoryKind.sync.title == "iCloud Sync")
+        #expect(CadenceSettingsCategoryKind.account.title == "Account")
+        // The raw value is what a stored selection round-trips through, so retitling must not
+        // have moved it — `ios.settings.category` persists this string.
+        #expect(CadenceSettingsCategoryKind.sync.rawValue == "sync")
+        #expect(CadenceMobileSettingsNavigation.railCategory(storedRawValue: "sync") == .sync)
+    }
+
+    /// And the rule that makes the retitle stick: every category's title is its own.
+    ///
+    /// Stated over `allCases` rather than over the pair, because the defect is "two rows read the
+    /// same", not "these two rows read the same" — and both rails are built from `allCases`.
+    @Test func everySettingsCategoryTitleIsUniqueAndNonEmpty() {
+        let titles = CadenceSettingsCategoryKind.allCases.map(\.title)
+        #expect(titles.count >= 15, "non-vacuity: read \(titles.count) categories")
+        #expect(!titles.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+        #expect(
+            Set(titles).count == titles.count,
+            "two settings categories share a title: \(titles.sorted())"
+        )
+    }
+
+    /// Mobile draws `.sync` and does **not** draw `.account`, which is the half that made the old
+    /// title wrong there rather than merely redundant.
+    @Test func mobileOffersTheSyncCategoryAndNoAccountCategory() {
+        #expect(CadenceMobileSettingsLayout.categories.contains(.sync))
+        #expect(!CadenceMobileSettingsLayout.categories.contains(.account))
+        #expect(CadenceMobileSettingsLayout.desktopOnly.contains(.account))
+    }
+}
+
 // MARK: - Source-reading helpers
 
 /// Fails unless `name` is called exactly `count` times in each listed file.

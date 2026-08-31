@@ -1,7 +1,7 @@
 #if os(macOS)
 import SwiftUI
 
-/// Settings → Account & Sync: whether this Mac's data is actually reaching the user's other
+/// Settings → iCloud Sync: whether this Mac's data is actually reaching the user's other
 /// devices, and why not when it is not.
 ///
 /// **What was missing here, and what was not.** Both root views already show

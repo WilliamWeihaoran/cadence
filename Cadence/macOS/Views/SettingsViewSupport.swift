@@ -80,7 +80,7 @@ struct SettingsCategoryGroup: Identifiable {
             title: "Connections",
             // `.sync` sits with Calendar and Reminders — the system services the app talks to —
             // rather than next to `.account` under "Account & Safety", even though its shared
-            // title reads "Account & Sync". `.account` is Sign in with Apple, macOS-only and
+            // title reads "iCloud Sync". `.account` is Sign in with Apple, macOS-only and
             // titled "Account"; the two filed adjacently would read as one setting listed twice.
             // Mobile files `.sync` beside `.calendar`/`.reminders` in its "System" group for the
             // same reason, so this is the same shape rather than a second opinion.
