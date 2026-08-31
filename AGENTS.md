@@ -31,8 +31,8 @@ Tests must be scoped to `CadenceTests`:
   -derivedDataPath /tmp/cadence-test-$$ -only-testing:CadenceTests
 ```
 
-Unscoped tests pull in `CadenceUITests`, which cannot launch headless. The warning baseline is zero.
-Any new warning is a regression.
+Unscoped tests pull in `CadenceUITests`. It launches now (automation granted 2026-08-31) but flakes
+on activation unless run via `scripts/xcb.sh`, which takes the test-host lock. Baseline: zero warnings.
 
 ## Where Things Live
 

@@ -754,7 +754,25 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   a Mac keyboard is attached"*. Establish which of the rest a simulator can cover and shorten the list.
 
 
-- [T-562] **The first-ever UI test run fails: no seeded sidebar list is visible.** Measured 2026-08-31,
+- [T-562] *(RESOLVED 2026-08-31 — **this ticket's premise was wrong, and the wrong half was mine.**
+  Not a regression, not a never-worked, and not a sidebar defect at all. `testLaunchesToTodayWithSeededSidebarLists`
+  **passes about 4 runs in 5**: 5 runs measured (working tree @5ae916a pass 7.4s; isolated `git archive HEAD`
+  pass 7.1s, FAIL 15.9s, pass 5.8s). The one failure was at `CadenceUITests.swift:74` —
+  `wait(for: .runningForeground, timeout: 10)` inside `launchApp` — so the app never reached the
+  foreground and no sidebar query was ever made. The originating run's xcresult shows the same thing:
+  `CadenceUITestsLaunchTests` **also** failed, at its identical foreground wait, and both tests ran
+  3-5x slower than normal. That exonerates the seeder, the sidebar data path and the identifier.
+  **All three hypotheses killed, H2 by direct measurement:** a 0.3s process poller caught the launch —
+  pid 98099 was `…/Build/Products/Debug/Cadence.app/Contents/MacOS/Cadence` (confirmed via `lsof` txt)
+  carrying the test env vars. XCUITest launches the freshly built debug app, **not**
+  `/Applications/Cadence.app`. The identical-bundle-id hazard does not apply to this target.
+  H1 died to archaeology: the row's accessibility chain is byte-identical from `2d3a82f` (where the
+  test and the identifier were both introduced) to HEAD.
+  **Root cause was process, not code, and it was the orchestrator's:** the originating run was a bare
+  `xcodebuild`, which takes **no test-host lock**, while another agent's hosts were live. `scripts/xcb.sh`
+  acquires the lock (`xcb.sh:183`); bare `xcodebuild` does not. Standing rule now: **run UI tests as
+  `scripts/xcb.sh <id> test -only-testing:CadenceUITests`.** Superseded by [[T-563]] for the residual flake.)*
+  ~~**The first-ever UI test run fails: no seeded sidebar list is visible.**~~ Measured 2026-08-31,
   immediately after the user granted the macOS automation authorisation that [[T-531]] was blocked on.
   `Testing started` now reaches real tests, so the gate is open and T-531's blocker is cleared.
   `testLaunchesToTodayWithSeededSidebarLists` finds `sidebar.destination.today` but then fails at
@@ -778,6 +796,22 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Safety, already checked: the user's real store was NOT written -- `~/Library/Containers/com.haoranwei.Cadence/`
   Application Support is still dated 2026-08-19, untouched by the run. The per-run
   `CADENCE_UI_TEST_STORE_ID` isolation held. Keep it that way.
+
+- [T-563] **`CadenceUITests` flakes on app activation, ~1 run in 5.** Split from [[T-562]], whose
+  sidebar premise was disproved. Measured 2026-08-31 across 5 runs. The flake is always the same
+  assertion, in two places: `wait(for: .runningForeground, timeout: 10)` at `CadenceUITests.swift:74`
+  and `CadenceUITestsLaunchTests.swift:30`. When it fires, the app has not reached the foreground and
+  nothing downstream of launch has run — so any failure it causes is misattributed to whatever the
+  test was about to assert. That misattribution already cost one ticket.
+  Do the cheap thing first and measure before touching the tests: **route UI runs through
+  `scripts/xcb.sh <id> test -only-testing:CadenceUITests`** so they take the test-host lock. The
+  originating failure happened under another agent's concurrent test hosts, so lock discipline alone
+  may remove most of it.
+  Only if it survives that: consider `app.activate()` before the foreground wait and a longer timeout.
+  **Both are test-behaviour changes, not app changes.** A ~20% flake cannot be shown fixed by a
+  handful of runs — budget ~20 runs before and after, or the "fix" is unfalsifiable.
+  Do not raise the timeout as a first move: a timeout bump that hides a real activation regression is
+  strictly worse than a flake that reports one.
 
 ## Done
 

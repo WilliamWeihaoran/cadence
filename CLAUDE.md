@@ -72,7 +72,9 @@ Tests must be scoped to `CadenceTests`:
   -derivedDataPath /tmp/cadence-test-$$ -only-testing:CadenceTests
 ```
 
-Unscoped tests pull in `CadenceUITests`, which cannot launch headless. The expected warning
+Unscoped tests pull in `CadenceUITests`. That target could not run until 2026-08-31, when the
+one-time macOS automation grant was given; it runs now, but flakes on app activation unless
+launched through `scripts/xcb.sh`, which takes the test-host lock. The expected warning
 baseline is zero; any new warning is a regression.
 
 ## When To Read The Long Reference
