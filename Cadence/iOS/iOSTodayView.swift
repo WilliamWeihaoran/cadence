@@ -340,9 +340,7 @@ struct iOSTodayView: View {
                     alignment: .leading
                 )
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
-                .padding(.bottom, 20)
+                .padding(iOSTodayTaskSections.contentPadding(layout: .twoPane))
         }
         .scrollIndicators(.hidden)
         .background(Theme.surface)

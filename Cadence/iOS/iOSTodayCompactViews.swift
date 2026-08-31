@@ -46,14 +46,13 @@ struct iOSCompactTodayView: View {
             // cannot drift apart again the way 520-against-720 was only half a decision.
             .frame(maxWidth: iOSTodayTaskSections.contentMaxWidth(layout: .compact), alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .top)
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            // Breathing room at the end of the content, not bar clearance: the tab bar is a `VStack`
-            // sibling of the tab content in `iOSCompactRootShell`, so this scroll view is handed a
-            // height that already stops where the bar starts. This used to be 132 — hand-cut
-            // clearance for a floating `+` — which is the shape of thing that goes wrong the moment
-            // the bar's height changes.
-            .padding(.bottom, 16)
+            // The gutter, the top inset and the end-of-content inset, from the same place the cap
+            // above comes from. The bottom of the three keeps its reasoning on the constant:
+            // breathing room at the end of the content, *not* bar clearance — the tab bar is a
+            // `VStack` sibling of the tab content in `iOSCompactRootShell`, so this scroll view is
+            // handed a height that already stops where the bar starts. It used to be 132, hand-cut
+            // clearance for a floating `+`.
+            .padding(iOSTodayTaskSections.contentPadding(layout: .compact))
         }
         .scrollIndicators(.hidden)
         .background(Theme.bg.ignoresSafeArea())

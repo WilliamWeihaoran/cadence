@@ -72,6 +72,20 @@ struct iOSTodayTaskSections: View {
         CadenceTodaySectionMetrics.metrics(layout: layout).contentMaxWidth
     }
 
+    /// The scroll container's own insets, for the same reason and with the same history: the cap
+    /// above was hoisted so "the two hosts cannot drift apart again", and the three gutters beside
+    /// it were left typed out in each host, where they promptly drifted (T-596). One call rather
+    /// than three numbers, so there is nothing left at either call site to drift.
+    static func contentPadding(layout: CadenceTodayLayout) -> EdgeInsets {
+        let metrics = CadenceTodaySectionMetrics.metrics(layout: layout)
+        return EdgeInsets(
+            top: metrics.topPadding,
+            leading: metrics.horizontalPadding,
+            bottom: metrics.bottomPadding,
+            trailing: metrics.horizontalPadding
+        )
+    }
+
     /// `CadenceTaskQuerySupport.todayGroups` drops its empty groups, so an empty list of groups is
     /// an empty day — the two hosts each re-derived this from their own `todayTasks` array instead,
     /// which is one more chance for them to disagree about when Today is empty.

@@ -50,6 +50,13 @@ struct CadenceTodaySectionMetricsTests {
     /// A new stored property does not fail this test — it fails to *compile* here, which is the
     /// point: the next per-layout knob has to be argued for in this file rather than added quietly
     /// and then guarded by a tautology.
+    ///
+    /// **T-596 added three fields and this is where they had to be argued for.** The two hosts were
+    /// still typing their own scroll gutters — 14 / top 12 / bottom 20 in the two-pane column
+    /// against 14 / top 10 / bottom 16 on the phone — *after* the cap was hoisted here so they
+    /// could not drift apart again. They are stored properties now, and every one of them is taken
+    /// from `compact` below: the assertion is that swapping the phone's three gutters into the
+    /// two-pane value changes nothing, i.e. that the cap is still the only thing that varies.
     @Test func theWidthCapIsTheOnlyFigureThatVariesByLayout() {
         let compact = Self.metrics(.compact)
         let twoPane = Self.metrics(.twoPane)
@@ -57,9 +64,77 @@ struct CadenceTodaySectionMetricsTests {
         #expect(
             CadenceTodaySectionMetrics(
                 groupSpacing: compact.groupSpacing,
-                contentMaxWidth: twoPane.contentMaxWidth
+                contentMaxWidth: twoPane.contentMaxWidth,
+                horizontalPadding: compact.horizontalPadding,
+                topPadding: compact.topPadding,
+                bottomPadding: compact.bottomPadding
             ) == twoPane
         )
+    }
+
+    // MARK: - The hosts' own gutters (T-596)
+
+    /// The three figures the hosts were still typing out, and what each of them settled on.
+    ///
+    /// The gutter was the one they had **not** drifted on, so it moves unchanged. The top inset had
+    /// no reason on either side, and 12 is the tie-break the ticket calls for rather than a third
+    /// number: nine sites across `Cadence/iOS/` spell `.padding(.top, 12)` against five for `10`.
+    /// The end-of-content inset is the one decided on evidence — see below.
+    @Test func todaysTwoHostsShareOneSetOfGutters() {
+        for layout in Self.layouts {
+            let metrics = Self.metrics(layout)
+            #expect(metrics.horizontalPadding == 14, "\(layout)")
+            #expect(metrics.topPadding == 12, "\(layout)")
+            #expect(metrics.bottomPadding == 16, "\(layout)")
+        }
+    }
+
+    /// **16 wins on evidence, not on counting.** It is the value with the rationale written beside
+    /// it — breathing room at the end of the content, *not* clearance for the tab bar, which is a
+    /// `VStack` sibling of the content rather than an overlay — and it is the same number the
+    /// sibling segments of this tab already give All Tasks and Inbox, under that same sentence, at
+    /// **both** widths. So the app had already decided this figure does not ramp, and the two-pane
+    /// column's 20 was the outlier rather than the wide end of a ramp.
+    @Test func theEndOfContentInsetIsTheOneTheOtherTabSegmentsUse() {
+        for isRegular in [true, false] {
+            #expect(
+                Self.metrics(.compact).bottomPadding
+                    == iOSTaskCollectionMetrics.metrics(isRegularWidth: isRegular).bottomPadding,
+                "against All Tasks / Inbox at isRegular=\(isRegular)"
+            )
+        }
+    }
+
+    /// And the hosts read them. `Cadence/iOS/` is invisible to this macOS-built target, so this is
+    /// the source text — the same half of the pin `theGroupStackTakesNoInsetOfItsOwn` above exists
+    /// for, and for the same reason: every value assertion in this file stayed green while the two
+    /// hosts drifted, because none of them could see a call site.
+    @Test func neitherTodayHostTypesAGutterOfItsOwn() throws {
+        for (path, layout) in [
+            ("Cadence/iOS/iOSTodayView.swift", ".twoPane"),
+            ("Cadence/iOS/iOSTodayCompactViews.swift", ".compact")
+        ] {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+
+            // Non-vacuity: the right file, past the comment stripper, still holding the cap read
+            // that the gutters now sit beside.
+            #expect(
+                source.contains("iOSTodayTaskSections.contentMaxWidth(layout: \(layout))"),
+                "non-vacuity: \(path)"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(
+                    "iOSTodayTaskSections\\.contentPadding\\(layout: \\\(layout)\\)",
+                    in: source
+                ) == 1,
+                "\(path) does not take its scroll insets from the metrics"
+            )
+            #expect(!source.contains(".padding(.horizontal, 14)"), "\(path) still types the gutter")
+            #expect(!source.contains(".padding(.top, 10)"))
+            #expect(!source.contains(".padding(.top, 12)"))
+            #expect(!source.contains(".padding(.bottom, 16)"))
+            #expect(!source.contains(".padding(.bottom, 20)"))
+        }
     }
 
     /// The other half of T-587, and the half a value test cannot reach: **the view must not inset

@@ -157,21 +157,62 @@ nonisolated struct CadenceTodaySectionMetrics: Equatable, Sendable {
     /// a task pane whose floor is `taskPaneMinWidth` can hold a wider readable column than a phone,
     /// and a line of text that runs the full width of an iPad is worse than one that does not.
     let contentMaxWidth: CGFloat
+    /// The scroll container's gutter, top inset and end-of-content inset — the **host's** three
+    /// numbers rather than the list's, and the last thing the two hosts were each typing out.
+    ///
+    /// They had already drifted (T-596): 14 / top 12 / bottom 20 in the two-pane column against
+    /// 14 / top 10 / bottom 16 on the phone — *after* both were pointed at `contentMaxWidth` here
+    /// precisely so "the two hosts cannot drift apart again". A cap is not a gutter, and the half
+    /// that was left behind is the half that drifted.
+    ///
+    /// **One figure each, and none of them keyed on the layout.** `contentMaxWidth` is still the
+    /// only thing here that varies, because it is the only one with an argument for varying: a
+    /// wider pane holds a wider readable column. Neither the space above the first group nor the
+    /// space after the last one is something a wider pane needs more of — which is exactly what
+    /// the sibling segments of this tab already concluded, `iOSTaskCollectionMetrics` giving All
+    /// Tasks and Inbox one `bottomPadding` at both widths.
+    let horizontalPadding: CGFloat
+    let topPadding: CGFloat
+    let bottomPadding: CGFloat
 
     static func metrics(layout: CadenceTodayLayout) -> CadenceTodaySectionMetrics {
         switch layout {
         case .compact:
             return CadenceTodaySectionMetrics(
                 groupSpacing: groupSpacing,
-                contentMaxWidth: 520
+                contentMaxWidth: 520,
+                horizontalPadding: horizontalPadding,
+                topPadding: topPadding,
+                bottomPadding: bottomPadding
             )
         case .twoPane:
             return CadenceTodaySectionMetrics(
                 groupSpacing: groupSpacing,
-                contentMaxWidth: 720
+                contentMaxWidth: 720,
+                horizontalPadding: horizontalPadding,
+                topPadding: topPadding,
+                bottomPadding: bottomPadding
             )
         }
     }
 
     private static let groupSpacing: CGFloat = 14
+
+    /// The one gutter the two hosts had **not** drifted on. It is not the page gutter
+    /// (`CadencePageHeaderMetrics` ramps 16/20): Today's header sits inside the same capped column
+    /// as its rows, so the header and the rows share this rather than the page's.
+    private static let horizontalPadding: CGFloat = 14
+
+    /// Above the first thing in the scroll view. **12 against the phone's 10, and neither number
+    /// carried a reason** — so this is the tie-break the ticket asks for rather than a third value:
+    /// `.padding(.top, 12)` stands at nine sites across `Cadence/iOS/` against five for `10`, and
+    /// nothing else distinguished them.
+    private static let topPadding: CGFloat = 12
+
+    /// After the last one. **16, and this one is decided on evidence rather than on counting.**
+    /// The phone's 16 is the value with the rationale written beside it — breathing room at the end
+    /// of the content, *not* clearance for the tab bar, which is a `VStack` sibling of the content
+    /// and not an overlay — and it is the same 16 `iOSTaskCollectionMetrics` gives All Tasks and
+    /// Inbox, under that same sentence, at both widths. The two-pane column's 20 was the outlier.
+    private static let bottomPadding: CGFloat = 16
 }

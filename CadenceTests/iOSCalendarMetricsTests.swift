@@ -201,6 +201,49 @@ struct iOSCalendarMetricsTests {
         #expect(!grid.contains("isCurrentMonth ? 0.18 : 0.08"))
     }
 
+    /// **T-596: the fourth figure of the same pair, and the one that had drifted furthest.**
+    ///
+    /// `theTodayTimelineReadsItsHourFiguresFromHere` above pins the three T-588 settled — the hour,
+    /// the label size, the label's inset. The ladder's *lines* were the ones left: Today drew a 1pt
+    /// rule at 0.55/0.25 where the Calendar grid drew a 0.5pt one at 0.46/0.20, on the identical
+    /// `% 3` cadence, with the identical 0.9/0.45 on the labels beside them. The cadence was copied
+    /// and the weights were not, which is what a `% 3` written twice buys.
+    ///
+    /// Also here because it is the same file and the same shape: one 7pt radius spelled two ways,
+    /// `Theme.radiusControl - 3` on the "Creating here" marker and a bare `cornerRadius: 7` on the
+    /// slot chip twelve views down.
+    @Test func theTodayTimelineDrawsTheSameHourLadder() throws {
+        let panel = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
+        )
+
+        // Non-vacuity: the right file, and the row that draws the ladder.
+        #expect(panel.contains("private struct iOSScheduleHourRow: View"))
+
+        #expect(panel.contains("iOSCalendarHairlineMetrics.hourMajorOpacity"))
+        #expect(panel.contains("iOSCalendarHairlineMetrics.hourMinorOpacity"))
+        #expect(panel.contains("iOSCalendarHairlineMetrics.width"))
+        #expect(panel.contains("iOSCalendarTimelineMetrics.hourLabelOpacity"))
+        #expect(panel.contains("iOSCalendarTimelineMetrics.hourLabelMutedOpacity"))
+
+        // The cadence is read at both places that counted to three, rather than spelled twice.
+        #expect(
+            CadenceSourceScan.matchCount(
+                "iOSCalendarTimelineMetrics\\.hourEmphasisInterval",
+                in: panel
+            ) == 2
+        )
+        #expect(CadenceSourceScan.matchCount("% 3 == 0", in: panel) == 0)
+        #expect(!panel.contains("0.55 : 0.25"))
+        #expect(!panel.contains("0.9 : 0.45"))
+
+        // One 7pt radius, one spelling — the file's only hardcoded radius is gone.
+        #expect(CadenceSourceScan.matchCount("cornerRadius: 7", in: panel) == 0)
+        #expect(
+            CadenceSourceScan.matchCount("Theme\\.radiusControl - 3", in: panel) == 2
+        )
+    }
+
     // MARK: - The hairlines (T-595)
 
     /// **The sharpest instance the ticket found: one month cell, two weights.** Its right edge drew

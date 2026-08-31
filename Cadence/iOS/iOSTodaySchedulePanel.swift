@@ -400,15 +400,41 @@ private struct iOSScheduleHourRow: View {
             // surface without one. The label shifts 1pt right on Today's timeline.
             Text(hourLabel)
                 .font(.system(size: iOSCalendarTimelineMetrics.hourLabelSize, weight: .medium))
-                .foregroundStyle(isSelectedForCreate ? Theme.blue : Theme.dim.opacity(hour % 3 == 0 ? 0.9 : 0.45))
+                .foregroundStyle(
+                    isSelectedForCreate
+                        ? Theme.blue
+                        : Theme.dim.opacity(
+                            hour % iOSCalendarTimelineMetrics.hourEmphasisInterval == 0
+                                ? iOSCalendarTimelineMetrics.hourLabelOpacity
+                                : iOSCalendarTimelineMetrics.hourLabelMutedOpacity
+                        )
+                )
                 .frame(width: 50, alignment: .trailing)
                 .padding(.trailing, iOSCalendarTimelineMetrics.hourLabelTrailingInset)
                 .padding(.top, -6)
 
             VStack(alignment: .leading, spacing: 5) {
+                // **The rule was copied and the weights were not (T-596).** This drew a 1pt line at
+                // 0.55/0.25 while the Calendar grid drew a 0.5pt one at 0.46/0.20 — the identical
+                // `% 3` cadence on both, and the identical 0.9/0.45 on the labels beside them, which
+                // is what made the line the accident rather than the decision.
+                //
+                // The Calendar's figures are the ones that stay, on T-588's grounds: that ticket
+                // already settled three figures of this exact pair (`hourHeight`, `hourLabelSize`,
+                // `hourLabelTrailingInset`) in the Calendar's favour, and 0.5pt is a hairline where
+                // 1pt is two device pixels at 2x — twice the weight for a line whose whole job is to
+                // be underneath the schedule rather than in it.
                 Rectangle()
-                    .fill(isSelectedForCreate ? Theme.blue.opacity(0.58) : Theme.borderSubtle.opacity(hour % 3 == 0 ? 0.55 : 0.25))
-                    .frame(height: 1)
+                    .fill(
+                        isSelectedForCreate
+                            ? Theme.blue.opacity(0.58)
+                            : Theme.borderSubtle.opacity(
+                                hour % iOSCalendarTimelineMetrics.hourEmphasisInterval == 0
+                                    ? iOSCalendarHairlineMetrics.hourMajorOpacity
+                                    : iOSCalendarHairlineMetrics.hourMinorOpacity
+                            )
+                    )
+                    .frame(height: iOSCalendarHairlineMetrics.width)
 
                 if hasItems {
                     VStack(alignment: .leading, spacing: 5) {
@@ -612,7 +638,9 @@ private struct iOSScheduleReadyTaskRow: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 26)
                             .background(Theme.blue.opacity(0.11))
-                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            .clipShape(
+                                RoundedRectangle(cornerRadius: Theme.radiusControl - 3, style: .continuous)
+                            )
                             .padding(.vertical, 9)
                             .contentShape(Rectangle())
                             .padding(.vertical, -9)
