@@ -261,7 +261,7 @@ struct CadenceSettingsSectionCopyTests {
     /// markdown toolbar and `LinksView`). The phone was right; macOS now reads the shared helper.
     ///
     /// **What this claims is that the label is set**, in the shape SwiftUI reads it from — the same
-    /// caveat `ControlAccessibilityLabelTests` states in its own header. Nothing in this target can
+    /// caveat `CadenceControlAccessibilityLabelTests` states in its own header. Nothing in this target can
     /// launch the app, so what VoiceOver announces is not measured here.
     @Test func theMacCalendarConnectMenuIsNamedRatherThanOnlyTooltipped() throws {
         let mac = try Self.strippedSource(at: "Cadence/macOS/Views/SettingsListManagementSections.swift")

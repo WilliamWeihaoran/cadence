@@ -15,7 +15,12 @@ import Testing
 ///
 /// Each sweep runs through a `CadenceScanInstrument`, so a detector that has stopped discriminating
 /// cannot reach the walk — "no offenders" is what a clean repo and a blind scan both look like.
-struct ControlAccessibilityLabelTests {
+/// The suite name matches this file's basename. It was `ControlAccessibilityLabelTests` —
+/// dropping the `Cadence` prefix the file carries — which matters because `-only-testing:` takes
+/// the **suite** name, not the file name, and a name that matches nothing is not an error:
+/// xcodebuild reports `Executed 0 tests`, `** TEST SUCCEEDED **` and exits 0. Scoping a run by
+/// this file's name therefore ran nothing and called it a pass (T-556).
+struct CadenceControlAccessibilityLabelTests {
 
     // MARK: - T-472: the markdown toolbar's icon-only buttons
 

@@ -73,7 +73,7 @@ nonisolated enum CadenceNotificationSettingsCopy {
     /// The row title **and** the switch's accessible name, which is why it is one constant rather
     /// than two: T-484 named the toggle after its own row precisely so the two could not drift, and
     /// spelling them separately is how that drift starts. Pinned by
-    /// `ControlAccessibilityLabelTests.theFiveNamedTogglesTakeTheirNameFromTheirOwnRow`.
+    /// `CadenceControlAccessibilityLabelTests.theFiveNamedTogglesTakeTheirNameFromTheirOwnRow`.
     static let remindersToggleTitle = "Enable reminders"
 
     /// Says what is scheduled and that it stays on the device. "Locally" is load-bearing: nothing
