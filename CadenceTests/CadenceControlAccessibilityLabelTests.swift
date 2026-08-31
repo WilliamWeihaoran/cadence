@@ -117,6 +117,254 @@ struct CadenceControlAccessibilityLabelTests {
         )
     }
 
+    // MARK: - T-594: the tooltip rule, over the whole app
+
+    /// How many lines either side of a `.help(` count as the same modifier chain.
+    ///
+    /// Ten, where the toggle rule below uses six, because a `.help` is routinely applied to the
+    /// *end* of a chain that opens with a multi-line `Button { … } label: { … }` and the name may
+    /// be stated on either side of it. The window is a heuristic and it errs towards silence: an
+    /// unrelated `.accessibilityLabel` ten lines away would mask a real offence. It is not the
+    /// claim — the ledger below is.
+    private static let tooltipChainWindow = 10
+
+    /// **The sites this rule has not reached yet, by file and count.**
+    ///
+    /// T-472 fixed the markdown toolbar and scoped its sweep to `MarkdownEditorView.swift`, so the
+    /// rule existed and read one file. T-594 widened it to the whole app and the widening is the
+    /// finding: **44 controls in 28 files** carry a tooltip and no accessible name — every one of
+    /// them on macOS, since `.help` is a pointer affordance the iOS tree does not use.
+    ///
+    /// Recorded as an exact ledger rather than a ceiling, the shape
+    /// `CadenceSaveCommitDisciplineTests` uses: a **new** unnamed tooltip fails, and so does a
+    /// **stale** entry, so fixing one means deleting its line in the same change. The number is
+    /// meant to go down.
+    ///
+    /// This is a ledger of a *known* gap, not a permission. `Cadence/macOS/Views/TasksPanelComponents.swift`
+    /// is deliberately absent: it is the file T-594 was filed about and it is now clean.
+    private static let knownUnnamedTooltipSites: [String: Int] = [
+        "Cadence/macOS/Sheets/ListEditorSupportViews.swift": 3,
+        "Cadence/macOS/Views/AIActionsSupportViews.swift": 1,
+        "Cadence/macOS/Views/CalendarBoardRailSupportViews.swift": 2,
+        "Cadence/macOS/Views/CalendarPageSupportViews.swift": 2,
+        "Cadence/macOS/Views/FocusBundleTaskSupportViews.swift": 1,
+        "Cadence/macOS/Views/FocusChromeSupportViews.swift": 2,
+        "Cadence/macOS/Views/FocusPickerSupportViews.swift": 2,
+        "Cadence/macOS/Views/FocusSidebarSupportViews.swift": 1,
+        "Cadence/macOS/Views/GoalTimelineView.swift": 1,
+        "Cadence/macOS/Views/HabitsSupportViews.swift": 1,
+        "Cadence/macOS/Views/InboxSupportViews.swift": 1,
+        "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": 2,
+        "Cadence/macOS/Views/KanbanCardSupportViews.swift": 1,
+        "Cadence/macOS/Views/KanbanColumnSupportViews.swift": 1,
+        "Cadence/macOS/Views/ListNotesSupportViews.swift": 2,
+        "Cadence/macOS/Views/NoteEditorAccessoryViews.swift": 1,
+        "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift": 1,
+        "Cadence/macOS/Views/SchedulePanelShellViews.swift": 1,
+        "Cadence/macOS/Views/SettingsListManagementSections.swift": 2,
+        "Cadence/macOS/Views/SettingsTagsSection.swift": 2,
+        "Cadence/macOS/Views/SidebarSupportViews.swift": 1,
+        "Cadence/macOS/Views/TagPickerPopoverViews.swift": 1,
+        "Cadence/macOS/Views/TagPickerSupportViews.swift": 5,
+        "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": 1,
+        "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift": 3,
+        "Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift": 1,
+        "Cadence/macOS/Views/TimelineBundleBlock.swift": 1,
+        "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift": 1,
+    ]
+
+    /// The T-472 rule, over every file the app compiles instead of over one.
+    @Test func noControlInTheAppGainsATooltipWithoutAnAccessibleName() throws {
+        let offenders = try unnamedTooltipInstrument().sweep(
+            try Self.swiftFiles(under: "Cadence"),
+            // 562 files at the time of writing; the floor only rules out a walk that found one
+            // folder and called it the app.
+            atLeast: 400,
+            including: "Cadence/macOS/Views/TasksPanelComponents.swift",
+            read: CadenceSourceScan.sourceFile
+        )
+
+        let unexpected = Set(offenders).subtracting(Self.knownUnnamedTooltipSites.keys)
+        #expect(
+            unexpected.isEmpty,
+            """
+            \(unexpected.sorted()) applies .help(…) to a control with no accessible name. Pair it \
+            with .accessibilityLabel(…), or use .cadenceControlLabel(…) which sets both from one \
+            string (T-472/T-594).
+            """
+        )
+        let fixed = Set(Self.knownUnnamedTooltipSites.keys).subtracting(offenders)
+        #expect(
+            fixed.isEmpty,
+            "\(fixed.sorted()) no longer has an unnamed tooltip — delete its line from knownUnnamedTooltipSites"
+        )
+    }
+
+    /// The ledger's *numbers*, not only its paths: a file with five unnamed tooltips that loses
+    /// four is still an offender, so path-level equality above would not notice the four.
+    @Test func theUnnamedTooltipLedgerStatesHowManySitesEachFileStillHas() throws {
+        var actual: [String: Int] = [:]
+        for path in try Self.swiftFiles(under: "Cadence") {
+            let count = Self.unnamedTooltipCount(in: try CadenceSourceScan.sourceFile(path))
+            if count > 0 { actual[path] = count }
+        }
+        #expect(actual == Self.knownUnnamedTooltipSites)
+        // The headline, so the report and the ledger cannot disagree: T-594 measured 44.
+        #expect(actual.values.reduce(0, +) == 44)
+        #expect(
+            actual.keys.allSatisfy { $0.hasPrefix("Cadence/macOS/") },
+            "an unnamed tooltip outside the macOS tree — `.help` is a pointer affordance"
+        )
+    }
+
+    /// The six controls T-594 named, by the name each now carries. Stated as values rather than
+    /// left to the sweep: the sweep only sees the two that had a `.help` to pair, and four of the
+    /// six had **no tooltip either**, so a sweep keyed on `.help` is structurally blind to them.
+    @Test func everyControlOnTheMacOSTodayRowCarriesAName() throws {
+        let row = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift")
+        )
+        #expect(row.contains("struct MacTaskRow"), "non-vacuity: wrong file read")
+
+        // The focus button: one string to the pointer and to VoiceOver.
+        #expect(row.contains(".cadenceControlLabel(CadenceTaskControlAccessibility.startFocus)"))
+        #expect(
+            row.contains(#".help("Start focus session")"#) == false,
+            "the focus button is back to a tooltip with no name"
+        )
+
+        // The completion circle — the primary control on every row, which had neither.
+        #expect(row.contains(".accessibilityLabel(glyph.state.accessibilityActionLabel)"))
+
+        // The three value-bearing chips: a name, and the reading as a separate value.
+        for (label, value) in [
+            ("CadenceTaskControlAccessibility.doDate", "DateFormatters.relativeDate(from: task.scheduledDate)"),
+            ("CadenceTaskControlAccessibility.dueDate", "DateFormatters.relativeDate(from: task.dueDate)"),
+            ("CadenceTaskControlAccessibility.estimate", "estimateLabel"),
+        ] {
+            #expect(row.contains(".accessibilityLabel(\(label))"), "\(label) is not set on the row")
+            #expect(row.contains(".accessibilityValue(\(value))"), "\(label) states no value")
+        }
+
+        // The estimate chip's value is the string it draws, not a second call to the label helper:
+        // `CadenceTodayUnificationTests.bothRowsCarryAnEstimateChipOverTheSharedPicker` pins this
+        // file at exactly one `CadenceTaskPresentationSupport.estimateLabel` call site, and a
+        // second one would also let the drawn figure and the announced one drift.
+        #expect(row.contains("Text(estimateLabel)"))
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"CadenceTaskPresentationSupport\.estimateLabel"#, in: row
+            ) == 1,
+            "the estimate chip reads the shared label helper more than once"
+        )
+
+        // The container badge is named on the shared chip rather than on this row, so the composer
+        // and the inspector breadcrumb are named by the same line.
+        let badge = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelSupportViews.swift")
+        )
+        #expect(badge.contains("struct ContainerPickerBadge: View"), "non-vacuity: wrong file read")
+        #expect(badge.contains(".accessibilityLabel(CadenceTaskControlAccessibility.list)"))
+        #expect(badge.contains(".accessibilityValue(label)"))
+    }
+
+    /// The completion circle's five names, and that they are the five `handleTap()` branches.
+    ///
+    /// A state reading would have been easier and wrong: mid-fill on macOS a second tap converts a
+    /// pending completion into a *cancellation* rather than undoing it, so "Completing…" would
+    /// have named the animation and not the control.
+    @Test func theCompletionCircleIsNamedForWhatTappingItDoes() {
+        #expect(CadenceTaskCompletionState.todo.accessibilityActionLabel == "Complete task")
+        #expect(CadenceTaskCompletionState.pendingCompletion.accessibilityActionLabel == "Cancel task")
+        #expect(CadenceTaskCompletionState.pendingCancellation.accessibilityActionLabel == "Stop cancelling task")
+        #expect(CadenceTaskCompletionState.done.accessibilityActionLabel == "Reopen task")
+        #expect(CadenceTaskCompletionState.cancelled.accessibilityActionLabel == "Reopen task")
+
+        // Every state is answered for, and none of them with nothing — `CaseIterable` is what makes
+        // that a property of the enum rather than of the five lines above.
+        #expect(CadenceTaskCompletionState.allCases.count == 5)
+        #expect(CadenceTaskCompletionState.allCases.allSatisfy { !$0.accessibilityActionLabel.isEmpty })
+        // A settled task reads the same either way it settled, which is the one collapse here and
+        // is deliberate: the tap does the same thing.
+        #expect(
+            CadenceTaskCompletionState.done.accessibilityActionLabel
+                == CadenceTaskCompletionState.cancelled.accessibilityActionLabel
+        )
+    }
+
+    /// The widened detector, against the tree on both sides.
+    ///
+    /// The positive is a file from the ledger; the negative is `MarkdownEditorView.swift`, the file
+    /// T-472's narrow sweep already cleaned. A detector that could not see the first would make the
+    /// ledger meaningless; one that fired on the second would mean T-472 never landed.
+    @Test func theWidenedTooltipDetectorSeesTheLedgerAndLeavesTheFixedFileAlone() throws {
+        let instrument = try unnamedTooltipInstrument()
+
+        let offending = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TagPickerSupportViews.swift")
+        #expect(instrument.fires(on: offending), "the detector cannot see an unnamed tooltip")
+
+        let cleaned = try CadenceSourceScan.sourceFile(Self.toolbarPath)
+        #expect(cleaned.contains(".help("), "non-vacuity: the markdown toolbar lost its tooltips")
+        #expect(instrument.fires(on: cleaned) == false, "T-472's own file reads as an offender")
+
+        // And the helper that sets both from one string is read as a name, not only the modifier.
+        #expect(
+            instrument.fires(on: """
+            Button(action: action) {
+                Image(systemName: systemName)
+            }
+            .buttonStyle(.cadencePlain)
+            .cadenceControlLabel(accessibilityLabel)
+            """) == false,
+            "cadenceControlLabel(_:) is not recognised as stating a name"
+        )
+    }
+
+    /// True when any `.help(…)` in the file has no accessible name within its modifier chain.
+    ///
+    /// Same positive and negative witnesses as `tooltipWithoutNameInstrument`, deliberately: this
+    /// is that rule with the *scope* widened and the *detector* made line-local, so sharing the
+    /// fixtures is what says the two agree about what the defect is.
+    private func unnamedTooltipInstrument() throws -> CadenceScanInstrument {
+        try CadenceScanInstrument(
+            "tooltip with no accessible name, anywhere in the app",
+            fires: """
+            Button(action: action) {
+                Image(systemName: systemName)
+            }
+            .buttonStyle(.cadencePlain)
+            .help(accessibilityLabel)
+            """,
+            andNotOn: """
+            Button(action: action) {
+                Image(systemName: systemName)
+            }
+            .buttonStyle(.cadencePlain)
+            .accessibilityLabel(accessibilityLabel)
+            .help(accessibilityLabel)
+            """,
+            by: { Self.unnamedTooltipCount(in: $0) > 0 }
+        )
+    }
+
+    static func unnamedTooltipCount(in source: String) -> Int {
+        // Cheap reject before the expensive strip, the same guard the rules below use.
+        guard source.contains(".help(") else { return 0 }
+        let lines = CadenceSourceScan.strippingComments(source).components(separatedBy: "\n")
+        var count = 0
+        for index in lines.indices where lines[index].contains(".help(") {
+            let window = lines[
+                max(0, index - Self.tooltipChainWindow)
+                    ..< min(index + Self.tooltipChainWindow + 1, lines.count)
+            ]
+            let isNamed = window.contains {
+                $0.contains(".accessibilityLabel(") || $0.contains(".cadenceControlLabel(")
+            }
+            if !isNamed { count += 1 }
+        }
+        return count
+    }
+
     // MARK: - The saved-links screen's icon-only buttons
 
     /// Same defect as T-472, one screen over: `macOS/Views/LinksView.swift` drew three icon-only

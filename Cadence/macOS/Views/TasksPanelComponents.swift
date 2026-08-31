@@ -202,7 +202,9 @@ struct MacTaskRow: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.cadencePlain)
-                .help("Start focus session")
+                // Name *and* tooltip from one string, the shape T-472 settled on. It carried the
+                // `.help` alone, so the pointer got a sentence and VoiceOver got "play.fill".
+                .cadenceControlLabel(CadenceTaskControlAccessibility.startFocus)
                 .opacity(isHovered ? 1 : 0)
                 .allowsHitTesting(isHovered)
             } else {
@@ -247,6 +249,10 @@ struct MacTaskRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.cadencePlain)
+        // The pill announced a bare "Tomorrow" with nothing saying which of the row's two dates it
+        // set — and the due-date pill beside it announced another bare "Tomorrow" (T-594).
+        .accessibilityLabel(CadenceTaskControlAccessibility.doDate)
+        .accessibilityValue(DateFormatters.relativeDate(from: task.scheduledDate))
         .onHover { hovering in
             guard isDoDateHovered != hovering else { return }
             isDoDateHovered = hovering
@@ -279,6 +285,8 @@ struct MacTaskRow: View {
         }
         .buttonStyle(.cadencePlain)
         .padding(.trailing, metrics.contentSpacing)
+        .accessibilityLabel(CadenceTaskControlAccessibility.dueDate)
+        .accessibilityValue(DateFormatters.relativeDate(from: task.dueDate))
         .onHover { hovering in
             guard isDueDateHovered != hovering else { return }
             isDueDateHovered = hovering
@@ -466,6 +474,13 @@ private struct MacTaskRowEstimateChip: View {
     /// choose the tier.
     private var metrics: CadenceTaskRowMetrics { .desktop }
 
+    /// The figure the chip draws, read once. `.accessibilityValue` states the same string, and
+    /// `CadenceTodayUnificationTests` pins that this file reaches the shared label helper from
+    /// exactly one place — so the chip and its announcement cannot become "45m" and "45 min".
+    private var estimateLabel: String {
+        CadenceTaskPresentationSupport.estimateLabel(minutes: task.estimatedMinutes)
+    }
+
     var body: some View {
         Button {
             showPicker.toggle()
@@ -473,7 +488,7 @@ private struct MacTaskRowEstimateChip: View {
             HStack(spacing: 4) {
                 Image(systemName: "clock")
                     .font(.system(size: 9, weight: .semibold))
-                Text(CadenceTaskPresentationSupport.estimateLabel(minutes: task.estimatedMinutes))
+                Text(estimateLabel)
                     .font(.system(size: metrics.secondaryFontSize, weight: .medium))
                     .lineLimit(1)
             }
@@ -485,6 +500,8 @@ private struct MacTaskRowEstimateChip: View {
         }
         .buttonStyle(.cadencePlain)
         .padding(.trailing, metrics.badgeSpacing)
+        .accessibilityLabel(CadenceTaskControlAccessibility.estimate)
+        .accessibilityValue(estimateLabel)
         .onHover { isHovered = $0 }
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
             EstimatePickerPopoverContent(
@@ -528,6 +545,11 @@ private struct TaskCompletionButton: View {
             }
         }
         .buttonStyle(.cadencePlain)
+        // **The primary control on every row, and it had neither a name nor a tooltip** (T-594).
+        // Keyed on the glyph's own state, because what a second tap does changes with it — see
+        // `CadenceTaskCompletionState.accessibilityActionLabel`, whose five branches mirror
+        // `handleTap()` below.
+        .accessibilityLabel(glyph.state.accessibilityActionLabel)
     }
 
     private var isPendingCompletion: Bool { manager.isPending(task) }

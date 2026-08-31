@@ -221,6 +221,12 @@ struct ContainerPickerBadge: View {
             trigger
         }
         .modifier(TaskPickerTriggerStyle(breadcrumbSegment: breadcrumbSegment))
+        // On the badge itself rather than on the task row that hosts it, so every surface that
+        // draws this chip — the row, the composer, the inspector breadcrumb — is named by fixing it
+        // once. It announced only the container's name, so a row read "…, Inbox, button" with
+        // nothing saying Inbox was the *list* (T-594).
+        .accessibilityLabel(CadenceTaskControlAccessibility.list)
+        .accessibilityValue(label)
         .popover(isPresented: $showPicker) {
             ContainerPickerPopoverContent(
                 contexts: contexts,

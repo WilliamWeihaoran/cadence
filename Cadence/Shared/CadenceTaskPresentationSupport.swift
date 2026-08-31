@@ -245,6 +245,54 @@ nonisolated enum CadenceTaskRowDatePlan: String, Sendable, CaseIterable {
     var statesBothFieldsInOneChip: Bool { self == .oneSharedDay }
 }
 
+/// What the controls on a task row are **called**, as opposed to what they currently read.
+///
+/// Every one of these drew a glyph and a value and stated no name ([[T-594]]). A row's do-date pill
+/// announced a bare "Tomorrow" with nothing saying *which* date it sets, its due-date pill
+/// announced another bare "Tomorrow", and the estimate chip announced "45m" — three values, no
+/// nouns, in one row.
+///
+/// The shape each call site uses is `.accessibilityLabel(name)` + `.accessibilityValue(reading)`,
+/// which is the pair SwiftUI already has for exactly this: the label names the control and does not
+/// change, the value is the figure the chip draws. Replacing the whole announcement with one string
+/// would have had to re-state the value and would then own two spellings of it.
+///
+/// Stated once, in `Cadence/Shared/`, because **iOS has the same hole** — `iOSTaskRowActionViews`
+/// carries one accessibility label in the whole file — and the next surface to fill it should take
+/// these words rather than pick its own.
+nonisolated enum CadenceTaskControlAccessibility: Sendable {
+    /// The sun pill. "Do date" is the field's name everywhere else in the app.
+    static let doDate = "Do date"
+    static let dueDate = "Due date"
+    static let estimate = "Estimate"
+    /// The container badge — Inbox, an area or a project. "List" is what the picker it opens calls
+    /// itself, and what `CadenceTaskComposerSupport.containerName` resolves.
+    static let list = "List"
+    static let startFocus = "Start focus session"
+}
+
+extension CadenceTaskCompletionState {
+    /// What the completion circle is called, in the state it is in.
+    ///
+    /// **The primary control on every task row, and it had neither an accessible name nor a
+    /// tooltip** ([[T-594]]) — VoiceOver read an unlabelled button and the pointer got nothing.
+    ///
+    /// An action phrase rather than a state reading, because that is what the repo's other named
+    /// controls do ("Start focus session", "Open link", "Delete link") and because the state is
+    /// already carried by the row's own strikethrough and dimming. It is keyed on the state rather
+    /// than written at the call site because the action genuinely changes with it: mid-fill, a
+    /// second tap on macOS converts a pending completion into a cancellation rather than undoing
+    /// it — see `TaskCompletionButton.handleTap()`, whose branches these five mirror.
+    var accessibilityActionLabel: String {
+        switch self {
+        case .todo:                return "Complete task"
+        case .pendingCompletion:   return "Cancel task"
+        case .pendingCancellation: return "Stop cancelling task"
+        case .done, .cancelled:    return "Reopen task"
+        }
+    }
+}
+
 enum CadenceTaskPresentationSupport {
     static func plainPreviewText(from markdown: String, limit: Int? = nil) -> String {
         CadenceMarkdownPresentationSupport.plainPreviewText(from: markdown, limit: limit)
