@@ -496,6 +496,10 @@ private struct iOSCalendarTimelineDayHeader: View {
     private let calendar = Calendar.current
     private var isToday: Bool { calendar.isDateInToday(date) }
 
+    /// Exactly what the "N timed" chip shows — one number, read once, so the chip and the
+    /// accessibility label cannot state two.
+    private var timedCount: Int { taskCount + bundleCount + eventCount }
+
     var body: some View {
         Button(action: action) {
             VStack(spacing: 0) {
@@ -530,9 +534,9 @@ private struct iOSCalendarTimelineDayHeader: View {
                         )
                     }
 
-                    if taskCount + bundleCount + eventCount > 0 {
+                    if timedCount > 0 {
                         iOSCalendarMiniChip(
-                            title: "\(taskCount + bundleCount + eventCount) timed",
+                            title: "\(timedCount) timed",
                             icon: "clock.fill",
                             color: Theme.blue
                         )
@@ -566,7 +570,20 @@ private struct iOSCalendarTimelineDayHeader: View {
             }
         }
         .buttonStyle(.iosPressable)
-        .accessibilityLabel(DateFormatters.longDate.string(from: date))
+        // Both figures the band draws — the "N timed" chip and the unscheduled stack — where it
+        // used to announce the long date and nothing else (T-573).
+        //
+        // **No `.isSelected` trait here**, unlike the two month cells. This header carries no
+        // selection state by design (see the doc above): tapping it still sets the calendar's
+        // selected day for the inspector to read, but nothing on the grid lights up for it, so a
+        // trait would announce a state the screen deliberately does not show.
+        .accessibilityLabel(
+            CadenceCalendarDayAccessibility.timelineDayLabel(
+                date: date,
+                timedCount: timedCount,
+                unscheduledCount: unscheduledTasks.count
+            )
+        )
     }
 }
 

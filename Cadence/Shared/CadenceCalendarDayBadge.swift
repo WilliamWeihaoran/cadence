@@ -99,3 +99,62 @@ enum CadenceCalendarDayBadge: Hashable, CaseIterable {
     /// Whether the day number is drawn heavier than its neighbours.
     var isEmphasized: Bool { self != .plain }
 }
+
+// MARK: - What a day cell announces
+
+/// What VoiceOver calls one day in a calendar grid.
+///
+/// **Every one of these cells announced a bare long date** — the same date its own day number
+/// already draws — and nothing about what is *on* the day, which is the only reason to look at a
+/// month grid at all ([[T-573]]). The date is the cheap half; the load is in the capsule, the dot
+/// and the chips beside it.
+///
+/// Three functions rather than one, because the three cells draw three genuinely different things
+/// and a label states what its own cell shows. That rule is [[T-572]]'s: a label that announces a
+/// number the screen does not draw is the same defect as a label that announces the wrong one.
+///
+/// A value type outside every platform conditional, so `CadenceTests` — which builds for macOS and
+/// cannot see `Cadence/iOS/` — can pin the words themselves rather than only the call sites.
+nonisolated enum CadenceCalendarDayAccessibility {
+    /// For a cell that draws the number: the full month grid's count capsule.
+    ///
+    /// `"Monday, 31 August 2026, 3 scheduled items"`.
+    static func countedDayLabel(date: Date, itemCount: Int) -> String {
+        guard itemCount > 0 else { return "\(dayName(date)), \(emptyPhrase)" }
+        return "\(dayName(date)), \(itemCount) scheduled item\(itemCount == 1 ? "" : "s")"
+    }
+
+    /// For a cell that draws only presence: the compact agenda grid's dot, which is binary.
+    ///
+    /// It says "has scheduled items" rather than a number **on purpose**. The count is knowable at
+    /// the call site — the parent already buckets the day to decide whether to draw the dot at all
+    /// — but the cell does not show it, and inventing a figure that is nowhere on screen is the
+    /// mirror of the mismatch [[T-571]] left behind.
+    static func markedDayLabel(date: Date, hasItems: Bool) -> String {
+        "\(dayName(date)), \(hasItems ? "has scheduled items" : emptyPhrase)"
+    }
+
+    /// For the timeline's day header, which draws **two** figures: an "N timed" chip and up to two
+    /// unscheduled task chips with a "+ M more".
+    ///
+    /// `"Monday, 31 August 2026, 3 timed items, 2 unscheduled"`. Both numbers, because both are on
+    /// screen; the unscheduled clause is dropped when there are none rather than read as "0".
+    static func timelineDayLabel(date: Date, timedCount: Int, unscheduledCount: Int) -> String {
+        var label = timedCount > 0
+            ? "\(dayName(date)), \(timedCount) timed item\(timedCount == 1 ? "" : "s")"
+            : "\(dayName(date)), \(emptyPhrase)"
+        if unscheduledCount > 0 {
+            label += ", \(unscheduledCount) unscheduled"
+        }
+        return label
+    }
+
+    /// One wording for an empty day, so the three cells cannot drift into three ways of saying
+    /// nothing. `countedDayLabel(itemCount: 0)` and `markedDayLabel(hasItems: false)` are the same
+    /// sentence by construction.
+    static let emptyPhrase = "no scheduled items"
+
+    private static func dayName(_ date: Date) -> String {
+        DateFormatters.longDate.string(from: date)
+    }
+}

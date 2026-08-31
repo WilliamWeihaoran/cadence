@@ -528,7 +528,11 @@ private struct iOSCalendarMonthCompactDayCell: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.iosPressable)
-        .accessibilityLabel(DateFormatters.longDate.string(from: date))
+        // The dot under the day number is binary, so the label is too — see
+        // `CadenceCalendarDayAccessibility.markedDayLabel` for why it is not a count (T-573).
+        .accessibilityLabel(
+            CadenceCalendarDayAccessibility.markedDayLabel(date: date, hasItems: hasItems)
+        )
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }

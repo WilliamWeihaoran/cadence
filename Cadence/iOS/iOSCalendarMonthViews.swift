@@ -370,8 +370,10 @@ private struct iOSCalendarMonthDayCell: View {
 
                     Spacer(minLength: 0)
 
-                    if !tasks.isEmpty || !bundles.isEmpty || !events.isEmpty {
-                        Text("\(tasks.count + bundles.count + events.count)")
+                    // The same `itemCount` the accessibility label reads, so the capsule and the
+                    // announcement cannot state two numbers.
+                    if itemCount > 0 {
+                        Text("\(itemCount)")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(Theme.dim)
                             .monospacedDigit()
@@ -442,8 +444,17 @@ private struct iOSCalendarMonthDayCell: View {
             }
         }
         .buttonStyle(.iosPressable)
-        .accessibilityLabel(DateFormatters.longDate.string(from: date))
+        // The count capsule this cell draws, and the selection its blue border draws. Neither
+        // reached VoiceOver: the sibling agenda cell had the trait and this one did not, in the
+        // same grid, off the same tap (T-573).
+        .accessibilityLabel(
+            CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: itemCount)
+        )
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
+
+    /// Exactly what the count capsule shows — one number, read once.
+    private var itemCount: Int { tasks.count + bundles.count + events.count }
 
     /// **The plate is what says "not this month" now (T-568)** — the shape macOS's month grid
     /// settled on, and the reason it can avoid a cell-wide `.opacity`, which would fade the today

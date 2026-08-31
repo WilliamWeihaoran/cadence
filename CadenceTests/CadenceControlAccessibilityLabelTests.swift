@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import Cadence
 
 /// **Two controls whose accessible name was never set** (T-472, T-484), pinned as source shape.
 ///
@@ -494,6 +495,148 @@ struct CadenceControlAccessibilityLabelTests {
         return regex.matches(in: source, range: range).compactMap { match in
             guard let captured = Range(match.range(at: 1), in: source) else { return nil }
             return String(source[captured])
+        }
+    }
+
+    // MARK: - T-573: the calendar's three day cells
+
+    /// The three cells, the label each draws its words from, and whether it may claim selection.
+    ///
+    /// The trailing flag is the ticket's own defect: two cells in **one grid**, off one tap, one
+    /// selection — and only the agenda one announced that it was selected.
+    private static let calendarDayCells: [(path: String, declaration: String, label: String, announcesSelection: Bool)] = [
+        (
+            "Cadence/iOS/iOSCalendarMonthViews.swift",
+            "struct iOSCalendarMonthDayCell: View {",
+            "CadenceCalendarDayAccessibility.countedDayLabel(date:date,itemCount:itemCount)",
+            true
+        ),
+        (
+            "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
+            "struct iOSCalendarMonthCompactDayCell: View {",
+            "CadenceCalendarDayAccessibility.markedDayLabel(date:date,hasItems:hasItems)",
+            true
+        ),
+        (
+            "Cadence/iOS/iOSCalendarTimelineViews.swift",
+            "struct iOSCalendarTimelineDayHeader: View {",
+            "CadenceCalendarDayAccessibility.timelineDayLabel(date:date,timedCount:timedCount,unscheduledCount:unscheduledTasks.count)",
+            false
+        ),
+    ]
+
+    /// **The words, as values.** The scan below only knows each cell calls the shared function; it
+    /// would stay green if the function started returning the bare date it used to.
+    @Test func aCalendarDayCellAnnouncesWhatIsOnTheDayAndNotOnlyTheDate() throws {
+        let date = try #require(DateFormatters.date(from: "2026-08-31"))
+        let day = DateFormatters.longDate.string(from: date)
+
+        // The full month grid draws a count capsule, so it announces the count.
+        #expect(
+            CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: 3)
+                == "\(day), 3 scheduled items"
+        )
+        #expect(
+            CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: 1)
+                == "\(day), 1 scheduled item"
+        )
+
+        // The compact agenda grid draws a binary dot, so it announces presence and not a figure it
+        // does not show.
+        #expect(
+            CadenceCalendarDayAccessibility.markedDayLabel(date: date, hasItems: true)
+                == "\(day), has scheduled items"
+        )
+
+        // The timeline band draws two figures, and says both. The unscheduled clause is dropped
+        // rather than read as "0 unscheduled".
+        #expect(
+            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, timedCount: 4, unscheduledCount: 2)
+                == "\(day), 4 timed items, 2 unscheduled"
+        )
+        #expect(
+            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, timedCount: 1, unscheduledCount: 0)
+                == "\(day), 1 timed item"
+        )
+
+        // One wording for an empty day across all three, by construction rather than by three
+        // literals happening to match.
+        let empty = "\(day), \(CadenceCalendarDayAccessibility.emptyPhrase)"
+        #expect(CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: 0) == empty)
+        #expect(CadenceCalendarDayAccessibility.markedDayLabel(date: date, hasItems: false) == empty)
+        #expect(CadenceCalendarDayAccessibility.timelineDayLabel(date: date, timedCount: 0, unscheduledCount: 0) == empty)
+
+        // And the date really is the long form the cells used to announce alone — so this suite
+        // records that the fix *added* to the label rather than replacing it.
+        #expect(empty.hasPrefix(day))
+    }
+
+    /// **The call sites**, including the one that must *not* claim selection.
+    ///
+    /// A scan, because all three cells are inside `#if os(iOS)` and this target builds for macOS.
+    @Test func everyCalendarDayCellNamesItselfAndOnlyTheSelectableOnesSaySo() throws {
+        for cell in Self.calendarDayCells {
+            let raw = try CadenceSourceScan.sourceFile(cell.path)
+            let stripped = CadenceSourceScan.strippingComments(raw)
+            #expect(stripped != raw, "non-vacuity: \(cell.path) carries no comments to strip")
+            let dense = stripped.filter { !$0.isWhitespace }
+            #expect(
+                dense.contains(cell.declaration.filter { !$0.isWhitespace }),
+                "non-vacuity: \(cell.path) no longer declares the cell this rule is about"
+            )
+
+            #expect(
+                dense.contains(".accessibilityLabel(\(cell.label))"),
+                "\(cell.path) no longer names its day cell from the shared calendar label"
+            )
+            // The bare date, which is what all three said before T-573.
+            #expect(
+                dense.contains(".accessibilityLabel(DateFormatters.longDate.string(from:date))") == false,
+                "\(cell.path) is back to announcing the date and nothing on the day (T-573)"
+            )
+
+            let claimsSelection = dense.contains(".accessibilityAddTraits(isSelected?[.isSelected]:[])")
+            #expect(
+                claimsSelection == cell.announcesSelection,
+                cell.announcesSelection
+                    ? "\(cell.path) draws a selected state and does not announce it (T-573)"
+                    : "\(cell.path) announces a selection its band deliberately does not draw"
+            )
+        }
+    }
+
+    /// Why the third cell is exempt, read from the tree rather than asserted from the ticket.
+    ///
+    /// T-573 listed the timeline day header as "a third instance" of the missing `.isSelected`
+    /// trait. It is not: the header carries **no selection state at all** — it says so in its own
+    /// doc, and its background keys on `isToday` alone, with no `isSelected` to key on because the
+    /// grid never passes one. Adding the trait would have announced a state the screen was
+    /// deliberately changed to stop showing.
+    @Test func theTimelineDayHeaderHasNoSelectedStateToAnnounce() throws {
+        let path = "Cadence/iOS/iOSCalendarTimelineViews.swift"
+        let raw = try CadenceSourceScan.sourceFile(path)
+        #expect(raw.contains("It carries **no selection state**"), "the header's stated design changed")
+
+        let header = try Self.bodyOfStruct(
+            "iOSCalendarTimelineDayHeader",
+            in: CadenceSourceScan.codeOnly(raw)
+        )
+        #expect(header.contains("isToday"), "non-vacuity: the header no longer marks today either")
+        #expect(
+            header.contains("isSelected") == false,
+            "the timeline day header has a selected state now — give it the trait and drop this test"
+        )
+        // And the two that do announce it really do draw it, which is what makes the split above a
+        // reading of the screen rather than a preference.
+        for path in [
+            "Cadence/iOS/iOSCalendarMonthViews.swift",
+            "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
+        ] {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(
+                source.contains("let isSelected: Bool"),
+                "\(path) stopped taking a selection; recheck whether it should still claim the trait"
+            )
         }
     }
 
