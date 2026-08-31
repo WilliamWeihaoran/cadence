@@ -341,6 +341,12 @@ private struct iOSCalendarBoardDayColumn: View {
         .dropDestination(for: String.self) { items, _ in
             handleDrop(items)
         } isTargeted: { isDropTargeted = $0 }
+        // The column had no name at all: VoiceOver reached a stack of cards with no statement of
+        // which day they were on (T-572). The one spelling both platforms read, so the announced
+        // count cannot drift from the header's the way macOS's hand-written label had.
+        .accessibilityLabel(
+            CadenceBoardColumnAccessibility.dayColumnLabel(date: date, itemCount: activeItems.count)
+        )
     }
 
     /// The same header treatment every board column gets, day columns included: dot, uppercased

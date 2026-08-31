@@ -63,10 +63,6 @@ struct CalendarBoardDayColumn: View {
         return (eventItems + bundleItems + taskItems).sorted(by: sortColumnItems)
     }
 
-    private var totalCount: Int {
-        activeItems.count + completedTasks.count
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -118,7 +114,12 @@ struct CalendarBoardDayColumn: View {
         } isTargeted: { targeted in
             isDropTargeted = targeted
         }
-        .accessibilityLabel("\(DateFormatters.longDate.string(from: date)), \(totalCount) scheduled item\(totalCount == 1 ? "" : "s")")
+        // Same count the header above it draws, through the same shared spelling iOS reads. It
+        // used to announce a local `totalCount` of active + completed while the header showed
+        // active only, so VoiceOver and the visible number disagreed (T-571/T-572).
+        .accessibilityLabel(
+            CadenceBoardColumnAccessibility.dayColumnLabel(date: date, itemCount: activeItems.count)
+        )
     }
 
     /// The shared board header. The only things that differ from a kanban column or one of this

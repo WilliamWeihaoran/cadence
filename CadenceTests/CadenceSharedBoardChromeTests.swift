@@ -120,6 +120,69 @@ struct CadenceSharedBoardChromeTests {
         }
     }
 
+    // MARK: - T-572: what VoiceOver calls a Board day column
+
+    /// The label's words and its plural, as a value.
+    ///
+    /// This is the half a scan cannot make: the sweep below only knows that both columns *call*
+    /// the shared function, and would stay green if the function itself started saying nothing.
+    @Test func theDayColumnAccessibilityLabelNamesTheDayAndPluralisesItsCount() throws {
+        let date = try #require(DateFormatters.date(from: "2026-08-31"))
+        let long = DateFormatters.longDate.string(from: date)
+
+        #expect(
+            CadenceBoardColumnAccessibility.dayColumnLabel(date: date, itemCount: 3)
+                == "\(long), 3 scheduled items"
+        )
+        #expect(
+            CadenceBoardColumnAccessibility.dayColumnLabel(date: date, itemCount: 1)
+                == "\(long), 1 scheduled item"
+        )
+        // An empty day still says so rather than announcing a bare date.
+        #expect(
+            CadenceBoardColumnAccessibility.dayColumnLabel(date: date, itemCount: 0)
+                == "\(long), 0 scheduled items"
+        )
+    }
+
+    /// **T-572, and the trap it was carrying.** Both Calendar Board day columns state a name, and
+    /// they state it with the count of what the column lists.
+    ///
+    /// The ticket said to copy macOS's hand-written label to iOS as "the correct pattern". By the
+    /// time it was worked it was not: [[T-571]] had just moved the visible header beside that label
+    /// to `activeItems.count`, while the label still read a local `totalCount` of active +
+    /// completed — so on macOS VoiceOver and the number on screen disagreed, and copying it would
+    /// have made that two platforms' bug while closing an accessibility ticket.
+    ///
+    /// Hence one shared function rather than two labels that agree today. This asserts the
+    /// *argument* as well as the call: passing `totalCount` back in would satisfy a call-site count
+    /// and reinstate the whole defect.
+    @Test func bothCalendarBoardDayColumnsAnnounceTheSameNumberTheirHeaderDraws() throws {
+        let sites = [
+            ("Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift", "struct CalendarBoardDayColumn: View {"),
+            ("Cadence/iOS/iOSCalendarBoardView.swift", "struct iOSCalendarBoardDayColumn: View {")
+        ]
+
+        for (path, declaration) in sites {
+            let raw = try sourceFile(path)
+            let stripped = try strippingComments(raw)
+            #expect(stripped != raw, "non-vacuity: \(path) carries no comments to strip")
+            let dense = stripped.filter { !$0.isWhitespace }
+            #expect(dense.contains(declaration.filter { !$0.isWhitespace }), "non-vacuity: wrong file read")
+
+            #expect(
+                dense.contains(".accessibilityLabel(CadenceBoardColumnAccessibility.dayColumnLabel(date:date,itemCount:activeItems.count))"),
+                "\(path) no longer names its day column from the shared label with the count it lists"
+            )
+            // The defect by name: a local sum of active + completed, which is what macOS announced
+            // and what the ticket asked iOS to copy.
+            #expect(
+                dense.contains("activeItems.count+completedTasks.count") == false,
+                "\(path) has a total of active + completed again — check nothing announces it (T-572)"
+            )
+        }
+    }
+
     /// Neither retired spelling may come back — as a call or as a declaration — anywhere in the app
     /// source. `iOSBoardColumnHeader` is the name this ticket exists about: it announced itself as
     /// "iOS counterpart of macOS's `BoardColumnHeader`" in its own doc comment and still read as an

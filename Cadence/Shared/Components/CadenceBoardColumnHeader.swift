@@ -71,6 +71,33 @@ nonisolated struct CadenceBoardColumnHeaderMetrics: Sendable {
     static let accentRuleOpacities: [Double] = [0.85, 0.45, 0.16]
 }
 
+/// What VoiceOver calls one Calendar Board day column, on either platform.
+///
+/// **The number this states is the number drawn in the header above it, and that is the whole
+/// reason the string lives here.** macOS's label was written by hand against a local `totalCount`
+/// (active + completed) while the header beside it passed `activeItems.count`; [[T-571]] then made
+/// iOS's header active-only too, which left one platform announcing a total nothing on screen adds
+/// up to. Copying that hand-written label across to iOS — which is what [[T-572]] originally asked
+/// for — would have shipped the mismatch twice.
+///
+/// So the column does not get to spell its own name. It hands over the date and the count of the
+/// items it lists, and both platforms read one implementation, the same way they already read one
+/// `CadenceBoardColumnHeader` for the visible half.
+///
+/// A value type outside every platform conditional, for the reason the metrics above are:
+/// `CadenceTests` builds for macOS and cannot see `Cadence/iOS/` at all, so a shared *value* is the
+/// only thing an assertion can cover both boards' behaviour with rather than one board's source.
+nonisolated enum CadenceBoardColumnAccessibility {
+    /// `"Monday, 31 August 2026, 3 scheduled items"`.
+    ///
+    /// `itemCount` is the count of what the column **lists** — its active items — not its active
+    /// plus completed. Finished work sits behind the column's own "Completed" toggle, which
+    /// carries its own count and is a separate element to VoiceOver.
+    static func dayColumnLabel(date: Date, itemCount: Int) -> String {
+        "\(DateFormatters.longDate.string(from: date)), \(itemCount) scheduled item\(itemCount == 1 ? "" : "s")"
+    }
+}
+
 /// Whether a board column's header draws its due-date line, and what that line reads.
 ///
 /// This is the metadata iOS was not handing the shared header (T-331). The header component was
