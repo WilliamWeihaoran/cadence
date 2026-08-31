@@ -295,6 +295,44 @@ struct CadenceCalendarConsistencySurfaceTests {
         )
     }
 
+    /// T-569. The iOS calendar drew a task label as `task.title.isEmpty ? "Untitled" : task.title`,
+    /// which is the one spelling that cannot see a title of spaces: `"   ".isEmpty` is `false`, so
+    /// the chip drew three spaces and read as a **blank line** on the grid, in the month cell and
+    /// in the day card. `TaskTitleSupport.displayTitle` trims first, which is why
+    /// `iOSCalendarBundleDetailSheet` — the same surface — never had the defect.
+    ///
+    /// The fallback is passed explicitly as `defaultCompactDisplayTitle`, because these four are
+    /// narrow chips: the copy stays the "Untitled" they already drew rather than becoming
+    /// `displayTitle`'s default "Untitled Task", so what changed is the trim and nothing else.
+    @Test func theIOSCalendarTaskLabelsTrimBeforeTheyFallBack() throws {
+        // The behaviour the four call sites now get, and the one they had. Both spellings are
+        // here because the whole defect is the difference between them.
+        #expect(
+            TaskTitleSupport.displayTitle("   ", fallback: TaskTitleSupport.defaultCompactDisplayTitle)
+                == TaskTitleSupport.defaultCompactDisplayTitle
+        )
+        #expect(("   ".isEmpty ? "Untitled" : "   ") == "   ", "the retired spelling drew the spaces")
+        #expect(TaskTitleSupport.defaultCompactDisplayTitle == "Untitled", "the copy changed")
+
+        for (path, count) in [
+            ("Cadence/iOS/iOSCalendarTimelineViews.swift", 3),
+            ("Cadence/iOS/iOSCalendarMonthViews.swift", 1),
+        ] {
+            let source = try scannedSource(path)
+            #expect(
+                CadenceSourceScan.matchCount(#"task\.title\.isEmpty \? "Untitled""#, in: source) == 0,
+                "\(path) still falls back on an untrimmed title"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(
+                    #"TaskTitleSupport\.displayTitle\(task\.title, fallback: TaskTitleSupport\.defaultCompactDisplayTitle\)"#,
+                    in: source
+                ) == count,
+                "\(path) no longer has the \(count) task labels this pins"
+            )
+        }
+    }
+
     /// T-332's actual call sites. Each of these macOS forms has an iOS sibling that already
     /// trimmed `.whitespacesAndNewlines`; they now share one spelling instead of four.
     @Test func macOSNameFormsTrimThroughTheSharedNormalizer() throws {

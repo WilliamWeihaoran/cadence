@@ -524,7 +524,7 @@ private struct iOSCalendarTimelineDayHeader: View {
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(unscheduledTasks.prefix(2)) { task in
                         iOSCalendarMiniChip(
-                            title: task.title.isEmpty ? "Untitled" : task.title,
+                            title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
                             icon: "circle.fill",
                             color: Color(hex: task.containerColor)
                         )
@@ -972,7 +972,7 @@ struct iOSTimelineTaskBlock: View {
                     .padding(.top, 2)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(task.title.isEmpty ? "Untitled" : task.title)
+                    Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                         .strikethrough(task.isDone, color: Theme.dim)
@@ -1083,7 +1083,7 @@ struct iOSTimelineBundleBlock: View {
                     HStack(spacing: 4) {
                         iOSTaskCompletionCircle(glyph: .resolve(task: task))
                             .frame(width: 9, height: 9)
-                        Text(task.title.isEmpty ? "Untitled" : task.title)
+                        Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                             .font(.system(size: 9.5, weight: .medium))
                             .foregroundStyle(task.isDone ? Theme.dim : Theme.text.opacity(0.85))
                             .strikethrough(task.isDone, color: Theme.dim)

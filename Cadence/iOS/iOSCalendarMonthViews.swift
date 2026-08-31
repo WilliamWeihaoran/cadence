@@ -392,7 +392,7 @@ private struct iOSCalendarMonthDayCell: View {
                     }
                     ForEach(visibleTasks) { task in
                         iOSCalendarMiniChip(
-                            title: task.title.isEmpty ? "Untitled" : task.title,
+                            title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
                             icon: task.isDone ? "checkmark.circle.fill" : "circle.fill",
                             color: Color(hex: task.containerColor)
                         )
