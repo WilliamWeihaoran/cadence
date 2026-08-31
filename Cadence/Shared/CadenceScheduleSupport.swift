@@ -509,6 +509,61 @@ enum CadenceScheduleSupport {
         return spread(pool, count: count)
     }
 
+    /// The half of "which start times do we offer" that belongs to the *day* rather than to the
+    /// task — one clock reading, one work-hours window, one set of busy ranges.
+    ///
+    /// **The chips used to be a single `[Int]` computed once for the pane and handed to every
+    /// row**, which made every row offer the same three times. That is only honest while every
+    /// task is the same length, and they are not: `readyScheduleSlots` rejects a collision for
+    /// `durationMinutes`, the pane passed none so it checked 30, and the chip then called
+    /// `CadenceTaskDateEditing.setScheduledSlot`, which writes only the start — the block's height
+    /// is `AppTask.timelineDurationMinutes`. A task the row beside the chip labels "90 min
+    /// estimate" landed on a slot cleared for 30 and drew straight through the block below it.
+    ///
+    /// So the "same times for every row" half of once-per-pane cannot survive per-task lengths;
+    /// preserving it would mean keeping the wrong answer. **The half worth keeping is that every
+    /// row reads the same live day** — a slot that has just been filled leaves every row at once,
+    /// and two rows drawn in one pass cannot disagree about what time it is. That is what this
+    /// value carries, and why `now` is captured here instead of being defaulted per call.
+    ///
+    /// Deriving a row's chips is `slots(forDurationMinutes:)`, which is `readyScheduleSlots` over
+    /// these inputs. It is pure arithmetic over at most 48 half-hour marks, and the stack draws at
+    /// most four rows.
+    struct ReadyScheduleContext {
+        let now: Date
+        let workStartMinute: Int
+        let workEndMinute: Int
+        let busyRanges: [Range<Int>]
+        let calendar: Calendar
+
+        init(
+            now: Date = Date(),
+            workStartMinute: Int,
+            workEndMinute: Int,
+            busyRanges: [Range<Int>],
+            calendar: Calendar = .current
+        ) {
+            self.now = now
+            self.workStartMinute = workStartMinute
+            self.workEndMinute = workEndMinute
+            self.busyRanges = busyRanges
+            self.calendar = calendar
+        }
+
+        /// The start times a block `durationMinutes` long can actually take on this day.
+        func slots(forDurationMinutes durationMinutes: Int, count: Int = 3) -> [Int] {
+            readyScheduleSlots(
+                now: now,
+                workStartMinute: workStartMinute,
+                workEndMinute: workEndMinute,
+                busyRanges: busyRanges,
+                durationMinutes: durationMinutes,
+                count: count,
+                calendar: calendar
+            )
+        }
+    }
+
     private static func roundedUpToStep(_ minute: Int, step: Int) -> Int {
         guard step > 0 else { return minute }
         let clamped = max(0, minute)

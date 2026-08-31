@@ -52,12 +52,16 @@ struct iOSSchedulePanel: View {
         scheduledTasks.isEmpty && todayBundles.isEmpty
     }
 
-    /// Derived on every draw from the clock, the work-hours window and what is already on the day —
-    /// see `CadenceScheduleSupport.readyScheduleSlots`. Deliberately not seeded into `@State`: the
-    /// slots go stale as the day moves and as tasks are placed, and a snapshot taken in `onAppear`
-    /// would keep offering an hour that has just been filled.
-    private var readySlots: [Int] {
-        CadenceScheduleSupport.readyScheduleSlots(
+    /// The day the ready-to-schedule chips are offered against: the clock, the work-hours window
+    /// and what is already on the day. Each row derives its own start times from it, because the
+    /// block a chip writes is as long as the task — see
+    /// `CadenceScheduleSupport.ReadyScheduleContext`.
+    ///
+    /// Derived on every draw and deliberately not seeded into `@State`: the answer goes stale as
+    /// the day moves and as tasks are placed, and a snapshot taken in `onAppear` would keep
+    /// offering an hour that has just been filled.
+    private var readyScheduleContext: CadenceScheduleSupport.ReadyScheduleContext {
+        CadenceScheduleSupport.ReadyScheduleContext(
             workStartMinute: workHoursStartMinute,
             workEndMinute: workHoursEndMinute,
             busyRanges: CadenceScheduleSupport.busyMinuteRanges(
@@ -73,7 +77,7 @@ struct iOSSchedulePanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !untimedTodayTasks.isEmpty {
-                iOSScheduleReadyStack(tasks: untimedTodayTasks, slots: readySlots)
+                iOSScheduleReadyStack(tasks: untimedTodayTasks, context: readyScheduleContext)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 12)
 
@@ -445,9 +449,11 @@ private struct iOSScheduleHourRow: View {
 
 private struct iOSScheduleReadyStack: View {
     let tasks: [AppTask]
-    /// Minutes from midnight, computed once for the pane so every row offers the same times and a
-    /// slot that has just been filled disappears from all of them at once.
-    let slots: [Int]
+    /// The day, computed once for the pane, so a slot that has just been filled disappears from
+    /// every row at once and no two rows drawn in one pass disagree about the clock. The start
+    /// *times* are per row, because the block a chip writes is as long as that row's task — see
+    /// `CadenceScheduleSupport.ReadyScheduleContext`.
+    let context: CadenceScheduleSupport.ReadyScheduleContext
 
     private var visibleTasks: [AppTask] {
         Array(tasks.prefix(4))
@@ -475,7 +481,7 @@ private struct iOSScheduleReadyStack: View {
 
             VStack(spacing: 7) {
                 ForEach(visibleTasks) { task in
-                    iOSScheduleReadyTaskRow(task: task, slots: slots)
+                    iOSScheduleReadyTaskRow(task: task, context: context)
                 }
             }
 
@@ -492,12 +498,19 @@ private struct iOSScheduleReadyStack: View {
 
 private struct iOSScheduleReadyTaskRow: View {
     @Bindable var task: AppTask
-    let slots: [Int]
+    let context: CadenceScheduleSupport.ReadyScheduleContext
     @Environment(\.modelContext) private var modelContext
     // T-201: Today's page hosts the inspector (`iOSTaskInspectorHost`), not this row. "Ready to
     // schedule" is by definition a filtered stack — scheduling, completing or cancelling the task
     // takes it out of the stack, which is exactly what this row's own sheet could not survive.
     @Environment(\.iOSTaskInspector) private var taskInspector
+
+    /// The chips this row may actually offer. `setScheduledSlot` writes only the start, so the
+    /// block that lands is `task.timelineDurationMinutes` tall — the length the free-time check has
+    /// to be made against, and the length the row's own subtitle already advertises.
+    private var slots: [Int] {
+        context.slots(forDurationMinutes: task.timelineDurationMinutes)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
