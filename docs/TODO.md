@@ -87,27 +87,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-352] **DECIDE: should the root destination persist? A comment already says it does.** From the
-  same audit; **premise verified** — `macOSRootView` holds the selection in `@State` with **zero**
-  `SceneStorage` or `AppStorage`, and no restore path exists anywhere. iPad regular width is the
-  same, while the *compact* tab and task subsection are persisted, so one platform has two
-  different answers depending on width.
-  **The defect worth acting on is not the missing feature — it is the comment.**
-  `macOSRootSupportViews.swift` documents a parameter as non-nil for "an `.inbox` selection
-  **restored at launch**", describing a mechanism that does not exist. That is the **third** such
-  comment found this week: [[T-333]] has one claiming macOS reads a shared sorter it does not, and
-  [[T-337]] carries one justifying an unseeded button by a drop path that no longer exists. A
-  comment asserting a mechanism is worse than a missing mechanism, because it stops the next reader
-  checking.
-  So: decide the contract, and **fix the comment either way**. If root navigation should persist,
-  start with stable destinations only — Today, Inbox, All Tasks, Habits, Goals, Calendar. **Do not
-  persist area or project ids until [[T-345]] lands**, or launch will restore a selection pointing
-  at a deleted list, which is that ticket's bug made permanent.
-
-
-
-
-
 - [T-168] **iOS Focus mode: widgets and a landscape timer.** Two halves.
   *(a)* A widget showing the running timer plus what is being worked on, and a second showing the
   task list — exact split is a design call, make a good one rather than shipping two widgets that
@@ -463,16 +442,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-487] **DECIDE: `TasksPanel`'s `.byDoDate` mode is unreachable.** No caller constructs it —
-  `TodayView.swift:29` is the only construction and takes the `.todayOverview` default; the only
-  `.byDoDate` panel in the repo is in a test. The mode still costs branches in `TasksPanel.swift`
-  (`:246,339,514,679`), `TasksPanelDerivedState.swift:87` and `TasksPanelSupportViews.swift:37,46,73`.
-  **Its empty state held two retired strings for the entire time nobody could see it**, which is how dead
-  UI decays. Either it is a planned All Tasks panel and something should draw it, or it and its branches
-  should go.
-
-
-
 - [T-489] **DECIDE: `.stroke` vs `.strokeBorder` app-wide.** Withdrawn from [[T-449]] rather than done.
   `macOS/Views/SettingsListManagementSections.swift:381` draws a 28x28 glyph at radius 7 with `.stroke`,
   which centres the 1pt line on the path — so the control renders 1pt wider than it measures, the defect
@@ -712,11 +681,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `GoalPickerViews.swift` and `HabitsFormSupportViews.swift` — **the last two are already [[T-550]]'s
   redundant `emptyText:` arguments, so sequence the two tickets together.**
 
-- [T-556] **`CadenceControlAccessibilityLabelTests.swift` declares `ControlAccessibilityLabelTests`** — the
-  only single-suite basename mismatch in the whole target (the other 13 are multi-suite files where a
-  rename would mean a restructure). A one-file rename, worth doing **precisely because it is the only
-  one**, so it is cheap and it does not need a rule behind it.
-
 - [T-557] **An archived-but-linked area keeps its `linkedCalendarID` and no Settings surface names it.**
   The connect menu, the summary and the broken-link card all narrow to active, by the policy stated in
   `CadenceCalendarLinkHealth.missingLinks` — so this is **consistent, not the [[T-554]] class of defect**.
@@ -813,7 +777,65 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Do not raise the timeout as a first move: a timeout bump that hides a real activation regression is
   strictly worse than a flake that reports one.
 
+- [T-564] **DECIDE: collapse the now single-case `TasksPanelMode`, and the half-pair it left behind.**
+  Split out of [[T-487]] deliberately — the agent did the deletion it was asked for and stopped at the
+  two changes that are design calls rather than cleanup.
+  **(a)** `TasksPanelMode` has one case left. `switch mode` is still written out in `taskSections`,
+  `doneTasks` and `isEmptyState` so that a future second mode must be *answered* rather than silently
+  fall through. Collapsing the enum removes a type; keeping it keeps that forcing function. If Today
+  and All Tasks may ever diverge again, keep it.
+  **(b)** `TasksPanelDropCoordinator.taskDropHandler` is now unreferenced (its call site was
+  `liveFlatSection`), but it is one half of a symmetric currying pair whose sibling `sectionDropHandler`
+  is still live. Deleting half a pair is a shape change, not a dead-code removal.
+  Note the interaction with the macOS Today scan: `TasksPanelSupport.assignTask` has a live drop bug
+  (compound `list:<uuid>|date:today` keys never split on `|`), so **do not restructure the drop
+  coordinator until that is fixed or explicitly deferred** — a refactor landing first would make the
+  bug harder to see.
+
+- [T-565] **A shared guard against the T-333 / T-337 / T-352 class: comments asserting machinery the
+  code no longer has.** Three tickets this week were the same defect — prose naming a mechanism that
+  does not exist, which is worse than a missing mechanism because it stops the next reader checking.
+  Proposed by the T-352 agent, which was asked to report rather than build it.
+  The instrument already exists: `CadenceScanInstrument`, plus the `strippingComments`-vs-raw pairing
+  that ticket's third test uses to prove a sentence lives in a comment. A sweep would pin a small
+  registry of **retired mechanism phrases** (`SceneStorage`, `todayDateSections`,
+  `SidebarStaticDestination`, ...) as absent from comments in files where they are also absent from
+  live code — i.e. flag prose asserting machinery no live line in the same file references.
+  **Keep the registry hand-curated.** A fully automatic version would fire on legitimate tombstones,
+  which this repo uses deliberately and well — 22 of them survive [[T-487]] on purpose. The value is
+  in catching the *claim*, not the *memorial*.
+  Use `strippingComments`, never `codeOnly` — `codeOnly` blanks string literals too, which is what
+  made an earlier copy scan permanently and silently green.
+
 ## Done
+
+- [T-352] **CLOSED 2026-08-31 (`5ae916a`).** Premise confirmed and then *inverted*: no persistence was
+  added, per the user's decision, because the defect was never a missing feature — it was a comment in
+  `macOSRootSupportViews.swift` asserting a launch-restore mechanism that has never existed.
+  `@SceneStorage` appears in **zero** of the 300+ files under `Cadence/`. Comment rewritten with a
+  tombstone naming the claim it replaced. `CadenceRootSelectionLaunchContractTests` (3 tests) now pins
+  both the code contract (the wrapper is read off the `selection` declaration by regex, so a *new*
+  persisted `*selection*` property also fails) and the prose contract. Non-vacuity proven by two
+  mutations that were **confirmed to compile** before their kills were believed.
+
+- [T-487] **CLOSED 2026-08-31 (`53e223c`).** `.byDoDate` deleted along with every branch, helper, view
+  and derived value that existed only to serve it: 4 section builders, 6 flat-section helpers, the
+  frozen list/flat snapshot chain, 4 orphaned views, the grouping control, and
+  `byDoDateBase{Tasks,SortedTasks}` — which were computed **unconditionally**, so every Today render
+  filtered every task and fully sorted the result for a mode nothing could reach. Net -711/+151.
+  Tests were retargeted rather than dropped. The first full run surfaced **2 genuine regressions**,
+  which is evidence the source scans were reading this change rather than passing through it — one of
+  them found a needle pinning two call sites as "two that must agree" where the second was inside a
+  function whose own doc said *"Currently unreferenced"*. Green at 3719 tests, 0 warnings.
+  **Deliberately not done, now [[T-564]]:** `TasksPanelMode` is single-case and was NOT collapsed, and
+  `TasksPanelDropCoordinator.taskDropHandler` was left unreferenced rather than half a currying pair
+  removed. Both are design changes the user has not seen.
+
+- [T-556] **CLOSED 2026-08-31 (`3eb8237`).** Suite renamed to `CadenceControlAccessibilityLabelTests`
+  to match its file. All four repo-wide mentions of the old name were checked and **none was an
+  invocation**. The T-552 hazard was *demonstrated rather than asserted*: against one build, the old
+  suite name ran **0 tests and xcodebuild called that a success**, while `xcb.sh`'s guard refused it
+  with exit 4; the new name ran 12.
 
 Moved to [`TODO_DONE.md`](TODO_DONE.md) on 2026-08-26 — 220 entries, with their reasoning and shipping SHAs intact.
 The working list was ~82k tokens and two thirds of it was finished work. **Search the archive
