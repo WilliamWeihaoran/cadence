@@ -16,7 +16,6 @@ struct TasksPanel: View {
     let showsHeader: Bool
     let sortField: TaskSortField
     let sortDirection: TaskSortDirection
-    let groupingMode: TaskGroupingMode
     let enableControls: Bool
     let useStandardHeaderHeight: Bool
     @AppStorage(CadenceTodayRolloverSupport.dismissedDateStorageKey) private var rolloverNoticeDismissedDate = ""
@@ -24,10 +23,7 @@ struct TasksPanel: View {
     @State private var isCompletedCollapsed = true
     @State private var localSortField: TaskSortField = .date
     @State private var localSortDirection: TaskSortDirection = .ascending
-    @State private var localGroupingMode: TaskGroupingMode = .byDate
     @State private var frozenTaskOrder: [AppTask]? = nil
-    @State private var frozenListGroups: [FrozenTodayTaskGroup]? = nil
-    @State private var frozenFlatSections: [FrozenFlatTaskSection]? = nil
     @State private var dragOverTaskID: UUID? = nil
 
     init(
@@ -35,7 +31,6 @@ struct TasksPanel: View {
         showsHeader: Bool = true,
         sortField: TaskSortField = .date,
         sortDirection: TaskSortDirection = .ascending,
-        groupingMode: TaskGroupingMode = .byDate,
         enableControls: Bool = false,
         useStandardHeaderHeight: Bool = false
     ) {
@@ -43,25 +38,18 @@ struct TasksPanel: View {
         self.showsHeader = showsHeader
         self.sortField = sortField
         self.sortDirection = sortDirection
-        self.groupingMode = groupingMode
         self.enableControls = enableControls
         self.useStandardHeaderHeight = useStandardHeaderHeight
-        let prefix = mode == .todayOverview ? "today" : "allTasks"
         let ud = UserDefaults.standard
-        _localSortField = State(initialValue: TaskSortField(rawValue: ud.string(forKey: "\(prefix)SortField") ?? "") ?? sortField)
-        _localSortDirection = State(initialValue: TaskSortDirection(rawValue: ud.string(forKey: "\(prefix)SortDirection") ?? "") ?? sortDirection)
-        let stored = TaskGroupingMode(rawValue: ud.string(forKey: "\(prefix)GroupingMode") ?? "")
-        let fallback: TaskGroupingMode = mode == .todayOverview ? .byList : groupingMode
-        // Today view does not support byDate grouping
-        _localGroupingMode = State(initialValue: (stored == .byDate && mode == .todayOverview) ? fallback : (stored ?? fallback))
+        _localSortField = State(initialValue: TaskSortField(rawValue: ud.string(forKey: "\(Self.udPrefix)SortField") ?? "") ?? sortField)
+        _localSortDirection = State(initialValue: TaskSortDirection(rawValue: ud.string(forKey: "\(Self.udPrefix)SortDirection") ?? "") ?? sortDirection)
     }
 
     /// Which `CadenceTaskSurface` this panel is drawing, so the chrome answers come from the
-    /// shared table rather than from four inline decisions (T-290). Today's panel is `.today`; the
-    /// `.byDoDate` mode is the All Tasks shape of the same panel.
-    private var surface: CadenceTaskSurface {
-        mode == .todayOverview ? .today : .allTasks
-    }
+    /// shared table rather than from four inline decisions (T-290). One surface, since T-487: the
+    /// `.byDoDate` mode that answered `.allTasks` here was unreachable and is gone. The All Tasks
+    /// *page* is `TasksPageView`, which has never built one of these panels.
+    private var surface: CadenceTaskSurface { .today }
 
     /// See `surface`. Read for the sort chips, the Completed section, and whether a row names its
     /// list — the three things this panel used to answer for itself.
@@ -71,8 +59,11 @@ struct TasksPanel: View {
 
     private var activeSortField: TaskSortField { enableControls ? localSortField : sortField }
     private var activeSortDirection: TaskSortDirection { enableControls ? localSortDirection : sortDirection }
-    private var activeGroupingMode: TaskGroupingMode { enableControls ? localGroupingMode : groupingMode }
-    private var udPrefix: String { mode == .todayOverview ? "today" : "allTasks" }
+
+    /// Where this panel's sort preferences are written. It used to be
+    /// `mode == .todayOverview ? "today" : "allTasks"`; the second half went with `.byDoDate`
+    /// (T-487). The `allTasks*` keys are still live — `TasksPageView` owns them.
+    private static let udPrefix = "today"
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -86,17 +77,15 @@ struct TasksPanel: View {
             areas: areas,
             projects: projects,
             mode: mode,
-            todayKey: todayKey,
-            sortField: activeSortField,
-            sortDirection: activeSortDirection
+            todayKey: todayKey
         )
     }
 
-    /// The `mode` clause is this surface's own — `TasksPanel` also draws All Tasks, which has no
-    /// Today and therefore no rollover. Everything after it is
-    /// `CadenceTodayRolloverSupport.isNoticeVisible`, the same predicate iOS's Today asks.
+    /// `CadenceTodayRolloverSupport.isNoticeVisible`, the same predicate iOS's Today asks. This
+    /// used to lead with `mode == .todayOverview &&`, guarding against the All Tasks shape of the
+    /// panel; that shape was unreachable and is gone (T-487).
     private func shouldShowRolloverNotice(_ derived: TasksPanelDerivedState) -> Bool {
-        mode == .todayOverview && CadenceTodayRolloverSupport.isNoticeVisible(
+        CadenceTodayRolloverSupport.isNoticeVisible(
             pastDoTaskCount: derived.overdoTasks.count,
             dismissedDateKey: rolloverNoticeDismissedDate,
             todayKey: todayKey
@@ -105,10 +94,6 @@ struct TasksPanel: View {
 
     private func applyFreeze(_ sorted: [AppTask]) -> [AppTask] {
         applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder)
-    }
-
-    private func byDoDateSortedTasks(_ derived: TasksPanelDerivedState) -> [AppTask] {
-        applyFreeze(derived.byDoDateBaseSortedTasks)
     }
 
     private var dropCoordinator: TasksPanelDropCoordinator {
@@ -136,49 +121,6 @@ struct TasksPanel: View {
         )
     }
 
-    /// T-342 reached here too. These two resolvers are hand-rolled copies of
-    /// `resolveFrozenTaskGroups` — same snapshot-rehydration shape, different result type — and they
-    /// carried the same half-rule: a task **cancelled** while the panel was frozen is not `isDone`,
-    /// so it stayed pinned in an active frozen group until the freeze released, while a task
-    /// completed beside it left at once. `isFinishedTask` is the whole rule, and the audit's "two
-    /// places" was really four.
-    private var resolvedFrozenListGroups: [TodayTaskGroup]? {
-        guard let frozenListGroups else { return nil }
-        let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
-        return frozenListGroups.compactMap { group in
-            let resolvedTasks = group.taskIDs
-                .compactMap { tasksByID[$0] }
-                .filter { !CadenceTaskQuerySupport.isFinishedTask($0) }
-            guard !resolvedTasks.isEmpty else { return nil }
-            return TodayTaskGroup(
-                id: group.id,
-                contextIcon: group.contextIcon,
-                contextColor: group.contextColor,
-                listIcon: group.listIcon,
-                listName: group.listName,
-                listColor: group.listColor,
-                tasks: resolvedTasks
-            )
-        }
-    }
-
-    private var resolvedFrozenFlatSections: [FrozenFlatTaskSection]? {
-        guard let frozenFlatSections else { return nil }
-        let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
-        return frozenFlatSections.compactMap { section in
-            let resolvedTasks = section.taskIDs
-                .compactMap { tasksByID[$0] }
-                .filter { !CadenceTaskQuerySupport.isFinishedTask($0) }
-            guard !resolvedTasks.isEmpty else { return nil }
-            return FrozenFlatTaskSection(
-                id: section.id,
-                title: section.title,
-                dropKey: section.dropKey,
-                taskIDs: resolvedTasks.map(\.id)
-            )
-        }
-    }
-
     var body: some View {
         let derived = derivedState
 
@@ -196,13 +138,10 @@ struct TasksPanel: View {
                 isCompletedCollapsed = true
             }
             .onChange(of: localSortField) { _, v in
-                UserDefaults.standard.set(v.rawValue, forKey: udPrefix + "SortField")
+                UserDefaults.standard.set(v.rawValue, forKey: Self.udPrefix + "SortField")
             }
             .onChange(of: localSortDirection) { _, v in
-                UserDefaults.standard.set(v.rawValue, forKey: udPrefix + "SortDirection")
-            }
-            .onChange(of: localGroupingMode) { _, v in
-                UserDefaults.standard.set(v.rawValue, forKey: udPrefix + "GroupingMode")
+                UserDefaults.standard.set(v.rawValue, forKey: Self.udPrefix + "SortDirection")
             }
     }
 
@@ -218,7 +157,7 @@ struct TasksPanel: View {
                     completedSection(derived: derived)
                     emptyStateSection(derived: derived)
                 }
-                .padding(.top, showsHeader && mode == .todayOverview ? 12 : 0)
+                .padding(.top, showsHeader ? 12 : 0)
                 .padding(.bottom, 16)
             }
             .cadenceSoftPageBounce()
@@ -228,7 +167,7 @@ struct TasksPanel: View {
     private func headerSection(derived: TasksPanelDerivedState) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                TasksPanelHeader(mode: mode, summary: todaySummary(derived: derived))
+                TasksPanelHeader(summary: todaySummary(derived: derived))
                 if enableControls {
                     controlsBar
                 }
@@ -240,11 +179,11 @@ struct TasksPanel: View {
 
     @ViewBuilder
     private func taskSections(derived: TasksPanelDerivedState) -> some View {
+        // One case, and the `switch` stays: `TasksPanelMode` is still an enum, so a mode added
+        // later has to be answered here rather than silently falling through (T-487).
         switch mode {
         case .todayOverview:
             todayOverviewSections(derived: derived)
-        case .byDoDate:
-            byDoDateSections(derived: derived)
         }
     }
 
@@ -320,9 +259,11 @@ struct TasksPanel: View {
         }
     }
 
-    private func todaySummary(derived: TasksPanelDerivedState) -> CadenceTodaySummary? {
-        guard mode == .todayOverview else { return nil }
-        return CadenceTodayPresentationSupport.summary(
+    /// Non-optional since T-487. It returned `CadenceTodaySummary?` and opened with
+    /// `guard mode == .todayOverview else { return nil }` — the day's counts only mean anything on
+    /// the day's page, and this panel is now only ever the day's page.
+    private func todaySummary(derived: TasksPanelDerivedState) -> CadenceTodaySummary {
+        CadenceTodayPresentationSupport.summary(
             activeTasks: derived.todayEligibleTasks,
             timedTasks: CadenceScheduleSupport.scheduledTasks(
                 on: todayKey,
@@ -336,122 +277,6 @@ struct TasksPanel: View {
     }
 
     @ViewBuilder
-    private func byDoDateSections(derived: TasksPanelDerivedState) -> some View {
-        let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
-        let sortedTasks = byDoDateSortedTasks(derived)
-
-        switch activeGroupingMode {
-        case .none:
-            frozenOrSingleFlatSection(
-                frozenSections: resolvedFrozenFlatSections,
-                tasksByID: tasksByID,
-                label: "Tasks",
-                tasks: sortedTasks
-            )
-        case .byDate:
-            if let frozenSections = resolvedFrozenFlatSections {
-                frozenFlatSections(frozenSections, tasksByID: tasksByID)
-            } else {
-                byDoDateDateSections(sortedTasks: sortedTasks)
-            }
-        case .byList:
-            byDoDateListSections(sortedTasks: sortedTasks)
-        case .byPriority:
-            prioritySections(tasks: sortedTasks, frozenSections: resolvedFrozenFlatSections, tasksByID: tasksByID)
-        }
-    }
-
-    @ViewBuilder
-    private func byDoDateDateSections(sortedTasks: [AppTask]) -> some View {
-        let todayTasks = sortedTasks.filter { $0.scheduledDate == todayKey }
-        let upcomingTasks = sortedTasks.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate != todayKey }
-        let unscheduledTasks = sortedTasks.filter { taskIsUnscheduled($0) }
-
-        if !todayTasks.isEmpty {
-            liveFlatSection(label: "Do Today", tasks: todayTasks, dropKey: "date:today")
-        }
-        if !upcomingTasks.isEmpty {
-            liveFlatSection(label: "Scheduled", tasks: upcomingTasks, dropKey: "date:scheduled")
-        }
-        if !unscheduledTasks.isEmpty {
-            liveFlatSection(label: "Unscheduled", tasks: unscheduledTasks, dropKey: "date:unscheduled")
-        }
-    }
-
-    @ViewBuilder
-    private func byDoDateListSections(sortedTasks: [AppTask]) -> some View {
-        ForEach(groupedTasks(sortedTasks)) { group in
-            TasksPanelGroupSectionView(
-                group: group,
-                dragOverTaskID: $dragOverTaskID,
-                contexts: contexts,
-                areas: areas,
-                projects: projects,
-                allTasks: allTasks,
-                isCollapsed: collapsedGroupIDs.contains(group.id),
-                overdueCount: overdueCount(in: group.tasks),
-                regularCount: regularCount(in: group.tasks),
-                onToggle: { toggleGroup(group.id) },
-                taskDragPayload: taskDragPayload,
-                onDropOnGroupPayload: { payload in
-                    dropCoordinator.handleSectionDrop(payload: payload, dropKey: "list:\(group.id)")
-                },
-                onDropOnTaskPayload: { payload, targetTask in
-                    dropCoordinator.handleTaskDrop(
-                        payload: payload,
-                        targetTask: targetTask,
-                        scopeTasks: group.tasks,
-                        dropKey: "list:\(group.id)"
-                    )
-                }
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func frozenOrSingleFlatSection(
-        frozenSections: [FrozenFlatTaskSection]?,
-        tasksByID: [UUID: AppTask],
-        label: String,
-        tasks: [AppTask]
-    ) -> some View {
-        if let frozenSections {
-            frozenFlatSections(frozenSections, tasksByID: tasksByID)
-        } else if !tasks.isEmpty {
-            liveFlatSection(label: label, tasks: tasks)
-        }
-    }
-
-    @ViewBuilder
-    private func frozenFlatSections(_ sections: [FrozenFlatTaskSection], tasksByID: [UUID: AppTask]) -> some View {
-        ForEach(sections, id: \.id) { section in
-            sectionView(from: section, tasksByID: tasksByID)
-        }
-    }
-
-    @ViewBuilder
-    private func prioritySections(
-        tasks: [AppTask],
-        frozenSections: [FrozenFlatTaskSection]?,
-        tasksByID: [UUID: AppTask]
-    ) -> some View {
-        if let frozenSections {
-            frozenFlatSections(frozenSections, tasksByID: tasksByID)
-        } else {
-            ForEach(TaskPriority.allCases.reversed(), id: \.self) { priority in
-                let priorityTasks = tasks.filter { $0.priority == priority }
-                if !priorityTasks.isEmpty {
-                    liveFlatSection(
-                        label: priority.label,
-                        tasks: priorityTasks,
-                        dropKey: "priority:\(priority.rawValue)"
-                    )
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
     private func completedSection(derived: TasksPanelDerivedState) -> some View {
         if options.showsCompletedToggle, !derived.doneTasks.isEmpty {
             TasksPanelCompletedSectionView(
@@ -462,7 +287,6 @@ struct TasksPanel: View {
                 // rather than a shorter list.
                 tasks: CadenceTaskSurfaceOptions.completedRows(from: derived.doneTasks, tier: .desktop),
                 showsContainer: options.showsContainerChip,
-                mode: mode,
                 contexts: contexts,
                 areas: areas,
                 projects: projects,
@@ -481,14 +305,16 @@ struct TasksPanel: View {
             // `iOSCompactTodayEmptyState` draws. macOS said "Nothing for today" over
             // "Due-today and do-today tasks will appear here" — a restatement of the page's scope
             // where the shared subtitle names the next thing to do.
+            //
+            // The other arm read `CadenceEmptyStateCopy.allTasks*` and went with `.byDoDate`
+            // (T-487). Those two constants stay live — iOS's `iOSTaskCollectionMetrics` draws the
+            // All Tasks empty state from them. What is gone with the mode is a macOS empty state
+            // that nothing could reach, which is why it still spelled "No tasks yet" / "Add a task
+            // above to get started" for as long as it did: the first is a string T-285 retired,
+            // and the second named a field that does not exist.
             EmptyStateView(
-                // `.byDoDate` is the All Tasks shape of this panel, so it says what the All Tasks
-                // page says. It used to spell "No tasks yet" / "Add a task above to get started"
-                // inline: the first is a string T-285 retired, and the second names a field that
-                // does not exist — this panel's affordance is the `+` glyph on its own header
-                // (`TasksPanelSupportViews`).
-                message: mode == .byDoDate ? CadenceEmptyStateCopy.allTasksTitle : CadenceTodayPresentationSupport.emptyTitle,
-                subtitle: mode == .byDoDate ? CadenceEmptyStateCopy.allTasksSubtitle : CadenceTodayPresentationSupport.emptySubtitle,
+                message: CadenceTodayPresentationSupport.emptyTitle,
+                subtitle: CadenceTodayPresentationSupport.emptySubtitle,
                 icon: "checkmark.circle"
             )
             .padding(.top, 40)
@@ -498,26 +324,8 @@ struct TasksPanel: View {
     private func hoverFreezeObserver(derived: TasksPanelDerivedState) -> some View {
         HoverFreezeObserver(
             frozenOrder: $frozenTaskOrder,
-            frozenListGroups: $frozenListGroups,
-            frozenFlatSections: $frozenFlatSections,
-            naturalTasks: mode == .todayOverview
-                ? derived.todayEligibleTasks.sorted(by: compareTasksForCurrentSort)
-                : byDoDateSortedTasks(derived),
-            listGroupSnapshot: currentFrozenListSnapshotForHover(derived),
-            // Intentional: keep flat/date/priority section trees live while hovering.
-            // Capturing section snapshots swaps the row tree under the pointer and
-            // can create hover-enter/exit refresh jitter in grouped Today views.
-            flatSectionSnapshot: []
+            naturalTasks: derived.todayEligibleTasks.sorted(by: compareTasksForCurrentSort)
         )
-    }
-
-    /// List-group snapshots are a `.byDoDate` concern only. Today groups by list too now, but it
-    /// draws its groups through `TasksPanelIntentSectionView` rather than `TodayTaskGroup`, so
-    /// there is no `FrozenTodayTaskGroup` for it to snapshot. `frozenTaskOrder` still holds the row
-    /// order steady under the pointer on both, which is what the freeze is for.
-    private func currentFrozenListSnapshotForHover(_ derived: TasksPanelDerivedState) -> [FrozenTodayTaskGroup] {
-        guard mode == .byDoDate, activeGroupingMode == .byList else { return [] }
-        return currentFrozenListGroupSnapshot(for: byDoDateSortedTasks(derived))
     }
 
     private func rollOverPastDoTasks() {
@@ -530,46 +338,11 @@ struct TasksPanel: View {
         }
     }
 
-    @ViewBuilder
-    private func liveFlatSection(label: String, tasks: [AppTask], dropKey: String? = nil) -> some View {
-        TasksPanelFlatSectionView(
-            label: label,
-            tasks: tasks,
-            showsContainer: options.showsContainerChip,
-            contexts: contexts,
-            areas: areas,
-            projects: projects,
-            allTasks: allTasks,
-            isCollapsed: collapsedGroupIDs.contains("flat-\(label.lowercased().replacingOccurrences(of: " ", with: "-"))"),
-            overdueCount: overdueCount(in: tasks),
-            regularCount: regularCount(in: tasks),
-            dragOverTaskID: $dragOverTaskID,
-            onToggle: { toggleGroup("flat-\(label.lowercased().replacingOccurrences(of: " ", with: "-"))") },
-            taskDragPayload: taskDragPayload,
-            onDropOnSectionPayload: dropCoordinator.sectionDropHandler(for: dropKey),
-            onDropOnTaskPayload: dropCoordinator.taskDropHandler(scopeTasks: tasks, dropKey: dropKey)
-        )
-    }
-
-    @ViewBuilder
-    private func sectionView(from section: FrozenFlatTaskSection, tasksByID: [UUID: AppTask]) -> some View {
-        let sectionTasks = section.taskIDs.compactMap { tasksByID[$0] }
-        liveFlatSection(label: section.title, tasks: sectionTasks, dropKey: section.dropKey)
-    }
-
     private var controlsBar: some View {
         HStack(spacing: 8) {
             if options.showsSort {
                 CadenceEnumPickerBadge(title: "Sort", selection: $localSortField)
                 CadenceEnumPickerBadge(title: "Order", selection: $localSortDirection)
-            }
-            // No grouping control on Today. Its sections are Overdue and then the day's lists —
-            // see `todayGroupSections` — which is the one grouping the page has, so there is
-            // nothing for a picker to choose between. `_localGroupingMode` still falls back to
-            // `.byList` for this mode, which is now a description of what Today actually does
-            // rather than a mode it declines to use.
-            if mode != .todayOverview {
-                CadenceEnumPickerBadge(title: "Group", selection: $localGroupingMode)
             }
             Spacer()
         }
@@ -617,100 +390,6 @@ struct TasksPanel: View {
             .padding(.horizontal, 16)
     }
 
-    // MARK: - Grouping
-
-    private func groupedTasks(_ tasks: [AppTask]) -> [TodayTaskGroup] {
-        if let resolvedFrozenListGroups {
-            return resolvedFrozenListGroups
-        }
-
-        return TasksPanelSupport.listGroups(from: tasks, contexts: contexts) { groupTasks in
-            applyFreeze(groupTasks.sorted(by: compareTasksForCurrentSort))
-        }
-    }
-
-    private func makeFlatSection(
-        id: String,
-        title: String,
-        tasks: [AppTask],
-        dropKey: String? = nil
-    ) -> FrozenFlatTaskSection? {
-        guard !tasks.isEmpty else { return nil }
-        return TasksPanelSupport.makeFlatSection(
-            id: id,
-            title: title,
-            tasks: tasks,
-            dropKey: dropKey
-        )
-    }
-
-    private func currentFrozenListGroupSnapshot(for tasks: [AppTask]) -> [FrozenTodayTaskGroup] {
-        groupedTasks(tasks).map { group in
-            FrozenTodayTaskGroup(
-                id: group.id,
-                contextIcon: group.contextIcon,
-                contextColor: group.contextColor,
-                listIcon: group.listIcon,
-                listName: group.listName,
-                listColor: group.listColor,
-                taskIDs: group.tasks.map(\.id)
-            )
-        }
-    }
-
-    /// Currently unreferenced: `hoverFreezeObserver` deliberately passes `flatSectionSnapshot: []`
-    /// (see the comment there) so flat/date/priority section trees stay live while hovering.
-    /// Kept as the counterpart to `currentFrozenListGroupSnapshot` should that ever change.
-    private func currentFrozenFlatSectionSnapshot(derived: TasksPanelDerivedState) -> [FrozenFlatTaskSection] {
-        switch mode {
-        case .todayOverview:
-            // Today has one grouping — Overdue, then by list — so there is no switch here any
-            // more. The groups are `CadenceTaskQuerySupport.todayGroups`', the same ones
-            // `todayGroupSections` draws, rather than a second list of the same predicates under
-            // names of their own.
-            let todayTasks = applyFreeze(
-                derived.todayGroupedTaskItems(showRolloverNotice: shouldShowRolloverNotice(derived))
-                    .sorted(by: compareTasksForCurrentSort)
-            )
-            let groups = CadenceTaskQuerySupport.todayGroups(from: todayTasks, todayKey: todayKey, contexts: contexts)
-            return groups.compactMap { group in
-                makeFlatSection(
-                    id: group.id,
-                    title: group.title,
-                    tasks: group.tasks,
-                    dropKey: CadenceTaskDropSupport.dropKey(forGroup: group.dropIdentity)
-                )
-            }
-        case .byDoDate:
-            let todayK = todayKey
-            let byDoDateSortedTasks = byDoDateSortedTasks(derived)
-            switch activeGroupingMode {
-            case .none:
-                return [makeFlatSection(id: "tasks", title: "Tasks", tasks: byDoDateSortedTasks)].compactMap { $0 }
-            case .byDate:
-                let todayTasks = byDoDateSortedTasks.filter { $0.scheduledDate == todayK }
-                let upcomingTasks = byDoDateSortedTasks.filter { !$0.scheduledDate.isEmpty && $0.scheduledDate != todayK }
-                let unscheduledTasks = byDoDateSortedTasks.filter { taskIsUnscheduled($0) }
-                return [
-                    makeFlatSection(id: "do-today", title: "Do Today", tasks: todayTasks, dropKey: "date:today"),
-                    makeFlatSection(id: "scheduled", title: "Scheduled", tasks: upcomingTasks, dropKey: "date:scheduled"),
-                    makeFlatSection(id: "unscheduled", title: "Unscheduled", tasks: unscheduledTasks, dropKey: "date:unscheduled")
-                ].compactMap { $0 }
-            case .byList:
-                return []
-            case .byPriority:
-                return TaskPriority.allCases.reversed().compactMap { priority in
-                    makeFlatSection(
-                        id: "priority-\(priority.rawValue)",
-                        title: priority.label,
-                        tasks: byDoDateSortedTasks.filter { $0.priority == priority },
-                        dropKey: "priority:\(priority.rawValue)"
-                    )
-                }
-            }
-        }
-    }
-
     /// **Today ranks by urgency first, then by whatever the Sort chips say** — and the `!enableControls`
     /// half of this condition is gone (T-305).
     ///
@@ -723,16 +402,13 @@ struct TasksPanel: View {
     /// `scheduledDate`.
     ///
     /// So the rank leads, exactly as iOS's `sortTodayTasks` has always had it, and the user's
-    /// chosen field and direction order the rows *inside* each rank. `.byDoDate` — All Tasks — is
-    /// untouched and still sorts purely by the chips.
+    /// chosen field and direction order the rows *inside* each rank. The `mode == .todayOverview`
+    /// test that used to wrap the rank is gone with `.byDoDate` — All Tasks was the one shape that
+    /// sorted purely by the chips, and it was unreachable (T-487).
     private func compareTasksForCurrentSort(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
-        if mode == .todayOverview {
-            let leftRank = todayTaskSortRank(lhs)
-            let rightRank = todayTaskSortRank(rhs)
-            if leftRank != rightRank { return leftRank < rightRank }
-            return taskSortPrecedes(lhs, rhs, field: activeSortField, direction: activeSortDirection)
-        }
-
+        let leftRank = todayTaskSortRank(lhs)
+        let rightRank = todayTaskSortRank(rhs)
+        if leftRank != rightRank { return leftRank < rightRank }
         return taskSortPrecedes(lhs, rhs, field: activeSortField, direction: activeSortDirection)
     }
 
@@ -743,26 +419,12 @@ struct TasksPanel: View {
         CadenceTaskQuerySupport.todayRank(task, todayKey: todayKey)
     }
 
-    // MARK: - Section builders
-
-    private func taskIsUnscheduled(_ task: AppTask) -> Bool {
-        task.scheduledDate.isEmpty
-    }
-
     private func toggleGroup(_ id: String) {
         if collapsedGroupIDs.contains(id) {
             collapsedGroupIDs.remove(id)
         } else {
             collapsedGroupIDs.insert(id)
         }
-    }
-
-    private func overdueCount(in tasks: [AppTask]) -> Int? {
-        TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey)
-    }
-
-    private func regularCount(in tasks: [AppTask]) -> Int {
-        TasksPanelSupport.regularCount(in: tasks, todayKey: todayKey)
     }
 
     private func openOverdueListSummary(_ summary: CadenceTodayOverdueListSummary) {

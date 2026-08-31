@@ -354,9 +354,7 @@ struct CadenceTodayOverdueSummarySurfaceTests {
             areas: areas,
             projects: projects,
             mode: .todayOverview,
-            todayKey: today,
-            sortField: .date,
-            sortDirection: .ascending
+            todayKey: today
         )
 
         // The expressions that used to be inline in `TasksPanelDerivedState.init`, verbatim apart

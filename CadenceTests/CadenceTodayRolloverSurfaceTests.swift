@@ -373,9 +373,7 @@ struct CadenceTodayRolloverSurfaceTests {
             areas: [],
             projects: [],
             mode: .todayOverview,
-            todayKey: today,
-            sortField: .date,
-            sortDirection: .ascending
+            todayKey: today
         )
 
         // The expression that used to be inline in `TasksPanelDerivedState.init`, verbatim.

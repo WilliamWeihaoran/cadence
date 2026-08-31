@@ -8,8 +8,6 @@ struct TasksPanelDerivedState {
     let overdoTasks: [AppTask]
     let overdueListSummaries: [CadenceTodayOverdueListSummary]
     let overdueSectionSummaries: [CadenceTodayOverdueSectionSummary]
-    let byDoDateBaseTasks: [AppTask]
-    let byDoDateBaseSortedTasks: [AppTask]
     let doneTasks: [AppTask]
 
     init(
@@ -17,9 +15,7 @@ struct TasksPanelDerivedState {
         areas: [Area],
         projects: [Project],
         mode: TasksPanelMode,
-        todayKey: String,
-        sortField: TaskSortField,
-        sortDirection: TaskSortDirection
+        todayKey: String
     ) {
         overdue = allTasks.filter { !$0.isDone && !$0.isCancelled && !$0.dueDate.isEmpty && $0.dueDate < todayKey }
         dueTodayTasks = allTasks.filter { !$0.isDone && !$0.isCancelled && $0.dueDate == todayKey }
@@ -50,18 +46,23 @@ struct TasksPanelDerivedState {
             todayKey: todayKey
         )
 
-        byDoDateBaseTasks = CadenceTaskQuerySupport.openTasks(from: allTasks)
-        byDoDateBaseSortedTasks = byDoDateBaseTasks.taskSorted(by: sortField, direction: sortDirection)
+        // `byDoDateBaseTasks` and `byDoDateBaseSortedTasks` were derived here, unconditionally —
+        // a filter over every task and a full sort of the result on **every Today render**, for a
+        // mode nothing could reach. Both went with `.byDoDate` (T-487), and with them the
+        // `sortField`/`sortDirection` parameters that existed only to feed the sort.
+        //
         // Today's Completed section is `CadenceTaskQuerySupport.completedTodayTasks` on both
         // platforms now (T-229). This used to be a second, hand-rolled spelling of it — the same
         // `completedAt`-inside-today test with the day range precomputed — sitting beside an iOS
         // one that *also* admitted anything do-dated or due-dated today, so the same day's finished
         // work differed by platform under one shared heading. The precompute moved into the shared
-        // function rather than being given up. The `.byDoDate` logbook is a different thing —
-        // everything ever settled — and keeps no date test at all.
-        doneTasks = mode == .todayOverview
-            ? CadenceTaskQuerySupport.completedTodayTasks(from: allTasks, todayKey: todayKey)
-            : CadenceTaskQuerySupport.completedTasks(from: allTasks)
+        // function rather than being given up. The other arm was the `.byDoDate` logbook —
+        // everything ever settled, no date test at all — and went with the mode (T-487);
+        // `CadenceTaskQuerySupport.completedTasks` is still read by the surfaces that want it.
+        switch mode {
+        case .todayOverview:
+            doneTasks = CadenceTaskQuerySupport.completedTodayTasks(from: allTasks, todayKey: todayKey)
+        }
     }
 
     var todayEligibleTasks: [AppTask] {
@@ -84,8 +85,6 @@ struct TasksPanelDerivedState {
             dueTodayTasks.isEmpty &&
             doTodayTasks.isEmpty &&
             doneTasks.isEmpty
-        case .byDoDate:
-            return byDoDateBaseTasks.isEmpty && doneTasks.isEmpty
         }
     }
 

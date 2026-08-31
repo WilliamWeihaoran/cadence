@@ -24,28 +24,20 @@ import AppKit
 /// ~130 — so "THURSDAY, AUGUST 20" truncated to "THURSDAY, AUGU…" the moment the divider was
 /// dragged left. It is also the last survivor of the header pills `DesktopPrimaryActionButton`
 /// was deleted with; every other macOS task surface captures through a circular `+`.
+///
+/// It took a `mode` until T-487, and answered "By Do Date" over the eyebrow "Tasks" for the
+/// `.byDoDate` panel. That panel was unreachable, so this row has only ever rendered the day.
 struct TasksPanelHeader: View {
-    let mode: TasksPanelMode
-    /// `nil` outside `.todayOverview`. The day's counts only mean anything on the day's page.
-    var summary: CadenceTodaySummary? = nil
+    /// The day's counts. Not optional: this header only exists on the day's page.
+    let summary: CadenceTodaySummary
 
     @Environment(TaskCreationManager.self) private var taskCreationManager
 
-    private var title: String {
-        switch mode {
-        case .todayOverview: return "Today"
-        case .byDoDate:      return "By Do Date"
-        }
-    }
+    private let title = "Today"
 
-    /// The day itself on Today — `DateFormatters.longDate`, uppercased by `SectionEyebrowLabel`,
-    /// exactly as both iOS Todays spell it.
-    private var eyebrow: String {
-        switch mode {
-        case .todayOverview: return DateFormatters.longDate.string(from: Date())
-        case .byDoDate:      return "Tasks"
-        }
-    }
+    /// The day itself — `DateFormatters.longDate`, uppercased by `SectionEyebrowLabel`, exactly as
+    /// both iOS Todays spell it.
+    private var eyebrow: String { DateFormatters.longDate.string(from: Date()) }
 
     var body: some View {
         DesktopPageHeader(
@@ -53,12 +45,12 @@ struct TasksPanelHeader: View {
             eyebrow: eyebrow,
             // The half that gives way: the eyebrow proper holds the layout priority, so a narrow
             // task column truncates "· 3 timed" before it truncates the date.
-            eyebrowDetail: summary?.line,
+            eyebrowDetail: summary.line,
             title: title,
-            count: summary?.activeCount,
+            count: summary.activeCount,
             // Today's colour, and with the tile gone the count capsule is the only thing wearing
             // it. iPad Today passes the same `Theme.amber` for the same badge.
-            tint: mode == .todayOverview ? Theme.amber : Theme.blue,
+            tint: Theme.amber,
             // The panel paints its own plate behind the header band.
             background: nil
         ) {
@@ -68,10 +60,7 @@ struct TasksPanelHeader: View {
 
     private var newTaskButton: some View {
         Button {
-            switch mode {
-            case .todayOverview: taskCreationManager.present(doDateKey: DateFormatters.todayKey())
-            case .byDoDate:      taskCreationManager.present()
-            }
+            taskCreationManager.present(doDateKey: DateFormatters.todayKey())
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 12, weight: .bold))
@@ -477,82 +466,19 @@ struct TaskPickerRowHover: ViewModifier {
     }
 }
 
-/// Counts here are deliberately colourless. The header used to tint `regularCount` with the
-/// section's accent (red under "Past Due", amber under "Past Do", the priority hue under a
-/// priority section) and `overdueCount` with `Theme.red` — so the loudest thing in the header was
-/// a number. A count is not urgent; the dates on the rows below it are, and those still say so.
-struct CollapsibleTaskGroupHeader: View {
-    let title: String
-    let isCollapsed: Bool
-    let overdueCount: Int?
-    let regularCount: Int
-    let onToggle: () -> Void
+// `CollapsibleTaskGroupHeader` and `CompletedSectionHeader` were here.
+//
+// `CollapsibleTaskGroupHeader` was the chevron-plus-counts row with the deliberately colourless
+// numbers, and `CompletedSectionHeader` was the neutral "Completed" heading over the `.byDoDate`
+// logbook. Between them they had three call sites — `TasksPanelGroupSectionView`,
+// `TasksPanelFlatSectionView` and `TasksPanelCompletedSectionView`'s `else` — and all three were
+// `.byDoDate`'s, so both went with the mode (T-487). The surviving group headers are
+// `TaskListGroupHeader` (`ListDetailSupportViews`, drawn by All Tasks, Inbox and list detail) and
+// `TasksPanelIntentSectionHeader` (`TasksPanelSectionViews`, drawn by Today).
 
-    @State private var isHovered = false
-
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-    }
-
-    var body: some View {
-        Button(action: onToggle) {
-            HStack(spacing: 8) {
-                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                Spacer()
-                if let overdueCount, overdueCount > 0 {
-                    Text("\(overdueCount)")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.muted)
-                    Text("/")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.dim.opacity(0.8))
-                }
-                Text("\(regularCount)")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-            }
-            .foregroundStyle(Theme.dim)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            // Exactly one hover layer at one radius: the same neutral wash the task rows below
-            // use, transparent at rest and with no border. The previous treatment stacked a
-            // resting card, its shadow, and `CadencePlainButtonStyle`'s blue fill and stroke at a
-            // different radius, which made a hovered header read as a focused text field.
-            .background(shape.fill(TaskHoverVisuals.hoverFill(isHovered: isHovered)))
-            .contentShape(shape)
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-    }
-}
-
-struct CompletedSectionHeader: View {
-    let count: Int
-    var isCollapsed: Bool = false
-    var onToggle: (() -> Void)? = nil
-
-    var body: some View {
-        CollapsibleTaskGroupHeader(
-            title: "Completed",
-            isCollapsed: isCollapsed,
-            overdueCount: nil,
-            regularCount: count,
-            onToggle: { onToggle?() }
-        )
-        .allowsHitTesting(onToggle != nil)
-        .overlay {
-            if onToggle == nil {
-                RoundedRectangle(cornerRadius: Theme.radiusControl)
-                    .fill(Color.clear)
-                    .allowsHitTesting(false)
-            }
-        }
-    }
-}
+// `CompletedSectionHeader` was here — the neutral "Completed" heading the `.byDoDate` logbook
+// drew instead of Today's "Completed Today". It had one call site, inside the `else` of
+// `TasksPanelCompletedSectionView`'s mode branch, and went with the mode (T-487).
 
 /// A picker enum with exactly two values, which reads better as a click-to-toggle than as a
 /// two-item menu. `CadenceEnumPickerBadge` renders conforming types as a single flipping button,

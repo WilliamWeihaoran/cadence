@@ -69,9 +69,7 @@ struct TodayScopeParityTests {
             areas: [],
             projects: [],
             mode: .todayOverview,
-            todayKey: todayKey,
-            sortField: .date,
-            sortDirection: .ascending
+            todayKey: todayKey
         )
 
         #expect(shared == Set(derived.todayEligibleTasks.map(\.id)))

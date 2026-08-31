@@ -258,9 +258,7 @@ struct CadenceCancelledTaskReachabilityTests {
             areas: [],
             projects: [],
             mode: .todayOverview,
-            todayKey: todayKey,
-            sortField: .date,
-            sortDirection: .ascending
+            todayKey: todayKey
         )
         #expect(state.doneTasks.map(\.title) == ["abandoned"])
     }
@@ -454,9 +452,7 @@ struct CadenceCancelledTaskReachabilityTests {
             areas: [],
             projects: [],
             mode: .todayOverview,
-            todayKey: todayKey,
-            sortField: .date,
-            sortDirection: .ascending
+            todayKey: todayKey
         )
         .doneTasks
         .map(\.title)
@@ -582,10 +578,16 @@ struct CadenceCancelledTaskReachabilityTests {
         #expect(busy.line == "1 done")
     }
 
-    /// The half of macOS's `doneTasks` that is **not** Today: `.byDoDate` is the logbook —
-    /// everything ever settled, no date test — and it went through the same rewrite. Pinned
-    /// because the mode branch is the only thing keeping the day filter off it.
-    @Test func theByDoDateLogbookStillListsEverythingEverSettled() throws {
+    /// **Retargeted, not deleted (T-487).** This built a `.byDoDate` `TasksPanelDerivedState` and
+    /// asserted its `doneTasks` was the logbook — everything ever settled, no date test. That mode
+    /// was unreachable and is gone, and with it the branch that chose between the two rules.
+    ///
+    /// The *rule* it was really pinning is not gone: `CadenceTaskQuerySupport.completedTasks` is
+    /// the shared "everything ever settled" answer and is still read by the surfaces that want a
+    /// logbook. Deleting the test with the mode would have dropped the one assertion that it
+    /// admits a **cancelled** task with no `completedAt` — the reachability this whole file is
+    /// about — so it asks the shared function instead of the dead panel.
+    @Test func theLogbookQueryStillListsEverythingEverSettled() throws {
         let universe = [
             task("settled today", status: .done, completedAt: try instant(todayKey)),
             task("settled in January", status: .done, completedAt: try instant("2026-01-14")),
@@ -593,27 +595,22 @@ struct CadenceCancelledTaskReachabilityTests {
             task("still open", doDate: todayKey)
         ]
 
-        let logbook = TasksPanelDerivedState(
-            allTasks: universe,
-            areas: [],
-            projects: [],
-            mode: .byDoDate,
-            todayKey: todayKey,
-            sortField: .date,
-            sortDirection: .ascending
-        )
         #expect(
-            logbook.doneTasks.map(\.title).sorted()
+            CadenceTaskQuerySupport.completedTasks(from: universe).map(\.title).sorted()
                 == ["legacy cancellation", "settled in January", "settled today"]
         )
     }
 
     /// macOS's half of this is a **refactor**, not a change of behaviour — its `doneTasks` was
-    /// already `completedAt`-inside-today on Today and everything-ever-settled otherwise, so all
-    /// that moved is where the expression lives. This recomputes both modes with the code that
-    /// used to be inline in `TasksPanelDerivedState.init`, verbatim, and asserts the new arrays are
-    /// identical — order included, because the section renders this array directly. Same shape as
+    /// already `completedAt`-inside-today on Today, so all that moved is where the expression
+    /// lives. This recomputes it with the code that used to be inline in
+    /// `TasksPanelDerivedState.init`, verbatim, and asserts the new array is identical — order
+    /// included, because the section renders this array directly. Same shape as
     /// `CadenceTodayRolloverSurfaceTests.theMacDerivedStateStillDerivesExactlyWhatItUsedTo`.
+    ///
+    /// It ran over both modes until T-487. `.byDoDate` is gone, so the loop is over the one mode
+    /// that exists; `legacyDoneTasks` keeps its `mode` parameter and its `guard`, because that
+    /// guard is precisely the line being checked against.
     @Test func theMacDoneTasksStillDeriveExactlyWhatTheyUsedTo() throws {
         let tasks = [
             task("settled today", status: .done, completedAt: try instant(todayKey)),
@@ -644,15 +641,13 @@ struct CadenceCancelledTaskReachabilityTests {
                 .taskCompletionSorted()
         }
 
-        for mode in [TasksPanelMode.todayOverview, .byDoDate] {
+        for mode in [TasksPanelMode.todayOverview] {
             let derived = TasksPanelDerivedState(
                 allTasks: tasks,
                 areas: [],
                 projects: [],
                 mode: mode,
-                todayKey: todayKey,
-                sortField: .date,
-                sortDirection: .ascending
+                todayKey: todayKey
             )
             let legacy = legacyDoneTasks(mode: mode)
             #expect(!legacy.isEmpty, "fixture no longer exercises \(mode)")
@@ -731,9 +726,7 @@ struct CadenceCancelledTaskReachabilityTests {
             areas: [area],
             projects: [],
             mode: .todayOverview,
-            todayKey: DateFormatters.todayKey(),
-            sortField: .date,
-            sortDirection: .ascending
+            todayKey: DateFormatters.todayKey()
         )
         #expect(state.doneTasks.map(\.title) == ["in the archived column"])
     }

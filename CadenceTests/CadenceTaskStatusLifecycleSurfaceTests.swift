@@ -227,14 +227,16 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
     /// predicate doing it rather than a second local spelling of "done or cancelled", which is the
     /// defect shape T-374 is about.
     @Test func theFrozenSurfaceFiltersOnTheSharedFinishedPredicate() throws {
-        // Four resolvers, not the two the audit counted: `TaskSurfaceFreezeModels` owns the shared
-        // pair, and `TasksPanel` hand-rolls two more with a different result type. Fixing only the
-        // shared pair would have left the Today panel's frozen groups still asymmetric.
+        // Two resolvers now, in `TaskSurfaceFreezeModels`. The audit counted two and this test
+        // once counted four: `TasksPanel` hand-rolled `resolvedFrozenListGroups` and
+        // `resolvedFrozenFlatSections` with a different result type, and both were readers of the
+        // `.byDoDate` frozen snapshots — unreachable, and deleted with the mode in T-487. The
+        // shared pair is what Today has always gone through, so the rule this pins is intact; the
+        // two zeros below still hold `TasksPanel` to it if the hand-rolled shape ever comes back.
         try expectOccurrences(
             of: "CadenceTaskQuerySupport.isFinishedTask($0)",
             at: [
-                "Cadence/macOS/Views/TaskSurfaceFreezeModels.swift": 2,
-                "Cadence/macOS/Views/TasksPanel.swift": 2
+                "Cadence/macOS/Views/TaskSurfaceFreezeModels.swift": 2
             ]
         )
         try expectOccurrences(
@@ -282,9 +284,12 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
         #expect(mutation.contains("static func toggleCompletion"))
         let freeze = try strippingComments(sourceFile("Cadence/macOS/Views/TaskSurfaceFreezeModels.swift"))
         #expect(freeze.contains("func applyFrozenTaskOrder"))
+        // `private var resolvedFrozenListGroups` / `resolvedFrozenFlatSections` were the two
+        // needles here; both were `.byDoDate`-only and went with it (T-487). The scan still has to
+        // prove it is reading this file, so it reads something Today actually draws.
         let panel = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanel.swift"))
-        #expect(panel.contains("private var resolvedFrozenListGroups"))
-        #expect(panel.contains("private var resolvedFrozenFlatSections"))
+        #expect(panel.contains("struct TasksPanel: View"))
+        #expect(panel.contains("HoverFreezeObserver("))
         let actions = try strippingComments(sourceFile("Cadence/iOS/iOSTaskRowActionViews.swift"))
         #expect(actions.contains("static func trailing("))
     }

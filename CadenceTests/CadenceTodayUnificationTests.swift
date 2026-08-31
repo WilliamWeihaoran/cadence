@@ -43,14 +43,18 @@ struct CadenceTodayUnificationTests {
     /// what macOS's `todayDateSections` was — and this fails; pinning `todayGroups` itself would
     /// not have noticed.
     ///
-    /// macOS calls it twice on purpose: once for the sections it draws and once for the hover-freeze
-    /// snapshot that has to describe the same sections. Two call sites that must agree is the
-    /// argument for the count being exact rather than "contains".
+    /// macOS called it **twice**: once for the sections it draws, and once for
+    /// `currentFrozenFlatSectionSnapshot`, which had to describe the same sections. That second
+    /// function carried a doc comment reading "Currently unreferenced" — it was kept as the
+    /// counterpart to `currentFrozenListGroupSnapshot`, and that counterpart was `.byDoDate`'s.
+    /// Both went in T-487, so the "two call sites that must agree" were a live one and a dead one,
+    /// and the count is 1. The count stays **exact** rather than "contains": that is what would
+    /// catch a second, local list of the same predicates growing back beside the shared call.
     @Test func everyTodaySurfaceGroupsThroughTheSharedQuery() throws {
         try expectCallSites(
             of: "CadenceTaskQuerySupport.todayGroups",
             at: [
-                "Cadence/macOS/Views/TasksPanel.swift": 2,
+                "Cadence/macOS/Views/TasksPanel.swift": 1,
                 "Cadence/iOS/iOSTodayView.swift": 1,
             ]
         )
@@ -60,7 +64,7 @@ struct CadenceTodayUnificationTests {
         // `contexts: contexts` alone is seven other section views on that file.
         try expectCallSites(
             of: "todayKey: todayKey, contexts: contexts",
-            at: ["Cadence/macOS/Views/TasksPanel.swift": 2]
+            at: ["Cadence/macOS/Views/TasksPanel.swift": 1]
         )
         try expectCallSites(
             of: "contexts: contexts",
@@ -610,7 +614,12 @@ struct CadenceTodayListGroupingTests {
             at: ["Cadence/macOS/Views/TasksPanel.swift": 1]
         )
         #expect(try liveTextOccurrences(of: "mode == .todayOverview && !enableControls") == 0)
-        #expect(try liveTextOccurrences(of: "mode == .todayOverview") > 0)
+        // The self-check the absence above needs — a scan that reads nothing passes every `== 0`.
+        // It used to be `mode == .todayOverview`, which no longer appears in live source: T-487
+        // deleted `.byDoDate`, so nothing tests the mode with `==` any more. `case .todayOverview`
+        // is the same fact spelled the way the surviving `switch`es spell it.
+        #expect(try liveTextOccurrences(of: "case .todayOverview") > 0)
+        #expect(try liveTextOccurrences(of: "mode == .todayOverview") == 0)
     }
 
     // MARK: - The rollover banner

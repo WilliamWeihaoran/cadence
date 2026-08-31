@@ -2,9 +2,16 @@
 import SwiftUI
 import SwiftData
 
+/// One case, and deliberately still an enum.
+///
+/// `.byDoDate` — this panel's All Tasks shape — was **unreachable**: `TodayView` builds the only
+/// `TasksPanel` in the repository and takes the `.todayOverview` default, so nothing but a test
+/// ever constructed the other one. It is gone (T-487), along with its grouping control, its four
+/// section builders, its frozen list/flat snapshots and an empty state that still spelled two
+/// strings the app retired, because nobody could see it to notice. Collapsing the enum itself is
+/// a further design change and has not been made here.
 enum TasksPanelMode {
     case todayOverview
-    case byDoDate
 }
 
 // `TaskSortField` and `TaskSortDirection` live in `Cadence/Models/TaskOrdering.swift`, next to
@@ -82,21 +89,6 @@ enum TasksPanelSupport {
     /// drift moving the rule out of here prevents.
     static func sidebarListOrder(contexts: [Context]) -> [String] {
         CadenceTaskQuerySupport.listGroupOrder(contexts: contexts)
-    }
-
-    static func makeFlatSection(
-        id: String,
-        title: String,
-        tasks: [AppTask],
-        dropKey: String? = nil
-    ) -> FrozenFlatTaskSection? {
-        guard !tasks.isEmpty else { return nil }
-        return FrozenFlatTaskSection(
-            id: id,
-            title: title,
-            dropKey: dropKey,
-            taskIDs: tasks.map(\.id)
-        )
     }
 
     static func listGroups(
