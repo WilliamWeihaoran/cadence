@@ -141,9 +141,100 @@ scarcest input in the project — and writing them up longhand is the expensive 
 - **Does an iOS twin exist?** If the same surface exists on both platforms, say whether they agree.
   Cross-platform copy and layout drift is the single most common defect shape here.
 
-**A second thing worth more than it looks: screen enumeration.** The user can name a screen and
-nothing else — "Goals page, macOS". Read every view that draws it and return a numbered list of what
-is structurally suspicious: values bypassing `Theme`, spacings not using a shared token, copy that
-differs from the iOS twin, alignment inconsistencies. The user replies with numbers. That inverts the
-cost — you generate candidates, they filter — and it is the cheapest possible use of the one person
-who can actually see the screen.
+**A second thing worth more than it looks: screen enumeration.** See section 6 — it now has a literal
+trigger and a fixed output format, because this is the task you should be doing most.
+
+
+## 6. `enum: <screen>` — the enumeration protocol
+
+**Trigger.** When the user's message is exactly `enum: <screen>` — e.g. `enum: ios calendar view`,
+`enum: macos today task list`, `enum: settings for both mac and ios` — run this protocol. Several may
+arrive at once; treat each as its own independent job and answer each with its own complete block.
+
+**Why this is your highest-value task.** Enumeration is high-volume reading with low judgement per
+token: skim thousands of lines, notice things, format them. That is the work most worth moving off
+Claude, whose scarce resource is context, not reading ability. Measured 2026-08-31: one Claude scan
+agent cost 101k–173k tokens. Four screens ran ~19,000 lines. Every one of those you absorb is budget
+Claude spends fixing instead of looking.
+
+**This task is READ-ONLY. Edit nothing — no source, no `docs/TODO.md`, no `docs/TODO_DONE.md`.** The
+user withdrew repo-write access deliberately. Enumeration does not need it.
+
+### Scope the screen first, and say what you scoped
+
+Open with one line naming every file you read and its line count, then the total. If you guessed at
+the boundary of a screen, say so — a scan whose scope the user cannot see is a scan they cannot trust.
+Do not silently skip a large file because it looked boring.
+
+### Output: one numbered entry per candidate, ranked, best first
+
+Rank genuinely. **Number 1 is the thing you would fix first.** Any real user-visible BUG goes above
+every TASTE item regardless of how small its diff is. Each entry gives exactly:
+
+1. **Headline, in plain language a non-programmer can picture.** The user does not read code. "The
+   month grid's selected day loses its ring when you scroll back to it" — not "stale `@State` in
+   `DayCell`". This line is the one they decide on; if it needs code to parse, the entry is wasted.
+2. **`file:line`.** Both sites when it is a cross-platform divergence.
+3. **MEASURED or INFERRED.** Measured = you read the code and the defect is certain. Inferred = it
+   looks wrong but only a running app settles it. **Never dress an inference as a measurement.** This
+   is the single reason your tickets have held up better than the coordinator's.
+4. **BUG or TASTE.** Bug = behaves incorrectly, or contradicts its own twin. Taste = works, but reads
+   or looks worse. The user weighs these very differently, so never blur them.
+5. **The 30-second confirming command** — an `rg`/`sed` one-liner that shows the problem without
+   building or launching anything.
+6. **Twin check.** Does the other platform have the same issue, the opposite behaviour, or no
+   equivalent? Cross-platform drift is the most common defect shape in this repo. For a divergence,
+   also say **which platform you would keep**, and why — that is the decision only the user can make.
+
+**For TASTE items, never propose a number.** Say "this spacing disagrees with its twin"; do not say
+"make it 12". Twice this session an agent correctly refused to re-derive a spacing value, because
+doing so would have silently re-tracked text nobody had ever looked at. Spacing, sizes and colours are
+the user's call.
+
+### Deduplicate before reporting
+
+Read `docs/TODO.md` first. Write "extends T-NNN" rather than re-filing. ~40 tickets are open and ~270
+archived. `docs/TODO_DONE.md` is near-complete above T-200 and near-empty below it, so finding nothing
+there is **not** evidence a ticket is new.
+
+### Calibration
+
+**10–20 entries. Quality over volume.** If only 8 are justified, report 8. A list padded with trivia
+costs the user the one thing this protocol exists to protect — their attention — and trains them to
+skip the next list. Being selective is the job, not a shortcut.
+
+### What counts as a finding
+
+The repo's own standing rules; a violation of any of these is real:
+
+- Hardcoded colours outside `Theme.swift` — any literal that is not a `Theme.*` token or a user-owned
+  `colorHex`.
+- Page headers that describe the page the user is already on. Search rows, pickers and empty states
+  may keep subtitles.
+- More than one hover/selection layer, or two corner radii for the same affordance.
+- Near-copies of a shared component instead of the shared one.
+- Dates not going through `DateFormatters`/`TimeFormatters`; persisted date strings not `yyyy-MM-dd`.
+- The same concept spelled two ways; a subtitle naming the wrong surface; copy contradicting a sibling.
+- Empty states that say nothing useful, or something false.
+- Magic numbers that belong in a metrics file; sibling metrics that ought to match and do not.
+- Unlabelled controls; accessibility identifiers off convention.
+- A setting or affordance present on one platform and silently missing on the other.
+
+### End every block with a HANDOFF BLOCK
+
+This is what makes the round trip cheap. After the numbered entries, emit a compact block the user can
+copy **selected lines out of** and paste straight to Claude, with no other explanation:
+
+```
+HANDOFF <screen> <YYYY-MM-DD>
+1 | BUG   | Cadence/iOS/iOSCalendarView.swift:212 | month grid selected-day ring is lost on scroll-back
+2 | TASTE | Cadence/iOS/iOSCalendarMetrics.swift:44 | agenda row padding disagrees with the timeline's
+```
+
+One line per candidate, same numbering as the entries above, `BUG`/`TASTE` padded to a fixed width so
+the column reads straight. The user deletes the lines they do not want and sends the rest. Claude can
+then dedup against `docs/TODO.md` and dispatch fix agents **without re-reading the screen** — which is
+the entire point, and the reason the `file:line` must be exact.
+
+If the user replies with bare numbers instead (`1, 4, 7`), that refers to this same list — so keep the
+numbering stable and never renumber a list you have already sent.
