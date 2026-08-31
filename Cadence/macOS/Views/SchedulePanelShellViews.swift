@@ -17,7 +17,11 @@ struct SchedulePanelHeader: View {
 
     private var standardHeader: some View {
         HStack(spacing: 0) {
-            PanelHeader(eyebrow: "Schedule", title: "Timeline")
+            // "Timeline", once. The `SCHEDULE` eyebrow over it named this column a second time
+            // in a second word — and in `RootTimelineSidebarPane`, which titles itself
+            // "Today Timeline", a third. `Timeline` is the word the rest of the app already uses:
+            // the zoom control, the close button's label, and iPad's pane switcher. (T-602)
+            PanelHeader(title: "Timeline")
             Spacer()
             exportButton
                 .padding(.trailing, 8)

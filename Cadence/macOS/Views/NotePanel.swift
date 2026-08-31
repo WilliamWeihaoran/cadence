@@ -42,7 +42,12 @@ struct NotePanel: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top, spacing: 10) {
-                    PanelHeader(eyebrow: "Notes", title: headerTitle)
+                    // The column's one name. It read `NOTES / <active tab>` — the column named
+                    // once in the eyebrow, then the tab strip's own answer restated in the title,
+                    // with the strip eight lines below already drawing that word lit. See
+                    // `PanelHeader` (T-602). The strip answers "which note"; this answers "which
+                    // column"; neither question is now answered twice.
+                    PanelHeader(title: "Notes")
                     Spacer()
                     if let activeNote {
                         NoteActionMenu(note: activeNote, onAppendSummary: { summary in
@@ -108,10 +113,6 @@ struct NotePanel: View {
             pendingFallbackContentSyncTask?.cancel()
             pendingFallbackContentSyncTask = nil
         }
-    }
-
-    private var headerTitle: String {
-        activeTab.rawValue
     }
 
     private var activeNote: Note? {

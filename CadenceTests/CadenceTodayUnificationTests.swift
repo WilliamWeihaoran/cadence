@@ -295,6 +295,41 @@ struct CadenceTodayUnificationTests {
         }
     }
 
+    /// **Today's three columns name themselves once each (T-602).**
+    ///
+    /// The task column was fixed first: `TASKS / Today` became the date over `Today`, because an
+    /// eyebrow naming the column above a title naming the page is the header-describes-its-own-page
+    /// rule one row down. The other two still read `NOTES / <active tab>` and `SCHEDULE / Timeline`
+    /// — the second of which named one column twice in two different words, while the first
+    /// repeated the tab strip eight lines below it with the live tab already lit.
+    ///
+    /// Neither column had a second fact to promote the way the task column had the date, so both
+    /// dropped the eyebrow instead of inventing one. iPad went further and draws no header on these
+    /// two panes at all; it can, because `iPadTodayInspectorSwitcher` names them. macOS's three
+    /// columns stand side by side with nothing else naming them, so the title stays.
+    @Test func todaysNoteAndScheduleColumnsNameThemselvesOnce() throws {
+        let notes = try strippingComments(sourceFile("Cadence/macOS/Views/NotePanel.swift"))
+        let schedule = try strippingComments(sourceFile("Cadence/macOS/Views/SchedulePanelShellViews.swift"))
+
+        // Non-vacuity: these really are the two files that host Today's other two column headers.
+        #expect(notes.contains("struct NotePanel"))
+        #expect(schedule.contains("struct SchedulePanelHeader"))
+
+        #expect(notes.contains("PanelHeader(title: \"Notes\")"))
+        #expect(schedule.contains("PanelHeader(title: \"Timeline\")"))
+
+        for (name, source) in [("NotePanel", notes), ("SchedulePanelShellViews", schedule)] {
+            #expect(
+                !source.contains("PanelHeader(eyebrow:"),
+                "\(name) puts an eyebrow back over a title that already names the column"
+            )
+        }
+
+        // The notes column's title was the active tab's own name, which the strip below already
+        // draws. Nothing computes a header title there any more.
+        #expect(!notes.contains("headerTitle"))
+    }
+
     /// The metrics that fed the tile go with it — a size table entry nothing reads is the same
     /// hazard as the parameter, and this one carried a role×surface ramp that would read as live.
     /// `tileGlyphRatio` and `tileFillOpacity` **stay**: `CommitmentIconTile` reads both for the
