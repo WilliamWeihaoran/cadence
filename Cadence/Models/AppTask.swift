@@ -511,9 +511,24 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
     @Relationship(deleteRule: .nullify, inverse: \AppTask.bundle)
     var tasks: [AppTask]? = nil
 
+    /// What an untitled block is called, and it is the word the rest of the app already uses:
+    /// "Block title", "Edit Block", "Delete Block", "No tasks in this block" (T-567). The literal
+    /// it replaces was "Task Bundle" — the *type's* name, which no user-facing string anywhere in
+    /// Cadence says — re-typed at nine call sites across both platforms, three of which stored it
+    /// rather than merely drawing it. One constant, so the noun cannot drift back apart.
+    static let defaultDisplayTitle = "Block"
+
+    /// What to store for a user-entered block title: trimmed, and never blank.
+    ///
+    /// The stored/display split `CadenceEventTitleSupport` already draws. `displayTitle` below is
+    /// for a block already in the store, whose title may be blank because an older build wrote it
+    /// that way; this is for the string a create form is about to save.
+    static func storedTitle(_ raw: String) -> String {
+        CadenceTitleNormalization.display(raw, fallback: defaultDisplayTitle)
+    }
+
     var displayTitle: String {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Task Bundle" : trimmed
+        CadenceTitleNormalization.display(title, fallback: Self.defaultDisplayTitle)
     }
 
     var endMin: Int {

@@ -811,7 +811,7 @@ enum CadenceTaskMutationSupport {
               targetTask.scheduledStartMin >= 0 else { return nil }
 
         let bundle = TaskBundle(
-            title: "Task Bundle",
+            title: TaskBundle.defaultDisplayTitle,
             dateKey: targetTask.scheduledDate,
             startMin: clampedBundleStart(targetTask.scheduledStartMin),
             durationMinutes: bundleDuration(
@@ -833,11 +833,10 @@ enum CadenceTaskMutationSupport {
         durationMinutes: Int,
         modelContext: ModelContext
     ) throws -> TaskBundle {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let clampedStart = clampedBundleStart(startMin)
         let duration = min(max(bundleMinimumDuration, durationMinutes), bundleDayEndMin - clampedStart)
         let bundle = TaskBundle(
-            title: trimmed.isEmpty ? "Task Bundle" : trimmed,
+            title: TaskBundle.storedTitle(title),
             dateKey: dateKey,
             startMin: clampedStart,
             durationMinutes: duration

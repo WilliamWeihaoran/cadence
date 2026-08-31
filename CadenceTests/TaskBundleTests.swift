@@ -1,3 +1,4 @@
+import Foundation
 import SwiftData
 import Testing
 @testable import Cadence
@@ -254,7 +255,7 @@ struct TaskBundleTests {
         let context = ModelContext(container)
         let bundle = SchedulingActions.createBundle(title: "", dateKey: "2026-05-01", startMin: 1438, endMin: 1510, in: context)
 
-        #expect(bundle.title == "Task Bundle")
+        #expect(bundle.title == TaskBundle.defaultDisplayTitle)
         #expect(bundle.startMin == 1435)
         #expect(bundle.durationMinutes == 5)
         #expect(bundle.endMin == 1440)
@@ -374,6 +375,110 @@ struct TaskBundleTests {
 
         #expect(short.actualMinutes == 10)
         #expect(long.actualMinutes == 20)
+    }
+    /// **T-567.** An untitled block was called "Task Bundle" — the *type's* name, and a word the
+    /// app never says to a user. Everything around it on that screen says **Block**: the segment,
+    /// "Block title", "Edit Block", "Delete Block", "No tasks in this block". The literal was
+    /// typed at nine sites across both platforms, three of which *stored* it rather than merely
+    /// drawing it, so the noun could be renamed in one place and left behind in eight.
+    ///
+    /// One constant now, on the model that owns the concept, with the store/display split
+    /// `CadenceEventTitleSupport` already draws: `storedTitle` for a create form about to save,
+    /// `displayTitle` for a row reading a block an older build may have stored blank.
+    @Test func anUntitledBlockIsNamedWithTheNounTheAppUses() throws {
+        #expect(TaskBundle.defaultDisplayTitle == "Block")
+        #expect(TaskBundle.storedTitle("") == TaskBundle.defaultDisplayTitle)
+        // A title of spaces is not a title — the same trim `displayTitle` has always done, now on
+        // the storing side too, so the blank never reaches the store in the first place.
+        #expect(TaskBundle.storedTitle("   ") == TaskBundle.defaultDisplayTitle)
+        #expect(TaskBundle.storedTitle("  Deep work  ") == "Deep work")
+
+        let blank = TaskBundle(title: " \n ", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
+        #expect(blank.displayTitle == TaskBundle.defaultDisplayTitle)
+        #expect(TaskBundle(title: "Admin", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30).displayTitle == "Admin")
+
+        // Both creation paths, one per platform, through the store rather than the constant.
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let dragged = SchedulingActions.createBundle(
+            title: "   ",
+            dateKey: "2026-05-01",
+            startMin: 600,
+            endMin: 660,
+            in: context
+        )
+        #expect(dragged.title == TaskBundle.defaultDisplayTitle)
+        let created = try CadenceTaskMutationSupport.insertBundle(
+            title: "",
+            dateKey: "2026-05-01",
+            startMin: 600,
+            durationMinutes: 30,
+            modelContext: context
+        )
+        #expect(created.title == TaskBundle.defaultDisplayTitle)
+    }
+
+    /// The other seven sites, which no behavioural test can reach: they are literals inside `View`
+    /// bodies and one AppKit-side service. The iOS create sheet is not in this list because it
+    /// never typed the noun — its half of T-567 is `canCreate`, two tests below.
+    @Test func noSurfaceStillTypesTheRetiredBundleNoun() throws {
+        for path in [
+            "Cadence/Models/AppTask.swift",
+            "Cadence/Shared/CadenceTaskMutationSupport.swift",
+            "Cadence/macOS/Services/SchedulingService.swift",
+            "Cadence/macOS/Views/TimelineDayCanvas.swift",
+            "Cadence/macOS/Views/QuickCreateChoicePopover.swift",
+            "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift",
+            "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift",
+        ] {
+            let source = try CadenceCommitSurfaceScan.scanned(path)
+            #expect(
+                CadenceSourceScan.matchCount(#""Task Bundle""#, in: source) == 0,
+                "\(path) still types the retired bundle noun"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(
+                    #"TaskBundle\.(defaultDisplayTitle|storedTitle)|\bdisplayTitle\b"#,
+                    in: source
+                ) >= 1,
+                "\(path) reads neither the shared constant nor the model's own display title"
+            )
+        }
+
+        // Non-vacuity for the stripper these reads go through: it blanks a comment and keeps a
+        // string literal, which is exactly what an assertion about a literal needs.
+        let raw = try CadenceSourceScan.sourceFile("Cadence/Models/AppTask.swift")
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(raw.contains("the *type's* name"), "the tombstone comment this pins is gone")
+        #expect(!stripped.contains("the *type's* name"))
+        #expect(stripped.contains(#"static let defaultDisplayTitle = "Block""#))
+    }
+
+    /// T-567's first half, and the reason the fallback was reachable from a create form at all:
+    /// `canCreate` returned `true` unconditionally for `.bundle` while Task and Event both
+    /// required a title, so two taps on an empty slot made a block the user had not named.
+    ///
+    /// Scoped to the `canCreate` body rather than the file: `showsTimedControls` twelve lines
+    /// below has its own `case .bundle: return true`, which is correct and must stay — a
+    /// file-wide needle would either miss this defect or condemn that line.
+    @Test func theIOSQuickCreateSheetAsksForATitleForEveryKindItCreates() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        let anchor = try #require(source.range(of: "var canCreate: Bool"))
+        let body = try #require(
+            CadenceSourceScan.matchedBody(after: anchor.upperBound, in: source, open: "{", close: "}")
+        )
+
+        #expect(CadenceSourceScan.matchCount(#"return true"#, in: body) == 0)
+        #expect(CadenceSourceScan.matchCount(#"TaskTitleSupport\.isEmpty\(title\)"#, in: body) == 2)
+        #expect(CadenceSourceScan.matchCount(#"case \.(task|bundle|event):"#, in: body) == 3)
+
+        // The read really was one declaration's body: the sibling that still answers `true` for a
+        // block is outside it.
+        #expect(!body.contains("showsTimedControls"))
+        #expect(
+            CadenceSourceScan.matchCount(#"case \.bundle:\s*return true"#, in: source) == 1,
+            "showsTimedControls no longer holds the negative this scan is discriminated against"
+        )
     }
 }
 #endif

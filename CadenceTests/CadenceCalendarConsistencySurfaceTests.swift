@@ -273,9 +273,11 @@ struct CadenceCalendarConsistencySurfaceTests {
             )
         }
 
-        // The canvas keeps `title.isEmpty ? "Task Bundle"` on its *bundle* path, which is a
-        // different ticket, so this pins the event branch by name rather than by a bare
-        // `isEmpty` sweep over the file.
+        // The canvas's *bundle* path was the different ticket this named, and it is closed:
+        // T-567 routed it through `TaskBundle.storedTitle`, pinned by
+        // `TaskBundleTests.noSurfaceStillTypesTheRetiredBundleNoun`. This still pins the event
+        // branch by name rather than by a bare `isEmpty` sweep over the file, because the two
+        // fallbacks are different copy owned by different types.
         let canvas = try scannedSource("Cadence/macOS/Views/TimelineDayCanvas.swift")
         #expect(
             CadenceSourceScan.matchCount(

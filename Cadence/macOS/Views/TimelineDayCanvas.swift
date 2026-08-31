@@ -255,7 +255,7 @@ struct TimelineDayCanvas: View {
                     finishDraftCreation()
                 },
                 onCreateBundle: { title, selectedTasks in
-                    onCreateBundle(title.isEmpty ? "Task Bundle" : title, start, end, selectedTasks)
+                    onCreateBundle(TaskBundle.storedTitle(title), start, end, selectedTasks)
                     finishDraftCreation()
                 },
                 onCreateEvent: onCreateEvent == nil ? nil : { title, calendarID, notes in

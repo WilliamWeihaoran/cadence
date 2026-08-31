@@ -27,10 +27,9 @@ enum SchedulingActions {
     /// Create and insert a new scheduled task bundle.
     @discardableResult
     static func createBundle(title: String, dateKey: String, startMin: Int, endMin: Int, in context: ModelContext) -> TaskBundle {
-        let cleanedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let range = clampedRange(startMin: startMin, endMin: endMin)
         let bundle = TaskBundle(
-            title: cleanedTitle.isEmpty ? "Task Bundle" : cleanedTitle,
+            title: TaskBundle.storedTitle(title),
             dateKey: dateKey,
             startMin: range.start,
             durationMinutes: range.duration

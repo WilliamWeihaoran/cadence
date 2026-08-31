@@ -221,7 +221,7 @@ struct QuickCreateChoicePopover: View {
             onCreateTask(title, selectedContainer, selectedSectionName, notes, resolvedSubtasks)
         } else if mode == .bundle {
             onCreateBundle?(
-                title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Task Bundle" : title,
+                TaskBundle.storedTitle(title),
                 selectedBundleTasks
             )
         } else {
@@ -374,9 +374,9 @@ struct QuickCreateChoicePopover: View {
         tildeMode = false
         if target == .bundle,
            title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            title = "Task Bundle"
+            title = TaskBundle.defaultDisplayTitle
         } else if target != .bundle,
-                  title.trimmingCharacters(in: .whitespacesAndNewlines) == "Task Bundle" {
+                  title.trimmingCharacters(in: .whitespacesAndNewlines) == TaskBundle.defaultDisplayTitle {
             title = ""
         }
         if target == .calendarEvent,

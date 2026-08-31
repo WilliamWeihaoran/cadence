@@ -71,7 +71,7 @@ struct TaskBundleDetailPopover: View {
                 .foregroundStyle(Theme.text)
                 .onSubmit {
                     if bundle.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        bundle.title = "Task Bundle"
+                        bundle.title = TaskBundle.defaultDisplayTitle
                     }
                 }
 

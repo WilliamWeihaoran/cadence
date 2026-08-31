@@ -172,7 +172,7 @@ struct MonthBundleChip: View {
             Image(systemName: "tray.full")
                 .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(Theme.amber)
-            Text(bundle.title.isEmpty ? "Task Bundle" : bundle.title)
+            Text(bundle.displayTitle)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)

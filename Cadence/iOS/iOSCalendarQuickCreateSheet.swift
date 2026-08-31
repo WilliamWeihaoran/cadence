@@ -67,12 +67,18 @@ struct iOSCalendarQuickCreateSheet: View {
         return projects.first { $0.id == id }
     }
 
+    /// **T-567.** `.bundle` used to return `true` unconditionally while both its neighbours
+    /// required a title, so the Block segment was the one arm of this sheet where two taps from an
+    /// empty slot created something — and what it created was named by
+    /// `TaskBundle.storedTitle`'s fallback rather than by the user. The three arms now agree that
+    /// a thing being created needs a name, and the fallback stays for the callers that do not ask
+    /// for one (a drag that forms a block from two tasks).
     private var canCreate: Bool {
         switch kind {
         case .task:
             return !TaskTitleSupport.isEmpty(title)
         case .bundle:
-            return true
+            return !TaskTitleSupport.isEmpty(title)
         case .event:
             return !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedWritableCalendar != nil
         }
