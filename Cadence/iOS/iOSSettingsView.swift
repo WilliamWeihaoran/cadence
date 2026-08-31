@@ -30,6 +30,9 @@ struct iOSSettingsView: View {
     @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var cloudAccount = CadenceCloudAccountProbe()
     @State private var contextEditorMode: iOSContextEditorMode?
+    /// Set when a context reorder was refused by the store. See `moveContext(_:by:)` — the row
+    /// order has already been put back by then, so the card and this sentence agree.
+    @State private var contextOrderFailureNotice: String?
     @State private var pendingDeletion: iOSListDeletionTarget?
     /// Which category you are in — **one** value, read two ways.
     ///
@@ -329,6 +332,31 @@ struct iOSSettingsView: View {
                                     Label("Edit Context", systemImage: "square.and.pencil")
                                 }
 
+                                // T-581. `Context.order` drives this card *and* both sidebars,
+                                // and until now only the Mac could change it: an iPhone-only user
+                                // got creation order for good, because `nextContextOrder()`
+                                // appends and nothing here moved anything.
+                                //
+                                // Not `.onMove`: that needs a `List` in edit mode, and this is a
+                                // settings card of rows. A one-step move is the same primitive
+                                // macOS's drag calls — `moveContext(dragged, before: target)` —
+                                // so the two platforms renumber identically.
+                                Section {
+                                    Button {
+                                        moveContext(context, by: -1)
+                                    } label: {
+                                        Label("Move Up", systemImage: "arrow.up")
+                                    }
+                                    .disabled(!canMoveContext(context, by: -1))
+
+                                    Button {
+                                        moveContext(context, by: 1)
+                                    } label: {
+                                        Label("Move Down", systemImage: "arrow.down")
+                                    }
+                                    .disabled(!canMoveContext(context, by: 1))
+                                }
+
                                 Button(role: .destructive) {
                                     archive(context)
                                 } label: {
@@ -344,6 +372,10 @@ struct iOSSettingsView: View {
                         }
                     }
                 }
+            }
+
+            if let contextOrderFailureNotice {
+                CadenceInlineFailureNotice(text: contextOrderFailureNotice)
             }
 
             if !archivedContexts.isEmpty {
@@ -412,6 +444,57 @@ struct iOSSettingsView: View {
         }
     }
     #endif
+
+    /// Whether a one-step move exists — false at the two ends of the visible list, which is what
+    /// greys the menu item rather than offering a move that would do nothing.
+    private func canMoveContext(_ context: Context, by offset: Int) -> Bool {
+        CadenceOrderReassignment.neighbourStep(
+            moving: context.id,
+            by: offset,
+            within: activeContexts.map(\.id)
+        ) != nil
+    }
+
+    /// Move a context one place, and **report it if the store refuses**.
+    ///
+    /// macOS's `SettingsView.moveContext(_:before:)` writes the same `order` fields and ends in
+    /// `try? modelContext.save()`. That is inside the letter of the `try? save()` rule — no
+    /// insert, no delete, nothing after it claiming success — but the row still visibly moves, and
+    /// a move that the store did not take is a move the next launch un-does with nothing said. So
+    /// this side commits through `CadencePendingChangePersistence.commitEdit(in:undo:)`: on a
+    /// refusal every `order` goes back to what it was, `@Query(sort: \Context.order)` re-sorts the
+    /// card to match the store, and the notice under it says so. The undo is not `rollback()`,
+    /// for the reason `commitEdit` documents — this is the whole app's `ModelContext`.
+    ///
+    /// The renumber runs over **every** context, archived ones included, exactly as macOS does:
+    /// `order` is one sequence, so numbering only the visible rows would hand them indices the
+    /// archived rows already hold, and a sort on ties is unstable.
+    private func moveContext(_ context: Context, by offset: Int) {
+        let snapshot = contexts
+        guard let step = CadenceOrderReassignment.neighbourStep(
+            moving: context.id,
+            by: offset,
+            within: activeContexts.map(\.id)
+        ),
+        let reordered = CadenceOrderReassignment.moved(snapshot, step.dragged, before: step.target) else { return }
+
+        let previousOrders = snapshot.map(\.order)
+        for (index, moved) in reordered.enumerated() {
+            moved.order = index
+        }
+
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext) {
+                for (moved, order) in zip(snapshot, previousOrders) {
+                    moved.order = order
+                }
+            }
+        } catch {
+            contextOrderFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        contextOrderFailureNotice = nil
+    }
 
     private func archive(_ context: Context) {
         context.isArchived = true

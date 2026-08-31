@@ -30,7 +30,7 @@ struct SettingsView: View {
     @State private var showCreateContext = false
     @State private var editingSidebarTab: SidebarStaticDestination?
     @State private var aiAPIKeyDraft = ""
-    /// The CloudKit account check behind Settings → Account & Sync, shared with iOS's own sync
+    /// The CloudKit account check behind Settings → iCloud Sync, shared with iOS's own sync
     /// section rather than re-rolled here — see `CadenceCloudAccountProbe`.
     @State private var cloudAccount = CadenceCloudAccountProbe()
 
@@ -258,15 +258,14 @@ struct SettingsView: View {
         sidebarTabOrderRaw = SidebarStaticDestination.rawOrderString(from: current)
     }
 
+    /// The drop half of the contexts pane's drag reorder.
+    ///
+    /// The arithmetic moved to `CadenceOrderReassignment` in T-581 rather than being copied for
+    /// iPhone: the same "insert before" is `toIndex` upwards and `toIndex - 1` downwards, and a
+    /// second hand-written copy of that on the other platform is how two lists come to disagree
+    /// about where a dropped row lands.
     private func moveContext(_ draggedID: UUID, before targetID: UUID) {
-        guard draggedID != targetID else { return }
-        var ordered = contexts
-        guard let fromIndex = ordered.firstIndex(where: { $0.id == draggedID }),
-              let toIndex = ordered.firstIndex(where: { $0.id == targetID }) else { return }
-
-        let moved = ordered.remove(at: fromIndex)
-        let insertionIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
-        ordered.insert(moved, at: insertionIndex)
+        guard let ordered = CadenceOrderReassignment.moved(contexts, draggedID, before: targetID) else { return }
 
         for (index, context) in ordered.enumerated() {
             context.order = index
