@@ -103,7 +103,8 @@ breaks the rule if any of three halves is true:
 1. **Existence** — the function also calls `modelContext.insert(…)` or `modelContext.delete(…)`.
 2. **Report** — something in the swallowed commit's own block, after it, dismisses or reports success:
    `dismiss()`, `is<Something> = false`, `presentedThing = …`, `onSave(…)`. A "swallowed commit" is
-   `try?` on a `save()` **or** a `Cadence*Persistence` helper — the commit surface, not the method name.
+   `try?` on a `save()` **or** a `Cadence*Persistence` helper — the commit surface, not the method
+   name — **and it counts one frame down**: a report over a callee that swallows is the same defect.
 3. **Commit reach** — the function inserts and reaches **no commit at all**. Halves 1 and 2 key on
    the *presence* of a swallowed save, so one that never commits passed both. A declaration **handed**
    a `ModelContext` is exempt by rule; one that reached for an ambient context must commit.
@@ -112,9 +113,8 @@ All three are fixed the same way: commit through `CadencePendingChangePersistenc
 (`commitInsert` / `commitDelete` / `commitEdit(in:undo:)`), `throws`, take `commit:`, and let the
 caller name the failure where the user is already looking.
 
-Why it matters: one `ModelContext` app-wide, so a swallowed failure does not mean "it did not
-happen" — the change stays *pending*, committed by the next unrelated `save()` from any screen or
-discarded by the next `rollback()`. Enforced by `CadenceSaveCommitDisciplineTests`.
+Why it matters: one `ModelContext` app-wide, so a swallowed failure leaves the change *pending*, for
+the next unrelated `save()` to take or `rollback()` to discard. Enforced by `CadenceSaveCommitDisciplineTests`.
 
 ## Build And Run Safety
 

@@ -45,7 +45,7 @@ struct CadenceBundleInspectorHostTests {
         #expect(CadenceScheduleSupport.bundles(inHourRow: 10, from: [bundle]).map(\.id) == [bundle.id])
 
         // The panel's Save, spelled the way the panel spells it.
-        CadenceTaskMutationSupport.updateBundle(
+        try CadenceTaskMutationSupport.updateBundle(
             bundle,
             title: "Admin sweep",
             dateKey: "2026-08-24",

@@ -20,6 +20,10 @@ import Testing
 ///    `presentedNote = …`, `onSave(…)`. Commit it through
 ///    `CadencePendingChangePersistence.commitEdit(in:undo:)` and throw; the caller catches and
 ///    names the failure where the user is already looking.
+///    **And one frame down (T-566).** The same report over a *callee* that swallows — the button
+///    calls `save()`, `save()` calls a shared mutation, the mutation holds the `try?`. Every frame
+///    passes the reading above, and the sheet still closes over a store that refused. Same fix,
+///    applied to whichever frame owns the commit.
 /// 3. **Commit reach.** The function inserts and reaches **no commit at all** — added by T-503,
 ///    because halves 1 and 2 both key on the *presence* of a `try? …save()` and so a function that
 ///    never commits passed both. Twenty-one declarations were in that state; four of them also
@@ -86,6 +90,33 @@ struct CadenceSaveCommitDisciplineTests {
             \(offenders) dismiss or call a completion handler after a `try? …save()`. \
             That is T-470/T-471 again: the screen reports success over a store that refused. \
             Commit through CadencePendingChangePersistence.commitEdit(in:undo:) and throw.
+            """
+        )
+    }
+
+    /// Half 2, one frame down: nothing reports success over a commit a *callee* swallowed (T-566).
+    ///
+    /// The hole half 2 had, and it is not an oversight — it is mechanical. Half 2 needs a literal
+    /// `try?` in the reporting declaration's own body, and this app writes its mutations one frame
+    /// away from the button: the Save button called `save()`, `save()` called
+    /// `CadenceTaskMutationSupport.updateBundle`, and the third frame held the swallow. All three
+    /// frames passed halves 1, 2 and 3 while the sheet closed over a store that had refused.
+    @Test func noSuccessReportFollowsACommitSwallowedOneFrameDown() throws {
+        let index = try swallowingIndexOverTheApp()
+        // Non-vacuity for the index itself: an empty one makes this whole half permanently green,
+        // and it is built by a fixed point that a parsing mistake would silently empty.
+        #expect(index.namesRead >= 50, "the swallowing index read \(index.namesRead) callee names")
+
+        let offenders = try saveCommitSweep(
+            instrument: CadenceSaveCommitRule.indirectReportInstrument(swallowing: index),
+            allowed: CadenceSaveCommitRule.indirectReportExemptions
+        )
+        #expect(
+            offenders.isEmpty,
+            """
+            \(offenders) report success after calling something that swallows its commit. \
+            The frame with the `try?` in it is not the frame the user is looking at: commit \
+            through CadencePendingChangePersistence, throw, and let the caller name the failure.
             """
         )
     }
@@ -254,6 +285,129 @@ struct CadenceSaveCommitDisciplineTests {
         #expect(CadenceSaveCommitRule.reportOffenders(in: fileWrite).isEmpty)
     }
 
+    /// The mechanism of the one-frame-down half, on fixtures: two frames, across two files, with
+    /// the swallow in neither of them at the call site.
+    ///
+    /// The negative is the same pair with the callee **throwing** — which is T-566's fix in
+    /// miniature — so what is pinned is the swallow rather than the call.
+    @Test func theOneFrameDownHalfFollowsACallIntoAnotherFileAndStopsWhenItThrows() throws {
+        let sheet = """
+        struct Sheet: View {
+            var body: some View {
+                Button("Save") {
+                    save()
+                    dismiss()
+                }
+            }
+
+            private func save() {
+                CadenceTaskMutationSupport.updateBundle(bundle, modelContext: modelContext)
+            }
+        }
+        """
+        let swallowingMutation = """
+        enum CadenceTaskMutationSupport {
+            static func updateBundle(_ bundle: TaskBundle, modelContext: ModelContext) {
+                bundle.title = title
+                try? modelContext.save()
+            }
+        }
+        """
+        let throwingMutation = """
+        enum CadenceTaskMutationSupport {
+            static func updateBundle(
+                _ bundle: TaskBundle,
+                modelContext: ModelContext,
+                commit: (ModelContext) throws -> Void = { try $0.save() }
+            ) throws {
+                bundle.title = title
+                try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+                    bundle.title = previous
+                }
+            }
+        }
+        """
+
+        let swallowed = index(over: ["mutation.swift": swallowingMutation, "sheet.swift": sheet])
+        #expect(CadenceSaveCommitRule.indirectReportOffenders(in: sheet, swallowing: swallowed) == ["body"])
+
+        let committed = index(over: ["mutation.swift": throwingMutation, "sheet.swift": sheet])
+        #expect(committed.namesRead == 0, "a throwing callee is not something a caller can swallow")
+        #expect(CadenceSaveCommitRule.indirectReportOffenders(in: sheet, swallowing: committed).isEmpty)
+    }
+
+    /// A callee is resolved by **name and type**, not by name. Measured over the app on the same
+    /// day: name-only resolution reports **17** sites where this reports 2, because `save`,
+    /// `create` and `persistNote` are each declared in several files. One of the extras is
+    /// `iOSEventNoteEditorSheet.persistNote` — read, and a genuine false positive: it returns an
+    /// outcome its caller *guards on*, which is the shape this rule is asking for.
+    @Test func theOneFrameDownHalfDoesNotConfuseTwoCalleesThatShareAName() throws {
+        let swallowing = """
+        enum CadenceTaskMutationSupport {
+            static func updateBundle(_ bundle: TaskBundle, modelContext: ModelContext) {
+                try? modelContext.save()
+            }
+        }
+        """
+        let otherType = """
+        struct Sheet: View {
+            var body: some View {
+                Button("Save") {
+                    SomeOtherService.updateBundle(bundle)
+                    dismiss()
+                }
+            }
+        }
+        """
+        let sameType = """
+        struct Sheet: View {
+            var body: some View {
+                Button("Save") {
+                    CadenceTaskMutationSupport.updateBundle(bundle, modelContext: modelContext)
+                    dismiss()
+                }
+            }
+        }
+        """
+        let swallowingIndex = index(over: ["mutation.swift": swallowing])
+        #expect(CadenceSaveCommitRule.indirectReportOffenders(in: otherType, swallowing: swallowingIndex).isEmpty)
+        #expect(CadenceSaveCommitRule.indirectReportOffenders(in: sameType, swallowing: swallowingIndex) == ["body"])
+    }
+
+    /// The two halves stay disjoint: a declaration half 2 already reports is not reported again
+    /// here, so no site ever needs an entry in both exemption lists.
+    @Test func theOneFrameDownHalfSubtractsWhatHalfTwoAlreadyReports() throws {
+        let both = """
+        struct Sheet: View {
+            private func finish() {
+                try? modelContext.save()
+                helper()
+                dismiss()
+            }
+
+            private func helper() {
+                try? modelContext.save()
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: both) == ["finish"])
+        let swallowed = index(over: ["sheet.swift": both])
+        #expect(CadenceSaveCommitRule.indirectReportOffenders(in: both, swallowing: swallowed).isEmpty)
+    }
+
+    /// An index over fixtures rather than over the tree, for the tests above. Not `throws`: the
+    /// builder is `rethrows` and a dictionary read cannot fail, so the fixture spelling is the one
+    /// place this API is used without a file read behind it.
+    private func index(over sources: [String: String]) -> CadenceSaveCommitRule.SwallowingIndex {
+        CadenceSaveCommitRule.swallowingIndex(over: sources.keys.sorted()) { sources[$0] ?? "" }
+    }
+
+    private func swallowingIndexOverTheApp() throws -> CadenceSaveCommitRule.SwallowingIndex {
+        try CadenceSaveCommitRule.swallowingIndex(over: try saveCommitSwiftFiles()) {
+            CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0))
+        }
+    }
+
     // MARK: - What half 3 subtracts, and why by rule
 
     /// The seventeen helpers are subtracted by **signature**: a declaration handed a `ModelContext`
@@ -372,10 +526,19 @@ struct CadenceSaveCommitDisciplineTests {
     /// it fails rather than sits there. This is also what stops a file with one *allowed* offender
     /// from masking a second, new one added beside it.
     @Test func everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule() throws {
+        // The one-frame-down half needs the index the sweep uses; an entry there is a claim about
+        // a *pair* of declarations, so checking it against an empty index would read every entry
+        // as stale.
+        let swallowing = try swallowingIndexOverTheApp()
         for (rule, exemptions, offenders) in [
             ("existence", CadenceSaveCommitRule.existenceExemptions, CadenceSaveCommitRule.existenceOffenders),
             ("report", CadenceSaveCommitRule.reportExemptions, CadenceSaveCommitRule.reportOffenders),
             ("commit reach", CadenceSaveCommitRule.commitReachExemptions, CadenceSaveCommitRule.commitReachOffenders),
+            (
+                "report one frame down",
+                CadenceSaveCommitRule.indirectReportExemptions,
+                { CadenceSaveCommitRule.indirectReportOffenders(in: $0, swallowing: swallowing) }
+            ),
         ] as [(String, [String: [String]], (String) -> [String])] {
             for (path, expected) in exemptions {
                 let found = offenders(CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path)))
@@ -663,6 +826,263 @@ enum CadenceSaveCommitRule {
         }
         return names.uniqued()
     }
+
+    // MARK: - Half 2, one frame down (T-566)
+
+    /// The callees a caller learns nothing from: a declaration that swallows a commit and does
+    /// **not** `throws`, so "it returned" and "it was written" are the same observation.
+    ///
+    /// Keyed by name **and enclosing type**, not by name alone. Measured over the same file set:
+    /// resolving a qualified call by bare name reports **17** sites where the pairing reports 2,
+    /// because `save`, `create` and `persistNote` are each declared in several files. The one
+    /// extra that was read through is `iOSEventNoteEditorSheet.persistNote`, which returns an
+    /// outcome its caller *guards on* — the shape this rule asks for, reported as the defect.
+    struct SwallowingIndex {
+        fileprivate var typesByName: [String: Set<String>] = [:]
+
+        /// How many distinct callee names the index holds. A sweep that asserts this is
+        /// non-trivial is how a builder which silently read nothing gets caught — an empty index
+        /// makes this whole half permanently green.
+        var namesRead: Int { typesByName.count }
+
+        fileprivate func holds(_ callee: String, on qualifier: String) -> Bool {
+            typesByName[callee]?.contains(qualifier) ?? false
+        }
+    }
+
+    /// Every declaration in the app whose answer hides a swallowed commit, directly or through a
+    /// chain of same-file calls, resolved to a fixed point **across** files.
+    ///
+    /// Two frames is the shape this exists for and one hop would have missed it: T-566's Save
+    /// button called `save()`, `save()` called `CadenceTaskMutationSupport.updateBundle`, and only
+    /// the third frame held the `try? modelContext.save()`.
+    static func swallowingIndex(
+        over files: [String],
+        read: (String) throws -> String
+    ) rethrows -> SwallowingIndex {
+        let parsed = try files.map { parsedDeclarations(in: try read($0)) }
+        var index = SwallowingIndex()
+        var reached = [Set<String>](repeating: [], count: parsed.count)
+        var changed = true
+        while changed {
+            changed = false
+            for (fileIndex, declarations) in parsed.enumerated() {
+                let names = localSwallowingNames(in: declarations, index: index, seed: reached[fileIndex])
+                guard names != reached[fileIndex] else { continue }
+                for name in names.subtracting(reached[fileIndex]) {
+                    for declaration in declarations where declaration.name == name {
+                        index.typesByName[name, default: []].insert(declaration.type)
+                    }
+                }
+                reached[fileIndex] = names
+                changed = true
+            }
+        }
+        return index
+    }
+
+    /// Half 2, one frame down: a declaration that calls something which swallows a commit and then
+    /// reports success in the same block (T-566).
+    ///
+    /// Half 2 above needs a literal `try?` in the reporting function's own body, and that is not
+    /// where this app writes its mutations: the sheet calls `save()`, `save()` calls a shared
+    /// mutation, and the mutation swallows. Every frame in that chain passed both existing halves,
+    /// and the user still watched a block get saved that the store had refused.
+    ///
+    /// **Declarations half 2 already reports are subtracted**, so the two halves stay disjoint and
+    /// a site never needs an entry in both exemption lists.
+    ///
+    /// **What it does not claim.** A qualified call resolves only when the qualifier is the *type*
+    /// that declares the callee, so an instance method swallowing in another file is invisible
+    /// here — deliberately, see `SwallowingIndex`. And `try?` on a *throwing* helper is not a
+    /// swallow this can see, because `swallowedSave` keys on the commit surface rather than on
+    /// `try?` itself; `iOSCalendarBoardView.move` is that shape and is allowed to be, since a drag
+    /// reports nothing.
+    static func indirectReportOffenders(in source: String, swallowing index: SwallowingIndex) -> [String] {
+        let parsed = parsedDeclarations(in: source)
+        let reached = localSwallowingNames(in: parsed, index: index)
+        let direct = Set(reportOffenders(in: source))
+        var names: [String] = []
+        for declaration in parsed where !direct.contains(declaration.name) {
+            for call in declaration.calls
+            where call.callee != declaration.name
+                && reachesASwallow(call.qualifier, call.callee, reached: reached, index: index) {
+                let tail = String(
+                    declaration.body[call.end..<blockEnd(in: declaration.body, from: call.end)]
+                )
+                if CadenceSourceScan.matchCount(successReport, in: tail) > 0 {
+                    names.append(declaration.name)
+                    break
+                }
+            }
+        }
+        return names.uniqued()
+    }
+
+    /// The two sites this half finds that no other half can see. Both are live; neither is T-566,
+    /// which is fixed. They re-scope [[T-497]]'s "2 sites left" to four.
+    static let indirectReportExemptions: [String: [String]] = [
+        // "Flush an in-place edit, then close" — the third instance of the family already held in
+        // `reportExemptions`, and blocked on the same undecided question: what an undo means for a
+        // field the user is still looking at and still has focus in. `persistNote()` swallows its
+        // commit and `body` dismisses after it.
+        "Cadence/iOS/iOSMarkdownReferenceSupport.swift": ["body"],
+        // A popover picking a task's list: `moveToContainer` swallows, `select` closes the popover
+        // with `isPresented = false`. Not blocked on anything — the popover holds no draft, so the
+        // fix is the ordinary `commitEdit(in:undo:)` one — just out of T-566's scope.
+        "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": ["select"],
+    ]
+
+    static func indirectReportInstrument(swallowing index: SwallowingIndex) throws -> CadenceScanInstrument {
+        try CadenceScanInstrument(
+            "a success report over a commit swallowed one frame down",
+            fires: """
+            struct Sheet: View {
+                var body: some View {
+                    Button("Save") {
+                        save()
+                        dismiss()
+                    }
+                }
+
+                private func save() {
+                    bundle.title = title
+                    try? modelContext.save()
+                }
+            }
+            """,
+            // The nearest negative, and it is T-566's own fix: the same two frames, with the inner
+            // one throwing and the outer one catching before it dismisses. A detector that merely
+            // noticed `save()` above a `dismiss()` would fire on this.
+            andNotOn: """
+            struct Sheet: View {
+                var body: some View {
+                    Button("Save") {
+                        do {
+                            try save()
+                        } catch {
+                            saveFailed = true
+                            return
+                        }
+                        dismiss()
+                    }
+                }
+
+                private func save() throws {
+                    bundle.title = title
+                    try CadencePendingChangePersistence.commitEdit(in: modelContext) { bundle.title = previous }
+                }
+            }
+            """,
+            by: { !indirectReportOffenders(in: $0, swallowing: index).isEmpty }
+        )
+    }
+
+    /// The declarations in one file that reach a swallowed commit, to a fixed point.
+    ///
+    /// `seed` is what the index builder carries between rounds: a name unlocked by another file's
+    /// declaration becoming swallowing must not be recomputed from nothing.
+    private static func localSwallowingNames(
+        in declarations: [ParsedDeclaration],
+        index: SwallowingIndex,
+        seed: Set<String> = []
+    ) -> Set<String> {
+        var names = seed
+        var changed = true
+        while changed {
+            changed = false
+            for declaration in declarations
+            where declaration.name != "body"
+                && !declaration.throwsItsAnswer
+                && !names.contains(declaration.name) {
+                let reaches = declaration.swallowsDirectly || declaration.calls.contains {
+                    $0.callee != declaration.name
+                        && reachesASwallow($0.qualifier, $0.callee, reached: names, index: index)
+                }
+                if reaches {
+                    names.insert(declaration.name)
+                    changed = true
+                }
+            }
+        }
+        return names
+    }
+
+    private static func reachesASwallow(
+        _ qualifier: String?,
+        _ callee: String,
+        reached: Set<String>,
+        index: SwallowingIndex
+    ) -> Bool {
+        guard let qualifier else { return reached.contains(callee) }
+        return index.holds(callee, on: qualifier)
+    }
+
+    fileprivate struct ParsedDeclaration {
+        let name: String
+        let type: String
+        let throwsItsAnswer: Bool
+        let swallowsDirectly: Bool
+        let body: [Character]
+        /// Every call in the body, as its qualifier (`nil` for a bare call), its callee, and the
+        /// offset just past the opening paren — which is where the block tail is read from.
+        let calls: [(qualifier: String?, callee: String, end: Int)]
+    }
+
+    /// `declarations(in:)` plus the three things this half needs per declaration, computed once.
+    ///
+    /// Once, because the index is a fixed point over every file: recomputing the regex work each
+    /// round would run it six times over the whole tree.
+    fileprivate static func parsedDeclarations(in source: String) -> [ParsedDeclaration] {
+        let found = declarations(in: source)
+        return zip(found, enclosingTypeNames(in: source, for: found)).map { declaration, type in
+            ParsedDeclaration(
+                name: declaration.name,
+                type: type,
+                throwsItsAnswer: declaration.signature.contains("throws"),
+                swallowsDirectly: CadenceSourceScan.matchCount(swallowedSave, in: declaration.body) > 0,
+                body: Array(declaration.body),
+                calls: callSites(in: declaration.body)
+            )
+        }
+    }
+
+    private static func callSites(in body: String) -> [(qualifier: String?, callee: String, end: Int)] {
+        guard let regex = try? NSRegularExpression(pattern: callSite) else { return [] }
+        return regex.matches(in: body, range: NSRange(body.startIndex..., in: body)).compactMap { match in
+            guard let whole = Range(match.range, in: body),
+                  let callee = Range(match.range(at: 2), in: body) else { return nil }
+            return (
+                Range(match.range(at: 1), in: body).map { String(body[$0]) },
+                String(body[callee]),
+                body.distance(from: body.startIndex, to: whole.upperBound)
+            )
+        }
+    }
+
+    /// The type each declaration is declared in, in the same order.
+    ///
+    /// Found by walking the file's type declarations alongside `declarations(in:)`'s own order
+    /// rather than by parsing scopes: a text scan cannot tell a nested type from a sibling, and
+    /// the last type opened before a `func` is the answer in every file in this repository.
+    private static func enclosingTypeNames(
+        in source: String,
+        for declarations: [(name: String, signature: String, body: String)]
+    ) -> [String] {
+        let types = CadenceSourceScan.captures(typeDeclaration, in: source)
+        var names: [String] = []
+        var cursor = source.startIndex
+        for declaration in declarations {
+            let found = source.range(of: declaration.signature, range: cursor..<source.endIndex)
+            let start = found?.lowerBound ?? cursor
+            names.append(types.last { $0.range.lowerBound < start }?.text ?? "")
+            if let found { cursor = found.lowerBound }
+        }
+        return names
+    }
+
+    private static let callSite = "(?:\\b(\\w+)\\s*\\.\\s*)?\\b(\\w+)\\s*\\("
+    private static let typeDeclaration = "\\b(?:enum|struct|final class|class|actor|extension)\\s+(\\w+)"
 
     /// What "swallowed" means, and it is **not** `save` (T-508).
     ///

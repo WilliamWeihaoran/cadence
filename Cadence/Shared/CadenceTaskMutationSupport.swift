@@ -428,6 +428,16 @@ enum CadenceTaskMutationSupport {
     /// travel together, so there is no arrangement in which one is updated alone.
     static let bundleDeleteFailureAlertTitle = "Couldn't Delete Block"
 
+    /// The alert title that carries a refused block **edit** on iOS (T-566).
+    ///
+    /// Beside its sibling above for the same reason, and it deliberately does not reuse
+    /// `bundleSaveFailureNotice`: that sentence is the *create* family's, with no clause about
+    /// what became of the work, because a refused creation has nothing to lose. A refused edit
+    /// does, and `updateBundle` now undoes it — so the sheet reports
+    /// `CadencePendingChangePersistence.editFailureNotice`, whose "Nothing was changed." is a
+    /// promise that undo is what earns.
+    static let bundleEditFailureAlertTitle = "Couldn't Save Block"
+
     /// - Parameter commit: See `deleteTasks(withIDs:modelContext:commitsImmediately:commit:…)`.
     @discardableResult
     static func delete(
@@ -852,39 +862,78 @@ enum CadenceTaskMutationSupport {
         }
     }
 
+    /// **Throws when the commit is refused (T-566).** It used to end `try? modelContext.save()`,
+    /// and `iOSCalendarBundleDetailSheet`'s "Save" dismissed straight afterwards, so a refused
+    /// save closed the sheet exactly as a successful one does — the block's own *delete* button
+    /// ten lines above already caught and reported (T-322), and so did the sibling create sheet
+    /// (T-471). This is the third way that sheet ends, and it was the one still swallowing.
+    ///
+    /// The undo is the caller-supplied kind `commitEdit(in:commit:undo:)` asks for, and it has to
+    /// reach further than the four fields on the block: moving a block moves its members' own
+    /// `scheduledDate`/`scheduledStartMin` too, so an undo that restored only the header would
+    /// leave the tasks on the day the store refused to put them on. `rollback()` is not the
+    /// answer here for the reasons `commitEdit` records — it would discard unrelated pending work
+    /// from the app's single context, and an edit it un-did would not be visible until something
+    /// re-fetched.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     static func updateBundle(
         _ bundle: TaskBundle,
         title: String,
         dateKey: String,
         startMin: Int,
         durationMinutes: Int,
-        modelContext: ModelContext
-    ) {
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let clampedStart = min(max(0, startMin), (24 * 60) - 5)
         let duration = min(max(5, durationMinutes), (24 * 60) - clampedStart)
+
+        let previousTitle = bundle.title
+        let previousDateKey = bundle.dateKey
+        let previousStartMin = bundle.startMin
+        let previousDuration = bundle.durationMinutes
+        let members = bundle.tasks ?? []
+        let previousSchedules = members.map { ($0.scheduledDate, $0.scheduledStartMin) }
 
         bundle.title = trimmed
         bundle.dateKey = dateKey
         bundle.startMin = clampedStart
         bundle.durationMinutes = duration
 
-        for task in bundle.tasks ?? [] {
+        for task in members {
             task.scheduledDate = dateKey
             task.scheduledStartMin = -1
         }
 
-        try? modelContext.save()
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+            bundle.title = previousTitle
+            bundle.dateKey = previousDateKey
+            bundle.startMin = previousStartMin
+            bundle.durationMinutes = previousDuration
+            for (task, schedule) in zip(members, previousSchedules) {
+                task.scheduledDate = schedule.0
+                task.scheduledStartMin = schedule.1
+            }
+        }
     }
 
-    static func moveBundle(_ bundle: TaskBundle, to dateKey: String, modelContext: ModelContext) {
-        updateBundle(
+    /// - Parameter commit: See `updateBundle(_:title:dateKey:startMin:durationMinutes:modelContext:commit:)`.
+    static func moveBundle(
+        _ bundle: TaskBundle,
+        to dateKey: String,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        try updateBundle(
             bundle,
             title: bundle.title,
             dateKey: dateKey,
             startMin: bundle.startMin,
             durationMinutes: bundle.durationMinutes,
-            modelContext: modelContext
+            modelContext: modelContext,
+            commit: commit
         )
     }
 

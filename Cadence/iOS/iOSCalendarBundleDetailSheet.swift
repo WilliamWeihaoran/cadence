@@ -18,6 +18,11 @@ struct iOSCalendarBundleDetailSheet: View {
     /// does. The alert is the shape `iOSTaskDeleteFailureAlert` already uses for the task delete
     /// this is the block-shaped sibling of.
     @State private var deleteFailed = false
+    /// T-566, and the same shape as `deleteFailed` above for the same reason: `save()` used to end
+    /// in a swallowed commit inside `updateBundle` and the button dismissed regardless, so a
+    /// refused save closed this sheet exactly as a successful one does. The block's *delete* and
+    /// the sibling *create* sheet (T-471) both already caught; this was the third exit.
+    @State private var saveFailed = false
     @State private var showStartTimePicker = false
 
     private let calendar = Calendar.current
@@ -69,7 +74,12 @@ struct iOSCalendarBundleDetailSheet: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        save()
+                        do {
+                            try save()
+                        } catch {
+                            saveFailed = true
+                            return
+                        }
                         dismiss()
                     }
                     .fontWeight(.semibold)
@@ -98,6 +108,14 @@ struct iOSCalendarBundleDetailSheet: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(CadenceTaskMutationSupport.bundleDeleteFailureNotice)
+            }
+            // "Nothing was changed" is earned by `updateBundle`'s undo: the block's own fields and
+            // its members' scheduling are back where they were, so the sheet the user is still
+            // looking at is showing the truth.
+            .alert(CadenceTaskMutationSupport.bundleEditFailureAlertTitle, isPresented: $saveFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(CadencePendingChangePersistence.editFailureNotice)
             }
         }
     }
@@ -268,8 +286,8 @@ struct iOSCalendarBundleDetailSheet: View {
         }
     }
 
-    private func save() {
-        CadenceTaskMutationSupport.updateBundle(
+    private func save() throws {
+        try CadenceTaskMutationSupport.updateBundle(
             bundle,
             title: title,
             dateKey: dateKey,

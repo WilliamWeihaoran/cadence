@@ -366,6 +366,99 @@ struct CadenceTrackingEditorSaveCommitTests {
         )
     }
 
+    // MARK: - Blocks
+
+    /// **T-566.** A refused block edit puts the block *and its members* back.
+    ///
+    /// The member half is the one a header-only undo would have missed: moving a block moves every
+    /// task in it, so an undo that restored the four fields on `TaskBundle` would leave the tasks
+    /// sitting on the day the store had just refused to put them on — and the sheet would be
+    /// telling the user "Nothing was changed" over a context where something was.
+    @Test func arefusedBlockEditPutsTheBlockAndItsMembersBack() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let bundle = TaskBundle(title: "Admin", dateKey: "2026-08-21", startMin: 600, durationMinutes: 30)
+        let member = AppTask(title: "Email")
+        // Whatever the member held before the edit is what the undo owes it back; 615 rather than
+        // the usual -1 so that a restore-to-a-constant would fail here.
+        member.scheduledDate = "2026-08-21"
+        member.scheduledStartMin = 615
+        modelContext.insert(bundle)
+        modelContext.insert(member)
+        member.bundle = bundle
+        bundle.tasks = [member]
+        try modelContext.save()
+
+        #expect(throws: CommitRefused.self) {
+            try CadenceTaskMutationSupport.updateBundle(
+                bundle,
+                title: "Deep work",
+                dateKey: "2026-08-24",
+                startMin: 900,
+                durationMinutes: 60,
+                modelContext: modelContext,
+                commit: { _ in throw CommitRefused() }
+            )
+        }
+
+        #expect(bundle.title == "Admin")
+        #expect(bundle.dateKey == "2026-08-21")
+        #expect(bundle.startMin == 600)
+        #expect(bundle.durationMinutes == 30)
+        #expect(member.scheduledDate == "2026-08-21")
+        #expect(member.scheduledStartMin == 615)
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<TaskBundle>()).map(\.dateKey) == ["2026-08-21"])
+
+        // And the same call still edits when the commit is accepted, so what was pinned above is
+        // the undo rather than a function that stopped writing.
+        try CadenceTaskMutationSupport.updateBundle(
+            bundle,
+            title: "Deep work",
+            dateKey: "2026-08-24",
+            startMin: 900,
+            durationMinutes: 60,
+            modelContext: modelContext
+        )
+        #expect(bundle.dateKey == "2026-08-24")
+        #expect(member.scheduledDate == "2026-08-24")
+        #expect(member.scheduledStartMin == -1)
+    }
+
+    /// The Save button that reports it, which this target does not compile.
+    ///
+    /// Its sibling ten lines above — "Delete Block" — has caught since T-322, and the sibling
+    /// *create* sheet since T-471; this was the third exit from the same sheet and the one still
+    /// dismissing over a refusal.
+    @Test func theIOSBlockSheetSaveDismissesOnlyThroughASuccessfulTry() throws {
+        let sheet = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift")
+        )
+        #expect(CadenceSourceScan.matchCount("try CadenceTaskMutationSupport\\.updateBundle", in: sheet) == 1)
+        #expect(CadenceSourceScan.matchCount("private func save\\(\\) throws", in: sheet) == 1)
+        #expect(
+            CadenceSourceScan.matchCount("bundleEditFailureAlertTitle", in: sheet) == 1,
+            "the block edit failure has no alert to land in"
+        )
+        #expect(
+            CadenceSourceScan.matchCount("CadencePendingChangePersistence\\.editFailureNotice", in: sheet) == 1,
+            "the alert promises nothing changed, which only the undo can earn"
+        )
+
+        let saveButton = try #require(sheet.range(of: "Button(\"Save\")"))
+        let button = try #require(
+            CadenceSourceScan.matchedBody(
+                after: saveButton.upperBound,
+                in: sheet,
+                open: "{",
+                close: "}"
+            )
+        )
+        #expect(
+            failureBranchReturnsBeforeReportingSuccess(button, report: "dismiss()"),
+            "the Save button can still reach dismiss() from the catch"
+        )
+    }
+
     /// Non-vacuity for the three scans above: the reader really returned Swift.
     @Test func thetrackingSaveCommitScansReadRealSource() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTrackingEditorSheets.swift")

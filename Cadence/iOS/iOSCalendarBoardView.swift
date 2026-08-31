@@ -230,8 +230,13 @@ struct iOSCalendarBoardPlanner: View {
         CadenceTaskDateEditing.moveTaskToDate(task, dateKey: dateKey, in: modelContext)
     }
 
+    /// The swallow here is the one the `try? save()` rule allows, and it is the same one
+    /// `schedule(_:on:)` three lines above already takes: a drag commits in-place field edits, and
+    /// nothing after it dismisses a sheet or reports success — the column redraws from the model
+    /// and the next fetch corrects it. `updateBundle` throws for the sheet that *does* report
+    /// (T-566); this caller is the other kind, and has no notice to land a failure in.
     private func move(_ bundle: TaskBundle, on dateKey: String) {
-        CadenceTaskMutationSupport.moveBundle(bundle, to: dateKey, modelContext: modelContext)
+        try? CadenceTaskMutationSupport.moveBundle(bundle, to: dateKey, modelContext: modelContext)
     }
 
     private func add(_ task: AppTask, to bundle: TaskBundle) {
