@@ -18,6 +18,10 @@ struct iOSSettingsView: View {
     /// `@AppStorage("ios.calendar.zoomLevel") ... = 1` — the key re-spelled as a literal and
     /// typed `Int`, which is how the two ends of one preference drifted apart (T-392).
     @AppStorage(CadenceCalendarZoom.storageKey) private var calendarZoomLevel = CadenceCalendarZoom.defaultZoom
+    /// T-579. The same key `iOSListDetailView` reads, and the same key macOS's Settings writes —
+    /// `CadencePreferenceKeys.listDetailDefaultPage`, not a re-spelled literal, for the reason the
+    /// zoom level above records.
+    @AppStorage(CadencePreferenceKeys.listDetailDefaultPage) private var listDetailDefaultPage = ListDetailPage.defaultPage.rawValue
     @Query private var tasks: [AppTask]
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query private var areas: [Area]
@@ -195,7 +199,8 @@ struct iOSSettingsView: View {
                     get: { calendarPresentation },
                     set: { calendarPresentationRaw = $0.rawValue }
                 ),
-                calendarZoomLevel: $calendarZoomLevel
+                calendarZoomLevel: $calendarZoomLevel,
+                listDetailDefaultPage: $listDetailDefaultPage
             )
         case .sync:
             iOSSyncSettingsSection(probe: cloudAccount)

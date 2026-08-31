@@ -166,12 +166,21 @@ struct iOSNavigationSettingsSection: View {
     /// The timed grid's zoom multiplier, the same `Double` the calendar's pinch writes. Typed
     /// `Int` here until T-392, against a key the calendar had already made continuous.
     @Binding var calendarZoomLevel: Double
+    /// T-579: the raw `listDetailDefaultPage` preference. `iOSListDetailView` has read it since it
+    /// shipped — every list on this phone opens on whatever it holds — while the only control for
+    /// it was on the Mac. So an iPhone-only user obeyed a setting they could not see or change.
+    ///
+    /// Raw `String` rather than `ListDetailPage`, matching macOS's `SettingsNavigationSection`:
+    /// the stored value can name a page this build removed ("Planning" is the live example), and
+    /// `ListDetailPage.resolved(_:)` is the only thing allowed to decide what that means.
+    @Binding var listDetailDefaultPage: String
     @State private var openPicker: DefaultsPicker?
 
     private enum DefaultsPicker: String, Identifiable {
         case calendarView
         case calendarStyle
         case timelineDensity
+        case defaultPage
 
         var id: String { rawValue }
     }
@@ -183,6 +192,21 @@ struct iOSNavigationSettingsSection: View {
             calendarStyleRow
             iOSEditorDivider()
             timelineDensityRow
+            iOSEditorDivider()
+            // Last, not first: the three above are one run about the calendar, and this one is
+            // about lists. Splitting it into its own group — macOS files it under "List Opening" —
+            // would put a one-row card under a heading on a screen where "Defaults" already says
+            // what all four are.
+            defaultPageRow
+        }
+        .onAppear {
+            // The same one-time normalization macOS's pane does: rewrite a stale/unrecognized
+            // persisted value so the store holds the page this row is showing. Without it the
+            // row reads "Tasks" over a preference that still says "Planning", and the row is a
+            // claim about the stored value.
+            if listDetailDefaultPage != selectedPage.rawValue {
+                listDetailDefaultPage = selectedPage.rawValue
+            }
         }
     }
 
@@ -259,6 +283,55 @@ struct iOSNavigationSettingsSection: View {
     /// rounded into a density the grid is not at — see `CadenceCalendarZoom.customDensityTitle`.
     private var densityTitle: String {
         CadenceCalendarZoom.densityTitle(for: calendarZoomLevel)
+    }
+
+    /// The page a list opens on when it has no remembered tab of its own.
+    ///
+    /// The explanatory line stays, where the three calendar rows' paragraphs did not. Those
+    /// restated their own labels; this one says the thing no label can — that a list normally
+    /// remembers its own page and this is only the fallback. It is macOS's sentence, at macOS's
+    /// 11pt `Theme.dim`, indented to the label column through the same shared metrics, because
+    /// the two platforms are describing one preference.
+    private var defaultPageRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            iOSEditorFieldRow(label: "Default page", systemImage: "rectangle.stack") {
+                valueButton(selectedPage.rawValue, picker: .defaultPage)
+                    .popover(isPresented: isPresented(.defaultPage)) {
+                        iOSChoicePopoverList(
+                            rows: ListDetailPage.allCases.map { page in
+                                iOSChoiceRow(
+                                    value: page,
+                                    title: page.rawValue,
+                                    systemImage: page.icon,
+                                    color: Theme.blue
+                                )
+                            },
+                            selection: pageSelection,
+                            isPresented: isPresented(.defaultPage)
+                        )
+                    }
+            }
+
+            Text("Used when a list does not have a saved page.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.dim)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+                .padding(.leading, CadenceSettingsRowMetrics.glyphSlot + CadenceSettingsRowMetrics.glyphLabelSpacing)
+        }
+    }
+
+    /// Never trust the raw persisted string: it can still hold a page this build removed, which
+    /// would leave the value reading as something the picker cannot show as selected.
+    private var selectedPage: ListDetailPage {
+        ListDetailPage.resolved(listDetailDefaultPage)
+    }
+
+    private var pageSelection: Binding<ListDetailPage> {
+        Binding(
+            get: { selectedPage },
+            set: { listDetailDefaultPage = $0.rawValue }
+        )
     }
 
     /// The value half of a row. `minHeight` hands the row's own 44pt to the button, because here
