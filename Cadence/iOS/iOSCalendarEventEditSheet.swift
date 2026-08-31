@@ -37,7 +37,6 @@ struct iOSCalendarEventEditSheet: View {
     @State private var actionError: String?
     @State private var pendingAction: PendingAction?
     @State private var showCalendarPicker = false
-    @State private var showStartTimePicker = false
     @State private var showDaysPicker = false
 
     /// `CadenceDatePicker` returns midnight-anchored day dates — merge just the Y/M/D into the
@@ -349,20 +348,7 @@ struct iOSCalendarEventEditSheet: View {
 
             if !isAllDay {
                 iOSEditorDivider()
-                iOSEditorFieldRow(label: "Time", systemImage: "clock.fill", color: Theme.blue) {
-                    iOSChoiceValueButton(title: TimeFormatters.timeString(from: startTimeMinutesBinding.wrappedValue), color: Theme.text) {
-                        showStartTimePicker = true
-                    }
-                    .popover(isPresented: $showStartTimePicker) {
-                        iOSChoicePopoverList(
-                            rows: stride(from: 0, to: 1440, by: 15).map { minute in
-                                iOSChoiceRow(value: minute, title: TimeFormatters.timeString(from: minute), color: Theme.blue)
-                            },
-                            selection: startTimeMinutesBinding,
-                            isPresented: $showStartTimePicker
-                        )
-                    }
-                }
+                CadenceStartTimeFieldRow(minutes: startTimeMinutesBinding)
             }
 
             iOSEditorDivider()

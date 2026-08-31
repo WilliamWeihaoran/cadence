@@ -23,7 +23,6 @@ struct iOSCalendarBundleDetailSheet: View {
     /// refused save closed this sheet exactly as a successful one does. The block's *delete* and
     /// the sibling *create* sheet (T-471) both already caught; this was the third exit.
     @State private var saveFailed = false
-    @State private var showStartTimePicker = false
 
     private let calendar = Calendar.current
 
@@ -161,20 +160,7 @@ struct iOSCalendarBundleDetailSheet: View {
 
             iOSEditorDivider()
 
-            iOSEditorFieldRow(label: "Start", systemImage: "clock.fill", color: Theme.blue) {
-                iOSChoiceValueButton(title: TimeFormatters.timeString(from: startMinuteBinding.wrappedValue), color: Theme.text) {
-                    showStartTimePicker = true
-                }
-                .popover(isPresented: $showStartTimePicker) {
-                    iOSChoicePopoverList(
-                        rows: stride(from: 0, to: 1440, by: 15).map { minute in
-                            iOSChoiceRow(value: minute, title: TimeFormatters.timeString(from: minute), color: Theme.blue)
-                        },
-                        selection: startMinuteBinding,
-                        isPresented: $showStartTimePicker
-                    )
-                }
-            }
+            CadenceStartTimeFieldRow(minutes: startMinuteBinding)
 
             iOSEditorDivider()
 

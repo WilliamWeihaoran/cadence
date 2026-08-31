@@ -412,7 +412,7 @@ private struct iOSCalendarMonthDayCell: View {
                         )
                     }
                     if overflow > 0 {
-                        Text("+ \(overflow) more")
+                        Text(CadenceTaskSurfaceOptions.moreLabel(hidden: overflow))
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(Theme.subdued)
                             .padding(.horizontal, 5)

@@ -383,4 +383,117 @@ struct CadenceCalendarConsistencySurfaceTests {
             ) == 1
         )
     }
+
+    // MARK: - T-598(a): one start-time control, one word
+
+    /// **Three sheets on one screen renamed the same control twice.**
+    ///
+    /// Quick-create said "Starts", the event editor said "Time", the block sheet said "Start" — and
+    /// behind all three was byte-for-byte the same thing: a `clock.fill` glyph in `Theme.blue`, a
+    /// `CadenceChoiceValueButton` showing `TimeFormatters.timeString(from:)`, and a popover of
+    /// `stride(from: 0, to: 1440, by: 15)` rows formatted by that same function.
+    ///
+    /// `CadenceStartTimeFieldRow` is now the only place any of it is written. **The word is a
+    /// `static let` inside the component rather than an argument**, which is the actual fix — a
+    /// `label:` parameter is how the app came to have three of them. It is also the only guard
+    /// available: `"Start"` is five characters, far under `CadenceSharedConstantReuseSweepTests`'
+    /// twelve-character floor, so a shared *constant* spelling it could never have been armed
+    /// against a call site re-typing the word.
+    @Test func theThreeCalendarSheetsShareOneStartTimeRow() throws {
+        // The winning word. "Start" is the noun that matches the "Date" and "Duration" rows beside
+        // it; "Starts" was the only verb on the card and "Time" the only label that did not say
+        // *which* time next to a Date row setting the other half of the same instant.
+        #expect(CadenceStartTimeFieldRow.label == "Start")
+        #expect(CadenceStartTimeFieldRow.label != "Starts")
+        #expect(CadenceStartTimeFieldRow.label != "Time")
+
+        // The component really does own the control the three sheets handed over.
+        let component = try scannedSource("Cadence/Shared/Components/CadenceStartTimeFieldRow.swift")
+        #expect(component.contains("stride(from: 0, to: 24 * 60, by: 15)"))
+        #expect(component.contains("CadenceChoicePopoverList("))
+        #expect(CadenceSourceScan.matchCount(#"TimeFormatters\.timeString\(from:"#, in: component) == 2)
+        #expect(
+            CadenceSourceScan.matchCount(#"label: *""#, in: component) == 0,
+            "the label came back as an argument, which is how there were three of them"
+        )
+
+        for (path, binding) in [
+            ("Cadence/iOS/iOSCalendarQuickCreateSheet.swift", "startTimeMinutesBinding"),
+            ("Cadence/iOS/iOSCalendarEventEditSheet.swift", "startTimeMinutesBinding"),
+            ("Cadence/iOS/iOSCalendarBundleDetailSheet.swift", "startMinuteBinding")
+        ] {
+            let source = try scannedSource(path)
+
+            // Non-vacuity: this is still a sheet with a Schedule card in it.
+            #expect(source.contains("iOSEditorSection("), "\(path) is not the sheet this pins")
+
+            #expect(
+                source.contains("CadenceStartTimeFieldRow(minutes: \(binding))"),
+                "\(path) does not use the shared start-time row"
+            )
+            for retired in [#"label: "Starts""#, #"label: "Time""#, #"label: "Start""#] {
+                #expect(
+                    CadenceSourceScan.matchCount(retired, in: source) == 0,
+                    "\(path) still spells \(retired)"
+                )
+            }
+            // The popover state each of them carried for this row and nothing else.
+            #expect(
+                CadenceSourceScan.matchCount("showStartTimePicker", in: source) == 0,
+                "\(path) still owns the start-time popover's presentation state"
+            )
+        }
+    }
+
+    // MARK: - T-598(c): one "+N more"
+
+    /// **The Calendar disagreed with the rest of the app about a plus sign, and with itself.**
+    ///
+    /// Twelve surfaces draw this line and they had split nine to three. All three spaced ones were
+    /// calendar — the iOS timeline's unscheduled-task stack, the iOS month cell, and macOS's month
+    /// cell — while `iOSCalendarTimelineViews`' *other* overflow line, in the same file, was
+    /// unspaced like the other eight. The nine win, and `CadenceTaskSurfaceOptions.moreLabel(hidden:)`
+    /// is now where the spelling lives.
+    ///
+    /// The remaining eight unspaced sites are left typing the literal deliberately: converting them
+    /// is a repo-wide sweep rather than this ticket, and they already agree with the constant. What
+    /// this pins is that no *calendar* surface spells it any more, which is the split T-598 names.
+    @Test func everyCalendarOverflowLineReadsTheSharedMoreLabel() throws {
+        #expect(CadenceTaskSurfaceOptions.moreLabel(hidden: 3) == "+3 more")
+        // The retired form, written out because the whole defect is the one character between them.
+        #expect(CadenceTaskSurfaceOptions.moreLabel(hidden: 3) != "+ 3 more")
+        #expect(CadenceTaskSurfaceOptions.moreLabel(hidden: 1) == "+1 more")
+
+        // It is not `overflowCaption`, which is the other answer to the same question and says
+        // both numbers because nothing on that surface reveals the rest.
+        #expect(CadenceTaskSurfaceOptions.overflowCaption(shown: 24, total: 40) == "Showing 24 of 40")
+
+        for (path, count) in [
+            ("Cadence/iOS/iOSCalendarTimelineViews.swift", 2),
+            ("Cadence/iOS/iOSCalendarMonthViews.swift", 1),
+            ("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift", 1)
+        ] {
+            let source = try scannedSource(path)
+            #expect(
+                CadenceSourceScan.matchCount(#""\+ ?\\\([^"]*\) more""#, in: source) == 0,
+                "\(path) still spells its own overflow line"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"CadenceTaskSurfaceOptions\.moreLabel\(hidden:"#, in: source) == count,
+                "\(path) no longer has the \(count) overflow lines this pins"
+            )
+        }
+
+        // The detector is not blind: it matches both spellings it is meant to and neither of the
+        // two nearby lines it must leave alone.
+        #expect(CadenceSourceScan.matchCount(#""\+ ?\\\([^"]*\) more""#, in: #"Text("+ \(overflow) more")"#) == 1)
+        #expect(CadenceSourceScan.matchCount(#""\+ ?\\\([^"]*\) more""#, in: #"Text("+\(n - 2) more")"#) == 1)
+        #expect(CadenceSourceScan.matchCount(#""\+ ?\\\([^"]*\) more""#, in: #"Text("Showing \(n) of \(m)")"#) == 0)
+        #expect(
+            CadenceSourceScan.matchCount(
+                #""\+ ?\\\([^"]*\) more""#,
+                in: #"Text(CadenceTaskSurfaceOptions.moreLabel(hidden: overflow))"#
+            ) == 0
+        )
+    }
 }

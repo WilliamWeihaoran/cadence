@@ -427,7 +427,7 @@ private struct iOSCalendarSettingsRow: View {
                         .lineLimit(1)
 
                     if !calendar.allowsContentModifications {
-                        Text("Read Only")
+                        Text(CadenceCalendarLinkExclusion.readOnly.qualifier)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Theme.dim)
                             .padding(.horizontal, 7)

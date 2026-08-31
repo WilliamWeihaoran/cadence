@@ -543,7 +543,7 @@ private struct iOSCalendarTimelineDayHeader: View {
                     }
 
                     if unscheduledTasks.count > 2 {
-                        Text("+ \(unscheduledTasks.count - 2) more")
+                        Text(CadenceTaskSurfaceOptions.moreLabel(hidden: unscheduledTasks.count - 2))
                             .font(.system(size: 9, weight: .medium))
                             .foregroundStyle(Theme.subdued)
                     }
@@ -1128,7 +1128,7 @@ struct iOSTimelineBundleBlock: View {
                 }
 
                 if tasks.count > 2 {
-                    Text("+\(tasks.count - 2) more")
+                    Text(CadenceTaskSurfaceOptions.moreLabel(hidden: tasks.count - 2))
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(Theme.dim)
                 }

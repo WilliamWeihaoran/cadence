@@ -346,7 +346,7 @@ struct MonthDayCell: View {
                     MonthEventChip(event: event)
                 }
                 if layout.overflow > 0 {
-                    Text("+ \(layout.overflow) more")
+                    Text(CadenceTaskSurfaceOptions.moreLabel(hidden: layout.overflow))
                         .font(.system(size: 9))
                         .foregroundStyle(Theme.dim)
                         .padding(.horizontal, 5)

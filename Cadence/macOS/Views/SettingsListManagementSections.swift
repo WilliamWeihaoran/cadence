@@ -299,7 +299,7 @@ private struct SettingsCalendarRow: View {
                         .lineLimit(1)
 
                     if !calendar.allowsContentModifications {
-                        Text("Read Only")
+                        Text(CadenceCalendarLinkExclusion.readOnly.qualifier)
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(Theme.dim)
                             .padding(.horizontal, 6)

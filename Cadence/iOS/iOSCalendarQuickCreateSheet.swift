@@ -31,7 +31,6 @@ struct iOSCalendarQuickCreateSheet: View {
     @State private var showCalendarPicker = false
     @State private var showContainerPicker = false
     @State private var showSectionPicker = false
-    @State private var showStartTimePicker = false
     @State private var actionError: String?
 
     /// `initialKind` is what the capture palette's **Event** segment needs: the segmented control
@@ -463,20 +462,7 @@ struct iOSCalendarQuickCreateSheet: View {
                     iOSEditorDivider()
                 }
 
-                iOSEditorFieldRow(label: "Starts", systemImage: "clock.fill", color: Theme.blue) {
-                    iOSChoiceValueButton(title: TimeFormatters.timeString(from: startTimeMinutesBinding.wrappedValue), color: Theme.text) {
-                        showStartTimePicker = true
-                    }
-                    .popover(isPresented: $showStartTimePicker) {
-                        iOSChoicePopoverList(
-                            rows: stride(from: 0, to: 1440, by: 15).map { minute in
-                                iOSChoiceRow(value: minute, title: TimeFormatters.timeString(from: minute), color: Theme.blue)
-                            },
-                            selection: startTimeMinutesBinding,
-                            isPresented: $showStartTimePicker
-                        )
-                    }
-                }
+                CadenceStartTimeFieldRow(minutes: startTimeMinutesBinding)
 
                 // No Duration row for a task. A task's length is `estimatedMinutes`, and the
                 // Estimate row in DETAILS above already edits it — two rows, one field, showing the

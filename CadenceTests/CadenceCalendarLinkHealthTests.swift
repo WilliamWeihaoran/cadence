@@ -257,4 +257,58 @@ struct CadenceCalendarLinkHealthTests {
         #expect(CadenceSourceScan.matchCount("calendar\\.title *==", in: "if calendar.title == other {") == 1)
         #expect(CadenceSourceScan.matchCount("calendar\\.title *==", in: "Text(calendar.title)") == 0)
     }
+
+    // MARK: - T-598(b): one spelling of "read-only"
+
+    /// **Two settings screens drew their own badge for a fact the app already had a word for.**
+    ///
+    /// `CadenceCalendarLinkExclusion.readOnly.qualifier` is `"Read-only"`, and it is what the
+    /// picker one tap away puts after an excluded calendar's name;
+    /// `CadenceCalendarEventEditingSupport.readOnlyNotice` says "read-only calendar" in prose. Both
+    /// settings rows typed `Text("Read Only")` — a third spelling of one fact, differing from the
+    /// other two by a hyphen and a capital.
+    ///
+    /// **This guard exists because the sweep cannot cover it.**
+    /// `CadenceSharedConstantReuseSweepTests` harvests shared string constants of **twelve
+    /// characters or more**; `"Read-only"` is nine, and it is a `switch` in a computed property
+    /// rather than a `static let`, so it is doubly outside that harvest. A fourth surface typing
+    /// the words out again is caught here or nowhere.
+    @Test func neitherCalendarSettingsSurfaceSpellsItsOwnReadOnlyBadge() throws {
+        // The word itself, so a rename of the qualifier fails here rather than silently
+        // re-pointing both call sites at something new.
+        #expect(CadenceCalendarLinkExclusion.readOnly.qualifier == "Read-only")
+        #expect(CadenceCalendarLinkExclusion.hidden.qualifier == "Hidden")
+        // The retired spelling and the shipped one are genuinely different strings — the whole
+        // defect is the difference, so the comparison is written out.
+        #expect(CadenceCalendarLinkExclusion.readOnly.qualifier != "Read Only")
+
+        for path in [
+            "Cadence/macOS/Views/SettingsListManagementSections.swift",
+            "Cadence/iOS/iOSCalendarSettingsSection.swift"
+        ] {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            #expect(raw.count > 1_000, "\(path) read as \(raw.count) characters; that is not the file")
+            let code = CadenceSourceScan.strippingComments(raw)
+
+            // Non-vacuity: this really is the row that decides whether to draw the badge.
+            #expect(
+                code.contains("!calendar.allowsContentModifications"),
+                "\(path) no longer holds the row this pins"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#""Read ?[Oo]nly""#, in: code) == 0,
+                "\(path) still spells its own read-only badge"
+            )
+            #expect(
+                code.contains("Text(CadenceCalendarLinkExclusion.readOnly.qualifier)"),
+                "\(path) does not read the shared qualifier"
+            )
+        }
+
+        // The prose notice is the *third* spelling and it is deliberately left alone: mid-sentence
+        // lowercase is the same hyphenation, not a fourth one.
+        let notice = CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: "Holidays")
+        #expect(notice.contains("read-only calendar"))
+        #expect(!notice.contains("Read Only"))
+    }
 }

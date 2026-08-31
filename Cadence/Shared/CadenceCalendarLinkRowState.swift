@@ -145,7 +145,21 @@ nonisolated enum CadenceCalendarLinkExclusion: Equatable, Sendable, CaseIterable
     /// The offer is what the user can write to; what it leaves out is read-only or subscribed.
     case readOnly
 
-    /// The parenthetical a surface puts after an excluded calendar's name.
+    /// The parenthetical a surface puts after an excluded calendar's name — and, since T-598, the
+    /// word on the badge beside it.
+    ///
+    /// **T-598(b).** Both calendar settings screens drew their own `Text("Read Only")` pill next to
+    /// a calendar the user cannot write to, while this enum was already spelling the same fact
+    /// `"Read-only"` in the picker one tap away and
+    /// `CadenceCalendarEventEditingSupport.readOnlyNotice` was saying "read-only calendar" in prose.
+    /// Three spellings of one fact, on one feature, two of them a hyphen apart.
+    ///
+    /// The hyphenated form wins because it is the compound adjective English actually has, and
+    /// because the prose was already using it; the badges now read it rather than re-typing it.
+    /// Note that `"Read-only"` is nine characters, under
+    /// `CadenceSharedConstantReuseSweepTests`' twelve-character floor, so that sweep will never
+    /// catch a fourth surface typing it out again — `CadenceCalendarLinkHealthTests` carries the
+    /// guard instead.
     var qualifier: String {
         switch self {
         case .hidden: "Hidden"

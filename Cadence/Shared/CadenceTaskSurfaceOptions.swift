@@ -199,4 +199,36 @@ enum CadenceTaskSurfaceOptions {
         guard total > shown else { return nil }
         return "Showing \(shown) of \(total)"
     }
+
+    /// The **other** line the paragraph above contrasts itself with: what a capped *row* or *cell*
+    /// says about the items it is not drawing.
+    ///
+    /// **T-598(c). It is `"+3 more"`, with no space after the plus.** Twelve sites in the app draw
+    /// this line and they had split nine to three. The unspaced nine are the board cards, the
+    /// kanban card, the markdown task embed and preview, the iOS task row and the macOS timeline
+    /// bundle block; the spaced three were all calendar — two on the iOS timeline and month grid,
+    /// one on macOS's month grid — so the Calendar disagreed with the rest of the app *and*, at
+    /// `iOSCalendarTimelineViews`' second site, with itself. The majority wins, and it is also the
+    /// typographically right one: `+3` is a signed quantity, not a plus sign followed by a number.
+    ///
+    /// It lives next to `overflowCaption` because the two lines are one decision seen twice, and
+    /// the paragraph above is where the app already explains which of them a surface gets: this one
+    /// where opening the thing reveals the rest, that one where nothing does.
+    ///
+    /// `MarkdownRenderedBlockTruncation.overflowLabel(unit:)` is deliberately **not** folded in
+    /// here. It says "+ 4 more rows" — a different sentence, naming what was cut and pluralising
+    /// the unit, under a rendered table rather than beside a list of chips. It happens to spell its
+    /// plus the spaced way; that is that line's separate question, recorded rather than swept up
+    /// with this one.
+    ///
+    /// **The declaration is a guard the sweep cannot supply.** `CadenceSharedConstantReuseSweepTests`
+    /// harvests non-interpolated `static let` strings only, and this is interpolated by nature, so a
+    /// thirteenth site typing `"+\(n) more"` would not be caught there.
+    /// `CadenceCalendarConsistencySurfaceTests` pins the calendar surfaces by hand instead.
+    ///
+    /// Takes the count the caller is hiding, which is the number every one of those sites had
+    /// already computed.
+    static func moreLabel(hidden: Int) -> String {
+        "+\(hidden) more"
+    }
 }
