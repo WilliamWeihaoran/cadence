@@ -154,6 +154,7 @@ private struct AppleReminderTaskRow: View {
             }
             .buttonStyle(.cadencePlain)
             .disabled(!reminder.allowsCompletion || rowState.isCompleting)
+            .accessibilityLabel("Complete in Apple Reminders")
             .help(reminder.allowsCompletion ? "Complete in Apple Reminders" : "This reminder list is read-only")
             .padding(.horizontal, 8)
 

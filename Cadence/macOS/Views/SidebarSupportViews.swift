@@ -410,6 +410,8 @@ struct SidebarListRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(CadenceTaskControlAccessibility.dueDate)
+        .accessibilityValue(DateFormatters.relativeDate(from: key))
         .help("Set due date")
         .popover(isPresented: $showDueDatePicker) {
             CadenceQuickDatePopover(

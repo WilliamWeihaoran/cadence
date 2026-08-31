@@ -200,7 +200,7 @@ struct HabitDetailView: View {
                         )
                 }
                 .buttonStyle(.cadencePlain)
-                .help("Edit habit")
+                .cadenceControlLabel("Edit habit")
 
                 CadenceActionButton(
                     title: isDoneToday ? "Undo" : "Check In Today",

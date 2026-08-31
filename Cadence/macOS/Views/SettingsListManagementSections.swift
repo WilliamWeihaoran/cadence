@@ -270,6 +270,7 @@ private struct SettingsMissingCalendarLinkRow: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .accessibilityLabel("Fix calendar link")
         .help("Link this list to a calendar that exists, or remove the link")
     }
 }
@@ -331,6 +332,7 @@ private struct SettingsCalendarRow: View {
                 ))
                 .toggleStyle(.switch)
                 .labelsHidden()
+                .accessibilityLabel("Active")
                 .help(isActive ? "Hide this calendar from Cadence" : "Show this calendar in Cadence")
             }
             .padding(.top, 7)

@@ -38,7 +38,8 @@ struct GoalsViewModeToggle: View {
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                 }
                 .buttonStyle(.cadencePlain)
-                .help(mode.title)
+                .cadenceControlLabel(mode.title)
+                .accessibilityAddTraits(selection == mode ? .isSelected : [])
             }
         }
         .padding(3)

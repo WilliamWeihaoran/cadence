@@ -193,7 +193,8 @@ struct ListEditorColorStrip: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(isSelected ? "Selected colour" : "Use this colour")
+                .cadenceControlLabel(isSelected ? "Selected colour" : "Use this colour")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
     }
@@ -236,7 +237,7 @@ struct ListEditorIconStrip: View {
                 icon: "ellipsis",
                 isSelected: false,
                 tint: Color(hex: colorHex),
-                help: "More icons"
+                accessibilityLabel: "More icons"
             ) {
                 showAll.toggle()
             }
@@ -260,7 +261,7 @@ private struct ListEditorIconCell: View {
     let icon: String
     let isSelected: Bool
     let tint: Color
-    var help: String? = nil
+    var accessibilityLabel: String? = nil
     let action: () -> Void
 
     @State private var isHovered = false
@@ -279,7 +280,7 @@ private struct ListEditorIconCell: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .modifier(ListEditorOptionalHelp(text: help))
+        .modifier(ListEditorOptionalControlLabel(text: accessibilityLabel))
     }
 
     private var fill: Color {
@@ -288,13 +289,14 @@ private struct ListEditorIconCell: View {
     }
 }
 
-/// `.help()` only when there is something to say — an empty help string still arms a tooltip.
-private struct ListEditorOptionalHelp: ViewModifier {
+/// A name and a tooltip, from one string, only when there is something to say — an empty help
+/// string still arms a tooltip, and a cell with no words has nothing to announce either.
+private struct ListEditorOptionalControlLabel: ViewModifier {
     let text: String?
 
     func body(content: Content) -> some View {
         if let text {
-            content.help(text)
+            content.cadenceControlLabel(text)
         } else {
             content
         }
@@ -503,6 +505,7 @@ struct ListEditorArchiveButton: View {
             tint: Theme.muted,
             action: action
         )
+        .accessibilityLabel(isArchived ? "Unarchive" : "Archive")
         .help(
             isArchived
                 ? "Return this \(noun.lowercased()) to the sidebar."

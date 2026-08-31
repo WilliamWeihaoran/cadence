@@ -131,25 +131,27 @@ struct CadenceControlAccessibilityLabelTests {
     /// **The sites this rule has not reached yet, by file and count.**
     ///
     /// T-472 fixed the markdown toolbar and scoped its sweep to `MarkdownEditorView.swift`, so the
-    /// rule existed and read one file. T-594 widened it to the whole app and the widening is the
-    /// finding: **44 controls in 28 files** carry a tooltip and no accessible name — every one of
+    /// rule existed and read one file. T-594 widened it to the whole app and the widening was the
+    /// finding: **44 controls in 28 files** carried a tooltip and no accessible name — every one of
     /// them on macOS, since `.help` is a pointer affordance the iOS tree does not use.
     ///
     /// Recorded as an exact ledger rather than a ceiling, the shape
     /// `CadenceSaveCommitDisciplineTests` uses: a **new** unnamed tooltip fails, and so does a
     /// **stale** entry, so fixing one means deleting its line in the same change. The number is
-    /// meant to go down.
+    /// meant to go down, and T-610 took it from 44 to **one**.
+    ///
+    /// The one left is deliberate, not missed. `FocusPickItemRow` is a *text* row — title over a
+    /// detail line — so it already has an accessible name, assembled by SwiftUI from what it
+    /// draws. Its `helpText` ("Focus this task") is the action and not the item, so naming the row
+    /// with it would make twenty rows announce the same four words; naming it with the title would
+    /// silently drop the due/scheduling line VoiceOver reads today. The fix needs a plain-text
+    /// form of `CadenceTaskDetailLineLabel`, which is a `Cadence/Shared/` change and its own
+    /// ticket.
     ///
     /// This is a ledger of a *known* gap, not a permission. `Cadence/macOS/Views/TasksPanelComponents.swift`
     /// is deliberately absent: it is the file T-594 was filed about and it is now clean.
     private static let knownUnnamedTooltipSites: [String: Int] = [
-        "Cadence/macOS/Sheets/ListEditorSupportViews.swift": 3,
         "Cadence/macOS/Views/FocusPickerSupportViews.swift": 1,
-        "Cadence/macOS/Views/GoalTimelineView.swift": 1,
-        "Cadence/macOS/Views/HabitsSupportViews.swift": 1,
-        "Cadence/macOS/Views/InboxSupportViews.swift": 1,
-        "Cadence/macOS/Views/SettingsListManagementSections.swift": 2,
-        "Cadence/macOS/Views/SidebarSupportViews.swift": 1,
     ]
 
     /// The T-472 rule, over every file the app compiles instead of over one.
@@ -189,8 +191,8 @@ struct CadenceControlAccessibilityLabelTests {
         }
         #expect(actual == Self.knownUnnamedTooltipSites)
         // The headline, so the report and the ledger cannot disagree: T-594 measured 44, and
-        // T-610 has named 34 of them.
-        #expect(actual.values.reduce(0, +) == 10)
+        // T-610 has named 43 of them.
+        #expect(actual.values.reduce(0, +) == 1)
         #expect(
             actual.keys.allSatisfy { $0.hasPrefix("Cadence/macOS/") },
             "an unnamed tooltip outside the macOS tree — `.help` is a pointer affordance"
