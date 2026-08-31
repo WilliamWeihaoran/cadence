@@ -201,6 +201,180 @@ struct iOSCalendarMetricsTests {
         #expect(!grid.contains("isCurrentMonth ? 0.18 : 0.08"))
     }
 
+    // MARK: - The hairlines (T-595)
+
+    /// **The sharpest instance the ticket found: one month cell, two weights.** Its right edge drew
+    /// `0.30` and its bottom edge `0.42` — the same rule, around the same cell, differing by a third
+    /// — while the timed grid's day header four hundred lines away set both of its own edges to one
+    /// number. A cell has one edge weight now, and the timed canvas's column rule is that same
+    /// weight, because ruling one day off from the next is one job in both presentations.
+    @Test func aDayIsRuledOffFromTheNextAtOneWeight() throws {
+        #expect(iOSCalendarHairlineMetrics.dayEdgeOpacity == 0.42)
+        #expect(iOSCalendarHairlineMetrics.width == 0.5)
+
+        let month = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMonthViews.swift")
+        )
+        let timeline = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        )
+
+        // Non-vacuity: the right files, past the comment stripper, still holding the views whose
+        // edges this is about.
+        #expect(month.contains("private struct iOSCalendarMonthDayCell: View"))
+        #expect(timeline.contains("private struct iOSCalendarTimelineColumnGridLines: View"))
+
+        // Counted, not merely present: the cell has *two* edges, and a fix that converted one of
+        // them and left the other is exactly the state this ticket found.
+        #expect(
+            CadenceSourceScan.matchCount(
+                "iOSCalendarHairlineMetrics\\.dayEdgeOpacity",
+                in: month
+            ) == 2
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                "iOSCalendarHairlineMetrics\\.dayEdgeOpacity",
+                in: timeline
+            ) == 1
+        )
+        #expect(!month.contains("borderSubtle.opacity(0.30)"))
+        #expect(!month.contains("borderSubtle.opacity(0.42)"))
+        #expect(!timeline.contains("borderSubtle.opacity(0.34)"))
+    }
+
+    /// The two lines that close the chrome the canvas scrolls under — the day-header band's bottom
+    /// and the hour rail's trailing side — **meet at the top-left corner of the canvas**, so one of
+    /// them being lighter than the other showed up as a corner rather than as an inconsistency. The
+    /// band drew 0.65 on both of its edges and the rail 0.75 on its one.
+    @Test func thePinnedChromeClosesAtOneWeight() throws {
+        #expect(iOSCalendarHairlineMetrics.pinnedEdgeOpacity == 0.65)
+        #expect(
+            iOSCalendarHairlineMetrics.pinnedEdgeOpacity > iOSCalendarHairlineMetrics.dayEdgeOpacity,
+            "chrome closing the canvas reads heavier than a rule inside it"
+        )
+
+        let timeline = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        )
+        #expect(timeline.contains("private struct iOSCalendarTimeRail: View"))
+        // Three: the band's trailing and bottom edges, and the rail's trailing edge.
+        #expect(
+            CadenceSourceScan.matchCount(
+                "iOSCalendarHairlineMetrics\\.pinnedEdgeOpacity",
+                in: timeline
+            ) == 3
+        )
+        #expect(!timeline.contains("borderSubtle.opacity(0.75)"))
+        #expect(!timeline.contains("borderSubtle.opacity(0.65)"))
+    }
+
+    /// The ladder is a cadence and the two weights it selects between, and those three figures only
+    /// mean anything together — which is why the cadence lives beside the label figures rather than
+    /// being re-spelled `% 3` wherever a line is drawn. Today's timeline spells the identical
+    /// cadence; that is how it came to spell a *different* pair of weights (T-596).
+    @Test func theHourLadderIsOneCadenceAndTwoWeights() throws {
+        #expect(iOSCalendarTimelineMetrics.hourEmphasisInterval == 3)
+        #expect(iOSCalendarHairlineMetrics.hourMajorOpacity == 0.46)
+        #expect(iOSCalendarHairlineMetrics.hourMinorOpacity == 0.20)
+        #expect(iOSCalendarHairlineMetrics.hourMajorOpacity > iOSCalendarHairlineMetrics.hourMinorOpacity)
+        #expect(iOSCalendarTimelineMetrics.hourLabelOpacity > iOSCalendarTimelineMetrics.hourLabelMutedOpacity)
+
+        let timeline = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        )
+        #expect(timeline.contains("private struct iOSCalendarTimelineColumnGridLines: View"))
+        #expect(timeline.contains("iOSCalendarHairlineMetrics.hourMajorOpacity"))
+        #expect(timeline.contains("iOSCalendarHairlineMetrics.hourMinorOpacity"))
+        #expect(timeline.contains("iOSCalendarTimelineMetrics.hourLabelOpacity"))
+        // The cadence is read at both of the places that count to three — the lines and the labels.
+        #expect(
+            CadenceSourceScan.matchCount(
+                "iOSCalendarTimelineMetrics\\.hourEmphasisInterval",
+                in: timeline
+            ) == 2
+        )
+        #expect(CadenceSourceScan.matchCount("% 3 == 0", in: timeline) == 0)
+    }
+
+    /// The Board's lane separator is **not** in the calendar's hairline vocabulary, and that is the
+    /// finding rather than an omission: it already agrees with the Mac's Board, at the same weight
+    /// and the same full point. Pulling it onto this screen's grid rule would have broken the
+    /// agreement it had in order to fix one it never had.
+    @Test func theBoardLaneSeparatorAgreesWithTheMacsBoard() throws {
+        #expect(iOSCalendarBoardMetrics.columnSeparatorOpacity == 0.28)
+        #expect(iOSCalendarBoardMetrics.columnSeparatorWidth == 1)
+
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift")
+        )
+        #expect(mac.contains("Rectangle()"), "non-vacuity: wrong file, or the stripper ate the code")
+        #expect(
+            mac.contains("Theme.borderSubtle.opacity(0.28)"),
+            "the Mac's lane moved; re-decide the iOS figure against it rather than leaving this stale"
+        )
+    }
+
+    // MARK: - The month grid's band (T-595)
+
+    /// One row of weekday names, over one grid container, framed at **36** by `iOSCalendarMonthGrid`
+    /// and **22** by `iOSCalendarMonthStack`. T-277 hoisted that label's *size* to
+    /// `CadenceCalendarWeekdayHeaderMetrics` for exactly this reason and left the band it sits in
+    /// behind.
+    @Test func theWeekdayBandIsOneHeightInBothMonthContainers() throws {
+        #expect(CadenceCalendarWeekdayHeaderMetrics.bandHeight == 22)
+        // It is a band around a label, so it has to clear the label: 10pt lays out at about 12.
+        #expect(
+            CadenceCalendarWeekdayHeaderMetrics.bandHeight
+                > CadenceCalendarWeekdayHeaderMetrics.labelSize * 1.2
+        )
+
+        for path in [
+            "Cadence/iOS/iOSCalendarMonthViews.swift",
+            "Cadence/iOS/iOSCalendarMonthAgendaViews.swift"
+        ] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("weekdayHeaderHeight"), "non-vacuity: \(path)")
+            #expect(
+                code.contains("CadenceCalendarWeekdayHeaderMetrics.bandHeight"),
+                "\(path) still frames the weekday row itself"
+            )
+            #expect(!code.contains("weekdayHeaderHeight: CGFloat = 36"))
+            #expect(!code.contains("weekdayHeaderHeight: CGFloat = 22"))
+        }
+    }
+
+    /// The other two figures the month grids were typing out: the cell floor its own shared support
+    /// file cites in prose, and a bottom padding that was a default *and* a private copy the caller
+    /// handed straight back in.
+    @Test func theMonthGridsOtherBareFiguresAreNamed() throws {
+        #expect(iOSCalendarMonthMetrics.minimumCellHeight == 104)
+        #expect(CadenceCalendarMonthAgendaSupport.gridBottomPadding == 8)
+
+        let grid = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMonthViews.swift")
+        )
+        #expect(grid.contains("struct iOSCalendarMonthGrid: View"))
+        #expect(grid.contains("iOSCalendarMonthMetrics.minimumCellHeight"))
+        #expect(CadenceSourceScan.matchCount("max\\(\\s*104", in: grid) == 0)
+
+        let stack = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMonthAgendaViews.swift")
+        )
+        #expect(stack.contains("struct iOSCalendarMonthStack"))
+        #expect(stack.contains("CadenceCalendarMonthAgendaSupport.gridBottomPadding"))
+        #expect(!stack.contains("gridBottomPadding: CGFloat = 8"))
+
+        // And the arithmetic still honours it: padding the grid takes comes out of row height, so a
+        // pane that can hold both readings still gets its 44pt touch target.
+        let row = CadenceCalendarMonthAgendaSupport.gridRowHeight(
+            availableHeight: 900,
+            rowCount: CadenceCalendarMonthWindow.visibleRowCount,
+            weekdayHeaderHeight: CadenceCalendarWeekdayHeaderMetrics.bandHeight
+        )
+        #expect(row >= 44)
+    }
+
     // MARK: - The toolbar
 
     /// The band's vertical padding used to ramp the wrong way: 12 on the phone against 10 on the

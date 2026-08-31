@@ -49,6 +49,22 @@ nonisolated struct CadenceCalendarWeekdayHeaderMetrics: Sendable {
     /// `CadenceScheduleSupport.weekdaySymbols`), and kerning belongs to the uppercased run.
     static let labelKerning: CGFloat = 0.5
 
+    /// The band that row of weekdays fills, over a month grid.
+    ///
+    /// **The height was left behind when T-277 hoisted the size.** `iOSCalendarMonthGrid` framed it
+    /// at 36 and `iOSCalendarMonthStack` at 22 — one row, one label, one grid container underneath
+    /// both — and neither number carried a reason, so this is settled the way T-588 settled the hour
+    /// label's inset: on which value more of the repo already stands behind.
+    ///
+    /// **22 wins on both counts.** It is the height `CadenceCalendarMonthAgendaSupport.gridRowHeight` is
+    /// pinned against at eight call sites in `CalendarMonthAgendaTests` and `CalendarMonthDetailTests`,
+    /// so 36 was the spelling no test had ever seen; and it is the one that clears the label without
+    /// tripling the band — `labelSize` lays out at about 12pt, which 22 surrounds with the same 5pt
+    /// the timed band gives its own date block (`iOSCalendarTimelineMetrics.dateBlockVerticalPadding`),
+    /// where 36 would surround it with 12. The 14pt 36 was spending came straight out of cell height,
+    /// on the one grid whose job is showing a whole month.
+    static let bandHeight: CGFloat = 22
+
     /// Between the weekday label and the day number under it.
     ///
     /// **macOS's 2 wins**, and this is the one of the three differences with a measured consequence.

@@ -70,6 +70,21 @@ nonisolated enum iOSCalendarTimelineMetrics {
     /// surface that measured to match the surface that did not.
     static let hourLabelTrailingInset: CGFloat = 8
 
+    /// How often the ladder says the hour louder: every third label, and every third line.
+    ///
+    /// Stated once because **both** timed surfaces already count to three — Today's timeline and the
+    /// Calendar grid spell the identical `% 3` and then disagree about what the emphasis *is* (see
+    /// `iOSCalendarHairlineMetrics`). A cadence and the weights it selects between belong together;
+    /// splitting them is how one of the two got copied without the other.
+    static let hourEmphasisInterval: Int = 3
+
+    /// The `12 AM` label on an emphasised hour, and on the two between.
+    ///
+    /// The one part of the ladder the two surfaces already agreed on, to the digit. Named so the
+    /// agreement is a read rather than a coincidence that survived.
+    static let hourLabelOpacity: Double = 0.9
+    static let hourLabelMutedOpacity: Double = 0.45
+
     // MARK: The day header band
 
     /// `MON` over a day column.
@@ -134,6 +149,73 @@ nonisolated enum iOSCalendarTimelineMetrics {
     }
 }
 
+// MARK: - The hairlines
+
+/// Every rule the calendar's grids are drawn with: the hour ladder, the lines between days, and the
+/// edges of the chrome pinned around the canvas.
+///
+/// **`Theme.borderSubtle` was appearing at ten different opacities on one screen** (`docs/TODO.md`
+/// T-595), which is what a token gets when each view decides for itself how much of it to use. The
+/// sharpest instance was a single month cell whose right edge drew at 0.30 and whose bottom edge
+/// drew at 0.42 — one cell, two weights, no reason for either — while the timed grid's day header,
+/// four hundred lines away, set both of its own edges to one number and was right to.
+///
+/// Three weights survive, and each answers a question the others do not:
+///
+/// - **`dayEdge`** rules one day off from the next, inside a grid. The month cell's two edges and
+///   the timed canvas's column edge are the same line in two presentations of the same screen.
+/// - **`pinnedEdge`** closes the chrome that does *not* scroll — the day-header band along its
+///   bottom and its columns, the hour rail down its trailing side. Those two lines **meet**, at the
+///   top-left corner of the canvas, which is why one of them being lighter than the other was
+///   visible rather than merely inconsistent.
+/// - **`hourMajor`/`hourMinor`** are the ladder, selected between by
+///   `iOSCalendarTimelineMetrics.hourEmphasisInterval`.
+///
+/// Two calendar hairlines are deliberately **not** here. The Board's column separator is
+/// `iOSCalendarBoardMetrics`', because it already agrees with the Mac's Board rather than with this
+/// screen; and the bundle sheet's row rule is the app's row-separator weight (`CadenceFieldRows`,
+/// the task inspector, Today's schedule panel all draw 0.35), so pulling it in here would break the
+/// agreement it already has.
+nonisolated enum iOSCalendarHairlineMetrics {
+    /// A hairline: the thinnest rule that still resolves on a 2x screen. The grids drew 0.5
+    /// everywhere already; it is stated so the next one does not arrive at 1.
+    static let width: CGFloat = 0.5
+
+    /// One day against the next, inside a grid.
+    ///
+    /// **0.42, and neither of the three it replaces had a stated reason** — so this is decided the
+    /// way T-588 decided the hour label's inset: by which value more of the repo already draws,
+    /// rather than by inventing a fourth. 0.42 and 0.34 each appear at two sites app-wide and 0.30
+    /// at one, so 0.30 loses outright; between the other two, 0.42 is the one that wins the pair
+    /// the cell itself was drawing (0.30 against 0.42), and taking the timed canvas's 0.34 to it
+    /// leaves the month grid's heavier edge where it was rather than moving both.
+    static let dayEdgeOpacity: Double = 0.42
+
+    /// The pinned chrome's closing edges: under the day-header band, and down the hour rail.
+    ///
+    /// **0.65 over the rail's 0.75**, on the same rule: it is the weight two of the three lines
+    /// already drew, and the third is the one that meets them.
+    static let pinnedEdgeOpacity: Double = 0.65
+
+    /// The hour ladder. Every third line reads as a rung and the two between it as texture; the
+    /// gap between the two weights is the whole effect, so they are stated as a pair.
+    static let hourMajorOpacity: Double = 0.46
+    static let hourMinorOpacity: Double = 0.20
+}
+
+// MARK: - The month grid
+
+/// The month grid's cells, in both of the containers that hold one.
+nonisolated enum iOSCalendarMonthMetrics {
+    /// The shortest a full-size month cell may be squeezed to.
+    ///
+    /// This is the figure `CadenceCalendarMonthAgendaSupport` names in its own doc as the reason the old
+    /// month view showed three weeks — "at a 104pt minimum cell" — while the only place it was
+    /// actually written was a bare `max(104, …)` in a view body, where that doc could not read it.
+    /// A cell needs it because it lists up to five `iOSCalendarMiniChip`s.
+    static let minimumCellHeight: CGFloat = 104
+}
+
 // MARK: - The toolbar
 
 /// The calendar's top row: the date title that is also the date control, and the presentation
@@ -181,6 +263,16 @@ nonisolated enum iOSCalendarBoardMetrics {
     /// `CalendarBoardPlannerSupport.compactColumnWidth` subtracts when it sizes a column to leave
     /// the next day peeking.
     static let columnSpacing: CGFloat = 10
+
+    /// Between one day column's lane and the next.
+    ///
+    /// **Deliberately not `iOSCalendarHairlineMetrics`'.** This one weight of the ten T-595 found
+    /// was not adrift: `CalendarBoardDayColumnSupportViews` draws the Mac's Board lane at the same
+    /// 0.28, at the same 1pt, so the figure to keep agreeing with is the other platform's Board
+    /// rather than the other presentations of this screen. It is a full point rather than a
+    /// hairline because a lane is a region and not a grid rule.
+    static let columnSeparatorOpacity: Double = 0.28
+    static let columnSeparatorWidth: CGFloat = 1
 
     /// The board's leading inset, which is the calendar page's gutter — the same one the toolbar
     /// above it and every other iOS page uses.

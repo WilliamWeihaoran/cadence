@@ -19,12 +19,14 @@ struct iOSCalendarMonthGrid: View {
     let eventsByDate: [String: [EKEvent]]
 
     private let calendar = Calendar.current
-    private let weekdayHeaderHeight: CGFloat = 36
+    /// The band was 36 here and 22 in `iOSCalendarMonthStack`, for the same row of the same grid.
+    /// One figure now; the reasoning for which of the two survived is on the constant.
+    private var weekdayHeaderHeight: CGFloat { CadenceCalendarWeekdayHeaderMetrics.bandHeight }
 
     var body: some View {
         GeometryReader { proxy in
             let rowHeight = max(
-                104,
+                iOSCalendarMonthMetrics.minimumCellHeight,
                 (proxy.size.height - weekdayHeaderHeight) / CGFloat(CadenceCalendarMonthWindow.visibleRowCount)
             )
 
@@ -432,15 +434,18 @@ private struct iOSCalendarMonthDayCell: View {
                         .padding(4)
                 }
             }
+            // One cell, one weight. These two edges drew 0.30 and 0.42 — see
+            // `iOSCalendarHairlineMetrics`, which is also where the timed canvas's column edge now
+            // reads from, because a day ruled off from the next day is the same line in both.
             .overlay(alignment: .trailing) {
                 Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.30))
-                    .frame(width: 0.5)
+                    .fill(Theme.borderSubtle.opacity(iOSCalendarHairlineMetrics.dayEdgeOpacity))
+                    .frame(width: iOSCalendarHairlineMetrics.width)
             }
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.42))
-                    .frame(height: 0.5)
+                    .fill(Theme.borderSubtle.opacity(iOSCalendarHairlineMetrics.dayEdgeOpacity))
+                    .frame(height: iOSCalendarHairlineMetrics.width)
             }
         }
         .buttonStyle(.iosPressable)

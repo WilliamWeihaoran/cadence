@@ -560,13 +560,13 @@ private struct iOSCalendarTimelineDayHeader: View {
             .background(isToday ? Theme.blue.opacity(0.035) : Theme.surface)
             .overlay(alignment: .trailing) {
                 Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.65))
-                    .frame(width: 0.5)
+                    .fill(Theme.borderSubtle.opacity(iOSCalendarHairlineMetrics.pinnedEdgeOpacity))
+                    .frame(width: iOSCalendarHairlineMetrics.width)
             }
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.65))
-                    .frame(height: 0.5)
+                    .fill(Theme.borderSubtle.opacity(iOSCalendarHairlineMetrics.pinnedEdgeOpacity))
+                    .frame(height: iOSCalendarHairlineMetrics.width)
             }
         }
         .buttonStyle(.iosPressable)
@@ -607,7 +607,13 @@ private struct iOSCalendarTimeRail: View {
                 ForEach(CadenceScheduleSupport.calendarHours, id: \.self) { hour in
                     Text(hourLabel(hour))
                         .font(.system(size: iOSCalendarTimelineMetrics.hourLabelSize, weight: .medium))
-                        .foregroundStyle(Theme.dim.opacity(hour % 3 == 0 ? 0.9 : 0.45))
+                        .foregroundStyle(
+                            Theme.dim.opacity(
+                                hour % iOSCalendarTimelineMetrics.hourEmphasisInterval == 0
+                                    ? iOSCalendarTimelineMetrics.hourLabelOpacity
+                                    : iOSCalendarTimelineMetrics.hourLabelMutedOpacity
+                            )
+                        )
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .frame(height: hourHeight, alignment: .top)
                         .padding(.trailing, iOSCalendarTimelineMetrics.hourLabelTrailingInset)
@@ -621,8 +627,8 @@ private struct iOSCalendarTimeRail: View {
         .background(Theme.bg)
         .overlay(alignment: .trailing) {
             Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.75))
-                .frame(width: 0.5)
+                .fill(Theme.borderSubtle.opacity(iOSCalendarHairlineMetrics.pinnedEdgeOpacity))
+                .frame(width: iOSCalendarHairlineMetrics.width)
         }
     }
 
@@ -649,16 +655,22 @@ private struct iOSCalendarTimelineColumnGridLines: View {
         ZStack(alignment: .topLeading) {
             ForEach(0...CadenceScheduleSupport.calendarHourCount, id: \.self) { index in
                 Rectangle()
-                    .fill(Theme.borderSubtle.opacity(index % 3 == 0 ? 0.46 : 0.20))
-                    .frame(width: colWidth, height: 0.5)
+                    .fill(
+                        Theme.borderSubtle.opacity(
+                            index % iOSCalendarTimelineMetrics.hourEmphasisInterval == 0
+                                ? iOSCalendarHairlineMetrics.hourMajorOpacity
+                                : iOSCalendarHairlineMetrics.hourMinorOpacity
+                        )
+                    )
+                    .frame(width: colWidth, height: iOSCalendarHairlineMetrics.width)
                     .offset(y: CGFloat(index) * hourHeight)
             }
         }
         .frame(width: colWidth, alignment: .topLeading)
         .overlay(alignment: .leading) {
             Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.34))
-                .frame(width: 0.5)
+                .fill(Theme.borderSubtle.opacity(iOSCalendarHairlineMetrics.dayEdgeOpacity))
+                .frame(width: iOSCalendarHairlineMetrics.width)
         }
         .allowsHitTesting(false)
     }

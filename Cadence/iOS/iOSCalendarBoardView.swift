@@ -326,8 +326,8 @@ private struct iOSCalendarBoardDayColumn: View {
         .background(laneBackground)
         .overlay(alignment: .trailing) {
             Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.28))
-                .frame(width: 1)
+                .fill(Theme.borderSubtle.opacity(iOSCalendarBoardMetrics.columnSeparatorOpacity))
+                .frame(width: iOSCalendarBoardMetrics.columnSeparatorWidth)
                 .padding(.vertical, 3)
         }
         .overlay {

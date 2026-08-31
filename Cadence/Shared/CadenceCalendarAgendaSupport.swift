@@ -143,6 +143,14 @@ enum CadenceCalendarMonthAgendaSupport {
     /// of its own cell height, on the one view whose subject is a whole month of cells.
     static let agendaMinimumHeight: CGFloat = 96
 
+    /// Under the last week row, before the detail begins.
+    ///
+    /// It was this function's default *and* a private `let` in `iOSCalendarMonthStack`, which then
+    /// passed its copy back in — so the one figure had two spellings and the caller's was the one
+    /// that could drift without the arithmetic noticing. Named here, defaulted from here, read by
+    /// the caller.
+    static let gridBottomPadding: CGFloat = 8
+
     /// The height of one week row, so that **every** week of the month is on screen at once — and so
     /// that the agenda under it is on screen *at all*.
     ///
@@ -166,7 +174,7 @@ enum CadenceCalendarMonthAgendaSupport {
         availableHeight: CGFloat,
         rowCount: Int,
         weekdayHeaderHeight: CGFloat,
-        gridBottomPadding: CGFloat = 8,
+        gridBottomPadding: CGFloat = Self.gridBottomPadding,
         agendaMinimumHeight: CGFloat = Self.agendaMinimumHeight,
         gridHeightFraction: CGFloat = 0.46,
         minimumRowHeight: CGFloat = 44,

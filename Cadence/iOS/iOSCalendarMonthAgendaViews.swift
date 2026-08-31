@@ -32,8 +32,8 @@ struct iOSCalendarMonthStack<Detail: View>: View {
     let eventsByDate: [String: [EKEvent]]
     @ViewBuilder let detail: () -> Detail
 
-    private let weekdayHeaderHeight: CGFloat = 22
-    private let gridBottomPadding: CGFloat = 8
+    private var weekdayHeaderHeight: CGFloat { CadenceCalendarWeekdayHeaderMetrics.bandHeight }
+    private var gridBottomPadding: CGFloat { CadenceCalendarMonthAgendaSupport.gridBottomPadding }
 
     var body: some View {
         GeometryReader { proxy in
