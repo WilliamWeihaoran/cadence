@@ -202,6 +202,8 @@ struct KanbanDurationBadge: View {
                     label
                 }
                 .buttonStyle(.cadencePlain)
+                .accessibilityLabel(CadenceTaskControlAccessibility.estimate)
+                .accessibilityValue(duration)
                 .help("Set duration")
             } else {
                 label

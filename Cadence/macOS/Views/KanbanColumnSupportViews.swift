@@ -341,7 +341,7 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
-                .help(section.isCompleted ? "Mark column active" : "Mark column completed")
+                .cadenceControlLabel(section.isCompleted ? "Mark column active" : "Mark column completed")
             }
 
             Button(action: onOpenEditor) {

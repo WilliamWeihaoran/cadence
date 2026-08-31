@@ -145,15 +145,10 @@ struct CadenceControlAccessibilityLabelTests {
     private static let knownUnnamedTooltipSites: [String: Int] = [
         "Cadence/macOS/Sheets/ListEditorSupportViews.swift": 3,
         "Cadence/macOS/Views/AIActionsSupportViews.swift": 1,
-        "Cadence/macOS/Views/CalendarBoardRailSupportViews.swift": 2,
-        "Cadence/macOS/Views/CalendarPageSupportViews.swift": 2,
         "Cadence/macOS/Views/FocusPickerSupportViews.swift": 1,
         "Cadence/macOS/Views/GoalTimelineView.swift": 1,
         "Cadence/macOS/Views/HabitsSupportViews.swift": 1,
         "Cadence/macOS/Views/InboxSupportViews.swift": 1,
-        "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": 2,
-        "Cadence/macOS/Views/KanbanCardSupportViews.swift": 1,
-        "Cadence/macOS/Views/KanbanColumnSupportViews.swift": 1,
         "Cadence/macOS/Views/ListNotesSupportViews.swift": 2,
         "Cadence/macOS/Views/NoteEditorAccessoryViews.swift": 1,
         "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift": 1,
@@ -204,8 +199,8 @@ struct CadenceControlAccessibilityLabelTests {
         }
         #expect(actual == Self.knownUnnamedTooltipSites)
         // The headline, so the report and the ledger cannot disagree: T-594 measured 44, and
-        // T-610 has named 13 of them.
-        #expect(actual.values.reduce(0, +) == 31)
+        // T-610 has named 21 of them.
+        #expect(actual.values.reduce(0, +) == 23)
         #expect(
             actual.keys.allSatisfy { $0.hasPrefix("Cadence/macOS/") },
             "an unnamed tooltip outside the macOS tree — `.help` is a pointer affordance"

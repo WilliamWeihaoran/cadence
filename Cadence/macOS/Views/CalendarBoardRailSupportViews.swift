@@ -91,7 +91,7 @@ struct CalendarBoardRailColumn: View {
                     }
                     .buttonStyle(.plain)
                     .modifier(CadenceHoverHighlight(cornerRadius: 5))
-                    .help("Collapse \(rail.label.capitalized)")
+                    .cadenceControlLabel("Collapse \(rail.label.capitalized)")
                 }
             }
 
@@ -145,6 +145,8 @@ struct CalendarBoardRailColumn: View {
         }
         .buttonStyle(.plain)
         .modifier(CadenceHoverHighlight(cornerRadius: kanbanColumnCornerRadius))
+        .accessibilityLabel("Expand \(rail.label.capitalized)")
+        .accessibilityValue("\(tasks.count) task\(tasks.count == 1 ? "" : "s")")
         .help("\(rail.label.capitalized) — \(tasks.count) task\(tasks.count == 1 ? "" : "s"). Click to expand.")
     }
 }

@@ -131,12 +131,13 @@ private struct CalendarBoardWindowNavigationControl: View {
             CalendarIconGhostButton(systemImage: "chevron.left", isEnabled: canMoveBack) {
                 moveWindow(-1)
             }
+            .accessibilityLabel("Previous 7 days")
             .help(canMoveBack ? "Previous 7 days" : "Board starts at today")
 
             CalendarIconGhostButton(systemImage: "chevron.right", isEnabled: true) {
                 moveWindow(1)
             }
-            .help("Next 7 days")
+            .cadenceControlLabel("Next 7 days")
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 3)

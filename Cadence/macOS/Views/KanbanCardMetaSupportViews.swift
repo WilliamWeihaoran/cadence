@@ -41,6 +41,8 @@ struct KanbanContainerMetaButton: View {
             KanbanMetaChip(item: item, isFocused: isPresented, onHoverChanged: onHoverChanged)
         }
         .buttonStyle(.cadencePlain)
+        .accessibilityLabel(CadenceTaskControlAccessibility.list)
+        .accessibilityValue(item.text)
         .help("Move to another list")
         .popover(isPresented: $isPresented, arrowEdge: .trailing) {
             KanbanContainerPickerPopover(task: task, isPresented: $isPresented)
@@ -122,6 +124,8 @@ struct KanbanCardTagStrip: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
+            .accessibilityLabel("Edit tags")
+            .accessibilityValue(tags.map { CadenceTagChipStyle.displayName(for: $0) }.joined(separator: ", "))
             .help("Edit tags")
             .onHover { onHoverChanged($0) }
             .popover(isPresented: $isPresented, arrowEdge: .trailing) {
