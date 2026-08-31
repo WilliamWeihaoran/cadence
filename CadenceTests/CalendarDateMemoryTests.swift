@@ -368,6 +368,76 @@ struct CalendarRestoredPositionTests {
     }
 }
 
+/// **T-570.** Where the day inspector's events come from.
+///
+/// A scan, for the same reason the one above is: `iOSCalendarView` is behind `#if os(iOS)` and this
+/// target builds for macOS. The arithmetic half — that the window cache can answer for a timed
+/// grid's selection and cannot always answer for Month's — is behaviour, and lives in
+/// `CalendarTimelineGridTests.theKeptInViewSelectionIsAlwaysInsideTheFetchWindow` and
+/// `CalendarMonthScrollWindowTests.aDayCarriedByTheSelectionCanLeaveTheMonthsEventWindow`.
+@MainActor
+struct CalendarDayInspectorEventFetchTests {
+    private func page() throws -> String {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarView.swift")
+        #expect(raw.count > 400, "iOSCalendarView.swift read as \(raw.count) characters")
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped != raw, "the comment stripper removed nothing")
+        #expect(stripped.contains("struct iOSCalendarView: View"), "the scan read the wrong file")
+        return stripped
+    }
+
+    private func dense(_ text: String) -> String {
+        text.filter { !$0.isWhitespace }
+    }
+
+    /// The defect: `selectedEvents` was `calendarManager.fetchEvents(for: selectedDate)` — a
+    /// synchronous EventKit predicate query in a computed property, re-run on every body pass, with
+    /// the inspector on screen beside a grid the user scrolls. It reads the cache now.
+    @Test func theDayInspectorReadsTheEventCacheRatherThanQueryingEventKitInBody() throws {
+        let source = try page()
+        #expect(
+            dense(source).contains("varselectedEvents:[EKEvent]{visibleEventsByDate[selectedKey]??selectedDayEvents}"),
+            "the day inspector's events are computed some other way — a live query again?"
+        )
+    }
+
+    /// **Two** query sites, both inside a refresh the page drives from `onChange`. This is the
+    /// assertion that would have failed before the fix, when there was a third one in a computed
+    /// property — and the count is taken over stripped source, so the fix's own doc comment quoting
+    /// the old call does not count as a call.
+    @Test func everyEventKitQueryOnTheCalendarPageSitsInsideARefresh() throws {
+        let source = try page()
+        #expect(CadenceSourceScan.matchCount(#"calendarManager\.fetchEvents\("#, in: source) == 2)
+
+        let window = try #require(
+            CadenceSourceScan.functionBody(named: "refreshVisibleEvents", in: source),
+            "iOSCalendarView has no refreshVisibleEvents()"
+        )
+        #expect(CadenceSourceScan.matchCount(#"calendarManager\.fetchEvents\("#, in: window) == 1)
+        #expect(dense(window).contains("refreshSelectedDayEvents(window:grouped)"))
+
+        let day = try #require(
+            CadenceSourceScan.functionBody(named: "refreshSelectedDayEvents", in: source),
+            "iOSCalendarView has no refreshSelectedDayEvents() — the Month fallback is gone"
+        )
+        #expect(CadenceSourceScan.matchCount(#"calendarManager\.fetchEvents\("#, in: day) == 1)
+        // And it is a *fallback*: it only queries for a day the window does not already hold, so a
+        // selection inside the window costs nothing.
+        #expect(dense(day).contains("cached[selectedKey]==nil"))
+        #expect(dense(day).contains("selectedDayEvents=calendarManager.fetchEvents(for:selectedDate)"))
+    }
+
+    /// The needles, against text that must and must not match. Without this the `== 2` above holds
+    /// of any pattern that happens not to compile.
+    @Test func theDayInspectorScanNeedlesAreNotVacuous() {
+        #expect(CadenceSourceScan.matchCount(#"calendarManager\.fetchEvents\("#,
+                                             in: "= calendarManager.fetchEvents(for: date)") == 1)
+        #expect(CadenceSourceScan.matchCount(#"calendarManager\.fetchEvents\("#,
+                                             in: "guard calendarManager.isAuthorized else {") == 0)
+        #expect(CadenceSourceScan.functionBody(named: "noSuchFunctionOnTheCalendarPage", in: "") == nil)
+    }
+}
+
 /// `CadenceCalendarDateMemoryWriter` — the coalescing half.
 ///
 /// The whole of T-152 is that a horizontal fling used to write user defaults once per column

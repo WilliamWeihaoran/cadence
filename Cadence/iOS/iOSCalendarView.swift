@@ -31,6 +31,9 @@ struct iOSCalendarView: View {
     /// The fetched events, cached against `eventWindowKey`. See that property for why this is not
     /// computed on demand any more.
     @State private var visibleEventsByDate: [String: [EKEvent]] = [:]
+    /// The inspected day's events, for the one case the window cache cannot answer. See
+    /// `selectedEvents`.
+    @State private var selectedDayEvents: [EKEvent] = []
     /// The width of this page, which on iPad is the window less the shell sidebar. See
     /// `hasInspector`.
     @State private var paneWidth: CGFloat = 0
@@ -104,8 +107,25 @@ struct iOSCalendarView: View {
         CadenceScheduleSupport.items(on: selectedKey, in: bundlesByDate)
     }
 
+    /// The day inspector's events.
+    ///
+    /// **T-570.** This used to be `calendarManager.fetchEvents(for: selectedDate)` — a synchronous
+    /// EventKit predicate query in a computed property, so it ran on every body pass of this page,
+    /// including every frame of a scroll with the inspector on screen beside the grid. It is the one
+    /// query that survived the fix `eventWindowKey` documents, and the window cache already holds
+    /// the answer for every day the grid is showing.
+    ///
+    /// The fallback is not defensive padding; it is the case the window genuinely cannot cover.
+    /// Month does **not** move the selection with the grid — `keepSelectedDateInView` is gated on
+    /// `isTimedGrid`, and the month cells only write `selectedDate` from a tap — so a day tapped and
+    /// then scrolled a month away stays inspected while leaving the twelve-week fetch window, and a
+    /// bare `?? []` there would empty a pane that has events in it. The timed grids cannot reach
+    /// that state: their selection is held inside the visible span, which is inside the window.
+    /// `CalendarMonthScrollWindowTests` and `CalendarTimelineGridTests` pin both halves.
+    ///
+    /// `selectedDayEvents` is itself cached, so neither path queries EventKit from `body`.
     private var selectedEvents: [EKEvent] {
-        calendarManager.fetchEvents(for: selectedDate)
+        visibleEventsByDate[selectedKey] ?? selectedDayEvents
     }
 
     private var calendarEventDates: [Date] {
@@ -277,6 +297,11 @@ struct iOSCalendarView: View {
         .onChange(of: selectedDate) { _, _ in
             rememberCalendarPosition()
         }
+        // No `initial:`. The window refresh above already seeds this on the first pass, and asking
+        // for both would race to fetch the same day twice on appear.
+        .onChange(of: selectedKey) { _, _ in
+            refreshSelectedDayEvents()
+        }
         .onChange(of: anchorDate) { _, _ in
             keepSelectedDateInView()
             rememberCalendarPosition()
@@ -391,6 +416,7 @@ struct iOSCalendarView: View {
     private func refreshVisibleEvents() {
         guard calendarManager.isAuthorized else {
             if !visibleEventsByDate.isEmpty { visibleEventsByDate = [:] }
+            if !selectedDayEvents.isEmpty { selectedDayEvents = [] }
             return
         }
         var grouped: [String: [EKEvent]] = [:]
@@ -398,6 +424,20 @@ struct iOSCalendarView: View {
             grouped[DateFormatters.dateKey(from: date)] = calendarManager.fetchEvents(for: date)
         }
         visibleEventsByDate = grouped
+        refreshSelectedDayEvents(window: grouped)
+    }
+
+    /// Fetches the inspected day **only** when the window cache does not already hold it — see
+    /// `selectedEvents` for when that happens. Passed the window explicitly rather than reading
+    /// `visibleEventsByDate` back, so the caller that has just rebuilt it is asking about the
+    /// rebuilt one.
+    private func refreshSelectedDayEvents(window: [String: [EKEvent]]? = nil) {
+        let cached = window ?? visibleEventsByDate
+        guard calendarManager.isAuthorized, cached[selectedKey] == nil else {
+            if !selectedDayEvents.isEmpty { selectedDayEvents = [] }
+            return
+        }
+        selectedDayEvents = calendarManager.fetchEvents(for: selectedDate)
     }
 
     /// Keeps the day the inspector and the summary band are describing on screen.

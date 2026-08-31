@@ -334,6 +334,46 @@ struct CalendarMonthScrollWindowTests {
         }
     }
 
+    /// **T-570, and the reason the day inspector keeps a fallback fetch.**
+    ///
+    /// Month is the one calendar surface that does not move the selection with the grid: its cells
+    /// write `selectedDate` from a tap and nothing else does, and `keepSelectedDateInView` is gated
+    /// on the timed grids. So a day tapped and then scrolled away from stays inspected while the
+    /// fetch window follows the *displayed month* — and two months of scrolling is enough to leave
+    /// it behind, in either direction. `iOSCalendarView.selectedEvents` therefore reads the window
+    /// cache with a cached per-day fetch behind it; a bare `visibleEventsByDate[selectedKey] ?? []`
+    /// would empty an inspector pane that has events in it.
+    ///
+    /// The window is asymmetric — three lead rows against the six trailing ones — which is why the
+    /// month *before* still covers the day and the month two back does not.
+    @Test func aDayCarriedByTheSelectionCanLeaveTheMonthsEventWindow() {
+        let carried = date("2026-08-15")
+
+        func windowKeys(displayedMonth monthKey: String) -> Set<String> {
+            Set(
+                CadenceCalendarMonthWindow
+                    .eventWindowDates(displayedMonth: date(monthKey), calendar: calendar)
+                    .map(key)
+            )
+        }
+
+        // Scrolled a month either way, the carried day is still fetched.
+        for monthKey in ["2026-07-15", "2026-08-15", "2026-09-15"] {
+            #expect(
+                windowKeys(displayedMonth: monthKey).contains(key(carried)),
+                "\(monthKey) should still hold the carried day"
+            )
+        }
+
+        // Two months, and it is gone — the case a `?? []` would draw as an empty day.
+        for monthKey in ["2026-06-15", "2026-10-15"] {
+            #expect(
+                !windowKeys(displayedMonth: monthKey).contains(key(carried)),
+                "\(monthKey) still holds the carried day — the fallback in `selectedEvents` may be dead now"
+            )
+        }
+    }
+
     /// And it is bounded: a window that grew with the scroll would be a per-week EventKit sweep,
     /// which is the cost `eventWindowKey` was made coarse to avoid.
     @Test func theEventWindowIsAFixedSpan() {

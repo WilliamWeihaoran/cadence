@@ -528,6 +528,46 @@ struct CadenceCalendarTimelineWindowTests {
         }
     }
 
+    /// **T-570.** The inspected day is always inside the fetch window on a timed grid, whatever the
+    /// selection started as.
+    ///
+    /// `iOSCalendarView.selectedEvents` reads the window cache and only falls back to a live query
+    /// for a day the window does not hold. This is why the timed grids never take that fallback:
+    /// the selection is held inside the visible span by `selectionKeptInView`, and the visible span
+    /// is inside the window. Month has no such rule, which is what the fallback exists for —
+    /// `CalendarMonthScrollWindowTests.aDayCarriedByTheSelectionCanLeaveTheMonthsEventWindow`.
+    @Test
+    func theKeptInViewSelectionIsAlwaysInsideTheFetchWindow() throws {
+        let leading = try date("2026-08-19")
+        let window = Set(
+            CadenceCalendarTimelineWindow.eventWindowDates(leadingDate: leading, calendar: calendar)
+                .map { DateFormatters.dateKey(from: $0) }
+        )
+
+        var everMoved = false
+        for visible in [7, 14] {
+            // A year either side, so the selection starts well outside the span far more often
+            // than inside it.
+            for offset in stride(from: -365, through: 365, by: 13) {
+                let started = try #require(calendar.date(byAdding: .day, value: offset, to: leading))
+                let settled = CadenceCalendarTimelineWindow.selectionKeptInView(
+                    selectedDate: started,
+                    leadingDate: leading,
+                    visibleDayCount: visible,
+                    calendar: calendar
+                ) ?? started
+                if !calendar.isDate(settled, inSameDayAs: started) { everMoved = true }
+                #expect(
+                    window.contains(DateFormatters.dateKey(from: settled)),
+                    "\(visible) columns, offset \(offset): the inspected day is outside the fetch window"
+                )
+            }
+        }
+        // Non-vacuity: the rule actually fired, so this is not a walk over days that were already
+        // in the span.
+        #expect(everMoved)
+    }
+
     /// And it only changes identity once a week, which is the whole reason it is coarse: the grid
     /// writes its leading column back on every column scrolled past, and a fetch window that moved
     /// with it would re-query EventKit several times a second, mid-gesture.
