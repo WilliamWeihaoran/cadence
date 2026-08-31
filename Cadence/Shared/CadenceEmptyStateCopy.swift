@@ -65,6 +65,27 @@ nonisolated enum CadenceEmptyStateCopy {
 
     // MARK: - Pages that exist at two widths
 
+    /// A calendar day with nothing on it — the Board's day column and the day inspector, which are
+    /// the same day drawn two ways on the same screen.
+    ///
+    /// **T-601(a).** The Board column already said this through `CadenceInlineEmpty(surface:
+    /// .touch)`; the inspector re-drew that component by hand — same words, same 13pt, same
+    /// `Theme.dim`, same `Theme.surfaceElevated.opacity(0.38)` wash, same `Theme.radiusControl` —
+    /// and got the vertical padding wrong at 6 against the shared touch metric's 14. It carried an
+    /// "Add" button inside the card as well, which the Board answers with the ordinary
+    /// `iOSCalendarAddItemRow` above the line rather than a second add control of its own; the
+    /// inspector's non-empty branch was already drawing exactly that row, so the empty branch now
+    /// matches its own sibling as well as the Board's.
+    ///
+    /// The sentence has to live here for the same reason every other one on this enum does: with
+    /// both surfaces reading the real component, `noEmptyStateSentenceIsSpelledInTwoFiles` sees
+    /// two files spelling it. At seventeen characters it also clears
+    /// `CadenceSharedConstantReuseSweepTests`' twelve-character floor, so declaring it genuinely
+    /// arms that sweep against a third surface typing the words out — which is not true of every
+    /// constant this ticket touched.
+    static let nothingScheduledTitle = "Nothing scheduled"
+
+
     /// The saved-links panel on a list, area or project detail page.
     ///
     /// **Deliberately names no control.** The two surfaces do not carry the same one: the Mac's

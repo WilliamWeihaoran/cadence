@@ -674,17 +674,30 @@ private struct iOSScheduleReadyTaskRow: View {
         )
     }
 
+    /// **T-601(c). This was `Theme.priorityColor` re-typed, with one case changed.**
+    ///
+    /// Three of the four arms were the shared function's, and `.none` returned
+    /// `Theme.dim.opacity(0.76)` where the shared one returns `Theme.dim`. It reads as taste, so
+    /// the history was checked before it was removed rather than after:
+    ///
+    /// - It arrives whole in `19fbf8b` (2026-06-12), a bulk "refactor macOS task and timeline
+    ///   views" commit that says nothing about it, in a row whose `rowTint` fed **two** things —
+    ///   this circle and a `strokeBorder(rowTint.opacity(0.22))` around the card.
+    /// - `fcc8300` (2026-08-04) deleted that border along with every other hard card border in the
+    ///   app. The second consumer went in a sweep about elevation; the 0.76 stayed because nothing
+    ///   in that sweep was looking at it.
+    /// - Nothing names it. No comment, no test, no sibling: the only other `0.76` in the tree is
+    ///   `Theme.surface.opacity(0.76)` on an unrelated macOS popover.
+    /// - The same `iOSTaskCompletionCircle` on the board card, the calendar chip and the block
+    ///   sheet resolves an unprioritised task through `CadenceTaskCompletionGlyph`, which is
+    ///   `Theme.priorityColor(.none)` — full-strength `Theme.dim`. So this row was the only place
+    ///   in the app where "no priority" was a *fainter* grey than "no priority" everywhere else.
+    ///
+    /// A value that outlived its second reader, that nothing explains, and that one surface holds
+    /// against nine is drift, not taste. `Theme.dim` is already the muted token; dimming it again
+    /// by an unnamed fraction is a second opinion about the same decision.
     private var rowTint: Color {
-        switch task.priority {
-        case .high:
-            return Theme.red
-        case .medium:
-            return Theme.amber
-        case .low:
-            return Theme.blue
-        case .none:
-            return Theme.dim.opacity(0.76)
-        }
+        Theme.priorityColor(task.priority)
     }
 
     private var estimateLabel: String {

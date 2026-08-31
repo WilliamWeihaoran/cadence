@@ -34,10 +34,24 @@ struct iOSCalendarDayInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !hasItems {
-                iOSCalendarInspectorEmptyState(addItem: addItem)
-                    .padding(14)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .background(Theme.bg)
+                // The Board's day column, exactly: the ordinary add row, then one line saying the
+                // day is clear. This branch used to hand-draw `CadenceInlineEmpty` — same words,
+                // same 13pt, same wash, same radius, 6pt of vertical padding against the shared
+                // touch metric's 14 — with an "Add" button folded into the card, which is a second
+                // spelling of the row the non-empty branch below already uses.
+                VStack(alignment: .leading, spacing: 14) {
+                    iOSCalendarAddItemRow(
+                        accessibilityLabel: "Add task on \(DateFormatters.longDate.string(from: date))",
+                        action: addItem
+                    )
+                    CadenceInlineEmpty(
+                        text: CadenceEmptyStateCopy.nothingScheduledTitle,
+                        surface: .touch
+                    )
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(Theme.bg)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 14) {
@@ -133,39 +147,6 @@ private struct iOSCalendarInspectorSection<Content: View>: View {
             iOSTaskSectionHeader(title: title, color: color)
             content()
         }
-    }
-}
-
-/// One line and one action.
-///
-/// It was an icon tile, a heading, a three-line explanation of what a planned task, a time block and
-/// an Apple Calendar event are, and a button — a card the height of a third of a phone screen, whose
-/// whole content was "there is nothing here". The explanation named the three things the add control
-/// it sits beside already offers.
-private struct iOSCalendarInspectorEmptyState: View {
-    let addItem: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Text("Nothing scheduled")
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.dim)
-
-            Spacer(minLength: 8)
-
-            iOSActionButton(
-                title: "Add",
-                systemImage: "plus",
-                role: .secondary,
-                size: .compact,
-                action: addItem
-            )
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surfaceElevated.opacity(0.38))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 }
 

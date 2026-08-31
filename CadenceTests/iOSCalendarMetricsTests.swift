@@ -465,4 +465,109 @@ struct iOSCalendarMetricsTests {
         #expect(peek > 0)
         #expect(peek / containerWidth > 0.14)
     }
+
+    // MARK: - T-601(b): the two hour rails read one formatter
+
+    /// **The calendar's hour rail hand-rolled the label that `TimeFormatters` already returns.**
+    ///
+    /// `iOSCalendarTimelineViews` carried a four-line `hourLabel(_:)` — `12 AM`, `n AM`, `12 PM`,
+    /// `n - 12 PM` — while `iOSTodaySchedulePanel`, the *other* iOS hour rail and the one this
+    /// suite already pins three shared figures against, read
+    /// `TimeFormatters.timeString(from: hour * 60)`. Two rails, one screen apart, two answers to
+    /// the same question.
+    ///
+    /// The strings are equal for every hour of the day and the equality is asserted rather than
+    /// asserted-about: `timeString` only appends minutes when they are non-zero, and `hour * 60`
+    /// never has any, so the shared function returns the retired spelling byte for byte.
+    @Test func bothIOSHourRailsFormatTheirLabelsWithTheSharedTimeFormatter() throws {
+        for hour in 0..<24 {
+            let retired: String
+            if hour == 0 { retired = "12 AM" }
+            else if hour < 12 { retired = "\(hour) AM" }
+            else if hour == 12 { retired = "12 PM" }
+            else { retired = "\(hour - 12) PM" }
+
+            #expect(
+                TimeFormatters.timeString(from: hour * 60) == retired,
+                "hour \(hour): \(TimeFormatters.timeString(from: hour * 60)) != \(retired)"
+            )
+        }
+        // The edges the hand-rolled version existed to special-case.
+        #expect(TimeFormatters.timeString(from: 0) == "12 AM")
+        #expect(TimeFormatters.timeString(from: 12 * 60) == "12 PM")
+        #expect(TimeFormatters.timeString(from: 23 * 60) == "11 PM")
+
+        let timeline = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        )
+        // Non-vacuity: the read reached the rail this is about.
+        #expect(timeline.contains("CadenceScheduleSupport.calendarHours"))
+
+        #expect(
+            CadenceSourceScan.matchCount(#"func hourLabel\("#, in: timeline) == 0,
+            "iOSCalendarTimelineViews declares its own hour label again"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#""12 [AP]M""#, in: timeline) == 0,
+            "iOSCalendarTimelineViews still spells a clock hour"
+        )
+        #expect(timeline.contains("Text(TimeFormatters.timeString(from: hour * 60))"))
+
+        let panel = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
+        )
+        #expect(panel.contains("TimeFormatters.timeString(from: hour * 60)"))
+    }
+
+    // MARK: - T-601(c): one priority ramp
+
+    /// **Today's schedule row re-implemented `Theme.priorityColor`, and changed one arm.**
+    ///
+    /// Three of four cases were the shared function's; `.none` returned `Theme.dim.opacity(0.76)`
+    /// where the shared one returns `Theme.dim`. That is the only place in the app where an
+    /// unprioritised task's completion circle was a fainter grey than an unprioritised task's
+    /// completion circle everywhere else — the board card, the calendar chip and the block sheet
+    /// all resolve the same control through `CadenceTaskCompletionGlyph`, which is
+    /// `Theme.priorityColor`.
+    ///
+    /// **The 0.76 was checked before it was removed.** It arrives whole in `19fbf8b` (2026-06-12),
+    /// a bulk refactor that says nothing about it, in a row where the tint also fed a
+    /// `strokeBorder(rowTint.opacity(0.22))`; `fcc8300` (2026-08-04) deleted that border along with
+    /// every hard card border in the app, and the value stayed because nothing in a de-bordering
+    /// sweep was looking at it. No comment, no test and no sibling names it. That is drift.
+    @Test func theTodayScheduleRowTintsFromTheSharedPriorityRamp() throws {
+        // The shared ramp, including the arm that was forked. `Theme.dim` is already the muted
+        // token; the retired value dimmed it a second time by an unnamed fraction.
+        #expect(Theme.priorityColor(.none) == Theme.dim)
+        #expect(Theme.priorityColor(.none) != Theme.dim.opacity(0.76))
+        #expect(Theme.priorityColor(.high) == Theme.red)
+        #expect(Theme.priorityColor(.medium) == Theme.amber)
+        #expect(Theme.priorityColor(.low) == Theme.blue)
+
+        // The same control elsewhere already resolved `.none` this way, which is what makes the
+        // panel the outlier rather than the ninth opinion.
+        #expect(
+            CadenceTaskCompletionGlyph.resolve(status: .todo, priority: .none).tint
+                == Theme.priorityColor(.none)
+        )
+
+        let panel = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
+        )
+        // Non-vacuity: the row whose tint this is.
+        #expect(panel.contains("iOSTaskCompletionCircle(isDone: false, tint: rowTint)"))
+
+        #expect(
+            panel.contains("Theme.priorityColor(task.priority)"),
+            "the schedule row does not read the shared priority ramp"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"Theme\.dim\.opacity\(0\.76\)"#, in: panel) == 0,
+            "the schedule row still dims Theme.dim a second time"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"case \.medium:"#, in: panel) == 0,
+            "the schedule row switches on priority again"
+        )
+    }
 }

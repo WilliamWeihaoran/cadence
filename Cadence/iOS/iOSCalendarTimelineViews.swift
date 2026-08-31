@@ -605,7 +605,7 @@ private struct iOSCalendarTimeRail: View {
 
             VStack(spacing: 0) {
                 ForEach(CadenceScheduleSupport.calendarHours, id: \.self) { hour in
-                    Text(hourLabel(hour))
+                    Text(TimeFormatters.timeString(from: hour * 60))
                         .font(.system(size: iOSCalendarTimelineMetrics.hourLabelSize, weight: .medium))
                         .foregroundStyle(
                             Theme.dim.opacity(
@@ -632,12 +632,6 @@ private struct iOSCalendarTimeRail: View {
         }
     }
 
-    private func hourLabel(_ hour: Int) -> String {
-        if hour == 0 { return "12 AM" }
-        if hour < 12 { return "\(hour) AM" }
-        if hour == 12 { return "12 PM" }
-        return "\(hour - 12) PM"
-    }
 }
 
 /// One day column's own hour lines and trailing rule.

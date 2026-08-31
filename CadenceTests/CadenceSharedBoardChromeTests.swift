@@ -279,6 +279,7 @@ struct CadenceSharedBoardChromeTests {
             ("Cadence/macOS/Views/GoalsSupportViews.swift", "surface: .desktop"),
             ("Cadence/macOS/Views/GoalAttachWorkSheet.swift", "surface: .desktop"),
             ("Cadence/iOS/iOSCalendarBoardView.swift", "surface: .touch"),
+            ("Cadence/iOS/iOSCalendarInspectorView.swift", "surface: .touch"),
             ("Cadence/iOS/iOSMarkdownAccessoryViews.swift", "surface: .touch"),
         ]
 
@@ -294,6 +295,64 @@ struct CadenceSharedBoardChromeTests {
                 "\(expectation.path) draws the shared inline empty at the wrong surface tier"
             )
         }
+    }
+
+    /// **T-601(a). The fifth call site above is a fork this ticket closed, not one it found kept.**
+    ///
+    /// `iOSCalendarInspectorView` drew `CadenceInlineEmpty(surface: .touch)` by hand — the same
+    /// sentence, the same 13pt `Theme.dim`, the same `Theme.surfaceElevated.opacity(0.38)` wash and
+    /// the same `Theme.radiusControl` — **at 6pt of vertical padding against the shared touch
+    /// metric's 14**, on the same screen as the Board day column that used the real component.
+    ///
+    /// It also folded an `iOSActionButton` "Add" into the card. That is why the fix is not a
+    /// one-line substitution: the Board answers the same need with the ordinary
+    /// `iOSCalendarAddItemRow` *above* the line, and the inspector's own non-empty branch was
+    /// already drawing exactly that row. So the empty branch became the same two views in the same
+    /// order, and the component stayed text-only rather than growing an accessory parameter for one
+    /// caller.
+    ///
+    /// **The sentence had to move to `CadenceEmptyStateCopy` in the same change.** With both files
+    /// reading the real component, `CadenceEmptyStateAuditTests.noEmptyStateSentenceIsSpelledInTwoFiles`
+    /// sees "Nothing scheduled" harvested from two `CadenceInlineEmpty(text:)` calls — the hand-rolled
+    /// copy was invisible to that sweep precisely because it was not a component call.
+    @Test func theCalendarDayInspectorDrawsTheSharedInlineEmptyRatherThanACopyOfIt() throws {
+        #expect(CadenceEmptyStateCopy.nothingScheduledTitle == "Nothing scheduled")
+        // Seventeen characters, so unlike most of what T-598 touched this one genuinely clears
+        // `CadenceSharedConstantReuseSweepTests`' twelve-character floor and is armed there.
+        #expect(CadenceEmptyStateCopy.nothingScheduledTitle.count >= 12)
+
+        let inspector = try sourceFile("Cadence/iOS/iOSCalendarInspectorView.swift")
+
+        // Non-vacuity: this is still the day inspector, and it is still the empty branch that draws
+        // the line.
+        #expect(inspector.contains("struct iOSCalendarDayInspector: View"))
+        #expect(inspector.contains("if !hasItems {"))
+
+        #expect(
+            inspector.contains("CadenceInlineEmpty(") && inspector.contains("CadenceEmptyStateCopy.nothingScheduledTitle"),
+            "the day inspector does not draw the shared inline empty with the shared sentence"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"iOSCalendarInspectorEmptyState"#, in: inspector) == 0,
+            "the hand-rolled empty state is back"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"padding\(\.vertical, 6\)"#, in: inspector) == 0,
+            "the day inspector still pads its empty line by 6 instead of the shared touch metric"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#""Nothing scheduled""#, in: inspector) == 0,
+            "the day inspector spells the sentence instead of reading it"
+        )
+        // The add affordance is the shared row both branches of this file and the Board use, not a
+        // second control of its own.
+        #expect(CadenceSourceScan.matchCount("iOSCalendarAddItemRow\\(", in: inspector) == 2)
+        #expect(CadenceSourceScan.matchCount("iOSActionButton\\(", in: inspector) == 0)
+
+        // And the Board, whose copy of the sentence is now the same constant.
+        let board = try sourceFile("Cadence/iOS/iOSCalendarBoardView.swift")
+        #expect(board.contains("CadenceEmptyStateCopy.nothingScheduledTitle"))
+        #expect(CadenceSourceScan.matchCount(#""Nothing scheduled""#, in: board) == 0)
     }
 
     @Test func theForkedInlineEmptySpellingsAreGone() throws {

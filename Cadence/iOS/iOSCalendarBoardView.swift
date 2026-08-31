@@ -384,9 +384,11 @@ private struct iOSCalendarBoardDayColumn: View {
             // One line, next to the ghost add row that is already there. The day inspector's
             // version of this — icon tile, heading, a three-line explanation of what a planned
             // task, a time block and an Apple Calendar event are, and a button repeating the ghost
-            // row — took roughly 40% of the phone screen to report that a day is empty.
+            // row — took roughly 40% of the phone screen to report that a day is empty. T-601(a)
+            // put the inspector on this same pair of views, so the sentence moved to
+            // `CadenceEmptyStateCopy` rather than being spelled in both files.
             if completedTasks.isEmpty {
-                CadenceInlineEmpty(text: "Nothing scheduled", surface: .touch)
+                CadenceInlineEmpty(text: CadenceEmptyStateCopy.nothingScheduledTitle, surface: .touch)
             }
         } else {
             ScrollView(.vertical) {
