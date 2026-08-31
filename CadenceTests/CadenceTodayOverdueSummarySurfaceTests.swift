@@ -632,6 +632,56 @@ struct CadenceTodayOverdueSummarySurfaceTests {
         #expect(stripped.contains("let b = 2"))
     }
 
+    /// **"Nothing planned for today" must not print under a card saying three of your lists are
+    /// past due.** `isEmptyState` tested the four task buckets plus Completed, and the past-due
+    /// cards are the one thing on Today derived from *projects* and *columns* rather than tasks —
+    /// so a day with no work on it and an overdue list drew both at once (T-592). iOS had guarded
+    /// this since it got the cards; macOS never did.
+    @Test func theMacTodayIsNotEmptyWhileAPastDueCardIsOnScreen() throws {
+        let today = "2026-08-20"
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let launch = project(name: "Q3 Launch", due: "2026-08-18")
+        context.insert(launch)
+
+        let area = Area(name: "Home")
+        context.insert(area)
+        area.sectionConfigs = [TaskSectionConfig(name: "Repairs", dueDate: "2026-08-01")]
+
+        // No tasks at all: every bucket `isEmptyState` used to consult is empty by construction.
+        let listCardOnly = TasksPanelDerivedState(
+            allTasks: [],
+            areas: [],
+            projects: [launch],
+            mode: .todayOverview,
+            todayKey: today
+        )
+        #expect(!listCardOnly.overdueListSummaries.isEmpty)
+        #expect(!listCardOnly.isEmptyState(for: .todayOverview))
+
+        let sectionCardOnly = TasksPanelDerivedState(
+            allTasks: [],
+            areas: [area],
+            projects: [],
+            mode: .todayOverview,
+            todayKey: today
+        )
+        #expect(!sectionCardOnly.overdueSectionSummaries.isEmpty)
+        #expect(!sectionCardOnly.isEmptyState(for: .todayOverview))
+
+        // And a day with neither cards nor tasks is still empty, so the guard cannot be satisfied
+        // by never reporting empty at all.
+        let nothing = TasksPanelDerivedState(
+            allTasks: [],
+            areas: [],
+            projects: [],
+            mode: .todayOverview,
+            todayKey: today
+        )
+        #expect(nothing.isEmptyState(for: .todayOverview))
+    }
+
     // MARK: - Fixtures
 
     private func project(name: String, due: String = "") -> Project {

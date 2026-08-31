@@ -77,6 +77,17 @@ struct TasksPanelDerivedState {
         )
     }
 
+    /// **The past-due summaries count as content.** They are the one thing on this page not drawn
+    /// from the task buckets: `CadenceTodayOverdueSummarySupport` filters *projects* and *columns*
+    /// by their own `dueDate` and never looks at a task. So a day with nothing planned but three
+    /// lists whose deadlines have gone by read "Nothing planned for today" directly under three
+    /// cards saying otherwise (T-592).
+    ///
+    /// The rollover banner needs no clause of its own here, unlike iOS's: while it is up the
+    /// grouped list is deliberately missing the rows it is offering, but those rows are
+    /// `overdoTasks` and this already counts them.
+    ///
+    /// iOS guards the same way and says the same thing — `iOSTodayTaskSections.isEmpty`.
     func isEmptyState(for mode: TasksPanelMode) -> Bool {
         switch mode {
         case .todayOverview:
@@ -84,7 +95,9 @@ struct TasksPanelDerivedState {
             overdoTasks.isEmpty &&
             dueTodayTasks.isEmpty &&
             doTodayTasks.isEmpty &&
-            doneTasks.isEmpty
+            doneTasks.isEmpty &&
+            overdueListSummaries.isEmpty &&
+            overdueSectionSummaries.isEmpty
         }
     }
 
