@@ -854,36 +854,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   removes browse-all-notes from the rail and leaves other narrow hosts index-only.
   **Nobody has looked at this on a device.** The whole analysis is arithmetic and source reading. Before
   committing, capture the rail at 1366 and at 836 on a simulator.
-- [T-598] **iOS calendar: say it once.** Approved 2026-08-31.
-  **(a)** One start-time control, three labels: "Starts" (`iOSCalendarQuickCreateSheet.swift:460`),
-  "Time" (`iOSCalendarEventEditSheet.swift:352`), "Start" (`iOSCalendarBundleDetailSheet.swift:146`) —
-  three sheets reachable from one screen, all opening the same 15-minute popover.
-  **(b)** `"Read Only"` (`iOSCalendarSettingsSection.swift:428`) against the shared
-  `CadenceCalendarLinkExclusion.readOnly.qualifier` = `"Read-only"`
-  (`CadenceCalendarLinkRowState.swift:152`), in a type whose doc exists so *"the shape is shared and
-  the word is a parameter"*; the event sheet's prose says "read-only calendar". **Three spellings of
-  one fact.** macOS `SettingsListManagementSections.swift:301` has the same `"Read Only"` — both drift
-  from the shared constant together, so fix both.
-  **(c)** `"+ 3 more"` (`iOSCalendarTimelineViews.swift:542`, `iOSCalendarMonthViews.swift:401`) vs
-  `"+3 more"` (`:1095`). Repo-wide the unspaced form wins 9-3, but the two spaced calendar sites match
-  macOS's spaced `CalendarPageMonthSupportViews.swift:349` — so the calendar is split internally *and*
-  from the rest of iOS. Pick one, hoist it, and say which in the closure.
-
-- [T-601] **Three call sites that ignore a correct shared helper.** Approved 2026-08-31. The repo's
-  most common defect shape (T-374).
-  **(a)** `iOSCalendarInspectorView.swift:145-169` reproduces `CadenceInlineEmpty(surface: .touch)`
-  exactly — same text, 13pt, `Theme.dim`, `Theme.surfaceElevated.opacity(0.38)`, `Theme.radiusControl`
-  — **except vertical padding is 6 where the shared touch metric is 14**. The Board day column on the
-  same screen uses the real component.
-  **(b)** `iOSCalendarTimelineViews.swift:612-617` hand-rolls `hourLabel(_:)` to produce
-  "12 AM / 1 AM / 12 PM / 1 PM". `TimeFormatters.timeString(from: hour * 60)` returns those strings
-  **byte-for-byte**, and **the other iOS hour rail already calls it**
-  (`iOSTodaySchedulePanel.swift:441-443`).
-  **(c)** `iOSTodaySchedulePanel.swift:587-598` re-implements `Theme.priorityColor`
-  (`Theme.swift:368-375`) case for case, **except `.none` returns `Theme.dim.opacity(0.76)` instead of
-  `Theme.dim`**. Nine other call sites use the shared function. If the 0.76 was deliberate, say so and
-  leave it; if not, it is a bug wearing taste's clothes.
-
 - [T-603] **iOS month grid: one selection layer, not three. DECIDED 2026-08-31 - badge only.**
   `iOSCalendarMonthViews.swift:414-419` with `:437` and `:445` currently paint (a) a square-cornered
   `Theme.blue.opacity(0.075)` cell fill, (b) a `RoundedRectangle(Theme.radiusControl)` ring inset 4pt
@@ -932,16 +902,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   value fall back rather than crash or silently re-sort. **If the mapping cannot be proven from the
   code, stop and report rather than guessing.**
 
-- [T-607] **macOS All Tasks / Inbox accept a section drop that resolved nothing — the same shape
-  [[T-591]] just fixed on Today.** `TasksListView.swift:236-243`'s `onDropOnSectionPayload` calls
-  `assignTask` and returns `true` unconditionally. Its keys are *bare*, so the compound-key parse bug
-  does not reach it — but a `list:p_<uuid>` whose project has been deleted is still silently accepted:
-  the row highlights, the drop is taken, nothing moves.
-  `TasksPanelSupport.assignTask` already answers `Bool` after T-591, so the fix is literally
-  `return assignTask(...)`. **Filed rather than done because it changes drop rejection on two more
-  screens and no evidence was gathered for those surfaces** — the agent was right not to widen scope
-  on a hunch. Gather the evidence first, then it is a one-line change plus a test.
-
 - [T-608] **Converge macOS Today's row block onto `TaskListInteractiveRow`.** Proposed by the T-593
   agent, deliberately not done. The Today block in `TasksPanelSectionViews` is a line-for-line
   re-implementation of `TaskListInteractiveRow` (`ListDetailSupportViews.swift:307`) — draggable,
@@ -963,23 +923,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (b) `CadenceMCPServer` and `CadenceWidgets` are separate targets, so check the helper is available
   there before assuming one call fits all. Pin the result with a scan so the 26th site cannot appear.
 
-- [T-610] **44 tooltip-only controls still have no accessible name, in 28 files.** Split from
-  [[T-594]], which widened the T-472 sweep from one file to the whole app and ledgered what it found.
-  All macOS. `cadenceControlLabel(_:)` is the fix and **each entry deletes its own line** from
-  `CadenceControlAccessibilityLabelTests.knownUnnamedTooltipSites` — the ledger is exact, so a new site
-  fails *and* a stale entry fails, which means this can be done a file at a time without losing the
-  count. Densest: `TagPickerSupportViews.swift` (5), `ListEditorSupportViews.swift` (3),
-  `TaskInspectorContentSupportViews.swift` (3).
-
-- [T-611] **The iOS task row has the hole macOS's just lost: 1 accessibility label across 25 buttons.**
-  `Cadence/iOS/iOSTaskRowActionViews.swift`. Split from [[T-594]].
-  Mostly call sites — `CadenceTaskControlAccessibility` already holds the words (`doDate`, `dueDate`,
-  `estimate`, `list`) and `CadenceTaskCompletionState.accessibilityActionLabel` holds the completion
-  circle's. **But the widened sweep is structurally blind here:** `.help` does not exist on iOS, so the
-  "tooltip without a name" rule cannot fire. A separate rule is needed — probably "an icon-only
-  `Button` whose label is a bare `Image`/`systemName` must carry a label" — and it should be written
-  before the call sites, or nothing stops the 26th.
-
 - [T-612] **A fourth spelling of the carried-day dim, and this one has no plate to move.**
   `iOSCalendarMonthAgendaViews.swift:477` (`Theme.dim` at full) x `:527` (`.opacity(0.5)` on the whole
   cell). Found by the [[T-568]] agent. It nets 0.50 so it does not break the contrast floor today, but
@@ -987,14 +930,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   dot along with the label.
   **Not a copy of T-568's fix:** unlike the full-size cell this one has no plate to move, so it needs a
   design call — add a plate, or accept label-only dimming. Ask before landing.
-
-- [T-613] **Three more orphan `cardPadding` insets from the same commit [[T-587]] cleaned up.**
-  `iOSTaskCollectionPage.swift:262`, `iOSListDetailView.swift:357`, `iOSInboxRemindersSection.swift:59`
-  each still apply a 12pt inset for a card `85809ff` deleted, on top of their page's own gutter — All
-  Tasks and Inbox rows sit at 28 against a header at 16. `iOSTaskCollectionMetrics.cardPadding`'s doc
-  still calls it "The group card's inset."
-  Today is fixed; these three are the identical residue and **should be decided together** rather than
-  one at a time, since they share a metrics constant.
 
 - [T-614] **The contexts reorder commits two different ways on the two platforms — decide the rule.**
   Split from [[T-583]], which decided macOS's `moveContext` should keep its `try? save()` and documented
@@ -1276,7 +1211,106 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   edit, nothing inserts, deletes, dismisses or reports, and macOS is `do/catch` with a `print`, not a
   `try?`. It belongs under [[T-614]]'s open question if anywhere.
 
+- [T-637] **Widen the icon-only-button ledger from `Cadence/iOS/` to the whole app.** From [[T-611]],
+  which scoped its new detector to iOS deliberately: at the time, [[T-610]] was still rewriting
+  `knownUnnamedTooltipSites` over the same moving file set, and **two exact ledgers over one file set
+  means every tooltip fix has to edit both.** T-610 has now settled at one remaining entry, so the
+  conflict is gone.
+  The same detector measures **31 unnamed icon-only buttons in 24 files** app-wide (down from 48/35
+  before T-610 landed), **28 of them macOS and largely the controls the tooltip ledger just released** —
+  i.e. controls that gained a `.help` label but still have no accessible name as a bare glyph.
+
+- [T-638] **Eight `"+N more"` literals still spelled inline, plus one deliberate exception.** From
+  [[T-598]], which hoisted the four calendar sites to `CadenceTaskSurfaceOptions.moreLabel(hidden:)` and
+  left the already-agreeing eight alone as out of scope.
+  Note the exception before sweeping: `MarkdownRenderedBlockTruncation.overflowLabel(unit:)` draws a
+  **spaced** `"+ 4 more rows"` — a different sentence with a pluralised unit, recorded in that helper's
+  doc. A mechanical sweep would break it.
+
 ## Done
+
+- [T-598] **CLOSED 2026-09-01 (`43c2294`).** New `CadenceStartTimeFieldRow` owns the label, glyph,
+  tint and popover; all three sheets are one line each. **"Start" won** — the neighbours are
+  "Date"/"Duration", so "Starts" was the only verb and "Time" the only label not saying *which* time
+  next to a Date row setting the other half of the same instant. The word is a `static let` **inside**
+  the component, not a `label:` argument, **because a parameter is how the app got three of them.**
+  "Read-only" won on (b); unspaced `"+3 more"` won 9-3 on (c), hoisted to
+  `CadenceTaskSurfaceOptions.moreLabel(hidden:)`.
+  **Sweep-floor caveat, stated in the code as well as here:** only `"Nothing scheduled"` genuinely arms
+  `CadenceSharedConstantReuseSweepTests`. `"Start"` is 5 chars, `"Read-only"` is 9 **and** a computed
+  `switch` rather than a `static let`, and `"+\(n) more"` is interpolated and excluded by the harvest
+  pattern. Those three are carried by hand-written guards, named in the doc comments **so the omission
+  cannot read as coverage.**
+
+- [T-601] **CLOSED 2026-09-01 (`239f031`).** (a) **premise partly disproved** — it was *not*
+  `CadenceInlineEmpty` exactly; the hand-rolled version folded an `iOSActionButton` into the card, so no
+  one-line substitution existed. Fixed the way the Board answers it. Note the sentence *had* to move to
+  `CadenceEmptyStateCopy` in the same change — **the hand-rolled copy was invisible to
+  `noEmptyStateSentenceIsSpelledInTwoFiles` precisely because it was not a component call.**
+  (b) `hourLabel` deleted, asserted byte-identical to `TimeFormatters.timeString` for all 24 hours.
+  **(c) The 0.76 was established as accidental, then removed.** It arrives whole in `19fbf8b`, a bulk
+  refactor that never mentions it, where `rowTint` fed *two* consumers — this circle and a
+  `strokeBorder(rowTint.opacity(0.22))`. `fcc8300` deleted that border with every hard card border in
+  the app, **so the second consumer went in a sweep about elevation and the value survived because
+  nothing in a de-bordering pass was looking at it.** Nothing names it; the same circle elsewhere
+  already resolves through `CadenceTaskCompletionGlyph` to full-strength `Theme.dim`. Archaeology
+  recorded in the file.
+
+- [T-607] **CLOSED 2026-09-01 (`b09bc5f`).** **The evidence came back partly negative and that is the
+  result.** The deleted-project case is **not** reachable through the app's own delete path —
+  `deleteProject` cascades the list's tasks with it — and is **impossible on Inbox**, which has one
+  `list:inbox` group. The live window is a stale `@Query` snapshot: a list deleted in another window
+  mid-drag, or a CloudKit delete arriving before a re-render. **So this is a hardening, not a bug fix
+  with a visible before/after.**
+  `TasksListView` held a line-for-line copy of both drop handlers differing only in discarding
+  `assignTask`'s answer. **The copy was deleted and both routed through the coordinator rather than the
+  `return` being patched — because a view body has no test seam**, so the one-line fix the ticket
+  described would have been a behaviour change no test could see. `taskDropHandler`'s currying pair
+  untouched, leaving [[T-564]](b) undecided.
+
+- [T-610] **CLOSED 2026-09-01** (`6bb6e6a`, `c821afb`, `adbf6ee`, `653d9eb`, `1401361`, `2bd0383`).
+  **43 of 44 named across all 28 files**, ledger honest at 1. Each commit deletes its own ledger lines
+  and moves the headline, so **every commit is green on its own** (44→36→31→23→17→10→1). Four `help:`
+  parameters became `accessibilityLabel:` — T-472's durable half.
+  **The one left is deliberate:** `FocusPickItemRow` is a *text* row, not an icon control — SwiftUI
+  already names it from the title and detail line it draws. Its `helpText` is an action, so using it
+  would make twenty rows announce the same four words; using the title would silently drop the
+  scheduling line announced today. Naming it well needs a plain-text form of
+  `CadenceTaskDetailLineLabel` in `Cadence/Shared/`. Argued in the ledger's own doc.
+  **Colour swatches were not guessed:** two sites have no verifiable name, so it reused iOS's existing
+  "Selected colour"/"Use this colour" rather than invent colour names, which
+  `CadenceAccentPalettePresentation` says the repo deliberately refuses to do.
+  **A collateral pin caught it being wrong:** its first `TimelineBundleBlock` label spelled
+  `title.isEmpty ? "Untitled"` — exactly [[T-590]]'s defect. **The pin was right and the change was
+  wrong**; fixed to `TaskTitleSupport.displayTitle`. It also repointed the detector's positive witness
+  to read out of the ledger instead of naming a file it expected someone to clean.
+
+- [T-611] **CLOSED 2026-09-01 (`e19921a`). Two premise corrections, and the second changed the design.**
+  **(i) "1 label across 25 buttons" was misleading** — 24 of the 25 are context-menu items spelled
+  `Label(text, systemImage:)`, which name themselves. The file has **zero icon-only buttons**, so the
+  rule this ticket asked for does not reach it at all.
+  **(ii) Its real gap is the [[T-594]] shape:** chips draw a *value* ("Tomorrow", "Weekly", "30m") and
+  never say which field it belongs to — **the do chip and the due chip announce identically.** No rule
+  about button labels can see that.
+  So the fix is a **compile-time gate, not a third sweep**: `iOSTaskAttributeChip.field` is a `let` with
+  no default, so the 8th chip **fails to build** rather than fails a test. The completion circle had a
+  name but a *second spelling* ("Mark task todo" vs the shared "Reopen task"); it reads the shared
+  action-keyed property now.
+  The rule was still written first, in its **own** suite because [[T-610]] was rewriting the other
+  file's ledger in the same tree, and **the sweep's iOS blindness is now measured** (0 offenders over
+  105 files) rather than assumed. New ledger: 3 sites in 2 files. Follow-on: [[T-637]].
+
+- [T-613] **CLOSED 2026-09-01 (`f2672e7`).** Premise fully confirmed — `git show 85809ff` deletes a
+  bare `.cadenceCard()` directly above each of the three `.padding(cardPadding)` lines.
+  **On iPhone:** All Tasks / Inbox group headers, rows **and the Apple Reminders strip** move 12pt left
+  (28 -> 16) onto the page header's own gutter; a list's Tasks tab moves 8pt left (24 -> 16) and its
+  bar-to-header gap tightens 24 -> 12. No background appears or disappears — there has been none since
+  August.
+  `cardPadding` **removed rather than zeroed** per [[T-587]]'s rule; `iOSInboxRemindersSection` loses a
+  `metrics:` parameter it wanted for nothing else. `theGroupCardHasAnInsetAtBothWidths` — **written a
+  fortnight after the card was deleted and structurally unable to see it** — replaced by a
+  memberwise-init pin and a brace-matched call-site scan.
+
 
 - [T-595] **CLOSED 2026-08-31 (`32dbe81`).** **This ticket's headline was wrong: it is not ten
   divergent weights.** Two of the reported ten are agreements the calendar already had and were left
