@@ -162,10 +162,7 @@ struct CadenceControlAccessibilityLabelTests {
         "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift": 1,
         "Cadence/macOS/Views/SchedulePanelShellViews.swift": 1,
         "Cadence/macOS/Views/SettingsListManagementSections.swift": 2,
-        "Cadence/macOS/Views/SettingsTagsSection.swift": 2,
         "Cadence/macOS/Views/SidebarSupportViews.swift": 1,
-        "Cadence/macOS/Views/TagPickerPopoverViews.swift": 1,
-        "Cadence/macOS/Views/TagPickerSupportViews.swift": 5,
         "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": 1,
         "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift": 3,
         "Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift": 1,
@@ -209,8 +206,9 @@ struct CadenceControlAccessibilityLabelTests {
             if count > 0 { actual[path] = count }
         }
         #expect(actual == Self.knownUnnamedTooltipSites)
-        // The headline, so the report and the ledger cannot disagree: T-594 measured 44.
-        #expect(actual.values.reduce(0, +) == 44)
+        // The headline, so the report and the ledger cannot disagree: T-594 measured 44, and
+        // T-610 has named 8 of them.
+        #expect(actual.values.reduce(0, +) == 36)
         #expect(
             actual.keys.allSatisfy { $0.hasPrefix("Cadence/macOS/") },
             "an unnamed tooltip outside the macOS tree — `.help` is a pointer affordance"
@@ -294,18 +292,32 @@ struct CadenceControlAccessibilityLabelTests {
 
     /// The widened detector, against the tree on both sides.
     ///
-    /// The positive is a file from the ledger; the negative is `MarkdownEditorView.swift`, the file
-    /// T-472's narrow sweep already cleaned. A detector that could not see the first would make the
-    /// ledger meaningless; one that fired on the second would mean T-472 never landed.
+    /// The positive is a file from the ledger; the negatives are `MarkdownEditorView.swift`, the
+    /// file T-472's narrow sweep already cleaned, and `TagPickerSupportViews.swift`, the densest
+    /// of the 28 T-610 cleaned. A detector that could not see the first would make the ledger
+    /// meaningless; one that fired on either of the others would mean that ticket never landed.
+    ///
+    /// The positive is **read out of the ledger** rather than named here. It used to name the tag
+    /// picker, which T-610 then fixed — a witness that names a file someone is expected to clean
+    /// goes stale by design, and the failure it produces ("the detector cannot see an unnamed
+    /// tooltip") accuses the instrument of the fix's success.
     @Test func theWidenedTooltipDetectorSeesTheLedgerAndLeavesTheFixedFileAlone() throws {
         let instrument = try unnamedTooltipInstrument()
 
-        let offending = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TagPickerSupportViews.swift")
+        let ledgered = try #require(
+            Self.knownUnnamedTooltipSites.keys.sorted().first,
+            "the ledger is empty — retire this witness rather than pointing it at a clean file"
+        )
+        let offending = try CadenceSourceScan.sourceFile(ledgered)
         #expect(instrument.fires(on: offending), "the detector cannot see an unnamed tooltip")
 
         let cleaned = try CadenceSourceScan.sourceFile(Self.toolbarPath)
         #expect(cleaned.contains(".help("), "non-vacuity: the markdown toolbar lost its tooltips")
         #expect(instrument.fires(on: cleaned) == false, "T-472's own file reads as an offender")
+
+        let tagPicker = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TagPickerSupportViews.swift")
+        #expect(tagPicker.contains(".help("), "non-vacuity: the tag picker lost its tooltips")
+        #expect(instrument.fires(on: tagPicker) == false, "T-610's densest file reads as an offender")
 
         // And the helper that sets both from one string is read as a name, not only the modifier.
         #expect(

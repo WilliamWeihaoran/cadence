@@ -303,13 +303,13 @@ private struct SettingsTagRow: View {
                 Spacer(minLength: 8)
 
                 HStack(spacing: 6) {
-                    rowButton(icon: "pencil", help: "Edit tag") {
+                    rowButton(icon: "pencil", accessibilityLabel: "Edit tag") {
                         startEditing()
                     }
                     if isArchivedList {
-                        rowButton(icon: "arrow.uturn.backward", color: Theme.blue, help: "Restore tag", action: onRestore)
+                        rowButton(icon: "arrow.uturn.backward", color: Theme.blue, accessibilityLabel: "Restore tag", action: onRestore)
                     } else {
-                        rowButton(icon: "archivebox", color: Theme.amber, help: "Archive tag", action: onArchive)
+                        rowButton(icon: "archivebox", color: Theme.amber, accessibilityLabel: "Archive tag", action: onArchive)
                     }
                 }
             }
@@ -379,7 +379,7 @@ private struct SettingsTagRow: View {
             .cadenceSettingsWell()
     }
 
-    private func rowButton(icon: String, color: Color = Theme.dim, help: String, action: @escaping () -> Void) -> some View {
+    private func rowButton(icon: String, color: Color = Theme.dim, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
@@ -389,7 +389,7 @@ private struct SettingsTagRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.cadencePlain)
-        .help(help)
+        .cadenceControlLabel(accessibilityLabel)
     }
 
     private func startEditing() {
@@ -471,6 +471,8 @@ private struct TagColorSwatches: View {
     var body: some View {
         HStack(spacing: 8) {
             ForEach(TagSupport.colorOptions, id: \.self) { option in
+                let isSelected = TagSupport.normalizedColorHex(selectedHex)
+                    .caseInsensitiveCompare(option) == .orderedSame
                 Button {
                     selectedHex = option
                 } label: {
@@ -478,13 +480,18 @@ private struct TagColorSwatches: View {
                         .fill(Color(hex: option))
                         .frame(width: 18, height: 18)
                         .overlay {
-                            if TagSupport.normalizedColorHex(selectedHex).caseInsensitiveCompare(option) == .orderedSame {
+                            if isSelected {
                                 Circle()
                                     .stroke(Theme.text.opacity(0.78), lineWidth: 2)
                             }
                         }
                 }
                 .buttonStyle(.cadencePlain)
+                // The tooltip is the hex the swatch paints; the *name* is what the control does,
+                // because a screen reader cannot verify a colour and the repo does not invent
+                // colour names for one — see `CadenceAccentPalettePresentation`.
+                .accessibilityLabel(isSelected ? "Selected colour" : "Use this colour")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .help(option)
             }
         }

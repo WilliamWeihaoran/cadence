@@ -185,7 +185,7 @@ struct TagPickerPopover: View {
             }
             .buttonStyle(.cadencePlain)
             .cadenceHoverHighlight(cornerRadius: 6)
-            .help("Edit tag")
+            .cadenceControlLabel("Edit tag")
         }
     }
 

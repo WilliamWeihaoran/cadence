@@ -45,7 +45,7 @@ struct TagPickerControl: View {
                 .clipShape(RoundedRectangle(cornerRadius: 7))
             }
             .buttonStyle(.cadencePlain)
-            .help("Edit tags")
+            .cadenceControlLabel("Edit tags")
             .popover(isPresented: $isPresented, arrowEdge: .bottom) {
                 TagPickerPopover(
                     selectedTags: $selectedTags,
@@ -121,6 +121,8 @@ private struct TagOverflowBadge: View {
         if let onRemove {
             Button { isPresented.toggle() } label: { badge }
                 .buttonStyle(.cadencePlain)
+                .accessibilityLabel("Show hidden tags")
+                .accessibilityValue("\(count)")
                 .help("Show the tags that do not fit")
                 .popover(isPresented: $isPresented, arrowEdge: .bottom) {
                     VStack(alignment: .leading, spacing: CadenceTagChipStyle.editableStripLineSpacing(for: .regular)) {
@@ -170,6 +172,8 @@ struct TagFilterBar: View {
                             CadenceTagChip(tag: tag, selection: isSelected ? .on : .off)
                         }
                         .buttonStyle(.cadencePlain)
+                        .accessibilityLabel("Filter by \(CadenceTagChipStyle.displayName(for: tag))")
+                        .accessibilityValue(isSelected ? "On" : "Off")
                         .help(isSelected ? "Remove tag filter" : "Filter by \(tag.name)")
                     }
 
@@ -183,7 +187,7 @@ struct TagFilterBar: View {
                                 .frame(width: 22, height: 22)
                         }
                         .buttonStyle(.cadencePlain)
-                        .help("Clear tag filters")
+                        .cadenceControlLabel("Clear tag filters")
                     }
                 }
                 .padding(.horizontal, 10)
@@ -272,6 +276,7 @@ struct TagPickerPlaceholderRow: View {
             }
             .buttonStyle(.cadencePlain)
             .cadenceHoverHighlight(cornerRadius: 6)
+            .accessibilityLabel("Add Default Tags")
             .help("Add Cadence's starter tags")
         case .noMatches:
             Text("No matching tags")
