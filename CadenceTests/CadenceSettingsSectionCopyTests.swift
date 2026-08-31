@@ -35,6 +35,50 @@ struct CadenceSettingsSectionCopyTests {
         ("CadenceCalendarSettingsCopy.noConnectableListsLabel", "No active areas or projects"),
         ("CadenceCalendarSettingsCopy.unconnectedSummary", "Not connected to any area or project"),
         ("CadenceCalendarSettingsCopy.connectMenuLabel", "Connect to areas and projects"),
+        ("CadenceCalendarSettingsCopy.appleCalendarsSectionTitle", "Apple Calendars"),
+    ]
+
+    /// **T-599.** Four more sentences that were spelled in both trees and had already drifted —
+    /// three of them in ways that changed what the sentence meant rather than only how long it
+    /// was. Same pair shape as the calendar and notification lists above: read the constant, do
+    /// not still type the literal.
+    private static let tagPairs: [(expression: String, literal: String)] = [
+        ("CadenceTagSettingsCopy.emptyCatalogTitle", "No active tags"),
+        ("CadenceTagSettingsCopy.emptyCatalogSubtitle", "Create a tag or add the default set."),
+    ]
+
+    private static let templatePairs: [(expression: String, literal: String)] = [
+        (
+            "CadenceTemplateSettingsCopy.editScopeFootnote",
+            "Templates affect future insertions only. Existing notes keep their current content."
+        ),
+    ]
+
+    private static let aiPairs: [(expression: String, literal: String)] = [
+        (
+            "CadenceAISettingsCopy.keyPrivacyDisclosure",
+            "Stored in Keychain. Cadence sends selected note content to OpenAI only when you run an AI action, such as summarizing a note or extracting task drafts."
+        ),
+        ("CadenceAISettingsCopy.saveAPIKeyAction", "Save API Key"),
+        ("CadenceAISettingsCopy.testConnectionAction", "Test Connection"),
+        ("CadenceAISettingsCopy.deleteAPIKeyAction", "Delete API Key"),
+    ]
+
+    private static let tagSurfaces = [
+        "Cadence/macOS/Views/SettingsTagsSection.swift",
+        "Cadence/iOS/iOSSettingsTagsSection.swift",
+    ]
+
+    private static let templateSurfaces = [
+        "Cadence/macOS/Views/SettingsTemplatesSection.swift",
+        "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
+    ]
+
+    /// The phone keeps its AI card in the same file as its templates and lists sections; the Mac
+    /// gives it a shared file with several other panes. Neither is the other's twin by filename.
+    private static let aiSurfaces = [
+        "Cadence/macOS/Views/SettingsSectionViews.swift",
+        "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
     ]
 
     private static let notificationPairs: [(expression: String, literal: String)] = [
@@ -128,6 +172,85 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
+    /// **T-599's four, each read as a pair on both surfaces.**
+    ///
+    /// Split from the calendar and notification tests above only because the file pairs differ;
+    /// the claim is identical, and so is the reason it is two assertions rather than one — a file
+    /// can read the constant in one branch and still spell the literal in another.
+    ///
+    /// The templates footnote is the interesting member: macOS still spells a **first clause**
+    /// this does not touch ("Templates appear in the note sidebar for matching note types."),
+    /// because the note sidebar is a real macOS surface and a false one on a phone. So the
+    /// assertion below is deliberately about the shared second sentence only, and the clause that
+    /// stays macOS-only is pinned by `theTemplatesFootnoteKeepsItsSidebarClauseOnMacOSAlone`.
+    @Test func bothSurfacesOfEachTaggedTemplateAndAICardReadTheConvergedString() throws {
+        for (surfaces, pairs) in [
+            (Self.tagSurfaces, Self.tagPairs),
+            (Self.templateSurfaces, Self.templatePairs),
+            (Self.aiSurfaces, Self.aiPairs),
+        ] {
+            for path in surfaces {
+                let code = try Self.strippedSource(at: path)
+                for pair in pairs {
+                    #expect(
+                        code.contains(pair.expression),
+                        "\(path) does not read \(pair.expression)"
+                    )
+                    #expect(
+                        !code.contains("\"\(pair.literal)\""),
+                        "\(path) still spells \"\(pair.literal)\" beside the constant that holds it"
+                    )
+                }
+            }
+        }
+    }
+
+    /// **T-599(b)'s decision, held as a difference rather than as a convergence.**
+    ///
+    /// The obvious "fix" for a footnote written twice is one constant read twice. That would have
+    /// shipped a sentence telling an iPhone reader to look in the note sidebar, which is not a
+    /// surface that phone has. So only the second sentence is shared, and this pins both halves:
+    /// the Mac keeps the clause, and the phone must never grow it.
+    @Test func theTemplatesFootnoteKeepsItsSidebarClauseOnMacOSAlone() throws {
+        let clause = "Templates appear in the note sidebar for matching note types."
+        let mac = try Self.strippedSource(at: Self.templateSurfaces[0])
+        let phone = try Self.strippedSource(at: Self.templateSurfaces[1])
+
+        #expect(mac.contains("struct SettingsTemplatesSection"), "non-vacuity: wrong file")
+        #expect(mac.contains(clause), "the Mac's footnote lost the surface it is describing")
+        #expect(
+            phone.contains("note sidebar") == false,
+            "the phone's templates footnote now names a surface the phone does not have"
+        )
+    }
+
+    /// **T-599(e): the calendar list's eyebrow is inside the authorized branch on both surfaces.**
+    ///
+    /// The plural was half of the finding. The other half is placement: iOS drew the label above
+    /// `if calendarManager.isAuthorized`, so "Apple Calendars" also headed the access-denied card
+    /// — an eyebrow over a list of calendars the app has just said it cannot read. macOS already
+    /// had it in the branch, which is why macOS is the one that did not move.
+    ///
+    /// Asserted as ordering within the file rather than as presence, because presence is what was
+    /// already true and wrong.
+    @Test func bothCalendarPanesHeadOnlyTheAuthorizedBranchWithTheCalendarList() throws {
+        for path in Self.calendarSurfaces {
+            let code = try Self.strippedSource(at: path)
+            let branch = try #require(
+                code.range(of: "calendarManager.isAuthorized"),
+                "\(path) no longer branches on calendar authorization"
+            )
+            let label = try #require(
+                code.range(of: "CadenceCalendarSettingsCopy.appleCalendarsSectionTitle"),
+                "\(path) does not read the shared Apple Calendars eyebrow"
+            )
+            #expect(
+                label.lowerBound > branch.upperBound,
+                "\(path) heads its access card with the name of the list it cannot show"
+            )
+        }
+    }
+
     /// The work-hours row's **title** is one string; its subtitle deliberately is not.
     ///
     /// The pair was found by the same sweep as the rest and is converged only as far as the check
@@ -177,41 +300,48 @@ struct CadenceSettingsSectionCopyTests {
         let harvested = try cadenceSharedStringConstants()
         #expect(harvested.count >= 60, "non-vacuity: the harvest returned \(harvested.count) constants")
 
-        let expected: [(name: String, literal: String, declaredIn: String)] =
-            [
-                ("brokenLinksSectionTitle", "Broken Calendar Links", "Cadence/Shared/CadenceCalendarLinkHealth.swift"),
-                ("noRelinkTargetsLabel", "No Apple calendars available", "Cadence/Shared/CadenceCalendarLinkHealth.swift"),
-            ]
-            + Self.calendarPairs
-                .filter { $0.expression.hasPrefix("CadenceCalendarSettingsCopy.") }
-                .map {
-                    (
-                        String($0.expression.dropFirst("CadenceCalendarSettingsCopy.".count)),
-                        $0.literal,
-                        "Cadence/Shared/CadenceSettingsSectionCopy.swift"
-                    )
-                }
-            + [(
-                "workdayBoundaryTitle",
-                "Workday boundary",
-                "Cadence/Shared/CadenceSettingsSectionCopy.swift"
-            )]
+        // Built by accumulation rather than as one `+`-chained literal: the chained form
+        // type-checked for minutes and then failed with "unable to type-check this expression in
+        // reasonable time" once T-599 added a fourth term.
+        typealias Registration = (name: String, literal: String, declaredIn: String)
+        let settingsCopy = "Cadence/Shared/CadenceSettingsSectionCopy.swift"
+        let linkHealth = "Cadence/Shared/CadenceCalendarLinkHealth.swift"
+
+        // The constant's *name* is read off the expression the surfaces are asserted to call, so
+        // a rename cannot leave this list describing constants that no longer exist.
+        func registrations(
+            of pairs: [(expression: String, literal: String)],
+            declaredIn path: String
+        ) -> [Registration] {
+            pairs.compactMap { pair in
+                let parts = pair.expression.split(separator: ".")
+                guard parts.count == 2 else { return nil }
+                return (name: String(parts[1]), literal: pair.literal, declaredIn: path)
+            }
+        }
+
+        var expected: [Registration] = [
+            (name: "brokenLinksSectionTitle", literal: "Broken Calendar Links", declaredIn: linkHealth),
+            (name: "noRelinkTargetsLabel", literal: "No Apple calendars available", declaredIn: linkHealth),
+            (name: "workdayBoundaryTitle", literal: "Workday boundary", declaredIn: settingsCopy),
             // T-577's. It was typed in `iOSSettingsTemplateAndListSections` alone, so macOS
             // getting the same fallback would have made it a second inline copy — the shape this
             // file exists to remove — rather than a shared rule. Harvested, so a third surface
             // spelling it out is a sweep hit rather than a re-read of the same audit.
-            + [(
-                "noParentListSubtitle",
-                "No parent list",
-                "Cadence/Shared/CadenceSettingsSectionCopy.swift"
-            )]
-            + Self.notificationPairs.map {
-                (
-                    String($0.expression.dropFirst("CadenceNotificationSettingsCopy.".count)),
-                    $0.literal,
-                    "Cadence/Shared/CadenceSettingsSectionCopy.swift"
-                )
-            }
+            (name: "noParentListSubtitle", literal: "No parent list", declaredIn: settingsCopy)
+        ]
+        expected += registrations(
+            of: Self.calendarPairs.filter { $0.expression.hasPrefix("CadenceCalendarSettingsCopy.") },
+            declaredIn: settingsCopy
+        )
+        expected += registrations(of: Self.notificationPairs, declaredIn: settingsCopy)
+        // T-599's four. The registration is the point of the ticket rather than a formality: each
+        // of these is now spelled once, so a *third* surface typing one out is a sweep hit instead
+        // of the next audit's finding.
+        expected += registrations(
+            of: Self.tagPairs + Self.templatePairs + Self.aiPairs,
+            declaredIn: settingsCopy
+        )
 
         for entry in expected {
             #expect(
@@ -424,6 +554,29 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceCalendarSettingsCopy.unconnectedSummary == "Not connected to any area or project")
         #expect(CadenceCalendarSettingsCopy.connectMenuLabel == "Connect to areas and projects")
         #expect(CadenceCalendarSettingsCopy.workdayBoundaryTitle == "Workday boundary")
+        #expect(CadenceCalendarSettingsCopy.appleCalendarsSectionTitle == "Apple Calendars")
+
+        // T-599. Each of these is the spelling that *won*, not the one that happened to be first
+        // alphabetically: the phone said "Create one or add the default set.", stopped the privacy
+        // sentence at "an AI action", and called the destructive button "Delete API Key" while
+        // calling the test button "Test". Editing any of these values silently changes what the
+        // ticket decided, which is what a value assertion is for.
+        #expect(CadenceTagSettingsCopy.emptyCatalogTitle == "No active tags")
+        #expect(CadenceTagSettingsCopy.emptyCatalogSubtitle == "Create a tag or add the default set.")
+        #expect(
+            CadenceTemplateSettingsCopy.editScopeFootnote
+                == "Templates affect future insertions only. Existing notes keep their current content."
+        )
+        #expect(
+            CadenceAISettingsCopy.keyPrivacyDisclosure
+                == """
+                Stored in Keychain. Cadence sends selected note content to OpenAI only when you \
+                run an AI action, such as summarizing a note or extracting task drafts.
+                """
+        )
+        #expect(CadenceAISettingsCopy.saveAPIKeyAction == "Save API Key")
+        #expect(CadenceAISettingsCopy.testConnectionAction == "Test Connection")
+        #expect(CadenceAISettingsCopy.deleteAPIKeyAction == "Delete API Key")
 
         #expect(CadenceNotificationSettingsCopy.remindersToggleTitle == "Enable reminders")
         #expect(
@@ -449,7 +602,8 @@ struct CadenceSettingsSectionCopyTests {
     /// every `!contains` vacuously true. Pinning that the two readers genuinely differ is what
     /// stops the pairing collapsing into one.
     @Test func theSettingsCopyScanReadsLiteralsRatherThanBlankingThem() throws {
-        for path in Self.calendarSurfaces + Self.notificationSurfaces + Self.workHoursSurfaces {
+        for path in Self.calendarSurfaces + Self.notificationSurfaces + Self.workHoursSurfaces
+            + Self.tagSurfaces + Self.templateSurfaces + Self.aiSurfaces {
             let raw = try CadenceSourceScan.sourceFile(path)
             #expect(raw.count > 1_000, "\(path) read as \(raw.count) characters; that is not the file")
             let stripped = CadenceSourceScan.strippingComments(raw)

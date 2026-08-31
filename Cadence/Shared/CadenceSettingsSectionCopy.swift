@@ -59,6 +59,82 @@ nonisolated enum CadenceCalendarSettingsCopy {
     /// it used to set `.help` alone, which is the T-472 defect (a pointer gets a sentence and
     /// assistive technology gets the SF Symbol name) two screens away from where T-472 fixed it.
     static let connectMenuLabel = "Connect to areas and projects"
+
+    /// The eyebrow over the list of Apple calendars, **inside the authorized branch**.
+    ///
+    /// **T-599(e).** macOS said "Apple Calendars" and iOS said "Apple Calendar", and the singular
+    /// was wrong twice over. It is a list of every calendar EventKit vends, so the plural is the
+    /// accurate noun; and iOS drew the label *above* the authorization branch, so the same word
+    /// also headed the access-denied card — an eyebrow announcing a list that is not there and
+    /// cannot be. Both surfaces now draw it only where the list is.
+    ///
+    /// *Extends [[T-547]]*, which is the same noun serving two concepts one screen over.
+    static let appleCalendarsSectionTitle = "Apple Calendars"
+}
+
+/// Settings → Tags, on both surfaces.
+nonisolated enum CadenceTagSettingsCopy {
+
+    /// The Active Tags card with nothing in it.
+    ///
+    /// **T-599(a).** macOS said "Create a tag or add the default set." and iOS said "Create one or
+    /// add the default set." — and "one" only resolves against the title above it, which is
+    /// exactly the referent an empty state cannot rely on a reader having just parsed. The noun
+    /// wins.
+    ///
+    /// The **title** converged the other way: macOS's had a full stop and iOS's did not, and every
+    /// other settings empty-state title on the phone — "No open reminders", "No active contexts",
+    /// "No completed or archived lists" — is a noun phrase without one. A title is not a sentence.
+    static let emptyCatalogTitle = "No active tags"
+    static let emptyCatalogSubtitle = "Create a tag or add the default set."
+}
+
+/// Settings → Note Templates, on both surfaces.
+nonisolated enum CadenceTemplateSettingsCopy {
+
+    /// What editing a template does and does not touch.
+    ///
+    /// **T-599(b), and only the second sentence.** macOS's footnote opened "Templates appear in
+    /// the note sidebar for matching note types." — a true statement about a real macOS surface
+    /// and a false one on a phone, which has no note sidebar. That clause stays spelled at the
+    /// macOS call site rather than being hoisted into a constant a phone could read; what both
+    /// surfaces genuinely say is the scope of the edit, and iOS's spelling of it is the one that
+    /// stands alone without the sidebar clause in front of it. Same family as [[T-544]].
+    static let editScopeFootnote = "Templates affect future insertions only. Existing notes keep their current content."
+}
+
+/// Settings → AI, on both surfaces.
+///
+/// **T-599(c) and (d).** The card is byte-identical between the two trees except for one sentence
+/// and three button labels, which is drift rather than a pair of platform decisions.
+nonisolated enum CadenceAISettingsCopy {
+
+    /// **Privacy copy, so accuracy is the bar rather than brevity.**
+    ///
+    /// macOS's sentence ended "…only when you run an AI action, such as summarizing a note or
+    /// extracting task drafts."; iOS's stopped at "AI action". The examples are what make "an AI
+    /// action" a thing the reader can recognise when they are about to take one, and the reader is
+    /// being told what leaves their device. The longer sentence wins on both.
+    static let keyPrivacyDisclosure = "Stored in Keychain. Cadence sends selected note content to OpenAI only when you run an AI action, such as summarizing a note or extracting task drafts."
+
+    /// The three buttons under the key field. Verbosity was **inverted** between the surfaces —
+    /// macOS said "Save API Key"/"Test Connection"/"Delete Key" and iOS said "Save Key"/"Test"/
+    /// "Delete API Key" — so neither tree was simply the terser one and there was nothing to
+    /// prefer wholesale.
+    ///
+    /// Resolved per button, on what each one has to say:
+    ///
+    /// - **Save/Delete name the whole noun.** A destructive control gets no second chance to
+    ///   explain itself, and "Delete Key" beside a Model ID field is one glance from ambiguous.
+    ///   Both now say "API Key", so the pair reads as one object with two verbs.
+    /// - **Test names what is tested.** "Test" alone is a verb with no object on a card that holds
+    ///   a key, a model id and a network call.
+    ///
+    /// The in-flight label is deliberately *not* here: macOS says "Testing..." and iOS "Testing",
+    /// which is a third divergence T-599 did not name and is under the sweep's 12-character floor.
+    static let saveAPIKeyAction = "Save API Key"
+    static let testConnectionAction = "Test Connection"
+    static let deleteAPIKeyAction = "Delete API Key"
 }
 
 /// Settings → Notifications, which is one row in two states on both surfaces.

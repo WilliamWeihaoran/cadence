@@ -64,8 +64,6 @@ struct iOSCalendarSettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            CadenceSettingsSectionLabel(text: "Apple Calendar")
-
             if calendarManager.isAuthorized {
                 // Above the calendar list, not inside it: these lists have no live calendar to
                 // hang off, which is exactly why they were invisible before T-400.
@@ -74,6 +72,10 @@ struct iOSCalendarSettingsSection: View {
                     missingLinksCard
                 }
 
+                // Inside the branch, as on macOS (T-599(e)). It used to head the whole section, so
+                // the access-denied card was also filed under an eyebrow for a list of calendars
+                // this app cannot see.
+                CadenceSettingsSectionLabel(text: CadenceCalendarSettingsCopy.appleCalendarsSectionTitle)
                 calendarsCard
             } else {
                 accessCard

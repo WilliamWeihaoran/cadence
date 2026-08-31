@@ -24,7 +24,7 @@ struct SettingsCalendarSection: View {
                     missingLinksCard
                 }
 
-                SettingsSectionLabel(text: "Apple Calendars")
+                SettingsSectionLabel(text: CadenceCalendarSettingsCopy.appleCalendarsSectionTitle)
                 calendarsCard
             } else {
                 calendarAccessCard

@@ -100,7 +100,10 @@ struct SettingsTagsSection: View {
 
             if activeTags.isEmpty {
                 CadenceFieldSection(title: "Active Tags") {
-                    EmptyTagCatalogRow(title: "No active tags.", subtitle: "Create a tag or add the default set.")
+                    EmptyTagCatalogRow(
+                        title: CadenceTagSettingsCopy.emptyCatalogTitle,
+                        subtitle: CadenceTagSettingsCopy.emptyCatalogSubtitle
+                    )
                 }
             } else {
                 // The catalog is a grid of cards, not rows in a card, so it keeps the eyebrow

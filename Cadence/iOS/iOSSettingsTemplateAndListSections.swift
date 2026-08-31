@@ -60,7 +60,7 @@ struct iOSTemplatesSettingsSection: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.blue)
 
-                    Text("Templates affect future insertions only. Existing notes keep their current content.")
+                    Text(CadenceTemplateSettingsCopy.editScopeFootnote)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
@@ -368,7 +368,7 @@ struct iOSAISettingsSection: View {
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
 
-                            Text("Stored in Keychain. Cadence sends selected note content to OpenAI only when you run an AI action.")
+                            Text(CadenceAISettingsCopy.keyPrivacyDisclosure)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -424,7 +424,7 @@ struct iOSAISettingsSection: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 10) {
                             iOSActionButton(
-                                title: "Save Key",
+                                title: CadenceAISettingsCopy.saveAPIKeyAction,
                                 systemImage: "key.fill",
                                 role: .primary,
                                 size: .compact,
@@ -434,7 +434,7 @@ struct iOSAISettingsSection: View {
                             )
 
                             iOSActionButton(
-                                title: aiSettingsManager.isTestingConnection ? "Testing" : "Test",
+                                title: aiSettingsManager.isTestingConnection ? "Testing" : CadenceAISettingsCopy.testConnectionAction,
                                 systemImage: "network",
                                 role: .secondary,
                                 size: .compact,
@@ -448,7 +448,7 @@ struct iOSAISettingsSection: View {
 
                         if aiSettingsManager.hasAPIKey {
                             iOSActionButton(
-                                title: "Delete API Key",
+                                title: CadenceAISettingsCopy.deleteAPIKeyAction,
                                 systemImage: "trash",
                                 role: .destructive,
                                 size: .compact,

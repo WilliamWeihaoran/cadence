@@ -115,7 +115,10 @@ struct iOSTagsSettingsSection: View {
             CadenceSettingsSectionLabel(text: "Active Tags")
             iOSSettingsCard {
                 if activeTags.isEmpty {
-                    iOSSettingsEmptyRow(title: "No active tags", subtitle: "Create one or add the default set.")
+                    iOSSettingsEmptyRow(
+                        title: CadenceTagSettingsCopy.emptyCatalogTitle,
+                        subtitle: CadenceTagSettingsCopy.emptyCatalogSubtitle
+                    )
                 } else {
                     iOSTagList(tags: activeTags, isArchivedList: false, archive: archive(_:), restore: restore(_:))
                 }

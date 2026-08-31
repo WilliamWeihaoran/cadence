@@ -169,7 +169,7 @@ struct SettingsAISection: View {
                             Text("OpenAI API Key")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
-                            Text("Stored in Keychain. Cadence sends selected note content to OpenAI only when you run an AI action, such as summarizing a note or extracting task drafts.")
+                            Text(CadenceAISettingsCopy.keyPrivacyDisclosure)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -222,7 +222,7 @@ struct SettingsAISection: View {
                         // The field above is empty whenever a key is saved — its placeholder is
                         // "Saved in Keychain" — so a live Save here meant the pane's *resting*
                         // state deleted the credential on one press (T-574).
-                        Button("Save API Key") {
+                        Button(CadenceAISettingsCopy.saveAPIKeyAction) {
                             do {
                                 try aiSettingsManager.saveAPIKey(aiAPIKeyDraft)
                                 aiAPIKeyDraft = ""
@@ -240,7 +240,7 @@ struct SettingsAISection: View {
                         .opacity(isAPIKeyDraftEmpty ? 0.52 : 1)
                         .disabled(isAPIKeyDraftEmpty)
 
-                        Button(aiSettingsManager.isTestingConnection ? "Testing..." : "Test Connection") {
+                        Button(aiSettingsManager.isTestingConnection ? "Testing..." : CadenceAISettingsCopy.testConnectionAction) {
                             Task { await aiSettingsManager.testConnection() }
                         }
                         .buttonStyle(.cadencePlain)
@@ -253,7 +253,7 @@ struct SettingsAISection: View {
                         .disabled(!aiSettingsManager.hasAPIKey || aiSettingsManager.isTestingConnection)
 
                         if aiSettingsManager.hasAPIKey {
-                            Button("Delete Key") {
+                            Button(CadenceAISettingsCopy.deleteAPIKeyAction) {
                                 do {
                                     try aiSettingsManager.removeAPIKey()
                                 } catch {

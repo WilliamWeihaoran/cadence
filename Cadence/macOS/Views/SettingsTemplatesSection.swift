@@ -55,7 +55,13 @@ struct SettingsTemplatesSection: View {
                     Image(systemName: "info.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.blue)
-                    Text("Templates appear in the note sidebar for matching note types. Editing a template changes future insertions only; existing notes stay untouched.")
+                    // The first clause names the note sidebar, a surface this platform has and
+                    // the phone does not, so it stays spelled here rather than in the shared
+                    // constant both surfaces read (T-599(b)).
+                    Text(
+                        "Templates appear in the note sidebar for matching note types. "
+                            + CadenceTemplateSettingsCopy.editScopeFootnote
+                    )
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
