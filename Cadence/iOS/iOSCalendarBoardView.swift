@@ -313,10 +313,6 @@ private struct iOSCalendarBoardDayColumn: View {
         return (eventItems + bundleItems + taskItems).sorted(by: sortColumnItems)
     }
 
-    private var totalCount: Int {
-        activeItems.count + completedTasks.count
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
@@ -353,11 +349,18 @@ private struct iOSCalendarBoardDayColumn: View {
     ///
     /// This replaced three overlapping affordances that all said "today": a "Today" pill, an
     /// amber-tinted count badge, and a separate glowing gradient capsule under the header.
+    ///
+    /// **T-571.** The count is `activeItems.count`, not `activeItems.count + completedTasks.count`.
+    /// It sits above the column's own list, and that list is the active items; finished work is
+    /// behind the "Completed" toggle below, which carries its own count. Adding the two here stated
+    /// a total nothing on screen added up to, and made a day fully cleared read as busy as one
+    /// untouched — the same number macOS's `CalendarBoardDayColumn` has always shown, and the same
+    /// meaning every kanban column header uses.
     private var header: some View {
         CadenceBoardColumnHeader(
             dotColor: isToday ? Theme.amber : Theme.dim,
             title: "\(DateFormatters.dayOfWeek.string(from: date)) · \(DateFormatters.shortDate.string(from: date))",
-            count: totalCount,
+            count: activeItems.count,
             accentRule: isToday ? Theme.amber : nil
         )
     }

@@ -74,6 +74,52 @@ struct CadenceSharedBoardChromeTests {
         )
     }
 
+    /// **T-571.** The two Calendar Board day columns reach the shared header with the same *number*.
+    ///
+    /// They did not. macOS passed `activeItems.count`; iOS passed `activeItems.count +
+    /// completedTasks.count`, so a day with two open and three done read **5** on the phone and
+    /// **2** on the Mac, in one shared component.
+    ///
+    /// Active only is the meaning that survives, and it is not a coin toss. The number sits
+    /// directly above the column's own list, and that list is the active items; finished work is
+    /// behind the "Completed" toggle underneath, which carries its own count. Summing the two
+    /// stated a total nothing on screen adds up to, counted the same task twice on a column that
+    /// shows both halves, and made a day fully cleared read as busy as one untouched. It is also
+    /// what every other board column header in the app already passes —
+    /// `KanbanSectionColumnView` hands `KanbanColumnHeader` its `activeTasks.count`.
+    ///
+    /// A scan, because the iOS half is behind `#if os(iOS)` and this target builds for macOS.
+    @Test func bothCalendarBoardDayColumnsCountOnlyTheWorkTheColumnStillLists() throws {
+        let sites = [
+            ("Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift", "struct CalendarBoardDayColumn: View {"),
+            ("Cadence/iOS/iOSCalendarBoardView.swift", "struct iOSCalendarBoardDayColumn: View {")
+        ]
+
+        for (path, declaration) in sites {
+            let raw = try sourceFile(path)
+            let stripped = try strippingComments(raw)
+            #expect(stripped != raw, "non-vacuity: \(path) carries no comments to strip")
+            let dense = stripped.filter { !$0.isWhitespace }
+            #expect(dense.contains(declaration.filter { !$0.isWhitespace }), "non-vacuity: wrong file read")
+
+            #expect(
+                dense.contains("count:activeItems.count,accentRule:"),
+                "\(path) no longer heads its day column with the count of what the column lists"
+            )
+            // The drift, by name. macOS keeps a `totalCount` for its accessibility label, so this
+            // is the *header argument* rather than the sum's existence.
+            #expect(
+                !dense.contains("count:totalCount"),
+                "\(path) is heading its day column with active + completed again (T-571)"
+            )
+            // And the finished half is still counted, once, where it belongs: on its own toggle.
+            #expect(
+                dense.contains("completedTasks.count"),
+                "\(path) stopped counting completed work anywhere at all"
+            )
+        }
+    }
+
     /// Neither retired spelling may come back — as a call or as a declaration — anywhere in the app
     /// source. `iOSBoardColumnHeader` is the name this ticket exists about: it announced itself as
     /// "iOS counterpart of macOS's `BoardColumnHeader`" in its own doc comment and still read as an
