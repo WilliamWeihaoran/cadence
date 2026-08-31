@@ -1142,6 +1142,54 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   open. **Propose the wording in the closure report rather than landing it silently** — and if the
   honest answer is that a column needs no header at all, say that.
 
+- [T-603] **iOS month grid: one selection layer, not three. DECIDED 2026-08-31 - badge only.**
+  `iOSCalendarMonthViews.swift:414-419` with `:437` and `:445` currently paint (a) a square-cornered
+  `Theme.blue.opacity(0.075)` cell fill, (b) a `RoundedRectangle(Theme.radiusControl)` ring inset 4pt
+  at `Theme.blue.opacity(0.65)`, 1.5pt, and (c) a wash behind the day badge - three layers, two radii,
+  for one state. **User's decision: drop the fill and the ring, keep the badge wash.**
+  This is also the convergent answer: the compact cell beside it already uses badge-only
+  (`iOSCalendarMonthAgendaViews.swift:499-533`) and macOS uses badge plus a plate change, so all three
+  month surfaces end up agreeing and no new value is invented.
+
+- [T-604] **iOS calendar sheets: all three `.ruled`. DECIDED 2026-08-31.**
+  Quick-create (`iOSCalendarQuickCreateSheet.swift:309-491`) is `.ruled`; the event-edit and
+  block-detail sheets are the default `.card`. Two of them draw a "Schedule" section, one ruled and one
+  carded, so the same section reads as two different components.
+  **User's decision: converge all three on `.ruled`**, matching the style's own doc
+  (`CadenceFieldRows.swift:42-44`): `.ruled` is *"for compact sheets where a stack of cards would read
+  as a stack of unrelated boxes"*, and all three are compact sheets sharing one section vocabulary.
+  Chrome (toolbar vs circular buttons) is **out of scope** unless converging the section style makes a
+  sheet incoherent; if it does, report rather than expanding.
+
+- [T-605] **macOS Today's headings converge on the 14pt bold style. DECIDED 2026-08-31.**
+  Today draws `CadenceTaskGroupHeading` - 10pt uppercase eyebrow, single count capsule, no bar
+  (`TasksPanelSectionViews.swift:122-153`). All Tasks, Inbox and list detail draw `TaskListGroupHeader`
+  - 3x22pt accent bar, 14pt bold sentence-case title, split "3 / 7" overdue/regular counts
+  (`ListDetailSupportViews.swift:99-180`).
+  **User's decision: move Today onto `TaskListGroupHeader`.** macOS becomes internally consistent and
+  Today gains the split counts the other three already show; one screen changes rather than three.
+  **Accepted consequence: macOS and iOS headings now differ** (iOS routes Today, Inbox and All Tasks
+  through the eyebrow style). That divergence is deliberate as of this decision - **record it in a
+  comment so it is not re-filed later as drift.** *Adjacent to [[T-496]], which is about tracking on
+  the uppercase tier, not which tier Today sits on.*
+
+- [T-606] **macOS Today adopts iOS's named sort set. DECIDED 2026-08-31.**
+  macOS has two chips - Sort (Custom/Date/Priority) x Order (Ascending/Descending), default Date +
+  Ascending (`TasksPanel.swift:341-352`, `Models/TaskOrdering.swift:16-28`). iOS has one control -
+  List Order / Priority / Do Date / Due Date / Newest, default Priority
+  (`CadenceTaskPlanningSupport.CadenceTaskSortMode`). Only "Priority" is common, and **macOS's "Date"
+  does not say which date, on a page whose whole vocabulary is do-date vs due-date.**
+  **User's decision: adopt iOS's named set on macOS.** The separate Order chip goes; direction folds
+  into the named modes.
+  **Handle the persisted preference deliberately - this is the one hazard in this batch.**
+  `TaskOrdering` and the Order chip are very likely persisted. Removing enum cases can strand a stored
+  value that no longer decodes, and this project has **no `SchemaMigrationPlan`**, so a stored-property
+  change is dangerous. Before editing: find every persisted read/write of sort and order, decide the
+  mapping for each retiring case (Custom -> List Order, Date -> Do Date is the likely intent but
+  **verify against what macOS actually sorts by** rather than assuming), and make an unknown stored
+  value fall back rather than crash or silently re-sort. **If the mapping cannot be proven from the
+  code, stop and report rather than guessing.**
+
 ## Done
 
 - [T-352] **CLOSED 2026-08-31 (`5ae916a`).** Premise confirmed and then *inverted*: no persistence was
