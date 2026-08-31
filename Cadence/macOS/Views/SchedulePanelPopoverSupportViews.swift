@@ -43,6 +43,8 @@ struct TaskDetailHeaderSection: View {
                 }
                 .buttonStyle(.cadencePlain)
                 .fixedSize()
+                .accessibilityLabel("Priority")
+                .accessibilityValue(task.priority.label)
                 .help("Priority")
                 .popover(isPresented: $showPriorityPicker, arrowEdge: .bottom) {
                     TaskPriorityPickerPopover(priority: $task.priority, isPresented: $showPriorityPicker)

@@ -302,7 +302,7 @@ struct TaskEmbedFieldEditorPopover: View {
                         .foregroundStyle(Theme.dim)
                 }
                 .buttonStyle(.cadencePlain)
-                .help("Clear time")
+                .cadenceControlLabel("Clear time")
             }
         }
     }

@@ -392,6 +392,12 @@ struct TaskInspectorEstimateChip: View {
 
     private var isSet: Bool { value > 0 }
 
+    /// The drawn figure and the announced one, from one call — the chip must not be able to say
+    /// one duration and show another.
+    private var estimateText: String {
+        CadenceTaskPresentationSupport.estimateLabel(minutes: value)
+    }
+
     var body: some View {
         Button { showPicker.toggle() } label: {
             HStack(spacing: 4) {
@@ -399,7 +405,7 @@ struct TaskInspectorEstimateChip: View {
                     .font(.system(size: 10, weight: .semibold))
                     // Purple is the app's planned-time colour, as it was on the old row's glyph.
                     .foregroundStyle(isSet ? Theme.purple : Theme.dim)
-                Text(isSet ? CadenceTaskPresentationSupport.estimateLabel(minutes: value) : "Est")
+                Text(isSet ? estimateText : "Est")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(isSet ? Theme.text : Theme.dim)
                     .monospacedDigit()
@@ -422,6 +428,8 @@ struct TaskInspectorEstimateChip: View {
         // Buttons take key focus under Full Keyboard Access; leaving the chip out of the focus
         // ring means clicking it cannot pull the caret out of a title being typed.
         .focusable(false)
+        .accessibilityLabel(CadenceTaskControlAccessibility.estimate)
+        .accessibilityValue(isSet ? estimateText : "None")
         .help("Estimate")
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
             EstimatePickerPopoverContent(value: $value, title: title) {

@@ -45,7 +45,7 @@ struct TaskDetailNotesSection: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
-            .help("Open task notes")
+            .cadenceControlLabel("Open task notes")
             .padding(6)
             .frame(maxWidth: .infinity, alignment: .topTrailing)
         }
@@ -147,7 +147,7 @@ struct TaskNotesExpandedEditorSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.cadencePlain)
-                .help("Close")
+                .cadenceControlLabel("Close")
             ),
             showsExpandButton: false
         )
@@ -330,14 +330,14 @@ struct TaskDetailActionsSection: View {
                 iconButton(
                     systemImage: "calendar.badge.minus",
                     tint: Theme.dim,
-                    help: "Unschedule"
+                    accessibilityLabel: "Unschedule"
                 ) {
                     SchedulingActions.removeFromCalendar(task)
                     CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
                 }
             }
 
-            iconButton(systemImage: "trash", tint: Theme.red, help: "Delete task") {
+            iconButton(systemImage: "trash", tint: Theme.red, accessibilityLabel: "Delete task") {
                 deleteConfirmationManager.presentTaskDelete(task, in: modelContext)
             }
         }
@@ -347,7 +347,7 @@ struct TaskDetailActionsSection: View {
     private func iconButton(
         systemImage: String,
         tint: Color,
-        help: String,
+        accessibilityLabel: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -362,7 +362,7 @@ struct TaskDetailActionsSection: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.cadencePlain)
-        .help(help)
+        .cadenceControlLabel(accessibilityLabel)
     }
 }
 #endif
