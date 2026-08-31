@@ -718,9 +718,21 @@ struct TasksPageView: View {
         case kanban = "Kanban"
     }
 
-    /// Non-`nil` when the selection named a view outright — the command palette's "Inbox" entry, or
-    /// an `.inbox` selection restored at launch. The sidebar's own row passes `nil`, which reopens
-    /// whichever view you last left the page on.
+    /// Non-`nil` when the selection named a view outright — the command palette's "Inbox" entry,
+    /// or a deep link that resolved to Inbox. The sidebar's own row passes `nil`, which reopens
+    /// whichever view you last left the page on (`tasksPageScope`, below — a *page* preference,
+    /// not a root one).
+    ///
+    /// **Nothing restores a selection when the app launches**, so this is `nil` on the first frame
+    /// of every launch. `macOSRootView.selection` is plain `@State` seeded to `.today`, with no
+    /// `SceneStorage` or `AppStorage` behind it anywhere; only navigation afterwards — the palette,
+    /// a deep link, a sidebar row — can make this non-`nil`. That is the intended contract, not an
+    /// omission (T-352).
+    ///
+    /// This sentence used to say an `.inbox` selection was restored when the app relaunched,
+    /// describing a mechanism that has never existed. A comment asserting machinery the code does
+    /// not have is worse than no comment at all, because it stops the next reader looking. Pinned
+    /// by `CadenceRootSelectionLaunchContractTests`, which forbids the old claim by its words.
     var requestedScope: CadenceTasksPageScope?
 
     @AppStorage("tasksPageScope") private var scopeRaw = CadenceTasksPageScope.defaultScope.rawValue
