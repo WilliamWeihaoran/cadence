@@ -807,6 +807,222 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Use `strippingComments`, never `codeOnly` — `codeOnly` blanks string literals too, which is what
   made an earlier copy scan permanently and silently green.
 
+- [T-574] **macOS: pressing "Save API Key" with the field empty DELETES your saved key.**
+  `Cadence/macOS/Views/SettingsSectionViews.swift:220` → `Services/AI/AISettingsManager.swift:123-128`
+  (an empty string routes to `removeAPIKey()`). **When a key is already saved the field is empty by
+  design** — placeholder "Saved in Keychain" — so this is the *default state of the screen*. No
+  confirmation; the status line then reads "API key removed." **iOS is already correct**
+  (`iOSSettingsTemplateAndListSections.swift:428` disables Save on an empty draft). Copy the guard.
+  Highest-severity finding of the 2026-08-31 sweep: silent credential loss, one-line fix.
+
+- [T-575] **"Delete everything" needs a typed phrase on iPhone and one click on the Mac — and the Mac
+  deletes more.** `SettingsDataSafetySection.swift:150-161` (plain `confirmationDialog`, destructive
+  button live immediately) vs `iOSDataResetSettingsSection.swift:104-172` (modal + typed "DELETE").
+  The shared gate `PrivacyDataResetConfirmation` (`CadencePrivacyDataResetService.swift:56-67`) has
+  **exactly one caller**. macOS additionally signs the Apple account out (`:239`), so **the less
+  guarded path is the more destructive one.** iOS is right; route macOS through the same gate.
+
+- [T-576] **macOS Settings > Notifications can say "access required" forever after you grant it.**
+  `SettingsNotificationsSection.swift:15-22` has no refresh hook of any kind; iOS has
+  `.onAppear { refreshAuthorizationState() }`. Flow: denied -> "Enable Notifications" -> system won't
+  re-prompt -> app opens System Settings -> user enables -> returns -> card unchanged until relaunch.
+  **Neither platform is fully right.** The correct pattern is one file over:
+  `.remindersAuthorizationLifecycle(...)` (`CadenceRemindersPresentationSupport.swift:549-554`)
+  refreshes on appear **and** on foreground, and both Reminders panes use it. Give Notifications the
+  same two-half modifier on both platforms; macOS is the urgent half.
+
+- [T-577] **macOS Settings > Lists shows a nameless row with a blank second line.**
+  `SettingsListManagementSections.swift:540,555,557`. Two gaps: (a) macOS passes `area.name`/
+  `project.name` raw where iOS falls back to `CadenceTitleNormalization.default*Name`; (b) macOS's
+  project subtitle joins context+area, which is `""` for a parent-less project, where iOS returns
+  "No parent list". **The macOS file contradicts itself** — its *area* branch twelve lines above
+  already falls back to "No context". Reachable today: [[T-558]]/[[T-559]] establish context-less
+  lists exist. iOS is right.
+
+- [T-578] **On iPhone, Settings > Notifications is headed "Reminders"** — the name of the Apple
+  Reminders category two rows away. `iOSNotificationsSettingsSection.swift:11`, while
+  `iOSRemindersSettingsSection.swift:32` heads the *actual* Reminders category "Apple Reminders".
+  macOS draws no heading at all, which is right: the pane holds one card and the page title already
+  says Notifications. Drop the heading, or rename it to "Notifications".
+
+- [T-579] **iOS honours the "Default page" setting but offers no control for it.**
+  `CadencePreferenceKeys.listDetailDefaultPage` is read by `iOSListDetailView.swift:31`; the only UI
+  is macOS `SettingsSectionViews.swift:331-361`. Not symmetric with the reverse case — `ios.calendar.*`
+  is genuinely iOS-only. Add the Default-page row to iOS's Defaults group
+  (`iOSSettingsOverviewSections.swift:180-186`).
+
+- [T-580] **macOS shows two rows both called Account; iPhone shows "Account & Sync" on a platform with
+  no account.** `CadenceSettingsPresentationSupport.swift:27` (`.sync` = "Account & Sync") and `:37`
+  (`.account` = "Account"); macOS draws both, iOS draws only `.sync`, whose section is one iCloud card
+  with the eyebrow "iCloud". **Neither is right.** Retitle `.sync` to "iCloud Sync" — what both screens
+  actually show, and what iOS's own eyebrow already says — and leave "Account" to the macOS-only
+  Sign-in-with-Apple pane. One string fixes both platforms.
+
+- [T-581] **Contexts can be reordered on macOS but not on iPhone, and the order drives both sidebars.**
+  macOS `SettingsView.swift:182,261-276` + drag handle; iOS `iOSSettingsView.swift:290-363` has no
+  move path and new contexts just append. **Not a deliberate exclusion** — nothing declares it, unlike
+  `.sidebar`/`.account` which are named in `desktopOnly`. Both sidebars read
+  `@Query(sort: \Context.order)`. macOS is right; iOS should gain an `.onMove` affordance.
+
+- [T-582] **"Created backup-....sqlite." appears underneath the red Delete Account & Data button.**
+  One `statusMessage` (`SettingsDataSafetySection.swift:12`) rendered in two cards at once — `:60`
+  (Backups) and `:350` (reset card). Every backup/cleanup/reveal/restore/export outcome lands in both.
+  The doc at `:288-290` deliberately shares it with the *export* card; the Backups card was never taken
+  out of the loop. **iOS is right**: one status line per card, owned by the card.
+
+- [T-583] **macOS archives a context without saving; iOS saves.** `SettingsView.swift:184,186` set
+  `isArchived` with no save, while `reopenArea`/`reopenProject`/`moveContext` in the *same file*
+  (`:275,280,285`) all call `try? modelContext.save()`. **INFERRED** — no `autosaveEnabled` is set
+  anywhere, so the default `true` probably covers it, but then the four explicit saves twelve lines
+  below are redundant and the file cannot be right both ways. **Decide the convention for this file**
+  rather than patching one line.
+
+- [T-566] **iOS: saving a time Block closes the sheet even when the save is refused.**
+  `iOSCalendarBundleDetailSheet.swift:71-74` -> `:271-280`. `Button("Save") { save(); dismiss() }`;
+  `save()` ends in `try? modelContext.save()` (`CadenceTaskMutationSupport.swift:878`). A refused write
+  closes the sheet exactly as a successful one does. **The Delete button ten lines above already does
+  this correctly** (T-322), as does the sibling create sheet (T-471).
+  **Important:** invisible to `CadenceSaveCommitDisciplineTests` because its pattern needs a literal
+  `try?` at the call site and the swallow is one frame down — so **[[T-497]]'s "2 sites left" is an
+  undercount by mechanism, not by oversight.** Widen the detector as part of this.
+
+- [T-567] **Creating a Block with no title names it "Task Bundle" — a word the app never says.**
+  `iOSCalendarQuickCreateSheet.swift:74-75` -> `CadenceTaskMutationSupport.swift:840`. `canCreate`
+  returns `true` unconditionally for `.bundle` (Task and Event both require a title), and the fallback
+  literal is "Task Bundle". Everything the user sees calls it a **Block**: the segment, "Block title",
+  "Edit Block", "Delete Block", "No tasks in this block". Two taps from an empty slot produces a block
+  called "Task Bundle" on the grid, in the month chip and in the agenda. macOS has the same literal
+  (`TimelineDayCanvas.swift:258`) — fix both.
+
+- [T-568] **iOS month grid: neighbouring-month days are dimmed three times over, below the contrast
+  floor macOS wrote down.** `iOSCalendarMonthViews.swift:413` with `:323` and `:444` — `0.58` on the
+  label, `0.18->0.08` on the badge, *and* `.opacity(0.52)` on the whole cell. SwiftUI multiplies: the
+  12pt numeral lands at **0.30**. macOS states one token and measures the floor in its doc comment:
+  *"0.35 gives 1.45:1, at which a 12pt numeral no longer resolves"*
+  (`CalendarPageMonthGridSupport.swift:241-252`). The whole-cell opacity also fades the today ring and
+  the chips, which macOS deliberately avoids by moving the *plate*. **The user picks the final value.**
+
+- [T-569] **A task titled with only spaces draws as a blank line on the calendar.**
+  `iOSCalendarTimelineViews.swift:527,975,1086` and `iOSCalendarMonthViews.swift:395` all spell
+  `task.title.isEmpty ? "Untitled" : task.title`. The shared `TaskTitleSupport.displayTitle`
+  **trims first**. `iOSCalendarBundleDetailSheet.swift:308` in this same surface already uses the
+  helper, so one file is right and two are not. Scope the fix to this surface; the repo-wide sweep
+  (~20 sites) is a separate ticket.
+
+- [T-570] **The iOS day inspector runs a live EventKit query on every scroll frame.**
+  `iOSCalendarView.swift:107-109` — `selectedEvents` is a computed property calling
+  `calendarManager.fetchEvents(for:)`, a synchronous predicate query, so it re-runs every body pass.
+  **The file's own comment at `:121-129` describes this exact bug being fixed** for
+  `visibleEventsByDate`; one query survived, and it feeds the pane on screen beside the grid on iPad.
+  `visibleEventsByDate[selectedKey] ?? []` is the one-line equivalent — **caveat: on Month, a carried
+  day just outside the fetch window would read empty. Check that before swapping.**
+
+- [T-571] **The Board's day count includes finished work on iPhone and excludes it on Mac.**
+  `iOSCalendarBoardView.swift:355` passes `count: totalCount` (active + completed); macOS
+  `CalendarBoardDayColumnSupportViews.swift:131` passes `count: activeItems.count`. A day with 2 open
+  and 3 done reads **5** on the phone and **2** on the Mac, in the same shared header component.
+
+- [T-572] **The iOS Board's day columns are unreadable to VoiceOver.**
+  `iOSCalendarBoardView.swift:315-343` has no `accessibilityLabel`; macOS
+  `CalendarBoardDayColumnSupportViews.swift:121` announces "<long date>, N scheduled items". The
+  correct pattern is one file over.
+
+- [T-573] **Two iOS month-grid cells, only one announces that it is selected.**
+  `iOSCalendarMonthAgendaViews.swift:531-532` has `.accessibilityAddTraits(.isSelected)`;
+  `iOSCalendarMonthViews.swift:433` does not. Same grid container, same tap, same selection. Both also
+  announce only the long date — neither says the cell has anything on it, though one draws a count
+  capsule and the other a dot. `iOSCalendarTimelineViews.swift:569` is a third instance.
+
+- [T-584] **On every iPad, Today > Notes shows a list of note titles and never a note.**
+  `iOSTodayView.swift:255-258` -> `iOSNotesView.swift:276-289`. MEASURED by arithmetic against the
+  repo's own widths: `CadenceNotesListMetrics.layout`'s two-column floor is 280+1+320 = **601pt**, but
+  the rail is `paneWidth - taskPaneWidth - 1` — **483** at the widest reachable pane (1210,
+  `CadenceTodayLayoutSupport.swift:104`) and **320** on a folded portrait iPad. Both < 601, so it
+  always resolves `.oneColumn`, which renders the sidebar alone. Reading a note needs a
+  `fullScreenCover` that blanks the whole iPad. **The Notes panel of a two-pane layout is an index with
+  no content at every shipping width.** macOS shows a real editor. Biggest user-visible finding of the
+  sweep. The fix is a design call — a narrower one-column *editor* mode, or a different floor.
+
+- [T-585] **The "Ready to Schedule" chips check 30 minutes of free time, then insert a task of any
+  length.** `iOSTodaySchedulePanel.swift:59-68` calls `readyScheduleSlots` without `durationMinutes:`,
+  so it defaults to 30 (`CadenceScheduleSupport.swift:470`) and only rejects collisions for a
+  **30-minute** block. The chip then calls `setScheduledSlot`, which sets only the start; the block's
+  length is `task.timelineDurationMinutes`. A task the row itself labels "90 min estimate" lands on a
+  slot checked to 30 and overlaps the block below it. Slots are deliberately computed once per pane
+  (`:448-450`), so this is a design tension, not a typo.
+
+- [T-586] **Switching the iPad Today rail between Notes and Timeline changes the pane's background
+  colour.** `iOSTodaySchedulePanel.swift:130` (`Theme.bg`, #09090b) vs `iOSNotesView.swift:170`
+  (`Theme.surface`, #131316). The switcher strip above is `Theme.bg` and the task column beside it is
+  `Theme.surface`, so **Timeline matches the strip and clashes with the column; Notes does the
+  reverse.** The schedule panel also omits the `.ignoresSafeArea()` the notes panel has.
+
+- [T-587] **`drawsCard` draws no card.** `iOSTodayTaskSections.swift:223-228` applies
+  `.padding(metrics.cardPadding)` and nothing else — no background, no clip. The flag's own doc
+  (`CadenceTodayLayoutSupport.swift:128-132`) states the reason it exists: *"the compact layout is
+  drawn on a `Theme.bg` page, where a `Theme.surface` card is what separates the day's list from the
+  page."* And `CadenceTodaySectionMetricsTests.swift:47-56` **pins `drawsCard` and `cardPadding > 0`
+  together — a test guarding a card no code draws.** Either the card was removed and the flag, padding,
+  doc and test are all residue, or it is genuinely missing. Decide which; one of the three is wrong.
+
+- [T-588] **`iOSCalendarMetrics` states in prose that 58 "is `iOSSchedulePanel.rowHeight`". It is a
+  second hand-typed 58.** `iOSCalendarMetrics.swift:41-44` vs `iOSTodaySchedulePanel.swift:170`. No
+  such reference exists in code. Same for `hourLabelSize = 11`. **And the duplication has already
+  drifted once**: `hourLabelTrailingInset = 8` against the row's literal `9`. A stated invariant with
+  nothing enforcing it — make the row read the metrics type, and pin it.
+
+- [T-589] **"Add a title first." stays red under the field while you type the title.**
+  `iOSTodaySchedulePanel.swift:314-319` draws it; `:202-211` are the only two clears
+  (`selectQuickCreateStart`, `cancelQuickCreate`). Nothing clears it when the title binding changes.
+  Reachable via `.onSubmit(create)` (`:290`) with whitespace-only text — the `+` button is disabled in
+  that state but Return is not.
+
+- [T-590] **VoiceOver calls an untitled task "task" while the screen calls it "Untitled Task".**
+  `iOSTodaySchedulePanel.swift:564` (`task.title.isEmpty ? "task" : task.title`) vs `:513` (renders
+  `TaskTitleSupport.displayTitle`). A blind user and a sighted user get different names for the same
+  row, and the sighted one is the shared name. *Adjacent to [[T-539]] but distinct*: that is a
+  `TextField` **prompt** deliberately staying a noun phrase; this is an **accessibility label over a
+  value**, which T-539's own resolution says should read the shared display title.
+
+- [T-591] **macOS: dragging a task onto a Today list heading is accepted and moves nothing.**
+  `TasksPanelSupport.swift:244-264` vs `CadenceTaskDropSupport.swift:134-135`, wired at
+  `TasksPanel.swift:235,249`. Today's groups hand out the compound key `"list:p_<uuid>|date:today"`;
+  `assignTask` does `dropKey.dropFirst(5)` and **never splits on `|`**, so it looks for a project whose
+  `uuidString` is `"<uuid>|date:today"`, finds none, falls through every branch — and `handleSectionDrop`
+  **still returns `true`**. The header lights up, the drop is accepted, nothing moves. Inbox is the same
+  (`"inbox|date:today" != "inbox"`). Dropping onto a *row* in another group is inert too. Reordering
+  inside one group still works, which is why this hides. The `|` vocabulary was built for *seeding* a
+  new task (`CadenceTaskDropSupport:237` splits it correctly); macOS reuses it for *moving* and
+  `assignTask` never learned the separator. **Fix this before restructuring the drop coordinator
+  ([[T-564]]).**
+
+- [T-592] **macOS: "Nothing planned" can appear directly under cards saying three of your lists are
+  past due.** `TasksPanelDerivedState.swift:80-89` (`isEmptyState`) tests only the four task buckets
+  plus Completed, while the past-due cards come from `CadenceTodayOverdueSummarySupport.listSummaries`,
+  which filters **projects** by their own `dueDate` and never looks at tasks. **iOS already guards this
+  and says why in a comment** (`iOSTodayTaskSections.swift:90-95`): *"a day with nothing planned but
+  three columns whose deadlines have gone by would otherwise read 'nothing planned' directly under
+  three cards saying otherwise."* Copy the guard.
+
+- [T-593] **macOS Today's task rows run flush to the right edge; every other macOS task list has a
+  gutter.** `TasksPanelSectionViews.swift:99` and `:190` apply `.padding(.leading, 16)` and no trailing
+  padding. The shared wrapper this was copied from, `TaskListDisplayRow`
+  (`ListDetailSupportViews.swift:288-294`), pads **leading 52 / trailing 12**. So on Today the row's
+  hover fill and its 1pt border touch the pane divider, while the same row on All Tasks / Inbox / list
+  detail sits 12pt clear. The blue drop indicator has the same asymmetry (`:95`). The block is
+  otherwise a line-for-line re-implementation of `TaskListInteractiveRow` with one inset dropped.
+
+- [T-594] **Six controls on every macOS Today row have no accessible name — including the completion
+  circle.** `TasksPanelComponents.swift:205` (`.help("Start focus session")` with no label), `:508`
+  completion button, `:217` do-date pill, `:262` due-date pill, `:459` estimate chip, `:96` container
+  badge. **The repo already has a rule and a test suite for exactly this shape**
+  (`CadenceControlAccessibilityLabelTests`, T-472/T-484): an icon-only control carrying `.help(...)`
+  must also carry `.accessibilityLabel(...)`. The sweep is scoped to `MarkdownEditorView.swift` and
+  never reaches here — **widen it**. The completion circle, the primary control on every row, has
+  neither label nor tooltip; the do/due pills announce a bare "Tomorrow" with no hint which date they
+  set. iOS has the same hole (`iOSTaskRowActionViews.swift` has one label in the whole file), so this
+  is a shared gap rather than a divergence.
+
 ## Done
 
 - [T-352] **CLOSED 2026-08-31 (`5ae916a`).** Premise confirmed and then *inverted*: no persistence was
