@@ -354,7 +354,9 @@ struct iOSListDetailView: View {
                     )
                 }
             }
-            .padding(iOSListDetailTaskMetrics.cardPadding)
+            // One gutter, not two (T-613). This was `.padding(12)` — the inset of the
+            // `.cadenceCard()` `85809ff` deleted — *plus* the panel's own 12, so the section
+            // headers and rows sat at 24 while the options bar directly above them sat at 16.
             .padding(.horizontal, iOSListDetailTaskMetrics.horizontalPadding)
             .padding(.bottom, iOSListDetailTaskMetrics.bottomPadding)
         }
@@ -365,11 +367,17 @@ struct iOSListDetailView: View {
 
 /// The Tasks tab's gutters. Its own type rather than `iOSTaskCollectionMetrics`, whose numbers are
 /// read off a page header this tab does not draw — the header and the tab picker are the page's,
-/// above this panel. The card inset and the group spacing are the collection page's, so the rows
-/// sit the same distance apart wherever they are read.
+/// above this panel. The group spacing is the collection page's, so the rows sit the same distance
+/// apart wherever they are read.
+///
+/// **`cardPadding` is gone and the gutter is 16 (T-613).** There were two horizontal insets here,
+/// 12 + 12: the panel's own, and the inset of a `.cadenceCard()` that `85809ff` deleted. The card
+/// went and its 12 stayed, which put this tab's section headers 24pt in against an options bar and
+/// a page header at 16 — the "header indented from the rows under it" defect
+/// `CadencePageHeaderMetrics.horizontalPadding` keeps the desktop gutter at 18 to avoid, stated the
+/// other way round. One inset now, and it is the 16 the bar above it already uses.
 private enum iOSListDetailTaskMetrics {
-    static let horizontalPadding: CGFloat = 12
-    static let cardPadding: CGFloat = 12
+    static let horizontalPadding: CGFloat = 16
     static let bottomPadding: CGFloat = 16
 }
 

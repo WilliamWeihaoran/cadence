@@ -90,10 +90,7 @@ struct iOSTaskCollectionPage: View {
                 )
 
                 if showsRemindersSection {
-                    iOSInboxRemindersSection(
-                        remindersManager: remindersManager,
-                        metrics: metrics
-                    )
+                    iOSInboxRemindersSection(remindersManager: remindersManager)
                 }
             }
             .padding(.horizontal, metrics.horizontalPadding)
@@ -212,11 +209,13 @@ struct iOSTaskCollectionSections: View {
         }
     }
 
-    /// **Carded, at both widths and on both collections.** The rule is Today's, and it is about the
-    /// host's background rather than the device: a `Theme.surface` card is what separates a list of
-    /// rows from a `Theme.bg` page, and is invisible on a `Theme.surface` one. All four of the views
-    /// this replaces painted `Theme.bg`, so all four should have drawn the card; only the phone's
-    /// Inbox did. One layer, at one radius — the rows inside carry no background of their own.
+    /// **Not carded, and no inset of its own (T-613).** This doc used to open "carded at both
+    /// widths and on both collections", and the card it described was deleted by `85809ff` — at five
+    /// sites at once, deliberately, because macOS never drew one and the rows read the same on both
+    /// platforms without it. `.padding(metrics.cardPadding)` outlived the fill it was insetting
+    /// from, so the page's gutter (16 on the phone, off `CadencePageHeaderMetrics`) plus 12 put
+    /// every group header and row at 28 against a page header and options bar at 16 directly above
+    /// them. Same residue T-587 removed from Today; see `iOSTaskCollectionMetrics`.
     private var groupStack: some View {
         // Asked of the surface, not decided here, so the phone's Inbox and the iPad's cannot answer
         // "does a row name its list" differently.
@@ -259,7 +258,6 @@ struct iOSTaskCollectionSections: View {
                 )
             }
         }
-        .padding(metrics.cardPadding)
     }
 }
 #endif

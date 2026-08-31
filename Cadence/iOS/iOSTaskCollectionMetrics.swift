@@ -104,6 +104,15 @@ nonisolated enum CadenceTaskCollection: String, CaseIterable, Sendable {
 /// scroll view is a page header drawn `padded: false` — the page supplies the header's own inset, so
 /// it had better be the header's own number. Everything else is one figure for both widths: the gap
 /// between a header and the bar under it is not something a wider pane needs more of.
+///
+/// **There used to be a `cardPadding` here, and it is gone (T-613).** It was documented as "the
+/// group card's inset", and `85809ff` deleted the `.cadenceCard()` it was insetting from — on
+/// purpose, at five sites at once, because macOS never drew one. What outlived the fill was the
+/// inset: `iOSTaskCollectionSections.groupStack` and `iOSInboxRemindersSection` each still added 12
+/// on top of the page's own gutter, so All Tasks' and Inbox's group headers and rows sat at 28
+/// against a page header at 16 directly above them. Same residue T-587 removed from Today's
+/// `CadenceTodaySectionMetrics`, and removed the same way: the field goes rather than becoming a
+/// zero a call site can still pad by.
 nonisolated struct iOSTaskCollectionMetrics: Equatable, Sendable {
     /// The page gutter, which is also the header's — see the note above.
     let horizontalPadding: CGFloat
@@ -117,8 +126,6 @@ nonisolated struct iOSTaskCollectionMetrics: Equatable, Sendable {
     let stackSpacing: CGFloat
     /// Between one counted task group and the next.
     let groupSpacing: CGFloat
-    /// The group card's inset.
-    let cardPadding: CGFloat
     /// What the empty state's card is at least. Two numbers for one component — 220 on All Tasks
     /// and 190 on Inbox — became the larger: an empty page is the one state where the card has no
     /// content to give it height, and there was never a reason for the two to differ by 30pt.
@@ -140,7 +147,6 @@ nonisolated struct iOSTaskCollectionMetrics: Equatable, Sendable {
             bottomPadding: 16,
             stackSpacing: stackSpacing,
             groupSpacing: groupSpacing,
-            cardPadding: 12,
             emptyStateMinHeight: 220
         )
     }

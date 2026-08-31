@@ -26,8 +26,6 @@ import UIKit
 /// which is the same ramp every other task row on iOS reads.
 struct iOSInboxRemindersSection: View {
     let remindersManager: RemindersManager
-    /// The page's own measurements, so this card is inset exactly as the group card above it is.
-    let metrics: iOSTaskCollectionMetrics
 
     /// **T-254.** One value, resolved once on the manager, rather than a fifth call to the
     /// shared resolver written out beside four others.
@@ -56,7 +54,9 @@ struct iOSInboxRemindersSection: View {
                 accessRow
             }
         }
-        .padding(metrics.cardPadding)
+        // No inset of its own, and no `metrics` to take one from (T-613). This carried
+        // `.padding(metrics.cardPadding)` for the `.cadenceCard()` `85809ff` deleted, on top of the
+        // page gutter its sibling group stack is already inside — see `iOSTaskCollectionMetrics`.
     }
 
     @ViewBuilder
