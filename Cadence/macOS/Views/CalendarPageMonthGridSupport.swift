@@ -239,17 +239,13 @@ enum CalendarMonthDayEmphasis: Equatable {
 
 extension CalendarMonthDayEmphasis {
     /// How far `Theme.dim` is pulled back for a carried day. Named once so the day number and the
-    /// month abbreviation beside it cannot drift apart.
+    /// month abbreviation beside it cannot drift apart — and, since T-568, so that the two iOS
+    /// month grids cannot drift from *this* either. The value, and the measurement that fixes it
+    /// near a floor rather than at an arbitrary grey, moved to
+    /// `CadenceCalendarDayBadge.outOfMonthLabelOpacity`, which both platforms compile.
     ///
-    /// 0.50, down from 0.58. Composited on the carried plate (`Theme.bg`) that is #3d3d43 rather
-    /// than #47474d — 1.84:1 against its own cell, down from 2.11:1 — while the in-month number
-    /// stays `Theme.text` at 15.9:1. This is close to the floor, and deliberately so: Apple's own
-    /// other-month numeral is `tertiaryLabelColor`, white at 0.25, which lands near 2.3:1 on its
-    /// cell, so the label was never the part that was too bright and a darker one alone cannot buy
-    /// the separation this grid was missing. Past here it stops being *grey* and starts being
-    /// unreadable — 0.35 gives 1.45:1, at which a 12pt numeral no longer resolves. The band that
-    /// reads at a glance is `cellBackground` below; this is the supporting half.
-    private static let outOfMonthLabelOpacity: Double = 0.50
+    /// The band that reads at a glance is `cellBackground` below; this is the supporting half.
+    private static var outOfMonthLabelOpacity: Double { CadenceCalendarDayBadge.outOfMonthLabelOpacity }
     /// Wash behind the cell on the page that owns today.
     private static let todayCellWashOpacity: Double = 0.04
     /// Stroke width of the hollow today marker used for a carried today.

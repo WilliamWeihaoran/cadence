@@ -318,9 +318,19 @@ private struct iOSCalendarMonthDayCell: View {
         CadenceCalendarDayBadge.style(isToday: isToday, isSelected: isSelected)
     }
 
+    /// **One dimming layer for a carried day, at the value macOS measured (T-568).**
+    ///
+    /// This cell used to dim a neighbouring month's day three separate times — 0.58 here, 0.18→0.08
+    /// on the badge behind the numeral, and `.opacity(0.52)` on the cell as a whole — and SwiftUI
+    /// multiplies them, so the 12pt number landed at 0.30 against a floor of 0.35 that
+    /// `CadenceCalendarDayBadge.outOfMonthLabelOpacity` records the contrast maths for. The other
+    /// two layers are gone; this is the only one left.
     private var dateLabelColor: Color {
         switch badge.label {
-        case .normal: return isCurrentMonth ? Theme.text : Theme.dim.opacity(0.58)
+        case .normal:
+            return isCurrentMonth
+                ? Theme.text
+                : Theme.dim.opacity(CadenceCalendarDayBadge.outOfMonthLabelOpacity)
         case .accent: return Theme.blue
         case .onFill: return Theme.onColor
         }
@@ -409,8 +419,10 @@ private struct iOSCalendarMonthDayCell: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-            .background(cellBackground)
-            .opacity(isCurrentMonth ? 1 : 0.52)
+            .background {
+                cellPlate
+                if let cellWash { cellWash }
+            }
             .overlay {
                 if isSelected {
                     RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
@@ -433,15 +445,42 @@ private struct iOSCalendarMonthDayCell: View {
         .accessibilityLabel(DateFormatters.longDate.string(from: date))
     }
 
-    private var cellBackground: Color {
+    /// **The plate is what says "not this month" now (T-568)** — the shape macOS's month grid
+    /// settled on, and the reason it can avoid a cell-wide `.opacity`, which would fade the today
+    /// ring and the event chips along with the day number.
+    ///
+    /// Every cell here used to be `Theme.bg` and the carried ones were faded on top of it. The
+    /// displayed month is lifted onto `Theme.surface` instead and the carried days fall back to the
+    /// app background, which is a real step (#131316 against #09090b) and needs no colour below
+    /// black. It stops at `surface` rather than climbing further because `iOSCalendarMiniChip`
+    /// plates itself in `Theme.surfaceElevated` — one stop more and the chips would read as holes
+    /// punched into the cell instead of cards sitting on it.
+    ///
+    /// The plate answers one question only — which month is this day in — so it is split from the
+    /// accent wash below rather than being the same `Color` property answering both. It had to be:
+    /// a single property returning the wash *instead of* the plate would have made a selected
+    /// carried day indistinguishable from a selected in-month one, which is the fact the whole
+    /// change is about.
+    private var cellPlate: Color {
+        isCurrentMonth ? Theme.surface : Theme.bg
+    }
+
+    /// Today's and the selection's accent, drawn *over* whichever plate the cell has. So a today
+    /// carried in from next month keeps the carried plate and is marked by its ring instead — the
+    /// "not this month" band stays unbroken, which is `CalendarMonthDayEmphasis.cellBackground`'s
+    /// rule too.
+    private var cellWash: Color? {
         if isSelected { return Theme.blue.opacity(0.075) }
         if isToday { return Theme.blue.opacity(0.045) }
-        return Theme.bg
+        return nil
     }
 
     private var dateBadgeFill: Color {
         switch badge.fill {
-        case .none:  return Theme.surfaceElevated.opacity(isCurrentMonth ? 0.18 : 0.08)
+        // Not dimmed for a carried day. It was 0.18 in-month against 0.08 out, which was the
+        // second of the three multiplied layers T-568 removed — and the numeral's own dimming is
+        // the layer that survives, so this one was pulling the plate out from under it as well.
+        case .none:  return Theme.surfaceElevated.opacity(0.18)
         case .wash:  return Theme.blue.opacity(CadenceCalendarDayBadge.washOpacity)
         case .solid: return Theme.blue
         }
