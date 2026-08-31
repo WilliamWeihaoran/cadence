@@ -642,7 +642,9 @@ struct SettingsSevenPaneVocabularyTests {
                 // 5 before T-449; the two calendar-row hairlines that were a two-line
                 // `Divider().background(Theme.borderSubtle)` are the other two.
                 "Cadence/macOS/Views/SettingsListManagementSections.swift": 7,
-                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 1,
+                // 1 before T-575; the second is the footer hairline in the Mac's typed-phrase
+                // reset confirmation, which is in this file and therefore in this sweep.
+                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 2,
                 "Cadence/macOS/Views/SettingsSectionViews.swift": 4
             ]
         )

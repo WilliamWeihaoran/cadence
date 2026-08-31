@@ -42,14 +42,18 @@ struct PrivacyDataResetOutcome: Equatable, Sendable {
     }
 }
 
-/// The typed phrase that arms the destructive button.
+/// The typed phrase that arms the destructive button, on every platform.
 ///
-/// macOS gates the reset behind a window-modal `confirmationDialog`: the destructive control is
-/// never on the settings pane, and reaching it costs a deliberate click on an alert that
-/// enumerates everything about to be lost. The mobile translation of that dialog is a bottom
-/// action sheet — one thumb-reachable tap — so iOS spends the seriousness somewhere a phone can
-/// actually carry it: the destructive control lives in a modal sheet, and stays disabled until
-/// this phrase has been typed. Same bar, different mechanism.
+/// **One gate, because one of them was weaker than the other in the wrong direction (T-575).**
+/// This used to describe a deliberate split: macOS behind a window-modal `confirmationDialog`,
+/// iOS behind a sheet with this phrase typed into it, "same bar, different mechanism". It was not
+/// the same bar. The Mac's dialog put a live **Delete Account & Data** button one click from the
+/// settings pane, and the Mac's reset is the *larger* one — Sign in with Apple is macOS-only, so
+/// only there is there an account profile to sign out as well. The less guarded path deleted more.
+///
+/// Both surfaces now present a modal that enumerates what is about to be lost and keeps its
+/// destructive control disabled until `authorizes(_:)` says otherwise:
+/// `SettingsDataResetConfirmationSheet` and `iOSDataResetConfirmationSheet`.
 ///
 /// Deliberately outside any platform guard so the rule is testable; `authorizes(_:)` is the only
 /// thing that decides, and no view may re-spell it.

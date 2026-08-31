@@ -269,6 +269,94 @@ struct CadencePrivacyDataResetSurfaceTests {
         )
     }
 
+    /// **T-575: the Mac is behind the same gate, and it had to be — the Mac's reset is the bigger
+    /// one.**
+    ///
+    /// This pane gated the reset behind a `confirmationDialog` whose destructive button was live
+    /// the moment it appeared, one click from the settings pane, while iPhone and iPad required
+    /// `DELETE` to be typed for a reset that does **not** sign an Apple account out. The less
+    /// guarded path deleted more. The same three properties asserted of iOS above.
+    @Test func theMacDestructiveControlLivesBehindTheSameTypedPhrase() throws {
+        let source = try strippingComments(sourceFile("Cadence/macOS/Views/SettingsDataSafetySection.swift"))
+
+        #expect(source.contains("PrivacyDataResetConfirmation.authorizes"), "the typed-phrase gate is gone from macOS")
+        #expect(source.contains("isDisabled: !isArmed"), "the macOS destructive button is no longer gated on the phrase")
+        #expect(
+            source.contains(".sheet(isPresented: $isConfirmingDataDelete)"),
+            "the macOS confirmation modal is gone"
+        )
+        #expect(
+            source.contains("onDeleteData: { isConfirmingDataDelete = true }"),
+            "the macOS Data Safety card's button no longer merely opens the confirmation"
+        )
+
+        // The one-click dialog is *gone*, not merely unreached. A second presenter left beside the
+        // sheet is exactly how the weaker path comes back, and it would satisfy every assertion
+        // above.
+        #expect(
+            !source.contains("Delete Cadence Account and Data?"),
+            "the one-click destructive confirmation dialog is back on macOS"
+        )
+        // One `confirmationDialog` left in the pane, and it is the *restore* one. The reset's
+        // dialog is gone rather than merely unpresented, and the reset itself is reached from
+        // exactly one place — the sheet's confirm handler.
+        #expect(
+            source.components(separatedBy: ".confirmationDialog(").count - 1 == 1,
+            "the pane presents a second confirmationDialog again"
+        )
+        #expect(source.contains("\"Restore Backup?\""), "non-vacuity: the surviving dialog is the restore one")
+        // Three mentions of the name and no more: the declaration, the sheet's `onConfirm:`, and
+        // the shared sequence it calls. A fourth is a second route to the reset.
+        #expect(
+            source.components(separatedBy: "deleteCadenceData").count - 1 == 3,
+            "the reset is reached from somewhere other than its declaration and the sheet"
+        )
+        #expect(
+            source.contains("SettingsDataResetConfirmationSheet(onConfirm: deleteCadenceData)"),
+            "the sheet is no longer what confirms the reset"
+        )
+    }
+
+    /// One gate, read once per surface. Delete either read and this fails; nothing else would,
+    /// because `Cadence/iOS/` is invisible to a macOS-built test target and the two views share no
+    /// type whose absence a compiler could notice.
+    @Test func bothResetSurfacesReachTheOneConfirmationGate() throws {
+        try expectCallSites(
+            of: "PrivacyDataResetConfirmation.authorizes",
+            at: [
+                "Cadence/iOS/iOSDataResetSettingsSection.swift": 1,
+                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 1,
+            ]
+        )
+
+        let mentions = try filesMentioning("PrivacyDataResetConfirmation")
+        #expect(
+            mentions == [
+                "Cadence/Services/CadencePrivacyDataResetService.swift",
+                "Cadence/iOS/iOSDataResetSettingsSection.swift",
+                "Cadence/macOS/Views/SettingsDataSafetySection.swift",
+            ],
+            "the confirmation gate is reached from \(mentions.sorted())"
+        )
+
+        // Neither surface re-spells the phrase. A literal beside the field is how the label and
+        // the rule come to disagree about what arms the button.
+        for path in [
+            "Cadence/iOS/iOSDataResetSettingsSection.swift",
+            "Cadence/macOS/Views/SettingsDataSafetySection.swift",
+        ] {
+            let code = try strippingComments(sourceFile(path))
+            #expect(
+                code.contains("PrivacyDataResetConfirmation.requiredPhrase"),
+                "\(path) no longer shows the shared phrase"
+            )
+            #expect(
+                !code.contains("\"DELETE\""),
+                "\(path) re-spells the required phrase as a literal"
+            )
+        }
+    }
+
     // MARK: - The wording both platforms show
 
     /// macOS's two status strings were inline in the view. They are the outcome's now, so neither

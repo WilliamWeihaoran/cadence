@@ -36,7 +36,7 @@ Account and data deletion:
 - On iPhone and iPad, users delete their Cadence data in Settings > Data Safety. There is no Account category on those platforms because Sign in with Apple is macOS-only, so there is no separate account to delete.
 - On every platform, Settings > Data Safety also offers Export an Archive: a single JSON file holding all Cadence-created content, written through the system save panel to a destination the user picks. Nothing is uploaded and the app retains no copy of the exported file. Cadence cannot import an archive back in.
 - Both platforms run the same deletion: it removes Cadence-created content from the current store, removes local Cadence backups and pending restores, removes the saved OpenAI API key, and cancels pending Cadence notifications. On macOS it additionally clears the local Apple account profile.
-- Deletion is confirmed before anything is removed. macOS asks for confirmation in a modal dialog that lists what will be deleted. iPhone and iPad open a confirmation sheet that lists the same items and requires the word DELETE to be typed before the destructive button becomes active.
+- Deletion is confirmed before anything is removed. On every platform Cadence opens a modal confirmation that lists what will be deleted and requires the word DELETE to be typed before the destructive button becomes active.
 - Because Cadence syncs through the user's private iCloud database, deletions propagate to the user's other devices. Apple Calendar events that already exist in Calendar are managed by Calendar and are not deleted.
 
 Sync:

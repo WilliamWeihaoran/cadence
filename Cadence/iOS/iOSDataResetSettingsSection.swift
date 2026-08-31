@@ -61,8 +61,8 @@ struct iOSDataResetSettingsSection: View {
                     }
 
                     // This button does not delete anything. It opens the confirmation sheet, and
-                    // the destructive control lives only there — see
-                    // `PrivacyDataResetConfirmation` for why the mechanism differs from macOS's.
+                    // the destructive control lives only there — the same shape macOS's pane has
+                    // since T-575. See `PrivacyDataResetConfirmation`.
                     iOSActionButton(
                         title: "Delete Cadence Data",
                         systemImage: "trash.fill",

@@ -147,17 +147,14 @@ struct SettingsDataSafetySection: View {
         } message: {
             Text("Cadence will restore this backup before the store opens on the next launch. Quit and reopen Cadence after staging.")
         }
-        .confirmationDialog(
-            "Delete Cadence Account and Data?",
-            isPresented: $isConfirmingDataDelete,
-            titleVisibility: .visible
-        ) {
-            Button("Delete Account & Data", role: .destructive) {
-                deleteCadenceData()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, goals, habits, tags, saved links, local Cadence backups, pending restores, and the saved OpenAI key. Apple Calendar events that already exist in Calendar are not deleted.")
+        // Not a `confirmationDialog` (T-575). This was the one destructive action in the app whose
+        // *less*-guarded path deleted the **more**: the Mac's dialog put a live "Delete Account &
+        // Data" button one click away, while the phone made you type DELETE for a reset that does
+        // not even sign the Apple account out. Same gate on both platforms now —
+        // `PrivacyDataResetConfirmation`, which is where the rule lives and the only thing that
+        // decides.
+        .sheet(isPresented: $isConfirmingDataDelete) {
+            SettingsDataResetConfirmationSheet(onConfirm: deleteCadenceData)
         }
     }
 
@@ -361,6 +358,102 @@ private struct SettingsDataResetCard: View {
                 }
             }
         }
+    }
+}
+
+/// The second and third gates on the Mac: a modal that enumerates what is about to be lost, and a
+/// phrase that has to be typed before the destructive button is live at all.
+///
+/// **T-575.** This pane used to gate the reset behind a `confirmationDialog` whose destructive
+/// button was live the moment it appeared, while iPhone and iPad required `DELETE` to be typed —
+/// and the Mac's reset is the *larger* one, because only here is there a Sign in with Apple
+/// profile to clear. The less guarded path deleted more. The gate is
+/// `PrivacyDataResetConfirmation`, the same value `iOSDataResetConfirmationSheet` reads, so
+/// neither surface re-spells what counts as authorization and neither can be relaxed alone.
+private struct SettingsDataResetConfirmationSheet: View {
+    let onConfirm: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var typedPhrase = ""
+    @FocusState private var isPhraseFocused: Bool
+
+    private var isArmed: Bool {
+        PrivacyDataResetConfirmation.authorizes(typedPhrase)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SectionEyebrowLabel(text: "Delete Account & Data")
+                .padding(.horizontal, 24)
+                .padding(.top, 18)
+                .padding(.bottom, 10)
+
+            VStack(alignment: .leading, spacing: 14) {
+                SettingsCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .top, spacing: 14) {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Theme.red.opacity(0.14))
+                                .frame(width: 42, height: 42)
+                                .overlay {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .foregroundStyle(Theme.red)
+                                }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("This cannot be undone")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Theme.text)
+                                Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, goals, habits, tags, saved links, local Cadence backups, pending restores, and the saved OpenAI key. Apple Calendar events that already exist in Calendar are not deleted.")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Theme.dim)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+
+                SettingsCard {
+                    CadenceSettingsField(
+                        title: "Type \(PrivacyDataResetConfirmation.requiredPhrase) to confirm"
+                    ) {
+                        TextField(PrivacyDataResetConfirmation.requiredPhrase, text: $typedPhrase)
+                            .focused($isPhraseFocused)
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 18)
+
+            // `CadenceRowDivider`, not `Divider().background(…)`: a settings pane that paints its
+            // own colour under the system separator is what T-286/T-553 sweep for, and this file
+            // is inside that sweep's corpus.
+            CadenceRowDivider()
+
+            HStack(spacing: 8) {
+                Spacer(minLength: 12)
+                CadenceActionButton(title: "Cancel", role: .ghost, size: .compact) {
+                    dismiss()
+                }
+                CadenceActionButton(
+                    title: "Delete Everything",
+                    systemImage: "trash.fill",
+                    role: .destructive,
+                    size: .compact,
+                    isDisabled: !isArmed
+                ) {
+                    dismiss()
+                    onConfirm()
+                }
+            }
+            .padding(16)
+        }
+        .frame(width: 460)
+        .background(Theme.surface)
+        .onAppear { isPhraseFocused = true }
     }
 }
 
