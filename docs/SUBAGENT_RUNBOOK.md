@@ -208,3 +208,23 @@ The related trap, same session: with three agents editing one tree, a build fail
 yours**. Check whose file the `error:` names before reacting. The T-591 batch lost a full run to 46
 compile errors in another agent's `TaskBundleTests.swift`, and the fix was to stop using the shared
 tree, not to touch that file.
+
+## `-only-testing:` takes a suite, and `Suite/testName` runs zero tests
+
+Recorded 2026-08-31 (T-602 batch). The runbook already says a *nonexistent* suite name returns
+`Executed 0 tests` / `** TEST SUCCEEDED **` / exit 0 with no diagnostic. There is a second spelling
+that fails the same way and looks far more reasonable:
+
+```sh
+-only-testing:CadenceTests/CadenceTodayUnificationTests/todaysNoteAndScheduleColumnsNameThemselvesOnce
+```
+
+Naming an individual test does **not** match here. It runs zero tests and reports success.
+
+`scripts/test-suite-index.sh --scope <name>` returns the **suite**, never a per-test path — if you
+find yourself hand-assembling a third path component, that is the mistake.
+
+`scripts/xcb.sh`'s zero-test guard caught this one with exit 4, which is the whole point of that
+guard: a failing-first run that executes nothing is indistinguishable from a passing run unless
+something counts the results. Never conclude "my new test fails as expected" from a red exit code
+alone — confirm the test ran **by name**.

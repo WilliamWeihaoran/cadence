@@ -813,13 +813,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Use `strippingComments`, never `codeOnly` — `codeOnly` blanks string literals too, which is what
   made an earlier copy scan permanently and silently green.
 
-- [T-583] **macOS archives a context without saving; iOS saves.** `SettingsView.swift:184,186` set
-  `isArchived` with no save, while `reopenArea`/`reopenProject`/`moveContext` in the *same file*
-  (`:275,280,285`) all call `try? modelContext.save()`. **INFERRED** — no `autosaveEnabled` is set
-  anywhere, so the default `true` probably covers it, but then the four explicit saves twelve lines
-  below are redundant and the file cannot be right both ways. **Decide the convention for this file**
-  rather than patching one line.
-
 - [T-572] **The iOS Board's day columns are unreadable to VoiceOver.**
   `iOSCalendarBoardView.swift:315-343` has no `accessibilityLabel`; macOS
   `CalendarBoardDayColumnSupportViews.swift:121` announces "<long date>, N scheduled items". The
@@ -970,16 +963,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `Theme.dim`**. Nine other call sites use the shared function. If the 0.76 was deliberate, say so and
   leave it; if not, it is a bug wearing taste's clothes.
 
-- [T-602] **macOS Today: two of three column headers describe their own page.**
-  `TodaySupportViews.swift:6-27` (`PanelHeader`), used at `NotePanel.swift:45` and
-  `SchedulePanelShellViews.swift:20`. The task column already fixed this and **its own doc says why**:
-  the eyebrow it replaced ("TASKS") was *"the header-describes-its-own-page rule one row down."* The
-  other two still do it — `NOTES` / *(note title)*, and `SCHEDULE` / **Timeline**, the latter naming
-  one column twice with two different words. Only the task column carries a count.
-  This is a standing-rule violation, so the *direction* is settled; only the replacement wording is
-  open. **Propose the wording in the closure report rather than landing it silently** — and if the
-  honest answer is that a column needs no header at all, say that.
-
 - [T-603] **iOS month grid: one selection layer, not three. DECIDED 2026-08-31 - badge only.**
   `iOSCalendarMonthViews.swift:414-419` with `:437` and `:445` currently paint (a) a square-cornered
   `Theme.blue.opacity(0.075)` cell fill, (b) a `RoundedRectangle(Theme.radiusControl)` ring inset 4pt
@@ -1092,7 +1075,50 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Today is fixed; these three are the identical residue and **should be decided together** rather than
   one at a time, since they share a metrics constant.
 
+- [T-614] **The contexts reorder commits two different ways on the two platforms — decide the rule.**
+  Split from [[T-583]], which decided macOS's `moveContext` should keep its `try? save()` and documented
+  that as deliberate: `order` is a field on rows the store already holds, nothing after it reports
+  success, so it is the case `AGENTS.md`'s rule leaves alone.
+  But [[T-581]] gave **iOS** the opposite treatment — its reorder commits through
+  `CadencePendingChangePersistence` and shows an inline notice on refusal, and its doc comment names
+  macOS's `try?` as the weaker half. Both agents reasoned well and reached different answers, which
+  means **the rule is underdetermined, not that either is wrong.**
+  The question is general, not about this pane: *does a visible rearrangement count as "reporting
+  success"?* A refused save leaves the rows where the user dragged them until the next launch silently
+  undoes it — which is the shape the `try? save()` rule exists to catch, but the write itself is a field
+  edit. Answer it once in `AGENTS.md`, then make both platforms match.
+
+- [T-615] **`RootTimelineSidebarPane` says "timeline" twice.** `macOSRootSupportViews.swift:327-352`
+  titles itself "Today Timeline" and then hosts the standard `SchedulePanel`. Before [[T-602]] that pane
+  said the word three times; it now says it twice. Noticed by the T-602 agent and deliberately left —
+  reversible either way, and small enough that it wants a decision rather than a guess: drop the pane's
+  own title, or drop the hosted panel's when it is hosted there.
+
 ## Done
+
+- [T-583] **CLOSED 2026-08-31 (`a4b03cd`).** The INFERRED half does **not** survive: autosave is on,
+  but "eventually" is exactly what T-327 measured, so deleting the four neighbouring saves was the wrong
+  branch. **And the case was stronger than the ticket knew** — macOS's *own*
+  `SettingsTagsSection.swift:192-201` already had the `archive(_:)`/`restore(_:)` shape, so the contexts
+  pane was deviating from its own platform, not merely from iOS.
+  The two inline closures are now `archiveContext(_:)`/`restoreContext(_:)` beside `moveContext`, each
+  doing the write plus the save, with the convention written down: **existence changes report, field
+  edits commit quietly.** `moveContext`'s swallowed save — left open by [[T-581]] — is decided the same
+  way and documented as deliberate; making it the one reporting mutation among five would have
+  re-created the inconsistency this ticket is about. Residual platform disagreement about the *reorder*
+  commit split out as [[T-614]].
+
+- [T-602] **CLOSED 2026-08-31 (`1dd6c4a`).** `NOTES / <active tab>` and `SCHEDULE / Timeline` are now
+  simply **Notes** and **Timeline**. `PanelHeader.eyebrow` is optional and unused; `NotePanel.headerTitle`
+  — which restated the tab strip eight lines below it — is deleted.
+  **Neither column had a second fact to promote** the way the task column had the date, so neither
+  invented one. **And it is deliberately not "no header at all":** iPad *does* delete both, because
+  `iPadTodayInspectorSwitcher` names the pane; macOS's three columns stand side by side with nothing
+  else naming them, so one title each stays. "Timeline" over "Schedule" because that is the word the
+  zoom control, the `Close timeline` label and iPad's switcher already use.
+  **Cost stated as computed, not observed:** with no eyebrow the two titles sit ~14pt higher inside the
+  unchanged 100pt band. The app was not launched.
+
 
 - [T-579] **CLOSED 2026-08-31 (`4849cea`).** iOS Settings > Defaults now carries a "Default page" row
   over `ListDetailPage.allCases`, on the same shared value-row/popover vocabulary macOS uses, with
