@@ -483,7 +483,13 @@ struct SettingsSevenPaneVocabularyTests {
             of: "CadenceSettingsNoticeRow",
             at: [
                 "Cadence/macOS/Views/SettingsNotificationsSection.swift": 2,
-                "Cadence/macOS/Views/SettingsRemindersSection.swift": 1,
+                // 1 before T-600(b). The second is the Reminder Lists card's empty state, which
+                // was a private one-line `summaryRow` — a glyph and "No open reminders." with
+                // nothing after it — twenty lines under this pane's own access verdict drawn on
+                // the shared row. It is the same shape (a glyph, what the state is, one sentence
+                // of why), so the count went up because a near-copy was removed, not because a
+                // row was added.
+                "Cadence/macOS/Views/SettingsRemindersSection.swift": 2,
                 "Cadence/macOS/Views/SettingsSyncSection.swift": 1,
                 "Cadence/macOS/Views/SettingsTagsSection.swift": 1,
                 // T-450: the sidebar-tab editor's row, which T-286 left private.

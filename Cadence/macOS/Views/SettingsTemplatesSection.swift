@@ -198,9 +198,17 @@ struct SettingsTemplatesSection: View {
                 }
             }
         } else {
-            Text("No templates available")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.dim)
+            // Was a bare `Text` with no glyph, no card row and no second line — the loudest of the
+            // four one-liners T-600(b) closed, because it is the only one that is not "you have
+            // nothing yet": the templates ship with the app, so this state means the stored
+            // definitions could not be read, and the subtitle now says so.
+            CadenceSettingsNoticeRow(
+                systemImage: "doc.text",
+                title: CadenceSettingsEmptyStateCopy.templatesTitle,
+                detail: CadenceSettingsEmptyStateCopy.templatesSubtitle
+            ) {
+                EmptyView()
+            }
         }
     }
 

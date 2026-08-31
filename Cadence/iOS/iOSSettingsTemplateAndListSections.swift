@@ -187,8 +187,8 @@ struct iOSTemplatesSettingsSection: View {
         } else {
             iOSSettingsEmptyInlineRow(
                 systemImage: "doc.text",
-                title: "No templates available",
-                subtitle: "Template definitions could not be loaded."
+                title: CadenceSettingsEmptyStateCopy.templatesTitle,
+                subtitle: CadenceSettingsEmptyStateCopy.templatesSubtitle
             )
         }
     }
@@ -264,12 +264,12 @@ struct iOSListsLifecycleSettingsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if completedAreas.isEmpty && archivedAreas.isEmpty && completedProjects.isEmpty && archivedProjects.isEmpty {
-                CadenceSettingsSectionLabel(text: "Inactive Lists")
+                CadenceSettingsSectionLabel(text: CadenceSettingsEmptyStateCopy.inactiveListsSectionTitle)
                 iOSSettingsCard {
                     iOSSettingsEmptyInlineRow(
                         systemImage: "archivebox",
-                        title: "No completed or archived lists",
-                        subtitle: "Areas and projects you complete or archive will appear here."
+                        title: CadenceSettingsEmptyStateCopy.inactiveListsTitle,
+                        subtitle: CadenceSettingsEmptyStateCopy.inactiveListsSubtitle
                     )
                 }
             } else {
@@ -705,34 +705,4 @@ private struct iOSAISettingsDisclosureRow: View {
     }
 }
 
-struct iOSSettingsEmptyInlineRow: View {
-    let systemImage: String
-    let title: String
-    let subtitle: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .frame(width: iOSSettingsMetrics.glyphSlot, height: iOSSettingsMetrics.glyphSlot)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-
-                Text(subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.subdued)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 4)
-    }
-}
 #endif

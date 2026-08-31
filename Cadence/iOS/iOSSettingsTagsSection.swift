@@ -115,7 +115,8 @@ struct iOSTagsSettingsSection: View {
             CadenceSettingsSectionLabel(text: "Active Tags")
             iOSSettingsCard {
                 if activeTags.isEmpty {
-                    iOSSettingsEmptyRow(
+                    iOSSettingsEmptyInlineRow(
+                        systemImage: "tag",
                         title: CadenceTagSettingsCopy.emptyCatalogTitle,
                         subtitle: CadenceTagSettingsCopy.emptyCatalogSubtitle
                     )

@@ -72,14 +72,15 @@ struct SettingsRemindersSection: View {
                 Spacer()
             }
         } else if remindersManager.reminders.isEmpty {
-            summaryRow {
-                Image(systemName: "checklist")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                Text("No open reminders.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.dim)
-                Spacer()
+            // The shared status row rather than a private one-liner (T-600(b)): this card already
+            // draws `CadenceSettingsNoticeRow` for the access verdict twenty lines up, and the
+            // empty state is the same shape — a glyph, what the state is, one sentence of why.
+            CadenceSettingsNoticeRow(
+                systemImage: "checklist",
+                title: CadenceSettingsEmptyStateCopy.remindersTitle,
+                detail: CadenceSettingsEmptyStateCopy.remindersSubtitle
+            ) {
+                EmptyView()
             }
         } else {
             let rows = RemindersSyncSummary.listRows(from: remindersManager.reminders)

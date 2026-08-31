@@ -165,6 +165,54 @@ nonisolated enum CadenceNotificationSettingsCopy {
     static let enableNotificationsAction = "Enable Notifications"
 }
 
+/// The settings cards that can be empty, on both surfaces.
+///
+/// **T-600(b).** Four of them said one thing on the Mac and two on the phone: macOS drew a single
+/// line naming what is absent — "No open reminders." — and iOS drew that line plus a sentence
+/// saying what would put something there. An empty state that reports only absence leaves the
+/// reader deciding between "this is broken", "I am in the wrong place" and "there is something I
+/// was supposed to do", which is what T-469 and T-473 found one screen over. iOS was right in all
+/// four, so all four sentences are iOS's.
+///
+/// **Titles carry no full stop and subtitles do.** macOS's four disagreed with each other about
+/// that — "No templates available" beside "No active contexts." — and iOS's did not.
+///
+/// *Extends [[T-545]]*, which named the empty-calendar row; these are four more of one shape.
+nonisolated enum CadenceSettingsEmptyStateCopy {
+
+    /// Settings → Apple Reminders, connected, with nothing open. Says what the list would hold and
+    /// how it would be arranged, which is the part that tells a reader the screen is working.
+    static let remindersTitle = "No open reminders"
+    static let remindersSubtitle = "Reminders you have not completed yet will be summarised here by list."
+
+    /// Settings → Contexts.
+    ///
+    /// "here" is load-bearing and true on both platforms — the **New Context** control is inside
+    /// this same card on the Mac and directly above it on the phone. That is the T-469 test this
+    /// sentence has to pass before it can be shared: copy naming a control that is not on the
+    /// screen is worse than no copy.
+    static let contextsTitle = "No active contexts"
+    static let contextsSubtitle = "Create one here, then use it when making areas and projects."
+
+    /// Settings → Lists.
+    ///
+    /// The eyebrow is part of the pair rather than chrome: every other branch of that pane names
+    /// the group it is showing ("Completed Areas", "Archived Projects"), and macOS's empty branch —
+    /// the only one a reader with no inactive lists ever sees — named nothing at all.
+    static let inactiveListsSectionTitle = "Inactive Lists"
+    static let inactiveListsTitle = "No completed or archived lists"
+    static let inactiveListsSubtitle = "Areas and projects you complete or archive will appear here."
+
+    /// Settings → Note Templates with no library at all.
+    ///
+    /// The odd one of the four, and the reason the subtitle matters most here: the templates ship
+    /// with the app, so this is not "you have not made one yet" — it is the stored definitions
+    /// failing to load. macOS said "No templates available" in a bare `Text` and stopped, which
+    /// reads as a state the reader could fix by creating something.
+    static let templatesTitle = "No templates available"
+    static let templatesSubtitle = "Template definitions could not be loaded."
+}
+
 /// Settings → Lists, on both surfaces: the "Inactive Lists" rows, which are the only place a
 /// completed or archived area or project can still be reached.
 ///

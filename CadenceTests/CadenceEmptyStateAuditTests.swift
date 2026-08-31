@@ -359,9 +359,10 @@ enum CadenceEmptyStateAudit {
     /// **`…Row` is subtracted as a rule, not as an allowlist.** A row is a list *item*: its title
     /// and subtitle describe something that is there, not the absence of everything. Nine views
     /// have this exact shape and are rows (`iOSListPickerRow`, `AttachListCandidateRow`,
-    /// `ListLifecycleRow`, …). The two rows that really are empty states — `iOSSettingsEmptyRow`
-    /// and `iOSSettingsEmptyInlineRow` — are carried by the *name* derivation, which is the point
-    /// of running two.
+    /// `ListLifecycleRow`, …). The one row that really is an empty state —
+    /// `iOSSettingsEmptyInlineRow` — is carried by the *name* derivation, which is the point of
+    /// running two. It used to be two rows; T-600(a) deleted `iOSSettingsEmptyRow`, which was the
+    /// same component with the glyph hardcoded to `tray` and a title a point smaller.
     static func emptyStateShapedViews(among declarations: [Declaration]) -> [Declaration] {
         declarations.filter { declaration in
             guard declaration.conformances.contains("View") else { return false }

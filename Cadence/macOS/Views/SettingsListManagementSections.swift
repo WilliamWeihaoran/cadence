@@ -421,17 +421,15 @@ struct SettingsContextsSection: View {
             SettingsCard {
                 VStack(spacing: 0) {
                     if activeContexts.isEmpty {
-                        HStack(spacing: 12) {
-                            Image(systemName: "square.stack.3d.up")
-                                .font(.system(size: 14))
-                                .foregroundStyle(Theme.dim)
-                            Text("No active contexts.")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Theme.dim)
-                            Spacer()
+                        // "Create one here" is true on this platform too: the **New Context**
+                        // button is in this same card, directly under the divider below.
+                        CadenceSettingsNoticeRow(
+                            systemImage: "square.stack.3d.up",
+                            title: CadenceSettingsEmptyStateCopy.contextsTitle,
+                            detail: CadenceSettingsEmptyStateCopy.contextsSubtitle
+                        ) {
+                            EmptyView()
                         }
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 2)
                         CadenceRowDivider()
                     } else {
                         ForEach(Array(activeContexts.enumerated()), id: \.element.id) { _, context in
@@ -499,15 +497,17 @@ struct SettingsListsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if completedAreas.isEmpty && archivedAreas.isEmpty && completedProjects.isEmpty && archivedProjects.isEmpty {
+                // The eyebrow is half of T-600(b) here: every other branch of this pane names
+                // the group it is showing, and the empty one — the only branch a reader with no
+                // inactive lists ever sees — named nothing.
+                SettingsSectionLabel(text: CadenceSettingsEmptyStateCopy.inactiveListsSectionTitle)
                 SettingsCard {
-                    HStack(spacing: 12) {
-                        Image(systemName: "archivebox")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-                        Text("No completed or archived lists.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.dim)
-                        Spacer()
+                    CadenceSettingsNoticeRow(
+                        systemImage: "archivebox",
+                        title: CadenceSettingsEmptyStateCopy.inactiveListsTitle,
+                        detail: CadenceSettingsEmptyStateCopy.inactiveListsSubtitle
+                    ) {
+                        EmptyView()
                     }
                 }
             } else {

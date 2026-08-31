@@ -109,8 +109,8 @@ struct iOSRemindersSettingsSection: View {
                 } else if listRows.isEmpty {
                     iOSSettingsEmptyInlineRow(
                         systemImage: "checklist",
-                        title: "No open reminders",
-                        subtitle: "Reminders you have not completed yet will be summarised here by list."
+                        title: CadenceSettingsEmptyStateCopy.remindersTitle,
+                        subtitle: CadenceSettingsEmptyStateCopy.remindersSubtitle
                     )
                 } else {
                     ForEach(Array(listRows.enumerated()), id: \.element.id) { index, row in

@@ -251,6 +251,150 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
+    // MARK: - T-600: one empty-row component, and four cards that say two lines on both surfaces
+
+    /// **The duplicate empty row is gone from the tree, not merely unused.**
+    ///
+    /// `iOSSettingsEmptyRow` and `iOSSettingsEmptyInlineRow` were the same card row twice — same
+    /// glyph tile, same two-line stack, same trailing `Spacer` — and had already drifted a point
+    /// (13pt title against 14) plus a `Theme.dim`/`Theme.subdued` subtitle. The fixed one hardcoded
+    /// its glyph to `tray`, which is what settles which survives: the parameterised row already
+    /// serves four cards passing four different symbols, and the fixed one could not have taken
+    /// any of them.
+    ///
+    /// Swept over the whole app rather than the two known call sites, because the failure this
+    /// guards is the component being *moved* rather than removed — the same claim shape
+    /// `theFifthPrivateSettingsRowIsRetiredRatherThanRelocated` makes one suite over.
+    @Test func theFixedGlyphSettingsEmptyRowIsDeletedRatherThanLeftUnused() throws {
+        var scanned = 0
+        var offenders: [String] = []
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
+            scanned += 1
+            let code = try Self.strippedSource(at: path)
+            if code.range(
+                of: "(?<![A-Za-z0-9_])iOSSettingsEmptyRow(?![A-Za-z0-9_])",
+                options: .regularExpression
+            ) != nil {
+                offenders.append(path)
+            }
+        }
+        #expect(scanned >= 300, "scanned only \(scanned) files")
+        #expect(offenders.isEmpty, "the retired iOSSettingsEmptyRow is still named in: \(offenders)")
+
+        // The survivor, and where it lives now: the shared iOS settings component file, beside the
+        // rest of that vocabulary rather than three hundred lines into a feature section.
+        let components = try Self.strippedSource(at: "Cadence/iOS/iOSSettingsComponents.swift")
+        #expect(components.contains("struct iOSSettingsEmptyInlineRow: View"))
+        #expect(
+            components.contains("Image(systemName: systemImage)"),
+            "the surviving row hardcodes its glyph again, which is why the other one lost"
+        )
+        let oldHome = try Self.strippedSource(at: "Cadence/iOS/iOSSettingsTemplateAndListSections.swift")
+        #expect(
+            oldHome.contains("struct iOSSettingsEmptyInlineRow") == false,
+            "the row is declared twice again"
+        )
+    }
+
+    /// **The four cards that can be empty say what is missing *and* what would fill it, on both.**
+    ///
+    /// macOS drew one line and iOS drew two, in four places. Asserted as the pairing this file
+    /// exists for — each surface reads the constant, neither still spells the literal — which is
+    /// strictly more than "macOS gained a subtitle": a second hand-typed sentence beside the first
+    /// would satisfy a looser check and re-create the drift on the next edit.
+    ///
+    /// `Cadence/iOS/` is not compiled by this target, so the phone's half can only be read as text;
+    /// the values themselves are asserted in
+    /// `theCompiledSettingsCopyStillSaysWhatBothSurfacesUsedToSpell`.
+    @Test func bothSurfacesOfEveryEmptySettingsCardReadOneTitleAndOneSubtitle() throws {
+        let pairs: [(surfaces: [String], expressions: [String], literals: [String])] = [
+            (
+                [
+                    "Cadence/macOS/Views/SettingsRemindersSection.swift",
+                    "Cadence/iOS/iOSRemindersSettingsSection.swift",
+                ],
+                ["CadenceSettingsEmptyStateCopy.remindersTitle", "CadenceSettingsEmptyStateCopy.remindersSubtitle"],
+                ["No open reminders", "No open reminders."]
+            ),
+            (
+                [
+                    "Cadence/macOS/Views/SettingsListManagementSections.swift",
+                    "Cadence/iOS/iOSSettingsView.swift",
+                ],
+                ["CadenceSettingsEmptyStateCopy.contextsTitle", "CadenceSettingsEmptyStateCopy.contextsSubtitle"],
+                ["No active contexts", "No active contexts."]
+            ),
+            (
+                [
+                    "Cadence/macOS/Views/SettingsListManagementSections.swift",
+                    "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
+                ],
+                [
+                    "CadenceSettingsEmptyStateCopy.inactiveListsSectionTitle",
+                    "CadenceSettingsEmptyStateCopy.inactiveListsTitle",
+                    "CadenceSettingsEmptyStateCopy.inactiveListsSubtitle",
+                ],
+                ["Inactive Lists", "No completed or archived lists", "No completed or archived lists."]
+            ),
+            (
+                [
+                    "Cadence/macOS/Views/SettingsTemplatesSection.swift",
+                    "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
+                ],
+                ["CadenceSettingsEmptyStateCopy.templatesTitle", "CadenceSettingsEmptyStateCopy.templatesSubtitle"],
+                ["No templates available", "No templates available."]
+            ),
+        ]
+
+        for entry in pairs {
+            for path in entry.surfaces {
+                let code = try Self.strippedSource(at: path)
+                for expression in entry.expressions {
+                    #expect(code.contains(expression), "\(path) does not read \(expression)")
+                }
+                for literal in entry.literals {
+                    #expect(
+                        !code.contains("\"\(literal)\""),
+                        "\(path) still spells \"\(literal)\" beside the constant that holds it"
+                    )
+                }
+            }
+        }
+    }
+
+    /// **Neither pane still draws one of these as a private one-liner.**
+    ///
+    /// The pairing above is satisfiable by a pane that reads the constants *and* keeps its old
+    /// hand-built row somewhere else in the file. What the four macOS sites had in common was not
+    /// a missing sentence but a private spelling of a row the app already owns — a bare `HStack`
+    /// of glyph-plus-`Text`, or in the templates pane a naked `Text` in no row at all. So this
+    /// asserts the replacement: every one of them is a `CadenceSettingsNoticeRow` now.
+    ///
+    /// Counts rather than presence, for the reason `theSevenPanesReadTheSharedFieldVocabulary`
+    /// gives: a presence check stays green when one of several call sites reverts.
+    @Test func theFourEmptySettingsCardsAreDrawnOnTheSharedNoticeRow() throws {
+        for (path, expected) in [
+            // The access verdict and the empty Reminder Lists card.
+            ("Cadence/macOS/Views/SettingsRemindersSection.swift", 2),
+            // Contexts and Inactive Lists; the calendar sections in this file draw neither.
+            ("Cadence/macOS/Views/SettingsListManagementSections.swift", 2),
+            ("Cadence/macOS/Views/SettingsTemplatesSection.swift", 1),
+        ] {
+            let code = try Self.strippedSource(at: path)
+            let actual = code.components(separatedBy: "CadenceSettingsNoticeRow(").count - 1
+            #expect(actual == expected, "\(path) draws \(actual) shared notice rows, expected \(expected)")
+        }
+
+        // And the shapes they replaced are gone from those files, so the count above is a
+        // substitution rather than an addition. The templates pane's was the starkest: a `Text` in
+        // no row at all, which is why its needle is the literal it used to hold.
+        let templates = try Self.strippedSource(at: "Cadence/macOS/Views/SettingsTemplatesSection.swift")
+        #expect(templates.contains("Text(\"No templates available\")") == false)
+        let lists = try Self.strippedSource(at: "Cadence/macOS/Views/SettingsListManagementSections.swift")
+        #expect(lists.contains("Image(systemName: \"archivebox\")") == false)
+        #expect(lists.contains("Image(systemName: \"square.stack.3d.up\")") == false)
+    }
+
     /// The work-hours row's **title** is one string; its subtitle deliberately is not.
     ///
     /// The pair was found by the same sweep as the rest and is converged only as far as the check
@@ -342,6 +486,44 @@ struct CadenceSettingsSectionCopyTests {
             of: Self.tagPairs + Self.templatePairs + Self.aiPairs,
             declaredIn: settingsCopy
         )
+        // T-600(b)'s, for the same reason. The literals are read off the compiled constants rather
+        // than restated: what this asserts is that the harvest *sees* each name, and the values
+        // are pinned by `theCompiledSettingsCopyStillSaysWhatBothSurfacesUsedToSpell`.
+        expected += [
+            (name: "remindersTitle", literal: CadenceSettingsEmptyStateCopy.remindersTitle, declaredIn: settingsCopy),
+            (
+                name: "remindersSubtitle",
+                literal: CadenceSettingsEmptyStateCopy.remindersSubtitle,
+                declaredIn: settingsCopy
+            ),
+            (name: "contextsTitle", literal: CadenceSettingsEmptyStateCopy.contextsTitle, declaredIn: settingsCopy),
+            (
+                name: "contextsSubtitle",
+                literal: CadenceSettingsEmptyStateCopy.contextsSubtitle,
+                declaredIn: settingsCopy
+            ),
+            (
+                name: "inactiveListsSectionTitle",
+                literal: CadenceSettingsEmptyStateCopy.inactiveListsSectionTitle,
+                declaredIn: settingsCopy
+            ),
+            (
+                name: "inactiveListsTitle",
+                literal: CadenceSettingsEmptyStateCopy.inactiveListsTitle,
+                declaredIn: settingsCopy
+            ),
+            (
+                name: "inactiveListsSubtitle",
+                literal: CadenceSettingsEmptyStateCopy.inactiveListsSubtitle,
+                declaredIn: settingsCopy
+            ),
+            (name: "templatesTitle", literal: CadenceSettingsEmptyStateCopy.templatesTitle, declaredIn: settingsCopy),
+            (
+                name: "templatesSubtitle",
+                literal: CadenceSettingsEmptyStateCopy.templatesSubtitle,
+                declaredIn: settingsCopy
+            )
+        ]
 
         for entry in expected {
             #expect(
@@ -591,6 +773,47 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceNotificationSettingsCopy.enableNotificationsAction == "Enable Notifications")
 
         #expect(CadenceListSettingsCopy.noParentListSubtitle == "No parent list")
+
+        // T-600(b). The four titles carry no full stop and the four subtitles do — macOS's
+        // one-liners disagreed with each other about that, and the shape assertion is the reason
+        // to write these as values rather than only scanning for the expression.
+        #expect(CadenceSettingsEmptyStateCopy.remindersTitle == "No open reminders")
+        #expect(
+            CadenceSettingsEmptyStateCopy.remindersSubtitle
+                == "Reminders you have not completed yet will be summarised here by list."
+        )
+        #expect(CadenceSettingsEmptyStateCopy.contextsTitle == "No active contexts")
+        #expect(
+            CadenceSettingsEmptyStateCopy.contextsSubtitle
+                == "Create one here, then use it when making areas and projects."
+        )
+        #expect(CadenceSettingsEmptyStateCopy.inactiveListsSectionTitle == "Inactive Lists")
+        #expect(CadenceSettingsEmptyStateCopy.inactiveListsTitle == "No completed or archived lists")
+        #expect(
+            CadenceSettingsEmptyStateCopy.inactiveListsSubtitle
+                == "Areas and projects you complete or archive will appear here."
+        )
+        #expect(CadenceSettingsEmptyStateCopy.templatesTitle == "No templates available")
+        #expect(CadenceSettingsEmptyStateCopy.templatesSubtitle == "Template definitions could not be loaded.")
+
+        for title in [
+            CadenceSettingsEmptyStateCopy.remindersTitle,
+            CadenceSettingsEmptyStateCopy.contextsTitle,
+            CadenceSettingsEmptyStateCopy.inactiveListsTitle,
+            CadenceSettingsEmptyStateCopy.templatesTitle,
+            CadenceTagSettingsCopy.emptyCatalogTitle
+        ] {
+            #expect(title.hasSuffix(".") == false, "\"\(title)\" is a title, not a sentence")
+        }
+        for subtitle in [
+            CadenceSettingsEmptyStateCopy.remindersSubtitle,
+            CadenceSettingsEmptyStateCopy.contextsSubtitle,
+            CadenceSettingsEmptyStateCopy.inactiveListsSubtitle,
+            CadenceSettingsEmptyStateCopy.templatesSubtitle,
+            CadenceTagSettingsCopy.emptyCatalogSubtitle
+        ] {
+            #expect(subtitle.hasSuffix("."), "\"\(subtitle)\" is a sentence and needs its full stop")
+        }
     }
 
     // MARK: - Non-vacuity

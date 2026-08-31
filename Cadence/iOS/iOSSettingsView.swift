@@ -313,9 +313,10 @@ struct iOSSettingsView: View {
             iOSSettingsCard {
                 VStack(spacing: 0) {
                     if activeContexts.isEmpty {
-                        iOSSettingsEmptyRow(
-                            title: "No active contexts",
-                            subtitle: "Create one here, then use it when making areas and projects."
+                        iOSSettingsEmptyInlineRow(
+                            systemImage: "square.stack.3d.up",
+                            title: CadenceSettingsEmptyStateCopy.contextsTitle,
+                            subtitle: CadenceSettingsEmptyStateCopy.contextsSubtitle
                         )
                     } else {
                         ForEach(activeContexts) { context in

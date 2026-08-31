@@ -365,32 +365,48 @@ private struct iOSSettingsCategoryRow: View {
     }
 }
 
-struct iOSSettingsEmptyRow: View {
+/// The "nothing here yet" row inside a settings card: a glyph in the shared slot, the thing that
+/// is absent, and one sentence saying what would put something there.
+///
+/// **T-600(a): there were two of these**, drawn in the same card vocabulary, and they had already
+/// drifted. `iOSSettingsEmptyRow` lived here with a 13pt title, a `Theme.dim` subtitle, 6pt of
+/// vertical padding and the glyph **hardcoded to `tray`**; `iOSSettingsEmptyInlineRow` lived down
+/// in `iOSSettingsTemplateAndListSections.swift` with a 14pt title, a `Theme.subdued` subtitle, 4pt
+/// of padding and the glyph as a parameter. One point of drift between two components nobody had
+/// noticed were one.
+///
+/// The parameterised one survives and moved up here, where the shared settings components live.
+/// It is strictly the more capable of the two: it already serves the four cards that pass
+/// `checklist`, `doc.text`, `archivebox` and `tag`, none of which the fixed-`tray` spelling could
+/// have taken without growing exactly the parameter it lacked. *Extends [[T-548]]*.
+struct iOSSettingsEmptyInlineRow: View {
+    let systemImage: String
     let title: String
     let subtitle: String
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "tray")
+            Image(systemName: systemImage)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.dim)
-                .frame(width: 32, height: 32)
+                .frame(width: iOSSettingsMetrics.glyphSlot, height: iOSSettingsMetrics.glyphSlot)
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.text)
+
                 Text(subtitle)
                     .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
+                    .foregroundStyle(Theme.subdued)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
     }
 }
 
