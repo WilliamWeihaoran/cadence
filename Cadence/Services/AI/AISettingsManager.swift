@@ -76,6 +76,19 @@ struct KeychainCredentialStore: AISecretStore {
     }
 }
 
+/// Failures that belong to the settings surface rather than to the Keychain or to OpenAI.
+enum AISettingsError: LocalizedError, Equatable {
+    /// The user pressed Save with nothing typed. See `AISettingsManager.saveAPIKey` (T-574).
+    case emptyAPIKey
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyAPIKey:
+            return "Enter an API key before saving. Removing the saved key is a separate action."
+        }
+    }
+}
+
 @Observable
 final class AISettingsManager {
     static let shared = AISettingsManager()
@@ -120,12 +133,18 @@ final class AISettingsManager {
         return secret?.isEmpty == false ? secret : nil
     }
 
+    /// Saving is never a deletion.
+    ///
+    /// **T-574.** An empty draft used to fall through to `removeAPIKey()`. The API Key field is
+    /// empty *by design* whenever a key is already stored — its placeholder reads "Saved in
+    /// Keychain" rather than the secret — so that made the resting state of the AI settings pane
+    /// one press of **Save API Key** away from destroying the credential, with no confirmation and
+    /// a status line that said "API key removed." only afterwards. Removing the key is its own
+    /// explicit button on both platforms; the two actions are not the same action with different
+    /// input.
     func saveAPIKey(_ key: String) throws {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            try removeAPIKey()
-            return
-        }
+        guard !trimmed.isEmpty else { throw AISettingsError.emptyAPIKey }
         try secretStore.saveSecret(trimmed, account: Key.apiKeyAccount)
         hasAPIKey = true
         statusMessage = "API key saved."

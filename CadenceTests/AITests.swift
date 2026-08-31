@@ -151,3 +151,114 @@ struct AIActionServiceTests {
         #expect(try modelContext.fetch(descriptor).isEmpty)
     }
 }
+
+/// **T-574: pressing Save with the field empty must never delete the saved key.**
+///
+/// The AI settings card shows an *empty* `SecureField` whenever a key is stored — the placeholder
+/// reads "Saved in Keychain", because the secret itself is never rendered back. So "empty draft" is
+/// the resting state of the screen, not an unusual one, and routing it to `removeAPIKey()` made
+/// **Save API Key** a one-click credential wipe on the pane's default state. macOS had no guard at
+/// all; iOS disabled its Save button but leaned on the view for the whole of the protection.
+///
+/// Both halves are pinned here: the manager refuses an empty save whatever calls it, and each
+/// platform's Save control is dead while the draft is blank so the refusal is not something the
+/// user has to discover by triggering it.
+@MainActor
+struct AIAPIKeySaveGuardTests {
+
+    /// The behaviour, on a real manager over a real (in-memory) secret store: a stored key
+    /// survives a blank save, a whitespace-only save, and the error each one reports.
+    @Test func anEmptyDraftCannotReachRemovalAndLeavesTheStoredKeyIntact() throws {
+        try withTemporaryDefaults("CadenceTests.ai.emptySave") { defaults in
+            let secretStore = InMemorySecretStore()
+            let manager = AISettingsManager(secretStore: secretStore, defaults: defaults)
+
+            try manager.saveAPIKey("sk-live")
+            #expect(manager.hasAPIKey)
+
+            for blank in ["", "   ", "\n\t "] {
+                #expect(throws: AISettingsError.emptyAPIKey) {
+                    try manager.saveAPIKey(blank)
+                }
+                #expect(
+                    try manager.loadAPIKey() == "sk-live",
+                    "saving \(blank.debugDescription) destroyed the stored API key"
+                )
+                #expect(manager.hasAPIKey, "saving \(blank.debugDescription) cleared the key status")
+                #expect(
+                    manager.statusMessage != "API key removed.",
+                    "saving \(blank.debugDescription) reported a removal"
+                )
+            }
+
+            // Removal is still reachable — deliberately, and only through its own function.
+            try manager.removeAPIKey()
+            #expect(try manager.loadAPIKey() == nil)
+            #expect(manager.hasAPIKey == false)
+        }
+    }
+
+    /// A save is not a delete. Scoped to `saveAPIKey`'s own body so the assertion cannot be
+    /// satisfied by `removeAPIKey`'s declaration twelve lines below it.
+    @Test func theSaveFunctionDoesNotReachTheRemovalPathAtAll() throws {
+        let source = try aiKeyGuardStrippingComments(
+            aiKeyGuardSourceFile("Cadence/Services/AI/AISettingsManager.swift")
+        )
+        let body = try cadenceFunctionBody("func saveAPIKey(_ key: String) throws", in: source)
+
+        #expect(
+            !body.contains("removeAPIKey"),
+            "an empty draft routes back to key removal from inside saveAPIKey"
+        )
+        #expect(
+            body.contains("AISettingsError.emptyAPIKey"),
+            "saveAPIKey no longer refuses an empty draft"
+        )
+    }
+
+    /// Both Save controls are dead while the draft is blank, and both decide it by trimming — a
+    /// button that stays live on `"   "` and a guard that rejects it are two different answers to
+    /// the same question.
+    @Test func neitherPlatformOffersALiveSaveButtonOnABlankDraft() throws {
+        let expectations = [
+            "Cadence/macOS/Views/SettingsSectionViews.swift": [
+                ".disabled(isAPIKeyDraftEmpty)",
+                "aiAPIKeyDraft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty",
+            ],
+            "Cadence/iOS/iOSSettingsTemplateAndListSections.swift": [
+                "isDisabled:aiAPIKeyDraft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty",
+            ],
+        ]
+
+        for (path, needles) in expectations {
+            let source = try aiKeyGuardStrippingComments(aiKeyGuardSourceFile(path))
+            // Non-vacuity: this really is the AI settings card, read from disk, before any
+            // absence or presence claim is made about it.
+            #expect(source.contains("Save API Key") || source.contains("Save Key"), "\(path) is not the AI key card")
+            let compact = source.filter { !$0.isWhitespace }
+            for needle in needles {
+                #expect(compact.contains(needle), "\(path) no longer guards Save with \(needle)")
+            }
+        }
+    }
+}
+
+private func aiKeyGuardSourceFile(_ relativePath: String) throws -> String {
+    let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+}
+
+private func aiKeyGuardStrippingComments(_ source: String) throws -> String {
+    let withoutBlocks = try NSRegularExpression(pattern: "/\\*.*?\\*/", options: [.dotMatchesLineSeparators])
+    let stripped = withoutBlocks.stringByReplacingMatches(
+        in: source,
+        range: NSRange(source.startIndex..<source.endIndex, in: source),
+        withTemplate: ""
+    )
+    return stripped
+        .components(separatedBy: .newlines)
+        .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+        .joined(separator: "\n")
+}

@@ -217,6 +217,11 @@ struct SettingsAISection: View {
                     }
 
                     HStack(spacing: 10) {
+                        // Dead on an empty draft, which is how iOS's Save button already behaved
+                        // (`iOSActionButton(isDisabled:)`, dimmed to 0.52 rather than restyled).
+                        // The field above is empty whenever a key is saved — its placeholder is
+                        // "Saved in Keychain" — so a live Save here meant the pane's *resting*
+                        // state deleted the credential on one press (T-574).
                         Button("Save API Key") {
                             do {
                                 try aiSettingsManager.saveAPIKey(aiAPIKeyDraft)
@@ -232,6 +237,8 @@ struct SettingsAISection: View {
                         .padding(.vertical, 8)
                         .background(Theme.blue)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .opacity(isAPIKeyDraftEmpty ? 0.52 : 1)
+                        .disabled(isAPIKeyDraftEmpty)
 
                         Button(aiSettingsManager.isTestingConnection ? "Testing..." : "Test Connection") {
                             Task { await aiSettingsManager.testConnection() }
@@ -268,6 +275,13 @@ struct SettingsAISection: View {
         .onAppear {
             aiSettingsManager.refreshKeyStatus()
         }
+    }
+
+    /// Whitespace is not a key. Trimmed the same way `AISettingsManager.saveAPIKey` trims, so the
+    /// button's live state and the guard behind it cannot come to disagree about what "empty"
+    /// means.
+    private var isAPIKeyDraftEmpty: Bool {
+        aiAPIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func aiDisclosureRow(icon: String, title: String, detail: String) -> some View {
