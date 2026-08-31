@@ -38,20 +38,36 @@ nonisolated enum iOSCalendarTimelineMetrics {
 
     // MARK: The hour ladder
 
-    /// The resting height of one hour, before `CadenceCalendarZoom` multiplies it. 58 is
-    /// `iOSSchedulePanel.rowHeight` — the app's one answer to how tall an hour on an iOS timeline
-    /// is, now given to both of the surfaces that ask.
+    /// The resting height of one hour, before `CadenceCalendarZoom` multiplies it — the app's one
+    /// answer to how tall an hour on an iOS timeline is, for both of the surfaces that ask.
+    ///
+    /// **This used to say "58 is `iOSSchedulePanel.rowHeight`", and it was not (T-588.)** No such
+    /// reference existed: `iOSSchedulePanel.rowHeight` was a second hand-typed `58` in
+    /// `iOSTodaySchedulePanel.swift`, and the sentence here was an invariant with nothing enforcing
+    /// it. It is a real read now, and `theTodayTimelineReadsItsHourFiguresFromHere` fails the build
+    /// if a third copy appears.
     static let hourHeight: CGFloat = 58
 
     /// The `12 AM` labels down the rail. The larger of the two it was, because the rail is a fixed
     /// column of chrome rather than something competing for room: at 11pt `12 AM` measures roughly
     /// 31pt, which clears `CadenceCalendarWeekGridLayout.timeRailWidth`'s narrow spelling of 48 with
     /// the inset below to spare.
+    ///
+    /// Today's timeline reads this too, having carried its own `rowHeight > 50 ? 11 : 10` — a ramp
+    /// whose lower branch nothing could reach, because that pane's row is always this file's
+    /// `hourHeight`.
     static let hourLabelSize: CGFloat = 11
 
     /// Between an hour label and the rail's closing hairline. The narrow rail is the one with no
     /// slack in it and it already used 8; the wide rail loses nothing by matching, since the label
     /// is right-aligned and the inset is measured from the same edge either way.
+    ///
+    /// **The one figure the duplication had already pulled apart (T-588):** Today's timeline drew
+    /// its own `9` against this `8`, on the same rail, for the same label. 8 wins on evidence
+    /// rather than on seniority — it is the value with a measurement behind it
+    /// (`theHourLabelFitsTheNarrowRail` checks the label against the narrow rail's 48) and the
+    /// value the Calendar grid draws at both widths, so keeping 9 would have meant moving the
+    /// surface that measured to match the surface that did not.
     static let hourLabelTrailingInset: CGFloat = 8
 
     // MARK: The day header band

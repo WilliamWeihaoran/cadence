@@ -189,7 +189,13 @@ struct iOSSchedulePanel: View {
         }
     }
 
-    private var rowHeight: CGFloat { 58 }
+    /// **Read, not re-typed (T-588).** `iOSCalendarTimelineMetrics.hourHeight`'s own doc already
+    /// claimed this: *"58 is `iOSSchedulePanel.rowHeight` — the app's one answer to how tall an
+    /// hour on an iOS timeline is."* It was a second hand-typed 58, and prose is not a reference —
+    /// the Calendar grid and this pane draw the same `iOSTimelineTaskBlock`, so a change to one 58
+    /// would have silently made the same scheduled task a different number of points tall on the
+    /// two timed surfaces of one iPad. `iOSCalendarMetricsTests` holds it to the read.
+    private var rowHeight: CGFloat { iOSCalendarTimelineMetrics.hourHeight }
 
     /// Opens the pane near the hour that matters. The grid is the whole day now, and a scroll view
     /// opens at the top of its content — so left alone this pane would open at midnight, which is
@@ -379,11 +385,24 @@ private struct iOSScheduleHourRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
+            // The hour rail, at the Calendar grid's own figures rather than a second copy of them
+            // (T-588). Both were `rowHeight > 50 ? … : …` ramps, and neither had a reachable lower
+            // branch: `rowHeight` is `iOSCalendarTimelineMetrics.hourHeight`, 58, on every pane
+            // this view is ever built on — the same dead compact ramp this file's own header
+            // records deleting from `rowHeight` itself, three lines further down the same row.
+            //
+            // **The trailing inset was 9 here against the rail's 8**, which is the drift a stated
+            // invariant with nothing enforcing it produces. 8 is the figure that stays: it is what
+            // `iOSCalendarTimelineMetrics.hourLabelTrailingInset` documents (the narrow rail is
+            // the one with no slack in it, and `theHourLabelFitsTheNarrowRail` measures the label
+            // against it), it is what the Calendar's rail already draws on both platforms' widths,
+            // and taking 9 instead would mean moving the surface with the measurement to match the
+            // surface without one. The label shifts 1pt right on Today's timeline.
             Text(hourLabel)
-                .font(.system(size: rowHeight > 50 ? 11 : 10, weight: .medium))
+                .font(.system(size: iOSCalendarTimelineMetrics.hourLabelSize, weight: .medium))
                 .foregroundStyle(isSelectedForCreate ? Theme.blue : Theme.dim.opacity(hour % 3 == 0 ? 0.9 : 0.45))
-                .frame(width: rowHeight > 50 ? 50 : 42, alignment: .trailing)
-                .padding(.trailing, rowHeight > 50 ? 9 : 7)
+                .frame(width: 50, alignment: .trailing)
+                .padding(.trailing, iOSCalendarTimelineMetrics.hourLabelTrailingInset)
                 .padding(.top, -6)
 
             VStack(alignment: .leading, spacing: 5) {

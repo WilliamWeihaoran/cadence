@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -97,6 +98,48 @@ struct iOSCalendarMetricsTests {
         )
     }
 
+    /// **T-588: the read that `hourHeight`'s doc used to only claim.**
+    ///
+    /// Today's timeline (`iOSSchedulePanel`, in `iOSTodaySchedulePanel.swift`) is inside
+    /// `#if os(iOS)` and cannot be referenced from this macOS-built target, so
+    /// `anHourIsOneHeightOnEveryTimedSurface` above can only pin *this* file's 58 and says so in
+    /// its own doc — "`iOSSchedulePanel.rowHeight` is the other half and cannot be read from
+    /// here". That is precisely how the other half came to be a second hand-typed literal, with
+    /// three figures duplicated and one of them (the trailing inset, 9 against 8) already drifted.
+    ///
+    /// A reference cannot be pinned by a value comparison the target cannot compile, so this pins
+    /// the *text*: the panel names this type for all three, and holds no bare literal that a
+    /// fourth copy would have to be spelled as. Comments are blanked first — `strippingComments`
+    /// and not `codeOnly`, because `codeOnly` blanks string literals too and half of what is being
+    /// searched for here is prose-adjacent.
+    @Test func theTodayTimelineReadsItsHourFiguresFromHere() throws {
+        let panel = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
+        )
+
+        // Non-vacuity: the read reached the right file, and the comment stripper left the code.
+        #expect(panel.contains("struct iOSSchedulePanel: View"))
+        #expect(panel.contains("private var rowHeight: CGFloat"))
+
+        #expect(panel.contains("iOSCalendarTimelineMetrics.hourHeight"))
+        #expect(panel.contains("iOSCalendarTimelineMetrics.hourLabelSize"))
+        #expect(panel.contains("iOSCalendarTimelineMetrics.hourLabelTrailingInset"))
+
+        // The three literals the references replaced. `58` is the hour, `11`/`10` the label size
+        // and `9`/`7` the inset; the row's own `rowHeight > 50` ramp is what carried the dead
+        // halves, and it is gone with them.
+        #expect(!panel.contains("rowHeight > 50"))
+        #expect(!panel.contains("rowHeight: CGFloat { 58 }"))
+        // Positive and counted rather than only negative: a needle that has stopped matching reads
+        // as "no offenders" against every `!contains` above, which is the hollow half of a scan.
+        #expect(
+            CadenceSourceScan.matchCount(
+                "rowHeight: CGFloat \\{ iOSCalendarTimelineMetrics\\.hourHeight \\}",
+                in: panel
+            ) == 1
+        )
+    }
+
     /// The hour rail's width still ramps — it is in `CadenceCalendarWeekGridLayout`, where it is
     /// about how much of the pane the chrome takes from the columns. The label inside it does not,
     /// so the narrow rail is the one that has to hold it: `12 AM` at 11pt measures roughly 31pt.
@@ -107,6 +150,55 @@ struct iOSCalendarMetricsTests {
         #expect(
             approximateLabelWidth + iOSCalendarTimelineMetrics.hourLabelTrailingInset < narrowRail
         )
+    }
+
+    // MARK: - The month grid's carried days
+
+    /// **T-568: one dimming layer, at the value the other platform measured.**
+    ///
+    /// The full-size iOS month cell dimmed a day carried in from a neighbouring month three times
+    /// over — `0.58` on the numeral, `0.18 → 0.08` on the badge behind it, and `.opacity(0.52)` on
+    /// the whole cell — and SwiftUI multiplies, so the 12pt number landed at **0.30**. macOS had
+    /// already stated one token for this and written the floor down beside it: 0.35 gives 1.45:1,
+    /// at which a 12pt numeral no longer resolves.
+    ///
+    /// Both halves are pinned here because either alone can go quietly green. The value assertions
+    /// cannot see a *fourth* multiplied layer added to a view body; the source assertions cannot
+    /// see the token being retuned to 0.30. `Cadence/iOS/` is inside `#if os(iOS)` and invisible to
+    /// this target, which is why the second half has to read text at all.
+    @Test func aCarriedMonthDayIsDimmedOnceAtTheMeasuredToken() throws {
+        // The token, and the floor its own doc measures. Not `>= 0.35`: 0.35 *is* the value that
+        // stops resolving.
+        #expect(CadenceCalendarDayBadge.outOfMonthLabelOpacity == 0.50)
+        #expect(CadenceCalendarDayBadge.outOfMonthLabelOpacity > 0.35)
+
+        // macOS reads it rather than holding a second copy — the token moved out of
+        // `CalendarMonthDayEmphasis` so that iOS could compile it at all.
+        #expect(
+            CalendarMonthDayEmphasis.outOfMonth.dateLabelColor
+                == Theme.dim.opacity(CadenceCalendarDayBadge.outOfMonthLabelOpacity)
+        )
+        // And macOS's separation is still the plate, which is the shape iOS was moved onto.
+        #expect(
+            CalendarMonthDayEmphasis.outOfMonth.cellBackground
+                != CalendarMonthDayEmphasis.inMonth.cellBackground
+        )
+
+        let grid = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMonthViews.swift")
+        )
+
+        // Non-vacuity: the right file, past the comment stripper, with the term the negatives below
+        // are looking for still present in it.
+        #expect(grid.contains("private struct iOSCalendarMonthDayCell: View"))
+        #expect(grid.contains("isCurrentMonth"))
+
+        #expect(grid.contains("Theme.dim.opacity(CadenceCalendarDayBadge.outOfMonthLabelOpacity)"))
+        // The plate, not a fade, is what carries "not this month" — a cell-wide opacity also takes
+        // the today ring and the event chips down with the numeral.
+        #expect(grid.contains("isCurrentMonth ? Theme.surface : Theme.bg"))
+        #expect(CadenceSourceScan.matchCount("\\.opacity\\(isCurrentMonth", in: grid) == 0)
+        #expect(!grid.contains("isCurrentMonth ? 0.18 : 0.08"))
     }
 
     // MARK: - The toolbar
