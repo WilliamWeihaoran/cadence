@@ -807,32 +807,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Use `strippingComments`, never `codeOnly` — `codeOnly` blanks string literals too, which is what
   made an earlier copy scan permanently and silently green.
 
-- [T-574] **CLOSED 2026-08-31 (`54cc616`).** Premise reproduced exactly. `saveAPIKey` now throws
-  `AISettingsError.emptyAPIKey` on an empty/whitespace draft instead of falling through to
-  `removeAPIKey()`; macOS's Save button is additionally disabled and dimmed on a blank draft, matching
-  what `iOSActionButton(isDisabled:)` already did. **Both halves were fixed deliberately** — a disabled
-  button is not testable in isolation, and the credential loss lived in the manager, so fixing only the
-  button would have left the hazard reachable from any other caller. `AIAPIKeySaveGuardTests` pins the
-  stored key surviving `""`, `"   "` and `"\n\t "`, that `saveAPIKey`'s body never reaches the removal
-  path, and that neither platform offers a live Save on a blank draft. Two mutations, three tests
-  killed, each confirmed compiled.
-
-- [T-575] **CLOSED 2026-08-31 (`e509ae2`).** macOS's one-click `confirmationDialog` replaced by
-  `SettingsDataResetConfirmationSheet` behind `PrivacyDataResetConfirmation.authorizes` — **the shared
-  gate now has two callers instead of one.** iOS untouched, so the guarded path was raised to meet the
-  unguarded one rather than the reverse. The doc comment calling the split deliberate, and the matching
-  sentence in `docs/app-review-notes.md`, were corrected rather than left asserting machinery the code
-  no longer has — the exact defect class [[T-565]] exists to catch. `AppStoreReviewReadinessTests`' pin
-  on "requires the word DELETE to be typed" still passes. One mutation, one test killed.
-
-- [T-576] **CLOSED 2026-08-31 (`19fd461`).** Premise reproduced on **both** platforms. T-253's
-  hook was **generalised rather than copied**: new `Cadence/Shared/CadenceAuthorizationLifecycle.swift`
-  takes a refresh *closure* instead of a `RemindersManager`, because the two managers share no protocol
-  and disagree on async-ness — but agree on *when*. That is the right seam. All four reminders call
-  sites are unchanged; `notificationsAuthorizationLifecycle` is new on both platforms, so both panes now
-  re-derive on appear **and** on foreground. Reminders file keeps a tombstone. Two mutations, three
-  tests killed.
-
 - [T-577] **macOS Settings > Lists shows a nameless row with a blank second line.**
   `SettingsListManagementSections.swift:540,555,557`. Two gaps: (a) macOS passes `area.name`/
   `project.name` raw where iOS falls back to `CadenceTitleNormalization.default*Name`; (b) macOS's
@@ -985,30 +959,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   row, and the sighted one is the shared name. *Adjacent to [[T-539]] but distinct*: that is a
   `TextField` **prompt** deliberately staying a noun phrase; this is an **accessibility label over a
   value**, which T-539's own resolution says should read the shared display title.
-
-- [T-591] **CLOSED 2026-08-31 (`1f53aa8`).** Compound key now split on
-  `CadenceTaskDropSupport.separator` and applied part by part; the parse extracted as the pure
-  `TasksPanelSupport.dropAssignments(forDropKey:)`, testable with no `ModelContext`. **The half that
-  mattered more:** `assignTask` reports whether anything resolved and `handleSectionDrop` returns it,
-  so an unresolvable key now bounces the row instead of swallowing it. `handleTaskDrop` still returns
-  `true` deliberately (the reorder ran either way) and says so. 8 tests; two mutations, **both
-  confirmed compiled** — restoring the parse bug killed 6, restoring the unconditional `true` killed
-  exactly 1, which is the attribution that matters: the silent-accept guard has its own test,
-  independent of the parse. Follow-on filed as [[T-607]].
-
-- [T-592] **CLOSED 2026-08-31 (`c39ff74`).** `isEmptyState` now also requires both past-due
-  summary arrays empty, matching `iOSTodayTaskSections`, with iOS's reasoning carried into a comment.
-  Mutation killed `theMacTodayIsNotEmptyWhileAPastDueCardIsOnScreen` alone; the test also asserts a
-  genuinely empty day still reports empty, so the guard cannot be satisfied by never returning `true`.
-  **One thing the ticket did not have:** macOS needs no rollover-notice clause, unlike iOS's guard —
-  the banner's rows are `overdoTasks`, which `isEmptyState` already counted. The agent recorded that in
-  the comment rather than copying a clause that would be dead here.
-
-- [T-593] **CLOSED 2026-08-31 (`7dea6b5`).** All three sites — rows, Completed rows and the
-  drop indicator — now read `TaskListDisplayMetrics.taskTrailingInset`, the sibling's own constant
-  rather than a restated `12`. Leading stays 16, extracted as `todayRowLeadingInset` with a comment on
-  why it differs from the shared 52. **Build-verified only, not looked at** — no test pins it and the
-  app was not launched. Convergence proposed as [[T-608]], deliberately not done.
 
 - [T-594] **Six controls on every macOS Today row have no accessible name — including the completion
   circle.** `TasksPanelComponents.swift:205` (`.help("Start focus session")` with no label), `:508`
@@ -1209,6 +1159,57 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   question — do them together or decide T-564 first, but do not restructure the same code twice.
 
 ## Done
+
+- [T-574] **CLOSED 2026-08-31 (`54cc616`).** Premise reproduced exactly. `saveAPIKey` now throws
+  `AISettingsError.emptyAPIKey` on an empty/whitespace draft instead of falling through to
+  `removeAPIKey()`; macOS's Save button is additionally disabled and dimmed on a blank draft, matching
+  what `iOSActionButton(isDisabled:)` already did. **Both halves were fixed deliberately** — a disabled
+  button is not testable in isolation, and the credential loss lived in the manager, so fixing only the
+  button would have left the hazard reachable from any other caller. `AIAPIKeySaveGuardTests` pins the
+  stored key surviving `""`, `"   "` and `"\n\t "`, that `saveAPIKey`'s body never reaches the removal
+  path, and that neither platform offers a live Save on a blank draft. Two mutations, three tests
+  killed, each confirmed compiled.
+
+- [T-575] **CLOSED 2026-08-31 (`e509ae2`).** macOS's one-click `confirmationDialog` replaced by
+  `SettingsDataResetConfirmationSheet` behind `PrivacyDataResetConfirmation.authorizes` — **the shared
+  gate now has two callers instead of one.** iOS untouched, so the guarded path was raised to meet the
+  unguarded one rather than the reverse. The doc comment calling the split deliberate, and the matching
+  sentence in `docs/app-review-notes.md`, were corrected rather than left asserting machinery the code
+  no longer has — the exact defect class [[T-565]] exists to catch. `AppStoreReviewReadinessTests`' pin
+  on "requires the word DELETE to be typed" still passes. One mutation, one test killed.
+
+- [T-576] **CLOSED 2026-08-31 (`19fd461`).** Premise reproduced on **both** platforms. T-253's
+  hook was **generalised rather than copied**: new `Cadence/Shared/CadenceAuthorizationLifecycle.swift`
+  takes a refresh *closure* instead of a `RemindersManager`, because the two managers share no protocol
+  and disagree on async-ness — but agree on *when*. That is the right seam. All four reminders call
+  sites are unchanged; `notificationsAuthorizationLifecycle` is new on both platforms, so both panes now
+  re-derive on appear **and** on foreground. Reminders file keeps a tombstone. Two mutations, three
+  tests killed.
+
+- [T-591] **CLOSED 2026-08-31 (`1f53aa8`).** Compound key now split on
+  `CadenceTaskDropSupport.separator` and applied part by part; the parse extracted as the pure
+  `TasksPanelSupport.dropAssignments(forDropKey:)`, testable with no `ModelContext`. **The half that
+  mattered more:** `assignTask` reports whether anything resolved and `handleSectionDrop` returns it,
+  so an unresolvable key now bounces the row instead of swallowing it. `handleTaskDrop` still returns
+  `true` deliberately (the reorder ran either way) and says so. 8 tests; two mutations, **both
+  confirmed compiled** — restoring the parse bug killed 6, restoring the unconditional `true` killed
+  exactly 1, which is the attribution that matters: the silent-accept guard has its own test,
+  independent of the parse. Follow-on filed as [[T-607]].
+
+- [T-592] **CLOSED 2026-08-31 (`c39ff74`).** `isEmptyState` now also requires both past-due
+  summary arrays empty, matching `iOSTodayTaskSections`, with iOS's reasoning carried into a comment.
+  Mutation killed `theMacTodayIsNotEmptyWhileAPastDueCardIsOnScreen` alone; the test also asserts a
+  genuinely empty day still reports empty, so the guard cannot be satisfied by never returning `true`.
+  **One thing the ticket did not have:** macOS needs no rollover-notice clause, unlike iOS's guard —
+  the banner's rows are `overdoTasks`, which `isEmptyState` already counted. The agent recorded that in
+  the comment rather than copying a clause that would be dead here.
+
+- [T-593] **CLOSED 2026-08-31 (`7dea6b5`).** All three sites — rows, Completed rows and the
+  drop indicator — now read `TaskListDisplayMetrics.taskTrailingInset`, the sibling's own constant
+  rather than a restated `12`. Leading stays 16, extracted as `todayRowLeadingInset` with a comment on
+  why it differs from the shared 52. **Build-verified only, not looked at** — no test pins it and the
+  app was not launched. Convergence proposed as [[T-608]], deliberately not done.
+
 
 - [T-352] **CLOSED 2026-08-31 (`5ae916a`).** Premise confirmed and then *inverted*: no persistence was
   added, per the user's decision, because the defect was never a missing feature — it was a comment in
