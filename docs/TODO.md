@@ -129,6 +129,26 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 - [T-122] *(rechecked 2026-08-30 at `a1556ae`: **do not flip, and the reason is now measured on both platforms.** macOS Swift 6 builds but costs **10 warnings** in 6 files against a zero-warning baseline — a flip that produces warnings is not done, so macOS fails on its own merits even setting iOS aside. **Step (1) is now solved**: the one blocking error was an erased `KeyPath` table, fixed with `& Sendable` — one word, **no `nonisolated(unsafe)`** — verified on macOS Swift 6, iOS Swift 5, macOS Swift 5 and the export suite, and it is the only `static let ... KeyPath<` in the app, so that is complete rather than a sample. Landed; inert under Swift 5. Steps (2)-(4) untouched.)* **Flip `SWIFT_VERSION` to 6.0 — now an open question rather than a blocked one.** `D-95`
+  *(measured 2026-08-31, timeboxed probe in an isolated `git archive HEAD` tree; nothing landed.
+  **This ticket's "611 -> 0" no longer holds: it is 775 -> 6.** The suite grew. Naive flip of
+  `CadenceTests` to 6.0 = 775 strict errors / 0 crashes, all one root cause — a nonisolated `@Test`
+  calling app API that is MainActor by default (472 static-method calls, 119 properties, 68 static
+  properties, 49 in `#expect` autoclosures, 27 key paths, the rest instance/init/default-value).
+  Adding `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` to `CadenceTests` collapses that to **6 errors +
+  1 warning in 3 files**: `TemporaryDefaultsSupport.swift` (4, the `CadenceSourceScan` helpers),
+  `CalendarDateMemoryTests.swift` (2, a `UserDefaults` subclass whose overrides now differ in
+  isolation from what they override), `MarkdownTableHostedEditingTests.swift` (1 warning).
+  **`CadenceWidgets` is free today: 0 errors, 0 warnings.** The **app target is still a don't** — it
+  builds clean (0 errors) but throws **10 warnings** against a zero-warning baseline, each a real
+  design question about where a callback runs: 3 x `TimelineDropInteractionSupport.swift`,
+  3 x `QuickTaskPanelController.swift`, and one each in `CalendarManager.swift`,
+  `CadenceMCPRefreshCoordinator.swift`, `CalendarBoardDayColumnSupportViews.swift`,
+  `CadenceRemindersManager.swift`. Estimate: widgets free, tests an afternoon, app 2-3 days.
+  Caveat recorded rather than hidden: the tests probe was a **compile** measurement only. No scoped
+  test run was done, and `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` makes every `@Test` main-actor,
+  which is a behavioural change to the suite. Budget a full `CadenceTests` run before believing it.
+  Step (1) is confirmed landed: `CadenceDataExportService.swift:228` is now
+  `[String: any KeyPath<CadenceArchive, Int> & Sendable]`.)*
   **DECIDED 2026-08-26: investigate and report, do not flip.** The user's call. Measure each target's
   error and warning count under Swift 6 and re-test whether the blocker is still real against the
   current toolchain, then bring a recommendation. A flip that adds concurrency warnings destroys the
@@ -227,6 +247,15 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `AGENTS.md`'s new bullet (after the T-236 test-host mutex entry) for the exact tell command.
 
 - [T-115] *(re-confirmed 2026-08-30 at `a1556ae`: **still blocked, and the toolchain never moved** — Xcode 26.6/17F113, the same build the original measurement used, so there was nothing new to test against. The frontend abort reproduces in **both** compilation modes with a byte-identical stack. **Two conflicting reports from this session are now explained and neither was flaky**: the "IRGen abort in `iOSTaskRowActionViews.swift`" was a **mis-attribution** — that file never appears on an `IRGenRequest` or `While emitting` line and is not even a `-primary-file` of the crashing invocation; the crashing file is `iOSCalendarView.swift`. And the "clean, no abort" run was a **Swift 5** build, so it never tested this condition.)* **The iOS Swift 6 flip is blocked by a toolchain bug, not app code.** With `D-86`'s three
+  *(re-measured 2026-08-31: **premise still reproduces, byte-for-byte. Not disproved.** Toolchain
+  unchanged at Xcode 26.6 / 17F113, so there was nothing new to test against. iOS Simulator build with
+  the app at `SWIFT_VERSION=6.0` + `SWIFT_COMPILATION_MODE=wholemodule`: **0 errors, 0 warnings,
+  2 `please submit a bug report` crashes**, BUILD FAILED, exit 65. Crash signature matches the ticket:
+  `IRGenSILFunction::visitFullApplySite` -> `SyncCallEmission::setArgs` -> `SmallVectorBase::grow_pod`
+  -> `report_at_maximum_capacity`, while emitting the `String` `@isolated(any)` reabstraction thunk
+  `@$sSSScA_pSgIeAghgg_SSIeAghn_TR` — exactly the thunk this ticket predicted for whole-module mode.
+  Nothing to fix in Cadence; recheck on the next Xcode bump. **Textbook case of the strict-error trap:
+  the error count on that build is 0 and it is a total failure.**)*
   **DECIDED 2026-08-26: investigate and report, do not flip.** The user's call. Measure each target's
   error and warning count under Swift 6 and re-test whether the blocker is still real against the
   current toolchain, then bring a recommendation. A flip that adds concurrency warnings destroys the
@@ -724,6 +753,31 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   keyboard-dismiss gesture cannot be exercised because *"the simulator suppresses the software keyboard while
   a Mac keyboard is attached"*. Establish which of the rest a simulator can cover and shorten the list.
 
+
+- [T-562] **The first-ever UI test run fails: no seeded sidebar list is visible.** Measured 2026-08-31,
+  immediately after the user granted the macOS automation authorisation that [[T-531]] was blocked on.
+  `Testing started` now reaches real tests, so the gate is open and T-531's blocker is cleared.
+  `testLaunchesToTodayWithSeededSidebarLists` finds `sidebar.destination.today` but then fails at
+  `CadenceUITests.swift:23` after five retries over 5s waiting for `sidebar.list.area.alpha-area`.
+  The other two UI tests skipped (they need `CADENCE_RUN_INTERACTIVE_UI_TESTS=1`).
+  **Do not assume this is a regression.** `CadenceUITests.swift` was last touched in `0dc7d3a`, long
+  before batches 1-10, and the target has been dark that entire time -- so this test may never have
+  passed. Establish that first; "it never worked" and "we broke it" need different fixes.
+  What is already ruled out: the identifier is derived, not typed
+  (`SidebarSupportViews.swift:353` builds `sidebar.list.\(kind.accessibilityFragment).\(slug(label))`,
+  and "Alpha Area" slugs to `alpha-area`); there is no `DisclosureGroup`/collapsed section around the
+  row; the seeder inserts all three lists under a context and does `try? modelContext.save()`
+  (`CadenceUITestSupport.swift:29-44`); `prepareAppState` is wired at `macOSRootView.swift:102`.
+  **Leading hypothesis, and it is cheap to test: the identical bundle id.** `/Applications/Cadence.app`
+  is `com.haoranwei.Cadence` **build 16** -- the same id XCUITest launches ("Open com.haoranwei.Cadence").
+  The runner may be attaching to the user's installed release app instead of the freshly built debug
+  one. Confirm which binary actually launched before theorising further.
+  Second hypothesis: the lists are seeded but never reach the sidebar's data source -- adjacent to
+  [[T-558]] and [[T-559]], though note these seeded lists *do* have a context, so it is not the
+  context-less path those tickets describe.
+  Safety, already checked: the user's real store was NOT written -- `~/Library/Containers/com.haoranwei.Cadence/`
+  Application Support is still dated 2026-08-19, untouched by the run. The per-run
+  `CADENCE_UI_TEST_STORE_ID` isolation held. Keep it that way.
 
 ## Done
 
