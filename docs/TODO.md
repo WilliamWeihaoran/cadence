@@ -474,7 +474,13 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-497] **Tier 3 of the condemned `try? save()` sites — 2 left of the original 12.**
+- [T-497] *(**re-scoped 2026-08-31 by [[T-566]]: it is 4 sites, not 2.** The widened
+  save-commit detector follows a call one frame down, which the old pattern structurally could not —
+  it needed a literal `try?` at the call site. The 2 new sites are
+  `iOSMarkdownReferenceSupport.swift` `body` (a third instance of "flush an in-place edit, then close",
+  blocked on the same undecided question as the original two) and
+  `KanbanCardMetaSupportViews.swift` `select` (popover closes over a swallowed `moveToContainer`; not
+  blocked on anything, just out of scope then). Both carried as exemptions with reasons.)* **Tier 3 of the condemned `try? save()` sites — 2 left of the original 12.**
   **Tier 1 and Tier 2 closed 2026-08-30** (7 sites, each exemption entry deleted with its fix, pinned by
   `CadenceTagAndNoteCommitSurfaceTests` — 3 behavioural, 5 source-shape, 10 mutations all killed by
   named tests). Two things that tiering did not predict: `openEventNote` **could not un-insert blindly**,
@@ -853,23 +859,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   below are redundant and the file cannot be right both ways. **Decide the convention for this file**
   rather than patching one line.
 
-- [T-566] **iOS: saving a time Block closes the sheet even when the save is refused.**
-  `iOSCalendarBundleDetailSheet.swift:71-74` -> `:271-280`. `Button("Save") { save(); dismiss() }`;
-  `save()` ends in `try? modelContext.save()` (`CadenceTaskMutationSupport.swift:878`). A refused write
-  closes the sheet exactly as a successful one does. **The Delete button ten lines above already does
-  this correctly** (T-322), as does the sibling create sheet (T-471).
-  **Important:** invisible to `CadenceSaveCommitDisciplineTests` because its pattern needs a literal
-  `try?` at the call site and the swallow is one frame down — so **[[T-497]]'s "2 sites left" is an
-  undercount by mechanism, not by oversight.** Widen the detector as part of this.
-
-- [T-567] **Creating a Block with no title names it "Task Bundle" — a word the app never says.**
-  `iOSCalendarQuickCreateSheet.swift:74-75` -> `CadenceTaskMutationSupport.swift:840`. `canCreate`
-  returns `true` unconditionally for `.bundle` (Task and Event both require a title), and the fallback
-  literal is "Task Bundle". Everything the user sees calls it a **Block**: the segment, "Block title",
-  "Edit Block", "Delete Block", "No tasks in this block". Two taps from an empty slot produces a block
-  called "Task Bundle" on the grid, in the month chip and in the agenda. macOS has the same literal
-  (`TimelineDayCanvas.swift:258`) — fix both.
-
 - [T-568] **iOS month grid: neighbouring-month days are dimmed three times over, below the contrast
   floor macOS wrote down.** `iOSCalendarMonthViews.swift:413` with `:323` and `:444` — `0.58` on the
   label, `0.18->0.08` on the badge, *and* `.opacity(0.52)` on the whole cell. SwiftUI multiplies: the
@@ -877,13 +866,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   *"0.35 gives 1.45:1, at which a 12pt numeral no longer resolves"*
   (`CalendarPageMonthGridSupport.swift:241-252`). The whole-cell opacity also fades the today ring and
   the chips, which macOS deliberately avoids by moving the *plate*. **The user picks the final value.**
-
-- [T-569] **A task titled with only spaces draws as a blank line on the calendar.**
-  `iOSCalendarTimelineViews.swift:527,975,1086` and `iOSCalendarMonthViews.swift:395` all spell
-  `task.title.isEmpty ? "Untitled" : task.title`. The shared `TaskTitleSupport.displayTitle`
-  **trims first**. `iOSCalendarBundleDetailSheet.swift:308` in this same surface already uses the
-  helper, so one file is right and two are not. Scope the fix to this surface; the repo-wide sweep
-  (~20 sites) is a separate ticket.
 
 - [T-570] **The iOS day inspector runs a live EventKit query on every scroll frame.**
   `iOSCalendarView.swift:107-109` — `selectedEvents` is a computed property calling
@@ -1158,7 +1140,49 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Sequencing: this is safe to do after [[T-591]] landed, and it overlaps [[T-564]]'s drop-coordinator
   question — do them together or decide T-564 first, but do not restructure the same code twice.
 
+- [T-609] **25 sites still hand-spell an empty-title fallback instead of using the shared helper.**
+  Split from [[T-569]], which fixed the four calendar sites and **measured** the remainder rather than
+  estimating it: 25 across `Cadence/`, `CadenceWidgets/` and `CadenceMCPServer/` spell
+  `title.isEmpty ? "..." : title`. The shared `TaskTitleSupport.displayTitle(_:fallback:)` **trims
+  first**, so every one of these draws a blank line for a whitespace-only title.
+  Two things to decide before sweeping, not during: (a) the fallback copy is not uniform — some sites
+  say "Untitled", `displayTitle`'s own default is "Untitled Task", and T-569 deliberately preserved the
+  compact wording rather than promoting it, so a blind sweep would silently re-word ~25 strings;
+  (b) `CadenceMCPServer` and `CadenceWidgets` are separate targets, so check the helper is available
+  there before assuming one call fits all. Pin the result with a scan so the 26th site cannot appear.
+
 ## Done
+
+- [T-566] **CLOSED 2026-08-31 (`750be02`).** `updateBundle` now takes `commit:` and throws through
+  `CadencePendingChangePersistence.commitEdit`; the Save button catches and alerts instead of
+  dismissing, the shape the Delete button beside it has had since T-322. **The undo restores each
+  member's `scheduledDate`/`scheduledStartMin`, not just the block's four fields** — moving a block
+  moves its tasks, so a header-only undo would have left them on the day the store refused while the
+  alert claimed nothing changed. That is the bug the obvious fix would have introduced.
+  **Detector widened, and it re-scopes [[T-497]] from 2 sites to 4.** The new half indexes every
+  declaration reaching a swallowed commit to a fixed point *across files*, keyed by callee name **and
+  enclosing type**, then reports a success report in the same block. Two frames were required, not one:
+  the button called `save()`, `save()` called `updateBundle`, and only the third frame held the `try?`.
+  **Type-pairing was measured rather than assumed** — name-only resolution reports 17 sites where the
+  paired rule reports 2, and one of the extras was read through and confirmed a genuine false positive.
+  The 2 new sites are carried as exemptions with reasons.
+
+- [T-567] **CLOSED 2026-08-31 (`5417b60`).** `canCreate` now requires a title for `.bundle`,
+  spelled exactly as `.task` does, and the noun has one home: `TaskBundle.defaultDisplayTitle = "Block"`
+  plus `storedTitle(_:)`, mirroring `CadenceEventTitleSupport`'s stored/display split (so a title of
+  spaces no longer reaches the store either).
+  **Premise correction: the ticket named 3 sites; there were 9 — and 3 of them *stored* the word
+  rather than drawing it** (`SchedulingActions.createBundle`, `QuickCreateChoicePopover.create`,
+  `TimelineBundleBlockSupportViews`'s `onSubmit`). A display-only fix would have left "Task Bundle" in
+  the database. All 9 now read the constant or `bundle.displayTitle`.
+
+- [T-569] **CLOSED 2026-08-31 (`f3d87e3`).** The four named sites now go through
+  `TaskTitleSupport.displayTitle(_:fallback:)` with the compact fallback, so **the trim is the only
+  thing that changed** — the copy stays "Untitled" rather than being promoted to `displayTitle`'s
+  default "Untitled Task". Repo-wide remainder measured: **25 sites** still spell
+  `title.isEmpty ? "..."` across `Cadence/`, `CadenceWidgets/` and `CadenceMCPServer/` (the ticket
+  estimated ~20). Split out as [[T-609]].
+
 
 - [T-574] **CLOSED 2026-08-31 (`54cc616`).** Premise reproduced exactly. `saveAPIKey` now throws
   `AISettingsError.emptyAPIKey` on an empty/whitespace draft instead of falling through to

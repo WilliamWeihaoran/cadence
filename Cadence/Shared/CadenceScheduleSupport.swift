@@ -59,7 +59,9 @@ enum CadenceScheduleSupport {
     /// `startMin`, and `startMin` alone was the entire comparator at both call sites below.
     ///
     /// `displayTitle` rather than `title` because that is the string the row draws: an untitled
-    /// bundle reads "Task Bundle" on screen and should sort where it reads.
+    /// bundle reads "Block" on screen and should sort where it reads. (It read "Task Bundle" until
+    /// T-567 gave the noun one home in `TaskBundle.defaultDisplayTitle`; sorting on `title` would
+    /// have put every untitled bundle at the top under an empty string either way.)
     nonisolated static func bundlePrecedes(_ lhs: TaskBundle, _ rhs: TaskBundle) -> Bool {
         if lhs.dateKey != rhs.dateKey { return lhs.dateKey < rhs.dateKey }
         if lhs.startMin != rhs.startMin { return lhs.startMin < rhs.startMin }
