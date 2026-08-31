@@ -6,10 +6,13 @@ struct iOSNotificationsSettingsSection: View {
     let notificationManager: NotificationManager
     @Binding var notificationsEnabled: Bool
 
+    /// No section heading, the same as macOS's `SettingsNotificationsSection` (`title: nil`).
+    /// This pane holds one card and the page header directly above it already reads
+    /// "Notifications". The heading it used to carry read "Reminders" (T-578) — which on iOS is
+    /// the name of the *Apple Reminders* category two rows away in the same settings list, whose
+    /// own section is headed "Apple Reminders". One word, two meanings, two rows apart.
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            CadenceSettingsSectionLabel(text: "Reminders")
-
             if notificationManager.isAuthorized {
                 enabledCard
             } else {

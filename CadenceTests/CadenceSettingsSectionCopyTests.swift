@@ -293,6 +293,37 @@ struct CadenceSettingsSectionCopyTests {
         #expect(phone.contains(".accessibilityLabel(CadenceCalendarSettingsCopy.connectMenuLabel)"))
     }
 
+    // MARK: - Settings → Notifications heads itself with nothing
+
+    /// **T-578.** The phone headed Settings → Notifications **"Reminders"** — which on iOS is the
+    /// name of the *Apple Reminders* category two rows away in the same settings list, whose own
+    /// section is headed "Apple Reminders". One word, two meanings, two rows apart.
+    ///
+    /// macOS drew no heading there at all (`CadenceFieldSection(title: nil)`), and that is the one
+    /// that is right rather than the one that is missing something: the pane holds a single card,
+    /// and `iOSSettingsPageHeader` directly above it already reads "Notifications". Renaming the
+    /// heading to "Notifications" would have put the category title on the screen twice, which is
+    /// the standing rule about a page header describing the page you are already on.
+    @Test func theIOSNotificationsPaneDrawsNoHeadingOfItsOwn() throws {
+        let phone = try Self.strippedSource(at: Self.notificationSurfaces[1])
+        #expect(phone.contains("struct iOSNotificationsSettingsSection"), "non-vacuity: wrong file")
+        #expect(
+            CadenceSourceScan.matchCount("CadenceSettingsSectionLabel\\(", in: phone) == 0,
+            "Settings → Notifications heads itself again (T-578)"
+        )
+
+        // The word is returned to the category it names rather than banished. Without this, the
+        // assertion above is satisfiable by deleting both headings, which loses the distinction
+        // instead of drawing it.
+        let reminders = try Self.strippedSource(at: "Cadence/iOS/iOSRemindersSettingsSection.swift")
+        #expect(reminders.contains("CadenceSettingsSectionLabel(text: \"Apple Reminders\")"))
+
+        // The shape the phone now matches, asserted rather than assumed — this is the whole of the
+        // ticket's judgement that macOS was right.
+        let mac = try Self.strippedSource(at: Self.notificationSurfaces[0])
+        #expect(mac.contains("CadenceFieldSection(title: nil)"))
+    }
+
     // MARK: - Values, not source shape
 
     /// The one assertion here that is not a scan: the constants the Mac target **compiles** still
@@ -344,8 +375,14 @@ struct CadenceSettingsSectionCopyTests {
         // The helper every scan above goes through, pinned on a literal it must keep. Swapping it
         // to `codeOnly` would turn each `!contains("\"…\"")` assertion vacuously true and leave
         // this suite green over a file that had reverted every one of them.
+        //
+        // The witness was `"Reminders"` until T-578, which was that file's section heading — the
+        // name of the *Apple Reminders* category two rows away — and is now deleted rather than
+        // renamed, because the pane holds one card under a page header that already says
+        // Notifications. The glyph is the replacement: still a literal in that file, and one no
+        // copy decision can take away.
         #expect(
-            try Self.strippedSource(at: Self.notificationSurfaces[1]).contains("\"Reminders\""),
+            try Self.strippedSource(at: Self.notificationSurfaces[1]).contains("\"bell.fill\""),
             "the shared reader blanks literals, so every literal assertion in this file is vacuous"
         )
 
