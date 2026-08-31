@@ -1152,6 +1152,130 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`AppStoreReviewReadinessTests.swift:33`), not an oversight. Do this when iOS ships, with that test's
   intent addressed rather than deleted.
 
+- [T-627] **The save-commit detector has four measured blind spots, and they matter more than any
+  single site they hide.** VERIFIED 2026-09-01. A faithful Python emulation of all four halves of
+  `CadenceSaveCommitDisciplineTests` was run over all 562 files under `Cadence/`. **It reproduced the
+  six exemption entries exactly and reported nothing else** — that exact reproduction is the
+  non-vacuity evidence, and it means **none of Codex's fifteen sites is caught by any half.**
+  **Gap 1 — only half 2 follows a call one frame down.** [[T-566]] widened the *Report* half across
+  files; the *Existence* and *Commit reach* halves still require a literal
+  `(modelContext|context|ctx)\.insert(`/`.delete(` in the declaration's **own** body. Measured with a
+  type-keyed one-hop resolver: **6** declarations swallow a commit and change existence one frame down,
+  and **22** reach no commit at all while changing existence one frame down. **This one gap accounts for
+  six of the nine confirmed findings.** Worth more than any ticket below.
+  **Gap 2 — `declarations(in:)` parses only `func ...` and `var body`.** Anything inside
+  `private var someSection: some View` is invisible to every half. Measured: 7 of 102 swallowed-commit
+  matches sit outside every parsed declaration, and one is a live Report offender.
+  **Gap 3 — half 3 keys on `.insert(` only, never `.delete(`.** "Delete and never commit at all" is
+  covered by nothing: half 1 sees deletes but requires a `try?` that is not there, half 3 sees no-commit
+  but only for inserts.
+  **Gap 4 — `successReport` is a closed vocabulary** that misses this app's actual dismissals
+  (`showEditor = false`, `showPopover = false`, `selectedBundleID = nil`, `pendingRecurrenceRule = nil`,
+  `dismissPicker()`, `return true` from a Bool drop handler, an `@AppStorage` assigned *from* the
+  swallowing call) **and requires the report to sit textually after the save** — three sites dismiss
+  first.
+  Close the gaps before fixing the sites, or the sites come back.
+
+- [T-628] **Two macOS paths change existence with no commit boundary at all.** VERIFIED, and the
+  strongest of the fifteen. **Both were spot-checked directly.**
+  **(a) Task-status controls.** `TaskCompletionAnimationManager.write:163-183` -> `TaskWorkflowService`
+  (`:6-25`, **no save**) -> `CadenceTaskRecurrenceWorkflowSupport.markDone` ->
+  `spawnNextOccurrenceIfNeeded:127-136` does `context.insert(nextTask)`. Reached from
+  `TimelineTaskBlock:69`, `TasksPanelComponents:584`, `macOSRootCommandEventSupport:149`, and the
+  inspector at `TaskInspectorContentSupportViews:306-311`. **Tick a recurring task's circle on macOS and
+  the successor is created with no commit** — the next unrelated `rollback()` from any delete path
+  discards both.
+  **(b) Bundle popover end actions.** `SchedulingService.completeBundle:165-179` marks members done
+  (recurrence insert), detaches them, then `context.delete(bundle)` — **no save**. `unbundle:187-190`
+  the same; `deleteBundle:207` forwards to it. Hosts then close (`showPopover = false`,
+  `selectedBundleID = nil`). **The correct throwing sibling already exists and is unused here:**
+  `CadenceTaskMutationSupport.deleteBundle:1050-1066` (`commitDelete` + `bundleDeleteFailureNotice`),
+  which is [[T-322]]'s fix that iOS already uses.
+  The app's own position is recorded at `SettingsView.swift:292`: autosave's default `true` applies, but
+  *"eventually" is the whole problem* — [[T-327]] measured a delete flushed by nobody coming back next
+  launch.
+
+- [T-629] **Markdown image insertion writes references for asset rows the store may never hold.**
+  VERIFIED. `MarkdownEditorView.swift:160-167`, `iOSMarkdownEditingSurface.swift:332-349` and `:362-371`
+  each call `MarkdownImageAssetService.createAsset(... in: modelContext)` — which does
+  `modelContext.insert(asset)` — then `try? modelContext.save()`. **Existence, one frame down.**
+  The image renders until an unrelated `rollback()` discards the pending insert; the note then holds
+  permanently broken `![...](asset-id)` references. **Note the interaction with [[T-620]]:** that ticket
+  is the same asset type being deleted too eagerly; this one is it never being committed.
+
+- [T-630] **macOS Move Note closes the picker before the move, and swallows the failure.** VERIFIED.
+  `AIActionsSupportViews.swift:37-48` swallows `try? modelContext?.save()`; the destination rows at
+  `:224`, `:239`, `:256` call `dismissPicker()` (-> `showsPicker = false`) **before** the move.
+  **Report, one frame up.** Missed for three independent reasons — non-`body` computed var (gap 2),
+  dismissal precedes the call, and `dismissPicker()` is outside the vocabulary (gap 4). **The closing
+  popover is the only success signal the user gets.**
+
+- [T-631] **Typing a new tag then pressing Cancel leaves the tag pending in the shared context.**
+  VERIFIED. `TagSupport.resolveTags:195` does `context.insert(tag)`; `CreateTaskSheet:486`,
+  `InlineTaskComposerView:251` and `iOSCreateTaskSheet:228` call it from the ambient context.
+  `TaskCreationService.createTask:172` commits only `[task] + subtasks`, so a refused task commit
+  un-inserts the task **but not the tag**, and no composer path calls `rollback()`. **Commit reach, one
+  frame down.** The verifier's measured sweep found **three more of this shape Codex missed**:
+  `iOSTaskDetailComponents.iOSTaskTagPickerPopover.addTag`, `NoteEditorPane.createTag`,
+  `SchedulePanelComponents.TaskDetailPopover.createTag`. A phantom tag appears in Settings > Tags on the
+  next unrelated save from any screen.
+
+- [T-632] **macOS kanban column archive/complete closes the editor over a swallowed save.** VERIFIED.
+  `KanbanSectionColumnView.swift:393-407` saves-and-swallows then `showEditor = false`; `:389-391`
+  toggles completion through `saveSection:503-512` (swallows) then closes. **Report.** Missed because
+  both sit in `private var columnEditor: some View` (gap 2) *and* `showEditor = false` is outside the
+  vocabulary (gap 4).
+  **Codex's sub-claim disproved:** the lifecycle settle does *not* need existence cleanup —
+  `CadenceTaskContainerLifecycleService.settle` calls `settleWithoutAdvancingSeries`, which explicitly
+  does not spawn a successor. The batch is field edits only.
+
+- [T-633] **iOS recurrence scope edits close the dialog, then swallow.** VERIFIED.
+  `iOSTaskRowActionViews.swift:339-346` and `:816-823`; the series path sets
+  `pendingRecurrenceRule = nil` — **which is what closes the scope dialog** — and then swallows.
+  **Report.** For `.thisAndFuture`, every later occurrence's rule changes in memory, the sheet closes,
+  and **the row's existing "Couldn't Update the Series" alert has nowhere to fire.**
+
+- [T-634] **Adding a subtask from the task-detail popover reaches no commit — from seven surfaces.**
+  VERIFIED. macOS `SchedulePanelComponents.swift:103-109` and `:147-154` route through
+  `deleteSubtask`/`insertSubtask` and **reach no commit at all**; `addSubtask` clears the draft
+  regardless. iOS `iOSTaskDetailSheet.swift:459-467` clears the draft *then* swallows; `:469-472` the
+  same for delete. **Commit reach (macOS), Existence (iOS)**, both one frame down. This popover is
+  presented from **seven** surfaces.
+
+- [T-635] **Roll Over hides the banner in persisted preferences whether or not the roll committed.**
+  VERIFIED, and **the only one of the fifteen whose false success outlives a rollback.**
+  `CadenceTodayRolloverSupport.swift:89-100` swallows and returns `todayKey` unconditionally;
+  `TasksPanel.swift:331-334` and `iOSTodayView.swift:152-158` assign it straight into the `@AppStorage`
+  `rolloverNoticeDismissedDate`. `rollOverTaskToToday:983-998` reaches
+  `deleteBundleIfFullySettled:1017-1030`, which does `modelContext.delete(bundle)`.
+  **Existence** (two frames down) **and Report** (the persisted dismissal). The banner stays hidden for
+  the rest of the day even if nothing was rolled.
+
+- [T-636] **The partly-confirmed residue from the CXT sweep — four narrower findings and one Codex
+  missed.** VERIFIED 2026-09-01.
+  **(a)** The real root under CXT-005 is not the note repaint (which is the 96-of-112 category the rule
+  deliberately leaves alone) but `CadenceTaskMutationSupport.toggleCompletion:30-37` — **the app-wide
+  completion spine — swallowing a save over a recurrence insert.**
+  **(b)** CXT-007 is a genuine **vocabulary gap**, not a new site class: `return true` from a Bool drop
+  handler is a success report by the repo's own words (`TasksPanelDropCoordinator:29-32`: *"a silent
+  accept says the move happened"*) but is outside `successReport`. Feeds [[T-627]] gap 4 and is adjacent
+  to [[T-607]].
+  **(c)** CXT-008's real half is `CadenceFocusPlanningSupport.swift:230-234` swallowing over a
+  recurrence insert. Separately, `logElapsedSeconds:182-192` uses **accumulating** `+=` writes, so the
+  rule's standing justification for `try?` — *"the next fetch corrects it"* — **does not hold there**.
+  Same shape as [[T-621]].
+  **(d)** CXT-012 and CXT-015 are **materially weaker than filed and outside the rule entirely**
+  (EventKit, not a `ModelContext` commit) — and **not silent**: every failure goes through `record()` and
+  both hosts mount `.calendarWriteFailureAlert()`. The residue is only lost draft text, a parity gap
+  with `iOSCalendarEventEditSheet`.
+  **(e) A bigger sibling Codex missed on the same canvas:** `SchedulePanel.swift:124-126`'s
+  `onCreateBundle` calls `SchedulingActions.createBundle` (`SchedulingService.swift:29-39`,
+  `context.insert(bundle)`, **no save**) then `finishDraftCreation()`. That is a real half-3 defect where
+  the event branch beside it is not.
+  **CXT-003 is DISPROVED and should be closed as not-a-defect** — `linkedCalendarID` is an in-place field
+  edit, nothing inserts, deletes, dismisses or reports, and macOS is `do/catch` with a `print`, not a
+  `try?`. It belongs under [[T-614]]'s open question if anywhere.
+
 ## Done
 
 - [T-595] **CLOSED 2026-08-31 (`32dbe81`).** **This ticket's headline was wrong: it is not ten
