@@ -813,20 +813,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Use `strippingComments`, never `codeOnly` — `codeOnly` blanks string literals too, which is what
   made an earlier copy scan permanently and silently green.
 
-- [T-577] **macOS Settings > Lists shows a nameless row with a blank second line.**
-  `SettingsListManagementSections.swift:540,555,557`. Two gaps: (a) macOS passes `area.name`/
-  `project.name` raw where iOS falls back to `CadenceTitleNormalization.default*Name`; (b) macOS's
-  project subtitle joins context+area, which is `""` for a parent-less project, where iOS returns
-  "No parent list". **The macOS file contradicts itself** — its *area* branch twelve lines above
-  already falls back to "No context". Reachable today: [[T-558]]/[[T-559]] establish context-less
-  lists exist. iOS is right.
-
-- [T-578] **On iPhone, Settings > Notifications is headed "Reminders"** — the name of the Apple
-  Reminders category two rows away. `iOSNotificationsSettingsSection.swift:11`, while
-  `iOSRemindersSettingsSection.swift:32` heads the *actual* Reminders category "Apple Reminders".
-  macOS draws no heading at all, which is right: the pane holds one card and the page title already
-  says Notifications. Drop the heading, or rename it to "Notifications".
-
 - [T-579] **iOS honours the "Default page" setting but offers no control for it.**
   `CadencePreferenceKeys.listDetailDefaultPage` is read by `iOSListDetailView.swift:31`; the only UI
   is macOS `SettingsSectionViews.swift:331-361`. Not symmetric with the reverse case — `ios.calendar.*`
@@ -846,12 +832,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `.sidebar`/`.account` which are named in `desktopOnly`. Both sidebars read
   `@Query(sort: \Context.order)`. macOS is right; iOS should gain an `.onMove` affordance.
 
-- [T-582] **"Created backup-....sqlite." appears underneath the red Delete Account & Data button.**
-  One `statusMessage` (`SettingsDataSafetySection.swift:12`) rendered in two cards at once — `:60`
-  (Backups) and `:350` (reset card). Every backup/cleanup/reveal/restore/export outcome lands in both.
-  The doc at `:288-290` deliberately shares it with the *export* card; the Backups card was never taken
-  out of the loop. **iOS is right**: one status line per card, owned by the card.
-
 - [T-583] **macOS archives a context without saving; iOS saves.** `SettingsView.swift:184,186` set
   `isArchived` with no save, while `reopenArea`/`reopenProject`/`moveContext` in the *same file*
   (`:275,280,285`) all call `try? modelContext.save()`. **INFERRED** — no `autosaveEnabled` is set
@@ -867,19 +847,14 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`CalendarPageMonthGridSupport.swift:241-252`). The whole-cell opacity also fades the today ring and
   the chips, which macOS deliberately avoids by moving the *plate*. **The user picks the final value.**
 
-- [T-570] **The iOS day inspector runs a live EventKit query on every scroll frame.**
-  `iOSCalendarView.swift:107-109` — `selectedEvents` is a computed property calling
-  `calendarManager.fetchEvents(for:)`, a synchronous predicate query, so it re-runs every body pass.
-  **The file's own comment at `:121-129` describes this exact bug being fixed** for
-  `visibleEventsByDate`; one query survived, and it feeds the pane on screen beside the grid on iPad.
-  `visibleEventsByDate[selectedKey] ?? []` is the one-line equivalent — **caveat: on Month, a carried
-  day just outside the fetch window would read empty. Check that before swapping.**
-
-- [T-571] **The Board's day count includes finished work on iPhone and excludes it on Mac.**
-  `iOSCalendarBoardView.swift:355` passes `count: totalCount` (active + completed); macOS
-  `CalendarBoardDayColumnSupportViews.swift:131` passes `count: activeItems.count`. A day with 2 open
-  and 3 done reads **5** on the phone and **2** on the Mac, in the same shared header component.
-
+- [T-572] *(**PREREQUISITE ADDED 2026-08-31 — read before starting. [[T-571]] changed the ground under
+  this ticket.** T-572 says to copy macOS's day-column accessibility label
+  (`CalendarBoardDayColumnSupportViews.swift:121`) to iOS as "the correct pattern". **It is no longer
+  correct.** That label announces `totalCount` (active + completed), while T-571 just changed the
+  visible header beside it to active-only. **On macOS, VoiceOver and the visible number now disagree.**
+  Copying the label as-is would export that mismatch to a second platform — turning one bug into two
+  while closing an accessibility ticket. Fix the macOS label first, or write the iOS label against
+  active-only and fix macOS in the same change. Do not copy blindly.)*
 - [T-572] **The iOS Board's day columns are unreadable to VoiceOver.**
   `iOSCalendarBoardView.swift:315-343` has no `accessibilityLabel`; macOS
   `CalendarBoardDayColumnSupportViews.swift:121` announces "<long date>, N scheduled items". The
@@ -927,12 +902,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   removes browse-all-notes from the rail and leaves other narrow hosts index-only.
   **Nobody has looked at this on a device.** The whole analysis is arithmetic and source reading. Before
   committing, capture the rail at 1366 and at 836 on a simulator.
-- [T-586] **Switching the iPad Today rail between Notes and Timeline changes the pane's background
-  colour.** `iOSTodaySchedulePanel.swift:130` (`Theme.bg`, #09090b) vs `iOSNotesView.swift:170`
-  (`Theme.surface`, #131316). The switcher strip above is `Theme.bg` and the task column beside it is
-  `Theme.surface`, so **Timeline matches the strip and clashes with the column; Notes does the
-  reverse.** The schedule panel also omits the `.ignoresSafeArea()` the notes panel has.
-
 - [T-587] **`drawsCard` draws no card.** `iOSTodayTaskSections.swift:223-228` applies
   `.padding(metrics.cardPadding)` and nothing else — no background, no clip. The flag's own doc
   (`CadenceTodayLayoutSupport.swift:128-132`) states the reason it exists: *"the compact layout is
@@ -1164,6 +1133,56 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   there before assuming one call fits all. Pin the result with a scan so the 26th site cannot appear.
 
 ## Done
+
+- [T-577] **CLOSED 2026-08-31 (`aac3679`).** Both gaps fixed. Titles now read
+  `CadenceTitleNormalization.display(_:fallback:)` — **stronger than iOS's `.isEmpty` check**, which let
+  a whitespace-only name through.
+  **One judgement worth recording:** copying iOS's `"No parent list"` literally would have put a second
+  inline copy in the repo — 2 sites in 2 files, exactly the threshold `CadenceSharedConstantReuseSweepTests`
+  and [[T-505]] say must be declared. *The fix for a drift would have committed the defect that sweep
+  exists to catch.* It is now `CadenceListSettingsCopy.parentSubtitle`, declared once and registered
+  with the sweep so a third surface arms it.
+
+- [T-578] **CLOSED 2026-08-31 (`dfce44a`).** Heading dropped rather than renamed — `iOSSettingsPageHeader`
+  sits directly above it in both layouts and already reads "Notifications", so this matches macOS's
+  `title: nil` exactly and does not read as orphaned.
+  **Consequence caught in passing:** `theSettingsCopyScanReadsLiteralsRatherThanBlankingThem` used that
+  exact heading as its **non-vacuity witness for the whole suite** — deleting it would have made every
+  literal assertion in that suite silently vacuous. The witness moved to `"bell.fill"` with the reason
+  recorded.
+
+- [T-582] **CLOSED 2026-08-31 (`3a3538f`).** The Backups card now owns `backupStatusMessage`; the
+  export-to-reset sharing is kept because that part was deliberate, and the doc comment asserting a
+  pane-wide shared line was rewritten rather than left standing ([[T-565]]'s class).
+  **The test asserts both directions on purpose** — no backup function reaches the shared line, *and*
+  export/delete still do — because a one-directional assertion is satisfied by splitting the export
+  pair too, which is the opposite fix.
+
+- [T-570] **CLOSED 2026-08-31 (`9fa6ed7`).** Premise reproduced. **The ticket's caveat was real and the
+  one-line fix would have been wrong.** Measured against the real window functions: Month never moves
+  the selection with the grid (`keepSelectedDateInView` is gated on `isTimedGrid`), and a day carried
+  from Aug 15 is inside the window at displayed months Jul/Aug/Sep but **outside** at Jun or Oct — so a
+  bare `?? []` would have emptied a pane that has events in it. Fix is
+  `visibleEventsByDate[selectedKey] ?? selectedDayEvents`, with a cached per-day fetch that runs only
+  when the window cache lacks the day. **No EventKit query remains in `body`.** The timed grids
+  provably cannot reach the fallback and that is now a test with a non-vacuity assert, not a claim.
+
+- [T-571] **CLOSED 2026-08-31 (`a5aebd4`).** iOS changed to active-only, matching macOS. The reasoning
+  is the ticket's open question answered: the count sits above the column's own list, that list is the
+  active items, and finished work is behind the "Completed" toggle **which already carries its own
+  count**. Summing them stated a total nothing on screen adds up to, counted the same task twice on a
+  column showing both halves, and made a fully cleared day read as busy as an untouched one. It also
+  matches every other board header in the app. iOS's `totalCount` had one reader and went with it.
+
+- [T-586] **CLOSED 2026-08-31 (`f5bc288`).** The whole rail is `Theme.surface` — switcher strip and
+  both halves — matching the task column across the divider, plus the `.ignoresSafeArea()` the schedule
+  panel was missing.
+  **Premise correction worth keeping:** the ticket blamed `iOSNotesView.swift:170`, but that line is not
+  what you see — the notes header (`:265`) and sidebar (`:314`) each draw `Theme.surface` in front of
+  it, so changing `:170` alone would have changed nothing on screen. That ruled out "move Notes to
+  `Theme.bg`" as a scoped fix. `iOSNotesView` is a standalone page too, so the two rail-only views moved
+  instead and it was left untouched.
+
 
 - [T-585] **CLOSED 2026-08-31 (`d35470a`).** Premise reproduced, **plus one the ticket missed**: the
   day-end clamp (`lastStart`) was computed for 30 minutes too, so a 90-minute task could be offered
