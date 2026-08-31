@@ -891,24 +891,42 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   announce only the long date — neither says the cell has anything on it, though one draws a count
   capsule and the other a dot. `iOSCalendarTimelineViews.swift:569` is a third instance.
 
-- [T-584] **On every iPad, Today > Notes shows a list of note titles and never a note.**
-  `iOSTodayView.swift:255-258` -> `iOSNotesView.swift:276-289`. MEASURED by arithmetic against the
-  repo's own widths: `CadenceNotesListMetrics.layout`'s two-column floor is 280+1+320 = **601pt**, but
-  the rail is `paneWidth - taskPaneWidth - 1` — **483** at the widest reachable pane (1210,
-  `CadenceTodayLayoutSupport.swift:104`) and **320** on a folded portrait iPad. Both < 601, so it
-  always resolves `.oneColumn`, which renders the sidebar alone. Reading a note needs a
-  `fullScreenCover` that blanks the whole iPad. **The Notes panel of a two-pane layout is an index with
-  no content at every shipping width.** macOS shows a real editor. Biggest user-visible finding of the
-  sweep. The fix is a design call — a narrower one-column *editor* mode, or a different floor.
-
-- [T-585] **The "Ready to Schedule" chips check 30 minutes of free time, then insert a task of any
-  length.** `iOSTodaySchedulePanel.swift:59-68` calls `readyScheduleSlots` without `durationMinutes:`,
-  so it defaults to 30 (`CadenceScheduleSupport.swift:470`) and only rejects collisions for a
-  **30-minute** block. The chip then calls `setScheduledSlot`, which sets only the start; the block's
-  length is `task.timelineDurationMinutes`. A task the row itself labels "90 min estimate" lands on a
-  slot checked to 30 and overlaps the block below it. Slots are deliberately computed once per pane
-  (`:448-450`), so this is a design tension, not a typo.
-
+- [T-584] *(**premise CORRECTED 2026-08-31 — this ticket, written by the coordinator, overstated the
+  defect in two ways.** (1) **It is not an unnoticed bug; it is a recorded decision.**
+  `CadenceTodayLayoutSupportTests.swift:142` `everyInspectorWidthTheTargetIPadsProduceFallsBackToOneNotesColumn`
+  already asserts this exact outcome over these exact devices, and `:167`
+  `theInspectorFloorWasNotRaisedToFitTwoNotesColumns` costs out the alternative. T-177 chose the
+  one-column fallback **on purpose**; the behaviour it replaced was a 39pt editor. (2) **"Never a note"
+  is literally false** — `iOSNotesView.open(_:)` (`:498-509`) routes `.oneColumn` at regular width to
+  `presentedNote`, so a note *is* readable.
+  Also corrected: the widest reachable rail is **545.4pt** (13" landscape, sidebar folded), not the 483
+  the ticket claimed. It changes nothing — a 601 rail needs a 1505 pane, which no iPad produces — so
+  `.oneColumn` at every shipping width still holds.
+  **The real complaint, which survives and is still worth fixing:** the rail is an index, and reading a
+  note means a `fullScreenCover` that blanks a 1366pt iPad. The Events tab uses `.sheet`, so it is a
+  form sheet rather than a blank-out — the two paths already disagree.)*
+  **AWAITING USER DECISION — four options costed, agent recommends option 1.**
+  **1. A one-column *editor* mode in the rail** (recommended). At regular width with a note selected,
+  render the editor in the pane with a return-to-list control instead of presenting a cover. Mostly
+  reuse: `editorPane` exists standalone (`iOSNotesView.swift:363-388`) and `iOSNoteEditorCover`
+  (`:622+`) is already a complete editor. Work: a third branch in `content`; `open(_:)` stops setting
+  `presentedNote` at regular width; `showsHeaderTemplateMenu` (`:146`) must become true in the editor
+  state or the header silently drops three controls; `iOSNoteEditorCover` needs an injected dismiss.
+  **Must be applied to `iOSListNotesView` too** (`:173-175`, same split, same cover) or the two notes
+  surfaces diverge. Takes nothing from the task column; fixes every narrow regular-width host.
+  **2. Lower `twoColumnMinimumWidth`** — dead end. Even at macOS's `columnIdealWidth` of 224 the floor
+  is 545, which only 13"-landscape-folded clears, so the rail would gain and lose its editor on
+  rotation. This is T-177's 39pt editor with a bigger number.
+  **3. Raise `inspectorPaneFloor` to 601** — refuted in-repo: `twoPaneMinimumWidth` becomes 1042 and a
+  13" portrait iPad loses the task column that is the page's subject, to make room for a notes index.
+  **3b.** Give the inspector the notes floor only when the pane can afford it (>=1042). Works
+  arithmetically, but the split appears and disappears with sidebar folding and the switcher reflows
+  the task column.
+  **4. Route the rail's Notes half through a different component** — e.g. today's daily note, edited
+  directly, no index. Arguably the best *product* answer and it sidesteps width entirely, but it
+  removes browse-all-notes from the rail and leaves other narrow hosts index-only.
+  **Nobody has looked at this on a device.** The whole analysis is arithmetic and source reading. Before
+  committing, capture the rail at 1366 and at 836 on a simulator.
 - [T-586] **Switching the iPad Today rail between Notes and Timeline changes the pane's background
   colour.** `iOSTodaySchedulePanel.swift:130` (`Theme.bg`, #09090b) vs `iOSNotesView.swift:170`
   (`Theme.surface`, #131316). The switcher strip above is `Theme.bg` and the task column beside it is
@@ -928,12 +946,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   such reference exists in code. Same for `hourLabelSize = 11`. **And the duplication has already
   drifted once**: `hourLabelTrailingInset = 8` against the row's literal `9`. A stated invariant with
   nothing enforcing it — make the row read the metrics type, and pin it.
-
-- [T-589] **"Add a title first." stays red under the field while you type the title.**
-  `iOSTodaySchedulePanel.swift:314-319` draws it; `:202-211` are the only two clears
-  (`selectQuickCreateStart`, `cancelQuickCreate`). Nothing clears it when the title binding changes.
-  Reachable via `.onSubmit(create)` (`:290`) with whitespace-only text — the `+` button is disabled in
-  that state but Return is not.
 
 - [T-590] **VoiceOver calls an untitled task "task" while the screen calls it "Untitled Task".**
   `iOSTodaySchedulePanel.swift:564` (`task.title.isEmpty ? "task" : task.title`) vs `:513` (renders
@@ -1152,6 +1164,31 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   there before assuming one call fits all. Pin the result with a scan so the 26th site cannot appear.
 
 ## Done
+
+- [T-585] **CLOSED 2026-08-31 (`d35470a`).** Premise reproduced, **plus one the ticket missed**: the
+  day-end clamp (`lastStart`) was computed for 30 minutes too, so a 90-minute task could be offered
+  23:30. New `ReadyScheduleContext` in `CadenceScheduleSupport` resolves the day once — one clock, one
+  work window, one set of busy ranges — and each row derives its own start times from its own task's
+  length.
+  **On the once-per-pane tension the ticket flagged, the agent kept the half that is load-bearing and
+  dropped the half that cannot be true.** "Every row offers the same times" is only honest while every
+  task is the same length; with mixed lengths one answer for every row is wrong for all but one of
+  them. The property that actually mattered — a filled slot leaves every row at once — comes from all
+  rows reading the same live day, which the context carries. It also fixes a latent bug: per-row calls
+  would each have taken their own `Date()`. An estimate-less task still resolves to 30 and its answer
+  is bit-identical to before, pinned by `anEstimatelessTaskGetsTheSameSlotsTheOldSharedAnswerGave`.
+  8 new tests; 3 mutations, each confirmed compiled.
+
+- [T-589] **CLOSED 2026-08-31 (`35790d3`).** `quickCreateError` was cleared only by
+  `selectQuickCreateStart` and `cancelQuickCreate` — both about the composer rather than the field — so
+  the notice sat in red while you typed the title it was asking for. Now cleared on title change.
+  **The `.onSubmit` half was deliberately NOT guarded, and the reasoning is in source.** The `+` button
+  refuses *visibly* by greying out; Return has no such affordance, so guarding it would make the key do
+  nothing at all — the inert-control-with-no-explanation failure T-470/T-471 went through this app
+  removing. It would also have made "Add a title first." unreachable dead code. Return reports; the
+  report now clears itself. `returnOnAnEmptyFieldStillReportsRatherThanDoingNothing` fails if someone
+  later adds that guard. 3 new tests; 2 mutations, each confirmed compiled.
+
 
 - [T-566] **CLOSED 2026-08-31 (`750be02`).** `updateBundle` now takes `commit:` and throws through
   `CadencePendingChangePersistence.commitEdit`; the Save button catches and alerts instead of
