@@ -39,22 +39,65 @@ struct CadenceTodaySectionMetricsTests {
 
     // MARK: - What varies, and why
 
-    /// The card is a fact about the **host's background**, not about the device: the compact layout
-    /// is drawn on a `Theme.bg` page, where a card separates the day's list from the page, and the
-    /// two-pane task column already *is* `Theme.surface`, where the same card would be invisible.
-    /// That is also why the shared empty state had to settle on `Theme.surfaceElevated`.
-    @Test func onlyTheLayoutDrawnOnThePageBackgroundGetsACard() {
-        #expect(Self.metrics(.compact).drawsCard)
-        #expect(!Self.metrics(.twoPane).drawsCard)
+    /// **The width cap is the only thing that varies now (T-587).** These two tests used to pin a
+    /// `drawsCard` flag and a `cardPadding` beside it — and they pinned them *to each other*, so
+    /// the pair stayed green after `85809ff` deleted the `.cadenceCard()` they described. What was
+    /// left was an inset with no fill behind it, which is exactly the "12pt indent that reads as a
+    /// broken gutter" the second of the two tests was written to forbid: it could not see it,
+    /// because it only ever compared one field of this type against another.
+    ///
+    /// So this replaces both, and it is deliberately spelled with the **memberwise initialiser**.
+    /// A new stored property does not fail this test — it fails to *compile* here, which is the
+    /// point: the next per-layout knob has to be argued for in this file rather than added quietly
+    /// and then guarded by a tautology.
+    @Test func theWidthCapIsTheOnlyFigureThatVariesByLayout() {
+        let compact = Self.metrics(.compact)
+        let twoPane = Self.metrics(.twoPane)
+
+        #expect(
+            CadenceTodaySectionMetrics(
+                groupSpacing: compact.groupSpacing,
+                contentMaxWidth: twoPane.contentMaxWidth
+            ) == twoPane
+        )
     }
 
-    /// A call site must not be able to pad for a card it is not drawing — an inset with no fill
-    /// behind it is a 12pt indent that reads as a broken gutter.
-    @Test func cardPaddingExistsExactlyWhereTheCardDoes() {
-        for layout in Self.layouts {
-            let metrics = Self.metrics(layout)
-            #expect(metrics.drawsCard == (metrics.cardPadding > 0), "\(layout)")
-        }
+    /// The other half of T-587, and the half a value test cannot reach: **the view must not inset
+    /// the group stack either.**
+    ///
+    /// The removed pair failed in exactly this gap. `85809ff` deleted the `.cadenceCard()` the
+    /// `drawsCard` flag described, and `.padding(metrics.cardPadding)` stayed behind it — a 12pt
+    /// inset with no fill, on top of the 14pt gutter both hosts already apply, so the phone's
+    /// group headers sat inside the page header and options bar directly above them. Every
+    /// assertion in this file stayed green through all of it, because none of them could see the
+    /// call site.
+    ///
+    /// `Cadence/iOS/` is inside `#if os(iOS)` and invisible to this macOS-built target, so this
+    /// reads the source text. Comments are blanked first, and the read is narrowed to `groupStack`
+    /// by brace matching rather than run over the whole file — `iOSTodayOverdueListSheet` and the
+    /// empty-state branch further down both pad legitimately, and a file-wide needle would be
+    /// answering a different question.
+    @Test func theGroupStackTakesNoInsetOfItsOwn() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodayTaskSections.swift")
+        )
+        let declaration = try #require(source.range(of: "private var groupStack: some View"))
+        let body = try #require(
+            CadenceSourceScan.matchedBody(
+                after: declaration.upperBound,
+                in: source,
+                open: "{",
+                close: "}"
+            )
+        )
+
+        // Non-vacuity: the matched span is the group stack and not an empty or runaway read.
+        #expect(body.contains("iOSTaskGroupSection("))
+        #expect(body.contains("spacing: metrics.groupSpacing"))
+
+        #expect(!body.contains(".padding("))
+        #expect(!body.contains("cardPadding"))
+        #expect(!body.contains("drawsCard"))
     }
 
     /// The one measurement that legitimately differs, and it has to differ in the right direction or
@@ -79,7 +122,6 @@ struct CadenceTodaySectionMetricsTests {
             let metrics = Self.metrics(layout)
             #expect(metrics.groupSpacing > 0, "\(layout)")
             #expect(metrics.contentMaxWidth > 0, "\(layout)")
-            #expect(metrics.cardPadding >= 0, "\(layout)")
         }
     }
 

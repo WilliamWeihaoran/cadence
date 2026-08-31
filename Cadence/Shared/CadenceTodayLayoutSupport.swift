@@ -126,15 +126,20 @@ nonisolated enum CadenceTodayLayoutSupport {
 /// it is what two copies of one list become after a few edits each, and it is the drift
 /// `CadencePageHeaderMetrics` was written to stop for headers.
 ///
-/// **The card is the one difference with a reason, and the reason is the host's background rather
-/// than the device.** The compact layout is drawn on a `Theme.bg` page, where a `Theme.surface`
-/// card is what separates the day's list from the page; the two-pane task column already *is*
-/// `Theme.surface`, so the same card there would be invisible — which is exactly why
-/// `iOSCompactTodayEmptyState` had to settle on `Theme.surfaceElevated` to read against both hosts.
+/// **There used to be a third difference — a card — and it is gone (T-587).** The compact layout
+/// carried `drawsCard`/`cardPadding`, documented as "a `Theme.surface` card is what separates the
+/// day's list from the `Theme.bg` page". `85809ff` deleted the `.cadenceCard()` behind it, on
+/// purpose and at five sites at once, because macOS never drew one and the rows now read the same
+/// on both platforms. What survived the deletion was the *inset*: the call site kept
+/// `.padding(metrics.cardPadding)` with no fill behind it, so the phone's group headers and rows
+/// sat 12pt inside the page header and options bar directly above them — the "header indented from
+/// the rows under it" defect `CadencePageHeaderMetrics.horizontalPadding` keeps its own gutter to
+/// avoid, only the other way round. Both fields are removed; each host already pads its own
+/// gutter, and the two layouts now differ in exactly one figure.
 ///
-/// Keyed on `CadenceTodayLayout` and **not** on the size class, so the iPad's own narrow fallback —
-/// a regular-width pane under `twoPaneMinimumWidth`, which renders the compact layout on a
-/// `Theme.bg` page — takes the card for the same reason the phone does.
+/// `contentMaxWidth` is keyed on `CadenceTodayLayout` and **not** on the size class, so the iPad's
+/// own narrow fallback — a regular-width pane under `twoPaneMinimumWidth`, which renders the
+/// compact layout on a `Theme.bg` page — takes the phone's cap rather than the tablet's.
 nonisolated struct CadenceTodaySectionMetrics: Equatable, Sendable {
     /// Between one counted task group and the next. **One number for both layouts**: the gap
     /// between "Overdue" and the first list under it is not something a wider pane needs more of,
@@ -152,28 +157,18 @@ nonisolated struct CadenceTodaySectionMetrics: Equatable, Sendable {
     /// a task pane whose floor is `taskPaneMinWidth` can hold a wider readable column than a phone,
     /// and a line of text that runs the full width of an iPad is worse than one that does not.
     let contentMaxWidth: CGFloat
-    /// Whether the group stack sits on a card of its own. See the note above — host background,
-    /// not device.
-    let drawsCard: Bool
-    /// The card's inset, and zero when there is no card, so a call site cannot pad for a card it is
-    /// not drawing.
-    let cardPadding: CGFloat
 
     static func metrics(layout: CadenceTodayLayout) -> CadenceTodaySectionMetrics {
         switch layout {
         case .compact:
             return CadenceTodaySectionMetrics(
                 groupSpacing: groupSpacing,
-                contentMaxWidth: 520,
-                drawsCard: true,
-                cardPadding: 12
+                contentMaxWidth: 520
             )
         case .twoPane:
             return CadenceTodaySectionMetrics(
                 groupSpacing: groupSpacing,
-                contentMaxWidth: 720,
-                drawsCard: false,
-                cardPadding: 0
+                contentMaxWidth: 720
             )
         }
     }

@@ -220,12 +220,13 @@ struct iOSTodayTaskSections: View {
             }
         }
 
-        if metrics.drawsCard {
-            stack
-                .padding(metrics.cardPadding)
-        } else {
-            stack
-        }
+        // No inset of its own. Both hosts already pad their own gutter — 14pt in
+        // `iOSCompactTodayView` and in `iOSTodayView.todayTaskSections` — and this used to add a
+        // further 12 on compact, for a `.cadenceCard()` that `85809ff` deleted on purpose. The
+        // padding outlived the fill it was insetting from, which put the day's group headers 12pt
+        // inside the page header and options bar stacked directly above them. See
+        // `CadenceTodaySectionMetrics` (T-587).
+        stack
     }
 }
 
