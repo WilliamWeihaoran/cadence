@@ -152,3 +152,31 @@ machine rather than a scratch tree.
 looked should say so, and an agent that did not must keep the old caveat rather than quietly upgrading
 its language. If you launch and the thing you wanted to check is inconclusive on screen, that is a
 result: report it as inconclusive rather than falling back to inference and presenting it as observation.
+
+## A probe may not be fatal, and must report before it probes
+
+CI run 33355551830 failed both jobs at their first step with exit 134 and **no output at all** --
+not even the step's own `== toolchain ==` header. The cause was one line in
+`.github/scripts/assert-toolchain.sh`:
+
+```sh
+v=$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version 2>/dev/null | head -1 | awk '{print $2}')
+```
+
+Under `set -euo pipefail`, an `xcodebuild` that aborts (SIGABRT, 128+6) propagates through
+`pipefail`, and `set -e` then kills the script on the assignment. The `2>/dev/null` discarded the
+only evidence of why. So the script whose entire purpose was to *explain* a toolchain problem
+became the least explicable failure in the run.
+
+Two rules, and they generalise well past this script:
+
+- **Report before you probe.** Print the environment, the inputs, and what you are about to do
+  before the first thing that can fail. A diagnostic that dies before its own header converts a
+  known problem into a mystery.
+- **A probe tolerates its own failure.** Code whose job is to look around and report must never
+  take the run down with it. Assign with `|| true` / `|| continue`, and keep stderr -- when a probe
+  fails, the reason *is* the finding.
+
+This is the same shape as the `CadenceSourceScan.codeOnly` trap: an instrument broke, and the
+breakage read as a verdict. Prefer detectors that fail loud over detectors that fail silent, and
+never let `2>/dev/null` sit on the one command whose error text you would need.
