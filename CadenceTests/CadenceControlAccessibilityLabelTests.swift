@@ -640,6 +640,105 @@ struct CadenceControlAccessibilityLabelTests {
         }
     }
 
+    // MARK: - T-590: an accessible name is the name on the screen
+
+    /// **No accessibility label in the app invents its own fallback for an empty title.**
+    ///
+    /// `iOSTodaySchedulePanel` announced `task.title.isEmpty ? "task" : task.title`, so an untitled
+    /// task was "Untitled Task" to a sighted user — from `TaskTitleSupport.displayTitle`, four
+    /// lines up in the same view — and "task" to VoiceOver. Two names for one row, and the ad-hoc
+    /// one also missed a whitespace-only title, which `displayTitle` treats as blank and the raw
+    /// `isEmpty` does not.
+    ///
+    /// Swept over both platforms rather than pinned to the file the ticket named, and the sweep
+    /// earned it: **it found a second instance** the ticket did not list, the same expression with
+    /// the same word, in `iOSCalendarTimelineViews`' clear-time control.
+    ///
+    /// This is [[T-539]]'s stated resolution as a rule. That ticket kept a `TextField` **prompt**
+    /// as a noun phrase on purpose; a label over a *value* reads the shared display title.
+    @Test func noAccessibilityLabelInTheAppSpellsItsOwnFallbackForAnEmptyTitle() throws {
+        let offenders = try handRolledTitleFallbackInstrument().sweep(
+            try Self.swiftFiles(under: "Cadence"),
+            // 551 files at the time of writing; the floor only rules out a walk that found a
+            // handful and called it the app.
+            atLeast: 400,
+            including: "Cadence/iOS/iOSTodaySchedulePanel.swift",
+            read: CadenceSourceScan.sourceFile
+        )
+        #expect(
+            offenders.isEmpty,
+            "accessibility label with its own empty-title fallback instead of the shared display title: \(offenders)"
+        )
+    }
+
+    /// The two labels by value, because the sweep only knows that *no* hand-rolled fallback is
+    /// left — it would stay green if either label were deleted outright.
+    @Test func theTwoScheduleControlsNameTheirTaskTheWayTheScreenDoes() throws {
+        let panel = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
+        #expect(
+            panel.contains(
+                #"accessibilityLabel("Schedule \(TaskTitleSupport.displayTitle(task.title)) at \(TimeFormatters.timeString(from: startMin))")"#
+            ),
+            "the ready-to-schedule chip no longer names its task from the shared display title"
+        )
+        // The visible name it now agrees with, in the same view.
+        #expect(panel.contains("Text(TaskTitleSupport.displayTitle(task.title))"))
+
+        let timeline = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        #expect(
+            timeline.contains(
+                #"accessibilityLabel("Move \(TaskTitleSupport.displayTitle(task.title)) back to ready to schedule")"#
+            ),
+            "the clear-time control no longer names its task from the shared display title"
+        )
+
+        // Both take the *full* fallback where the block beside them draws the compact one. That is
+        // the compact spelling's own stated reason — "a row with no width for the noun" — and a
+        // spoken label has no width. Pinned so the pair cannot silently become one form.
+        #expect(CadenceTitleNormalization.defaultTaskTitle == "Untitled Task")
+        #expect(CadenceTitleNormalization.defaultCompactTitle == "Untitled")
+        #expect(TaskTitleSupport.displayTitle("") == CadenceTitleNormalization.defaultTaskTitle)
+        #expect(TaskTitleSupport.displayTitle("   ") == CadenceTitleNormalization.defaultTaskTitle)
+    }
+
+    /// True when any accessibility label in the file spells its own fallback for an empty title.
+    ///
+    /// The negative witness is the nearest miss on purpose: the same control, the same sentence,
+    /// the same interpolation — reading the shared display title instead of a local ternary. A
+    /// detector keyed on "the label contains a conditional" would separate them for the wrong
+    /// reason and would flag `iOSFloatingCreateTaskButton`, whose `caption.isEmpty ?` is a genuine
+    /// choice between two sentences rather than a second name for one thing.
+    private func handRolledTitleFallbackInstrument() throws -> CadenceScanInstrument {
+        try CadenceScanInstrument(
+            "accessibility label with a hand-rolled empty-title fallback",
+            fires: #"""
+            .buttonStyle(.plain)
+            .accessibilityLabel("Schedule \(task.title.isEmpty ? "task" : task.title) at \(time)")
+            """#,
+            andNotOn: #"""
+            .buttonStyle(.plain)
+            .accessibilityLabel("Schedule \(TaskTitleSupport.displayTitle(task.title)) at \(time)")
+            """#,
+            by: Self.namesATitleFallbackInALabel
+        )
+    }
+
+    private static func namesATitleFallbackInALabel(_ source: String) -> Bool {
+        // Cheap reject before the expensive strip, the same guard the two rules above use.
+        guard source.contains(".title.isEmpty") else { return false }
+        let code = CadenceSourceScan.strippingComments(source)
+        return accessibilityNameSegments(in: code).contains { $0.contains(".title.isEmpty") }
+    }
+
+    /// The text of every `.accessibilityLabel(…)` and `.accessibilityValue(…)` in `source`.
+    ///
+    /// Both, because the rule is about a *name over a value*: a label and a value are the two
+    /// modifiers that speak one, and splitting them would leave half the surface unswept.
+    static func accessibilityNameSegments(in source: String) -> [String] {
+        segments(after: ".accessibilityLabel(", open: "(", close: ")", in: source)
+            + segments(after: ".accessibilityValue(", open: "(", close: ")", in: source)
+    }
+
     // MARK: - Reading Swift text
 
     enum ProbeFailure: Swift.Error, CustomStringConvertible {

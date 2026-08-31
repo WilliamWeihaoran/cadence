@@ -1052,7 +1052,14 @@ struct iOSTimelineTaskBlock: View {
             .buttonStyle(.iosPressable)
             .padding(.top, 4)
             .padding(.trailing, 5)
-            .accessibilityLabel("Move \(task.title.isEmpty ? "task" : task.title) back to ready to schedule")
+            // The shared display title, not a second fallback. T-590 named the schedule panel's
+            // chip; this is the same `task.title.isEmpty ? "task" : task.title` one file over, and
+            // the block it sits on already draws `TaskTitleSupport.displayTitle`.
+            //
+            // The *full* fallback, where the block beside it draws the compact one. That is the
+            // compact spelling's own stated reason — "a row with no width for the noun" — and a
+            // spoken label has no width, so "Untitled Task" is the right form of the same name.
+            .accessibilityLabel("Move \(TaskTitleSupport.displayTitle(task.title)) back to ready to schedule")
         }
     }
 }

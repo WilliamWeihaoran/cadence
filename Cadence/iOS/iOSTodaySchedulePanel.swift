@@ -618,7 +618,12 @@ private struct iOSScheduleReadyTaskRow: View {
                             .padding(.vertical, -9)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Schedule \(task.title.isEmpty ? "task" : task.title) at \(TimeFormatters.timeString(from: startMin))")
+                    // The same name the row above it draws. This chip had its own fallback —
+                    // `task.title.isEmpty ? "task" : task.title` — so an untitled task was
+                    // "Untitled Task" on screen and "task" to VoiceOver, two names for one row,
+                    // and the fallback also missed a whitespace-only title that `displayTitle`
+                    // treats as blank (T-590).
+                    .accessibilityLabel("Schedule \(TaskTitleSupport.displayTitle(task.title)) at \(TimeFormatters.timeString(from: startMin))")
                 }
             }
         }
