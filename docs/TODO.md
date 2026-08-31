@@ -813,25 +813,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Use `strippingComments`, never `codeOnly` — `codeOnly` blanks string literals too, which is what
   made an earlier copy scan permanently and silently green.
 
-- [T-579] **iOS honours the "Default page" setting but offers no control for it.**
-  `CadencePreferenceKeys.listDetailDefaultPage` is read by `iOSListDetailView.swift:31`; the only UI
-  is macOS `SettingsSectionViews.swift:331-361`. Not symmetric with the reverse case — `ios.calendar.*`
-  is genuinely iOS-only. Add the Default-page row to iOS's Defaults group
-  (`iOSSettingsOverviewSections.swift:180-186`).
-
-- [T-580] **macOS shows two rows both called Account; iPhone shows "Account & Sync" on a platform with
-  no account.** `CadenceSettingsPresentationSupport.swift:27` (`.sync` = "Account & Sync") and `:37`
-  (`.account` = "Account"); macOS draws both, iOS draws only `.sync`, whose section is one iCloud card
-  with the eyebrow "iCloud". **Neither is right.** Retitle `.sync` to "iCloud Sync" — what both screens
-  actually show, and what iOS's own eyebrow already says — and leave "Account" to the macOS-only
-  Sign-in-with-Apple pane. One string fixes both platforms.
-
-- [T-581] **Contexts can be reordered on macOS but not on iPhone, and the order drives both sidebars.**
-  macOS `SettingsView.swift:182,261-276` + drag handle; iOS `iOSSettingsView.swift:290-363` has no
-  move path and new contexts just append. **Not a deliberate exclusion** — nothing declares it, unlike
-  `.sidebar`/`.account` which are named in `desktopOnly`. Both sidebars read
-  `@Query(sort: \Context.order)`. macOS is right; iOS should gain an `.onMove` affordance.
-
 - [T-583] **macOS archives a context without saving; iOS saves.** `SettingsView.swift:184,186` set
   `isArchived` with no save, while `reopenArea`/`reopenProject`/`moveContext` in the *same file*
   (`:275,280,285`) all call `try? modelContext.save()`. **INFERRED** — no `autosaveEnabled` is set
@@ -839,32 +820,10 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   below are redundant and the file cannot be right both ways. **Decide the convention for this file**
   rather than patching one line.
 
-- [T-568] **iOS month grid: neighbouring-month days are dimmed three times over, below the contrast
-  floor macOS wrote down.** `iOSCalendarMonthViews.swift:413` with `:323` and `:444` — `0.58` on the
-  label, `0.18->0.08` on the badge, *and* `.opacity(0.52)` on the whole cell. SwiftUI multiplies: the
-  12pt numeral lands at **0.30**. macOS states one token and measures the floor in its doc comment:
-  *"0.35 gives 1.45:1, at which a 12pt numeral no longer resolves"*
-  (`CalendarPageMonthGridSupport.swift:241-252`). The whole-cell opacity also fades the today ring and
-  the chips, which macOS deliberately avoids by moving the *plate*. **The user picks the final value.**
-
-- [T-572] *(**PREREQUISITE ADDED 2026-08-31 — read before starting. [[T-571]] changed the ground under
-  this ticket.** T-572 says to copy macOS's day-column accessibility label
-  (`CalendarBoardDayColumnSupportViews.swift:121`) to iOS as "the correct pattern". **It is no longer
-  correct.** That label announces `totalCount` (active + completed), while T-571 just changed the
-  visible header beside it to active-only. **On macOS, VoiceOver and the visible number now disagree.**
-  Copying the label as-is would export that mismatch to a second platform — turning one bug into two
-  while closing an accessibility ticket. Fix the macOS label first, or write the iOS label against
-  active-only and fix macOS in the same change. Do not copy blindly.)*
 - [T-572] **The iOS Board's day columns are unreadable to VoiceOver.**
   `iOSCalendarBoardView.swift:315-343` has no `accessibilityLabel`; macOS
   `CalendarBoardDayColumnSupportViews.swift:121` announces "<long date>, N scheduled items". The
   correct pattern is one file over.
-
-- [T-573] **Two iOS month-grid cells, only one announces that it is selected.**
-  `iOSCalendarMonthAgendaViews.swift:531-532` has `.accessibilityAddTraits(.isSelected)`;
-  `iOSCalendarMonthViews.swift:433` does not. Same grid container, same tap, same selection. Both also
-  announce only the long date — neither says the cell has anything on it, though one draws a count
-  capsule and the other a dot. `iOSCalendarTimelineViews.swift:569` is a third instance.
 
 - [T-584] *(**premise CORRECTED 2026-08-31 — this ticket, written by the coordinator, overstated the
   defect in two ways.** (1) **It is not an unnoticed bug; it is a recorded decision.**
@@ -902,38 +861,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   removes browse-all-notes from the rail and leaves other narrow hosts index-only.
   **Nobody has looked at this on a device.** The whole analysis is arithmetic and source reading. Before
   committing, capture the rail at 1366 and at 836 on a simulator.
-- [T-587] **`drawsCard` draws no card.** `iOSTodayTaskSections.swift:223-228` applies
-  `.padding(metrics.cardPadding)` and nothing else — no background, no clip. The flag's own doc
-  (`CadenceTodayLayoutSupport.swift:128-132`) states the reason it exists: *"the compact layout is
-  drawn on a `Theme.bg` page, where a `Theme.surface` card is what separates the day's list from the
-  page."* And `CadenceTodaySectionMetricsTests.swift:47-56` **pins `drawsCard` and `cardPadding > 0`
-  together — a test guarding a card no code draws.** Either the card was removed and the flag, padding,
-  doc and test are all residue, or it is genuinely missing. Decide which; one of the three is wrong.
-
-- [T-588] **`iOSCalendarMetrics` states in prose that 58 "is `iOSSchedulePanel.rowHeight`". It is a
-  second hand-typed 58.** `iOSCalendarMetrics.swift:41-44` vs `iOSTodaySchedulePanel.swift:170`. No
-  such reference exists in code. Same for `hourLabelSize = 11`. **And the duplication has already
-  drifted once**: `hourLabelTrailingInset = 8` against the row's literal `9`. A stated invariant with
-  nothing enforcing it — make the row read the metrics type, and pin it.
-
-- [T-590] **VoiceOver calls an untitled task "task" while the screen calls it "Untitled Task".**
-  `iOSTodaySchedulePanel.swift:564` (`task.title.isEmpty ? "task" : task.title`) vs `:513` (renders
-  `TaskTitleSupport.displayTitle`). A blind user and a sighted user get different names for the same
-  row, and the sighted one is the shared name. *Adjacent to [[T-539]] but distinct*: that is a
-  `TextField` **prompt** deliberately staying a noun phrase; this is an **accessibility label over a
-  value**, which T-539's own resolution says should read the shared display title.
-
-- [T-594] **Six controls on every macOS Today row have no accessible name — including the completion
-  circle.** `TasksPanelComponents.swift:205` (`.help("Start focus session")` with no label), `:508`
-  completion button, `:217` do-date pill, `:262` due-date pill, `:459` estimate chip, `:96` container
-  badge. **The repo already has a rule and a test suite for exactly this shape**
-  (`CadenceControlAccessibilityLabelTests`, T-472/T-484): an icon-only control carrying `.help(...)`
-  must also carry `.accessibilityLabel(...)`. The sweep is scoped to `MarkdownEditorView.swift` and
-  never reaches here — **widen it**. The completion circle, the primary control on every row, has
-  neither label nor tooltip; the do/due pills announce a bare "Tomorrow" with no hint which date they
-  set. iOS has the same hole (`iOSTaskRowActionViews.swift` has one label in the whole file), so this
-  is a shared gap rather than a divergence.
-
 - [T-595] **iOS calendar: put the drawn numbers in `iOSCalendarMetrics`.** Approved 2026-08-31.
   **(a) Ten hairline weights on one screen.** `Theme.borderSubtle` appears at 1.0, 0.75, 0.65, 0.46,
   0.42, 0.35, 0.34, 0.30, 0.28 and 0.20 across `iOSCalendarTimelineViews.swift:559,564,607,635,643`,
@@ -1132,7 +1059,129 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (b) `CadenceMCPServer` and `CadenceWidgets` are separate targets, so check the helper is available
   there before assuming one call fits all. Pin the result with a scan so the 26th site cannot appear.
 
+- [T-610] **44 tooltip-only controls still have no accessible name, in 28 files.** Split from
+  [[T-594]], which widened the T-472 sweep from one file to the whole app and ledgered what it found.
+  All macOS. `cadenceControlLabel(_:)` is the fix and **each entry deletes its own line** from
+  `CadenceControlAccessibilityLabelTests.knownUnnamedTooltipSites` — the ledger is exact, so a new site
+  fails *and* a stale entry fails, which means this can be done a file at a time without losing the
+  count. Densest: `TagPickerSupportViews.swift` (5), `ListEditorSupportViews.swift` (3),
+  `TaskInspectorContentSupportViews.swift` (3).
+
+- [T-611] **The iOS task row has the hole macOS's just lost: 1 accessibility label across 25 buttons.**
+  `Cadence/iOS/iOSTaskRowActionViews.swift`. Split from [[T-594]].
+  Mostly call sites — `CadenceTaskControlAccessibility` already holds the words (`doDate`, `dueDate`,
+  `estimate`, `list`) and `CadenceTaskCompletionState.accessibilityActionLabel` holds the completion
+  circle's. **But the widened sweep is structurally blind here:** `.help` does not exist on iOS, so the
+  "tooltip without a name" rule cannot fire. A separate rule is needed — probably "an icon-only
+  `Button` whose label is a bare `Image`/`systemName` must carry a label" — and it should be written
+  before the call sites, or nothing stops the 26th.
+
+- [T-612] **A fourth spelling of the carried-day dim, and this one has no plate to move.**
+  `iOSCalendarMonthAgendaViews.swift:477` (`Theme.dim` at full) x `:527` (`.opacity(0.5)` on the whole
+  cell). Found by the [[T-568]] agent. It nets 0.50 so it does not break the contrast floor today, but
+  it is a *multiplied pair* — the same shape T-568 removed — and it fades the today ring and the item
+  dot along with the label.
+  **Not a copy of T-568's fix:** unlike the full-size cell this one has no plate to move, so it needs a
+  design call — add a plate, or accept label-only dimming. Ask before landing.
+
+- [T-613] **Three more orphan `cardPadding` insets from the same commit [[T-587]] cleaned up.**
+  `iOSTaskCollectionPage.swift:262`, `iOSListDetailView.swift:357`, `iOSInboxRemindersSection.swift:59`
+  each still apply a 12pt inset for a card `85809ff` deleted, on top of their page's own gutter — All
+  Tasks and Inbox rows sit at 28 against a header at 16. `iOSTaskCollectionMetrics.cardPadding`'s doc
+  still calls it "The group card's inset."
+  Today is fixed; these three are the identical residue and **should be decided together** rather than
+  one at a time, since they share a metrics constant.
+
 ## Done
+
+- [T-579] **CLOSED 2026-08-31 (`4849cea`).** iOS Settings > Defaults now carries a "Default page" row
+  over `ListDetailPage.allCases`, on the same shared value-row/popover vocabulary macOS uses, with
+  macOS's one-time stale-value normalization brought across. Nothing removed from macOS; `ios.calendar.*`
+  remains genuinely iOS-only.
+
+- [T-580] **CLOSED 2026-08-31 (`87872f4`).** `.sync` retitled "iCloud Sync" — one string fixed both
+  platforms: macOS no longer draws two rows about an account, iOS no longer says "Account" on a
+  platform with none. **Both checks the ticket asked for came back clean:** the string is a label only,
+  `rawValue` (`"sync"`) is what persists and decodes and was untouched, and the only test hits on the
+  old title were `#require` *messages*, not assertions.
+
+- [T-581] **CLOSED 2026-08-31 (`a95423e`).** iOS gained Move Up / Move Down in the context menu each
+  row already had, greyed at the ends — **not `.onMove`**, which needs a `List` in edit mode and this is
+  a card of rows. Index arithmetic is now shared (`CadenceOrderReassignment`) and macOS reads it too, so
+  there is no second copy to drift.
+  **It did not copy macOS's swallowed save.** macOS ends `moveContext` in `try? save()`, which is inside
+  the letter of the rule but leaves a refused save as a rearrangement the next launch silently undoes.
+  iOS commits through `CadencePendingChangePersistence.commitEdit(in:undo:)`, restoring every `order` on
+  refusal so the card re-sorts to the store, with an inline failure notice. Both sides renumber over
+  *every* context including archived ones — numbering only the visible slice hands them indices archived
+  rows already hold, and a sort on ties is unstable.
+
+- [T-568] **CLOSED 2026-08-31 (`4628fd7`).** User chose macOS's documented 0.50, one layer. Token now
+  `CadenceCalendarDayBadge.outOfMonthLabelOpacity` in Shared (iOS cannot see `Cadence/macOS/`), read by
+  both platforms, with the contrast maths beside it. The badge's second dim and the whole-cell
+  `.opacity(0.52)` are gone; **following macOS's shape, the plate moves instead** — in-month
+  `Theme.surface`, carried `Theme.bg` — with today's and the selection's washes drawn over it, so the
+  today ring and the event chips are no longer faded. No third value invented.
+
+- [T-572] **CLOSED 2026-08-31 (`321cafd`).** **The prerequisite was right and saved the ticket from
+  shipping a bug twice.** macOS's label announced active+completed while its header drew active-only,
+  so copying it to iOS would have exported the mismatch. Fixed macOS in the same change and gave
+  neither side its own sentence: both read `CadenceBoardColumnAccessibility.dayColumnLabel`. macOS's
+  `totalCount` had one reader and is deleted. Pinned as a value **and** as a call-site scan asserting
+  the *argument* — a count-only scan would stay green if a sum were passed back in.
+
+- [T-573] **CLOSED 2026-08-31 (`bd8da45`).** `.isSelected` added; all three cells now say what is on
+  the day via `CadenceCalendarDayAccessibility`. **Label rule chosen deliberately:** count where a
+  count is drawn, presence where only a dot is, both where two are. The agenda count *is* knowable and
+  is deliberately not announced — stating a figure that is nowhere on screen is the mirror of the
+  T-571 mismatch.
+  **Premise did not reproduce:** `iOSCalendarTimelineViews:569` is **not** a third instance. That
+  header carries no selection state by design — its doc says so, its background keys on `isToday`
+  alone, and the grid passes it no `isSelected`. Adding the trait would announce a state the screen was
+  deliberately changed to stop drawing. Exemption pinned by
+  `theTimelineDayHeaderHasNoSelectedStateToAnnounce`.
+
+- [T-587] **CLOSED 2026-08-31 (`2668841`).** **Git settled it:** `git log -S'drawsCard'` shows the card
+  removed at this exact call site in `85809ff`, deliberately and five sites wide — *"macOS never drew
+  one, so the rows now read the same on both platforms."* So the flag, the padding, the doc sentence and
+  both tests were residue.
+  **The padding was not inert residue.** Both hosts already inset the list 14pt, so compact drew its
+  groups at 26 while the page header, options bar, rollover banner and past-due cards — siblings in the
+  same `VStack` — stayed at 14. **Visible change on iPhone Today:** group headers and rows move 12pt left
+  onto the same gutter as everything above them.
+  The old test pair pinned `drawsCard` and `cardPadding` *to each other*, which is exactly why it
+  survived the card's deletion — including the one whose own doc forbids "an inset with no fill behind
+  it". Replaced by a memberwise-init equality pin, so a new per-layout field now fails to **compile**.
+
+- [T-588] **CLOSED 2026-08-31 (`816329f`).** The row reads `iOSCalendarTimelineMetrics` for hour
+  height, label size and trailing inset. **8 won over 9** because it is the value with a measurement
+  behind it (`theHourLabelFitsTheNarrowRail`) and the one the Calendar rail already draws at both
+  widths — taking 9 would have moved the surface that measured to match the surface that did not.
+  **Extra finding:** all three literals sat behind a `rowHeight > 50` ramp with an unreachable lower
+  branch — the same dead compact ramp this file's own header records deleting from `rowHeight` itself,
+  still live three lines down. Collapsed with them.
+
+- [T-590] **CLOSED 2026-08-31 (`0da8318`).** Line numbers had moved exactly as warned. **The sweep
+  found a second instance the ticket did not list** — the same `title.isEmpty ? "task"` in
+  `iOSCalendarTimelineViews`' clear-time control. Both now read `TaskTitleSupport.displayTitle`, and
+  the app-wide rule is pinned: no accessibility label may spell its own empty-title fallback. Note both
+  take the full "Untitled Task" where the block beside them draws compact "Untitled" — that spelling's
+  stated reason is "a row with no width for the noun", **and a spoken label has no width.**
+
+- [T-594] **CLOSED 2026-08-31 (`7aa7de9`).** All six named. Three value chips take
+  `.accessibilityLabel` + `.accessibilityValue` (so "Do date, Tomorrow", not a bare "Tomorrow"); the
+  container badge is named on the shared `ContainerPickerBadge`, so the composer and inspector
+  breadcrumb inherit it; the completion circle keys on
+  `CadenceTaskCompletionState.accessibilityActionLabel`, whose five branches mirror `handleTap()`
+  — **mid-fill a second tap cancels, so a state reading would have been wrong.**
+  **Sweep widened from one file to the app: 44 unnamed-tooltip sites in 28 files remain**, recorded as
+  an exact per-file ledger so a new one fails *and* a stale entry fails. Split out as [[T-610]]; the
+  iOS twin is [[T-611]].
+  **A collateral run caught a real break** the scoped run would not have: `CadenceTodayUnificationTests`
+  pins `TasksPanelComponents.swift` at exactly one `estimateLabel` call site and the new
+  `.accessibilityValue` made it two. Fixed by having the chip read one property for both, **not** by
+  raising the pinned number.
+
 
 - [T-577] **CLOSED 2026-08-31 (`aac3679`).** Both gaps fixed. Titles now read
   `CadenceTitleNormalization.display(_:fallback:)` — **stronger than iOS's `.isEmpty` check**, which let
