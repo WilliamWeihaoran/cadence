@@ -23,6 +23,16 @@ struct TodayTaskGroup: Identifiable {
 // are `TasksPanelIntentSectionView` below; `TasksListView` and `ListDetailComponents` draw their
 // own and never used these.
 
+/// How far Today's rows are indented from the pane's leading edge.
+///
+/// **Deliberately not `TaskListDisplayMetrics.taskLeadingInset` (52).** That inset clears a list
+/// detail's own leading furniture; Today's rows sit directly under a panel header and are indented
+/// to match it. The **trailing** gutter has no such story — both surfaces need the hover fill and
+/// its 1pt border to stop short of the divider — so Today reads
+/// `TaskListDisplayMetrics.taskTrailingInset` rather than restating 12. It had no trailing padding
+/// at all until T-593, which is why Today alone drew rows flush to the divider.
+private let todayRowLeadingInset: CGFloat = 16
+
 /// One of Today's intent groups — Overdue / Past Do / Due Today / Planned Today — and the day's
 /// Completed group under them.
 ///
@@ -92,11 +102,17 @@ struct TasksPanelIntentSectionView: View {
                         }
                         .overlay(alignment: .top) {
                             if dragOverTaskID == task.id {
-                                Rectangle().fill(Theme.blue).frame(height: 2).padding(.leading, 16).transition(.opacity)
+                                Rectangle()
+                                    .fill(Theme.blue)
+                                    .frame(height: 2)
+                                    .padding(.leading, todayRowLeadingInset)
+                                    .padding(.trailing, TaskListDisplayMetrics.taskTrailingInset)
+                                    .transition(.opacity)
                             }
                         }
                         .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
-                        .padding(.leading, 16)
+                        .padding(.leading, todayRowLeadingInset)
+                        .padding(.trailing, TaskListDisplayMetrics.taskTrailingInset)
                         .transition(.asymmetric(
                             insertion: .opacity,
                             removal: .opacity.combined(with: .move(edge: .top))
@@ -187,7 +203,8 @@ struct TasksPanelCompletedSectionView: View {
                 ForEach(tasks) { task in
                     MacTaskRow(task: task, style: .standard, showsContainer: showsContainer, contexts: contexts, areas: areas, projects: projects)
                         .draggable(taskDragPayload(task))
-                        .padding(.leading, 16)
+                        .padding(.leading, todayRowLeadingInset)
+                        .padding(.trailing, TaskListDisplayMetrics.taskTrailingInset)
                         .transition(.asymmetric(
                             insertion: .opacity,
                             removal: .opacity.combined(with: .move(edge: .top))
