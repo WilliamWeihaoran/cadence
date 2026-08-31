@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The CI-only entitlement set. PROPOSAL - see .github/workflows/ci.yml.
+	     Cadence/Cadence.entitlements asks for an iCloud container, an app group, Sign in with
+	     Apple and APS. Every one of those needs a provisioning profile, and a hosted runner has
+	     no signing identity and no profile, so the shipping entitlements cannot be used there.
+	     Dropping them entirely does not work either: measured 2026-08-31, a build with
+	     CODE_SIGNING_ALLOWED=NO compiles and links fine but its test host HANGS -
+	     "The test runner hung before establishing connection." after 369s - because an
+	     unentitled, linker-signed binary cannot be attached to, and XCTest injection needs that.
+	     get-task-allow is the entitlement that permits it. Under XCTest the app opens a local
+	     temp store (PersistenceController.isRunningTests) and never reaches CloudKit or the app
+	     group, so nothing else here is needed by the unit suite. -->
+	<key>com.apple.security.get-task-allow</key>
+	<true/>
+</dict>
+</plist>

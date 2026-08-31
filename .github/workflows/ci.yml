@@ -1,0 +1,193 @@
+# Cadence CI — PROPOSAL. Nothing runs until Actions is enabled on this repository.
+#
+# Why this file exists
+# --------------------
+# Every verification in this project runs through one coordinator, serially, on one Mac. One
+# integration pass is ~9 minutes of wall clock that nothing else can overlap. Two things follow:
+#
+#  1. Serialisation. A batch of agents queues behind one machine and one test-host mutex.
+#  2. Blind spots that `-scheme Cadence` cannot see. `CadenceMCPServer` is a command-line target
+#     with an EXPLICIT Sources phase (see CadenceMCPServer/AGENTS.md): app-side edits to
+#     Cadence/Models or Cadence/Services routinely break it while the app scheme stays green.
+#     Measured precedent in this repository's own history: the MCP target did not compile for four
+#     consecutive commits (aaa0064 through bc13be0, fixed in 45a8084) with `-scheme Cadence` green
+#     the whole way; 670e299 and 62dc384 are two more. Building that scheme on every push is the
+#     "honest close" docs/TODO.md T-435 names for itself.
+#
+# What this deliberately does NOT do
+# ----------------------------------
+#  * CadenceUITests. T-531: macOS UI testing needs a one-time system authorisation granted with the
+#    user's password at a GUI prompt. A hosted runner has nobody to grant it, so the stage would
+#    fail at launch on every run, not intermittently. It stays local-only until T-531 is resolved.
+#  * Anything signed with a real identity. A hosted runner has no keychain identity and no
+#    provisioning profile for this app's entitlements (iCloud container, app group, Sign in with
+#    Apple, APS), so the shipping entitlements cannot be used there.
+#
+#    Measured locally 2026-08-31, and the obvious spelling is WRONG:
+#      - CODE_SIGNING_ALLOWED=NO builds fine (911 Swift compiles, 0 errors, `** TEST BUILD
+#        SUCCEEDED **`, products `adhoc, linker-signed`, `TeamIdentifier=not set`) but its test
+#        host HANGS: "Cadence (43764) encountered an error (The test runner hung before
+#        establishing connection.)" after 369 s. An unentitled linker-signed binary cannot be
+#        attached to, and XCTest injection needs that.
+#      - CODE_SIGN_IDENTITY="-" with .github/ci.entitlements (get-task-allow, nothing else) WORKS:
+#        11 tests executed, exit 0. That is what every job below uses.
+#    Under XCTest the app never opens the app-group or CloudKit store — PersistenceController
+#    .isRunningTests routes it to a local temp store — so nothing else in the shipping
+#    entitlements is needed by the unit suite.
+#  * Archive / notarise / release. Out of scope; those need the real identity.
+#
+# Cost, stated plainly
+# --------------------
+# GitHub-hosted macOS runners are NOT free on a private repository. They bill at a 10x multiplier
+# against included minutes (publicly listed around $0.08/min for the standard 3-core arm64 image —
+# re-check current pricing before enabling). This repository is private as of writing.
+#
+#   * Local full pass on the user's M3 Pro (11 cores): ~526 s.
+#   * A hosted standard macOS runner is a 3-core M1. Expect roughly 2-3x, i.e. 20-30 min for the
+#     test job, ~2 min for the MCP job, ~6-10 min for the optional iOS job.
+#   * So one full CI pass is roughly 25-40 macOS runner-minutes ≈ $2-$3 per push, or about 5-8
+#     pushes on a plan's included 200-300 macOS minutes.
+#
+# That is why `paths-ignore` below is load-bearing rather than tidy: 106 of this repository's last
+# 120 commits touch only docs/**, AGENTS.md, CLAUDE.md or README.md. Skipping those is an ~88%
+# reduction in billed minutes, and it costs nothing real — no doc change can break a build.
+# If the cost is still unacceptable, the cheap subset is the `mcp-server` job alone (~2 min): it is
+# the one gate that catches something the local loop structurally cannot.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/AGENTS.md'
+      - 'CLAUDE.md'
+      - 'README.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**/AGENTS.md'
+      - 'CLAUDE.md'
+      - 'README.md'
+  workflow_dispatch:
+    inputs:
+      run_ios:
+        description: 'Also compile the iOS surface (T-535). Costs ~6-10 extra runner minutes.'
+        type: boolean
+        default: false
+
+# Superseded pushes are cancelled rather than billed.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The gate the local loop structurally cannot provide. Cheapest job here; if
+  # only one job is ever enabled, make it this one.
+  # ---------------------------------------------------------------------------
+  mcp-server:
+    name: Build CadenceMCPServer (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert toolchain
+        run: ./.github/scripts/assert-toolchain.sh
+      - name: Build
+        run: |
+          # scripts/xcb.sh writes its log to "${TMPDIR}cadence-xcb-<id>.log". Pin TMPDIR here (NOT
+          # in a job-level `env:` -- the `runner` context is not legal there and evaluates empty)
+          # so the Gates step below knows the path without parsing it back out of stdout.
+          export TMPDIR="$RUNNER_TEMP/"
+          ./scripts/xcb.sh ci-mcp build \
+            -scheme CadenceMCPServer \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd-mcp" \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            CODE_SIGN_ENTITLEMENTS=.github/ci.entitlements
+      - name: Gates
+        if: always()
+        run: ./.github/scripts/check-log.sh "$RUNNER_TEMP/cadence-xcb-ci-mcp.log" build
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: mcp-build-log
+          path: ${{ runner.temp }}/cadence-xcb-ci-mcp.log
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # The unit suite. Scoped to CadenceTests: an unscoped run pulls in
+  # CadenceUITests, which cannot launch here (T-531).
+  # ---------------------------------------------------------------------------
+  macos-tests:
+    name: CadenceTests (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert toolchain
+        run: ./.github/scripts/assert-toolchain.sh
+      - name: Test
+        run: |
+          export TMPDIR="$RUNNER_TEMP/"
+          ./scripts/xcb.sh ci-tests test \
+            -scheme Cadence \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd-tests" \
+            -only-testing:CadenceTests \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            CODE_SIGN_ENTITLEMENTS=.github/ci.entitlements
+      - name: Gates
+        if: always()
+        run: ./.github/scripts/check-log.sh "$RUNNER_TEMP/cadence-xcb-ci-tests.log" test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-log
+          path: ${{ runner.temp }}/cadence-xcb-ci-tests.log
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: xcresult
+          path: ${{ runner.temp }}/dd-tests/Logs/Test/*.xcresult
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # T-535: nothing in the release gate ever compiles the iOS surface, and
+  # Cadence/iOS is a large real surface, not a stub. Manual-only, deliberately:
+  # it is ~6-10 billed runner-minutes and most changes here are macOS-only.
+  #
+  # If it should instead run automatically on pushes that touch Cadence/iOS, that
+  # needs a cheap ubuntu `changes` job emitting an output that this job's `if:`
+  # reads -- a per-job `paths:` filter does not exist, and doing it with a
+  # third-party paths-filter action would add supply-chain surface for one
+  # boolean. Left as a decision rather than guessed at.
+  # ---------------------------------------------------------------------------
+  ios-build:
+    name: Build iOS surface
+    runs-on: macos-latest
+    timeout-minutes: 40
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.run_ios
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert toolchain
+        run: ./.github/scripts/assert-toolchain.sh
+      - name: Build
+        run: |
+          export TMPDIR="$RUNNER_TEMP/"
+          ./scripts/xcb.sh ci-ios build \
+            -scheme Cadence \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/dd-ios" \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            CODE_SIGN_ENTITLEMENTS=.github/ci.entitlements
+      - name: Gates
+        if: always()
+        run: ./.github/scripts/check-log.sh "$RUNNER_TEMP/cadence-xcb-ci-ios.log" build

@@ -8,28 +8,13 @@ import EventKit
 import SwiftData
 import Observation
 
-enum CalendarRecurrenceEditScope: String, CaseIterable, Hashable {
-    case thisOccurrence
-    case futureOccurrences
-
-    var label: String {
-        switch self {
-        case .thisOccurrence: return "Only This Event"
-        case .futureOccurrences: return "This And Future Events"
-        }
-    }
-
-    var eventSpan: EKSpan {
-        switch self {
-        case .thisOccurrence: return .thisEvent
-        case .futureOccurrences: return .futureEvents
-        }
-    }
-}
-
-// `CalendarWriteFailure` — the typed reason a write did not happen — used to be declared here.
-// T-339 moved it to `Cadence/Shared/CalendarWriteFailure.swift` so iOS can return it too; this
-// file is one big `#if os(macOS)`, which is the whole reason iOS had to answer `Bool`.
+// Two types that used to be declared here have moved out to `Cadence/Shared/`, both because this
+// file is one big `#if os(macOS)` and neither of them was ever desktop-only:
+//
+// - `CalendarWriteFailure` — the typed reason a write did not happen — under T-339, which is the
+//   whole reason iOS used to have to answer `Bool`.
+// - `CalendarRecurrenceEditScope` — which occurrences a write applies to — under T-549, which
+//   deleted the byte-identical private copy `iOSCalendarEventEditSheet` had been keeping.
 
 @Observable
 final class CalendarManager {

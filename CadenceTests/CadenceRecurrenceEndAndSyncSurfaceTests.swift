@@ -288,42 +288,78 @@ struct CadenceRecurrenceEndSurfaceTests {
         }
     }
 
-    /// **The phone's private copy of the calendar scope enum still says the same two things.**
+    /// **One calendar scope enum, and the phone uses it.**
     ///
-    /// Found while converging the dialog around it, and reported rather than assumed:
-    /// `CalendarRecurrenceEditScope` is inside `CalendarManager.swift`, which is one whole
-    /// `#if os(macOS)`, so `iOSCalendarEventEditSheet` declares its own
-    /// `iOSCalendarRecurrenceEditScope` — the same two cases, the same two `rawValue`s, the same
-    /// two labels and the same two `EKSpan`s, byte for byte. **Measured at the point of this
-    /// change: the two had not drifted.** Nothing held them together, though, and that is exactly
-    /// the state [[T-200]] found the *task* scope enums in — `TaskWorkflowService` had its own
-    /// two-case copy with byte-identical labels, and the fix was one type plus a test on the
-    /// labels. This is the same shape one surface over, minus the merge: the enums cannot be
-    /// merged while the macOS one is fenced, so the labels get the test.
+    /// This replaces `thePhonesPrivateCalendarScopeEnumMatchesTheMacOne`, which held the line while
+    /// two copies existed: `CalendarRecurrenceEditScope` was declared inside `CalendarManager.swift`
+    /// — one whole `#if os(macOS)` — so `iOSCalendarEventEditSheet` carried a
+    /// `private enum iOSCalendarRecurrenceEditScope` with the same two cases, the same two
+    /// `rawValue`s, the same two labels and the same two `EKSpan`s, byte for byte. That pin could
+    /// only ever be a *source scan over the phone's file*, because the duplicate it was watching
+    /// was not a symbol this target could name. T-549 moved the enum to `Cadence/Shared/` and
+    /// deleted the copy, so the pin went with it — it existed only because the duplication did.
     ///
-    /// The expected words are read off the macOS enum rather than typed here, so renaming a scope
-    /// re-points this check instead of silently emptying it.
-    @Test func thePhonesPrivateCalendarScopeEnumMatchesTheMacOne() throws {
-        let sheet = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarEventEditSheet.swift"))
-        #expect(
-            sheet.contains("private enum iOSCalendarRecurrenceEditScope"),
-            "non-vacuity: the phone's private scope enum is not in this file"
-        )
+    /// What is left to scan is the thing a runtime check still cannot see: that no **second**
+    /// declaration has come back. The needle is the `enum` keyword with an optional prefix on the
+    /// name, so a fresh `iOSCalendarRecurrenceEditScope` or `macCalendarRecurrenceEditScope` is
+    /// caught as readily as a verbatim re-declaration.
+    @Test func theCalendarRecurrenceScopeIsDeclaredOnceAndOutsideEveryPlatformFence() throws {
+        let declaration = "Cadence/Shared/CalendarRecurrenceEditScope.swift"
+        let source = try strippingComments(sourceFile(declaration))
 
-        for scope in CalendarRecurrenceEditScope.allCases {
-            #expect(
-                sheet.contains("case .\(scope.rawValue): return \"\(scope.label)\""),
-                "the phone's \(scope.rawValue) button no longer says \"\(scope.label)\""
-            )
+        // Non-vacuity: the file exists, is the declaration, and the reader is looking at code.
+        #expect(source.contains("enum CalendarRecurrenceEditScope: String, CaseIterable, Hashable"))
+        #expect(try filesMentioning("thisCalendarScopeSentenceIsInNoSourceFile").isEmpty)
+
+        // Shared and *actually* shared: not a file whose every line is one platform's, which is the
+        // shape that trapped it in the first place.
+        let firstCodeLine = source
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty }
+        #expect(firstCodeLine?.hasPrefix("#if os(") == false, "the shared scope enum is fenced again")
+
+        // Exactly one declaration in the whole app, and it is that file.
+        let declarationPattern = "enum\\s+[A-Za-z0-9_]*CalendarRecurrenceEditScope(?![A-Za-z0-9_])"
+        var declaringFiles: [String] = []
+        for path in try swiftFiles(under: "Cadence") {
+            let code = try strippingComments(sourceFile(path))
+            if CadenceSourceScan.matchCount(declarationPattern, in: code) > 0 {
+                declaringFiles.append(path)
+            }
         }
+        #expect(declaringFiles == [declaration], "calendar scope enum declared in: \(declaringFiles)")
 
-        // And the span each case resolves to, which is what makes the labels true rather than
-        // merely equal: a phone whose "Only This Event" wrote `.futureEvents` would pass a
-        // label-only check while destroying the rest of somebody's series.
-        #expect(sheet.contains("case .thisOccurrence: return .thisEvent"))
-        #expect(sheet.contains("case .futureOccurrences: return .futureEvents"))
+        // And the phone reads the shared one rather than answering `.thisEvent` from a copy.
+        let sheet = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarEventEditSheet.swift"))
+        #expect(sheet.contains("CalendarRecurrenceEditScope.thisOccurrence.label"))
+        #expect(sheet.contains("CalendarRecurrenceEditScope.futureOccurrences.label"))
+        #expect(try filesMentioning("iOSCalendarRecurrenceEditScope").isEmpty)
+    }
+
+    /// **The words and the span come from one value, for both platforms now.**
+    ///
+    /// This is the half of the deleted pin that mattered and the half a label-only check would have
+    /// missed: an "Only This Event" button that wrote `.futureEvents` reads correctly everywhere and
+    /// deletes the rest of somebody's series. It used to be true of the phone only by textual
+    /// coincidence — the assertion was `sheet.contains("case .thisOccurrence: return .thisEvent")`,
+    /// a string in a file this target compiles nothing from. With one shared type it is executed.
+    ///
+    /// Total rather than per-case: two cases that agreed on a label, or on a span, would be one
+    /// choice wearing two hats, and `allCases.count` pins that a third scope cannot arrive
+    /// unexamined.
+    @Test func everyCalendarRecurrenceScopePairsItsOwnLabelWithItsOwnEventSpan() {
+        #expect(CalendarRecurrenceEditScope.allCases.count == 2)
+
+        #expect(CalendarRecurrenceEditScope.thisOccurrence.label == "Only This Event")
         #expect(CalendarRecurrenceEditScope.thisOccurrence.eventSpan == .thisEvent)
+        #expect(CalendarRecurrenceEditScope.futureOccurrences.label == "This And Future Events")
         #expect(CalendarRecurrenceEditScope.futureOccurrences.eventSpan == .futureEvents)
+
+        let labels = Set(CalendarRecurrenceEditScope.allCases.map(\.label))
+        #expect(labels.count == CalendarRecurrenceEditScope.allCases.count)
+        let spans = Set(CalendarRecurrenceEditScope.allCases.map(\.eventSpan.rawValue))
+        #expect(spans.count == CalendarRecurrenceEditScope.allCases.count)
     }
 
     // MARK: - The shared presentation type

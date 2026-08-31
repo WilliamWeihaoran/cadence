@@ -115,3 +115,35 @@ Keep doing what you are doing. `docs/AUDIT_BRIEF.md` is the full version; the sh
 - The single most common defect shape across 20 audits is **a correct shared helper that call sites
   do not use**. It is filed as T-374. When you find one, say so explicitly — it makes the fix an
   easy review instead of new design.
+
+## 5. Turn the user's UI dump into located tickets — highest-value new task
+
+The user sees the app; nobody else in this loop can. Claude's agents can drive an **iOS simulator**
+and verify there, but a macOS debug build vends no AX window tree and `screencapture` refuses its
+window, so macOS UI judgements come back to the user. That makes the user's own observations the
+scarcest input in the project — and writing them up longhand is the expensive part for them.
+
+**So: the user gives you one-liners, sometimes with screenshots. You give back tickets.** For each:
+
+- **Locate it.** `file:line` for the thing being described. This is the bulk of the value — it is the
+  step that otherwise costs Claude the most reading.
+- **The 30-second confirming command.** A `rg`, a `swift -e`, the exact test.
+- **Measured or inferred**, per claim. You already do this and it is why your tickets have held up
+  better than the coordinator's: eleven ticket premises were disproved by the agents fixing them this
+  session, and the ones written from reading rather than running are where that happened.
+- **Bug or taste?** Say which. "This spacing is inconsistent with its twin" is a bug. "This spacing
+  should be tighter" is a preference, and the fix must not be spelled as a number by anyone but the
+  user — twice this session an agent correctly refused to re-derive a spacing value because it would
+  have silently retracked text nobody had looked at.
+- **Check `docs/TODO.md` first** and write "extends T-NNN" rather than re-filing. Roughly 40 tickets
+  are open and ~270 archived; `docs/TODO_DONE.md` is near-complete above T-200 and near-empty below
+  it, so a miss there is not evidence a ticket is new.
+- **Does an iOS twin exist?** If the same surface exists on both platforms, say whether they agree.
+  Cross-platform copy and layout drift is the single most common defect shape here.
+
+**A second thing worth more than it looks: screen enumeration.** The user can name a screen and
+nothing else — "Goals page, macOS". Read every view that draws it and return a numbered list of what
+is structurally suspicious: values bypassing `Theme`, spacings not using a shared token, copy that
+differs from the iOS twin, alignment inconsistencies. The user replies with numbers. That inverts the
+cost — you generate candidates, they filter — and it is the cheapest possible use of the one person
+who can actually see the screen.

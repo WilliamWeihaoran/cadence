@@ -16,6 +16,11 @@ import SwiftData
 struct SidebarView: View {
     @Binding var selection: SidebarItem?
     @Query(sort: \Context.order) private var contexts: [Context]
+    // Queried flat, not read off `context.areas` / `context.projects`. Iterating the relationship
+    // is what made a context-less list invisible on this column — see `listSections` (T-538).
+    // Unsorted on purpose: the one ordering is `CadenceSidebarLists`'.
+    @Query private var areas: [Area]
+    @Query private var projects: [Project]
     @Query private var allTasks: [AppTask]
     @Query private var habits: [Habit]
     @Query(filter: #Predicate<Goal> { $0.statusRaw == "active" }) private var activeGoals: [Goal]
@@ -159,18 +164,40 @@ struct SidebarView: View {
 
     // MARK: - Lists
 
+    /// The region, top to bottom — **through the same rule the iPad column uses** (T-538).
+    ///
+    /// This used to be `ForEach(contexts)` handing each `Context` to a section that then read its
+    /// own `context.areas` / `context.projects`. `Area.context` and `Project.context` are
+    /// optional, and iOS's list editor writes `nil` there from its "None" row in every mode — so
+    /// the Mac inherits by sync a list that belongs to no context, and a region derived by
+    /// *iterating contexts* reaches it from nowhere. It was not un-grouped in this column; it was
+    /// **invisible**. Archiving a context did the same to every list inside it.
+    ///
+    /// `CadenceSidebarLists.sections` already answered this for iPad, where the leftovers get an
+    /// "Other" section, and its own doc comment named the macOS gap. Both columns route through it
+    /// now. `keepingEmptyContexts` is the one difference and it is load-bearing: this header
+    /// carries the "+" that opens `CreateListSheet`, the only way to make a list in a given
+    /// context on macOS, so a context with no lists yet must still get a section.
+    private var listSections: [CadenceSidebarLists.ElementSection<SidebarListEntry>] {
+        CadenceSidebarLists.sections(
+            contexts: contexts.filter { !$0.isArchived }.map {
+                CadenceSidebarLists.ContextRef(id: $0.id, name: $0.name)
+            },
+            elements: areas.filter(\.isActive).map(SidebarListEntry.area)
+                + projects.filter(\.isActive).map(SidebarListEntry.project),
+            keepingEmptyContexts: true,
+            item: { $0.sidebarListItem }
+        )
+    }
+
     /// The single scrolling region. Takes every point the pinned groups don't, so
     /// Settings stays on the bottom edge whether the user has two lists or forty.
     private var listsSection: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(contexts.filter { !$0.isArchived }) { context in
-                    ContextSection(
-                        context: context,
-                        selection: $selection,
-                        onAddList: { contextForNewList = context }
-                    )
-                    .padding(.vertical, 2)
+                ForEach(listSections) { section in
+                    contextSection(section)
+                        .padding(.vertical, 2)
                 }
             }
             .padding(.vertical, SidebarMetrics.groupSpacing)
@@ -178,6 +205,20 @@ struct SidebarView: View {
         }
         .scrollIndicators(.hidden)
         .frame(maxHeight: .infinity)
+    }
+
+    /// The catch-all section gets no "+": it stands for no context, so there is nothing for
+    /// `CreateListSheet` — which requires one — to be opened *in*.
+    private func contextSection(
+        _ section: CadenceSidebarLists.ElementSection<SidebarListEntry>
+    ) -> some View {
+        let owner = section.contextID.flatMap { id in contexts.first { $0.id == id } }
+        return ContextSection(
+            title: section.title,
+            entries: section.elements,
+            selection: $selection,
+            onAddList: owner.map { context in { contextForNewList = context } }
+        )
     }
 
     // MARK: - Tab visibility / order

@@ -371,33 +371,10 @@ struct iOSSidebar: View {
 
 // MARK: - Model → value bridge
 
+/// The two `Item` initialisers this extension used to hold live in `CadenceSidebarListsBridge`
+/// now. macOS carried a second, divergent copy that took the context id as a **non-optional**
+/// parameter, which is what made a context-less list undrawable on that column (T-538).
 private extension CadenceSidebarLists.Item {
-    init(_ area: Area) {
-        self.init(
-            id: area.id,
-            kind: .area,
-            name: area.name,
-            colorHex: area.colorHex,
-            order: area.order,
-            contextID: area.context?.id,
-            dueDateKey: nil,
-            openTaskCount: CadenceTaskQuerySupport.openTaskCount(for: area)
-        )
-    }
-
-    init(_ project: Project) {
-        self.init(
-            id: project.id,
-            kind: .project,
-            name: project.name,
-            colorHex: project.colorHex,
-            order: project.order,
-            contextID: project.context?.id,
-            dueDateKey: project.dueDate.isEmpty ? nil : project.dueDate,
-            openTaskCount: CadenceTaskQuerySupport.openTaskCount(for: project)
-        )
-    }
-
     var selectionItem: iOSSidebarItem {
         switch kind {
         case .area: return .area(id)

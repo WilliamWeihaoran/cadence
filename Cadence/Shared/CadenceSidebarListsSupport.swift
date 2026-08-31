@@ -72,6 +72,23 @@ nonisolated enum CadenceSidebarLists {
         static let ungroupedID = "ungrouped"
     }
 
+    /// The same section, for a caller that has to keep its own element type — the grouping twin of
+    /// `sorted(_:item:)`, and it exists for the same reason (T-538).
+    ///
+    /// macOS's rows drag and their drop delegate writes `order` back, so `ContextSection` holds
+    /// live `Area` / `Project` objects and cannot render a flattened `Item`. Before this existed it
+    /// therefore could not call `sections(contexts:items:)` at all, and did the grouping itself by
+    /// iterating each `Context`'s relationship — which is how the catch-all below came to be drawn
+    /// on iPad and nowhere else.
+    struct ElementSection<Element>: Identifiable {
+        /// `nil` on the trailing catch-all section, exactly as on `Section`.
+        let contextID: UUID?
+        let title: String
+        let elements: [Element]
+
+        var id: String { contextID?.uuidString ?? Section.ungroupedID }
+    }
+
     /// A context, reduced to what the region needs. Callers pass these already filtered and in the
     /// order the sidebar shows them.
     struct ContextRef: Identifiable, Equatable, Hashable {
@@ -92,34 +109,69 @@ nonisolated enum CadenceSidebarLists {
     /// lose rows that are on screen today. They get a section instead.
     static let ungroupedTitle = "Other"
 
-    /// The region, top to bottom.
+    /// The region, top to bottom, for the iPad column — which renders flattened `Item`s.
     ///
-    /// `contexts` supplies the order and the naming. **A section with no rows is dropped**,
-    /// catch-all included: the header carries no control of its own — creating a list is the Lists
-    /// row above the region — so an empty one would be a word over nothing.
+    /// `contexts` supplies the order and the naming. **A section with no rows is dropped** here,
+    /// catch-all included: on this column no header carries a control of its own — creating a list
+    /// is the Lists row above the region — so an empty one would be a word over nothing.
     static func sections(contexts: [ContextRef], items: [Item]) -> [Section] {
-        let known = Set(contexts.map(\.id))
-        var byContext: [UUID: [Item]] = [:]
-        var ungrouped: [Item] = []
+        sections(contexts: contexts, elements: items, keepingEmptyContexts: false, item: { $0 })
+            .map { Section(contextID: $0.contextID, title: $0.title, items: $0.elements) }
+    }
 
-        for item in items {
-            if let contextID = item.contextID, known.contains(contextID) {
-                byContext[contextID, default: []].append(item)
+    /// The same region, for a caller that has to keep its own element type.
+    ///
+    /// **This is the whole of T-538.** A list whose `context` is `nil` — or whose context has been
+    /// archived, so it is not in `contexts` — belongs to no context section, and a column that
+    /// derives its rows by *iterating contexts* cannot draw it at all. It is not un-grouped there;
+    /// it is absent. iOS offers "None" in the context row of every list editor, in new and edit
+    /// mode alike, so this state is one tap away on the phone and arrives on the Mac by sync. Both
+    /// columns route through here now, so neither can reach the leftovers by not looking.
+    ///
+    /// `keepingEmptyContexts` is the one thing the two columns genuinely differ on, and it is not
+    /// cosmetic: the macOS header *does* carry a control — the "+" that opens `CreateListSheet`,
+    /// which is the only way to make a list in a given context on that platform — so dropping an
+    /// empty context there would make a newly created context unusable. The catch-all is never
+    /// kept when empty either way; it has no control to offer under any spelling.
+    static func sections<Element>(
+        contexts: [ContextRef],
+        elements: [Element],
+        keepingEmptyContexts: Bool,
+        item: (Element) -> Item
+    ) -> [ElementSection<Element>] {
+        // Decorated once, not re-read per phase: `item` walks a SwiftData relationship on macOS
+        // (the open-task tally), so calling it in the bucketing loop and again inside the sort
+        // would double that walk for every row on every render.
+        let decorated = elements.map { (element: $0, item: item($0)) }
+        let known = Set(contexts.map(\.id))
+        typealias Decorated = (element: Element, item: Item)
+        var byContext: [UUID: [Decorated]] = [:]
+        var ungrouped: [Decorated] = []
+
+        for entry in decorated {
+            if let contextID = entry.item.contextID, known.contains(contextID) {
+                byContext[contextID, default: []].append(entry)
             } else {
-                ungrouped.append(item)
+                ungrouped.append(entry)
             }
         }
 
-        var sections = contexts.compactMap { context -> Section? in
+        func section(_ contextID: UUID?, _ title: String, _ owned: [Decorated]) -> ElementSection<Element> {
+            ElementSection(
+                contextID: contextID,
+                title: title,
+                elements: sorted(owned, item: \.item).map(\.element)
+            )
+        }
+
+        var sections = contexts.compactMap { context -> ElementSection<Element>? in
             let owned = byContext[context.id] ?? []
-            guard !owned.isEmpty else { return nil }
-            return Section(contextID: context.id, title: context.name, items: sorted(owned))
+            guard keepingEmptyContexts || !owned.isEmpty else { return nil }
+            return section(context.id, context.name, owned)
         }
 
         if !ungrouped.isEmpty {
-            sections.append(
-                Section(contextID: nil, title: ungroupedTitle, items: sorted(ungrouped))
-            )
+            sections.append(section(nil, ungroupedTitle, ungrouped))
         }
 
         return sections

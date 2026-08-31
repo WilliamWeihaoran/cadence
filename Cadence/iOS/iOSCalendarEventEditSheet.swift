@@ -13,25 +13,6 @@ struct iOSCalendarEventSelection: Identifiable {
     }
 }
 
-private enum iOSCalendarRecurrenceEditScope: String, CaseIterable, Hashable {
-    case thisOccurrence
-    case futureOccurrences
-
-    var label: String {
-        switch self {
-        case .thisOccurrence: return "Only This Event"
-        case .futureOccurrences: return "This And Future Events"
-        }
-    }
-
-    var eventSpan: EKSpan {
-        switch self {
-        case .thisOccurrence: return .thisEvent
-        case .futureOccurrences: return .futureEvents
-        }
-    }
-}
-
 struct iOSCalendarEventEditSheet: View {
     let event: EKEvent
 
@@ -213,10 +194,10 @@ struct iOSCalendarEventEditSheet: View {
                 ),
                 titleVisibility: .visible
             ) {
-                Button(iOSCalendarRecurrenceEditScope.thisOccurrence.label) {
+                Button(CalendarRecurrenceEditScope.thisOccurrence.label) {
                     applyPendingAction(scope: .thisOccurrence)
                 }
-                Button(iOSCalendarRecurrenceEditScope.futureOccurrences.label) {
+                Button(CalendarRecurrenceEditScope.futureOccurrences.label) {
                     applyPendingAction(scope: .futureOccurrences)
                 }
                 Button("Cancel", role: .cancel) {
@@ -588,7 +569,7 @@ struct iOSCalendarEventEditSheet: View {
         applyDelete(scope: .thisOccurrence)
     }
 
-    private func applyPendingAction(scope: iOSCalendarRecurrenceEditScope) {
+    private func applyPendingAction(scope: CalendarRecurrenceEditScope) {
         guard let pendingAction else { return }
         self.pendingAction = nil
         switch pendingAction {
@@ -599,7 +580,7 @@ struct iOSCalendarEventEditSheet: View {
         }
     }
 
-    private func applySave(scope: iOSCalendarRecurrenceEditScope) {
+    private func applySave(scope: CalendarRecurrenceEditScope) {
         if let failure = calendarManager.updateEvent(
             event,
             title: title,
@@ -621,7 +602,7 @@ struct iOSCalendarEventEditSheet: View {
         dismiss()
     }
 
-    private func applyDelete(scope: iOSCalendarRecurrenceEditScope) {
+    private func applyDelete(scope: CalendarRecurrenceEditScope) {
         if let failure = calendarManager.deleteEvent(event, span: scope.eventSpan) {
             actionError = CadenceCalendarEventEditingSupport.deleteFailureNotice(for: failure)
         } else {

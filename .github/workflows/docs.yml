@@ -1,0 +1,66 @@
+# The cheap half of CI. PROPOSAL — see .github/workflows/ci.yml for the rationale and the cost.
+#
+# This is a separate workflow, not a job in ci.yml, for one reason: ci.yml `paths-ignore`s docs/**
+# and **/AGENTS.md, because 106 of the last 120 commits here touch nothing else and macOS runner
+# minutes are the expensive resource. That exclusion leaves the guides' own budget unchecked on
+# exactly the pushes most likely to break it. This workflow fires on the complement.
+#
+# `AgentContextBudgetTests` remains the authority; it caps every AGENTS.md in the tree and also
+# checks routing and required links, which this does not. What this adds is the FAST red: the test
+# only runs inside the ~25-minute macOS job, and two agents in a row have landed a good rule and
+# left the file over the cap, turning a green batch into a rerun. Ubuntu minutes bill at 1x.
+
+name: Docs budget
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '**/AGENTS.md'
+      - 'CLAUDE.md'
+      - 'README.md'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '**/AGENTS.md'
+      - 'CLAUDE.md'
+      - 'README.md'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  budget:
+    name: Always-read guides stay under 200 lines
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check line budgets
+        run: |
+          set -uo pipefail
+          rc=0
+          count=0
+          while IFS= read -r guide; do
+            count=$((count + 1))
+            lines=$(wc -l < "$guide" | tr -d ' ')
+            printf '  %-40s %4s lines\n' "$guide" "$lines"
+            if [ "$lines" -gt 200 ]; then
+              echo "::error file=$guide::$guide is $lines lines, over the 200-line cap."
+              rc=1
+            fi
+          done < <(git ls-files '*AGENTS.md' 'CLAUDE.md' | sort)
+          # Non-vacuity: a glob that found nothing must not read as a pass. The tree had 13
+          # capped guides when this was written; AgentContextBudgetTests asserts >= 12.
+          if [ "$count" -lt 12 ]; then
+            echo "::error::found only $count guides to cap; the file list is wrong, not the budget."
+            rc=1
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "A new always-read rule must remove or link out something else in the same change."
+            echo "Put the detail in docs/SUBAGENT_RUNBOOK.md or another linked reference."
+          fi
+          exit $rc

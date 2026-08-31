@@ -145,10 +145,10 @@ Before treating a red run as a code regression, check:
   builds. Re-run.
 - Thousands of zero-second test failures and multiple `My Mac - Cadence (...)` host PIDs: concurrent
   macOS test hosts. Re-run under `scripts/test-host-lock.sh`.
-  **`-parallel-testing-enabled YES` causes this by itself**, even under the lock: it spawns two or
-  more hosts inside a *single* `xcodebuild` invocation, and they share the app-group container.
-  Measured 2026-08-28 — 2 host PIDs, 2033 zero-second failures, 0 compile errors. The shared scheme's
-  `parallelizable = "NO"` is load-bearing; do not re-enable it per-invocation to save time either.
+    **The 2026-08-28 reason here is stale**: it spawned 2 hosts then; on Xcode 26.6 it spawns **one**
+    and parallelises in-process (re-measured 2026-08-31, twice). `parallelizable = "NO"` stays anyway —
+    parallel still fails one test deterministically (a store assertion across a 60ms suspension in a
+    `@MainActor` suite) and buys only 1.27x wall clock for ~9x the CPU. Do not re-enable per-invocation.
   It also changes the log format from `✘ Test name()` to `Test case 'Suite/name()' failed`, so
   failure greps written for the serial format silently match nothing.
 - A few zero-second failures and one host PID: inspect the `.xcresult`; the test runner may have

@@ -64,6 +64,9 @@ shared_cadence_entries() {
 # --- the zero-test guard (T-552) ---------------------------------------------
 # Evidence that a test RAN, in the two shapes this repository's logs use: swift-testing's
 # `✔ Test name()` / `✘ Test name()`, and XCTest's `Test Case '-[Suite testName]' passed`.
+# `[Cc]ase` is deliberate: Xcode 26.6 writes `Test case '…' passed` (lowercase) in a PARALLEL run and
+# `Test Case` (capital) serially. Measured 2026-08-31 — a scoped parallel run with 33 real results was
+# refused as "executed 0 tests". A zero-test guard that false-negatives is the exact trap it exists to close.
 #
 # The `Executed N tests` summary is deliberately NOT the signal. It is the line a run that died
 # before reaching any test never prints at all, so keying on it would read total silence as a full
@@ -75,7 +78,7 @@ shared_cadence_entries() {
 # string, and CadenceBuildInvocationHygieneTests lifts this exact pattern out of this file and runs
 # it against literal log fixtures to prove it still discriminates. An anchor the two engines read
 # differently would make that check evidence about something other than this script.
-TEST_RESULT_PATTERN='(✔|✘) Test [A-Za-z0-9_]+\(\)|Test Case .*(passed|failed)'
+TEST_RESULT_PATTERN='(✔|✘) Test [A-Za-z0-9_]+\(\)|Test [Cc]ase .*(passed|failed)'
 
 tests_seen() { grep -acE "$TEST_RESULT_PATTERN" "$1" 2>/dev/null | tr -d ' '; }
 

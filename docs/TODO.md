@@ -502,12 +502,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-510] **Release packet and review notes disagree about which platforms ship** (Codex, P3, measured
-  doc drift, **not a runtime bug**). `docs/app-store-submission-packet.md:13` says *Platforms: macOS*,
-  while `docs/app-review-notes.md:8` says Cadence targets macOS **plus iOS/iPadOS from one app target**,
-  and the project lists `iphoneos iphonesimulator macosx`. If the next submission is Mac-only the packet
-  should say so explicitly; if it includes iOS/iPadOS, the packet and its readiness tests need updating.
-  **Decide before submitting, not after.**
 
 
 - [T-511] **Does a plain-text drag reach the macOS note editor at all?** Residue from [[T-495]], which
@@ -574,13 +568,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-538] **The macOS sidebar drops a context-less list entirely — worse than [[T-534]]'s picker.**
-  `SidebarContextSection` derives rows from the relationship (`(context.areas ?? []).filter(\.isActive)`,
-  `macOS/Views/SidebarComponents.swift:96-97`), iterated per `Context`, and `sidebarListItem(contextID:)`
-  takes a **non-optional** id. So a list with `context == nil` is not merely un-grouped — **it is invisible
-  in the macOS sidebar.** iPad draws the same region through `CadenceSidebarLists.sections` and gives it
-  "Other". Same cause, same fix shape and same iOS-creates/macOS-inherits reachability as T-534's second
-  defect: iOS offers "None" unconditionally, macOS can neither create nor correct that state.
 
 - [T-539] **`iOSTaskDetailComponents.swift:72` prompts with a placeholder value, not a noun phrase.** Its
   title `TextField` prompts `"Untitled task"`, where every other title prompt in the app is a noun phrase
@@ -650,14 +637,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   without adding it to `componentNames`** — so this is an unnoticed gap between two same-session tickets,
   not a recorded decision. [[T-533]]'s guard checks within `iOSFeatureViews.swift`; T-540's checks the two
   macOS goals files; neither crosses.
-- [T-549] **`CalendarRecurrenceEditScope` cannot be shared while `CalendarManager.swift` is one
-  `#if os(macOS)`.** `iOSCalendarEventEditSheet` privately re-declares it — same cases, raw values, labels
-  and `EKSpan`s, byte for byte — and until [[T-524]] **nothing pinned either copy**, which is the state
-  [[T-200]] found the *task* scope enums in. The real fix is moving the enum to `Cadence/Shared/`, which
-  deletes the private copy outright; `thePhonesPrivateCalendarScopeEnumMatchesTheMacOne` holds the line
-  meanwhile and **should be deleted as part of that move**. Note the pin asserts the `EKSpan` mapping too,
-  not just the labels — equal words over a wrong span would **destroy a series** while passing a
-  label-only check.
 
 - [T-550] **Two redundant `emptyText:` arguments.** `CreateGoalSheet.swift:139` and
   `HabitsFormSupportViews.swift:49` pass `emptyText: "No matching goals"`, which is identical to
@@ -714,6 +693,36 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `CadenceCalendarLinkHealth.missingLinks` — so this is **consistent, not the [[T-554]] class of defect**.
   But the link survives where the user cannot see or clear it, which is a product question worth an
   answer.
+
+
+- [T-558] **`TildeContainerPickerSupport.flatContainers` drops every context-less list — the fifth instance
+  of this shape.** `macOS/Views/TildeContainerPicker.swift:56-79` is `for context in contexts { areas.filter
+  { $0.context?.id == context.id } … }`, so a list with `context == nil` matches no iteration and is never
+  appended. **This is the only source of rows for the `~` list-search panel on both macOS composers**
+  (`TaskTitleEntryField.swift:248`, `QuickCreateChoicePopover.swift:310`), so a task cannot be filed into a
+  context-less list from either. Same fix as [[T-538]]: append the unfiled lists after the loop, keyed on the
+  *offered* context set so an archived context's lists are caught too.
+
+- [T-559] **macOS can now see a context-less list but still cannot create or correct one.** `CreateListSheet`
+  takes a **non-optional** `let context: Context` and titles itself "in \(context.name)"; `EditAreaSheet` and
+  `EditProjectSheet` have **no context control at all**. So a Mac user sees the row under "Other" and has no
+  way to file it. `CadenceContextPickerSupport` and the keyboard-first `CadenceContextPickerList` already
+  exist; the work is a `ListEditorContextRow` beside `ListEditorCalendarRow`, plus making
+  `CreateListSheet.context` optional.
+
+- [T-560] **The test target leaks a directory into the user's real app container on every run, and it is
+  live.** `~/Library/Containers/com.haoranwei.Cadence/Data/tmp/` holds **3,268** UUID directories, each with
+  an `inMemory_store_ckAssets`, 2.9 MB, oldest 2026-08-22. **Attributed causally rather than assumed**: six
+  test runs took it from 3,176 → 3,264, about 13–15 per full run, matching the 13 `isStoredInMemoryOnly: true`
+  sites. One directory per in-memory `ModelContainer`, never cleaned. Same shape as [[T-516]]'s stranded
+  plists. **The existing 3,268 are the user's to delete**; the fix is the cause.
+
+- [T-561] **Re-triage `docs/device-checks.md` now that simulator use is established.** The checklist was
+  written when nobody could drive anything. Since then agents have driven iPhone simulators successfully —
+  [[T-514]]'s before/after and [[T-538]]'s create half both came from one. Several of its 15 steps may now be
+  coverable without hardware. **Two genuinely are not**: pasting an image needs a real clipboard, and the
+  keyboard-dismiss gesture cannot be exercised because *"the simulator suppresses the software keyboard while
+  a Mac keyboard is attached"*. Establish which of the rest a simulator can cover and shorten the list.
 
 
 ## Done
@@ -1776,6 +1785,33 @@ before filing**: this list has had the same ticket re-reported more than once.
   `noSettingsPaneStillPaintsUnderTheSystemSeparator` is dead weight, strictly subsumed by its
   line-break sibling which counts the walk and has a detector test.
   **Closed 2026-08-31. All three sweeps go through `CadenceScanInstrument` with literal fixtures and non-vacuous walks; two also pin that the comment-blanking reader genuinely differs from a raw read. `CadenceSidebarCountMetricsTests`' needle collapsed to one constant read by both the sweep and its self-check. `noSettingsPaneStillPaintsUnderTheSystemSeparator` **deleted** as a strict subset of its line-break sibling, with its positive `CadenceRowDivider` table moved into the survivor. **Proved both ways**: blinding each detector kills it with `.blind`, and planting each needle as live code makes each sweep name the planted file. The instructive one is the tint needle — **the blinded sweep still passes, because it inherently cannot detect its own blinding, while the witness reading the same constant fails.** That asymmetry is the entire fix.**
+
+- [T-510] **Release packet and review notes disagree about which platforms ship** (Codex, P3, measured
+  doc drift, **not a runtime bug**). `docs/app-store-submission-packet.md:13` says *Platforms: macOS*,
+  while `docs/app-review-notes.md:8` says Cadence targets macOS **plus iOS/iPadOS from one app target**,
+  and the project lists `iphoneos iphonesimulator macosx`. If the next submission is Mac-only the packet
+  should say so explicitly; if it includes iOS/iPadOS, the packet and its readiness tests need updating.
+  **Decide before submitting, not after.**
+  **Closed 2026-08-31 **by the user's decision: macOS only for 1.0.** Neither document was factually wrong — `app-review-notes.md` described the *build* accurately while the packet mirrors an App Store Connect *field*, which is a per-submission choice. The packet, the SKU (`cadence-macos`), the reviewer script and `apple-release-readiness.md` are all macOS-shaped and self-consistent, so **the packet stands and the review notes' iOS/iPadOS claims are the ones to narrow**. The project genuinely builds `iphoneos iphonesimulator macosx` with complete iOS icons — that stays true and simply is not what is being submitted. Revisit when iOS ships: [[T-535]] records that nothing in the release gate ever compiles the iOS surface.**
+
+- [T-538] **The macOS sidebar drops a context-less list entirely — worse than [[T-534]]'s picker.**
+  `SidebarContextSection` derives rows from the relationship (`(context.areas ?? []).filter(\.isActive)`,
+  `macOS/Views/SidebarComponents.swift:96-97`), iterated per `Context`, and `sidebarListItem(contextID:)`
+  takes a **non-optional** id. So a list with `context == nil` is not merely un-grouped — **it is invisible
+  in the macOS sidebar.** iPad draws the same region through `CadenceSidebarLists.sections` and gives it
+  "Other". Same cause, same fix shape and same iOS-creates/macOS-inherits reachability as T-534's second
+  defect: iOS offers "None" unconditionally, macOS can neither create nor correct that state.
+  **Closed 2026-08-31. `SidebarView.listSections` buckets flat `@Query` results through a new generic overload of `CadenceSidebarLists.sections`, which the flattened iPad spelling is now **implemented as** — one bucketing rule rather than two. `sidebarListItem(contextID: UUID)` is gone; the two model→`Item` initialisers moved into a shared `CadenceSidebarListsBridge` that reads `area.context?.id`. **The non-optional was the whole defect and it was never a narrowing**: the optional was *discharged by the iteration* — `ForEach(contexts) { $0.areas }` never constructs the nil case, so no compiler diagnostic could exist. That is the real shape here: **traversal-derived rendering silently defines its own domain, and its blind spot is exactly the rows where the relationship is nil.** `keepingEmptyContexts` is the one legitimate platform difference and is load-bearing — the macOS header carries the "+" that opens `CreateListSheet`, the only route to a list in a given context there. **A second defect fell out: lists inside an archived context were equally invisible on the Mac** and now land in "Other" too. Ten of eleven new tests killed by at least one of eight mutations (the eleventh is unkilled and declared as such). **Create half confirmed on an iPhone simulator** (`ZCONTEXT IS NULL` in the store); **macOS render not confirmed by eye and not claimed** — `screencapture` refuses this app's window, the debug build vends 0 AX windows, and a frontmost-guarded capture aborted when focus moved.**
+
+- [T-549] **`CalendarRecurrenceEditScope` cannot be shared while `CalendarManager.swift` is one
+  `#if os(macOS)`.** `iOSCalendarEventEditSheet` privately re-declares it — same cases, raw values, labels
+  and `EKSpan`s, byte for byte — and until [[T-524]] **nothing pinned either copy**, which is the state
+  [[T-200]] found the *task* scope enums in. The real fix is moving the enum to `Cadence/Shared/`, which
+  deletes the private copy outright; `thePhonesPrivateCalendarScopeEnumMatchesTheMacOne` holds the line
+  meanwhile and **should be deleted as part of that move**. Note the pin asserts the `EKSpan` mapping too,
+  not just the labels — equal words over a wrong span would **destroy a series** while passing a
+  label-only check.
+  **Closed 2026-08-31. `CalendarRecurrenceEditScope` moved to `Cadence/Shared/` verbatim — cases, raw values, labels and the `EKSpan` mapping all preserved — and `private enum iOSCalendarRecurrenceEditScope` is deleted, 5 references repointed. **`thePhonesPrivateCalendarScopeEnumMatchesTheMacOne` was replaced rather than merely deleted**: it existed only because the duplication did, but dropping it outright would have left the `EKSpan` mapping unpinned, and **equal labels over a wrong span would destroy a recurring series while passing a label-only check**. Two successors took its place. No MCP or widget build needed, established by reading the target source lists rather than building speculatively: each pulls three files from `Shared/` and **zero** from `macOS/`, and neither list contains the moved file.**
 
 ## Cancelled
 
