@@ -581,7 +581,11 @@ struct CadenceSharedTaskRowJobsTests {
             ("metrics.contentSpacing", 3),
             ("metrics.badgeSpacing", 7),
             ("metrics.titleFontSize", 1),
-            ("metrics.secondaryFontSize", 5)
+            // Six, not five: the Cancelled chip joined its four siblings on this row (T-597). It
+            // had set its own `size: 10` and `6/3` padding while every other chip beside it read
+            // this tier — which is the shape of drift `.desktop` exists to prevent, one chip late.
+            // The do-date pill spells the figure twice, once on the hidden `Text` reserving width.
+            ("metrics.secondaryFontSize", 6)
         ] {
             try expectOccurrences(of: figure, at: ["Cadence/macOS/Views/TasksPanelComponents.swift": count])
         }

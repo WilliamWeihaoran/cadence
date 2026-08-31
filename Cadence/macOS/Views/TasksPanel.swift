@@ -346,7 +346,7 @@ struct TasksPanel: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, TasksPanelMetrics.horizontalInset)
         .padding(.bottom, 10)
         .background(Theme.surface)
     }
@@ -362,7 +362,7 @@ struct TasksPanel: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, TasksPanelMetrics.horizontalInset)
             .padding(.bottom, 10)
         }
     }
@@ -378,7 +378,7 @@ struct TasksPanel: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, TasksPanelMetrics.horizontalInset)
             .padding(.bottom, 10)
         }
     }
@@ -387,7 +387,7 @@ struct TasksPanel: View {
     /// `CadenceTodayOverdueSummaryHeading`, which iOS's Today draws too.
     private func overdueSectionHeading(_ title: String, count: Int) -> some View {
         CadenceTodayOverdueSummaryHeading(title: title, count: count)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, TasksPanelMetrics.horizontalInset)
     }
 
     /// **Today ranks by urgency first, then by whatever the Sort chips say** — and the `!enableControls`

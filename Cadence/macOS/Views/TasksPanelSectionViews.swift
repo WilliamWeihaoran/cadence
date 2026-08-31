@@ -23,15 +23,46 @@ struct TodayTaskGroup: Identifiable {
 // are `TasksPanelIntentSectionView` below; `TasksListView` and `ListDetailComponents` draw their
 // own and never used these.
 
+/// The figures the macOS Today panel is laid out with.
+///
+/// **The panel had three section headers and no metrics type** (`docs/TODO.md` T-597). Two adjacent
+/// headings — the intent groups and the Completed group under them — were padded identically except
+/// for **1pt** of bottom inset, 5 against 6, and the gutter they share with the controls bar, the
+/// overdue heading and the two overdue card stacks was typed out at six sites as a bare `16`.
+///
+/// **Deliberately not `TaskListDisplayMetrics`**, whose `headerHorizontalInset` is 24. That is a
+/// list *detail*'s gutter, and its rows are indented 52 to clear their own leading furniture;
+/// Today's rows start at `MacTaskRow`'s own 14. A 24pt header over a 14pt row is the "header
+/// indented from the rows under it" defect `CadencePageHeaderMetrics.horizontalPadding` keeps its
+/// own gutter to avoid — so the panel keeps 16, and now says so once.
+enum TasksPanelMetrics {
+    /// The panel's gutter: its headings, its controls bar, its overdue cards — and its rows, which
+    /// is not a coincidence but the rule. Today's rows sit directly under a panel heading and are
+    /// indented to match it, which was already written down as the reason `todayRowLeadingInset`
+    /// was 16 and not `TaskListDisplayMetrics.taskLeadingInset`'s 52.
+    static let horizontalInset: CGFloat = 16
+
+    /// Above a section heading, separating it from the group before it.
+    static let sectionHeaderTopInset: CGFloat = 16
+
+    /// Under one, before its first row. **6, and neither of the pair had a reason** — so it is the
+    /// tie-break the ticket asks for rather than a third figure: `.padding(.bottom, 6)` stands at
+    /// five sites under `Cadence/macOS/` against one for `5`. It is deliberately not the
+    /// list-detail sibling's 8; that header is a page's and this one is a pane's, and the pane's
+    /// two headings only ever disagreed with each other.
+    static let sectionHeaderBottomInset: CGFloat = 6
+}
+
 /// How far Today's rows are indented from the pane's leading edge.
 ///
 /// **Deliberately not `TaskListDisplayMetrics.taskLeadingInset` (52).** That inset clears a list
 /// detail's own leading furniture; Today's rows sit directly under a panel header and are indented
-/// to match it. The **trailing** gutter has no such story — both surfaces need the hover fill and
-/// its 1pt border to stop short of the divider — so Today reads
-/// `TaskListDisplayMetrics.taskTrailingInset` rather than restating 12. It had no trailing padding
-/// at all until T-593, which is why Today alone drew rows flush to the divider.
-private let todayRowLeadingInset: CGFloat = 16
+/// to match it — which is why this is now that heading's own inset rather than a second 16. The
+/// **trailing** gutter has no such story — both surfaces need the hover fill and its 1pt border to
+/// stop short of the divider — so Today reads `TaskListDisplayMetrics.taskTrailingInset` rather
+/// than restating 12. It had no trailing padding at all until T-593, which is why Today alone drew
+/// rows flush to the divider.
+private let todayRowLeadingInset: CGFloat = TasksPanelMetrics.horizontalInset
 
 /// One of Today's intent groups — Overdue / Past Do / Due Today / Planned Today — and the day's
 /// Completed group under them.
@@ -70,9 +101,9 @@ struct TasksPanelIntentSectionView: View {
     var body: some View {
         Section {
             header
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 5)
+                .padding(.horizontal, TasksPanelMetrics.horizontalInset)
+                .padding(.top, TasksPanelMetrics.sectionHeaderTopInset)
+                .padding(.bottom, TasksPanelMetrics.sectionHeaderBottomInset)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .dropDestination(for: String.self) { items, _ in
@@ -195,9 +226,9 @@ struct TasksPanelCompletedSectionView: View {
                 isCollapsed: isCollapsed,
                 onToggle: onToggle
             )
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 6)
+            .padding(.horizontal, TasksPanelMetrics.horizontalInset)
+            .padding(.top, TasksPanelMetrics.sectionHeaderTopInset)
+            .padding(.bottom, TasksPanelMetrics.sectionHeaderBottomInset)
 
             if !isCollapsed {
                 ForEach(tasks) { task in

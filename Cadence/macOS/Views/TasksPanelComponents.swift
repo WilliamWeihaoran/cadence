@@ -66,11 +66,15 @@ struct MacTaskRow: View {
                 .padding(.leading, task.sortedTags.isEmpty ? 0 : metrics.badgeSpacing)
 
             if task.isCancelled {
+                // The fifth chip on this row, drawn like the other four. It set its own `10` and
+                // `6/3` while the do-date pill, the due-date pill, the bundle badge and the
+                // estimate chip beside it all read `metrics.secondaryFontSize` at `4/2` — which is
+                // the drift `CadenceTaskRowMetrics.desktop` exists to stop (T-597).
                 Text("Cancelled")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: metrics.secondaryFontSize, weight: .semibold))
                     .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
                     .background(Theme.dim.opacity(0.14))
                     .clipShape(Capsule())
                     .padding(.leading, metrics.badgeSpacing)
