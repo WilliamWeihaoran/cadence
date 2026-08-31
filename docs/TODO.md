@@ -1041,6 +1041,117 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   hairline and a Retina hairline are genuinely different physical things, so do not assume they should
   match before checking.
 
+- [T-620] **A note or list delete can permanently erase an image the user pasted into a different
+  note.** VERIFIED 2026-09-01 from CXT-017 — **confirmed, and the mechanism is pinned green by an
+  existing test.**
+  `CadenceListDeleteHelpers.deleteUnreferencedMarkdownImageAssets` fetches
+  `FetchDescriptor<MarkdownImageAsset>()` — *every* asset in the store — and deletes any the remaining
+  markdown does not reference. Four user paths reach it: context, project and area delete
+  (`:79`, `:113`, `:136`) and single-note delete (`CadenceNoteActionSupport.swift:42`).
+  **The globality is measured, not inferred:** `CadenceMarkdownSourceInventoryTests.swift:150-186`
+  inserts an `orphan` asset unrelated to the delete and asserts it is collected.
+  **The repo already contains the correct reasoning, on the same model type, in the other direction.**
+  `DataIntegrityRepairServiceTests.swift:258-271` documents why *repair* must not collect an orphaned
+  `MarkdownImageAsset`: *"an unowned row is indistinguishable from one whose owner has not arrived."*
+  `MarkdownImageAsset` has **no relationship to `Note` or `AppTask`**, so CloudKit has nothing to order
+  the two records by. Delete does the opposite of repair with the same row type.
+  **Consequence: silent, permanent loss of `.externalStorage` bytes**, with the later-arriving note
+  keeping a `cadence-image://` reference that no longer resolves. Not self-healing.
+  Fix shape: a candidate-set delete rather than a global GC. **No stored-property change, so no
+  migration cost.** Reasoned half: that an asset can be local while its owning markdown has not
+  imported. Settle with two devices, or a CloudKit Dashboard read.
+
+- [T-621] **Focus minutes are read-modify-write counters, so two devices lose sessions.** VERIFIED
+  2026-09-01 from CXT-021 — confirmed.
+  Three increment sites, all `x += minutes` on CloudKit-synced scalars:
+  `CadenceFocusPlanningSupport.swift:186-190`, `FocusSessionSupport.swift:42-46`,
+  `CadenceFocusBundleSupport.swift:252-256`, writing `AppTask.actualMinutes`, `Area.loggedMinutes`,
+  `Project.loggedMinutes`. `CadenceSchema.swift` lists 22 models and contains **no session or ledger
+  type** — read in full, not grepped.
+  **Two pieces of corroboration the audit missed, both strengthening it:** `DataIntegrityRepairService`
+  already reconciles duplicate lists with `max(target, source)` for this field — **the repo's own merge
+  rule is max, not sum**, the same lossy shape one level up. And `GoalContributionSummary.swift:192`
+  folds `actualMinutes` into goal progress, so a lost increment becomes **wrong goal progress**, not
+  just a wrong stat.
+  Migration note: a new `@Model` is additive (no `SchemaMigrationPlan` needed for a new entity) but must
+  be added to `CadenceSchema`, `PrivacyDataResetService`, the export DTOs and the MCP surface per
+  `Cadence/Models/AGENTS.md`. **The real cost is backfilling without double-counting.**
+
+- [T-622] **Two devices can complete one recurring task and fork its successor chain.** VERIFIED
+  2026-09-01 from CXT-019 — mechanism confirmed, reachability reasoned.
+  `CadenceTaskRecurrenceWorkflowSupport.swift:128` guards on `recurrenceSpawnedTaskID == nil` reading
+  only the local replica, then inserts a fresh `AppTask` and writes a scalar pointer.
+  `recurrenceSpawnedTaskIDRaw` is a single `String`, so CloudKit can name only one successor.
+  **The "no repair exists" half is measured** — every `func` in `DataIntegrityRepairService` was read:
+  it has duplicate-habit-completion and duplicate-note passes, and **no duplicate-task pass of any
+  kind**. `TaskWorkflowRecurrenceTests` covers rapid duplicate calls on one object, which cannot reach
+  this.
+  Outcome is proliferation, not loss — a duplicate occupying the same `(seriesID, index)` with its own
+  reminders. **Cheapest of the confirmed set: no stored-property change, the identity fields already
+  exist, and the repo has the pattern in `CadenceHabitCompletionStore.collapseDuplicates`.**
+
+- [T-623] **Hard list deletion walks only the local replica.** VERIFIED 2026-09-01 from CXT-018 —
+  mechanism confirmed, **but Codex mis-severed it and the fix it proposes is the most expensive of the
+  seven.**
+  `CadenceListDeleteHelpers.swift:39-74`, `:98-115`, `:118-138` build the whole cascade from local
+  arrays with no gate on import state. **The outcome is the inverse of data loss:** rows the user
+  confirmed deleting *survive*. Tasks land in Inbox (visible, fixable); `GoalListLink` and
+  `HabitCompletion` survivors are less visible. Confirmation counts under-report, which the repo
+  already cares about (T-433's "may not over-promise" rule).
+  **Codex's short-term fix is not implementable as written.** It says "refuse hard delete until import
+  is complete" — but a full-tree search for `NSPersistentCloudKitContainer.Event`,
+  `eventChangedNotification`, `hasCompletedInitialImport` or any equivalent returns **zero hits**. The
+  app has no way to know whether its first import finished.
+  **The durable fix is a synced soft-delete tombstone plus raw ancestor identity on children — a
+  stored-property change across most of the model graph, with no `SchemaMigrationPlan`. Reconsider the
+  size before ticketing it as proposed.**
+
+- [T-624] **A device-local EventKit calendar identifier is stored in CloudKit.** VERIFIED 2026-09-01
+  from CXT-020 — mechanism confirmed; **the ping-pong premise is the one unmeasured link in the set.**
+  `Area.swift:39` and `Project.swift:25` persist a bare `EKCalendar.calendarIdentifier` on synced
+  models; `CadenceCalendarLinkHealth.swift:130` declares a link dead purely from *this device's* live
+  set, and both platforms' repairs write straight back to the same synced field.
+  **Whether the same iCloud calendar carries different identifiers on this user's Mac and iPhone was
+  NOT measured** — the verifier had one machine and deliberately did not touch EventKit, which would
+  have triggered a TCC prompt on the user's Mac. Apple documents the identifier as local, which makes
+  it plausible. **This is the finding that turns entirely on that unmeasured fact.**
+  Outcome if true: each device shows the other's good link as broken and each repair invalidates the
+  other. No content lost; a repeating false alarm.
+  **Guard worth knowing:** `CadenceEventKitPlatformParityTests` **fails if a second `linkedCalendar*`
+  property appears** — the repo has already armed itself against the alternative branch. The suggested
+  device-local preferences map needs no stored property.
+
+- [T-625] **T-358's two-device section merge claim is broader than what its test pins.** VERIFIED
+  2026-09-01 from CXT-022 — confirmed as a **claim-accuracy** finding, not a new defect.
+  `SectionConfigRoundTripTests.swift:143-193` is headed "Two devices, one blob" but performs two
+  sequential edits **against one `Area` instance** — that proves stale-editor merging, not isolated
+  replica convergence. There is no import-side hook; nothing calls the merge when CloudKit lands a
+  `sectionConfigsRaw` string.
+  **The file is already partly honest** — its doc says "Order is last-writer-wins, and deliberately
+  so", citing the absent `SchemaMigrationPlan`. What overstates is the opening paragraph and the test's
+  section heading.
+  **T-358 is CLOSED** (`docs/TODO_DONE.md:183`, landed `859e270`), so this is a narrowing, not open
+  ground. The cheap and correct action is the doc/test rename; the "columns as their own rows" fix is a
+  new `@Model` **plus** migrating existing JSON, which is a data migration this repo cannot cheaply do.
+  **The real risk is the one Codex named: a closed ticket that reads stronger than the code, so the
+  next reviewer declines the real work.** That is [[T-565]]'s class.
+
+- [T-626] **iOS omits the background mode CloudKit silent-sync needs — latent, not shipping.** VERIFIED
+  2026-09-01 from CXT-016 — source fact confirmed, **and Codex under-stated it in one way and
+  over-severed it in another.**
+  **Stronger than filed:** the *registration* is macOS-only too. `CadenceAppDelegate` is wrapped in
+  `#if os(macOS)` and is the sole caller of `registerForRemoteNotifications()`; there is **no
+  `UIApplicationDelegateAdaptor` anywhere**. On iOS, Cadence neither declares the capability nor
+  registers.
+  **But impact on any shipping build today is zero.** `docs/apple-release-readiness.md` contains no
+  occurrence of "iOS", "iPhone" or "iPad" — the channels are Mac App Store and Developer ID. iOS builds
+  but is not distributed.
+  **Implementation wrinkle Codex did not mention:** one app target shares one `Info.plist`, so adding
+  `UIBackgroundModes` puts it in the **macOS** bundle too — and the `#expect(info["UIBackgroundModes"]
+  == nil)` it would break is a *deliberate* App Store review-hygiene check
+  (`AppStoreReviewReadinessTests.swift:33`), not an oversight. Do this when iOS ships, with that test's
+  intent addressed rather than deleted.
+
 ## Done
 
 - [T-595] **CLOSED 2026-08-31 (`32dbe81`).** **This ticket's headline was wrong: it is not ten
