@@ -131,7 +131,14 @@ struct iOSSchedulePanel: View {
                 }
             }
         }
-        .background(Theme.bg)
+        // **T-586.** `Theme.surface`, and it ignores the safe area, because this pane and
+        // `iOSNotesView` are the two halves of one rail: the switcher above them selects between
+        // them, and a background that changed with the selection made the selection look like a
+        // change of page. This half drew `Theme.bg` inside the safe area and the other
+        // `Theme.surface` beyond it. Surface is the side that wins — it is what the task column
+        // beside the rail draws, what `iOSNotesView` draws everywhere it is hosted, and the one of
+        // the two this pane could change without changing a page that also stands alone.
+        .background(Theme.surface.ignoresSafeArea())
     }
 
     /// The composer, drawn under the hour lane that was tapped rather than above the whole grid.

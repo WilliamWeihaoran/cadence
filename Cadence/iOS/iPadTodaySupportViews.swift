@@ -112,7 +112,13 @@ struct iPadTodayInspectorSwitcher: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Theme.bg)
+        // **T-586.** The rail's header, on the rail's background. This drew `Theme.bg` while the
+        // panel under it drew whichever of `Theme.bg` / `Theme.surface` the selected half happened
+        // to use, so one selection matched the strip and the other matched the task column across
+        // the divider. Both halves are `Theme.surface` now, and so is this: a column is one
+        // surface from its header down, which is exactly what `iOSTodayView.todayTaskColumn` does
+        // on the other side of the divider.
+        .background(Theme.surface)
     }
 }
 

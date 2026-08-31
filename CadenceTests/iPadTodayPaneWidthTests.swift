@@ -146,3 +146,72 @@ struct iPadTodayPaneWidthTests {
         }
     }
 }
+
+/// **T-586.** The iPad Today rail is one surface, whichever half is selected.
+///
+/// The switcher strip drew `Theme.bg`, the Timeline half drew `Theme.bg`, and the Notes half drew
+/// `Theme.surface` — so tapping the switcher changed the pane's background colour, and whichever
+/// half was showing either matched the strip above it or the task column across the divider, never
+/// both. `Theme.surface` is the side that wins: it is what the task column beside the rail draws
+/// from its own header down, and `iOSNotesView` is hosted standalone as well as here, so it is the
+/// one of the two halves that could not be changed without changing a page outside Today.
+///
+/// A scan, because all four files are behind `#if os(iOS)` and this target builds for macOS.
+@MainActor
+struct iPadTodayRailSurfaceTests {
+    private func source(_ path: String) throws -> String {
+        let raw = try CadenceSourceScan.sourceFile(path)
+        #expect(raw.count > 400, "\(path) read as \(raw.count) characters")
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped != raw, "non-vacuity: \(path) carries no comments to strip")
+        return stripped
+    }
+
+    private func dense(_ text: String) -> String {
+        text.filter { !$0.isWhitespace }
+    }
+
+    /// Both halves of the rail, and the same background on each — down to the safe area, which the
+    /// timeline half used to stop at while the notes half did not.
+    @Test func bothHalvesOfTheTodayRailDrawTheSameBackground() throws {
+        let timeline = try source("Cadence/iOS/iOSTodaySchedulePanel.swift")
+        #expect(timeline.contains("struct iOSSchedulePanel: View {"), "non-vacuity: wrong file read")
+        #expect(dense(timeline).contains(".background(Theme.surface.ignoresSafeArea())"))
+        #expect(
+            CadenceSourceScan.matchCount(#"\.background\(Theme\.bg"#, in: timeline) == 0,
+            "the Today timeline pane is drawing the page background again (T-586)"
+        )
+
+        let notes = try source("Cadence/iOS/iOSNotesView.swift")
+        #expect(notes.contains("struct iOSNotesView: View {"), "non-vacuity: wrong file read")
+        #expect(dense(notes).contains(".background(Theme.surface.ignoresSafeArea())"))
+    }
+
+    /// And the strip that selects between them, which is the rail's header. A column is one surface
+    /// from its header down — which is exactly what `todayTaskColumn` does on the other side of the
+    /// divider, and the comparison the choice was made against.
+    @Test func theRailsSwitcherStripSitsOnTheSameSurfaceAsTheHalvesItSelects() throws {
+        let support = try source("Cadence/iOS/iPadTodaySupportViews.swift")
+        let signature = try #require(
+            support.range(of: "struct iPadTodayInspectorSwitcher: View {"),
+            "iPadTodayInspectorSwitcher is gone"
+        )
+        let switcher = try #require(
+            CadenceSourceScan.matchedBody(after: signature.lowerBound, in: support, open: "{", close: "}"),
+            "iPadTodayInspectorSwitcher's braces never balanced"
+        )
+        #expect(dense(switcher).contains(".background(Theme.surface)"))
+        #expect(
+            CadenceSourceScan.matchCount(#"Theme\.bg"#, in: switcher) == 0,
+            "the rail's header is back on the page background while its panes are not (T-586)"
+        )
+
+        let today = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodayView.swift")
+        )
+        #expect(today.contains("struct iOSTodayView: View {"), "non-vacuity: wrong file read")
+        // The reference the choice was made against: the task column across the divider draws
+        // `Theme.surface` under its header and under its list.
+        #expect(CadenceSourceScan.matchCount(#"\.background\(Theme\.surface\)"#, in: today) >= 2)
+    }
+}
