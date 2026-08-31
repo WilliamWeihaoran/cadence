@@ -110,7 +110,7 @@ struct FocusView: View {
                 foreground: Theme.muted,
                 background: Theme.surfaceElevated,
                 size: 38,
-                help: "Reset session",
+                accessibilityLabel: "Reset session",
                 action: { focusManager.reset() }
             )
 
@@ -121,7 +121,7 @@ struct FocusView: View {
                 size: 52,
                 shadowColor: Color(hex: task.containerColor).opacity(0.45),
                 shadowRadius: 11,
-                help: focusManager.isRunning ? "Pause session" : "Start session",
+                accessibilityLabel: focusManager.isRunning ? "Pause session" : "Start session",
                 action: { focusManager.isRunning.toggle() }
             )
 
@@ -130,7 +130,7 @@ struct FocusView: View {
                 foreground: focusManager.elapsed > 0 ? Theme.green : Theme.muted,
                 background: Theme.surfaceElevated,
                 size: 38,
-                help: "Log session",
+                accessibilityLabel: "Log session",
                 action: {
                     focusManager.isRunning = false
                     showLogSheet = true
@@ -224,7 +224,7 @@ struct FocusView: View {
                 foreground: Theme.muted,
                 background: Theme.surfaceElevated,
                 size: 38,
-                help: "Reset session",
+                accessibilityLabel: "Reset session",
                 action: { focusManager.reset() }
             )
 
@@ -235,7 +235,7 @@ struct FocusView: View {
                 size: 52,
                 shadowColor: Theme.amber.opacity(0.45),
                 shadowRadius: 11,
-                help: focusManager.isRunning ? "Pause session" : "Start session",
+                accessibilityLabel: focusManager.isRunning ? "Pause session" : "Start session",
                 action: { focusManager.isRunning.toggle() }
             )
 
@@ -244,7 +244,7 @@ struct FocusView: View {
                 foreground: focusManager.elapsed > 0 ? Theme.green : Theme.muted,
                 background: Theme.surfaceElevated,
                 size: 38,
-                help: "Log session",
+                accessibilityLabel: "Log session",
                 action: {
                     focusManager.isRunning = false
                     showLogSheet = true

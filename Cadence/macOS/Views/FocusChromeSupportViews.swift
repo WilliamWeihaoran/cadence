@@ -35,7 +35,7 @@ private struct FocusSurfaceHeader<Metadata: View>: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.cadencePlain)
-            .help("Close focus session")
+            .cadenceControlLabel("Close focus session")
         }
         .padding(.leading, 24)
         .padding(.trailing, 18)
@@ -191,7 +191,7 @@ struct FocusIconButton: View {
     let size: CGFloat
     var shadowColor: Color = .clear
     var shadowRadius: CGFloat = 0
-    let help: String
+    let accessibilityLabel: String
     let action: () -> Void
 
     var body: some View {
@@ -205,7 +205,7 @@ struct FocusIconButton: View {
                 .shadow(color: shadowColor, radius: shadowRadius)
         }
         .buttonStyle(.cadencePlain)
-        .help(help)
+        .cadenceControlLabel(accessibilityLabel)
     }
 }
 

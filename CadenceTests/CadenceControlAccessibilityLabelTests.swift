@@ -147,10 +147,7 @@ struct CadenceControlAccessibilityLabelTests {
         "Cadence/macOS/Views/AIActionsSupportViews.swift": 1,
         "Cadence/macOS/Views/CalendarBoardRailSupportViews.swift": 2,
         "Cadence/macOS/Views/CalendarPageSupportViews.swift": 2,
-        "Cadence/macOS/Views/FocusBundleTaskSupportViews.swift": 1,
-        "Cadence/macOS/Views/FocusChromeSupportViews.swift": 2,
-        "Cadence/macOS/Views/FocusPickerSupportViews.swift": 2,
-        "Cadence/macOS/Views/FocusSidebarSupportViews.swift": 1,
+        "Cadence/macOS/Views/FocusPickerSupportViews.swift": 1,
         "Cadence/macOS/Views/GoalTimelineView.swift": 1,
         "Cadence/macOS/Views/HabitsSupportViews.swift": 1,
         "Cadence/macOS/Views/InboxSupportViews.swift": 1,
@@ -207,8 +204,8 @@ struct CadenceControlAccessibilityLabelTests {
         }
         #expect(actual == Self.knownUnnamedTooltipSites)
         // The headline, so the report and the ledger cannot disagree: T-594 measured 44, and
-        // T-610 has named 8 of them.
-        #expect(actual.values.reduce(0, +) == 36)
+        // T-610 has named 13 of them.
+        #expect(actual.values.reduce(0, +) == 31)
         #expect(
             actual.keys.allSatisfy { $0.hasPrefix("Cadence/macOS/") },
             "an unnamed tooltip outside the macOS tree — `.help` is a pointer affordance"

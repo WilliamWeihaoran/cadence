@@ -107,7 +107,7 @@ struct FocusPickSessionCard: View {
                         .foregroundStyle(Theme.dim)
                 }
                 .buttonStyle(.cadencePlain)
-                .help("Clear search")
+                .cadenceControlLabel("Clear search")
             }
         }
         .padding(.horizontal, 12)

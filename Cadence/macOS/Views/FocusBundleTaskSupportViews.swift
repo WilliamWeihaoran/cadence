@@ -103,6 +103,8 @@ struct FocusBundleTaskRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
+            .accessibilityLabel("Include in time log")
+            .accessibilityValue(isSelected ? "On" : "Off")
             .help(isSelected ? "Exclude from time log" : "Include in time log")
 
             VStack(alignment: .leading, spacing: CadenceBundleTaskRowMetrics.summarySpacing) {

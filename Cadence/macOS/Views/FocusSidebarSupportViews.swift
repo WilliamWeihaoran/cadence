@@ -139,7 +139,7 @@ struct FocusSidebarTaskRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.cadencePlain)
-        .help("Focus this task")
+        .cadenceControlLabel("Focus this task")
         .onHover { isHovered = $0 }
     }
 }
