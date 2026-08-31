@@ -234,7 +234,20 @@ struct AIAPIKeySaveGuardTests {
             let source = try aiKeyGuardStrippingComments(aiKeyGuardSourceFile(path))
             // Non-vacuity: this really is the AI settings card, read from disk, before any
             // absence or presence claim is made about it.
-            #expect(source.contains("Save API Key") || source.contains("Save Key"), "\(path) is not the AI key card")
+            //
+            // **Anchor on the symbol, not on the words.** This witness used to grep the literal
+            // `"Save API Key"`, and it went red the moment T-599 hoisted that string into
+            // `CadenceAISettingsCopy.saveAPIKeyAction` — i.e. it broke because someone *improved*
+            // the code, which is the worst failure mode a guard can have. A witness that a correct
+            // refactor invalidates trains the next reader to delete the guard.
+            //
+            // The literals stay accepted so this keeps working if a surface ever inlines one again.
+            #expect(
+                source.contains("saveAPIKeyAction")
+                    || source.contains("Save API Key")
+                    || source.contains("Save Key"),
+                "\(path) is not the AI key card"
+            )
             let compact = source.filter { !$0.isWhitespace }
             for needle in needles {
                 #expect(compact.contains(needle), "\(path) no longer guards Save with \(needle)")
