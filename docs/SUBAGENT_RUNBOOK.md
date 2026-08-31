@@ -228,3 +228,28 @@ find yourself hand-assembling a third path component, that is the mistake.
 guard: a failing-first run that executes nothing is indistinguishable from a passing run unless
 something counts the results. Never conclude "my new test fails as expected" from a red exit code
 alone — confirm the test ran **by name**.
+
+## A `+`-chained array literal stops type-checking long before it stops being readable
+
+Recorded 2026-08-31 (T-599). Adding a fourth term to an array built as
+`A.all + B.all + C.all` made the Swift type-checker give up: **24 identical errors, all pointing at
+the same line**, in a file that compiled fine with three.
+
+That error shape is the tell. Two dozen diagnostics on one line, all saying the same thing, is almost
+never two dozen mistakes — it is the expression type-checker timing out and reporting its confusion
+once per candidate overload. Reading the first error and "fixing" it wastes the run.
+
+The fix is to stop making the checker infer one enormous expression:
+
+```swift
+var harvested: [String] = []
+harvested += CadenceTagSettingsCopy.all
+harvested += CadenceTemplateSettingsCopy.all
+// ...
+```
+
+Accumulate into a typed `var` rather than chaining. Same result, and each line is checked on its own.
+
+Related: this is why a growing "register every shared constant here" list should be built by
+accumulation from the start. The literal form works right up until someone adds the term that breaks
+it, and the failure lands on whoever added it rather than on whoever chose the shape.

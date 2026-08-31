@@ -908,46 +908,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   macOS's spaced `CalendarPageMonthSupportViews.swift:349` — so the calendar is split internally *and*
   from the rest of iOS. Pick one, hoist it, and say which in the closure.
 
-- [T-599] **Settings: say it once.** Approved 2026-08-31. Five copy divergences; hoist each to
-  `CadenceSettingsSectionCopy` rather than editing two literals into agreement.
-  **(a)** Tags empty state: macOS `"Create a tag or add the default set."`
-  (`SettingsTagsSection.swift:103`) vs iOS `"Create one or add the default set."`
-  (`iOSSettingsTagsSection.swift:118`). Recommend macOS's — "a tag" is concrete where "one" needs the
-  title above it to parse.
-  **(b)** Templates footnote written twice (`SettingsTemplatesSection.swift:58` vs
-  `iOSSettingsTemplateAndListSections.swift:63`). Keep iOS's second sentence; **macOS's first clause
-  names "the note sidebar", which is a real macOS surface and a false one on iPhone** — so that clause
-  stays macOS-only. Same family as [[T-544]].
-  **(c)** The **AI privacy disclosure** is one sentence longer on macOS
-  (`SettingsSectionViews.swift:172` has "such as summarizing a note or extracting task drafts"; iOS
-  `:367` does not). Everything else on the card is byte-identical, so this is drift, not a decision.
-  macOS is right — the examples make "AI action" concrete. **This is privacy copy; treat accuracy as
-  the bar.**
-  **(d)** Four AI buttons, four labels, verbosity **inverted**: macOS "Save API Key"/"Test
-  Connection"/"Delete Key"; iOS "Save Key"/"Test"/"Delete API Key". Recommend iOS's Delete ("Delete API
-  Key" — a destructive button should name the whole noun) and macOS's Test ("Test Connection" says what
-  is tested).
-  **(e)** `"Apple Calendars"` (macOS `SettingsListManagementSections.swift:27`, plural, inside the
-  authorized branch) vs `"Apple Calendar"` (iOS `iOSCalendarSettingsSection.swift:67`, singular, and
-  **above** the branch so it also heads the access-denied card). macOS is right on both counts.
-  *Extends [[T-547]]* — that ticket is the noun serving two concepts; this is the section label.
-
-- [T-600] **Settings empty states: converge the component first, then the four copies.** Approved
-  2026-08-31. **Strictly sequenced — (a) before (b).**
-  **(a)** iOS has two near-identical empty-row components: `iOSSettingsEmptyRow`
-  (`iOSSettingsComponents.swift:368-393`, 13pt title, glyph hardcoded to `tray`) and
-  `iOSSettingsEmptyInlineRow` (`iOSSettingsTemplateAndListSections.swift:704-733`, 14pt title, glyph
-  parameterised). Both drawn in the same card vocabulary, **already drifted by a point**. Keep
-  `iOSSettingsEmptyInlineRow` — the parameterised glyph is strictly more capable — and delete the
-  other. *Extends [[T-548]]*.
-  **(b)** Then close the four macOS one-liners against their iOS two-line twins: Reminders lists
-  (`SettingsRemindersSection.swift:79`), Contexts (`SettingsListManagementSections.swift:428`), Lists
-  (`:507`, where iOS also has an "Inactive Lists" eyebrow macOS lacks), Templates
-  (`SettingsTemplatesSection.swift:195`, a bare `Text` not even in a card row). **macOS says only what
-  is absent and never what would fill it; iOS says both.** iOS is right in all four.
-  *Extends [[T-545]]*, which named only the empty-calendar row — these are four more of the identical
-  shape and should probably be absorbed into it.
-
 - [T-601] **Three call sites that ignore a correct shared helper.** Approved 2026-08-31. The repo's
   most common defect shape (T-374).
   **(a)** `iOSCalendarInspectorView.swift:145-169` reproduces `CadenceInlineEmpty(surface: .touch)`
@@ -1095,6 +1055,35 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   own title, or drop the hosted panel's when it is hosted there.
 
 ## Done
+
+- [T-599] **CLOSED 2026-08-31 (`102dbd6`).** Five strings hoisted to `CadenceSettingsSectionCopy` and
+  registered with the shared-constant sweep, so a third surface typing any of them is a sweep hit —
+  not two literals edited into agreement.
+  **Two deviations from this ticket's recommendations, both better reasoned than the ticket:**
+  (i) it also converged the *title*, which the ticket did not name — macOS had `"No active tags."` and
+  iOS `"No active tags"`, and **iOS's full-stop-free form won because a title is not a sentence, and
+  macOS's own four one-liners disagreed with each other about it** (`"No templates available"` vs
+  `"No active contexts."`). (ii) Save took macOS's `"Save API Key"` rather than iOS's `"Save Key"`, so
+  **Save and Delete name the same whole noun** — the ticket had only specified Delete.
+  (b) is deliberately *partial*: only iOS's scope sentence is shared; macOS's "the note sidebar" clause
+  stays macOS-only, pinned by a test that also asserts **the phone never grows those words**.
+  **Left unconverged on purpose:** the Test button's in-flight label is still `"Testing..."` / `"Testing"`
+  — at 10 characters it is under the sweep's 12-character floor, so a constant would arm nothing.
+  Recorded in the constant's doc rather than silently skipped.
+
+- [T-600] **CLOSED 2026-08-31 (`3d9f0b8`), in the required order.** (a) `iOSSettingsEmptyRow` deleted,
+  `iOSSettingsEmptyInlineRow` moved into `iOSSettingsComponents.swift`; its two callers now pass `tag`
+  and `square.stack.3d.up` instead of inheriting a hardcoded `tray`, and the 13/14pt, `dim`/`subdued`,
+  6/4pt drift is closed. (b) All four macOS one-liners now draw the shared `CadenceSettingsNoticeRow`
+  over nine strings in a new `CadenceSettingsEmptyStateCopy` — three were private `HStack`s and the
+  templates one was a bare `Text` in no row at all. macOS's Inactive Lists card gains the eyebrow iOS
+  had.
+  **One pinned count moved and the agent judged it stale rather than bumping it blindly:**
+  `theSevenPanesReadTheSharedFieldVocabulary` expected 1 `CadenceSettingsNoticeRow` in
+  `SettingsRemindersSection` and now expects 2 — **because the second row replaced a private near-copy
+  rather than adding a row**, and that pane already drew a notice row for its access verdict twenty
+  lines up. The reason is in the test's comment. No other pinned count moved.
+
 
 - [T-583] **CLOSED 2026-08-31 (`a4b03cd`).** The INFERRED half does **not** survive: autosave is on,
   but "eventually" is exactly what T-327 measured, so deleting the four neighbouring saves was the wrong
