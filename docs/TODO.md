@@ -854,45 +854,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   removes browse-all-notes from the rail and leaves other narrow hosts index-only.
   **Nobody has looked at this on a device.** The whole analysis is arithmetic and source reading. Before
   committing, capture the rail at 1366 and at 836 on a simulator.
-- [T-595] **iOS calendar: put the drawn numbers in `iOSCalendarMetrics`.** Approved 2026-08-31.
-  **(a) Ten hairline weights on one screen.** `Theme.borderSubtle` appears at 1.0, 0.75, 0.65, 0.46,
-  0.42, 0.35, 0.34, 0.30, 0.28 and 0.20 across `iOSCalendarTimelineViews.swift:559,564,607,635,643`,
-  `iOSCalendarMonthViews.swift:423,428`, `iOSCalendarBoardView.swift:328`,
-  `iOSCalendarBundleDetailSheet.swift:349`. Sharpest instance: **one month cell whose right edge is
-  0.30 and bottom edge is 0.42** (`:423`/`:428`), while the timeline day header's two edges agree at
-  0.65. **(b)** Weekday header band height is `36` (`iOSCalendarMonthViews.swift:22`) and `22`
-  (`iOSCalendarMonthAgendaViews.swift:35`), both feeding the same grid; same file also carries a bare
-  `104` and a `gridBottomPadding = 8`. `CadenceCalendarWeekdayHeaderMetrics` already owns the label's
-  *size* for exactly this reason (T-277) — the band's *height* was left behind.
-  `iOSCalendarMetrics.swift` opens by claiming to hold "every measurement the iOS calendar's three
-  presentations are drawn with" and holds none of these. **Make the claim true, and pin it.**
-  Where two values disagree, do NOT invent a third — report the pair and use the one with a stated
-  rationale, or ask.
-
-- [T-596] **iOS Today rail: the same, for the schedule panel.** Approved 2026-08-31.
-  **(a)** The two iOS hour grids disagree: `iOSTodaySchedulePanel.swift:361-363` draws `height: 1` at
-  `opacity(hour % 3 == 0 ? 0.55 : 0.25)`; `iOSCalendarTimelineViews.swift:632-636` draws `height: 0.5`
-  at `0.46 : 0.20`. **Same `% 3` cadence, so the rule was copied and the values were not** — 2x line
-  weight and two opacity pairs for one hairline. The hour *label* opacities do match (0.9/0.45), which
-  is what makes the line divergence look accidental. **(b)** One 7pt radius spelled two ways in one
-  file: `Theme.radiusControl - 3` (`:437`, the repo's inner-pill idiom) and a bare `cornerRadius: 7`
-  (`:558`) — the only hardcoded radius in the six scoped files. **(c)** The two Today hosts type their
-  own gutters and have drifted: `iOSTodayView.swift:343-345` (14 / top 12 / bottom 20) vs
-  `iOSTodayCompactViews.swift:49-56` (14 / top 10 / bottom 16) — **after both already read
-  `contentMaxWidth` from `CadenceTodaySectionMetrics` precisely so "the two hosts cannot drift apart
-  again."** Finish that unification; `CadenceTodaySectionMetrics` is keyed on layout and is the home.
-
-- [T-597] **macOS Today: two chips and two headers that ignore their own metrics types.** Approved
-  2026-08-31. **(a)** The Cancelled chip (`TasksPanelComponents.swift:68-77`) hardcodes `size: 10`,
-  padding `6/3`, while its four siblings on the same row — do-date pill, due-date pill, bundle badge,
-  estimate chip — all use `metrics.secondaryFontSize` (11 on `.desktop`) with `4/2`.
-  `CadenceTaskRowMetrics.desktop` exists precisely so these do not drift. **(b)** Two adjacent section
-  headers differ by **1pt** of bottom padding — `TasksPanelSectionViews.swift:63-65` (bottom 5) vs
-  `:182-184` (bottom 6) — and neither reads `TaskListDisplayMetrics`, which owns
-  `headerHorizontalInset = 24` and is used with bottom 8 by the list-detail siblings.
-  `TasksPanel.swift:349,365,381,390` repeats the bare `16` four more times. iOS puts every one of these
-  in `CadenceTodaySectionMetrics`, keyed on layout — that is the target shape.
-
 - [T-598] **iOS calendar: say it once.** Approved 2026-08-31.
   **(a)** One start-time control, three labels: "Starts" (`iOSCalendarQuickCreateSheet.swift:460`),
   "Time" (`iOSCalendarEventEditSheet.swift:352`), "Start" (`iOSCalendarBundleDetailSheet.swift:146`) —
@@ -1054,7 +1015,72 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   reversible either way, and small enough that it wants a decision rather than a guess: drop the pane's
   own title, or drop the hosted panel's when it is hosted there.
 
+- [T-616] **`cornerRadius: 7` at 55 sites with no token, and `Theme`'s radius scale has nothing at 7.**
+  Measured by the [[T-596]] agent while disproving that ticket's "inner-pill idiom" claim: the token
+  spelling `Theme.radiusControl - 3` stands at **2** sites against **55** bare literals. `Theme`'s scale
+  is 10/18/22.
+  So the question is not "hoist the literal" — it is **whether 7 should be a named step in the scale**.
+  If it should, name it once and sweep. If it should not, 55 sites are drawing a radius the design
+  system does not contain, which is a bigger finding than the drift. Decide before sweeping; a
+  mechanical replace would enshrine an accident 55 times.
+
+- [T-617] **The macOS chip padding `4/2` is typed inline at five sites in `TasksPanelComponents.swift`.**
+  From [[T-597]]. `CadenceTaskRowMetrics` has no chip-padding field. **Adding one needs an iOS answer
+  decided with it** (`iOSTaskAttributeChipSize`), or the two platforms gain two different homes for the
+  same measurement — which is the shape this whole batch has been closing.
+
+- [T-618] **`Theme.borderSubtle.opacity(0.35)` is the app's row-separator weight at five sites, with no
+  shared constant.** Across Shared, iOS and macOS. From [[T-595]], which identified it as a genuine
+  agreement rather than drift and therefore deliberately left it alone — it deserves a name precisely
+  *because* five sites already agree, so the constant would record a decision rather than impose one.
+
+- [T-619] **The two platforms' timed grids draw different hour ladders.** macOS `CalendarVisualStyle`
+  0.36/0.30 at 0.95/0.85pt against iOS's 0.46/0.20 at 0.5pt. Out of scope for [[T-595]]/[[T-596]], which
+  were iOS-internal and have now made iOS self-consistent. This is the cross-platform half, and it is a
+  design call: near-identical numbers that differ by a hair usually mean nobody chose, but a Mac
+  hairline and a Retina hairline are genuinely different physical things, so do not assume they should
+  match before checking.
+
 ## Done
+
+- [T-595] **CLOSED 2026-08-31 (`32dbe81`).** **This ticket's headline was wrong: it is not ten
+  divergent weights.** Two of the reported ten are agreements the calendar already had and were left
+  alone — the Board's 0.28 already matches macOS's Board, and the bundle sheet's 0.35 is the app's
+  row-separator weight used across Shared, iOS and macOS. **Pulling either into the calendar's
+  vocabulary would have broken an agreement to fix a phantom.** And the reported "1.0" is
+  `Theme.borderSubtle` with no `.opacity` modifier at all — the absence of a weight, not a tenth one.
+  `iOSCalendarHairlineMetrics` now states three: `dayEdge` **0.42** (0.30 had one site repo-wide
+  against the others' two), `pinnedEdge` **0.65** (two of three lines already drew it, and they meet at
+  the canvas corner), and the ladder's 0.46/0.20 beside a named `hourEmphasisInterval`.
+  `CadenceCalendarWeekdayHeaderMetrics.bandHeight` = **22** over 36 — eight test call sites pin
+  `gridRowHeight` against 22, and 36 spends 12pt of padding on a 12pt line. **Every line number in the
+  ticket was stale.**
+
+- [T-596] **CLOSED 2026-08-31 (`13c3fde`).** Today's timeline now reads the Calendar's hour ladder —
+  0.5pt at 0.46/0.20, cadence included — on T-588's grounds, and because 0.5pt is a hairline where 1pt
+  is two device pixels.
+  **Premise correction:** `Theme.radiusControl - 3` is **not** "the repo's inner-pill idiom" — it stands
+  at **2 sites against 55** bare `cornerRadius: 7`. The token spelling was taken anyway because hoisting
+  literals is this batch's whole direction, and the other half of the claim does hold: zero hardcoded
+  radii remain in the six scoped files. Split out as [[T-616]].
+  Gutters are in `CadenceTodaySectionMetrics` and **none varies by layout**: 14 unchanged, top **12** as
+  a stated tie-break on site count (9 vs 5), bottom **16 on evidence** — 16 carries the rationale, and
+  `iOSTaskCollectionMetrics` gives All Tasks and Inbox that same 16 at *both* widths, so the app had
+  already decided it does not ramp. The test pins against that type, not against the number.
+
+- [T-597] **CLOSED 2026-08-31 (`7d5a5b0`).** Cancelled chip reads `secondaryFontSize` at 4/2.
+  **Premise correction: three of the four siblings use 4/2, not four** — the bundle badge draws the
+  shared font but has no chip padding at all.
+  New `TasksPanelMetrics` states the gutter and both header insets; bottom **6** over 5 on site count
+  (5 vs 1), and `todayRowLeadingInset` now reads the gutter its own doc already claimed to match.
+  **Deliberate deviation from this ticket, and it was right:** it did *not* point these at
+  `TaskListDisplayMetrics.headerHorizontalInset` (24) as instructed. That inset sits over rows indented
+  52; the panel's rows start at 14, so a 24pt heading would be **indented 10pt from the rows it heads**
+  — the exact defect `CadencePageHeaderMetrics` keeps its own gutter to avoid. A test pins that
+  argument against both types, so it fails if the list detail's inset changes meaning.
+  A collateral run caught the expected exact-count pin (`secondaryFontSize` reads 5 -> 6); updated with
+  the reason, since the chip genuinely became a sixth reader.
+
 
 - [T-599] **CLOSED 2026-08-31 (`102dbd6`).** Five strings hoisted to `CadenceSettingsSectionCopy` and
   registered with the shared-constant sweep, so a third surface typing any of them is a sweep hit —
