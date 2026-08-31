@@ -68,6 +68,14 @@ struct CadenceSettingsSectionCopyTests {
         "Cadence/iOS/iOSCalendarSettingsSection.swift",
     ]
 
+    /// Settings → Lists, "Inactive Lists": the two files that draw a completed or archived area or
+    /// project. The only screen either list can still be reached from, which is why an unreadable
+    /// row there is worse than one anywhere else.
+    private static let inactiveListSurfaces = [
+        "Cadence/macOS/Views/SettingsListManagementSections.swift",
+        "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
+    ]
+
     // MARK: - Both surfaces read each converged string
 
     /// Settings → Calendar says one thing on two devices.
@@ -186,6 +194,15 @@ struct CadenceSettingsSectionCopyTests {
             + [(
                 "workdayBoundaryTitle",
                 "Workday boundary",
+                "Cadence/Shared/CadenceSettingsSectionCopy.swift"
+            )]
+            // T-577's. It was typed in `iOSSettingsTemplateAndListSections` alone, so macOS
+            // getting the same fallback would have made it a second inline copy — the shape this
+            // file exists to remove — rather than a shared rule. Harvested, so a third surface
+            // spelling it out is a sweep hit rather than a re-read of the same audit.
+            + [(
+                "noParentListSubtitle",
+                "No parent list",
                 "Cadence/Shared/CadenceSettingsSectionCopy.swift"
             )]
             + Self.notificationPairs.map {
@@ -324,6 +341,72 @@ struct CadenceSettingsSectionCopyTests {
         #expect(mac.contains("CadenceFieldSection(title: nil)"))
     }
 
+    // MARK: - Settings → Lists: a row with a name and a second line
+
+    /// **T-577.** A project filed under neither a context nor an area got a subtitle of `""`,
+    /// because macOS built the line as `[context, area].compactMap { $0 }.joined(separator: " • ")`
+    /// and an empty array joins to the empty string. Not a hypothetical: T-558/T-559 establish that
+    /// context-less lists exist, and this is the screen a completed or archived one is reached from.
+    ///
+    /// A value test rather than a scan, because the defect was in the *rule* and not in which words
+    /// the rule was given. The empty-string cases are the ones that matter: `compactMap` alone
+    /// drops `nil` and keeps `""`, so a named area under an unnamed context read " • Launch".
+    @Test func aParentlessProjectRowSaysSoRatherThanShowingABlankLine() {
+        #expect(CadenceListSettingsCopy.parentSubtitle(contextName: nil, areaName: nil) == "No parent list")
+        #expect(CadenceListSettingsCopy.parentSubtitle(contextName: "", areaName: "") == "No parent list")
+        #expect(CadenceListSettingsCopy.parentSubtitle(contextName: "", areaName: nil) == "No parent list")
+
+        #expect(CadenceListSettingsCopy.parentSubtitle(contextName: "Work", areaName: nil) == "Work")
+        #expect(CadenceListSettingsCopy.parentSubtitle(contextName: nil, areaName: "Launch") == "Launch")
+        #expect(CadenceListSettingsCopy.parentSubtitle(contextName: "", areaName: "Launch") == "Launch")
+        #expect(CadenceListSettingsCopy.parentSubtitle(contextName: "Work", areaName: "") == "Work")
+
+        #expect(
+            CadenceListSettingsCopy.parentSubtitle(contextName: "Work", areaName: "Launch") == "Work • Launch"
+        )
+    }
+
+    /// The other half of T-577, and the half the file contradicted itself about: macOS passed
+    /// `area.name` and `project.name` to the row raw, twelve lines under an *area* subtitle branch
+    /// that already knew to fall back to "No context". An unnamed list drew a row with no title.
+    ///
+    /// A scan, because a row title is a `String` argument to a `View` initialiser inside a `body`
+    /// with no seam to call — and because `Cadence/iOS/` is not compiled by this target at all, so
+    /// the phone's half can only be read as text. Both directions per file: reading the fallback
+    /// and no longer passing the name through.
+    @Test func neitherInactiveListSurfaceDrawsARowTitledWithARawName() throws {
+        for path in Self.inactiveListSurfaces {
+            let code = try Self.strippedSource(at: path)
+            #expect(code.contains("lifecycleCard"), "non-vacuity: \(path) draws no inactive-list card")
+
+            #expect(
+                code.contains("CadenceTitleNormalization.defaultAreaName"),
+                "\(path) draws an unnamed area with no fallback again"
+            )
+            #expect(
+                code.contains("CadenceTitleNormalization.defaultProjectName"),
+                "\(path) draws an unnamed project with no fallback again"
+            )
+            #expect(
+                code.contains("CadenceListSettingsCopy.parentSubtitle"),
+                "\(path) builds the project subtitle itself again"
+            )
+
+            for raw in ["area", "project"] {
+                #expect(
+                    CadenceSourceScan.matchCount("title: \(raw)\\.name", in: code) == 0,
+                    "\(path) titles a lifecycle row with \(raw).name raw"
+                )
+            }
+            // The join lives in one place now, so neither surface may spell it. This is the exact
+            // expression that produced the blank line.
+            #expect(
+                CadenceSourceScan.matchCount("joined\\(separator: \" • \"\\)", in: code) == 0,
+                "\(path) joins a parent subtitle itself again"
+            )
+        }
+    }
+
     // MARK: - Values, not source shape
 
     /// The one assertion here that is not a scan: the constants the Mac target **compiles** still
@@ -353,6 +436,8 @@ struct CadenceSettingsSectionCopyTests {
                 == "Allow Cadence to notify you about scheduled tasks, due dates, and habit reminders."
         )
         #expect(CadenceNotificationSettingsCopy.enableNotificationsAction == "Enable Notifications")
+
+        #expect(CadenceListSettingsCopy.noParentListSubtitle == "No parent list")
     }
 
     // MARK: - Non-vacuity

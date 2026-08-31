@@ -299,7 +299,10 @@ struct iOSListsLifecycleSettingsSection: View {
                 ForEach(Array(areas.enumerated()), id: \.element.id) { index, area in
                     iOSListLifecycleSettingsRow(
                         icon: area.icon,
-                        title: area.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : area.name,
+                        title: CadenceTitleNormalization.display(
+                            area.name,
+                            fallback: CadenceTitleNormalization.defaultAreaName
+                        ),
                         subtitle: area.context?.name ?? "No context",
                         color: Color(hex: area.colorHex),
                         statusLabel: area.isDone ? "Completed" : "Archived",
@@ -316,8 +319,14 @@ struct iOSListsLifecycleSettingsSection: View {
                 ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
                     iOSListLifecycleSettingsRow(
                         icon: project.icon,
-                        title: project.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : project.name,
-                        subtitle: projectSubtitle(project),
+                        title: CadenceTitleNormalization.display(
+                            project.name,
+                            fallback: CadenceTitleNormalization.defaultProjectName
+                        ),
+                        subtitle: CadenceListSettingsCopy.parentSubtitle(
+                            contextName: project.context?.name,
+                            areaName: project.area?.name
+                        ),
                         color: Color(hex: project.colorHex),
                         statusLabel: project.isDone ? "Completed" : "Archived",
                         primaryLabel: project.isDone ? "Reopen" : "Unarchive",
@@ -331,11 +340,6 @@ struct iOSListsLifecycleSettingsSection: View {
                 }
             }
         }
-    }
-
-    private func projectSubtitle(_ project: Project) -> String {
-        let parts = [project.context?.name, project.area?.name].compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? "No parent list" : parts.joined(separator: " • ")
     }
 }
 

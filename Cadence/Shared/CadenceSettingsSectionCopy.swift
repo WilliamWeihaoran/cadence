@@ -88,3 +88,30 @@ nonisolated enum CadenceNotificationSettingsCopy {
     /// system will not prompt again and both surfaces fall through to system settings.
     static let enableNotificationsAction = "Enable Notifications"
 }
+
+/// Settings → Lists, on both surfaces: the "Inactive Lists" rows, which are the only place a
+/// completed or archived area or project can still be reached.
+///
+/// **T-577.** The two surfaces drew the same row from two different rules, and the Mac's was the
+/// broken one: it printed `project.name` and `area.name` raw, and built the project's second line
+/// as `[context, area].compactMap { $0 }.joined(separator: " • ")` — which is the **empty string**
+/// for a project with neither. A context-less list is reachable (T-558/T-559), so Settings → Lists
+/// could show a row with no name over a blank line. iOS fell back to
+/// `CadenceTitleNormalization.default*Name` and to the sentence below, and the Mac's own *area*
+/// branch twelve lines above already fell back to "No context" — the file disagreed with itself.
+///
+/// The subtitle rule lives here rather than at either call site so the two cannot drift again. It
+/// takes the two names rather than a `Project` to keep this file free of model coupling; the
+/// titles themselves read `CadenceTitleNormalization.display(_:fallback:)`, which is stronger than
+/// the `.isEmpty` check iOS had — a whitespace-only name is blank too (T-569).
+nonisolated enum CadenceListSettingsCopy {
+
+    /// A project filed under neither a context nor an area. The whole line, not a prefix.
+    static let noParentListSubtitle = "No parent list"
+
+    /// The second line of a project row: its context and its area, or `noParentListSubtitle`.
+    static func parentSubtitle(contextName: String?, areaName: String?) -> String {
+        let parts = [contextName, areaName].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? noParentListSubtitle : parts.joined(separator: " • ")
+    }
+}

@@ -537,7 +537,12 @@ struct SettingsListsSection: View {
                 ForEach(Array(areas.enumerated()), id: \.element.id) { index, area in
                     ListLifecycleRow(
                         icon: area.icon,
-                        title: area.name,
+                        // Not `area.name` (T-577): an unnamed list drew a row with no title at
+                        // all, three lines above a subtitle branch that already knew to fall back.
+                        title: CadenceTitleNormalization.display(
+                            area.name,
+                            fallback: CadenceTitleNormalization.defaultAreaName
+                        ),
                         subtitle: area.context?.name ?? "No context",
                         color: Color(hex: area.colorHex),
                         statusLabel: area.isDone ? "Completed" : "Archived",
@@ -553,8 +558,16 @@ struct SettingsListsSection: View {
                 ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
                     ListLifecycleRow(
                         icon: project.icon,
-                        title: project.name,
-                        subtitle: [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " • "),
+                        title: CadenceTitleNormalization.display(
+                            project.name,
+                            fallback: CadenceTitleNormalization.defaultProjectName
+                        ),
+                        // The join was `""` for a project with neither a context nor an area, so
+                        // the row's second line was blank rather than absent (T-577).
+                        subtitle: CadenceListSettingsCopy.parentSubtitle(
+                            contextName: project.context?.name,
+                            areaName: project.area?.name
+                        ),
                         color: Color(hex: project.colorHex),
                         statusLabel: project.isDone ? "Completed" : "Archived",
                         primaryLabel: project.isDone ? "Reopen" : "Unarchive",
