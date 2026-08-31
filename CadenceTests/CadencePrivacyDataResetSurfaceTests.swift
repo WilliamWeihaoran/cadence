@@ -439,6 +439,79 @@ struct CadencePrivacyDataResetSurfaceTests {
         )
     }
 
+    /// **T-582: a status line belongs to the card whose button produced it.**
+    ///
+    /// The Mac's Data Safety pane declared one `statusMessage` and rendered it in **two** cards at
+    /// once — the Backups card and the reset card — so creating a backup printed "Created
+    /// backup-….sqlite." underneath the red **Delete Account & Data** button. iOS never had it:
+    /// `iOSDataExportSettingsSection` and `iOSDataResetSettingsSection` each own their own line.
+    ///
+    /// **The export card's sharing is deliberate and is asserted here rather than merely spared.**
+    /// It has no status line of its own, and its outcome is drawn by the reset card directly below
+    /// it because both answer "what just happened to my data". An assertion that only forbade
+    /// sharing would be satisfied by splitting that pair too, which is the opposite fix.
+    ///
+    /// Read as text, for this file's usual reason: a `@State String?` rendered inside a `body` has
+    /// no seam a macOS-built test target can call.
+    @Test func aBackupOutcomeIsPrintedUnderTheBackupButtonsAndNotUnderTheDeleteButton() throws {
+        let path = "Cadence/macOS/Views/SettingsDataSafetySection.swift"
+        let code = try strippingComments(sourceFile(path))
+        #expect(code.contains("struct SettingsDataSafetySection"), "non-vacuity: wrong file")
+        #expect(
+            code.contains("@State private var backupStatusMessage"),
+            "the Backups card has no status line of its own again (T-582)"
+        )
+
+        // Per function, not per file: a whole-file count stays green when one of the four reverts.
+        for name in ["createBackup", "cleanUpAutomaticBackups", "revealBackupFolder", "stageRestore"] {
+            let body = try #require(
+                CadenceSourceScan.functionBody(named: name, in: code),
+                "\(name) is gone from \(path)"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("backupStatusMessage =", in: body) > 0,
+                "\(name) reports its outcome nowhere"
+            )
+            // `backupStatusMessage` capitalises the S, so this needle counts writes to the shared
+            // line only — it does not double-count the ones asserted above.
+            #expect(
+                CadenceSourceScan.matchCount("statusMessage =", in: body) == 0,
+                "\(name)'s outcome still reaches the reset card (T-582)"
+            )
+        }
+
+        // And the two that belong there still land there.
+        for name in ["prepareArchiveExport", "deleteCadenceData"] {
+            let body = try #require(
+                CadenceSourceScan.functionBody(named: name, in: code),
+                "\(name) is gone from \(path)"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("backupStatusMessage =", in: body) == 0,
+                "\(name) reports into the Backups card"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("statusMessage =", in: body) > 0,
+                "\(name) reports its outcome nowhere"
+            )
+        }
+
+        // Each line is rendered once, by one card. This is the assertion the bug failed: the count
+        // for `statusMessage` was two.
+        #expect(
+            CadenceSourceScan.matchCount("if let statusMessage \\{", in: code) == 1,
+            "the export/reset status line is drawn by more or fewer than one card (T-582)"
+        )
+        #expect(
+            CadenceSourceScan.matchCount("if let backupStatusMessage \\{", in: code) == 1,
+            "the backup status line is drawn by more or fewer than one card"
+        )
+        #expect(
+            CadenceSourceScan.matchCount("statusMessage: statusMessage", in: code) == 1,
+            "the reset card is no longer the one place the export and reset outcome is shown"
+        )
+    }
+
     /// The rest of the iOS screen, which was already right about the account — which is why the
     /// success notice read as a contradiction rather than as a slip.
     ///

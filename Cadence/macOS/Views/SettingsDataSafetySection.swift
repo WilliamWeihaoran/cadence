@@ -9,7 +9,21 @@ struct SettingsDataSafetySection: View {
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(AppleAccountManager.self) private var appleAccountManager
     @State private var backups: [StoreBackupSnapshot] = []
+
+    /// The outcome of the **export** and of the **reset**, shown under the reset card.
+    ///
+    /// Sharing one line between those two is deliberate — see `SettingsDataExportCard` — because
+    /// both answer "what just happened to my data" and the export card has no status line of its
+    /// own. Sharing it with the *Backups* card was not: this was one `@State` rendered in two
+    /// cards at once, so creating a backup printed "Created backup-….sqlite." underneath the red
+    /// **Delete Account & Data** button as well as under the backup buttons (T-582). iOS never
+    /// had the bug — `iOSDataExportSettingsSection` and `iOSDataResetSettingsSection` each own
+    /// their own line — and this is the same rule: a status line belongs to the card whose button
+    /// produced it.
     @State private var statusMessage: String?
+
+    /// Create / clean / reveal / stage-restore, shown under the Backups card and nowhere else.
+    @State private var backupStatusMessage: String?
     @State private var pendingRestore: StoreBackupSnapshot?
     @State private var isConfirmingDataDelete = false
     @State private var exportDocument: CadenceArchiveDocument?
@@ -57,8 +71,8 @@ struct SettingsDataSafetySection: View {
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
-                            if let statusMessage {
-                                Text(statusMessage)
+                            if let backupStatusMessage {
+                                Text(backupStatusMessage)
                                     .font(.system(size: 11))
                                     .foregroundStyle(Theme.muted)
                             }
@@ -179,25 +193,25 @@ struct SettingsDataSafetySection: View {
     private func createBackup() {
         do {
             if let url = try StoreBackupManager.createBackupIfStoreExists(reason: .manual) {
-                statusMessage = "Created \(url.lastPathComponent)."
+                backupStatusMessage = "Created \(url.lastPathComponent)."
             } else {
-                statusMessage = "No active store exists yet."
+                backupStatusMessage = "No active store exists yet."
             }
             refreshBackups()
         } catch {
-            statusMessage = "Backup failed: \(error.localizedDescription)"
+            backupStatusMessage = "Backup failed: \(error.localizedDescription)"
         }
     }
 
     private func cleanUpAutomaticBackups() {
         do {
             let removedCount = try StoreBackupManager.cleanUpAutomaticBackups()
-            statusMessage = removedCount == 0
+            backupStatusMessage = removedCount == 0
                 ? "Automatic backups are already thinned."
                 : "Removed \(removedCount) older automatic backup\(removedCount == 1 ? "" : "s")."
             refreshBackups()
         } catch {
-            statusMessage = "Cleanup failed: \(error.localizedDescription)"
+            backupStatusMessage = "Cleanup failed: \(error.localizedDescription)"
         }
     }
 
@@ -206,16 +220,16 @@ struct SettingsDataSafetySection: View {
             try FileManager.default.createDirectory(at: StoreBackupManager.backupRootURL, withIntermediateDirectories: true)
             NSWorkspace.shared.activateFileViewerSelecting([StoreBackupManager.backupRootURL])
         } catch {
-            statusMessage = "Could not open backup folder: \(error.localizedDescription)"
+            backupStatusMessage = "Could not open backup folder: \(error.localizedDescription)"
         }
     }
 
     private func stageRestore(_ backup: StoreBackupSnapshot) {
         do {
             try StoreBackupManager.scheduleRestore(from: backup.url)
-            statusMessage = "Restore staged. Quit and reopen Cadence to apply it."
+            backupStatusMessage = "Restore staged. Quit and reopen Cadence to apply it."
         } catch {
-            statusMessage = "Could not stage restore: \(error.localizedDescription)"
+            backupStatusMessage = "Could not stage restore: \(error.localizedDescription)"
         }
     }
 
@@ -282,9 +296,13 @@ private struct SettingsPrivacyStatementSection: View {
 /// The route to a copy of the data that Cadence cannot delete.
 ///
 /// Every word it shows is `CadenceDataExportPresentation`'s, so iOS's card cannot come to describe
-/// a different file. It has no status line of its own: the outcome sentence goes to the pane's
-/// shared `statusMessage`, next to the reset's, because both are answers to "what just happened to
-/// my data".
+/// a different file. It has no status line of its own: the outcome sentence goes to `statusMessage`
+/// and is drawn by `SettingsDataResetCard` directly below, because both are answers to "what just
+/// happened to my data".
+///
+/// **That pairing is the whole of the sharing now (T-582).** `statusMessage` used to be rendered by
+/// the Backups card as well, so "Created backup-….sqlite." also appeared under the red
+/// **Delete Account & Data** button. The backup buttons write `backupStatusMessage` instead.
 private struct SettingsDataExportCard: View {
     let onExport: () -> Void
 
