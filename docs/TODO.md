@@ -1023,6 +1023,125 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   set. iOS has the same hole (`iOSTaskRowActionViews.swift` has one label in the whole file), so this
   is a shared gap rather than a divergence.
 
+- [T-595] **iOS calendar: put the drawn numbers in `iOSCalendarMetrics`.** Approved 2026-08-31.
+  **(a) Ten hairline weights on one screen.** `Theme.borderSubtle` appears at 1.0, 0.75, 0.65, 0.46,
+  0.42, 0.35, 0.34, 0.30, 0.28 and 0.20 across `iOSCalendarTimelineViews.swift:559,564,607,635,643`,
+  `iOSCalendarMonthViews.swift:423,428`, `iOSCalendarBoardView.swift:328`,
+  `iOSCalendarBundleDetailSheet.swift:349`. Sharpest instance: **one month cell whose right edge is
+  0.30 and bottom edge is 0.42** (`:423`/`:428`), while the timeline day header's two edges agree at
+  0.65. **(b)** Weekday header band height is `36` (`iOSCalendarMonthViews.swift:22`) and `22`
+  (`iOSCalendarMonthAgendaViews.swift:35`), both feeding the same grid; same file also carries a bare
+  `104` and a `gridBottomPadding = 8`. `CadenceCalendarWeekdayHeaderMetrics` already owns the label's
+  *size* for exactly this reason (T-277) — the band's *height* was left behind.
+  `iOSCalendarMetrics.swift` opens by claiming to hold "every measurement the iOS calendar's three
+  presentations are drawn with" and holds none of these. **Make the claim true, and pin it.**
+  Where two values disagree, do NOT invent a third — report the pair and use the one with a stated
+  rationale, or ask.
+
+- [T-596] **iOS Today rail: the same, for the schedule panel.** Approved 2026-08-31.
+  **(a)** The two iOS hour grids disagree: `iOSTodaySchedulePanel.swift:361-363` draws `height: 1` at
+  `opacity(hour % 3 == 0 ? 0.55 : 0.25)`; `iOSCalendarTimelineViews.swift:632-636` draws `height: 0.5`
+  at `0.46 : 0.20`. **Same `% 3` cadence, so the rule was copied and the values were not** — 2x line
+  weight and two opacity pairs for one hairline. The hour *label* opacities do match (0.9/0.45), which
+  is what makes the line divergence look accidental. **(b)** One 7pt radius spelled two ways in one
+  file: `Theme.radiusControl - 3` (`:437`, the repo's inner-pill idiom) and a bare `cornerRadius: 7`
+  (`:558`) — the only hardcoded radius in the six scoped files. **(c)** The two Today hosts type their
+  own gutters and have drifted: `iOSTodayView.swift:343-345` (14 / top 12 / bottom 20) vs
+  `iOSTodayCompactViews.swift:49-56` (14 / top 10 / bottom 16) — **after both already read
+  `contentMaxWidth` from `CadenceTodaySectionMetrics` precisely so "the two hosts cannot drift apart
+  again."** Finish that unification; `CadenceTodaySectionMetrics` is keyed on layout and is the home.
+
+- [T-597] **macOS Today: two chips and two headers that ignore their own metrics types.** Approved
+  2026-08-31. **(a)** The Cancelled chip (`TasksPanelComponents.swift:68-77`) hardcodes `size: 10`,
+  padding `6/3`, while its four siblings on the same row — do-date pill, due-date pill, bundle badge,
+  estimate chip — all use `metrics.secondaryFontSize` (11 on `.desktop`) with `4/2`.
+  `CadenceTaskRowMetrics.desktop` exists precisely so these do not drift. **(b)** Two adjacent section
+  headers differ by **1pt** of bottom padding — `TasksPanelSectionViews.swift:63-65` (bottom 5) vs
+  `:182-184` (bottom 6) — and neither reads `TaskListDisplayMetrics`, which owns
+  `headerHorizontalInset = 24` and is used with bottom 8 by the list-detail siblings.
+  `TasksPanel.swift:349,365,381,390` repeats the bare `16` four more times. iOS puts every one of these
+  in `CadenceTodaySectionMetrics`, keyed on layout — that is the target shape.
+
+- [T-598] **iOS calendar: say it once.** Approved 2026-08-31.
+  **(a)** One start-time control, three labels: "Starts" (`iOSCalendarQuickCreateSheet.swift:460`),
+  "Time" (`iOSCalendarEventEditSheet.swift:352`), "Start" (`iOSCalendarBundleDetailSheet.swift:146`) —
+  three sheets reachable from one screen, all opening the same 15-minute popover.
+  **(b)** `"Read Only"` (`iOSCalendarSettingsSection.swift:428`) against the shared
+  `CadenceCalendarLinkExclusion.readOnly.qualifier` = `"Read-only"`
+  (`CadenceCalendarLinkRowState.swift:152`), in a type whose doc exists so *"the shape is shared and
+  the word is a parameter"*; the event sheet's prose says "read-only calendar". **Three spellings of
+  one fact.** macOS `SettingsListManagementSections.swift:301` has the same `"Read Only"` — both drift
+  from the shared constant together, so fix both.
+  **(c)** `"+ 3 more"` (`iOSCalendarTimelineViews.swift:542`, `iOSCalendarMonthViews.swift:401`) vs
+  `"+3 more"` (`:1095`). Repo-wide the unspaced form wins 9-3, but the two spaced calendar sites match
+  macOS's spaced `CalendarPageMonthSupportViews.swift:349` — so the calendar is split internally *and*
+  from the rest of iOS. Pick one, hoist it, and say which in the closure.
+
+- [T-599] **Settings: say it once.** Approved 2026-08-31. Five copy divergences; hoist each to
+  `CadenceSettingsSectionCopy` rather than editing two literals into agreement.
+  **(a)** Tags empty state: macOS `"Create a tag or add the default set."`
+  (`SettingsTagsSection.swift:103`) vs iOS `"Create one or add the default set."`
+  (`iOSSettingsTagsSection.swift:118`). Recommend macOS's — "a tag" is concrete where "one" needs the
+  title above it to parse.
+  **(b)** Templates footnote written twice (`SettingsTemplatesSection.swift:58` vs
+  `iOSSettingsTemplateAndListSections.swift:63`). Keep iOS's second sentence; **macOS's first clause
+  names "the note sidebar", which is a real macOS surface and a false one on iPhone** — so that clause
+  stays macOS-only. Same family as [[T-544]].
+  **(c)** The **AI privacy disclosure** is one sentence longer on macOS
+  (`SettingsSectionViews.swift:172` has "such as summarizing a note or extracting task drafts"; iOS
+  `:367` does not). Everything else on the card is byte-identical, so this is drift, not a decision.
+  macOS is right — the examples make "AI action" concrete. **This is privacy copy; treat accuracy as
+  the bar.**
+  **(d)** Four AI buttons, four labels, verbosity **inverted**: macOS "Save API Key"/"Test
+  Connection"/"Delete Key"; iOS "Save Key"/"Test"/"Delete API Key". Recommend iOS's Delete ("Delete API
+  Key" — a destructive button should name the whole noun) and macOS's Test ("Test Connection" says what
+  is tested).
+  **(e)** `"Apple Calendars"` (macOS `SettingsListManagementSections.swift:27`, plural, inside the
+  authorized branch) vs `"Apple Calendar"` (iOS `iOSCalendarSettingsSection.swift:67`, singular, and
+  **above** the branch so it also heads the access-denied card). macOS is right on both counts.
+  *Extends [[T-547]]* — that ticket is the noun serving two concepts; this is the section label.
+
+- [T-600] **Settings empty states: converge the component first, then the four copies.** Approved
+  2026-08-31. **Strictly sequenced — (a) before (b).**
+  **(a)** iOS has two near-identical empty-row components: `iOSSettingsEmptyRow`
+  (`iOSSettingsComponents.swift:368-393`, 13pt title, glyph hardcoded to `tray`) and
+  `iOSSettingsEmptyInlineRow` (`iOSSettingsTemplateAndListSections.swift:704-733`, 14pt title, glyph
+  parameterised). Both drawn in the same card vocabulary, **already drifted by a point**. Keep
+  `iOSSettingsEmptyInlineRow` — the parameterised glyph is strictly more capable — and delete the
+  other. *Extends [[T-548]]*.
+  **(b)** Then close the four macOS one-liners against their iOS two-line twins: Reminders lists
+  (`SettingsRemindersSection.swift:79`), Contexts (`SettingsListManagementSections.swift:428`), Lists
+  (`:507`, where iOS also has an "Inactive Lists" eyebrow macOS lacks), Templates
+  (`SettingsTemplatesSection.swift:195`, a bare `Text` not even in a card row). **macOS says only what
+  is absent and never what would fill it; iOS says both.** iOS is right in all four.
+  *Extends [[T-545]]*, which named only the empty-calendar row — these are four more of the identical
+  shape and should probably be absorbed into it.
+
+- [T-601] **Three call sites that ignore a correct shared helper.** Approved 2026-08-31. The repo's
+  most common defect shape (T-374).
+  **(a)** `iOSCalendarInspectorView.swift:145-169` reproduces `CadenceInlineEmpty(surface: .touch)`
+  exactly — same text, 13pt, `Theme.dim`, `Theme.surfaceElevated.opacity(0.38)`, `Theme.radiusControl`
+  — **except vertical padding is 6 where the shared touch metric is 14**. The Board day column on the
+  same screen uses the real component.
+  **(b)** `iOSCalendarTimelineViews.swift:612-617` hand-rolls `hourLabel(_:)` to produce
+  "12 AM / 1 AM / 12 PM / 1 PM". `TimeFormatters.timeString(from: hour * 60)` returns those strings
+  **byte-for-byte**, and **the other iOS hour rail already calls it**
+  (`iOSTodaySchedulePanel.swift:441-443`).
+  **(c)** `iOSTodaySchedulePanel.swift:587-598` re-implements `Theme.priorityColor`
+  (`Theme.swift:368-375`) case for case, **except `.none` returns `Theme.dim.opacity(0.76)` instead of
+  `Theme.dim`**. Nine other call sites use the shared function. If the 0.76 was deliberate, say so and
+  leave it; if not, it is a bug wearing taste's clothes.
+
+- [T-602] **macOS Today: two of three column headers describe their own page.**
+  `TodaySupportViews.swift:6-27` (`PanelHeader`), used at `NotePanel.swift:45` and
+  `SchedulePanelShellViews.swift:20`. The task column already fixed this and **its own doc says why**:
+  the eyebrow it replaced ("TASKS") was *"the header-describes-its-own-page rule one row down."* The
+  other two still do it — `NOTES` / *(note title)*, and `SCHEDULE` / **Timeline**, the latter naming
+  one column twice with two different words. Only the task column carries a count.
+  This is a standing-rule violation, so the *direction* is settled; only the replacement wording is
+  open. **Propose the wording in the closure report rather than landing it silently** — and if the
+  honest answer is that a column needs no header at all, say that.
+
 ## Done
 
 - [T-352] **CLOSED 2026-08-31 (`5ae916a`).** Premise confirmed and then *inverted*: no persistence was
