@@ -422,7 +422,7 @@ private struct BundleTaskPopoverRow: View {
         }
         .buttonStyle(.cadencePlain)
         .disabled(isDisabled)
-        .help(label)
+        .cadenceControlLabel(label)
     }
 }
 #endif

@@ -136,7 +136,7 @@ struct NoteActionMenu: View {
             .foregroundStyle(Theme.muted)
         }
         .fixedSize()
-        .help("Note actions")
+        .cadenceControlLabel("Note actions")
     }
 
     // MARK: - Pages

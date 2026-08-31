@@ -178,6 +178,7 @@ private struct NoteTemplateTextButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .accessibilityLabel(template.title)
         .help(template.subtitle)
     }
 }

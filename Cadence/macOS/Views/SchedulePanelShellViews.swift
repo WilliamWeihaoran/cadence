@@ -58,7 +58,7 @@ struct SchedulePanelHeader: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.cadencePlain)
-        .help("Export schedule")
+        .cadenceControlLabel("Export schedule")
     }
 }
 

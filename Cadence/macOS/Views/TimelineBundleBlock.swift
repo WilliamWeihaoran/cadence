@@ -223,12 +223,24 @@ struct TimelineBundleBlock: View {
                 if frame.height >= 58 {
                     ForEach(Array(bundle.sortedTasks.prefix(2)), id: \.id) { member in
                         let memberDue = CadenceDueUrgency.evaluate(dueDateKey: member.dueDate, isDone: member.isDone)
+                        let memberDueLabel = CadenceFocusSupport.dueLabel(
+                            forDueDateKey: member.dueDate,
+                            todayKey: DateFormatters.todayKey()
+                        ) ?? ""
+                        // One expression for the drawn name and the announced one. A label may not
+                        // spell its own empty-title fallback (T-590) — and the ternary this
+                        // replaces also drew a whitespace-only title as a blank line, which
+                        // `displayTitle` trims first.
+                        let memberTitle = TaskTitleSupport.displayTitle(
+                            member.title,
+                            fallback: TaskTitleSupport.defaultCompactDisplayTitle
+                        )
                         HStack(spacing: 5) {
                             Circle()
                                 .strokeBorder(member.isDone ? Color.clear : Theme.dim, lineWidth: 1)
                                 .background(Circle().fill(member.isDone ? accent : Color.clear))
                                 .frame(width: 6, height: 6)
-                            Text(member.title.isEmpty ? "Untitled" : member.title)
+                            Text(memberTitle)
                                 .font(.system(size: 9))
                                 .foregroundStyle(member.isDone ? Theme.dim : Theme.muted)
                                 .strikethrough(member.isDone, color: Theme.dim)
@@ -242,7 +254,9 @@ struct TimelineBundleBlock: View {
                                     .foregroundStyle(memberDue.tint)
                             }
                         }
-                        .help(CadenceFocusSupport.dueLabel(forDueDateKey: member.dueDate, todayKey: DateFormatters.todayKey()) ?? "")
+                        .accessibilityLabel(memberTitle)
+                        .accessibilityValue(memberDueLabel)
+                        .help(memberDueLabel)
                     }
                     if memberCount > 2 {
                         Text("+\(memberCount - 2) more")

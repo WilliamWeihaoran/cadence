@@ -75,6 +75,8 @@ struct TaskNoteEditorPane: View {
                 .padding(.vertical, 7)
                 .background(Theme.surfaceElevated.opacity(0.88))
                 .clipShape(Capsule())
+                .accessibilityLabel("Task-linked note")
+                .accessibilityValue(taskTitle)
                 .help("Task-linked note")
 
                 if showsExpandButton {
@@ -93,7 +95,7 @@ struct TaskNoteEditorPane: View {
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .buttonStyle(.cadencePlain)
-                    .help("Open task notes")
+                    .cadenceControlLabel("Open task notes")
                 }
 
                 if let trailingToolbarAccessory {
