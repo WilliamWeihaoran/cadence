@@ -269,6 +269,16 @@ nonisolated enum CadenceTaskControlAccessibility: Sendable {
     /// itself, and what `CadenceTaskComposerSupport.containerName` resolves.
     static let list = "List"
     static let startFocus = "Start focus session"
+    /// The repeat chip (T-611). "Repeat" is what `iOSTaskRowContextMenu`'s submenu is already
+    /// titled, so the two ways into the same field are named the same thing.
+    static let recurrence = "Repeat"
+    /// The goal chip. The app calls a goal a **milestone** everywhere it names one to the user —
+    /// `CadenceTitleNormalization.defaultMilestoneTitle` is "Untitled Milestone" — so a chip that
+    /// announced "Goal" would be the only place it is called that.
+    static let milestone = "Milestone"
+    /// The placement breadcrumb's second segment, which names a column inside the list. "Section"
+    /// is `CadenceTaskInspectorSupport.sectionSegmentTitle`'s own word for it.
+    static let section = "Section"
 }
 
 extension CadenceTaskCompletionState {

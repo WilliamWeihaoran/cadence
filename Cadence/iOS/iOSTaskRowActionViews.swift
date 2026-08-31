@@ -94,6 +94,7 @@ struct iOSTaskRowContainerChip: View {
     var body: some View {
         iOSTaskAttributeChip(
             title: task.containerName.isEmpty ? CadenceTaskInspectorSupport.inboxSegmentTitle : task.containerName,
+            field: CadenceTaskControlAccessibility.list,
             systemImage: task.project?.icon ?? task.area?.icon ?? "tray.fill",
             isSet: true,
             size: .row,
@@ -175,6 +176,15 @@ enum iOSTaskRowDateField {
         case .dueDate: return "flag.fill"
         }
     }
+
+    /// The field's name, from the shared words rather than spelled here — macOS's row reads the
+    /// same two constants, so the two platforms cannot announce one field two ways (T-611).
+    var accessibilityLabel: String {
+        switch self {
+        case .doDate: return CadenceTaskControlAccessibility.doDate
+        case .dueDate: return CadenceTaskControlAccessibility.dueDate
+        }
+    }
 }
 
 /// A do/due chip over `CadenceQuickDatePopover` — the same Today / Tomorrow / This Weekend pills,
@@ -200,6 +210,9 @@ struct iOSTaskRowDateChip: View {
     var body: some View {
         iOSTaskAttributeChip(
             title: title,
+            // Which of the row's two dates this is — the whole point of the name, since both draw
+            // the same "Tomorrow".
+            field: field.accessibilityLabel,
             systemImage: field.systemImage,
             isSet: true,
             tint: tint,
@@ -273,6 +286,7 @@ struct iOSTaskRowRepeatChip: View {
     var body: some View {
         iOSTaskAttributeChip(
             title: task.recurrenceRule.shortLabel,
+            field: CadenceTaskControlAccessibility.recurrence,
             systemImage: task.recurrenceRule.systemImage,
             isSet: true,
             size: .row,
@@ -357,6 +371,7 @@ struct iOSTaskRowGoalChip: View {
     var body: some View {
         iOSTaskAttributeChip(
             title: goal.title.isEmpty ? "Goal" : goal.title,
+            field: CadenceTaskControlAccessibility.milestone,
             systemImage: goal.icon,
             isSet: true,
             size: .row,
@@ -423,6 +438,7 @@ struct iOSTaskRowEstimateChip: View {
     var body: some View {
         iOSTaskAttributeChip(
             title: CadenceTaskPresentationSupport.estimateLabel(minutes: task.estimatedMinutes),
+            field: CadenceTaskControlAccessibility.estimate,
             systemImage: "clock",
             isSet: true,
             size: .row,

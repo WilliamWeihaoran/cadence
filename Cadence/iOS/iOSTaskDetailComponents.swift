@@ -149,6 +149,7 @@ struct iOSTaskPlacementBreadcrumb: View {
         CadenceWrappingHStack(spacing: 4, lineSpacing: 4) {
             iOSTaskAttributeChip(
                 title: containerTitle,
+                field: CadenceTaskControlAccessibility.list,
                 systemImage: containerIcon,
                 isSet: !isInbox
             ) {
@@ -173,6 +174,7 @@ struct iOSTaskPlacementBreadcrumb: View {
                     // The real name of where the task is, never "None": dimmer styling is what
                     // conveys "unset", so the segment and its picker cannot disagree.
                     title: CadenceTaskInspectorSupport.sectionSegmentTitle(task.sectionName),
+                    field: CadenceTaskControlAccessibility.section,
                     systemImage: nil,
                     isSet: !task.sectionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ) {
@@ -201,6 +203,20 @@ struct iOSTaskPlacementBreadcrumb: View {
 /// priority.
 struct iOSTaskAttributeChip: View {
     let title: String
+    /// **The field this chip names, and it has no default on purpose (T-611).**
+    ///
+    /// A chip draws its *value* — "Tomorrow", "Weekly", "30m", "Website" — and nothing that says
+    /// which field the value belongs to. Sighted users get that from where the chip sits in the
+    /// strip; VoiceOver got "Tomorrow, Opens a picker" and had to guess whether it was the do date
+    /// or the due date, which is the same defect T-594 fixed on the macOS row.
+    ///
+    /// The fix is `.accessibilityLabel` + `.accessibilityValue` — SwiftUI's pair for exactly this,
+    /// so the name stays put while the reading changes — and it lives **here** rather than at the
+    /// seven call sites. That is what stops the eighth: a chip added without naming its field does
+    /// not fail a scan, it fails to compile. Take the word from
+    /// `CadenceTaskControlAccessibility`; the row and the inspector must not spell one field two
+    /// ways.
+    let field: String
     var systemImage: String? = nil
     var isSet: Bool = false
     /// Glyph colour once the field is set. `nil` keeps the neutral treatment.
@@ -252,6 +268,8 @@ struct iOSTaskAttributeChip: View {
             .iOSExpandedHitArea(size.hitInset)
         }
         .buttonStyle(.iosPressable)
+        .accessibilityLabel(field)
+        .accessibilityValue(title)
         .accessibilityHint("Opens a picker")
     }
 }

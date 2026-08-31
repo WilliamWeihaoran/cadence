@@ -163,18 +163,26 @@ struct iOSTaskRow: View {
     /// `iOSExpandedHitArea` gives the glyph a 44pt touch target without letting it take 44pt of
     /// layout, which would shove the title across the row.
     private var completionButton: some View {
-        Button {
+        // **The name is keyed on what a tap does, not on the state (T-611).** It was
+        // `isFinishedTask ? "Mark task todo" : "Complete task"` — two strings this file spelled for
+        // itself, where macOS's identical control reads
+        // `CadenceTaskCompletionState.accessibilityActionLabel`. Reading the shared answer off the
+        // glyph's own state also closes the wording gap: a settled task now says "Reopen task" on
+        // both platforms, and the five branches stay in one place, which matters because on macOS
+        // the mid-fill states genuinely change what a second tap does.
+        let glyph = CadenceTaskCompletionGlyph.resolve(task: task)
+        return Button {
             toggleCompletion()
         } label: {
             iOSTaskCompletionCircle(
-                glyph: .resolve(task: task),
+                glyph: glyph,
                 diameter: CadenceTaskRowMetrics.completionCircleDiameter
             )
             .frame(width: metrics.completionGlyphSize, height: metrics.completionGlyphSize)
             .iOSExpandedHitArea((44 - metrics.completionGlyphSize) / 2)
         }
         .buttonStyle(.iosPressable)
-        .accessibilityLabel(CadenceTaskQuerySupport.isFinishedTask(task) ? "Mark task todo" : "Complete task")
+        .accessibilityLabel(glyph.state.accessibilityActionLabel)
     }
 
     private var taskSummary: some View {
