@@ -247,3 +247,118 @@ private final class ToggleEffectRecorder {
         )
     }
 }
+
+/// **T-576: the notification permission card has to re-read the permission the user just granted.**
+///
+/// The flow that broke it is the card's own: the permission is denied, so the pane offers **Enable
+/// Notifications**; the system will not prompt a second time, so the button falls through to System
+/// Settings; the user grants there and comes back. On macOS nothing terminated the app and nothing
+/// re-derived — the pane had no refresh hook of any kind — so it went on reading "Notification
+/// access required" until the next relaunch. iOS had `.onAppear`, which is the half that does *not*
+/// fire on a return from the Settings app.
+///
+/// The correct pattern already existed one permission over: T-253's reminders hook, which carries
+/// `.onAppear` **and** `.onChange(of: scenePhase)`. It is generalised rather than copied
+/// (`CadenceAuthorizationLifecycle`), because a second hand-written pair of lifecycle events is the
+/// exact shape the first one was created to stop.
+@MainActor
+struct CadenceNotificationsAuthorizationLifecycleTests {
+
+    /// Both surfaces apply the one hook, exactly once, and neither keeps a hand-written half
+    /// beside it — which is how the reminders panes came to carry only the appearance half while
+    /// both Inboxes had both.
+    @Test func bothNotificationsSurfacesRederiveThroughTheOneHook() throws {
+        let surfaces = [
+            "Cadence/macOS/Views/SettingsNotificationsSection.swift",
+            "Cadence/iOS/iOSNotificationsSettingsSection.swift",
+        ]
+
+        for path in surfaces {
+            let code = try t576StrippingComments(t576SourceFile(path))
+            #expect(
+                code.contains("CadenceNotificationSettingsCopy.accessRequiredTitle"),
+                "non-vacuity: \(path) is not the notification permission card"
+            )
+
+            let applications = code.components(separatedBy: ".notificationsAuthorizationLifecycle(").count - 1
+            #expect(applications == 1, "\(path) applies the lifecycle hook \(applications) times, expected 1")
+
+            #expect(
+                !code.contains("refreshAuthorizationState"),
+                "\(path) re-derives notification authorization outside the one shared hook again"
+            )
+            #expect(
+                !code.contains("scenePhase"),
+                "\(path) hand-writes its own half of the lifecycle beside the hook"
+            )
+        }
+    }
+
+    /// One modifier for both permissions, in one file. Two `ViewModifier`s each spelling
+    /// `.onAppear` plus `.onChange(of: scenePhase)` is two places for the pair to come apart, which
+    /// is the whole history of this hook.
+    @Test func theLifecycleHookIsOneTypeRatherThanOnePerPermission() throws {
+        let files = try t576SwiftFiles(under: "Cadence")
+        #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")
+
+        let declarers = try files.filter {
+            try t576StrippingComments(t576SourceFile($0)).contains("ViewModifier")
+                && t576StrippingComments(t576SourceFile($0)).contains(".onChange(of: scenePhase)")
+        }
+        #expect(
+            declarers == ["Cadence/Shared/CadenceAuthorizationLifecycle.swift"],
+            "authorization lifecycle modifiers are declared in \(declarers.sorted())"
+        )
+
+        // The reminders file's copy is retired, not merely unread: the extension that used to live
+        // there is what the four reminders surfaces still call, and it has to resolve to the shared
+        // modifier rather than to a survivor beside it.
+        let reminders = try t576StrippingComments(
+            t576SourceFile("Cadence/Shared/CadenceRemindersPresentationSupport.swift")
+        )
+        #expect(reminders.contains("enum RemindersAccessRequestPlan"), "non-vacuity: wrong reminders file")
+        #expect(
+            !reminders.contains("ViewModifier"),
+            "the reminders file declares its own lifecycle modifier again"
+        )
+
+        let shared = try t576StrippingComments(t576SourceFile("Cadence/Shared/CadenceAuthorizationLifecycle.swift"))
+        #expect(shared.contains("func remindersAuthorizationLifecycle"), "the reminders entry point moved again")
+        #expect(shared.contains("func notificationsAuthorizationLifecycle"), "the notifications entry point is gone")
+    }
+}
+
+private func t576SourceFile(_ relativePath: String) throws -> String {
+    let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+}
+
+private func t576SwiftFiles(under relativeDirectory: String) throws -> [String] {
+    let root = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let directory = root.appendingPathComponent(relativeDirectory)
+    guard let enumerator = FileManager.default.enumerator(atPath: directory.path) else { return [] }
+    return enumerator.compactMap { element in
+        guard let relativePath = element as? String, relativePath.hasSuffix(".swift") else { return nil }
+        return "\(relativeDirectory)/\(relativePath)"
+    }
+}
+
+/// Blanks `//` and `/* */` so the assertions read code rather than the design notes this repo
+/// keeps. Crude on purpose: a `//` inside a string literal is blanked too, which can only make
+/// these checks stricter about what counts as a comment.
+private func t576StrippingComments(_ source: String) throws -> String {
+    var result = source
+    for pattern in ["//[^\n]*", "/\\*(?s:.)*?\\*/"] {
+        while let range = result.range(of: pattern, options: .regularExpression) {
+            result.replaceSubrange(
+                range,
+                with: String(repeating: " ", count: result.distance(from: range.lowerBound, to: range.upperBound))
+            )
+        }
+    }
+    return result
+}

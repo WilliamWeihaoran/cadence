@@ -496,60 +496,10 @@ nonisolated enum RemindersAccessRequestPlan: Equatable, Sendable {
     }
 }
 
-/// When a reminders surface re-derives authorization from EventKit.
-///
-/// **T-253.** All four reminders surfaces have to answer this the same way, and two of them did
-/// not. Both Inboxes carried `.onAppear` **and** `.onChange(of: scenePhase)`; both Settings
-/// sections carried `.onAppear` alone, with a comment claiming it matched the Inbox. On macOS that
-/// is the surface most exposed to the gap: revoking in System Settings does not terminate the app
-/// the way iOS does, so a user who follows Settings > Reminders' own **Open Reminders Settings**
-/// button, revokes, and comes back lands on a view that never disappeared — `.onAppear` never
-/// fires a second time — still claiming "Apple Reminders connected" over a stale list.
-///
-/// The hook is one modifier now rather than four hand-written pairs, so there is no longer a
-/// surface that can carry half of it.
-nonisolated enum RemindersAuthorizationLifecycle {
-    /// Only a return to `.active` re-derives. `.inactive` and `.background` are the *leaving*
-    /// halves of the same transition — re-reading EventKit on the way out costs a fetch and tells
-    /// the user nothing, because the change they are about to make has not happened yet.
-    static func shouldRefresh(onScenePhaseChangeTo phase: ScenePhase) -> Bool {
-        phase == .active
-    }
-}
-
-/// The modifier itself. Applied by all four reminders surfaces; see
-/// `RemindersAuthorizationLifecycle` for why there is only one of it.
-struct RemindersAuthorizationLifecycleModifier: ViewModifier {
-    let manager: RemindersManager
-    /// `false` where the host view exists on more than one page and only one of them shows
-    /// reminders — the iOS Tasks page is All Tasks as well as Inbox, and touching EventKit from a
-    /// page with no reminders surface on it is work with nothing behind it.
-    let isEnabled: Bool
-
-    @Environment(\.scenePhase) private var scenePhase
-
-    func body(content: Content) -> some View {
-        content
-            .onAppear { refreshIfEnabled() }
-            .onChange(of: scenePhase) { _, phase in
-                guard RemindersAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo: phase) else { return }
-                refreshIfEnabled()
-            }
-    }
-
-    /// Internal rather than private so a test can watch it happen: `RemindersManager` counts its
-    /// own re-derives in `reconcileLedger`, so "disabled means no EventKit read" is an assertion
-    /// about an effect rather than about the text of a view body.
-    func refreshIfEnabled() {
-        guard isEnabled else { return }
-        manager.refreshAuthorizationState()
-    }
-}
-
-extension View {
-    /// Re-derive reminders authorization when this surface appears **and** whenever the app comes
-    /// back to the foreground. See `RemindersAuthorizationLifecycle`.
-    func remindersAuthorizationLifecycle(_ manager: RemindersManager, isEnabled: Bool = true) -> some View {
-        modifier(RemindersAuthorizationLifecycleModifier(manager: manager, isEnabled: isEnabled))
-    }
-}
+// `RemindersAuthorizationLifecycle`, `RemindersAuthorizationLifecycleModifier` and the
+// `remindersAuthorizationLifecycle(_:isEnabled:)` extension used to close this file (T-253). They
+// are `Cadence/Shared/CadenceAuthorizationLifecycle.swift` now, generalised over the permission
+// rather than over EventKit: Settings > Notifications had the same defect on both platforms —
+// macOS with no refresh at all, iOS with the appearance half alone — and a second hand-written
+// copy of the same two lifecycle events is what the first one was created to stop (T-576). The
+// call sites are unchanged; `remindersAuthorizationLifecycle` still spells the same thing.

@@ -16,9 +16,10 @@ struct iOSNotificationsSettingsSection: View {
                 accessCard
             }
         }
-        .onAppear {
-            Task { await notificationManager.refreshAuthorizationState() }
-        }
+        // `.onAppear` alone before T-576. Returning from the iOS Settings app is a foreground
+        // transition, not a fresh appearance, so the half this adds is the half that matters after
+        // the user actually grants the permission.
+        .notificationsAuthorizationLifecycle(notificationManager)
     }
 
     // Both cards are `iOSSettingsCard`, not the shared `CadenceSettingsCard`: this section

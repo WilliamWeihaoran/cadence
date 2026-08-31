@@ -99,9 +99,9 @@ struct CadenceInboxRemindersSurfaceTests {
     /// fetch and tells the user nothing, because the change they are about to make in System
     /// Settings has not happened yet.
     @Test func onlyAReturnToTheForegroundRederivesAuthorization() {
-        #expect(RemindersAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo: .active))
-        #expect(!RemindersAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo: .inactive))
-        #expect(!RemindersAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo: .background))
+        #expect(CadenceAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo: .active))
+        #expect(!CadenceAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo: .inactive))
+        #expect(!CadenceAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo: .background))
     }
 
     /// **T-253, the effect.** The hook's one side effect is a re-derive, and `reconcileLedger`
@@ -114,13 +114,15 @@ struct CadenceInboxRemindersSurfaceTests {
         let manager = RemindersManager.shared
 
         let before = manager.reconcileLedger.authorizationRefreshes
-        RemindersAuthorizationLifecycleModifier(manager: manager, isEnabled: false).refreshIfEnabled()
+        CadenceAuthorizationLifecycleModifier(isEnabled: false) { manager.refreshAuthorizationState() }
+            .refreshIfEnabled()
         #expect(
             manager.reconcileLedger.authorizationRefreshes == before,
             "a disabled reminders lifecycle hook read EventKit anyway"
         )
 
-        RemindersAuthorizationLifecycleModifier(manager: manager, isEnabled: true).refreshIfEnabled()
+        CadenceAuthorizationLifecycleModifier(isEnabled: true) { manager.refreshAuthorizationState() }
+            .refreshIfEnabled()
         #expect(
             manager.reconcileLedger.authorizationRefreshes == before + 1,
             "an enabled reminders lifecycle hook did not re-derive authorization"
@@ -134,13 +136,13 @@ struct CadenceInboxRemindersSurfaceTests {
     /// who follows Settings > Reminders' own **Open Reminders Settings** button, revokes, and comes
     /// back is looking at a view that never disappeared and still claims access.
     @Test func theSharedHookCarriesBothHalvesOfTheLifecycle() throws {
-        let source = try strippingComments(sourceFile("Cadence/Shared/CadenceRemindersPresentationSupport.swift"))
+        let source = try strippingComments(sourceFile("Cadence/Shared/CadenceAuthorizationLifecycle.swift"))
         let body = try cadenceFunctionBody("func body(content: Content) -> some View", in: source)
 
         #expect(body.contains(".onAppear"), "the shared reminders hook stopped re-deriving on appear")
         #expect(body.contains(".onChange(of: scenePhase)"), "the shared reminders hook stopped re-deriving on foreground")
         #expect(
-            body.contains("RemindersAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo:"),
+            body.contains("CadenceAuthorizationLifecycle.shouldRefresh(onScenePhaseChangeTo:"),
             "the shared reminders hook re-spells which scene phase counts"
         )
         #expect(

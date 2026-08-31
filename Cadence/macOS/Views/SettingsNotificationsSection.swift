@@ -20,6 +20,13 @@ struct SettingsNotificationsSection: View {
                 notAuthorizedRow
             }
         }
+        // **T-576.** This pane had no refresh hook of any kind, and it is the surface most exposed
+        // to the gap: the "Enable Notifications" button below falls through to System Settings on
+        // the second press, because the system will not prompt twice — and macOS does not
+        // terminate the app when the user grants there, so this view never disappeared and
+        // `.onAppear` alone would never fire again. The card read "Notification access required"
+        // until the next relaunch. Same hook the Reminders pane one file over already applies.
+        .notificationsAuthorizationLifecycle(notificationManager)
     }
 
     private var enabledRow: some View {
