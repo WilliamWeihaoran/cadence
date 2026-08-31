@@ -984,33 +984,29 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `TextField` **prompt** deliberately staying a noun phrase; this is an **accessibility label over a
   value**, which T-539's own resolution says should read the shared display title.
 
-- [T-591] **macOS: dragging a task onto a Today list heading is accepted and moves nothing.**
-  `TasksPanelSupport.swift:244-264` vs `CadenceTaskDropSupport.swift:134-135`, wired at
-  `TasksPanel.swift:235,249`. Today's groups hand out the compound key `"list:p_<uuid>|date:today"`;
-  `assignTask` does `dropKey.dropFirst(5)` and **never splits on `|`**, so it looks for a project whose
-  `uuidString` is `"<uuid>|date:today"`, finds none, falls through every branch — and `handleSectionDrop`
-  **still returns `true`**. The header lights up, the drop is accepted, nothing moves. Inbox is the same
-  (`"inbox|date:today" != "inbox"`). Dropping onto a *row* in another group is inert too. Reordering
-  inside one group still works, which is why this hides. The `|` vocabulary was built for *seeding* a
-  new task (`CadenceTaskDropSupport:237` splits it correctly); macOS reuses it for *moving* and
-  `assignTask` never learned the separator. **Fix this before restructuring the drop coordinator
-  ([[T-564]]).**
+- [T-591] **CLOSED 2026-08-31 (`1f53aa8`).** Compound key now split on
+  `CadenceTaskDropSupport.separator` and applied part by part; the parse extracted as the pure
+  `TasksPanelSupport.dropAssignments(forDropKey:)`, testable with no `ModelContext`. **The half that
+  mattered more:** `assignTask` reports whether anything resolved and `handleSectionDrop` returns it,
+  so an unresolvable key now bounces the row instead of swallowing it. `handleTaskDrop` still returns
+  `true` deliberately (the reorder ran either way) and says so. 8 tests; two mutations, **both
+  confirmed compiled** — restoring the parse bug killed 6, restoring the unconditional `true` killed
+  exactly 1, which is the attribution that matters: the silent-accept guard has its own test,
+  independent of the parse. Follow-on filed as [[T-607]].
 
-- [T-592] **macOS: "Nothing planned" can appear directly under cards saying three of your lists are
-  past due.** `TasksPanelDerivedState.swift:80-89` (`isEmptyState`) tests only the four task buckets
-  plus Completed, while the past-due cards come from `CadenceTodayOverdueSummarySupport.listSummaries`,
-  which filters **projects** by their own `dueDate` and never looks at tasks. **iOS already guards this
-  and says why in a comment** (`iOSTodayTaskSections.swift:90-95`): *"a day with nothing planned but
-  three columns whose deadlines have gone by would otherwise read 'nothing planned' directly under
-  three cards saying otherwise."* Copy the guard.
+- [T-592] **CLOSED 2026-08-31 (`c39ff74`).** `isEmptyState` now also requires both past-due
+  summary arrays empty, matching `iOSTodayTaskSections`, with iOS's reasoning carried into a comment.
+  Mutation killed `theMacTodayIsNotEmptyWhileAPastDueCardIsOnScreen` alone; the test also asserts a
+  genuinely empty day still reports empty, so the guard cannot be satisfied by never returning `true`.
+  **One thing the ticket did not have:** macOS needs no rollover-notice clause, unlike iOS's guard —
+  the banner's rows are `overdoTasks`, which `isEmptyState` already counted. The agent recorded that in
+  the comment rather than copying a clause that would be dead here.
 
-- [T-593] **macOS Today's task rows run flush to the right edge; every other macOS task list has a
-  gutter.** `TasksPanelSectionViews.swift:99` and `:190` apply `.padding(.leading, 16)` and no trailing
-  padding. The shared wrapper this was copied from, `TaskListDisplayRow`
-  (`ListDetailSupportViews.swift:288-294`), pads **leading 52 / trailing 12**. So on Today the row's
-  hover fill and its 1pt border touch the pane divider, while the same row on All Tasks / Inbox / list
-  detail sits 12pt clear. The blue drop indicator has the same asymmetry (`:95`). The block is
-  otherwise a line-for-line re-implementation of `TaskListInteractiveRow` with one inset dropped.
+- [T-593] **CLOSED 2026-08-31 (`7dea6b5`).** All three sites — rows, Completed rows and the
+  drop indicator — now read `TaskListDisplayMetrics.taskTrailingInset`, the sibling's own constant
+  rather than a restated `12`. Leading stays 16, extracted as `todayRowLeadingInset` with a comment on
+  why it differs from the shared 52. **Build-verified only, not looked at** — no test pins it and the
+  app was not launched. Convergence proposed as [[T-608]], deliberately not done.
 
 - [T-594] **Six controls on every macOS Today row have no accessible name — including the completion
   circle.** `TasksPanelComponents.swift:205` (`.help("Start focus session")` with no label), `:508`
@@ -1189,6 +1185,26 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **verify against what macOS actually sorts by** rather than assuming), and make an unknown stored
   value fall back rather than crash or silently re-sort. **If the mapping cannot be proven from the
   code, stop and report rather than guessing.**
+
+- [T-607] **macOS All Tasks / Inbox accept a section drop that resolved nothing — the same shape
+  [[T-591]] just fixed on Today.** `TasksListView.swift:236-243`'s `onDropOnSectionPayload` calls
+  `assignTask` and returns `true` unconditionally. Its keys are *bare*, so the compound-key parse bug
+  does not reach it — but a `list:p_<uuid>` whose project has been deleted is still silently accepted:
+  the row highlights, the drop is taken, nothing moves.
+  `TasksPanelSupport.assignTask` already answers `Bool` after T-591, so the fix is literally
+  `return assignTask(...)`. **Filed rather than done because it changes drop rejection on two more
+  screens and no evidence was gathered for those surfaces** — the agent was right not to widen scope
+  on a hunch. Gather the evidence first, then it is a one-line change plus a test.
+
+- [T-608] **Converge macOS Today's row block onto `TaskListInteractiveRow`.** Proposed by the T-593
+  agent, deliberately not done. The Today block in `TasksPanelSectionViews` is a line-for-line
+  re-implementation of `TaskListInteractiveRow` (`ListDetailSupportViews.swift:307`) — draggable,
+  dropDestination, top indicator, 0.15s animation, same asymmetric transition — and the shared one
+  **already takes `leadingInset`/`trailingInset` as parameters**, so passing `leadingInset: 16` would
+  delete ~20 lines outright. The only real difference is `MacTaskRow`'s `.opacity(opacity)` on the
+  dimmed Completed group, which needs one more parameter.
+  Sequencing: this is safe to do after [[T-591]] landed, and it overlaps [[T-564]]'s drop-coordinator
+  question — do them together or decide T-564 first, but do not restructure the same code twice.
 
 ## Done
 

@@ -180,3 +180,31 @@ Two rules, and they generalise well past this script:
 This is the same shape as the `CadenceSourceScan.codeOnly` trap: an instrument broke, and the
 breakage read as a verdict. Prefer detectors that fail loud over detectors that fail silent, and
 never let `2>/dev/null` sit on the one command whose error text you would need.
+
+## A `kill -9` on a runner that mutates the tree strands the mutation, not just the lock
+
+Recorded 2026-08-31, from the T-591 batch. The runbook already says that killing a queued runner must
+also kill its `acquire` child, or the lock is stranded. There is a worse sibling.
+
+A mutation-test runner does three things in sequence: `cp` the file aside, edit it, run the suite, and
+restore it from the backup on the way out. That restore lives in an `EXIT` trap. **`SIGKILL` does not
+run traps.** So a `kill -9` on such a runner leaves the *mutated source in the user's working tree* —
+not in a scratch copy — and leaves the lock held on top of it.
+
+That is a corrupted repo, and a quiet one: the tree still compiles, because a good mutation is
+deliberately compilable. The next agent to build sees a passing or failing run that has nothing to do
+with its own change.
+
+Rules:
+
+- Prefer `SIGTERM` for a runner that mutates anything, and give the trap a moment to run.
+- If you must `kill -9`, **restore from the `cp` backup by hand in the same turn**, and confirm the
+  restore by grepping for the needle rather than assuming it.
+- Release the lock with the same id you acquired under, in the same turn.
+- Better: do mutation batches in an isolated `git archive HEAD | tar -x` tree, where a stranded
+  mutation dies with the scratch directory and cannot reach the user's repo at all.
+
+The related trap, same session: with three agents editing one tree, a build failure is often **not
+yours**. Check whose file the `error:` names before reacting. The T-591 batch lost a full run to 46
+compile errors in another agent's `TaskBundleTests.swift`, and the fix was to stop using the shared
+tree, not to touch that file.
