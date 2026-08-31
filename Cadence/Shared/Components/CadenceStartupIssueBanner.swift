@@ -71,8 +71,25 @@ struct CadenceStartupIssueBannerModel: Equatable {
         isCollapsed ? collapsedTitle : "\(issue.bannerTitle). \(issue.bannerDetail)"
     }
 
-    /// Never "dismiss". There is no other durable indicator on macOS — only iOS Settings →
-    /// iCloud Sync renders `CadenceSyncHealth` — so this control collapses and nothing more.
+    /// Never "dismiss" — but no longer because macOS has nowhere else to show a failure. It does:
+    /// `SettingsSyncSection` folds `PersistenceController.startupIssue` into
+    /// `CadenceSyncHealth.resolve`, and `.sync` is filed under "Connections" in the rail. The claim
+    /// that used to sit here — that only iOS renders `CadenceSyncHealth` — was true when written and
+    /// is now false.
+    ///
+    /// Two reasons survive it, both narrower and both enforced elsewhere rather than asserted here.
+    ///
+    /// **One: the pane only sees half the kinds.** `resolve` reacts to a kind whose
+    /// `disablesCloudSync` is true, and that gate is deliberate — reporting a maintenance-save
+    /// failure as a sync failure "would be its own lie", per `CadenceStartupIssueKind`. So
+    /// `.maintenanceSaveFailed` and `.restoreFailed` reach no Settings pane on *either* platform, and
+    /// for those two this banner is still the only durable indicator in the app.
+    ///
+    /// **Two: one kind cannot safely be hidden at all.** `.inMemoryStore` has `losesDataOnQuit`, so a
+    /// dismiss would let someone hide the warning and then quit, losing everything written this
+    /// launch. Collapse keeps the affordance on screen; dismiss does not.
+    ///
+    /// Both facts are pinned by `CadenceSyncHealthTests`, not by this comment.
     var accessibilityHint: String {
         isCollapsed ? "Expands to show what went wrong." : "Collapses to a compact badge."
     }
@@ -101,8 +118,11 @@ struct CadenceStartupIssueBannerModel: Equatable {
 /// compact-width fork: a Mac window is wide enough that the banner occludes nothing, but a user who
 /// has read it once should still be able to put it away there too.
 ///
-/// It does **not** dismiss, on any platform. macOS Settings has no sync or iCloud row at all, so a
-/// dismissed banner on a Mac would leave the failure with no indicator anywhere.
+/// It does **not** dismiss, on any platform — see the note on `accessibilityHint` for the reason,
+/// which is no longer the one that used to be written here. macOS *does* have a sync pane now
+/// (`SettingsSyncSection`, under "Connections"), so "a Mac has no indicator anywhere" is false; what
+/// holds is that the pane only reacts to kinds whose `disablesCloudSync` is true, and that
+/// `.inMemoryStore` loses data on quit.
 struct CadenceStartupIssueBanner: View {
     let issue: CadenceStartupIssue
 

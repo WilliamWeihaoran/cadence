@@ -157,9 +157,18 @@ struct CadenceStartupIssueBannerTests {
         }
     }
 
-    /// Collapse, never dismiss. macOS Settings has no sync or iCloud row — only iOS Settings →
-    /// iCloud Sync renders `CadenceSyncHealth` — so a banner a Mac user could dismiss outright
-    /// would leave the failure with no durable indicator anywhere in the app.
+    /// Collapse, never dismiss — and the old reason for it has expired. This comment used to say
+    /// macOS Settings has no sync row; `SettingsSyncSection` is one, filed under "Connections", and
+    /// it renders `CadenceSyncHealth` built from `PersistenceController.startupIssue`.
+    ///
+    /// The behaviour is unchanged because two better reasons hold. The pane only reacts to kinds
+    /// whose `disablesCloudSync` is true, so `.maintenanceSaveFailed` and `.restoreFailed` — half of
+    /// `CadenceStartupIssueKind` — still reach no Settings pane on either platform. And
+    /// `.inMemoryStore` loses data on quit, so a dismissible warning is one a user could hide and
+    /// then quit behind.
+    ///
+    /// `CadenceSyncHealthTests` pins both facts. If either changes, this test's reason should be
+    /// re-argued rather than this comment quietly re-edited.
     @Test func theControlNeverOffersToDismiss() {
         for issue in allIssues {
             for hint in [collapsed(issue).accessibilityHint, expanded(issue).accessibilityHint] {
