@@ -288,7 +288,7 @@ struct TimelineBundleBlock: View {
                         .help(memberDueLabel)
                     }
                     if memberCount > 2 {
-                        Text("+\(memberCount - 2) more")
+                        Text(CadenceTaskSurfaceOptions.moreLabel(hidden: memberCount - 2))
                             .font(.system(size: 9))
                             .foregroundStyle(Theme.dim)
                     }

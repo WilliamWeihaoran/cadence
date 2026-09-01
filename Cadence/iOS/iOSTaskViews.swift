@@ -240,7 +240,7 @@ struct iOSTaskRow: View {
 
                 if let hidden = CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task) {
                     Button(action: openDetail) {
-                        Text("+\(hidden) more")
+                        Text(CadenceTaskSurfaceOptions.moreLabel(hidden: hidden))
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Theme.dim)
                             .frame(minHeight: 30)

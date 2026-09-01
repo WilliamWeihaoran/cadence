@@ -211,6 +211,11 @@ enum CadenceTaskSurfaceOptions {
     /// `iOSCalendarTimelineViews`' second site, with itself. The majority wins, and it is also the
     /// typographically right one: `+3` is a signed quantity, not a plus sign followed by a number.
     ///
+    /// **T-638 finished it.** T-598 hoisted the four calendar sites and left the eight that already
+    /// agreed typing the literal, on the grounds that they agreed. Agreement is not a guard — it is
+    /// the state a line is in right before someone edits one copy — so those eight read this
+    /// function now too, and every one of the twelve is one call.
+    ///
     /// It lives next to `overflowCaption` because the two lines are one decision seen twice, and
     /// the paragraph above is where the app already explains which of them a surface gets: this one
     /// where opening the thing reveals the rest, that one where nothing does.
@@ -221,10 +226,13 @@ enum CadenceTaskSurfaceOptions {
     /// plus the spaced way; that is that line's separate question, recorded rather than swept up
     /// with this one.
     ///
-    /// **The declaration is a guard the sweep cannot supply.** `CadenceSharedConstantReuseSweepTests`
-    /// harvests non-interpolated `static let` strings only, and this is interpolated by nature, so a
-    /// thirteenth site typing `"+\(n) more"` would not be caught there.
-    /// `CadenceCalendarConsistencySurfaceTests` pins the calendar surfaces by hand instead.
+    /// **This declaration is a guard the constant sweep cannot supply.**
+    /// `CadenceSharedConstantReuseSweepTests` harvests non-interpolated `static let` strings only,
+    /// and this is interpolated by nature, so a thirteenth site typing `"+\(n) more"` would not be
+    /// caught there. `CadenceTaskSurfaceOptionsTests.onlyTheSharedHelperSpellsTheOverflowLine`
+    /// (T-638) is the needle-shaped sweep that does catch it: the app tree and the widget
+    /// extension, with this file the only one allowed to spell the line.
+    /// `CadenceCalendarConsistencySurfaceTests` still pins the calendar surfaces by name.
     ///
     /// Takes the count the caller is hiding, which is the number every one of those sites had
     /// already computed.

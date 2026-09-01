@@ -392,7 +392,7 @@ struct iOSBoardTaskCard: View {
                 }
 
                 if let hidden = CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task) {
-                    Text("+\(hidden) more")
+                    Text(CadenceTaskSurfaceOptions.moreLabel(hidden: hidden))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.dim)
                         .frame(minHeight: 30)
@@ -520,7 +520,7 @@ struct iOSCalendarBoardBundleCard: View {
                             }
                         }
                         if tasks.count > 2 {
-                            Text("+\(tasks.count - 2) more")
+                            Text(CadenceTaskSurfaceOptions.moreLabel(hidden: tasks.count - 2))
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(Theme.dim)
                         }

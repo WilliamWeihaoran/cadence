@@ -216,6 +216,89 @@ struct CadenceTaskSurfaceOptionsTests {
     @Test func theMacsTaskPagesNameTheSurfaceTheyAre() {
         #expect(CadenceTasksPageScope.allCases.map(\.surface) == [.allTasks, .inbox])
     }
+
+    /// **T-638. `"+N more"` is spelled in exactly one declaration, and this is what says so.**
+    ///
+    /// T-598(c) settled the *spelling* — unspaced, because `+3` is a signed quantity — and hoisted
+    /// the four calendar sites that disagreed onto `moreLabel(hidden:)`. It left the eight sites
+    /// that already agreed typing the literal, on the grounds that they agreed. Agreement is not a
+    /// guard: `moreLabel` is interpolated by nature, so `CadenceSharedConstantReuseSweepTests`
+    /// (which harvests non-interpolated `static let`s) cannot see it, and a thirteenth surface
+    /// typing `"+\(n) more"` would have been caught by nothing at all. That gap is this sweep.
+    ///
+    /// **Two neighbouring lines are deliberately *not* this one, and the needle separates them
+    /// without an exception list.** `MarkdownRenderedBlockTruncation.overflowLabel(unit:)` draws
+    /// `"+ 4 more rows"` — spaced, pluralised, naming the unit that was cut, under a rendered table
+    /// rather than beside a list of chips; `iOSTodaySchedulePanel` draws `"+3 more in Today"`,
+    /// which names *where* the rest are. Both continue past the word `more`, and the needle is
+    /// anchored on the literal's closing quote, so neither can be swept up by a change to the list
+    /// of files.
+    ///
+    /// The one file that may spell it is the one that declares it.
+    @Test func onlyTheSharedHelperSpellsTheOverflowLine() throws {
+        let declaration = "Cadence/Shared/CadenceTaskSurfaceOptions.swift"
+        let needle = #""\+ ?\\\([^"]*\) more""#
+
+        // The needle is not blind: it matches both spellings of this line, and neither of the two
+        // sentences that merely start the same way.
+        #expect(CadenceSourceScan.matchCount(needle, in: #"Text("+\(hidden) more")"#) == 1)
+        #expect(CadenceSourceScan.matchCount(needle, in: #"Text("+ \(overflow) more")"#) == 1)
+        #expect(
+            CadenceSourceScan.matchCount(needle, in: #"return "+ \(count) more \(unit)s""#) == 0,
+            "the needle swept up MarkdownRenderedBlockTruncation.overflowLabel(unit:)"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(needle, in: #"Text("+\(hidden) more in Today")"#) == 0,
+            "the needle swept up iOSTodaySchedulePanel's line"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                needle,
+                in: #"Text(CadenceTaskSurfaceOptions.moreLabel(hidden: hidden))"#
+            ) == 0
+        )
+
+        let spellsItsOwnOverflowLine = try CadenceScanInstrument(
+            "an overflow line spelled inline",
+            fires: #"""
+            Text("+\(hidden) more")
+                .foregroundStyle(Theme.dim)
+            """#,
+            // The nearest negatives, all three at once: the line drawn through the helper, and the
+            // two sentences that share its first four characters and are not it.
+            andNotOn: #"""
+            Text(CadenceTaskSurfaceOptions.moreLabel(hidden: hidden))
+            Text("+\(tasks.count - visible.count) more in Today")
+            return "+ \(overflowCount) more \(unit)\(overflowCount == 1 ? "" : "s")"
+            """#,
+            by: { CadenceSourceScan.matchCount(needle, in: CadenceSourceScan.strippingComments($0)) > 0 }
+        )
+
+        var paths = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        paths += try CadenceSourceScan.swiftFiles(under: "CadenceWidgets")
+        let read = CadenceSourceScan.strippedSourceReader()
+
+        // Non-vacuity that no `atLeast:` can supply: the walk reaches the one file that *does*
+        // spell the line, and reads it as spelling it exactly once.
+        #expect(
+            CadenceSourceScan.matchCount(needle, in: try read(declaration)) == 1,
+            "the sweep no longer reads moreLabel's own declaration"
+        )
+
+        let offenders = try spellsItsOwnOverflowLine.sweep(
+            paths,
+            // 560 app files plus the widget extension when this was written; a walk that collapses
+            // is how an absence sweep passes forever.
+            atLeast: 400,
+            including: declaration,
+            read: read
+        ).filter { $0 != declaration }
+
+        #expect(
+            offenders.isEmpty,
+            "overflow line spelled inline rather than through moreLabel(hidden:) in: \(offenders.joined(separator: ", "))"
+        )
+    }
 }
 
 /// Copy that appears on more than one screen. Each of these was written out at both call sites and

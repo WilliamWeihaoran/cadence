@@ -439,7 +439,7 @@ enum MarkdownTaskEmbedDrawing {
         }
 
         if task.hiddenSubtaskCount > 0 {
-            let label = "+\(task.hiddenSubtaskCount) more"
+            let label = CadenceTaskSurfaceOptions.moreLabel(hidden: task.hiddenSubtaskCount)
             let width = min(max(48, label.size(withAttributes: subtaskMetaAttributes).width + 16), 84)
             if x + width <= contentMaxX {
                 let full = NSRect(x: x, y: rowY, width: width, height: rowHeight)
@@ -467,7 +467,7 @@ enum MarkdownTaskEmbedDrawing {
         MarkdownStylist.codeBorder.withAlphaComponent(0.52).setStroke()
         path.lineWidth = 0.7
         path.stroke()
-        ("+\(count) more" as NSString).draw(in: rect.insetBy(dx: 6, dy: 3), withAttributes: subtaskMetaAttributes)
+        (CadenceTaskSurfaceOptions.moreLabel(hidden: count) as NSString).draw(in: rect.insetBy(dx: 6, dy: 3), withAttributes: subtaskMetaAttributes)
     }
 
     private static func drawSubtask(

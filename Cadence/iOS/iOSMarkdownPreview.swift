@@ -389,7 +389,7 @@ private struct iOSMarkdownPreviewTaskEmbedBlock: View {
                     }
 
                     if task.hiddenSubtaskCount > 0 {
-                        Text("+\(task.hiddenSubtaskCount) more")
+                        Text(CadenceTaskSurfaceOptions.moreLabel(hidden: task.hiddenSubtaskCount))
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Theme.dim)
                     }

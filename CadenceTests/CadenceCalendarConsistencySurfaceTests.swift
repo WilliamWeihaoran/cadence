@@ -455,9 +455,11 @@ struct CadenceCalendarConsistencySurfaceTests {
     /// unspaced like the other eight. The nine win, and `CadenceTaskSurfaceOptions.moreLabel(hidden:)`
     /// is now where the spelling lives.
     ///
-    /// The remaining eight unspaced sites are left typing the literal deliberately: converting them
-    /// is a repo-wide sweep rather than this ticket, and they already agree with the constant. What
-    /// this pins is that no *calendar* surface spells it any more, which is the split T-598 names.
+    /// The remaining eight unspaced sites were left typing the literal by this ticket, on the
+    /// grounds that they already agreed; T-638 converted them and added the repo-wide sweep,
+    /// `CadenceTaskSurfaceOptionsTests.onlyTheSharedHelperSpellsTheOverflowLine`. What *this* still
+    /// pins, and the sweep does not, is which calendar file draws the line and how many times —
+    /// the split T-598 names, stated by name rather than as an absence.
     @Test func everyCalendarOverflowLineReadsTheSharedMoreLabel() throws {
         #expect(CadenceTaskSurfaceOptions.moreLabel(hidden: 3) == "+3 more")
         // The retired form, written out because the whole defect is the one character between them.

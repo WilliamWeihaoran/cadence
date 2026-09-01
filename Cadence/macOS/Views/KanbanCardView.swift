@@ -161,7 +161,7 @@ struct KanbanCard: View {
                 }
 
                 if let hidden = CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task) {
-                    Text("+\(hidden) more")
+                    Text(CadenceTaskSurfaceOptions.moreLabel(hidden: hidden))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Theme.dim)
                         .padding(.vertical, 3)
