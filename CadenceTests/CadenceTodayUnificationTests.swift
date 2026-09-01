@@ -846,6 +846,247 @@ struct CadenceTodayListGroupingTests {
     }
 }
 
+/// **macOS Today speaks iOS's sort vocabulary now (T-606), and the swap had to be non-destructive.**
+///
+/// macOS had two chips — Sort (Custom / Date / Priority) × Order (Ascending / Descending) — and iOS
+/// one control naming five modes. Only "Priority" was common, and macOS's "Date" did not say *which*
+/// date on a page whose whole vocabulary is do-date vs due-date. The decision was to adopt iOS's
+/// named set and fold direction into it.
+///
+/// The hazard is that both halves were persisted (`todaySortField` / `todaySortDirection`) and this
+/// project has no `SchemaMigrationPlan`, so a stored value that no longer decodes must land
+/// somewhere defined rather than crash or silently re-sort. These tests are that guarantee, and the
+/// comparator-equivalence pair below is the evidence for the mapping: they compare the *old*
+/// comparator against the *new* one over a fixture set rather than trusting the two labels to mean
+/// the same thing.
+struct CadenceTodaySortVocabularyTests {
+
+    // MARK: - The mapping
+
+    /// Every retiring `TaskSortField`, mapped — and mapped **exhaustively**, so a field added later
+    /// cannot fall through to the default unnoticed.
+    @Test func everyRetiredMacOSSortFieldMapsOntoANamedMode() {
+        let mapped = TaskSortField.allCases.map {
+            CadenceTaskSortMode.migratedFromMacOSTodaySortField($0.rawValue)
+        }
+        #expect(mapped == [.listOrder, .doDate, .priority])
+        #expect(TaskSortField.allCases.map(\.rawValue) == ["Custom", "Date", "Priority"])
+    }
+
+    /// **The fallback, which is the whole point of the ticket.** Nil, empty, the *other*
+    /// vocabulary's raw values, and a string from no vocabulary at all: every one lands on a
+    /// defined mode instead of crashing or resetting to iOS's default.
+    @Test func anUnrecognisedStoredSortValueLandsOnTheMacOSDefault() {
+        #expect(CadenceTaskSortMode.macOSTodayDefault == .doDate)
+
+        let unrecognised: [String?] = [
+            nil,
+            "",
+            "date",                       // right vocabulary, wrong case
+            "doDate",                     // the *new* vocabulary in the *old* key
+            "Newest",                     // a mode macOS never had
+            "Ascending",                  // the Order chip's value in the Sort key
+            "\u{1F600}"
+        ]
+        for raw in unrecognised {
+            #expect(
+                CadenceTaskSortMode.migratedFromMacOSTodaySortField(raw) == .doDate,
+                "\(raw ?? "nil") did not fall back"
+            )
+        }
+    }
+
+    /// macOS keeps its **own** default rather than iOS's `.priority`, and deliberately: macOS Today
+    /// shipped `Date` + `Ascending`, which is `.doDate`. Taking iOS's default would have re-sorted
+    /// every user who never opened the chip — the exact silent re-sort this ticket forbids.
+    @Test func macOSTodayKeepsItsOwnDefaultRatherThanIOSTodays() {
+        #expect(CadenceTaskSortMode.macOSTodayDefault == .doDate)
+        #expect(CadenceTaskSortMode.macOSTodayDefault != .priority)
+    }
+
+    // MARK: - The comparator evidence for the mapping
+
+    /// **Three retiring settings sort identically under their replacement**, over a fixture built to
+    /// exercise every branch: do-dated and undated, timed and untimed, four priorities, and ties
+    /// that reach `fallbackPrecedes`.
+    ///
+    /// This is what proves the mapping rather than assuming it. `Date` is only a label; what it
+    /// *does* is sort `AppTask.scheduledDate` — the do date — which is why `.doDate` and not
+    /// `.dueDate` is the answer.
+    @Test func theThreeMappedSettingsSortIdenticallyUnderTheirReplacement() {
+        let tasks = Self.fixture()
+
+        let equivalences: [(TaskSortField, TaskSortDirection, CadenceTaskSortMode)] = [
+            (.custom, .ascending, .listOrder),
+            (.custom, .descending, .listOrder),
+            (.date, .ascending, .doDate),
+            (.priority, .descending, .priority)
+        ]
+
+        for (field, direction, mode) in equivalences {
+            let old = tasks.sorted { TaskOrdering.precedes($0, $1, field: field, direction: direction) }
+            let new = tasks.sorted { CadenceTaskQuerySupport.sortTasks($0, $1, sortMode: mode) }
+            #expect(
+                old.map(\.title) == new.map(\.title),
+                "\(field.rawValue) + \(direction.rawValue) != \(mode.title): \(old.map(\.title)) vs \(new.map(\.title))"
+            )
+        }
+    }
+
+    /// **And two do not, which is the cost of retiring the Order chip — recorded, not hidden.**
+    ///
+    /// iOS's set has no reversed do-date and no low-priority-first, so `Date` + `Descending` and
+    /// `Priority` + `Ascending` fold onto the ascending-side mode and genuinely change what those
+    /// users see. Neither was a default, so this reaches only a user who chose one. If this test
+    /// ever goes green, either a reversed mode was added or the fold was quietly undone — both are
+    /// decisions, and both should fail here first.
+    @Test func theTwoUnmappableDirectionsAreKnownToReorderTheList() {
+        let tasks = Self.fixture()
+
+        func order(field: TaskSortField, direction: TaskSortDirection) -> [String] {
+            tasks.sorted { TaskOrdering.precedes($0, $1, field: field, direction: direction) }.map(\.title)
+        }
+        func order(mode: CadenceTaskSortMode) -> [String] {
+            tasks.sorted { CadenceTaskQuerySupport.sortTasks($0, $1, sortMode: mode) }.map(\.title)
+        }
+
+        #expect(order(field: .date, direction: .descending) != order(mode: .doDate))
+        #expect(order(field: .priority, direction: .ascending) != order(mode: .priority))
+    }
+
+    // MARK: - What is on disk
+
+    /// **The read path, end to end, against a throwaway defaults suite** — never
+    /// `UserDefaults.standard`, which on this host is the test runner's own domain.
+    ///
+    /// Through `withTemporaryDefaults` rather than a hand-rolled suite: a name minted from
+    /// `UUID()` strands one more preference plist in the app's own container on every run, which
+    /// is T-516 and is guarded by
+    /// `CadenceTestTargetHygieneTests.noTestInTheTargetNamesAUserDefaultsSuiteAfterAFreshUUID`.
+    /// The helper derives the name from `#function`, so the cost stays at one file forever.
+    @Test func theStoredSortModeWinsAndTheRetiredKeysAreTheFallback() throws {
+        try withTemporaryDefaults("cadence.tests.todaySortMode") { defaults in
+            func read() -> CadenceTaskSortMode {
+                TasksPanel.storedSortMode(in: defaults, fallback: .macOSTodayDefault)
+            }
+
+            // Nothing stored at all — a fresh install, or a user who never opened the chip.
+            #expect(read() == .doDate)
+
+            // Only the retired keys: the pre-upgrade state, for every combination of them.
+            defaults.set("Custom", forKey: TasksPanel.legacySortFieldDefaultsKey)
+            defaults.set("Descending", forKey: TasksPanel.legacySortDirectionDefaultsKey)
+            #expect(read() == .listOrder, "the retired direction must not change the mapping")
+
+            defaults.set("Priority", forKey: TasksPanel.legacySortFieldDefaultsKey)
+            #expect(read() == .priority)
+
+            defaults.set("Date", forKey: TasksPanel.legacySortFieldDefaultsKey)
+            #expect(read() == .doDate)
+
+            // A retired value that decodes as neither vocabulary still produces a mode.
+            defaults.set("Whatever", forKey: TasksPanel.legacySortFieldDefaultsKey)
+            #expect(read() == .doDate)
+
+            // The new key wins over the retired one once it exists.
+            defaults.set("Custom", forKey: TasksPanel.legacySortFieldDefaultsKey)
+            defaults.set(CadenceTaskSortMode.dueDate.rawValue, forKey: TasksPanel.sortModeDefaultsKey)
+            #expect(read() == .dueDate)
+
+            // …and an undecodable new key falls back through the retired one rather than crashing.
+            defaults.set("notAMode", forKey: TasksPanel.sortModeDefaultsKey)
+            #expect(read() == .listOrder)
+        }
+    }
+
+    /// The retired keys are **read and never written**, so a build rolled back to the two chips
+    /// still finds the preference it wrote. Deleting them would have been the destructive option in
+    /// a project with no `SchemaMigrationPlan`.
+    @Test func theRetiredKeysAreReadButNeverWrittenOrCleared() throws {
+        let code = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanel.swift"))
+        #expect(code.contains("legacySortFieldDefaultsKey"))
+        #expect(!code.contains("removeObject"))
+        #expect(code.components(separatedBy: "UserDefaults.standard.set").count - 1 == 1)
+    }
+
+    // MARK: - The chips themselves
+
+    /// **One chip, and the Order chip is gone from Today.** The source pin exists for the T-161
+    /// reason the rest of this file exists: the mapping tests above would stay green if the panel
+    /// went back to reading `TaskSortField`.
+    @Test func macOSTodayDrawsOneSortChipAndNoOrderChip() throws {
+        let code = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanel.swift"))
+        #expect(code.components(separatedBy: "CadenceEnumPickerBadge(").count - 1 == 1)
+        #expect(!code.contains("\"Order\""))
+        #expect(!code.contains("TaskSortField"))
+        #expect(!code.contains("TaskSortDirection"))
+        #expect(code.contains("CadenceTaskQuerySupport.sortTasks("))
+    }
+
+    /// The two chips survive on the surfaces this ticket did **not** touch — All Tasks, Inbox, and
+    /// list detail — so a later sweep cannot read the pin above as "the Order chip is retired
+    /// app-wide". `TaskSortField` and `TaskSortDirection` are still live persisted vocabulary
+    /// there, which is why neither enum lost a case.
+    @Test func theOtherMacOSSurfacesKeepTheTwoChipVocabulary() throws {
+        for path in [
+            "Cadence/macOS/Views/macOSRootSupportViews.swift",
+            "Cadence/macOS/Views/ListDetailView.swift"
+        ] {
+            let code = try strippingComments(sourceFile(path))
+            #expect(code.contains("\"Order\""), "\(path) lost its Order chip")
+        }
+        #expect(TaskSortField.allCases.count == 3)
+        #expect(TaskSortDirection.allCases.count == 2)
+    }
+
+    /// A chip prints the mode's **title**, not its persisted raw value — `"Do Date"`, never
+    /// `"doDate"`. The raw values are `ios.today.sortMode`'s on-disk spelling and could not be
+    /// changed to labels without resetting every iOS user's preference, so the badge learned to ask
+    /// instead.
+    @Test func aSortChipPrintsTheModeTitleRatherThanItsPersistedRawValue() {
+        #expect(CadenceTaskSortMode.doDate.rawValue == "doDate")
+        #expect(CadenceTaskSortMode.doDate.pickerLabel == "Do Date")
+        for mode in CadenceTaskSortMode.allCases {
+            #expect(mode.pickerLabel == mode.title)
+            #expect(!mode.pickerLabel.isEmpty)
+        }
+    }
+
+    // MARK: - Fixture
+
+    /// Deliberately tie-heavy and branch-heavy: two days plus undated work, timed and untimed rows
+    /// on the same day, every priority, and pairs that agree until `fallbackPrecedes`.
+    private static func fixture() -> [AppTask] {
+        func task(
+            _ title: String,
+            scheduled: String = "",
+            due: String = "",
+            startMin: Int = -1,
+            priority: TaskPriority = .none,
+            order: Int
+        ) -> AppTask {
+            let task = AppTask(title: title)
+            task.scheduledDate = scheduled
+            task.dueDate = due
+            task.scheduledStartMin = startMin
+            task.priority = priority
+            task.order = order
+            task.createdAt = Date(timeIntervalSince1970: 1_700_000_000 + Double(order))
+            return task
+        }
+
+        return [
+            task("Alpha", scheduled: "2026-08-11", startMin: 540, priority: .high, order: 3),
+            task("Bravo", scheduled: "2026-08-11", priority: .low, order: 1),
+            task("Charlie", scheduled: "2026-08-12", startMin: 60, priority: .medium, order: 2),
+            task("Delta", due: "2026-08-11", priority: .none, order: 5),
+            task("Echo", scheduled: "2026-08-11", startMin: 60, priority: .none, order: 4),
+            task("Foxtrot", priority: .high, order: 0),
+            task("Golf", scheduled: "2026-08-12", priority: .low, order: 6)
+        ]
+    }
+}
+
 // MARK: - Source-reading helpers
 
 /// Fails unless `name` appears exactly `count` times in each listed file.

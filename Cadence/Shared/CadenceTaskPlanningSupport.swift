@@ -21,6 +21,55 @@ enum CadenceTaskSortMode: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
+// MARK: - The retired macOS vocabulary (T-606)
+
+extension CadenceTaskSortMode {
+    /// What macOS Today falls back to: its shipped default, and where an unrecognised stored value
+    /// lands.
+    ///
+    /// Deliberately **not** iOS Today's default (`.priority`). macOS Today's retiring default was
+    /// `Date` + `Ascending`, and `TaskOrdering.precedes` sorts `.date` by `AppTask.scheduledDate`
+    /// — the *do* date. So `.doDate` is the one mode that leaves an untouched macOS Today looking
+    /// exactly as it did; adopting iOS's default would silently re-sort every user who never
+    /// opened the chip. Adopting iOS's *named set* was the decision; adopting its default was not.
+    static let macOSTodayDefault: CadenceTaskSortMode = .doDate
+
+    /// macOS Today's retired `TaskSortField` preference, mapped onto this vocabulary.
+    ///
+    /// Each mapping is read off the two comparators, not off the two labels:
+    ///
+    /// - `.custom` is `TaskOrdering.fallbackPrecedes` and its branch never reads the direction.
+    ///   `.listOrder` with no `sectionNames` — which is how Today calls it — is the same call.
+    ///   **Exact, from either direction.**
+    /// - `.date` is `TaskOrdering.dateSortKey(scheduledDate)`, then timed-before-untimed, then
+    ///   `scheduledStartMin`, then the fallback. `.doDate` is those four steps in that order, and
+    ///   its private `sortDateKey` is character-identical to `dateSortKey` (`"9999-99-99"`).
+    ///   **Exact from `Ascending`**, which was macOS's default. It is the *do* date on both sides:
+    ///   the label said only "Date", on a page whose whole vocabulary is do-date vs due-date, which
+    ///   is the reason this ticket exists.
+    /// - `.priority` is `TaskPriority.rank` then the fallback; `.priority` here is
+    ///   `priorityRank` **descending** then the same fallback. **Exact from `Descending`.**
+    ///
+    /// **The direction is discarded, and that is the decision**: the Order chip goes and direction
+    /// folds into the named modes. iOS has no reversed do-date and no low-priority-first, so the
+    /// two settings on the far side — `Date` + `Descending` and `Priority` + `Ascending` — have no
+    /// equivalent and land on the ascending-side mode. Both are reachable but neither is a
+    /// default, so this re-sorts only a user who chose one.
+    ///
+    /// Anything that decodes as neither vocabulary — nil, empty, or a value written by some other
+    /// build — lands on ``macOSTodayDefault`` rather than crashing or resetting to iOS's default.
+    static func migratedFromMacOSTodaySortField(_ storedRawValue: String?) -> CadenceTaskSortMode {
+        guard let storedRawValue, let field = TaskSortField(rawValue: storedRawValue) else {
+            return macOSTodayDefault
+        }
+        switch field {
+        case .custom: return .listOrder
+        case .date: return .doDate
+        case .priority: return .priority
+        }
+    }
+}
+
 /// The four date buckets Today **used** to be grouped into, kept only as the vocabulary a dropped
 /// `+` speaks: `CadenceTaskDropSupport.dropKey(forGroup:)` still names them to say what each kind
 /// of destination can seed. Nothing draws a heading from them any more — see

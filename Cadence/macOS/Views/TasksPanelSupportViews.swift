@@ -509,6 +509,22 @@ extension TaskSortDirection: CadenceToggleablePickerValue {
     }
 }
 
+/// A picker enum whose raw value is a **storage key**, not a label.
+///
+/// `CadenceEnumPickerBadge` prints `rawValue`, which is right for the enums written for these
+/// chips — `TaskSortField` is `"Custom"` / `"Date"`, `TaskGroupingMode` is `"By Date"` — and wrong
+/// for `CadenceTaskSortMode`, whose raw values are `listOrder` / `doDate` because iOS persists
+/// them under `ios.today.sortMode`. Conforming keeps the persisted spelling and the printed one
+/// apart, so adopting iOS's vocabulary on macOS (T-606) did not mean either changing a persisted
+/// raw value or drawing `doDate` in a chip.
+protocol CadenceLabelledPickerValue {
+    var pickerLabel: String { get }
+}
+
+extension CadenceTaskSortMode: CadenceLabelledPickerValue {
+    var pickerLabel: String { title }
+}
+
 struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>: View where T.RawValue == String {
     let title: String
     @Binding var selection: T
@@ -518,6 +534,14 @@ struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>
     private var availableCases: [T] {
         Array(T.allCases).filter { item in !excluded.contains(where: { $0.id == item.id }) }
     }
+
+    /// What a value is *called*. `rawValue` unless the type says otherwise — see
+    /// `CadenceLabelledPickerValue`.
+    private func label(for value: T) -> String {
+        (value as? CadenceLabelledPickerValue)?.pickerLabel ?? value.rawValue
+    }
+
+    private var selectionLabel: String { label(for: selection) }
 
     @ViewBuilder
     var body: some View {
@@ -536,16 +560,16 @@ struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>
         }) {
             badgeLabel(icon: toggleable.toggleGlyph, iconWeight: .bold, showsChevron: false)
         }
-        .accessibilityLabel("\(title), \(selection.rawValue)")
-        .help("\(title): \(selection.rawValue) — click to switch to \(toggleable.toggledRawValue)")
+        .accessibilityLabel("\(title), \(selectionLabel)")
+        .help("\(title): \(selectionLabel) — click to switch to \(toggleable.toggledRawValue)")
     }
 
     private var menuBadge: some View {
         CadenceQuietPillButton(state: .resting, action: { showPicker.toggle() }) {
             badgeLabel(icon: titleIcon, iconWeight: .semibold, showsChevron: true)
         }
-        .accessibilityLabel("\(title), \(selection.rawValue)")
-        .help("\(title): \(selection.rawValue)")
+        .accessibilityLabel("\(title), \(selectionLabel)")
+        .help("\(title): \(selectionLabel)")
         .popover(isPresented: $showPicker) {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(availableCases, id: \.id) { value in
@@ -554,7 +578,7 @@ struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>
                         showPicker = false
                     } label: {
                         HStack(spacing: 8) {
-                            Text(value.rawValue).font(.system(size: 13)).foregroundStyle(Theme.text)
+                            Text(label(for: value)).font(.system(size: 13)).foregroundStyle(Theme.text)
                             Spacer()
                             if selection.id == value.id {
                                 Image(systemName: "checkmark")
@@ -586,7 +610,7 @@ struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>
                 .font(.system(size: 9, weight: iconWeight))
                 .foregroundStyle(Theme.muted)
 
-            Text(selection.rawValue)
+            Text(selectionLabel)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)

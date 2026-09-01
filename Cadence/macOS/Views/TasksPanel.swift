@@ -14,35 +14,29 @@ struct TasksPanel: View {
     @Query(sort: \Project.order) private var projects: [Project]
     let mode: TasksPanelMode
     let showsHeader: Bool
-    let sortField: TaskSortField
-    let sortDirection: TaskSortDirection
+    let sortMode: CadenceTaskSortMode
     let enableControls: Bool
     let useStandardHeaderHeight: Bool
     @AppStorage(CadenceTodayRolloverSupport.dismissedDateStorageKey) private var rolloverNoticeDismissedDate = ""
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var isCompletedCollapsed = true
-    @State private var localSortField: TaskSortField = .date
-    @State private var localSortDirection: TaskSortDirection = .ascending
+    @State private var localSortMode: CadenceTaskSortMode = .macOSTodayDefault
     @State private var frozenTaskOrder: [AppTask]? = nil
     @State private var dragOverTaskID: UUID? = nil
 
     init(
         mode: TasksPanelMode = .todayOverview,
         showsHeader: Bool = true,
-        sortField: TaskSortField = .date,
-        sortDirection: TaskSortDirection = .ascending,
+        sortMode: CadenceTaskSortMode = .macOSTodayDefault,
         enableControls: Bool = false,
         useStandardHeaderHeight: Bool = false
     ) {
         self.mode = mode
         self.showsHeader = showsHeader
-        self.sortField = sortField
-        self.sortDirection = sortDirection
+        self.sortMode = sortMode
         self.enableControls = enableControls
         self.useStandardHeaderHeight = useStandardHeaderHeight
-        let ud = UserDefaults.standard
-        _localSortField = State(initialValue: TaskSortField(rawValue: ud.string(forKey: "\(Self.udPrefix)SortField") ?? "") ?? sortField)
-        _localSortDirection = State(initialValue: TaskSortDirection(rawValue: ud.string(forKey: "\(Self.udPrefix)SortDirection") ?? "") ?? sortDirection)
+        _localSortMode = State(initialValue: Self.storedSortMode(in: .standard, fallback: sortMode))
     }
 
     /// Which `CadenceTaskSurface` this panel is drawing, so the chrome answers come from the
@@ -57,13 +51,44 @@ struct TasksPanel: View {
         CadenceTaskSurfaceOptions.options(for: surface)
     }
 
-    private var activeSortField: TaskSortField { enableControls ? localSortField : sortField }
-    private var activeSortDirection: TaskSortDirection { enableControls ? localSortDirection : sortDirection }
+    private var activeSortMode: CadenceTaskSortMode { enableControls ? localSortMode : sortMode }
 
-    /// Where this panel's sort preferences are written. It used to be
+    /// Where this panel's sort preference is written. It used to be
     /// `mode == .todayOverview ? "today" : "allTasks"`; the second half went with `.byDoDate`
     /// (T-487). The `allTasks*` keys are still live — `TasksPageView` owns them.
     private static let udPrefix = "today"
+
+    /// The key T-606 writes. New rather than reused, because the value stored under it is a
+    /// different vocabulary: `todaySortField` holds `TaskSortField` raw values (`"Date"`), this
+    /// holds `CadenceTaskSortMode` raw values (`"doDate"`), and one key holding both would make
+    /// every read ambiguous.
+    static let sortModeDefaultsKey = udPrefix + "SortMode"
+
+    /// The pre-T-606 keys. Still read once, by `storedSortMode(in:fallback:)`, and deliberately
+    /// **not** deleted: nothing is gained by destroying the only record of what the user chose,
+    /// and a build rolled back to the two chips still finds its preference intact.
+    static let legacySortFieldDefaultsKey = udPrefix + "SortField"
+    static let legacySortDirectionDefaultsKey = udPrefix + "SortDirection"
+
+    /// Today's stored sort mode, and the one place the retired two-chip preference is migrated.
+    ///
+    /// `todaySortMode` wins whenever it decodes. Otherwise the legacy `todaySortField` is mapped
+    /// through `CadenceTaskSortMode.migratedFromMacOSTodaySortField`, which is where the mapping
+    /// and its comparator evidence are written down. `todaySortDirection` is read by nothing: the
+    /// Order chip is gone and direction folded into the named modes.
+    ///
+    /// **Nothing here can fail to produce a value.** A raw value neither vocabulary recognises —
+    /// the hazard in removing a persisted case with no `SchemaMigrationPlan` behind it — falls
+    /// through both `init(rawValue:)` calls to `fallback`, which is `.macOSTodayDefault` at every
+    /// live call site.
+    static func storedSortMode(in defaults: UserDefaults, fallback: CadenceTaskSortMode) -> CadenceTaskSortMode {
+        if let raw = defaults.string(forKey: sortModeDefaultsKey),
+           let mode = CadenceTaskSortMode(rawValue: raw) {
+            return mode
+        }
+        guard let legacy = defaults.string(forKey: legacySortFieldDefaultsKey) else { return fallback }
+        return CadenceTaskSortMode.migratedFromMacOSTodaySortField(legacy)
+    }
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -137,11 +162,8 @@ struct TasksPanel: View {
             .onAppear {
                 isCompletedCollapsed = true
             }
-            .onChange(of: localSortField) { _, v in
-                UserDefaults.standard.set(v.rawValue, forKey: Self.udPrefix + "SortField")
-            }
-            .onChange(of: localSortDirection) { _, v in
-                UserDefaults.standard.set(v.rawValue, forKey: Self.udPrefix + "SortDirection")
+            .onChange(of: localSortMode) { _, v in
+                UserDefaults.standard.set(v.rawValue, forKey: Self.sortModeDefaultsKey)
             }
     }
 
@@ -342,8 +364,7 @@ struct TasksPanel: View {
     private var controlsBar: some View {
         HStack(spacing: 8) {
             if options.showsSort {
-                CadenceEnumPickerBadge(title: "Sort", selection: $localSortField)
-                CadenceEnumPickerBadge(title: "Order", selection: $localSortDirection)
+                CadenceEnumPickerBadge(title: "Sort", selection: $localSortMode)
             }
             Spacer()
         }
@@ -391,7 +412,7 @@ struct TasksPanel: View {
             .padding(.horizontal, TasksPanelMetrics.horizontalInset)
     }
 
-    /// **Today ranks by urgency first, then by whatever the Sort chips say** — and the `!enableControls`
+    /// **Today ranks by urgency first, then by whatever the Sort chip says** — and the `!enableControls`
     /// half of this condition is gone (T-305).
     ///
     /// It used to read `mode == .todayOverview && !enableControls`, and the only `TasksPanel` that
@@ -403,14 +424,21 @@ struct TasksPanel: View {
     /// `scheduledDate`.
     ///
     /// So the rank leads, exactly as iOS's `sortTodayTasks` has always had it, and the user's
-    /// chosen field and direction order the rows *inside* each rank. The `mode == .todayOverview`
-    /// test that used to wrap the rank is gone with `.byDoDate` — All Tasks was the one shape that
-    /// sorted purely by the chips, and it was unreachable (T-487).
+    /// chosen mode orders the rows *inside* each rank. The `mode == .todayOverview` test that used
+    /// to wrap the rank is gone with `.byDoDate` — All Tasks was the one shape that sorted purely
+    /// by the chips, and it was unreachable (T-487).
+    ///
+    /// Since T-606 the second half is `CadenceTaskQuerySupport.sortTasks` — the same call iOS's
+    /// Today makes — rather than `taskSortPrecedes`, so the two Todays now agree on the sort as
+    /// well as on the rank. The rank stays spelled out here rather than calling the shared
+    /// `sortTodayTasks`, because `macOSTodayLeadsItsSortWithTheSharedRank` pins this file's one
+    /// `CadenceTaskQuerySupport.todayRank` call site and that pin is the guard against macOS
+    /// growing a fourth copy of the rank.
     private func compareTasksForCurrentSort(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
         let leftRank = todayTaskSortRank(lhs)
         let rightRank = todayTaskSortRank(rhs)
         if leftRank != rightRank { return leftRank < rightRank }
-        return taskSortPrecedes(lhs, rhs, field: activeSortField, direction: activeSortDirection)
+        return CadenceTaskQuerySupport.sortTasks(lhs, rhs, sortMode: activeSortMode)
     }
 
     /// `CadenceTaskQuerySupport.todayRank`, not a local copy of it. The copy that used to live here
