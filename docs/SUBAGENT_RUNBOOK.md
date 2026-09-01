@@ -28,6 +28,15 @@ per-agent boilerplate.
   fails and the script dies without running your build. One agent lost a 640-second lock wait to it.
   Dry-run your runner with the build stubbed out before you queue it; that is cheap insurance for a
   failure that looks exactly like "the lock never came free".
+- **`read ... path ...` in zsh empties `$PATH` for the whole loop.** Recorded 2026-09-02. A mutation
+  driver written as `python3 mutate.py list | while IFS=$'\t' read -r id suite path desc` looks
+  harmless and is not: `path` is tied to `$PATH` in zsh, so the loop body ran with a command search
+  path of one source directory. `python3`, `cat` and `grep` all became *command not found*, and all
+  twelve mutations reported **"failed to apply"** with an empty error message — a batch that looks
+  like a broken mutation script rather than a broken shell. Same family as `local status=$?` above:
+  a magic zsh name quietly eating a runner. Do not use `path`, `cdpath`, `fpath`, `manpath`,
+  `status`, `argv` or `options` as loop or scratch variables, and treat "every mutation failed to
+  apply" as this until proven otherwise.
 - **`-only-testing:` takes a SUITE name, not a file name — and a name that does not exist is a green
   run over zero tests.** Measured 2026-08-31: `-only-testing:CadenceTests/<NoSuchSuite>` returns
   `Executed 0 tests`, `** TEST SUCCEEDED **`, `EXIT=0`, with no warning and no diagnostic. **42 of 256

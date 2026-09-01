@@ -43,6 +43,37 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-689] **The Goals screen says "No goals yet" when every goal is completed.** Both surfaces draw
+  `CadenceEmptyStateCopy.goalsTitle(isNarrowed: false)` whenever the active count is zero, so a user
+  with five finished goals and none in flight reads "No goals yet". [[T-541]] made the detail pane
+  agree with the list rather than contradict it, so the two panes now say this together — the
+  inaccuracy is one sentence, not a disagreement. `isNarrowed: true` ("No matching goals") is not
+  the fix either: the Goals page carries no search field and no status picker, so there is no filter
+  to try differently. It needs a third case for "every goal is done", which is a copy decision of
+  the same shape as `activeListsSubtitle(hasArchived:)`.
+
+- [T-690] **A paused or cancelled project reaches no Settings lifecycle section, so it cannot be
+  reopened or deleted there.** `SettingsView.swift` and `iOSSettingsView.swift` both hand
+  `SettingsListsSection`/`iOSListsLifecycleSettingsSection` exactly four groups —
+  `filter(\.isDone)` and `filter(\.isArchived)` for areas and projects — while `ProjectStatus` has
+  five cases. `.paused` and `.cancelled` projects are excluded from every active surface by
+  `filter(\.isActive)` and from Settings → Lists by these four filters, leaving search as the only
+  way to reach one. Found while adding [[T-557]]'s dormant-link card, which *does* list all four
+  inactive states because it reads `CadenceListSearchLifecycle`. Same file, same family:
+  `SettingsListManagementSections.lifecycleCard` spells `statusLabel: area.isDone ? "Completed" :
+  "Archived"` inline — the exact collapse `CadenceListSearchLifecycle` was written to end, and it
+  would label a cancelled project "Archived" the moment one reached the card.
+
+- [T-691] **The broken-calendar-link row draws no title for an unnamed list.**
+  `CadenceCalendarLinkHealth.missingLinks` passes `area.name` / `project.name` straight into
+  `CadenceMissingCalendarLink.name`, so an untitled area's row is a blank line above its summary —
+  the [[T-577]] class. [[T-557]]'s `dormantLinks` passes
+  `CadenceTitleNormalization.display(_:fallback:)` instead, so the two rows in the same settings
+  section now differ in a way that is deliberate on one side and an oversight on the other.
+  **Not a duplicate of the [[T-609]] sweep**: that one hunts the inline
+  `x.isEmpty ? "Untitled" : x` ternary, and this site has no fallback at all — there is no ternary
+  for a sweep of that shape to see.
+
 - [T-645] **The kanban column editor's other three writes reach no commit at all, and one of them
   closes the popover.** Found while fixing [[T-632]], deliberately left out of that change.
   `KanbanSectionColumnView.columnEditor`'s `onDelete` runs `moveTasks(...)`, `removeSection()` and
@@ -603,16 +634,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   first entry in `cadenceUndeclaredPlaceholderLabels`; **deleting that entry is part of the fix.**
 
 
-- [T-541] **A Goals detail pane can show a goal that has no row beside it.** `iOSFeatureViews.swift` gives
-  `listPane` `count: activeGoals.count` where `activeGoals` filters `status != .done`, but `selected` ends
-  `?? goals.first`, **unfiltered**. With every goal completed the chooser says "No goals yet" while the
-  detail pane renders a done goal in full. The mirror image of [[T-514]]/[[T-534]] — there the list had no
-  row for where you are; here the detail shows what the list filtered away. **Not fixed deliberately**: the
-  fallback's unfiltered tail is load-bearing for the deleted-out-from-under-you case the code comments
-  describe, so choosing between them is a decision.
-
-
-
 - [T-543] **Settings > Calendar's access card says two things and draws two glyphs.** macOS shows an
   **amber warning triangle even in the not-yet-asked state** with "Allow Cadence to create and sync
   calendar events."; iOS shows a neutral blue `calendar.badge.plus` with "Allow Cadence to show events and
@@ -708,13 +729,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `"No goals yet"` in `GoalPickerViews.swift` and `"No matching goals"` in `CreateGoalSheet.swift`,
   `GoalPickerViews.swift` and `HabitsFormSupportViews.swift` — **the last two are already [[T-550]]'s
   redundant `emptyText:` arguments, so sequence the two tickets together.**
-
-- [T-557] **An archived-but-linked area keeps its `linkedCalendarID` and no Settings surface names it.**
-  The connect menu, the summary and the broken-link card all narrow to active, by the policy stated in
-  `CadenceCalendarLinkHealth.missingLinks` — so this is **consistent, not the [[T-554]] class of defect**.
-  But the link survives where the user cannot see or clear it, which is a product question worth an
-  answer.
-
 
 - [T-558] **`TildeContainerPickerSupport.flatContainers` drops every context-less list — the fifth instance
   of this shape.** `macOS/Views/TildeContainerPicker.swift:56-79` is `for context in contexts { areas.filter
@@ -1438,6 +1452,40 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   in `docs/SUBAGENT_RUNBOOK.md` beside the shared-file guidance.
 
 ## Done
+
+- [T-541] **CLOSED 2026-09-02, `c1b0c9b`.** Filtered the fallback too, as decided. The Goals
+  detail pane resolves through `GoalAssignmentRules.selectedGoal(id:from:)`, whose every rung is
+  narrowed to `status != .done` — the unfiltered `?? goals.first` tail is gone, and the selected-id
+  lookup no longer reaches through the whole collection either, so completing the goal you are
+  looking at on iPad moves the pane instead of stranding it on a row that no longer exists. The
+  deleted-out-from-under-you fall-through the old comment described is intact and now says so where
+  it is testable; the retired half of that comment (a "No goal selected" copy that T-533 removed)
+  went with it. `nil` from the rule is now **exactly** `activeGoals.count == 0`, the condition
+  `iOSFeatureListPane` draws its empty panel on — an equality, where the pane's old comment claimed
+  only an implication and the gap was the defect. Both sides therefore empty together, and the
+  detail side's empty state is the chooser's own real one (`iOSFeatureEmptyDetail(matching:)` →
+  `iOSEmptyPanel`, icon + title + subtitle), not a blank pane. Five behavioural tests in
+  `GoalPresentationTests`, including why the second fallback rung is not dead code; the source-shape
+  pin in `CadenceEmptyStateAuditTests` now pins the shared reader and bans `?? goals.first`. Six
+  mutations, all killed. Residue filed as [[T-689]].
+
+- [T-557] **CLOSED 2026-09-02, `72bced5`.** Surfaced in Settings, with the active-only policy
+  untouched. `CadenceCalendarLinkHealth.dormantLinks(areas:projects:)` reports every **inactive**
+  list — archived, completed, paused or cancelled — that still holds a `linkedCalendarID`, and both
+  calendar settings surfaces draw a *Dormant Calendar Links* card for it whose one control is
+  **Remove Link**. Archiving still keeps the link, so un-archiving restores it intact; what changes
+  is that it is now visible and clearable without un-archiving first. `missingLinks` is unchanged
+  and still narrows to active lists: an archived list's link is not missing, it is dormant, and the
+  two sets are disjoint by construction. **It does not touch [[T-624]]'s evidence gate**: the
+  detector takes no `liveCalendarIDs`, no `observedCalendarIDs` and no authorization flag, so it
+  never judges an archived link against EventKit and cannot report one broken on a device that has
+  never seen its calendar — pinned behaviourally over five evidence states and structurally over
+  the function body. The row offers no re-pick for the same reason a re-pick was the T-624 clobber.
+  The card renders **outside** the authorization branch, because whether an inactive list holds a
+  link is a fact about this app's own store rather than a question for EventKit. `"Remove Link"`
+  became `CadenceCalendarLinkHealth.removeLinkLabel` in the same change, since four rows now want
+  those two words. Nine tests in `CadenceCalendarLinkHealthTests`; six mutations, all killed.
+  Residue filed as [[T-690]] and [[T-691]].
 
 - [T-608] **CLOSED 2026-09-02, `0d16896`.** The intent groups call `TaskListInteractiveRow` and the
   Completed group calls `TaskListDisplayRow` plus a `.draggable` — the shape
