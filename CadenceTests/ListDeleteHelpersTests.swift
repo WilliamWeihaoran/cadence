@@ -110,7 +110,19 @@ struct ListDeleteHelpersTests {
         let modelContext = ModelContext(container)
         let deletedAsset = MarkdownImageAsset(data: Data([1]), mimeType: "image/png", pixelWidth: 20, pixelHeight: 20, displayWidth: 20)
         let retainedAsset = MarkdownImageAsset(data: Data([2]), mimeType: "image/png", pixelWidth: 20, pixelHeight: 20, displayWidth: 20)
-        let deletedNote = Note(kind: .list, title: "Deleted", content: "![gone](cadence-image://\(deletedAsset.id.uuidString))")
+        // **Both assets are referenced by the doomed note (T-620).** The sweep is a candidate-set
+        // delete now, so an asset the deleted markdown never mentioned survives trivially — and
+        // this test is about the *other* reason to survive: another note still references it.
+        // Naming both in the doomed body keeps `retainedAsset` a candidate, so its survival is
+        // still attributable to `retainedNote` and nothing else.
+        let deletedNote = Note(
+            kind: .list,
+            title: "Deleted",
+            content: [
+                "![gone](cadence-image://\(deletedAsset.id.uuidString))",
+                "![shared](cadence-image://\(retainedAsset.id.uuidString))"
+            ].joined(separator: "\n")
+        )
         let retainedNote = Note(kind: .permanent, title: "Retained", content: "![keep](cadence-image://\(retainedAsset.id.uuidString))")
 
         modelContext.insert(deletedAsset)
@@ -119,8 +131,12 @@ struct ListDeleteHelpersTests {
         modelContext.insert(retainedNote)
         try modelContext.save()
 
+        let doomedBody = deletedNote.content
         modelContext.delete(deletedNote)
-        modelContext.deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: [deletedNote.id])
+        modelContext.deleteUnreferencedMarkdownImageAssets(
+            referencedByDeletedMarkdown: [doomedBody],
+            excludingNoteIDs: [deletedNote.id]
+        )
         try modelContext.save()
 
         let remainingAssets = try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>())
@@ -139,10 +155,17 @@ struct ListDeleteHelpersTests {
 
         let inlineAsset = MarkdownImageAsset(data: Data([7]), mimeType: "image/png", pixelWidth: 20, pixelHeight: 20, displayWidth: 20)
         let orphanAsset = MarkdownImageAsset(data: Data([8]), mimeType: "image/png", pixelWidth: 20, pixelHeight: 20, displayWidth: 20)
+        // Both assets are named by the doomed note, because the sweep only considers assets the
+        // deleted markdown referenced (T-620). Without the second line `inlineAsset` would never
+        // be a candidate and would survive for a reason that has nothing to do with T-350 — the
+        // sweep could go back to asking the rendering question and this test would stay green.
         let deletedNote = Note(
             kind: .list,
             title: "Deleted",
-            content: "![gone](cadence-image://\(orphanAsset.id.uuidString))"
+            content: [
+                "![gone](cadence-image://\(orphanAsset.id.uuidString))",
+                "![chart](cadence-image://\(inlineAsset.id.uuidString))"
+            ].joined(separator: "\n")
         )
         let survivingNote = Note(
             kind: .permanent,
@@ -156,8 +179,12 @@ struct ListDeleteHelpersTests {
         modelContext.insert(survivingNote)
         try modelContext.save()
 
+        let doomedBody = deletedNote.content
         modelContext.delete(deletedNote)
-        modelContext.deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: [deletedNote.id])
+        modelContext.deleteUnreferencedMarkdownImageAssets(
+            referencedByDeletedMarkdown: [doomedBody],
+            excludingNoteIDs: [deletedNote.id]
+        )
         try modelContext.save()
 
         let remaining = try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>())

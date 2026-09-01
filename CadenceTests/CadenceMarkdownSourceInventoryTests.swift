@@ -158,19 +158,34 @@ struct CadenceMarkdownSourceInventoryTests {
     /// **Why a round trip and not an equality check on `allCases`.** Removing a case *and* its
     /// switch arm compiles cleanly and silently narrows the scan back down — the exact shape of the
     /// original defect. Only reading the store proves the case does something.
+    ///
+    /// **Both assets are handed in as candidates, and that is what T-620 changed here.** The sweep
+    /// used to fetch every asset in the store, so `collected` was simply "everything the surviving
+    /// markdown did not mention" and the second asset could be seeded as an unrelated orphan. It is
+    /// now restricted to the assets the *deleted* markdown referenced, so the fixture has to say
+    /// which assets this delete is about — `deletedBody` names both, which is the store-wide scope
+    /// the old call had, restricted to these two rows.
+    ///
+    /// **Both assertions keep exactly the protection they were written with.** `referenced`
+    /// surviving still proves this source's field was read: it is a candidate, it is unreferenced
+    /// by the deleted body's own survivors, and the *only* thing keeping it alive is the seeded row
+    /// — drop the case from `liveTexts(for:…)` and it is collected, which is the original defect.
+    /// `unreferenced` going still proves the sweep ran and deleted something, so a sweep that
+    /// silently became a no-op cannot pass by keeping everything.
     @Test func everySourceInTheInventoryKeepsItsOwnImageAlive() throws {
         for source in CadenceMarkdownSourceInventory.Source.allCases {
             let container = try CadenceModelContainerFactory.makeInMemoryContainer()
             let modelContext = ModelContext(container)
 
             let referenced = imageAsset(5)
-            let orphan = imageAsset(6)
+            let unreferenced = imageAsset(6)
             modelContext.insert(referenced)
-            modelContext.insert(orphan)
+            modelContext.insert(unreferenced)
             seedRow(for: source, referencing: referenced, in: modelContext)
             try modelContext.save()
 
-            modelContext.deleteUnreferencedMarkdownImageAssets()
+            let deletedBody = [imageLine(referenced), imageLine(unreferenced)].joined(separator: "\n")
+            modelContext.deleteUnreferencedMarkdownImageAssets(referencedByDeletedMarkdown: [deletedBody])
             try modelContext.save()
 
             let remaining = try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).map(\.id)
@@ -179,10 +194,75 @@ struct CadenceMarkdownSourceInventoryTests {
                 "\(source.entityName).\(source.propertyName) is in the inventory but its text was not read"
             )
             #expect(
-                !remaining.contains(orphan.id),
+                !remaining.contains(unreferenced.id),
                 "\(source.entityName).\(source.propertyName) left a genuinely unreferenced asset behind"
             )
         }
+    }
+
+    // MARK: - T-620: the sweep is a candidate-set delete, not a store-wide collection
+
+    /// **The loss this closes.** An image pasted into note B on another device; note B's record has
+    /// not imported yet, so nothing in this store references the asset. Deleting an unrelated note
+    /// A used to collect it — every asset in the store was a candidate — and note B then arrived
+    /// holding a `cadence-image://` reference that will never resolve. `.externalStorage` bytes,
+    /// gone, silently, with no way back.
+    ///
+    /// This is `DataIntegrityRepairServiceTests
+    /// .repairLeavesOrphanedRowsAloneRatherThanCollectingThemAtStartup` stated for the delete side:
+    /// the same model type, the same argument — an unowned row is indistinguishable from one whose
+    /// owner has not arrived — and now the same answer.
+    ///
+    /// Asserted by identity, and paired with an asset the delete really is about so the test cannot
+    /// pass by the sweep having become inert.
+    @Test func aDeleteLeavesAloneAnAssetNoMarkdownInThisStoreReferences() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let notYetImported = imageAsset(11)
+        let doomedNoteImage = imageAsset(12)
+        let doomed = Note(kind: .list, title: "Doomed", content: imageLine(doomedNoteImage))
+
+        modelContext.insert(notYetImported)
+        modelContext.insert(doomedNoteImage)
+        modelContext.insert(doomed)
+        try modelContext.save()
+
+        modelContext.deleteNote(doomed)
+        try modelContext.save()
+
+        let remaining = try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).map(\.id)
+        #expect(remaining == [notYetImported.id])
+    }
+
+    /// The same rule through a list cascade, which is the other three of the four paths that reach
+    /// the sweep (`deleteContext`, `deleteProject`, `deleteArea`).
+    ///
+    /// The cascade's own image still goes, so this is not "the sweep stopped working": the area's
+    /// list note referenced it and nothing survives that does.
+    @Test func aListCascadeLeavesAloneAnAssetItsOwnMarkdownNeverReferenced() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let unrelated = imageAsset(13)
+        let inTheList = imageAsset(14)
+        let context = Context(name: "Work")
+        let area = Area(name: "Launch", context: context)
+        let listNote = Note(kind: .list, title: "Spec", content: imageLine(inTheList))
+        listNote.area = area
+
+        modelContext.insert(context)
+        modelContext.insert(area)
+        modelContext.insert(unrelated)
+        modelContext.insert(inTheList)
+        modelContext.insert(listNote)
+        try modelContext.save()
+
+        #expect(modelContext.deleteArea(area))
+        try modelContext.save()
+
+        let remaining = try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).map(\.id)
+        #expect(remaining == [unrelated.id])
     }
 
     /// Exhaustive on purpose: a new case is a compile error here as well as in the reader.

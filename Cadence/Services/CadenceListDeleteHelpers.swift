@@ -67,6 +67,11 @@ extension ModelContext {
             projects.flatMap { Array($0.documents ?? []) }
         )
         let deletedNoteIDs = Set(notes.map(\.id))
+        // Read while the rows are still live, and before the task sweep below deletes them
+        // (T-620). This is the candidate set: the assets this cascade's own markdown pointed at.
+        // Notes, legacy documents and task notes are the three markdown-bearing fields a list
+        // cascade takes, which is the same triple `CadenceListDeletionSummary` counts from.
+        let doomedMarkdown = notes.map(\.content) + documents.map(\.content) + tasks.map(\.notes)
         let links = uniqueLinks(from:
             areas.flatMap { Array($0.links ?? []) } +
             projects.flatMap { Array($0.links ?? []) }
@@ -76,7 +81,10 @@ extension ModelContext {
         guard sweep(sweepTasks)(Set(tasks.map(\.id))) else { return false }
         delete(notes)
         delete(documents)
-        deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
+        deleteUnreferencedMarkdownImageAssets(
+            referencedByDeletedMarkdown: doomedMarkdown,
+            excludingNoteIDs: deletedNoteIDs
+        )
         delete(links)
         delete(completions)
         delete(goalLinks)
@@ -102,6 +110,8 @@ extension ModelContext {
         let notes = uniqueNotes(from: Array(project.notes ?? [])).filter { $0.kind == .list }
         let documents = uniqueDocuments(from: Array(project.documents ?? []))
         let deletedNoteIDs = Set(notes.map(\.id))
+        // Read before the task sweep deletes the tasks. See `deleteContext` above.
+        let doomedMarkdown = notes.map(\.content) + documents.map(\.content) + tasks.map(\.notes)
         // The goal links go **after** the guard (T-291). They used to go before it, so a failed
         // task read returned `false` having already severed every link from this project to the
         // goals it contributes to — the project survived, its tasks survived, and a goal quietly
@@ -110,7 +120,10 @@ extension ModelContext {
         delete(uniqueGoalListLinks(from: Array(project.goalLinks ?? [])))
         delete(notes)
         delete(documents)
-        deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
+        deleteUnreferencedMarkdownImageAssets(
+            referencedByDeletedMarkdown: doomedMarkdown,
+            excludingNoteIDs: deletedNoteIDs
+        )
         delete(uniqueLinks(from: Array(project.links ?? [])))
         delete(project)
         return true
@@ -123,6 +136,9 @@ extension ModelContext {
         let notes = uniqueNotes(from: Array(area.notes ?? [])).filter { $0.kind == .list }
         let documents = uniqueDocuments(from: Array(area.documents ?? []))
         let deletedNoteIDs = Set(notes.map(\.id))
+        // This area's own markdown only; each nested project supplies its own candidate set from
+        // the recursive `deleteProject` call below.
+        let doomedMarkdown = notes.map(\.content) + documents.map(\.content) + tasks.map(\.notes)
         // After the guard, and after the nested projects, for the reason `deleteProject` gives:
         // both of those can still return `false`, and an area that failed to delete must not have
         // dropped its goal links on the way out.
@@ -133,7 +149,10 @@ extension ModelContext {
         delete(uniqueGoalListLinks(from: Array(area.goalLinks ?? [])))
         delete(notes)
         delete(documents)
-        deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: deletedNoteIDs)
+        deleteUnreferencedMarkdownImageAssets(
+            referencedByDeletedMarkdown: doomedMarkdown,
+            excludingNoteIDs: deletedNoteIDs
+        )
         delete(uniqueLinks(from: Array(area.links ?? [])))
         delete(area)
         return true
@@ -219,7 +238,8 @@ extension ModelContext {
         dedupe(links, by: \GoalListLink.id)
     }
 
-    /// Collects the image assets nothing in the store references any more.
+    /// Reclaims the image assets **this delete's own markdown** referenced and nothing surviving
+    /// still does.
     ///
     /// **"Referenced" means every markdown-bearing field, not `Note.content` (T-411).** The
     /// markdown editor is one component bound to several fields, and a paste into a *task's* notes
@@ -227,8 +247,49 @@ extension ModelContext {
     /// alone made that asset unreferenced by definition, so the next `deleteNote` or list cascade
     /// took its `.externalStorage` bytes while the task kept a reference that no longer resolved.
     /// `CadenceMarkdownSourceInventory` owns the field list and the rule for extending it.
-    func deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: Set<UUID> = []) {
-        guard let assets = try? fetch(FetchDescriptor<MarkdownImageAsset>()), !assets.isEmpty else { return }
+    ///
+    /// **`referencedByDeletedMarkdown` is the candidate set, and it is what stops this being a
+    /// global garbage collection (T-620).** It used to fetch every `MarkdownImageAsset` in the
+    /// store and delete every one the *surviving* markdown did not mention — so an asset whose
+    /// owning row had not arrived from CloudKit yet was, by definition, unreferenced, and any
+    /// unrelated note or list delete took its `.externalStorage` bytes. The note then imported
+    /// holding a `cadence-image://` reference that will never resolve again. Nothing self-heals;
+    /// the bytes are gone.
+    ///
+    /// **This is `DataIntegrityRepairService`'s reasoning, applied to the same model type from the
+    /// other side.** That service refuses to collect an orphaned `MarkdownImageAsset` because
+    /// *"an unowned row is indistinguishable from one whose owner has not arrived"* — the asset has
+    /// no relationship to `Note` or `AppTask`, so CloudKit has nothing to order the two records by.
+    /// Repair declining to collect the row while delete collected it was the same store answering
+    /// one question two ways. Delete now agrees with repair: an asset nobody has ever referenced is
+    /// **not this delete's business**, and the only assets at stake are the ones the rows being
+    /// deleted actually pointed at.
+    ///
+    /// It is also the definition both confirmations already promise. `CadenceNoteDeletionSummary`
+    /// and `CadenceListDeletionSummary` compute `images` as *the doomed rows' references, minus
+    /// what survives* and deliberately exclude pre-existing orphans (T-423) — so before this the
+    /// counts on the confirmation sheet were a strict subset of what the button did.
+    ///
+    /// The residual, stated rather than hidden: an asset the deleted markdown referenced **and** an
+    /// unimported row also references is still collected. That needs ownership the schema does not
+    /// have, and is not this fix. The cost of the new bias is a leak — an asset referenced by
+    /// nothing is never reclaimed here — which is the direction this whole area errs in
+    /// (`CadenceMarkdownSourceInventory`: *keep, not collect*).
+    ///
+    /// - Parameter referencedByDeletedMarkdown: every markdown body this delete is removing —
+    ///   note contents, task notes, legacy document contents. Read these **before** the rows are
+    ///   deleted; a deleted-but-unsaved model is not a body worth trusting.
+    func deleteUnreferencedMarkdownImageAssets(
+        referencedByDeletedMarkdown doomedMarkdown: [String],
+        excludingNoteIDs: Set<UUID> = []
+    ) {
+        let candidateIDs = doomedMarkdown.reduce(into: Set<UUID>()) { result, text in
+            result.formUnion(MarkdownImageAssetService.referencedIDs(in: text))
+        }
+        guard !candidateIDs.isEmpty else { return }
+        guard let assets = try? fetch(FetchDescriptor<MarkdownImageAsset>()) else { return }
+        let candidates = assets.filter { candidateIDs.contains($0.id) }
+        guard !candidates.isEmpty else { return }
         // These fetches decide which images are still *referenced*, so `?? []` on a failed read did
         // not mean "collect nothing" — it meant "nothing in this store references any image", and
         // every asset the user had ever pasted into any note was deleted while the notes kept
@@ -241,7 +302,7 @@ extension ModelContext {
             excludingNoteIDs: excludingNoteIDs
         ) else { return }
         let unreferenced = MarkdownImageAssetService.unreferencedAssets(
-            allAssets: assets,
+            allAssets: candidates,
             markdownTexts: remainingMarkdown
         )
         delete(unreferenced)

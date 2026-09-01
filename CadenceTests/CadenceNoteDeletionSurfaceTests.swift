@@ -178,8 +178,19 @@ struct CadenceNoteDeletionSurfaceTests {
     /// summary over-stated the *loss*, never the survival — but it is still a number on a
     /// confirmation that does not describe what the button does.
     ///
-    /// The orphan is why the restriction in the promise is real rather than pedantic: the sweep
-    /// collects it, this note is not why, and `images` must not claim credit for it.
+    /// The orphan is why the restriction in the promise was real rather than pedantic: the sweep
+    /// used to collect it, this note was not why, and `images` must not claim credit for it.
+    ///
+    /// **T-620 moved the sweep to the summary's definition, and this test moved with it.** The
+    /// sweep is now a candidate-set delete — only assets the *deleted* markdown referenced are at
+    /// risk — so the orphan survives, and `before.subtracting(after)` has become exactly the set
+    /// `images` names rather than a superset of it. The `.intersection(doomedReferences)` below is
+    /// kept anyway: it is the promise as stated, and dropping it because the two happen to coincide
+    /// today is how this comment stopped being true the first time.
+    ///
+    /// The orphan is asserted *by identity as a survivor* now, which is the stronger version of the
+    /// same pin — the assertion moved from "the summary does not claim this" to "the delete does
+    /// not take this".
     @Test func theImageCountMatchesWhatTheSweepActuallyCollects() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
@@ -224,9 +235,10 @@ struct CadenceNoteDeletionSurfaceTests {
         try modelContext.save()
 
         let after = Set(try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).map(\.id))
-        // What the sweep did: the exclusive image and the pre-existing orphan went; the two the
-        // task and the legacy row still reference stayed.
-        #expect(after == [alsoInATask.id, alsoInALegacyRow.id])
+        // What the sweep did: only the exclusive image went. The two the task and the legacy row
+        // still reference stayed because something references them; the orphan stayed because this
+        // note never referenced it and it is therefore none of this delete's business (T-620).
+        #expect(after == [alsoInATask.id, alsoInALegacyRow.id, orphan.id])
 
         // The promise, spelled as the arithmetic rather than as a literal: everything this note
         // referenced that the delete actually took.

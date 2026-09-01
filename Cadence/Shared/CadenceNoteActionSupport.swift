@@ -36,10 +36,16 @@ extension ModelContext {
     /// under it — `CadenceNoteActionSupportTests` pins that it does.
     func deleteNote(_ note: Note) {
         // Read before the delete: `id` is readable on a deleted-but-unsaved model, but the sweep's
-        // exclusion set is the whole reason the images go, and it must not depend on that.
+        // exclusion set is the whole reason the images go, and it must not depend on that. The
+        // body is read here for the same reason and one stronger — it is the *candidate set*
+        // (T-620), so a stale or emptied read would silently widen or narrow what gets collected.
         let noteID = note.id
+        let doomedMarkdown = note.content
         delete(note)
-        deleteUnreferencedMarkdownImageAssets(excludingNoteIDs: [noteID])
+        deleteUnreferencedMarkdownImageAssets(
+            referencedByDeletedMarkdown: [doomedMarkdown],
+            excludingNoteIDs: [noteID]
+        )
     }
 }
 
@@ -55,8 +61,12 @@ extension ModelContext {
 /// **`images` is exactly `deleteUnreferencedMarkdownImageAssets`'s collection restricted to the
 /// assets this note references, and it is computed from the same source (T-423).** This comment
 /// used to claim the two sets were identical, full stop. Two things were wrong with that. The
-/// sweep also collects assets *nobody* references — orphans already in the store — which are not
-/// this delete's cost and are deliberately excluded here. And the claim silently stopped holding
+/// sweep also collected assets *nobody* references — orphans already in the store — which are not
+/// this delete's cost and are deliberately excluded here. **T-620 closed that gap from the other
+/// side**: the sweep is now a candidate-set delete restricted to the assets the doomed markdown
+/// referenced, which is exactly the restriction below, so the two sets have stopped differing in
+/// that direction. This summary is still the narrower statement of the same rule and keeps its own
+/// restriction rather than relying on the sweep's. And the claim silently stopped holding
 /// even in the restricted sense when T-411 widened "referenced" from `Note.content` to the seven
 /// fields in `CadenceMarkdownSourceInventory`, while this summary went on asking the surviving
 /// *notes* only: an image also pasted into a task's notes was reported as about to be reclaimed
