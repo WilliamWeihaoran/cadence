@@ -1403,6 +1403,31 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `Theme.rowSeparator` would be exactly the unreviewed visual change T-617 and T-618 both refused.
   Decide the weight, then name the survivors on `Theme` beside `rowSeparator` and `rule`.
 
+- [T-678] **`CadenceIOSControlAccessibilityTests` still carries an iOS-only name while holding an
+  app-wide rule.** [[T-637]] widened its icon-only-button sweep from the 105 files under
+  `Cadence/iOS/` to all 565 under `Cadence/`, and **28 of the 31 sites it now names are macOS**. The
+  agent deliberately did not rename it: moving ~150 lines of brace-walking between two suites while
+  two siblings held files in the same tree was the larger risk, and it left the discrepancy stated in
+  the file header and in T-637's closure rather than silent.
+  Cheap now that the tree is quiet. Note the rename must not break the suite's `including:` witness,
+  which is `Cadence/macOS/Views/TasksPanelSupportViews.swift` — the widening is enforced by the walk,
+  not by the name.
+
+- [T-679] **The git index is shared between concurrent agents, and file-disjointness does not protect
+  it.** Measured 2026-09-02 in the Batch D run: d1 staged a `git rm` of
+  `Cadence/macOS/Views/TaskSortHelpers.swift`, and d2's next commit swept it in — so the deletion
+  landed in `91d533c` ([[T-637]]) instead of `5b0c2b8` ([[T-639]]). **No work was lost and the file is
+  correctly gone from HEAD**; what broke is that the commit carrying a change is not the commit whose
+  message explains it, which is the whole reason this repo puts reasoning in commit messages.
+  **The existing rule was followed and is insufficient.** Every brief says `git add <specific paths>`,
+  never `git add -A`, and both agents complied — but `git add` writes to **one index shared by every
+  agent in the checkout**, and a bare `git commit` takes whatever is staged, including a sibling's
+  hunk. The `git hash-object` / `git update-index` reconstruction the Batch A and B agents used for a
+  shared *file* happens to dodge this as well, but nothing anywhere says so.
+  Fix shape: require an explicit pathspec (`git commit -- <paths>`), or a `git status --porcelain`
+  check immediately before committing that the index holds nothing but the agent's own paths. Belongs
+  in `docs/SUBAGENT_RUNBOOK.md` beside the shared-file guidance.
+
 ## Done
 
 - [T-615] **CLOSED 2026-09-02, `d06be27`.** Decided the second way: the pane keeps "Today Timeline"
