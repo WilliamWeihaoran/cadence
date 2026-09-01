@@ -86,6 +86,19 @@ struct macOSRootView: View {
         // Shared with both iOS shells since T-153. The banner used to be a `private` view in this
         // file, so the identical silent failure was visible here and invisible on iPhone and iPad.
         .cadenceStartupIssueBanner(PersistenceController.startupIssue)
+        // T-628. The completion control is reached from four surfaces and owned by none of them,
+        // so the refusal is named once here rather than four times badly.
+        .alert(
+            CadenceTaskMutationSupport.settleFailureAlertTitle,
+            isPresented: Binding(
+                get: { taskCompletionAnimationManager.settleFailed },
+                set: { if !$0 { taskCompletionAnimationManager.clearSettleFailure() } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(CadencePendingChangePersistence.editFailureNotice)
+        }
         .modelContext(currentModelContext)
         // Attached *after* `.modelContext(...)` on purpose: like the `@Query`s it replaces, the
         // observer must resolve against the inherited context, not `currentModelContext`.

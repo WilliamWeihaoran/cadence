@@ -1072,8 +1072,6 @@ enum CadenceSaveCommitRule {
         // [[T-635]]: Roll Over reaches `deleteBundleIfFullySettled`, which deletes the block, over
         // a swallowed commit. The `@AppStorage` half of the same ticket is in the report ledger.
         "Cadence/Shared/CadenceTodayRolloverSupport.swift": ["rollOver"],
-        // [[T-628]](b): the bundle popover's end actions, reached from the calendar board.
-        "Cadence/macOS/Views/CalendarBoardItemSupportViews.swift": ["bundleDetailPopover"],
         // T-497 emptied the rest of this list: `CadenceNoteFolderSupport.createNote`,
         // `SettingsTagsSection.createTag`, `iOSSettingsTagsSection.createTag` and
         // `iOSCalendarEventEditSheet.openEventNote` all commit through `commitInsert` now, and are
@@ -1183,6 +1181,9 @@ enum CadenceSaveCommitRule {
     /// Every entry is a real finding. The list is a schedule, not a silence: fixing one deletes its
     /// line here in the same change, because
     /// `everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule` fails on a stale entry.
+    /// [[T-628]] is the first to leave that way — `TaskCompletionAnimationManager.write`,
+    /// `TaskInspectorContentSupportViews.body` and `TimelineBundleBlock.body` were listed here for
+    /// exactly one commit.
     static let commitReachExemptions: [String: [String]] = [
         // [[T-631]]'s family, and the largest: `TagSupport.resolveTags` and `setTags` insert the
         // `Tag` row into the ambient context and commit nothing, so every composer that offers
@@ -1209,13 +1210,6 @@ enum CadenceSaveCommitRule {
         // all — which is why only this half can see these two.
         "Cadence/macOS/Views/FocusView.swift": ["timerControls"],
         "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": ["setStatus"],
-        // [[T-628]], both halves, and the two this ticket's own fix removes. (a) ticking a
-        // recurring task's circle spawns the successor with no commit boundary at all; (b) the
-        // bundle popover's Complete/Unbundle/Delete detach the members and delete the bundle,
-        // then close.
-        "Cadence/macOS/Services/TaskCompletionAnimationManager.swift": ["write"],
-        "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift": ["body"],
-        "Cadence/macOS/Views/TimelineBundleBlock.swift": ["body"],
         // **Not a defect, and the one entry here that is a limit of the scan rather than a
         // finding.** `CadenceWriteService.resolvedTags` reaches for the service's own stored
         // `context`, so the signature rule cannot subtract it — but the unit of work is owned by

@@ -397,6 +397,15 @@ enum CadenceTaskMutationSupport {
     /// (`DeleteConfirmationManager.failureNotice`), which has a title already.
     static let deleteFailureAlertTitle = "Couldn't Delete Task"
 
+    /// The alert title for a refused **settle** — ticking or un-ticking a task's circle (T-628).
+    ///
+    /// It carries `CadencePendingChangePersistence.editFailureNotice`, and the "Nothing was
+    /// changed" in that sentence is earned rather than claimed: `TaskWorkflowService.commitSettle`
+    /// un-inserts the successor the recurrence workflow spawned *and* puts the status, timestamp
+    /// and `recurrenceSpawnedTaskID` back, so the circle the user is still looking at has already
+    /// re-drawn open by the time this title appears.
+    static let settleFailureAlertTitle = "Couldn't Update Task"
+
     /// Shown when a block the user asked for could not be committed (T-471).
     ///
     /// "Block" rather than "task": a `TaskBundle` is a *block* everywhere the user meets one — the

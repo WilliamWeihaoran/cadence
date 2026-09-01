@@ -13,6 +13,12 @@ struct TaskBundleDetailPopover: View {
     let onComplete: () -> Void
     let onUnbundle: () -> Void
     let onDelete: () -> Void
+    /// The sentence to show when one of the three end actions was refused and rolled back (T-628).
+    ///
+    /// A binding rather than local `@State` because the host owns the outcome: it is the frame
+    /// that catches, and it is the frame that decides *not* to close the popover — a notice the
+    /// popover set itself would be drawn for one frame and then dismissed with it.
+    @Binding var actionFailureNotice: String?
 
     @State private var isConfirmingDelete = false
     @State private var isConfirmingUnbundle = false
@@ -169,6 +175,9 @@ struct TaskBundleDetailPopover: View {
 
     @ViewBuilder
     private var confirmationSection: some View {
+        if let actionFailureNotice {
+            CadenceInlineFailureNotice(text: actionFailureNotice)
+        }
         if isConfirmingDelete {
             BundleInspectorConfirmationCard(
                 message: "Delete this bundle block and keep its tasks on the same day.",

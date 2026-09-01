@@ -18,6 +18,14 @@ final class TaskCompletionAnimationManager {
     private(set) var pendingCancelStartTimes: [UUID: Date] = [:]
     @ObservationIgnored private var pendingCancelTasks: [UUID: Task<Void, Never>] = [:]
 
+    /// Set when a settle was refused and put back (T-628), and read by `macOSRootView`'s alert.
+    ///
+    /// It lives on the manager rather than on a view because the manager is where the write is:
+    /// four surfaces reach `toggleCompletion` — the timeline block, the task row, the ⌘-key
+    /// command and the inspector — and a notice owned by any one of them would be missing from the
+    /// other three.
+    private(set) var settleFailed = false
+
     private init() {}
 
     // MARK: - Completion
@@ -160,6 +168,21 @@ final class TaskCompletionAnimationManager {
     /// hold), `settleWithoutAdvancingSeries` still keeps the invariant T-341 is about: a settled
     /// status carries a timestamp, an open one carries none. There is no store to spawn a successor
     /// into in that case, and inventing one would be worse than not advancing the series.
+    func clearSettleFailure() { settleFailed = false }
+
+    /// Runs a committing settle and records a refusal instead of dropping it.
+    ///
+    /// `commitSettle` has already put the task and its successor back by the time this catches, so
+    /// the circle the user is looking at re-draws open — the alert is what says why rather than
+    /// leaving that reversal unexplained.
+    private func settle(in context: ModelContext, _ commit: (ModelContext) throws -> Void) {
+        do {
+            try commit(context)
+        } catch {
+            settleFailed = true
+        }
+    }
+
     private func write(_ transition: StatusWrite, to task: AppTask) {
         var transaction = Transaction()
         transaction.disablesAnimations = true
@@ -169,13 +192,13 @@ final class TaskCompletionAnimationManager {
                 TaskWorkflowService.markTodo(task)
             case .done:
                 if let context = modelContext ?? task.modelContext {
-                    TaskWorkflowService.markDone(task, in: context)
+                    settle(in: context) { try TaskWorkflowService.commitMarkDone(task, in: $0) }
                 } else {
                     CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: .done)
                 }
             case .cancelled:
                 if let context = modelContext ?? task.modelContext {
-                    TaskWorkflowService.markCancelled(task, in: context)
+                    settle(in: context) { try TaskWorkflowService.commitMarkCancelled(task, in: $0) }
                 } else {
                     CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: .cancelled)
                 }

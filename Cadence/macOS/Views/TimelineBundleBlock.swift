@@ -25,6 +25,7 @@ struct TimelineBundleBlock: View {
     @State private var resizeSession: TimelineResizeSession? = nil
     @State private var isHovered = false
     @State private var isDropTargeted = false
+    @State private var bundleActionFailureNotice: String?
 
     private var frame: TimelineBlockFrame {
         computeTimelineBlockFrame(
@@ -54,17 +55,26 @@ struct TimelineBundleBlock: View {
                         activeDragBundleID = nil
                         selectedBundleID = bundle.id
                     } onDelete: {
-                        deleteConfirmationManager.present(
+                        // `presentRefusable` rather than `present` (T-628): the delete can be
+                        // refused now, and the overlay is the only thing on screen that can say
+                        // so — the selection it clears is what closes the block's popover.
+                        deleteConfirmationManager.presentRefusable(
                             title: "Delete Bundle?",
-                            message: "This will delete \"\(bundle.displayTitle)\" and keep its tasks on the same day."
+                            message: "This will delete \"\(bundle.displayTitle)\" and keep its tasks on the same day.",
+                            failureNotice: CadenceTaskMutationSupport.bundleDeleteFailureNotice
                         ) {
+                            do {
+                                try SchedulingActions.deleteBundle(bundle, in: modelContext)
+                            } catch {
+                                return false
+                            }
                             if selectedBundleID == bundle.id {
                                 selectedBundleID = nil
                             }
                             if activeDragBundleID == bundle.id {
                                 activeDragBundleID = nil
                             }
-                            SchedulingActions.deleteBundle(bundle, in: modelContext)
+                            return true
                         }
                     }
                 } else {
@@ -125,20 +135,39 @@ struct TimelineBundleBlock: View {
                             focusManager.reset()
                             focusManager.activeSession = nil
                         }
-                        SchedulingActions.completeBundle(bundle, in: modelContext)
-                        selectedBundleID = nil
+                        endBlock(CadencePendingChangePersistence.editFailureNotice) {
+                            try SchedulingActions.completeBundle(bundle, in: modelContext)
+                        }
                     },
                     onUnbundle: {
-                        SchedulingActions.unbundle(bundle, in: modelContext)
-                        selectedBundleID = nil
+                        endBlock(CadencePendingChangePersistence.editFailureNotice) {
+                            try SchedulingActions.unbundle(bundle, in: modelContext)
+                        }
                     },
                     onDelete: {
-                        SchedulingActions.deleteBundle(bundle, in: modelContext)
-                        selectedBundleID = nil
-                    }
+                        endBlock(CadenceTaskMutationSupport.bundleDeleteFailureNotice) {
+                            try SchedulingActions.deleteBundle(bundle, in: modelContext)
+                        }
+                    },
+                    actionFailureNotice: $bundleActionFailureNotice
                 )
             }
             .position(x: frame.centerX, y: frame.centerY)
+    }
+
+    /// Runs one of the block's three end actions and **clears the selection only if it committed**
+    /// (T-628).
+    ///
+    /// `selectedBundleID = nil` is what closes the popover, and closing it is the whole of the
+    /// success report — so a refused commit has to leave it open with a sentence in it.
+    private func endBlock(_ notice: String, _ attempt: () throws -> Void) {
+        do {
+            try attempt()
+            bundleActionFailureNotice = nil
+            selectedBundleID = nil
+        } catch {
+            bundleActionFailureNotice = notice
+        }
     }
 
     /// Bundle-complete mirrors a single task's "done" look: once every member task is

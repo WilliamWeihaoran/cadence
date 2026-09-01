@@ -6,6 +6,76 @@ import Testing
 #if os(macOS)
 @MainActor
 struct TaskBundleTests {
+    /// A commit that always refuses, the way every other save-commit suite here spells it.
+    private struct CommitRefused: Error {}
+
+    /// **T-628: the three ways a block ends now have a commit boundary.**
+    ///
+    /// `completeBundle` used to mark every open member done — which spawns a recurrence successor —
+    /// detach them all, and `context.delete(bundle)`, with no save anywhere. Both hosts then closed
+    /// their popover, which is the only signal either gesture gives. So the insert and the delete
+    /// sat pending in the app's one `ModelContext` for the next unrelated `save()` to take or the
+    /// next unrelated `rollback()` to throw away, and the user was told it worked either way.
+    ///
+    /// The commit is `CadenceTaskMutationSupport.deleteBundle`'s — T-322's fix, which iOS already
+    /// used — so the refusal rolls back and the sentence the popover shows is earned: the block is
+    /// still there, its members are still in it, and the successor was never created.
+    @Test func aRefusedBundleCompletionLeavesTheBlockItsMembersAndTheSuccessorAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let member = AppTask(title: "Repeats daily")
+        member.recurrenceRule = .daily
+        member.scheduledDate = "2026-05-01"
+        let bundle = TaskBundle(title: "Morning block", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
+        context.insert(member)
+        context.insert(bundle)
+        SchedulingActions.addTask(member, to: bundle)
+        try context.save()
+
+        #expect(throws: (any Error).self) {
+            try SchedulingActions.completeBundle(bundle, in: context) { _ in
+                throw CommitRefused()
+            }
+        }
+
+        // Read through a **second context on the same container**, which is the only reading that
+        // answers the question the notice makes a promise about: what the store holds. A live
+        // object still answers the value it was assigned until something refreshes it, and
+        // `rollback()` un-deletes unconditionally but does not visibly undo a field edit — both
+        // halves of that are measured in `CadencePendingChangePersistence.commitEdit`'s note.
+        let stored = ModelContext(container)
+        let bundles = try stored.fetch(FetchDescriptor<TaskBundle>())
+        #expect(bundles.count == 1, "the block is still in the store")
+        #expect(bundles.first?.sortedTasks.count == 1, "and still holds its member")
+        let tasks = try stored.fetch(FetchDescriptor<AppTask>())
+        #expect(tasks.count == 1, "no successor was written")
+        #expect(tasks.first?.isDone == false, "and the member was not completed")
+    }
+
+    /// The same boundary on `unbundle`, which `deleteBundle` forwards to — the other two of the
+    /// three end actions (T-628).
+    @Test func aRefusedUnbundleLeavesTheBlockAndItsMembersAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let member = AppTask(title: "Stays put")
+        let bundle = TaskBundle(title: "Morning block", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
+        context.insert(member)
+        context.insert(bundle)
+        SchedulingActions.addTask(member, to: bundle)
+        try context.save()
+
+        #expect(throws: (any Error).self) {
+            try SchedulingActions.unbundle(bundle, in: context) { _ in
+                throw CommitRefused()
+            }
+        }
+
+        let stored = ModelContext(container)
+        let bundles = try stored.fetch(FetchDescriptor<TaskBundle>())
+        #expect(bundles.count == 1)
+        #expect(bundles.first?.sortedTasks.count == 1)
+    }
+
     @Test func addingTaskToBundleUsesBundleDateWithoutTaskTime() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
@@ -71,7 +141,7 @@ struct TaskBundleTests {
         context.insert(bundle)
         SchedulingActions.addTask(task, to: bundle)
 
-        SchedulingActions.deleteBundle(bundle, in: context)
+        try SchedulingActions.deleteBundle(bundle, in: context)
 
         #expect(task.bundle == nil)
         #expect(task.scheduledDate == "2026-05-01")
@@ -88,7 +158,7 @@ struct TaskBundleTests {
         context.insert(bundle)
         SchedulingActions.addTask(task, to: bundle)
 
-        SchedulingActions.deleteBundle(bundle, in: context)
+        try SchedulingActions.deleteBundle(bundle, in: context)
 
         #expect(task.bundle == nil)
         #expect(task.scheduledDate == "2026-05-01")
@@ -105,7 +175,7 @@ struct TaskBundleTests {
         context.insert(bundle)
         [first, second].forEach { SchedulingActions.addTask($0, to: bundle) }
 
-        SchedulingActions.completeBundle(bundle, in: context)
+        try SchedulingActions.completeBundle(bundle, in: context)
 
         #expect(first.isDone)
         #expect(second.isDone)
@@ -235,7 +305,7 @@ struct TaskBundleTests {
         context.insert(bundle)
         SchedulingActions.addTask(task, to: bundle)
 
-        SchedulingActions.unbundle(bundle, in: context)
+        try SchedulingActions.unbundle(bundle, in: context)
 
         #expect(task.bundle == nil)
         #expect(task.scheduledDate == "2026-05-01")
@@ -352,7 +422,7 @@ struct TaskBundleTests {
         let unbundled = stale("Unbundled")
         SchedulingActions.addTask(unbundled, to: bundle)
         unbundled.calendarEventID = "legacy-event-id"
-        SchedulingActions.unbundle(bundle, in: context)
+        try SchedulingActions.unbundle(bundle, in: context)
         #expect(unbundled.calendarEventID.isEmpty)
 
         // Duplicating must not hand a second task the same event identifier.

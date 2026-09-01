@@ -19,6 +19,61 @@ import Testing
 @MainActor
 struct CadenceTaskStatusLifecycleSurfaceTests {
 
+    /// A commit that always refuses, the way every other save-commit suite here spells it.
+    private struct CommitRefused: Error {}
+
+    // MARK: - T-628: the settle has a commit boundary
+
+    /// **The macOS completion funnel had no commit at all.**
+    ///
+    /// `TaskCompletionAnimationManager.write` → `TaskWorkflowService.markDone(_:in:)` →
+    /// `CadenceTaskRecurrenceWorkflowSupport.markDone` → `spawnNextOccurrenceIfNeeded`, which does
+    /// `context.insert(nextTask)` — and nothing in that chain saved. Ticking a recurring task's
+    /// circle therefore minted its successor as a *pending* row, for the next unrelated `save()`
+    /// from any other screen to take or the next unrelated `rollback()` to discard.
+    ///
+    /// A settle is two changes at once, so this pins both undos: the successor is un-inserted, and
+    /// the status, timestamp and `recurrenceSpawnedTaskID` are put back. That is what lets the
+    /// alert say "Nothing was changed" and lets the circle re-draw open honestly.
+    @Test func aRefusedSettleUnInsertsTheSuccessorAndPutsTheStatusBack() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Repeats daily")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-05-01"
+        context.insert(task)
+        try context.save()
+
+        #expect(throws: (any Error).self) {
+            try TaskWorkflowService.commitMarkDone(task, in: context) { _ in
+                throw CommitRefused()
+            }
+        }
+
+        #expect(task.status == .todo, "the status went back")
+        #expect(task.completedAt == nil)
+        #expect(task.recurrenceSpawnedTaskID == nil, "and so did the pointer at the successor")
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 1, "no successor was left pending")
+    }
+
+    /// The same commit, accepted: the successor exists and the pointer names it. Without this the
+    /// test above passes on a `commitMarkDone` that settles nothing at all.
+    @Test func anAcceptedSettleCommitsTheSuccessorItSpawned() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Repeats daily")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-05-01"
+        context.insert(task)
+        try context.save()
+
+        try TaskWorkflowService.commitMarkDone(task, in: context)
+
+        #expect(task.status == .done)
+        #expect(task.recurrenceSpawnedTaskID != nil)
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 2)
+    }
+
     // MARK: - T-344: the circle toggles settled, not done
 
     @Test func theCircleRestoresACancelledTaskRatherThanCompletingIt() throws {
@@ -212,14 +267,22 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
 
         // Every transition goes through the macOS wrapper, which is what adds the notification
         // reconcile hop around the shared recurrence transitions.
+        //
+        // **The two settling spellings are the *committing* ones since T-628**, and the pin moved
+        // with them rather than being relaxed. The claim it makes is unchanged — one funnel,
+        // reached once per transition — but the funnel now has a commit boundary in it, because
+        // `markDone` reaches `spawnNextOccurrenceIfNeeded`, which inserts. The uncommitted
+        // spellings must not come back beside them, so they are pinned at zero.
         try expectOccurrences(
-            of: "TaskWorkflowService.markDone(task, in: context)",
+            of: "TaskWorkflowService.commitMarkDone(task, in: $0)",
             at: [path: 1]
         )
         try expectOccurrences(
-            of: "TaskWorkflowService.markCancelled(task, in: context)",
+            of: "TaskWorkflowService.commitMarkCancelled(task, in: $0)",
             at: [path: 1]
         )
+        try expectOccurrences(of: "TaskWorkflowService.markDone(", at: [path: 0])
+        try expectOccurrences(of: "TaskWorkflowService.markCancelled(", at: [path: 0])
         try expectOccurrences(of: "TaskWorkflowService.markTodo(task)", at: [path: 1])
         // One funnel, and every call site of it.
         try expectOccurrences(of: "private func write(", at: [path: 1])

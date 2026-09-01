@@ -299,16 +299,26 @@ struct TaskDetailActionsSection: View {
     private static let controlHeight: CGFloat = 32
     private static let cornerRadius: CGFloat = 7
 
+    /// Set when "Mark done" was refused and put back (T-628). The inspector is the one surface
+    /// that reaches the settle *without* going through `TaskCompletionAnimationManager`, so the
+    /// root alert cannot speak for it and it says so where the button is.
+    @State private var settleFailureNotice: String?
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            controlRow
+            if let settleFailureNotice {
+                CadenceInlineFailureNotice(text: settleFailureNotice)
+            }
+        }
+    }
+
+    private var controlRow: some View {
         // One row: a flexible primary action plus two square icon buttons. The old layout used
         // three equal-width text buttons, which forced "Unschedule" to wrap mid-word.
         HStack(spacing: 8) {
             Button {
-                if task.isDone {
-                    TaskWorkflowService.markTodo(task)
-                } else {
-                    TaskWorkflowService.markDone(task, in: modelContext)
-                }
+                markDoneOrNotDone()
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: task.isDone ? "circle" : "checkmark.circle.fill")
@@ -340,6 +350,24 @@ struct TaskDetailActionsSection: View {
             iconButton(systemImage: "trash", tint: Theme.red, accessibilityLabel: "Delete task") {
                 deleteConfirmationManager.presentTaskDelete(task, in: modelContext)
             }
+        }
+    }
+
+    /// The settle, with a commit boundary and the failure named where the button is (T-628).
+    ///
+    /// Only the "mark done" direction reaches an insert — `markTodo` clears the fields and spawns
+    /// nothing — so only that direction has something a rollback could strand.
+    private func markDoneOrNotDone() {
+        if task.isDone {
+            TaskWorkflowService.markTodo(task)
+            settleFailureNotice = nil
+            return
+        }
+        do {
+            try TaskWorkflowService.commitMarkDone(task, in: modelContext)
+            settleFailureNotice = nil
+        } catch {
+            settleFailureNotice = CadencePendingChangePersistence.editFailureNotice
         }
     }
 

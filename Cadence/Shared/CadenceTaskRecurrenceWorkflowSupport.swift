@@ -19,10 +19,12 @@ nonisolated enum CadenceTaskRecurrenceEditScope: String, CaseIterable, Hashable 
 }
 
 nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
-    static func markDone(_ task: AppTask, in context: ModelContext, now: Date = Date()) {
+    /// Returns the successor it spawned, or `nil` — see `spawnNextOccurrenceIfNeeded` (T-628).
+    @discardableResult
+    static func markDone(_ task: AppTask, in context: ModelContext, now: Date = Date()) -> AppTask? {
         task.completedAt = now
         task.status = .done
-        spawnNextOccurrenceIfNeeded(from: task, in: context, now: now)
+        return spawnNextOccurrenceIfNeeded(from: task, in: context, now: now)
     }
 
     /// Cancelling a single occurrence skips it, but the recurring series must keep going —
@@ -44,10 +46,12 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     /// Callers that treated a nil `completedAt` as part of the cancelled state must not read it
     /// that way any more: `status == .cancelled` is the whole test. `CadenceWriteService`'s
     /// `cancelTask` / `bulkCancelTasks` idempotency guards were the two that did.
-    static func markCancelled(_ task: AppTask, in context: ModelContext, now: Date = Date()) {
+    /// Returns the successor it spawned, or `nil` — see `spawnNextOccurrenceIfNeeded` (T-628).
+    @discardableResult
+    static func markCancelled(_ task: AppTask, in context: ModelContext, now: Date = Date()) -> AppTask? {
         task.completedAt = now
         task.status = .cancelled
-        spawnNextOccurrenceIfNeeded(from: task, in: context, now: now)
+        return spawnNextOccurrenceIfNeeded(from: task, in: context, now: now)
     }
 
     static func markTodo(_ task: AppTask) {
@@ -124,17 +128,29 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     ///
     /// When the series does end, the current task still completes/cancels normally (its status was
     /// already set by the caller) and its `recurrenceSpawnedTaskID` stays nil — no dangling pointer.
-    private static func spawnNextOccurrenceIfNeeded(from task: AppTask, in context: ModelContext, now: Date) {
-        guard task.isRecurring, task.recurrenceSpawnedTaskID == nil else { return }
+    /// **Returns the successor, so the caller can undo the insert (T-628).** The row it inserts is
+    /// the whole reason a completion needs a commit boundary rather than an autosave: a status
+    /// field that did not land still reads right and is corrected by the next fetch, and a task
+    /// that does or does not exist has no such halfway reading. The only party that can un-insert
+    /// it is one holding the object, so the object comes back up the chain —
+    /// `TaskWorkflowService.commitSettle` hands it to
+    /// `CadencePendingChangePersistence.commitInsert`. Every other caller ignores it.
+    private static func spawnNextOccurrenceIfNeeded(
+        from task: AppTask,
+        in context: ModelContext,
+        now: Date
+    ) -> AppTask? {
+        guard task.isRecurring, task.recurrenceSpawnedTaskID == nil else { return nil }
         ensureRecurrenceSeriesMetadata(for: task)
 
-        guard !task.recurrenceHasEnded else { return }
+        guard !task.recurrenceHasEnded else { return nil }
         let plannedDates = plannedNextDates(for: task, now: now)
-        guard task.shouldSpawnNextOccurrence(nextDateKey: plannedDates.anchorKey(now: now)) else { return }
+        guard task.shouldSpawnNextOccurrence(nextDateKey: plannedDates.anchorKey(now: now)) else { return nil }
 
         let nextTask = makeNextRecurringTask(from: task, dates: plannedDates)
         context.insert(nextTask)
         task.recurrenceSpawnedTaskID = nextTask.id
+        return nextTask
     }
 
     // MARK: - Forked successor chains (T-622)

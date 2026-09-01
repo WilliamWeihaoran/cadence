@@ -14,9 +14,11 @@ struct CalendarBoardBundleCard: View {
     @State private var showPopover = false
     @State private var isHovered = false
     @State private var isTargeted = false
+    @State private var bundleActionFailureNotice: String?
 
     var body: some View {
         Button {
+            bundleActionFailureNotice = nil
             showPopover = true
         } label: {
             label
@@ -96,6 +98,21 @@ struct CalendarBoardBundleCard: View {
         }
     }
 
+    /// Runs one of the block's three end actions and **closes only if it committed** (T-628).
+    ///
+    /// The popover closing is the whole of the success report here — there is no other signal that
+    /// Complete or Delete did anything — so a refused commit has to leave it open and say so.
+    /// `deleteBundle`'s `commitDelete` rolls back, which is what makes both sentences true.
+    private func endBlock(_ notice: String, _ attempt: () throws -> Void) {
+        do {
+            try attempt()
+            bundleActionFailureNotice = nil
+            showPopover = false
+        } catch {
+            bundleActionFailureNotice = notice
+        }
+    }
+
     private var bundleDetailPopover: some View {
         TaskBundleDetailPopover(
             bundle: bundle,
@@ -123,17 +140,21 @@ struct CalendarBoardBundleCard: View {
                     focusManager.reset()
                     focusManager.activeSession = nil
                 }
-                SchedulingActions.completeBundle(bundle, in: modelContext)
-                showPopover = false
+                endBlock(CadencePendingChangePersistence.editFailureNotice) {
+                    try SchedulingActions.completeBundle(bundle, in: modelContext)
+                }
             },
             onUnbundle: {
-                SchedulingActions.unbundle(bundle, in: modelContext)
-                showPopover = false
+                endBlock(CadencePendingChangePersistence.editFailureNotice) {
+                    try SchedulingActions.unbundle(bundle, in: modelContext)
+                }
             },
             onDelete: {
-                SchedulingActions.deleteBundle(bundle, in: modelContext)
-                showPopover = false
-            }
+                endBlock(CadenceTaskMutationSupport.bundleDeleteFailureNotice) {
+                    try SchedulingActions.deleteBundle(bundle, in: modelContext)
+                }
+            },
+            actionFailureNotice: $bundleActionFailureNotice
         )
     }
 }
