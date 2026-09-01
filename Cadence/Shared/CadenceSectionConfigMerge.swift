@@ -4,11 +4,23 @@ import Foundation
 ///
 /// **Why this exists.** All of a list's section state is a single JSON blob —
 /// `Area.sectionConfigsRaw` / `Project.sectionConfigsRaw`, read back through the `sectionConfigs`
-/// computed property — so the whole array is the sync unit. Two devices that edit *different*
-/// columns of the same list each write a whole array, and the second write wins outright: the
-/// first device's column comes back with whatever values the second device's editor happened to
+/// computed property — so the whole array is what any one save writes. Two *editors* opened on the
+/// same list that edit different columns each write a whole array, and the second write used to win
+/// outright: the first editor's column came back with whatever values the second editor happened to
 /// open with. `TaskSectionConfig` has carried a stable `uuid` all along; what was missing was a
 /// moment at which that identity is consulted at write time (`docs/TODO.md` T-358).
+///
+/// **This is a write-time merge and only a write-time merge (`docs/TODO.md` T-625).** Nothing calls
+/// it on the way *in*. The app installs no remote-change observer, so when CloudKit lands a peer's
+/// `sectionConfigsRaw` the string arrives whole and replaces what was there, unread by this type.
+/// Two devices therefore converge only in the ordering where the peer's blob is already in
+/// `current` when the local save runs; in the other ordering the local edit is overwritten and no
+/// merge happens at all. Per-column conflict resolution would mean columns as their own rows — a
+/// new `@Model` plus a migration of every existing blob, and this project has no
+/// `SchemaMigrationPlan`, which is the same constraint that makes order last-writer-wins below.
+/// `SectionConfigRoundTripTests`'
+/// `aPeersBlobLandingAfterALocalMergeReplacesItWholeBecauseNothingMergesOnImport` asserts the
+/// limit; read it before believing any broader claim about two devices.
 ///
 /// **The shape of a write.** Every writer states three arrays:
 ///

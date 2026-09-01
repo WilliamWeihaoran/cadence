@@ -141,12 +141,21 @@ struct SectionConfigRoundTripTests {
         )
     }
 
-    // MARK: - Two devices, one blob (T-358)
+    // MARK: - One store, one blob: stale-snapshot writes (T-358, narrowed by T-625)
 
-    /// **The ticket in one test.** A list's whole section array is a single JSON string
-    /// (`Area.sectionConfigsRaw`), so it is also the sync unit: two devices that open the same
-    /// list, edit *different* columns and save each write the entire array, and the second write
-    /// used to put the first device's column back to whatever its own editor opened with.
+    /// **The ticket in one test, and it is a *write-time* test.** A list's whole section array is
+    /// a single JSON string (`Area.sectionConfigsRaw`), so the whole array is what any save writes:
+    /// two editors opened on the same list that edit *different* columns each write the entire
+    /// array, and the second write used to put the first one's column back to whatever its own
+    /// editor opened with.
+    ///
+    /// **What this proves, exactly: stale-editor merging.** One `Area`, two snapshots taken at
+    /// different times. It is *not* isolated-replica convergence — both saves run in one process
+    /// against one object, and the merge is reached because both go through
+    /// `applySectionConfigEdits`. Two devices reach it only in the ordering where the peer's blob
+    /// has already landed in `current` before the local save; the other ordering is
+    /// `aPeersBlobLandingAfterALocalMergeReplacesItWholeBecauseNothingMergesOnImport` below, and
+    /// the merge does not help there at all. T-625 is the correction of the broader reading.
     ///
     /// The control at the bottom is the write this replaced. Without it every assertion above
     /// could be passing because the fixture never reproduced the defect in the first place.
@@ -191,6 +200,61 @@ struct SectionConfigRoundTripTests {
 
         #expect(column(control.sectionConfigs, 1)?.name == "Research", "the control no longer reproduces T-358")
         #expect(column(control.sectionConfigs, 2)?.colorHex == "#ff5a5a")
+    }
+
+    /// **T-625: the limit of everything above, asserted rather than described.**
+    ///
+    /// Every *write* path runs the merge; **no read path does.** `CadenceSectionConfigMerge.merged`
+    /// has exactly two callers — `applySectionConfigEdits` and `mutateSectionConfigs`, both on
+    /// `CadenceSectionConfigContainer` — and every caller of those is a local editor saving. The app
+    /// installs no remote-change observer at all, so when CloudKit lands a peer's
+    /// `sectionConfigsRaw` the string arrives whole and nothing merges it against what is there.
+    ///
+    /// So two genuinely separate replicas, each of which merged correctly against its own `current`,
+    /// still resolve to whichever blob was written last, and the loser's edit is gone. That is the
+    /// claim `CadenceSectionConfigMerge`'s doc used to read as covering and does not.
+    ///
+    /// **It stays this way deliberately.** The fix is columns as their own rows — a new `@Model`
+    /// *plus* a migration of every existing JSON blob — and this project has no
+    /// `SchemaMigrationPlan`. Same reason order is last-writer-wins. The test is here so that the
+    /// day an import-side merge does appear, the prose saying there is none fails alongside it.
+    @Test func aPeersBlobLandingAfterALocalMergeReplacesItWholeBecauseNothingMergesOnImport() {
+        // Two replicas of one list: the same columns with the same uuids, in two separate objects.
+        let deviceA = Area(name: "Ops")
+        deviceA.sectionConfigs = seededConfigs()
+
+        let deviceB = Area(name: "Ops")
+        deviceB.sectionConfigsRaw = deviceA.sectionConfigsRaw
+        deviceB.sectionNamesRaw = deviceA.sectionNamesRaw
+        #expect(
+            deviceB.sectionConfigs.map(\.uuid) == deviceA.sectionConfigs.map(\.uuid),
+            "the fixture is two different lists, not two replicas of one"
+        )
+
+        // Each device edits a different column, and each merges correctly against its own store.
+        let baseA = deviceA.sectionConfigs
+        var editedA = baseA
+        editedA[1].name = "Discovery"
+        deviceA.applySectionConfigEdits(base: baseA, edited: editedA)
+        #expect(column(deviceA.sectionConfigs, 1)?.name == "Discovery")
+
+        let baseB = deviceB.sectionConfigs
+        var editedB = baseB
+        editedB[2].colorHex = "#ff5a5a"
+        deviceB.applySectionConfigEdits(base: baseB, edited: editedB)
+        #expect(column(deviceB.sectionConfigs, 2)?.colorHex == "#ff5a5a")
+
+        // B's record reaches A the way CloudKit delivers it: `sectionConfigsRaw` is one string
+        // field of one record, so the whole array arrives at once, straight onto the stored
+        // property. No hook anywhere re-runs the merge over an arriving value.
+        deviceA.sectionConfigsRaw = deviceB.sectionConfigsRaw
+        deviceA.sectionNamesRaw = deviceB.sectionNamesRaw
+
+        #expect(
+            column(deviceA.sectionConfigs, 1)?.name == "Research",
+            "an import-side merge exists now — T-625's narrowing is stale and the docs must say so"
+        )
+        #expect(column(deviceA.sectionConfigs, 2)?.colorHex == "#ff5a5a")
     }
 
     /// The reason the merge is a **field-level** diff and not a whole-config replace keyed by
