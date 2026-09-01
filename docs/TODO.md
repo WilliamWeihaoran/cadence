@@ -1039,16 +1039,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`AppStoreReviewReadinessTests.swift:33`), not an oversight. Do this when iOS ships, with that test's
   intent addressed rather than deleted.
 
-- [T-631] **Typing a new tag then pressing Cancel leaves the tag pending in the shared context.**
-  VERIFIED. `TagSupport.resolveTags:195` does `context.insert(tag)`; `CreateTaskSheet:486`,
-  `InlineTaskComposerView:251` and `iOSCreateTaskSheet:228` call it from the ambient context.
-  `TaskCreationService.createTask:172` commits only `[task] + subtasks`, so a refused task commit
-  un-inserts the task **but not the tag**, and no composer path calls `rollback()`. **Commit reach, one
-  frame down.** The verifier's measured sweep found **three more of this shape Codex missed**:
-  `iOSTaskDetailComponents.iOSTaskTagPickerPopover.addTag`, `NoteEditorPane.createTag`,
-  `SchedulePanelComponents.TaskDetailPopover.createTag`. A phantom tag appears in Settings > Tags on the
-  next unrelated save from any screen.
-
 - [T-636] **The partly-confirmed residue from the CXT sweep — four narrower findings and one Codex
   missed.** VERIFIED 2026-09-01.
   **(a) LANDED 2026-09-01 (`afff149`); the rest of this ticket is still open.** The real root under
@@ -1282,7 +1272,100 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   a fix; the cheapest honest shape is probably for the setter to answer and the list to close only
   on success.
 
+- [T-651] **The other half of [[T-631]]'s tag family, now pointing at a closed ticket.** VERIFIED
+  2026-09-01 while landing T-631. Four sites are still ledgered in
+  `CadenceSaveCommitRule`'s exemption lists against T-631's *family*, and T-631 itself is closed, so
+  nothing is left scheduled to fix them:
+  `KanbanCardMetaSupportViews.body` (existence — the tag-picker binding's setter swallows the save
+  that would commit the tag `onCreateTag` just inserted), `MarkdownEditorView.createInlineTag`
+  (existence **and** report — the swallowed commit is followed by `return .tag(tag)`, which the
+  editor writes into the note, so the phantom tag is in the note's text as well as in Settings ›
+  Tags), and `CadenceNotePlanningSupport.update`.
+  **Three of them now have an answer off the shelf**: `TagSupport.committedTag(named:in:commit:)`
+  (`Cadence/Shared/CadenceInlineTagCreation.swift`) commits the rows it minted and answers `nil`
+  rather than an unsaved `Tag`. `createInlineTag` already returns an Optional, so it is a `guard`.
+  **The fourth is genuinely harder and is the reason T-631 stopped where it did**:
+  `NoteEditorPane.noteTagsBinding` and `.persistEditorContentIfNeeded` write tags through
+  `TagSupport.setTags` / `syncNoteTagsFromMarkdown` on the *debounced autosave* path, where what an
+  undo means under the user's caret is the question `commitEdit`'s doc leaves open. Do not fold that
+  one in with the other three.
+
+- [T-652] **`TagPickerPopoverViews.restore(_:)` un-archives a tag over a swallowed save, then
+  selects it.** VERIFIED 2026-09-01 while landing [[T-631]].
+  `Cadence/macOS/Views/TagPickerPopoverViews.swift`: `tag.isArchived = false; tag.updatedAt = Date();
+  try? modelContext.save()` and then `selectedTags.append(tag)` and `query = ""`. **Report half** —
+  the chip appearing and the query clearing are the only thing that says the tag came back, and they
+  run whether or not it did.
+  **Its two siblings in the same file were fixed and this one was missed.** [[T-497]] took
+  `saveEdits` and `archive` — `restore` is the third member of that set and reads exactly like them.
+  The undo is a two-field snapshot (`isArchived`, `updatedAt`) through `commitEdit`, which is what
+  `archive` already does one screen over.
+
+- [T-653] **Two `TagSupport` maintenance exemptions are justified by a rationale that stopped being
+  true.** VERIFIED 2026-09-01 while landing [[T-631]]. `existenceExemptions` holds
+  `seedDefaultTags`, `deduplicateTags` and `syncAllNoteTagsFromMarkdown` under "launch-time
+  maintenance with no user watching and nothing to report to". Measured:
+  **`seedDefaultTags` has no launch caller at all.** [[T-528]] removed every automatic one —
+  `PersistenceController.performStartupMaintenance` says so in a twenty-line comment, and
+  `CadenceFirstLaunchEmptyStoreTests` holds it there. Its four remaining callers are all "Add
+  Defaults" **buttons a person pressed**: `SettingsTagsSection`, `iOSSettingsTagsSection`,
+  `TagPickerSupportViews` and `iOSTaskDetailComponents`. There is a user watching, and the empty
+  state disappearing is the report.
+  **`deduplicateTags`' swallowed save is unreachable.** Its only caller in the app is
+  `seedDefaultTags`, which passes `save: false`.
+  `syncAllNoteTagsFromMarkdown` is the one entry the rationale still fits: `PersistenceController`
+  calls it with `saveChanges: false` and the only caller that lets it save is
+  `CadenceModelContainerFactory`, on the MCP boundary, where there genuinely is nobody to tell.
+  So the fix is a `commit:`/`throws` seed for the four buttons plus a corrected comment, not a
+  wholesale rewrite — and the comment is worth fixing on its own, because it currently tells the
+  next reader something measurably false.
+
+- [T-659] **`CadenceCommitSurfaceScan.reportFollowsTheCatch` searches backwards, so a report that
+  runs *both* above and below the failure branch passes it.** VERIFIED 2026-09-01 by a **surviving
+  mutation** while landing [[T-631]] — not by reading.
+  The reader takes `body.range(of: report, options: .backwards)` and compares its offset to the last
+  `catch`. That answers "is *some* occurrence below the failure branch", which is weaker than the
+  question every calling suite means to ask. The mutation that exposed it added a second
+  `newTagName = ""` at the **top** of `iOSTaskTagPickerPopover.addTag` — clearing the field before
+  the guard, which is exactly the defect T-631 fixed — and left the original below the guard. The
+  assertion stayed green.
+  **Five suites read it**: `CadenceTagAndNoteCommitSurfaceTests` (12 call sites),
+  `CadenceCreateSheetCommitSurfaceTests` (8), `CadenceMarkdownImageCommitSurfaceTests` (4),
+  `CadenceNoteMoveCommitTests` (2), `CadenceOrderReassignmentTests` (1). Every one of them is
+  guarding a fixed T-3xx/T-4xx/T-6xx site against exactly this shape of regression.
+  **The fix is one word** — drop `options: .backwards`, so the comparison anchors on the *first*
+  occurrence — plus a fixture that separates the two, which
+  `CadenceInlineTagCommitSurfaceTests.reportFollowsTheRefusal` already carries and is worth copying
+  verbatim. Re-run each calling suite after: a body that legitimately writes its report twice would
+  start failing, and if one exists it is worth knowing about.
+
 ## Done
+- [T-631] **CLOSED 2026-09-01 (`0ddbbb7`).** All six inline "create tag" doors commit through
+  `TagSupport.resolveTagsCommittingInsertions(named:in:commit:)` /
+  `TagSupport.committedTag(named:in:)`, which live in
+  `Cadence/Shared/CadenceInlineTagCreation.swift`. Pinned by `CadenceInlineTagCommitSurfaceTests`
+  (11 tests: five behavioural against a real container with a throwing `commit`, six source scans).
+  **Every line number in the ticket had drifted and every claim in it was correct.**
+  **Only the rows a call *minted* are handed to `commitInsert`.** An undo that took the whole
+  resolved set would delete a tag the user already had; a `rollback()` undo would take the note
+  someone is typing behind the popover with it. Both have their own behavioural test.
+  **A new file, and the reason is a target boundary.** `TagSupport.swift` compiles into
+  `CadenceWidgets`, which has no `CadencePendingChangePersistence` — so the committing spellings
+  cannot live beside `resolveTags`. `TagSupport.resolution(named:in:)` went from `private` to
+  internal to bridge that, which is recorded on it.
+  **`onCreateTag` answers `Tag?` now**, and the `?? Tag(name: name)` fallback is gone: it handed the
+  picker an object the store had never been asked about, which the picker then drew as a chip.
+  Failing-first, against unmodified source with the exemptions deleted: half 3's sweep named
+  exactly the five ambient frames, the `NoteEditorPane` exemption diff named `createTag`, and all
+  five new source scans were red.
+  **Six mutations, all compiled, five killed on the first pass and the sixth *survived*** — the
+  surviving one was worth more than the five kills, and is filed as [[T-659]]: the ordering reader
+  searched backwards, so a report written both above and below the refusal passed it. Fixed here,
+  still live in the shared `reportFollowsTheCatch` that five suites read.
+  **Residue, all filed**: [[T-651]] (the four sites still ledgered against this ticket's family),
+  [[T-652]] (`TagPickerPopoverViews.restore`), [[T-653]] (two stale `TagSupport` maintenance
+  exemptions), [[T-659]] (the reader).
+
 
 - [T-638] **CLOSED 2026-09-01 (`3cfd576`).** All eight read
   `CadenceTaskSurfaceOptions.moreLabel(hidden:)` now — the two markdown task-embed draw calls, both
