@@ -37,8 +37,27 @@ let timeLabelPad:   CGFloat = 6
 let blockInset:     CGFloat = timeLabelWidth + timeLabelPad  // 42
 
 enum SchedulePanelPresentation {
+    /// Today's schedule column: the panel is the page's own third column and nothing above it says
+    /// what it is, so it draws its own "Timeline" header.
     case standard
+    /// The focus screen and the focus sidebar: same job, tighter header.
     case compact
+    /// Hosted inside a pane that has **already** named it — today only `RootTimelineSidebarPane`,
+    /// which titles itself "Today Timeline" and draws its own rule underneath that title.
+    ///
+    /// **T-615.** The pane said "timeline" twice, one line apart, and before T-602 three times. A
+    /// page header does not describe the page the user is already on, and that rule does not stop
+    /// at the outermost header: the second one is the one to drop, because the first is the one the
+    /// user read. The divider goes with the header — the host draws that rule itself, so keeping
+    /// the panel's would leave two hairlines with nothing between them.
+    ///
+    /// Opt-in, not a default, and that is the load-bearing half: the other three hosts have nothing
+    /// above them naming the column, so a panel that dropped its heading unconditionally would
+    /// leave three unnamed columns to fix one named twice.
+    case hosted
+
+    /// Whether the panel draws its own heading and the rule under it.
+    var drawsOwnHeader: Bool { self != .hosted }
 }
 
 struct SchedulePanel: View {
@@ -85,14 +104,16 @@ struct SchedulePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SchedulePanelHeader(
-                presentation: presentation,
-                zoomLevel: $zoomLevel,
-                onExport: exportTodayPlan
-            )
-            .frame(height: headerHeight, alignment: .top)
+            if presentation.drawsOwnHeader {
+                SchedulePanelHeader(
+                    presentation: presentation,
+                    zoomLevel: $zoomLevel,
+                    onExport: exportTodayPlan
+                )
+                .frame(height: headerHeight, alignment: .top)
 
-            Divider().background(Theme.borderSubtle)
+                Divider().background(Theme.borderSubtle)
+            }
 
             GeometryReader { geo in
                 ScrollViewReader { proxy in
@@ -222,6 +243,7 @@ struct SchedulePanel: View {
         }
     }
 
+    /// Only asked when `presentation.drawsOwnHeader`; `.hosted` draws no header to size.
     private var headerHeight: CGFloat? {
         if presentation == .compact { return 58 }
         return useStandardHeaderHeight ? todayPanelHeaderHeight : nil

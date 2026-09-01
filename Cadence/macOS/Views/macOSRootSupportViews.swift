@@ -349,7 +349,10 @@ struct RootTimelineSidebarPane: View {
 
             Divider().background(Theme.borderSubtle)
 
-            SchedulePanel()
+            // Headerless, because the title six lines up has already said "Timeline" and the rule
+            // above is this pane's own. `SchedulePanel`'s three other hosts have nothing naming
+            // them, so they keep their headers — see `SchedulePanelPresentation.hosted` (T-615).
+            SchedulePanel(presentation: .hosted)
                 .frame(minWidth: 320, idealWidth: 360, maxWidth: 420)
         }
         .frame(width: 360)

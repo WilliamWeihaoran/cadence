@@ -12,6 +12,11 @@ struct SchedulePanelHeader: View {
             standardHeader
         case .compact:
             compactHeader
+        case .hosted:
+            // Never reached: `SchedulePanel` builds no header at all when its host has already
+            // named the column (T-615). Stated rather than defaulted, so a genuinely new
+            // presentation still has to come here and decide.
+            EmptyView()
         }
     }
 

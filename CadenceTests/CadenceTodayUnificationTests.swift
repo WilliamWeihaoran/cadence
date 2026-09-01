@@ -399,6 +399,93 @@ struct CadenceTodayUnificationTests {
         #expect(!notes.contains("headerTitle"))
     }
 
+    /// **T-615.** The timeline sidebar named the timeline twice. `RootTimelineSidebarPane` titles
+    /// itself "Today Timeline" and then hosts the standard `SchedulePanel`, which draws its own
+    /// "Timeline" header directly underneath. Before T-602 it was three times — the `SCHEDULE`
+    /// eyebrow made a third — and dropping the eyebrow left the remaining pair.
+    ///
+    /// The pane keeps its title and the hosted panel drops its heading, because the header rule is
+    /// about the page the user is already on and the outer title has already said it. The panel's
+    /// own divider goes with the header: the pane draws that rule itself, so keeping both would
+    /// leave two hairlines with nothing between them.
+    ///
+    /// **The pin that matters is the three other hosts.** Today's schedule column, the focus screen
+    /// and the focus sidebar each host the same panel with nothing above naming it, so each must
+    /// still draw its own header — dropping the heading unconditionally would have left three
+    /// unnamed columns to fix one named twice. `.hosted` is opt-in, and it is opt-in at exactly one
+    /// call site in the app.
+    @Test func theTimelinePaneNamesItselfOnceAndTheOtherHostsStillNameThemselves() throws {
+        #expect(SchedulePanelPresentation.standard.drawsOwnHeader)
+        #expect(SchedulePanelPresentation.compact.drawsOwnHeader)
+        #expect(!SchedulePanelPresentation.hosted.drawsOwnHeader)
+
+        let pane = try strippingComments(sourceFile("Cadence/macOS/Views/macOSRootSupportViews.swift"))
+        #expect(pane.contains("struct RootTimelineSidebarPane: View"), "non-vacuity: wrong file read")
+        #expect(pane.contains(#"Text("Today Timeline")"#), "the pane stopped naming itself")
+        #expect(pane.contains("SchedulePanel(presentation: .hosted)"))
+
+        let panel = try strippingComments(sourceFile("Cadence/macOS/Views/SchedulePanel.swift"))
+        #expect(panel.contains("struct SchedulePanel: View"), "non-vacuity: wrong file read")
+        #expect(
+            panel.contains("if presentation.drawsOwnHeader {"),
+            "the panel draws its header unconditionally again"
+        )
+
+        // The three that must still draw one, named one at a time with the construction each uses.
+        let namedHosts = [
+            ("Cadence/macOS/Views/TodayView.swift", "SchedulePanel(useStandardHeaderHeight: true)"),
+            ("Cadence/macOS/Views/FocusView.swift", "SchedulePanel(presentation: .compact)"),
+            ("Cadence/macOS/Views/FocusSidebarSupportViews.swift", "SchedulePanel(presentation: .compact)"),
+        ]
+        for (path, construction) in namedHosts {
+            let source = try strippingComments(sourceFile(path))
+            #expect(source.contains(construction), "\(path) no longer hosts the panel this way")
+            #expect(
+                !source.contains(".hosted"),
+                "\(path) dropped a heading with nothing above it naming the column"
+            )
+        }
+
+        // And nowhere else. `iOSSchedulePanel(` contains this needle as a substring, so the
+        // lookbehind is load-bearing rather than decorative.
+        let hostsThePanel = try CadenceScanInstrument(
+            "hosts SchedulePanel",
+            fires: "                SchedulePanel(useStandardHeaderHeight: true)\n",
+            andNotOn: "            iOSSchedulePanel()\n",
+            by: { CadenceSourceScan.matchCount(#"(?<![A-Za-z])SchedulePanel\("#, in: $0) > 0 }
+        )
+        let headerless = try CadenceScanInstrument(
+            "hosts SchedulePanel headerless",
+            fires: "            SchedulePanel(presentation: .hosted)\n",
+            andNotOn: "            SchedulePanel(presentation: .compact)\n",
+            by: { $0.contains("SchedulePanel(presentation: .hosted)") }
+        )
+        let read = CadenceSourceScan.strippedSourceReader()
+        let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        let hosts = try hostsThePanel.sweep(
+            files,
+            atLeast: 400,
+            including: "Cadence/macOS/Views/macOSRootSupportViews.swift",
+            read: read
+        )
+        #expect(
+            hosts == [
+                "Cadence/macOS/Views/FocusSidebarSupportViews.swift",
+                "Cadence/macOS/Views/FocusView.swift",
+                "Cadence/macOS/Views/TodayView.swift",
+                "Cadence/macOS/Views/macOSRootSupportViews.swift",
+            ],
+            "the app hosts SchedulePanel from \(hosts)"
+        )
+        let silenced = try headerless.sweep(
+            files,
+            atLeast: 400,
+            including: "Cadence/macOS/Views/macOSRootSupportViews.swift",
+            read: read
+        )
+        #expect(silenced == ["Cadence/macOS/Views/macOSRootSupportViews.swift"])
+    }
+
     /// The metrics that fed the tile go with it — a size table entry nothing reads is the same
     /// hazard as the parameter, and this one carried a role×surface ramp that would read as live.
     /// `tileGlyphRatio` and `tileFillOpacity` **stay**: `CommitmentIconTile` reads both for the
