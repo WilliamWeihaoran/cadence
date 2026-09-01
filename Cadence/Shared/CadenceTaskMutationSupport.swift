@@ -27,13 +27,81 @@ enum CadenceTaskMutationSupport {
     /// The labels that describe this gesture read the same predicate — see `iOSTaskRowActions`,
     /// `iOSTaskRow`, `iOSTaskEditorTitleCard` and `iOSBoardTaskCard` — and
     /// `CadenceTaskStatusLifecycleSurfaceTests` pins that they do.
-    static func toggleCompletion(_ task: AppTask, modelContext: ModelContext) {
+    ///
+    /// **The completion spine commits now (T-636).** This used to end `try? modelContext.save()`,
+    /// and the `else` above it reaches `CadenceTaskRecurrenceWorkflowSupport.markDone` →
+    /// `spawnNextOccurrenceIfNeeded`, which does `context.insert(nextTask)`. So ticking a recurring
+    /// task's circle minted its successor as a **pending** row in the app's one `ModelContext`, for
+    /// the next unrelated `save()` from any other screen to take or the next unrelated `rollback()`
+    /// to discard. [[T-628]] fixed the macOS funnel, which reaches the same insert by a different
+    /// road; this is the other half of the same spine, and it is the entry point every iOS
+    /// checkbox, swipe and card reaches through `CadenceTaskStatusEditing.toggleCompletion`.
+    ///
+    /// **Both directions undo, and they undo differently**, because the toggle is two different
+    /// kinds of change depending on which way it points:
+    ///
+    /// - settling goes through `commitSettle`, which un-inserts the successor *and* puts the
+    ///   status, timestamp and `recurrenceSpawnedTaskID` back;
+    /// - restoring inserts nothing, so it is an ordinary `commitEdit` over the two fields
+    ///   `markTodo` writes.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    static func toggleCompletion(
+        _ task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         if CadenceTaskQuerySupport.isFinishedTask(task) {
+            let status = task.status
+            let completedAt = task.completedAt
             CadenceTaskRecurrenceWorkflowSupport.markTodo(task)
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+                task.status = status
+                task.completedAt = completedAt
+            }
         } else {
-            CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
+            try commitSettle(task, in: modelContext, commit: commit) {
+                CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
+            }
         }
-        try? modelContext.save()
+    }
+
+    /// Settle a task and commit it, putting **both** halves back when the commit is refused.
+    ///
+    /// Two halves, because a settle is two changes at once and each needs a different undo:
+    ///
+    /// - the successor is an *insert*, so `commitInsert` un-inserts the one object it was given —
+    ///   which is why `spawnNextOccurrenceIfNeeded` returns it rather than swallowing it;
+    /// - the status, timestamp and `recurrenceSpawnedTaskID` are *edits*, so they are captured here
+    ///   and put back. `commitEdit`'s doc says why `rollback()` is not the answer: this is the
+    ///   app's single context, and a refused completion must not take the note someone is typing
+    ///   behind it.
+    ///
+    /// So the user sees the circle un-tick, which is the truth, and the caller has an error to name
+    /// it with.
+    ///
+    /// **Lifted here from `TaskWorkflowService.commitSettle` (T-636).** It was written for T-628's
+    /// macOS funnel and sat inside `#if os(macOS)` importing nothing platform-specific — the exact
+    /// shape T-190, T-195 and T-215 each spent a ticket undoing — and the iOS spine above needed
+    /// the identical sentence. The Mac spelling delegates and must not grow a body of its own.
+    static func commitSettle(
+        _ task: AppTask,
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void,
+        _ settle: () -> AppTask?
+    ) throws {
+        let status = task.status
+        let completedAt = task.completedAt
+        let spawnedTaskID = task.recurrenceSpawnedTaskID
+        let spawned: [any PersistentModel] = settle().map { [$0] } ?? []
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: spawned, in: context, commit: commit)
+        } catch {
+            task.status = status
+            task.completedAt = completedAt
+            task.recurrenceSpawnedTaskID = spawnedTaskID
+            throw error
+        }
     }
 
     static func setStatus(_ status: TaskStatus, for task: AppTask, modelContext: ModelContext) {

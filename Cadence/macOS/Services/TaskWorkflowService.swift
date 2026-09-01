@@ -55,35 +55,18 @@ enum TaskWorkflowService {
 
     /// Settle a task and commit it, putting **both** halves back when the commit is refused.
     ///
-    /// Two halves, because a settle is two changes at once and each needs a different undo:
-    ///
-    /// - the successor is an *insert*, so `commitInsert` un-inserts the one object it was given —
-    ///   which is why `spawnNextOccurrenceIfNeeded` returns it rather than swallowing it;
-    /// - the status, timestamp and `recurrenceSpawnedTaskID` are *edits*, so they are captured
-    ///   here and put back. `commitEdit`'s doc says why `rollback()` is not the answer: this is the
-    ///   app's single context, and a refused completion must not take the note someone is typing
-    ///   behind it.
-    ///
-    /// So the user sees the circle un-tick, which is the truth, and the caller has an error to name
-    /// it with.
+    /// **The body is `CadenceTaskMutationSupport.commitSettle` now (T-636).** It was written here
+    /// for T-628 and imported nothing platform-specific, so when the iOS completion spine needed
+    /// the identical sentence the choice was one shared body or two copies asserted to agree. This
+    /// spelling delegates and must not grow a body of its own — the same rule, for the same
+    /// reason, as `rollOverTaskToToday` two files over.
     private static func commitSettle(
         _ task: AppTask,
         in context: ModelContext,
         commit: (ModelContext) throws -> Void,
         _ settle: () -> AppTask?
     ) throws {
-        let status = task.status
-        let completedAt = task.completedAt
-        let spawnedTaskID = task.recurrenceSpawnedTaskID
-        let spawned: [any PersistentModel] = settle().map { [$0] } ?? []
-        do {
-            try CadencePendingChangePersistence.commitInsert(of: spawned, in: context, commit: commit)
-        } catch {
-            task.status = status
-            task.completedAt = completedAt
-            task.recurrenceSpawnedTaskID = spawnedTaskID
-            throw error
-        }
+        try CadenceTaskMutationSupport.commitSettle(task, in: context, commit: commit, settle)
     }
 
     static func markTodo(_ task: AppTask) {

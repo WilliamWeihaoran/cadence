@@ -237,10 +237,20 @@ struct CadenceTaskStatusEditingSurfaceTests {
     /// — a cancel by id, which needs no store read and no desired-set computation — so a file-wide
     /// ban would be a rule this repository does not actually hold.
     @Test func theSharedStatusHelpersStillReconcileNothing() throws {
+        // The `commit:` default arguments are removed first, and that is load-bearing rather than
+        // tidy: `functionBody(named:)` stops at the first `{` after the name, which for a
+        // declaration carrying `= { try $0.save() }` is the default closure and not the body. Since
+        // T-636 gave `toggleCompletion` such a parameter, scanning the raw text here would read a
+        // one-expression closure and find no `HabitNotificationReconcileSupport` in it — a green
+        // assertion over the wrong span.
         let mutationLayer = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift")
-        )
+        ).replacingOccurrences(of: "= { try $0.save() }", with: "")
         #expect(mutationLayer.count > 400)
+        #expect(
+            !mutationLayer.contains("= { try $0.save() }"),
+            "the commit defaults are still in the text the body reader walks"
+        )
 
         for name in ["toggleCompletion", "setStatus", "applyStatusCompletion"] {
             let body = CadenceSourceScan.functionBody(named: name, in: mutationLayer)

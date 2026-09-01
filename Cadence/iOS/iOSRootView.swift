@@ -91,6 +91,21 @@ struct iOSRootView: View {
         // Both shells, one call. A banner that only appeared on the iPad sidebar shell would
         // recreate the macOS/iOS asymmetry it exists to close, one level down.
         .cadenceStartupIssueBanner(PersistenceController.startupIssue)
+        // T-636, and `macOSRootView` says the same thing in the same place for the same reason:
+        // the completion control is reached from six surfaces here and owned by none of them, so
+        // a refused settle is named once at the shell rather than six times badly. Both shells,
+        // one call — the rule the banner above records.
+        .alert(
+            CadenceTaskMutationSupport.settleFailureAlertTitle,
+            isPresented: Binding(
+                get: { CadenceTaskSettleFailureCenter.shared.settleFailed },
+                set: { if !$0 { CadenceTaskSettleFailureCenter.shared.clear() } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(CadencePendingChangePersistence.editFailureNotice)
+        }
         // T-201, and the same "both shells, one call" reasoning. The task inspector used to be
         // presented by the row that opened it, so any status write that moved the task out of its
         // section took the row down and the panel with it. Presented here, its lifetime is the

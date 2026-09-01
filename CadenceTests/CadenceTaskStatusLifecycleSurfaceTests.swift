@@ -74,6 +74,141 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
         #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 2)
     }
 
+    // MARK: - T-636(a): so does the shared spine every other surface reaches
+
+    /// **The macOS funnel was only half the spine.** T-628 gave
+    /// `TaskCompletionAnimationManager.write` a commit boundary; the *shared*
+    /// `CadenceTaskMutationSupport.toggleCompletion` still ended `try? modelContext.save()` over
+    /// the same `spawnNextOccurrenceIfNeeded` insert, and that is the entry point every iOS
+    /// checkbox, swipe and card reaches through `CadenceTaskStatusEditing`.
+    ///
+    /// Same two undos as its macOS sibling, because it is the same sentence now — the body moved
+    /// to `CadenceTaskMutationSupport.commitSettle` and the Mac spelling delegates.
+    @Test func aRefusedToggleUnInsertsTheSuccessorAndPutsTheStatusBack() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Repeats daily")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-05-01"
+        context.insert(task)
+        try context.save()
+
+        #expect(throws: (any Error).self) {
+            try CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context) { _ in
+                throw CommitRefused()
+            }
+        }
+
+        #expect(task.status == .todo, "the status went back")
+        #expect(task.completedAt == nil)
+        #expect(task.recurrenceSpawnedTaskID == nil, "and so did the pointer at the successor")
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 1, "no successor was left pending")
+    }
+
+    /// The same toggle, accepted: the successor is in the store and nothing is left pending.
+    /// Without this the test above passes on a `toggleCompletion` that settles nothing at all.
+    @Test func anAcceptedToggleCommitsTheSuccessorRatherThanLeavingItPending() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Repeats daily")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-05-01"
+        context.insert(task)
+        try context.save()
+
+        try CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
+
+        #expect(task.status == .done)
+        #expect(task.recurrenceSpawnedTaskID != nil)
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 2)
+        #expect(!context.hasChanges, "the successor was left pending in the context")
+    }
+
+    /// The other direction. Restoring inserts nothing, so its undo is an ordinary `commitEdit`
+    /// over the two fields `markTodo` writes — and a refused restore must leave the task settled
+    /// rather than half-reopened, which is the state a `try?` here produced.
+    @Test func aRefusedRestoreLeavesTheTaskSettled() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "finished")
+        task.status = .done
+        let finishedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        task.completedAt = finishedAt
+        context.insert(task)
+        try context.save()
+
+        #expect(throws: (any Error).self) {
+            try CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context) { _ in
+                throw CommitRefused()
+            }
+        }
+
+        #expect(task.status == .done, "the circle re-drew open over a store that still holds it done")
+        #expect(task.completedAt == finishedAt)
+    }
+
+    /// One settle-commit, not two agreeing copies. `TaskWorkflowService.commitSettle` was written
+    /// for T-628 inside `#if os(macOS)` while importing nothing platform-specific; the iOS spine
+    /// needed the identical sentence, so the body moved to `Shared/` and the Mac spelling is the
+    /// delegation and nothing else. Stated as the whole body for the reason
+    /// `theMacSpellingDelegatesToTheSharedMutation` gives two files over: a second body added
+    /// underneath a delegating call leaves a `contains(…)` exactly where it was.
+    @Test func theMacSettleCommitDelegatesToTheSharedOne() throws {
+        let source = try strippingComments(sourceFile("Cadence/macOS/Services/TaskWorkflowService.swift"))
+        let body = try cadenceFunctionBody("private static func commitSettle(", in: source)
+        #expect(
+            body.trimmingCharacters(in: .whitespacesAndNewlines)
+                == "try CadenceTaskMutationSupport.commitSettle(task, in: context, commit: commit, settle)",
+            "TaskWorkflowService.commitSettle has grown a body of its own: \(body)"
+        )
+        // And the shared one really is the body that moved, rather than a third spelling.
+        let shared = try strippingComments(sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift"))
+        let sharedBody = try cadenceFunctionBody("static func commitSettle(", in: shared)
+        #expect(sharedBody.contains("CadencePendingChangePersistence.commitInsert(of: spawned"))
+        #expect(sharedBody.contains("task.recurrenceSpawnedTaskID = spawnedTaskID"))
+    }
+
+    /// **The refusal is named once, at the shell.** The wrapper catches rather than rethrows
+    /// because one of its six callers is `iOSTaskSwipeActions.trailing`, a `static func` returning
+    /// closures with no view state at all — so there is no "where the user is already looking" for
+    /// it to report into. macOS reached the same answer in T-628 and put the notice on the manager
+    /// for `macOSRootView` to show; this is that shape on the other platform.
+    @Test func theAppSideWrapperNamesARefusedSettleRatherThanSwallowingIt() throws {
+        let wrapper = try strippingComments(sourceFile("Cadence/Shared/CadenceTaskStatusEditing.swift"))
+        let body = try cadenceFunctionBody("static func toggleCompletion(", in: wrapper)
+        #expect(body.contains("try CadenceTaskMutationSupport.toggleCompletion("))
+
+        // The refusal is recorded, and the reconcile is *skipped* — reconciling a transition that
+        // was put back would retire a reminder for work that is still open.
+        let record = try #require(body.range(of: "CadenceTaskSettleFailureCenter.shared.record()"))
+        let reconcile = try #require(body.range(of: "reconcile(context, reconciler)"))
+        #expect(record.lowerBound < reconcile.lowerBound)
+        #expect(
+            body[record.upperBound..<reconcile.lowerBound].contains("return"),
+            "a refused settle falls through to the reconcile"
+        )
+
+        // And the one surface that reads it is the shell both iOS layouts pass through.
+        let shell = try strippingComments(sourceFile("Cadence/iOS/iOSRootView.swift"))
+        #expect(shell.contains("CadenceTaskMutationSupport.settleFailureAlertTitle"))
+        #expect(shell.contains("CadenceTaskSettleFailureCenter.shared.settleFailed"))
+        #expect(shell.contains("CadencePendingChangePersistence.editFailureNotice"))
+    }
+
+    /// The centre is inert until something records, and clearable afterwards — otherwise the alert
+    /// above is either always up or never up, and the scan that finds it proves neither.
+    @Test func theSettleFailureCentreIsInertUntilARefusalIsRecorded() throws {
+        let centre = CadenceTaskSettleFailureCenter.shared
+        centre.clear()
+        #expect(!centre.settleFailed)
+
+        centre.record()
+        #expect(centre.settleFailed)
+
+        centre.clear()
+        #expect(!centre.settleFailed)
+    }
+
     // MARK: - T-344: the circle toggles settled, not done
 
     @Test func theCircleRestoresACancelledTaskRatherThanCompletingIt() throws {
@@ -85,7 +220,7 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
         context.insert(task)
         try context.save()
 
-        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
+        try CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
 
         #expect(task.status == .todo)
         #expect(task.completedAt == nil)
@@ -100,7 +235,7 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
         context.insert(task)
         try context.save()
 
-        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
+        try CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
 
         #expect(task.status == .todo)
         #expect(task.completedAt == nil)
@@ -116,7 +251,7 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
             context.insert(task)
             try context.save()
 
-            CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
+            try CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
 
             #expect(task.status == .done)
             #expect(task.completedAt != nil)
@@ -140,7 +275,7 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
             sawFinished = sawFinished || wasFinished
             sawOpen = sawOpen || !wasFinished
 
-            CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
+            try CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
 
             #expect(
                 task.status == (wasFinished ? .todo : .done),
@@ -167,7 +302,7 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
         context.insert(task)
         try context.save()
 
-        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
+        try CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
 
         let all = try context.fetch(FetchDescriptor<AppTask>())
         #expect(task.status == .todo)

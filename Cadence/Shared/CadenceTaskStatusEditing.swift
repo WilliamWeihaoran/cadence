@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SwiftData
 
 /// The app-side wrapper every user-facing **status** change to a task goes through: it performs the
@@ -51,12 +52,30 @@ enum CadenceTaskStatusEditing {
 
     /// The completion circle and every swipe / card / row that flips one task between done and
     /// todo.
+    ///
+    /// **It catches rather than rethrows, and records the refusal (T-636).** The mutation under it
+    /// throws now, but the six surfaces that reach this are three cards, two sheets and a
+    /// `[CadenceSwipeAction]` built by a `static func` with no view state at all — so "let the
+    /// caller name the failure where the user is already looking" cannot mean six copies of an
+    /// alert, and for the swipe it cannot mean anything. macOS answered the identical question the
+    /// identical way in T-628: `TaskCompletionAnimationManager.settleFailed` is read by
+    /// `macOSRootView`, once, because a notice owned by any one surface is missing from the rest.
+    ///
+    /// **Nothing is reconciled on the failure path.** `commitSettle` has already put the status,
+    /// the timestamp and the successor back, so there is no transition for the notification
+    /// reconcile to act on — and reconciling anyway would retire a reminder for work that is still
+    /// open.
     static func toggleCompletion(
         _ task: AppTask,
         in context: ModelContext,
         reconciler: CadenceWindDownReconciler? = nil
     ) {
-        CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
+        do {
+            try CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context)
+        } catch {
+            CadenceTaskSettleFailureCenter.shared.record()
+            return
+        }
         reconcile(context, reconciler)
     }
 
@@ -96,4 +115,29 @@ enum CadenceTaskStatusEditing {
     private static func reconcile(_ context: ModelContext, _ reconciler: CadenceWindDownReconciler?) {
         (reconciler ?? .default).run(in: context)
     }
+}
+
+/// Where a refused **settle** is recorded so one surface can name it (T-636).
+///
+/// iOS's answer to macOS's `TaskCompletionAnimationManager.settleFailed`, and beside
+/// `CadenceTaskStatusEditing` rather than in a file of its own because the wrapper above is the
+/// only party that may write it: a second writer would be a second answer to "did that tick land".
+///
+/// It carries a flag rather than an error, and that is a claim about what there is to say. Every
+/// refusal it can hold has already been undone by `CadenceTaskMutationSupport.commitSettle`, so the
+/// circle the user is looking at has re-drawn open on its own and the only thing left to add is the
+/// sentence `CadencePendingChangePersistence.editFailureNotice` already spells, under the title
+/// `CadenceTaskMutationSupport.settleFailureAlertTitle` macOS already shows.
+@MainActor
+@Observable
+final class CadenceTaskSettleFailureCenter {
+    static let shared = CadenceTaskSettleFailureCenter()
+
+    private(set) var settleFailed = false
+
+    private init() {}
+
+    func record() { settleFailed = true }
+
+    func clear() { settleFailed = false }
 }

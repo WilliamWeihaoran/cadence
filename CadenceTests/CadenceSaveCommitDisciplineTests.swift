@@ -1053,7 +1053,12 @@ enum CadenceSaveCommitRule {
         // `CadenceTaskRecurrenceWorkflowSupport.markDone` → `spawnNextOccurrenceIfNeeded`, which
         // inserts the successor. Every surface that ticks a checkbox over a swallowed save is one
         // of these, and they must be fixed together or the spine grows a second answer.
-        "Cadence/Shared/CadenceTaskMutationSupport.swift": ["setStatus", "toggleCompletion"],
+        //
+        // `toggleCompletion` left this list with T-636(a): it commits through `commitSettle` and
+        // throws, and `CadenceTaskStatusEditing` names the refusal on
+        // `CadenceTaskSettleFailureCenter`. `setStatus` is the same shape and is still here,
+        // because its surfaces are two files another change owns.
+        "Cadence/Shared/CadenceTaskMutationSupport.swift": ["setStatus"],
         "Cadence/Shared/CadenceFocusPlanningSupport.swift": ["complete"],
         "Cadence/macOS/Views/ListNotesSupportViews.swift": ["toggleEmbeddedTask"],
         "Cadence/macOS/Views/NoteEditorPane.swift": ["toggleEmbeddedTask"],
