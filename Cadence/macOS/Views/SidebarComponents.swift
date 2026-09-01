@@ -96,11 +96,12 @@ struct ContextSection: View {
     /// Already bucketed and already sorted, by `CadenceSidebarLists.sections`.
     let entries: [SidebarListEntry]
     @Binding var selection: SidebarItem?
-    /// `nil` on the catch-all section, which belongs to no context and so has nothing to create a
-    /// list *in*. Every other header keeps its "+": on macOS that button is the only way to make a
+    /// Every header has one, the catch-all included since T-559 made `CreateListSheet`'s context
+    /// optional — before that it was `(() -> Void)?` and `nil` there, because the sheet could not
+    /// be opened without a context to open it in. On macOS this button is the only way to make a
     /// list in a given context, which is also why an empty context still gets a section here and
     /// gets none on iPad.
-    let onAddList: (() -> Void)?
+    let onAddList: () -> Void
     @Environment(\.modelContext) private var modelContext
     @State private var areaForEdit: Area? = nil
     @State private var projectForEdit: Project? = nil
@@ -122,19 +123,17 @@ struct ContextSection: View {
 
                 Spacer(minLength: SidebarMetrics.listTrailingGap)
 
-                if let onAddList {
-                    Button(action: onAddList) {
-                        Image(systemName: "plus")
-                            .font(.system(size: SidebarMetrics.contextAddIconSize, weight: .semibold))
-                            .foregroundStyle(Theme.dim.opacity(0.8))
-                            .frame(
-                                width: SidebarMetrics.contextAddButtonSize,
-                                height: SidebarMetrics.contextAddButtonSize
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.cadencePlain)
+                Button(action: onAddList) {
+                    Image(systemName: "plus")
+                        .font(.system(size: SidebarMetrics.contextAddIconSize, weight: .semibold))
+                        .foregroundStyle(Theme.dim.opacity(0.8))
+                        .frame(
+                            width: SidebarMetrics.contextAddButtonSize,
+                            height: SidebarMetrics.contextAddButtonSize
+                        )
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.cadencePlain)
             }
             .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
             .padding(.top, SidebarMetrics.contextHeaderTopPadding)
@@ -162,7 +161,7 @@ struct ContextSection: View {
                         }
                     }
                 }
-            } else if let onAddList {
+            } else {
                 Button(action: onAddList) {
                     // Starts on the same x as a list name would, so an empty context and a
                     // populated one share a left edge.

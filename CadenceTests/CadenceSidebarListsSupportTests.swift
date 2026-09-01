@@ -235,8 +235,9 @@ struct CadenceSidebarListsSupportTests {
         #expect(dropped.map(\.title) == ["Work"])
     }
 
-    /// `keepingEmptyContexts` is about *contexts*. The catch-all has no control to offer under any
-    /// spelling, so an empty one is still a word over nothing.
+    /// `keepingEmptyContexts` is about *contexts*. The catch-all draws a "+" on macOS since T-559,
+    /// but it only pre-selects "No context" in a sheet every other header reaches too, so an empty
+    /// one is still a word over nothing.
     @Test func theCatchAllIsNeverKeptEmptyEvenWhereEmptyContextsAre() {
         let sections = CadenceSidebarLists.sections(
             contexts: [work, home],
@@ -423,7 +424,9 @@ struct CadenceSidebarListsSupportTests {
         #expect(components.contains("struct ContextSection: View {"))
 
         #expect(components.contains("let entries: [SidebarListEntry]"))
-        #expect(components.contains("let onAddList: (() -> Void)?"))
+        // Non-optional since T-559: the catch-all header carries a "+" too, now that
+        // `CreateListSheet` can be opened on no context at all.
+        #expect(components.contains("let onAddList: () -> Void"))
         #expect(components.contains("var sidebarListItem: CadenceSidebarLists.Item"))
 
         // The three pre-T-538 spellings, each of which reintroduces the defect on its own.

@@ -9,7 +9,9 @@ struct EditAreaSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
+    @Query(sort: \Context.order) private var contexts: [Context]
 
+    @State private var selectedContextID: UUID?
     @State private var name: String
     /// `Area.desc`. Loaded and saved raw, the way iOS's list editor does it — see `applyEdits()`.
     @State private var details: String
@@ -27,6 +29,7 @@ struct EditAreaSheet: View {
 
     init(area: Area) {
         self.area = area
+        _selectedContextID = State(initialValue: area.context?.id)
         _name = State(initialValue: area.name)
         _details = State(initialValue: area.desc)
         _selectedColor = State(initialValue: area.colorHex)
@@ -58,6 +61,9 @@ struct EditAreaSheet: View {
             )
 
             TaskInspectorRecessedGroup {
+                ListEditorContextRow(contexts: contexts, selectedID: $selectedContextID)
+                TaskInspectorFieldDivider()
+
                 if calendarManager.isAuthorized {
                     ListEditorCalendarRow(
                         calendars: calendarManager.availableCalendars,
@@ -116,6 +122,20 @@ struct EditAreaSheet: View {
     /// platforms round-trip a description byte for byte; T-332's `.whitespaces` /
     /// `.whitespacesAndNewlines` split is about the *name* fields and is left alone here.
     private func applyEdits() {
+        // **T-559.** Moving the list has to move its tasks. `AppTask.context` is a denormalized
+        // copy of the list's, and SwiftData does not re-point copies, so an area that changes
+        // owner without this leaves every task in it *in* the list and *out* of the context. That
+        // is T-293, which iOS's editor already had to fix; giving this sheet a context control
+        // without the re-point would have shipped the same bug a second time.
+        //
+        // Guarded on an actual change because the reassignment writes every task the area owns —
+        // including, by `inheritedContextTargets`, those of child projects with no context of
+        // their own — and an ordinary rename has no business dirtying them.
+        let contextChanged = area.context?.id != selectedContextID
+        area.context = selectedContext
+        if contextChanged {
+            CadenceTaskMutationSupport.reassignInheritedContext(area: area)
+        }
         area.name = CadenceTitleNormalization.normalized(name)
         area.desc = details
         area.colorHex = selectedColor
@@ -140,10 +160,11 @@ struct EditAreaSheet: View {
     /// has to sit under a commit that can fail.
     ///
     /// The undo is a field snapshot, never `modelContext.rollback()` — `CadenceListEditSnapshot`
-    /// holds the measurement that rules the rollback out. No tasks are passed: `applyEdits()`
-    /// writes the area's own fields and nothing else.
+    /// holds the measurement that rules the rollback out. The only tasks it carries are the ones a
+    /// *changed* context re-points (T-559); on every other save `contextChangeTargets` is empty,
+    /// because `applyEdits()` then writes the area's own fields and nothing else.
     private func saveEdits() {
-        let undo = CadenceListEditSnapshot(area)
+        let undo = CadenceListEditSnapshot(area, tasks: contextChangeTargets)
         applyEdits()
         do {
             try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
@@ -163,6 +184,7 @@ struct EditAreaSheet: View {
         let undo = CadenceListEditSnapshot(
             area,
             tasks: TaskContainerLifecycleService.remainingActiveTasks(in: area, includingChildProjects: true)
+                + contextChangeTargets
         )
         applyEdits()
         switch choice {
@@ -190,6 +212,22 @@ struct EditAreaSheet: View {
         dismiss()
     }
 
+    private var selectedContext: Context? {
+        guard let selectedContextID else { return nil }
+        return contexts.first { $0.id == selectedContextID }
+    }
+
+    /// The tasks `applyEdits()` is about to re-point, or none when the context has not moved.
+    ///
+    /// Empty on an ordinary save, deliberately: snapshotting every task in a list costs a
+    /// `CadenceTaskFieldSnapshot` each, and a save that does not touch them has nothing to put
+    /// back. `apply(_:)` concatenates this with the set it settles and the two overlap; that is
+    /// fine, and `CadenceListEditSnapshot` says why.
+    private var contextChangeTargets: [AppTask] {
+        guard area.context?.id != selectedContextID else { return [] }
+        return CadenceTaskMutationSupport.inheritedContextTargets(area: area)
+    }
+
     /// T-291: the cascade's `false` and a refused save were both being saved over and dismissed
     /// through, so a delete that did not happen closed the sheet and reported nothing. Now the
     /// dismissal *is* the report of success, and a failure keeps the sheet on screen holding the
@@ -215,7 +253,9 @@ struct EditProjectSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
+    @Query(sort: \Context.order) private var contexts: [Context]
 
+    @State private var selectedContextID: UUID?
     @State private var name: String
     /// `Project.desc`. Loaded and saved raw — same rule as `EditAreaSheet`.
     @State private var details: String
@@ -234,6 +274,7 @@ struct EditProjectSheet: View {
 
     init(project: Project) {
         self.project = project
+        _selectedContextID = State(initialValue: project.context?.id)
         _name = State(initialValue: project.name)
         _details = State(initialValue: project.desc)
         _selectedColor = State(initialValue: project.colorHex)
@@ -278,6 +319,9 @@ struct EditProjectSheet: View {
             )
 
             TaskInspectorRecessedGroup {
+                ListEditorContextRow(contexts: contexts, selectedID: $selectedContextID)
+                TaskInspectorFieldDivider()
+
                 TaskInspectorDateControl(
                     label: "Due",
                     reservesIconSlot: false,
@@ -340,7 +384,16 @@ struct EditProjectSheet: View {
         }
     }
 
+    /// Same rule as `EditAreaSheet.applyEdits()`, same reason (T-559/T-293). A project reads its
+    /// context through `resolvedContext` — its own if set, otherwise its area's — so clearing this
+    /// row does not orphan its tasks, it hands them back to the area's context. There is no cascade
+    /// on this branch: nothing inherits from a project.
     private func applyEdits() {
+        let contextChanged = project.context?.id != selectedContextID
+        project.context = selectedContext
+        if contextChanged {
+            CadenceTaskMutationSupport.reassignInheritedContext(project: project)
+        }
         project.name = CadenceTitleNormalization.normalized(name)
         project.desc = details
         project.colorHex = selectedColor
@@ -359,7 +412,7 @@ struct EditProjectSheet: View {
     /// fields `applyEdits()` writes, and the snapshot holds it for the same reason it holds the
     /// rest.
     private func saveEdits() {
-        let undo = CadenceListEditSnapshot(project)
+        let undo = CadenceListEditSnapshot(project, tasks: contextChangeTargets)
         applyEdits()
         do {
             try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
@@ -375,7 +428,7 @@ struct EditProjectSheet: View {
         // Same set the settle walks, for the same reason as `EditAreaSheet.apply(_:)`.
         let undo = CadenceListEditSnapshot(
             project,
-            tasks: TaskContainerLifecycleService.remainingActiveTasks(in: project)
+            tasks: TaskContainerLifecycleService.remainingActiveTasks(in: project) + contextChangeTargets
         )
         applyEdits()
         switch choice {
@@ -399,6 +452,17 @@ struct EditProjectSheet: View {
         }
         saveFailureNotice = nil
         dismiss()
+    }
+
+    private var selectedContext: Context? {
+        guard let selectedContextID else { return nil }
+        return contexts.first { $0.id == selectedContextID }
+    }
+
+    /// Same contract as `EditAreaSheet.contextChangeTargets`.
+    private var contextChangeTargets: [AppTask] {
+        guard project.context?.id != selectedContextID else { return [] }
+        return CadenceTaskMutationSupport.inheritedContextTargets(project: project)
     }
 
     /// Same as `EditAreaSheet.deleteArea()`, same reason.

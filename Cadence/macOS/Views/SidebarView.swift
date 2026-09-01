@@ -30,7 +30,7 @@ struct SidebarView: View {
 
     @Environment(GlobalSearchManager.self) private var globalSearchManager
 
-    @State private var contextForNewList: Context? = nil
+    @State private var newListTarget: SidebarNewListTarget? = nil
 
     /// Built once per render and handed to both groups. Each tally is one pass over the task
     /// list; this used to build two `CadenceFeatureBadgeSupport.Snapshot`s — three passes each —
@@ -87,8 +87,8 @@ struct SidebarView: View {
                 .fill(Theme.borderSubtle)
                 .frame(width: 1)
         }
-        .sheet(item: $contextForNewList) { ctx in
-            CreateListSheet(context: ctx)
+        .sheet(item: $newListTarget) { target in
+            CreateListSheet(context: target.context)
         }
     }
 
@@ -207,8 +207,15 @@ struct SidebarView: View {
         .frame(maxHeight: .infinity)
     }
 
-    /// The catch-all section gets no "+": it stands for no context, so there is nothing for
-    /// `CreateListSheet` — which requires one — to be opened *in*.
+    /// **Every header carries a "+", the catch-all included (T-559).** It used to be the one
+    /// exception, and the reason given was true at the time: `CreateListSheet` took a non-optional
+    /// `Context`, so there was nothing for it to be opened *in*. That sheet takes an optional now
+    /// and states the context in a row you can change, so the catch-all's "+" opens it already on
+    /// "No context" instead of making the user open some unrelated context's "+" and clear the row.
+    ///
+    /// It is not the *only* route to a context-less list — the row in the sheet is reachable from
+    /// every header — and it cannot be, because this section is drawn only when it already has rows
+    /// in it. It is the route that reads as one.
     private func contextSection(
         _ section: CadenceSidebarLists.ElementSection<SidebarListEntry>
     ) -> some View {
@@ -217,7 +224,7 @@ struct SidebarView: View {
             title: section.title,
             entries: section.elements,
             selection: $selection,
-            onAddList: owner.map { context in { contextForNewList = context } }
+            onAddList: { newListTarget = SidebarNewListTarget(context: owner) }
         )
     }
 
@@ -279,6 +286,18 @@ struct SidebarView: View {
             )
         }
     }
+}
+
+/// What the sidebar's "+" opens `CreateListSheet` on.
+///
+/// A wrapper rather than a bare `Context?`, because `.sheet(item:)` needs something `Identifiable`
+/// and the catch-all's target *is* "no context" rather than "nothing to present". Its `id` is the
+/// same `CadenceSidebarLists.Section.ungroupedID` the section itself uses, so the two spellings of
+/// "the leftovers" cannot drift apart.
+struct SidebarNewListTarget: Identifiable {
+    let context: Context?
+
+    var id: String { context?.id.uuidString ?? CadenceSidebarLists.Section.ungroupedID }
 }
 
 #endif

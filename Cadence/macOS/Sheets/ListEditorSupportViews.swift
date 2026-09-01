@@ -11,10 +11,15 @@ import EventKit
 ///
 /// The footer has a leading slot for whole-list lifecycle actions (Archive, Delete). Those live
 /// here, not in the field well, so a destructive action never shares a surface with a routine one.
+///
+/// **The eyebrow has no right-hand note any more (T-559).** It carried one string, `CreateListSheet`'s
+/// "in Work", back when the context a list was being made in was fixed by whichever "+" you clicked
+/// and the sheet had no way to say otherwise. Every list sheet now draws `ListEditorContextRow`, so
+/// the context is stated by the control that sets it. Keeping the note would have meant answering
+/// "what does it say when there is no context", and the honest answer is that the eyebrow should
+/// never have been the thing saying it.
 struct ListEditorSheetShell<Content: View, FooterLeading: View>: View {
     let title: String
-    /// Right-hand note in the eyebrow, e.g. "in Work".
-    var titleTrailing: String? = nil
     let confirmTitle: String
     let isConfirmDisabled: Bool
     let onConfirm: () -> Void
@@ -27,18 +32,11 @@ struct ListEditorSheetShell<Content: View, FooterLeading: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             // The sheet's own name is an eyebrow, not a heading: the thing you actually read at the
             // top is the list you are editing, typed into the header below.
-            HStack(spacing: 8) {
-                SectionEyebrowLabel(text: title)
-                Spacer(minLength: 0)
-                if let titleTrailing {
-                    Text(titleTrailing)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 18)
-            .padding(.bottom, 10)
+            SectionEyebrowLabel(text: title)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 18)
+                .padding(.bottom, 10)
 
             VStack(alignment: .leading, spacing: 14) {
                 content
@@ -73,7 +71,6 @@ struct ListEditorSheetShell<Content: View, FooterLeading: View>: View {
 extension ListEditorSheetShell where FooterLeading == EmptyView {
     init(
         title: String,
-        titleTrailing: String? = nil,
         confirmTitle: String,
         isConfirmDisabled: Bool,
         onConfirm: @escaping () -> Void,
@@ -81,7 +78,6 @@ extension ListEditorSheetShell where FooterLeading == EmptyView {
     ) {
         self.init(
             title: title,
-            titleTrailing: titleTrailing,
             confirmTitle: confirmTitle,
             isConfirmDisabled: isConfirmDisabled,
             onConfirm: onConfirm,
@@ -326,6 +322,62 @@ struct ListEditorCheckRow: View {
         .buttonStyle(.plain)
         .modifier(InspectorPickerHover(cornerRadius: TaskInspectorFieldRowMetrics.hoverCornerRadius))
         .accessibilityValue(isOn ? "On" : "Off")
+    }
+}
+
+// MARK: - Context row
+
+/// **T-559.** Which context a list is filed in, as a field row in every macOS list sheet.
+///
+/// Before this row existed the Mac could not put a list in "no context" and could not take one out
+/// of a context either: `CreateListSheet` took a non-optional `Context` decided by whichever
+/// sidebar "+" opened it, and the two edit sheets had no context control at all. iOS's list editor
+/// offers a "None" row in new and edit mode alike, so a context-less list arrives on the Mac by
+/// sync — and after T-534, T-538 and T-558 the Mac can finally *see* every one of them under
+/// "Other". This is the other half: seeing a row you cannot correct is not much better than not
+/// seeing it.
+///
+/// The list under the popover is `CadenceContextPickerList`, unchanged — the archive rule, the
+/// "show the assigned one even when it is no longer offerable" rule, the sort and the untitled
+/// fallback are `CadenceContextPickerSupport`'s and are not respelled here. The row's *value* is
+/// read from the same helper as the popover's rows, which is the agreement T-446 exists to keep:
+/// a trigger and a menu that resolve the selection separately are how a picker comes to show
+/// "None" over a context it is about to save.
+struct ListEditorContextRow: View {
+    let contexts: [Context]
+    @Binding var selectedID: UUID?
+
+    @State private var showPicker = false
+
+    /// The same words the picker's own "none" row uses, so the row does not rename the thing the
+    /// user is about to tap.
+    static let noneTitle = "No context"
+
+    var body: some View {
+        TaskInspectorFieldButtonRow(
+            label: "Context",
+            reservesIconSlot: false,
+            valueText: CadenceContextPickerSupport.selectionTitle(
+                from: contexts,
+                selectedID: selectedID,
+                noneTitle: Self.noneTitle
+            ),
+            isSet: selectedID != nil
+        ) {
+            showPicker.toggle()
+        }
+        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+            ScrollView {
+                CadenceContextPickerList(
+                    contexts: contexts,
+                    selectedID: $selectedID,
+                    onPick: { showPicker = false }
+                )
+            }
+            .frame(width: 260)
+            .frame(maxHeight: 320)
+            .background(Theme.surface)
+        }
     }
 }
 

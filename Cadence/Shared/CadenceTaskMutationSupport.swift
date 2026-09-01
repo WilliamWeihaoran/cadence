@@ -353,6 +353,33 @@ enum CadenceTaskMutationSupport {
         return nil
     }
 
+    /// **Exactly the tasks `reassignInheritedContext` writes**, for the list it would be given.
+    ///
+    /// A caller that has to be able to *undo* the reassignment must snapshot the same set, and the
+    /// set is not `area.tasks`: the cascade in `reassignInheritedContext` below reaches the tasks
+    /// of every child project that has no context of its own. Deriving it at the call site is how
+    /// that half gets missed, so it is derived here and the pairing is pinned by
+    /// `CadenceContextlessListSurfaceTests.reassigningAnInheritedContextWritesExactlyTheTargetsItAnnounces`.
+    static func inheritedContextTargets(area: Area? = nil, project: Project? = nil) -> [AppTask] {
+        var targets = area?.tasks ?? []
+        targets += project?.tasks ?? []
+        guard let area else { return targets }
+        for child in area.projects ?? [] where child.context == nil {
+            targets += child.tasks ?? []
+        }
+        return targets
+    }
+
+    /// The reassignment over its own targets, for a caller that has no reason to name a narrower
+    /// set than "everything this change reaches".
+    static func reassignInheritedContext(area: Area? = nil, project: Project? = nil) {
+        reassignInheritedContext(
+            in: inheritedContextTargets(area: area, project: project),
+            area: area,
+            project: project
+        )
+    }
+
     /// Re-points the denormalized `AppTask.context` of every task already in a list, after the
     /// list itself changed owner.
     ///

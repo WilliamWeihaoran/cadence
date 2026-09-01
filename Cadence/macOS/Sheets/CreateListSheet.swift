@@ -2,12 +2,24 @@
 import SwiftUI
 import SwiftData
 
+/// **`context` is optional (T-559).** It was a non-optional `Context`, decided entirely by which
+/// sidebar "+" opened the sheet, and the eyebrow said "in \(context.name)" — so the one list state
+/// the Mac could already *see* under "Other" after T-534/T-538/T-558 was the one it could not make.
+/// `Area.context` and `Project.context` are both optional and iOS writes `nil` there from a "None"
+/// row in every mode; there was no reason but this sheet for the Mac to be unable to.
+///
+/// The argument is now the context the sheet *opens on* rather than the context it creates in:
+/// `ListEditorContextRow` states it and changes it, and `nil` — from the catch-all header's "+" —
+/// simply opens on "No context".
 struct CreateListSheet: View {
-    let context: Context
-
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
+    @Query(sort: \Context.order) private var contexts: [Context]
+    @Query private var areas: [Area]
+    @Query private var projects: [Project]
+
+    @State private var selectedContextID: UUID?
     @State private var name = ""
     /// The list's `desc`. Written raw, exactly as iOS's list editor writes it — see `create()`.
     @State private var details = ""
@@ -19,6 +31,13 @@ struct CreateListSheet: View {
     @State private var hideDueDateIfEmpty = true
     @State private var hideSectionDueDateIfEmpty = true
     @State private var createFailureNotice: String?
+
+    /// `context` seeds the row and is not kept: after this initializer the sheet's answer to
+    /// "which context" is `selectedContextID`, and a second source for it is a second thing to
+    /// disagree with the control.
+    init(context: Context?) {
+        _selectedContextID = State(initialValue: context?.id)
+    }
 
     enum ListType: String, CaseIterable {
         case area = "Area"
@@ -54,7 +73,6 @@ struct CreateListSheet: View {
     var body: some View {
         ListEditorSheetShell(
             title: "New List",
-            titleTrailing: "in \(context.name)",
             confirmTitle: "Create",
             isConfirmDisabled: CadenceTitleNormalization.isBlank(name),
             onConfirm: create
@@ -78,6 +96,9 @@ struct CreateListSheet: View {
             )
 
             TaskInspectorRecessedGroup {
+                ListEditorContextRow(contexts: contexts, selectedID: $selectedContextID)
+                TaskInspectorFieldDivider()
+
                 if listType == .project {
                     TaskInspectorDateControl(
                         label: "Due",
@@ -126,7 +147,7 @@ struct CreateListSheet: View {
         let inserted: any PersistentModel
         switch listType {
         case .area:
-            let area = Area(name: trimmed, context: context, colorHex: selectedColor, icon: selectedIcon)
+            let area = Area(name: trimmed, context: selectedContext, colorHex: selectedColor, icon: selectedIcon)
             area.desc = details
             area.order = nextListOrder
             area.hideDueDateIfEmpty = hideDueDateIfEmpty
@@ -134,7 +155,7 @@ struct CreateListSheet: View {
             modelContext.insert(area)
             inserted = area
         case .project:
-            let project = Project(name: trimmed, context: context, colorHex: selectedColor)
+            let project = Project(name: trimmed, context: selectedContext, colorHex: selectedColor)
             project.desc = details
             project.icon = selectedIcon
             project.order = nextListOrder
@@ -154,10 +175,23 @@ struct CreateListSheet: View {
         dismiss()
     }
 
+    private var selectedContext: Context? {
+        guard let selectedContextID else { return nil }
+        return contexts.first { $0.id == selectedContextID }
+    }
+
+    /// One past the highest `order` among the lists the new one will sit beside.
+    ///
+    /// Read off the flat queries and an **optional-to-optional** comparison rather than off
+    /// `context.areas` / `context.projects`, which is the whole point: the relationship can only be
+    /// walked from a context that exists, so the no-context case had no siblings to number against
+    /// and every context-less list would have been created at 0. `nil == nil` is the unfiled bucket,
+    /// spelled the same way as the filed one.
     private var nextListOrder: Int {
-        let areaOrders = (context.areas ?? []).map(\.order)
-        let projectOrders = (context.projects ?? []).map(\.order)
-        return ((areaOrders + projectOrders).max() ?? -1) + 1
+        let selected = selectedContextID
+        var orders = areas.filter { $0.context?.id == selected }.map(\.order)
+        orders += projects.filter { $0.context?.id == selected }.map(\.order)
+        return (orders.max() ?? -1) + 1
     }
 }
 

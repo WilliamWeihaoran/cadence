@@ -30,6 +30,13 @@ import SwiftData
 /// settle only `TaskContainerLifecycleService.remainingActiveTasks`. Each hands over the set it is
 /// about to write to, so nothing is snapshotted that was never touched and nothing touched is
 /// missed.
+///
+/// **A task may legitimately appear twice (T-559).** macOS's edit sheets hand over two overlapping
+/// sets in one save — the tasks a context change re-points, and the ones a lifecycle choice settles
+/// — and concatenating them is the natural spelling at both call sites. Every snapshot in one
+/// initializer is taken before any write, so two of the same task hold the same values and
+/// restoring twice is exactly restoring once. De-duplicating would be code with no observable
+/// effect, which is worse than the duplication.
 struct CadenceListEditSnapshot {
     private let area: Area?
     private let project: Project?
