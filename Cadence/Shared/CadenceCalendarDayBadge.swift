@@ -57,7 +57,12 @@ enum CadenceCalendarDayBadge: Hashable, CaseIterable {
     }
 
     /// The circle behind the day number.
-    enum Fill: Hashable {
+    /// `nonisolated` because the project builds with `-default-isolation=MainActor`, so without it
+    /// this enum's `Hashable`/`Equatable` conformance is main-actor-isolated — and a `#expect`
+    /// comparing two `Fill`s from a nonisolated test context expands into a warning. Same shape as the
+    /// `TaskContainerSelection` fix: a pure value type that never touches UI state has no reason to be
+    /// isolated, and the isolation is inherited by default rather than chosen.
+    nonisolated enum Fill: Hashable {
         /// Whatever the grid's resting cell looks like — no accent at all.
         case none
         /// `Theme.blue` at `washOpacity`.

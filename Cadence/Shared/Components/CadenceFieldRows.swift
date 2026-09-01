@@ -35,7 +35,10 @@ enum CadenceSettingsRowMetrics {
 }
 
 /// How a field group separates itself from the one above.
-enum CadenceFieldSectionStyle {
+/// `nonisolated` for the same reason as `CadenceCalendarDayBadge.Fill`: default MainActor isolation
+/// makes its synthesised `Equatable` main-actor-isolated, which warns when a test compares two values
+/// from a nonisolated context. It is a style tag with no state.
+nonisolated enum CadenceFieldSectionStyle {
     /// Fields sit on a raised card. The default, and what every full-screen editor and settings
     /// pane uses.
     case card
