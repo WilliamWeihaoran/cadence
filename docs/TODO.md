@@ -896,15 +896,24 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   that is structurally unable to. Either drop them for `priority.rank` at the four call sites, or
   make them internal so the loop can name them — the second is cheaper and keeps the local spelling.
 
-- [T-608] **Converge macOS Today's row block onto `TaskListInteractiveRow`.** Proposed by the T-593
-  agent, deliberately not done. The Today block in `TasksPanelSectionViews` is a line-for-line
-  re-implementation of `TaskListInteractiveRow` (`ListDetailSupportViews.swift:307`) — draggable,
-  dropDestination, top indicator, 0.15s animation, same asymmetric transition — and the shared one
-  **already takes `leadingInset`/`trailingInset` as parameters**, so passing `leadingInset: 16` would
-  delete ~20 lines outright. The only real difference is `MacTaskRow`'s `.opacity(opacity)` on the
-  dimmed Completed group, which needs one more parameter.
-  Sequencing: this is safe to do after [[T-591]] landed, and it overlaps [[T-564]]'s drop-coordinator
-  question — do them together or decide T-564 first, but do not restructure the same code twice.
+- [T-680] **Three `allTasks` parameters are threaded into section views that never read them.**
+  Found during [[T-608]]. `TasksPanelCompletedSectionView.allTasks`
+  (`Cadence/macOS/Views/TasksPanelSectionViews.swift`), `ListTasksGroupSectionView.allTasks` and
+  `ListTasksCompletedSectionView.allTasks` (`Cadence/macOS/Views/ListDetailSupportViews.swift`) are
+  stored properties no body mentions. Swift does not warn on an unread stored property, so all three
+  are invisible: `TasksPanel.swift` and `ListDetailComponents.swift` hand over the whole task array
+  on every render for nothing. Deleting them touches four files and no behaviour.
+  Not done inside T-608, which was scoped to the row block, and [[T-564]] is queued over two of the
+  same call sites.
+
+- [T-681] **Today's section header carries `List` row modifiers inside a `LazyVStack`.** Found during
+  [[T-608]]. `TasksPanelIntentSectionView`'s header chains `.listRowBackground(Color.clear)` and
+  `.listRowSeparator(.hidden)`, but `TasksPanel` draws its sections in a
+  `ScrollView { LazyVStack(pinnedViews: .sectionHeaders) }`, where both are no-ops. (The same two
+  modifiers *are* load-bearing inside `TaskListDisplayRow`, whose other caller
+  `ListDetailComponents` really does use a `List` — so this is not a case for deleting them there.)
+  Harmless, but it is chrome asserting the container is something it is not, and it is the kind of
+  line the next section view copies. Check `TasksPanel`'s overdue card stacks for the same shape.
 
 - [T-609] **25 sites still hand-spell an empty-title fallback instead of using the shared helper.**
   Split from [[T-569]], which fixed the four calendar sites and **measured** the remainder rather than
@@ -1429,6 +1438,29 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   in `docs/SUBAGENT_RUNBOOK.md` beside the shared-file guidance.
 
 ## Done
+
+- [T-608] **CLOSED 2026-09-02, `0d16896`.** The intent groups call `TaskListInteractiveRow` and the
+  Completed group calls `TaskListDisplayRow` plus a `.draggable` — the shape
+  `TasksListCompletedSectionView` already uses on All Tasks. `MacTaskRow` is now constructed at
+  **exactly one site in the app**, inside `TaskListDisplayRow`.
+  **It was not quite a copy, and the difference was a defect.** Today overlaid the drop indicator on
+  the *unpadded* row and padded the result, so the 2pt bar was inset twice: 32pt from the pane's
+  leading edge over a row whose content starts at 16. The shared row overlays the padded row. That
+  is the one visible change.
+  **The ticket's `opacity` premise was wrong.** It was declared on the *intent* section, not the
+  Completed group, and `TasksPanel` — its only caller, since the commit that introduced it — never
+  passed it. Dead from the day it shipped, so deleted rather than plumbed into a shared component.
+  Two further differences were enumerated rather than assumed away: `TaskListDisplayRow`'s
+  `.listRow*` modifiers are load-bearing for `ListDetailComponents` (a real `List`) and inert for
+  `TasksPanel` (a `LazyVStack`); and `.draggable`/`.dropDestination` now sit outside the padding, so
+  a row's drop target covers its own gutter, as on the other two surfaces.
+  **[[T-564]] was not reachable and was not touched** — `TasksPanelMode`, its `switch`,
+  `taskSections`, `doneTasks`, `isEmptyState` and `TasksPanelDropCoordinator` are all unchanged.
+  Pinned by `CadenceTodayUnificationTests.todaysRowsAreTheSharedInteractiveRowAtThePanelsOwnInsets`,
+  written so that "the shared row is called" is *not* enough: the shared row's default leading inset
+  is the list detail's 52, so a converged call site that omitted the argument would move every Today
+  row and still pass. 7 mutations, 7 killed, each by that test and no other. Residue filed as
+  [[T-680]] and [[T-681]].
 
 - [T-615] **CLOSED 2026-09-02, `d06be27`.** Decided the second way: the pane keeps "Today Timeline"
   and the hosted panel drops its heading. A page header does not describe the page the user is
