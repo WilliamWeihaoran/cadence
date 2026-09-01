@@ -1118,20 +1118,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `applyStatusCompletion` return the spawned task, threading `commit:`, and deciding what the
   `.todo`/`.inProgress` branch's undo is — it inserts nothing, so it is a `commitEdit`.
 
-- [T-644] **`CadenceSourceScan.functionBody(named:)` reads the wrong span for any declaration with a
-  `commit:` default argument.** Found while landing [[T-636]](a). It takes the first `{` after
-  `func <name>(` as the body — which for
-  `commit: (ModelContext) throws -> Void = { try $0.save() }` is the **default closure**, so the
-  "body" it returns is `try $0.save()` and every `contains(…)` over it is answered by a
-  one-expression closure. Not an error, not a warning: a green assertion over the wrong text, the
-  same family as the `codeOnly` string-blanking trap.
-  `CadenceTaskStatusEditingSurfaceTests.theSharedStatusHelpersStillReconcileNothing` hit it the
-  moment `toggleCompletion` grew that parameter, and is worked around **locally** by stripping
-  `= { try $0.save() }` before the scan. The reader itself is still wrong, and the `commit:` default
-  is now the repo's standard spelling for a committing helper — 20+ declarations carry one.
-  Fix: balance the parameter list before looking for the body (`matchedBody(after:in:open:close:)`
-  already does parentheses), and pin it with a fixture that fails on the current reader.
-
 - [T-657] **The save-commit detector cannot see a success report handed *sideways* one frame down.**
   Found while landing [[T-636]](b), and it is the reason three of [[T-648]]'s four sites are not in
   the ledger. Half 2 already follows the **swallow** one frame down (`indirectReportOffenders`,
@@ -1257,25 +1243,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   wholesale rewrite — and the comment is worth fixing on its own, because it currently tells the
   next reader something measurably false.
 
-- [T-659] **`CadenceCommitSurfaceScan.reportFollowsTheCatch` searches backwards, so a report that
-  runs *both* above and below the failure branch passes it.** VERIFIED 2026-09-01 by a **surviving
-  mutation** while landing [[T-631]] — not by reading.
-  The reader takes `body.range(of: report, options: .backwards)` and compares its offset to the last
-  `catch`. That answers "is *some* occurrence below the failure branch", which is weaker than the
-  question every calling suite means to ask. The mutation that exposed it added a second
-  `newTagName = ""` at the **top** of `iOSTaskTagPickerPopover.addTag` — clearing the field before
-  the guard, which is exactly the defect T-631 fixed — and left the original below the guard. The
-  assertion stayed green.
-  **Five suites read it**: `CadenceTagAndNoteCommitSurfaceTests` (12 call sites),
-  `CadenceCreateSheetCommitSurfaceTests` (8), `CadenceMarkdownImageCommitSurfaceTests` (4),
-  `CadenceNoteMoveCommitTests` (2), `CadenceOrderReassignmentTests` (1). Every one of them is
-  guarding a fixed T-3xx/T-4xx/T-6xx site against exactly this shape of regression.
-  **The fix is one word** — drop `options: .backwards`, so the comparison anchors on the *first*
-  occurrence — plus a fixture that separates the two, which
-  `CadenceInlineTagCommitSurfaceTests.reportFollowsTheRefusal` already carries and is worth copying
-  verbatim. Re-run each calling suite after: a body that legitimately writes its report twice would
-  start failing, and if one exists it is worth knowing about.
-
 - [T-660] **The agent-guide cap is stated in one unit and enforced in another, and it has now cost a
   batch.** `AgentContextBudgetTests.expectLineCount` splits on `"\n"` with
   `omittingEmptySubsequences: false`, so a file ending in a trailing newline — every file here — counts
@@ -1339,7 +1306,82 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the answer. `AppStoreReviewReadinessTests.appInfoPlistContainsReviewReadyPrivacyKeys` reads the
   **file**, so today it is asserting over the copy that may not be the one that ships.
 
+- [T-667] **Nine suites cannot be reached by `-only-testing:` at all, and the repo's own tool hands
+  you the identifier that runs nothing.** Found 2026-09-01 while measuring [[T-644]]'s blast radius:
+  a 52-suite scoped run reported `** TEST SUCCEEDED **` over 593 tests, and **four of the 52 had
+  executed nothing**. Caught only by diffing the `✔ Suite` lines against the requested flags.
+  The four carry `@Suite("display name")`. Measured, both spellings, each on its own:
+  `-only-testing:CadenceTests/ListDetailPageTests` → `Executed 0 tests`, exit 0;
+  `-only-testing:CadenceTests/List detail page resolution` → `Executed 0 tests`, exit 0. In a **full**
+  run the suite does execute, printing `◇ Suite "List detail page resolution" started` — so these are
+  not dead tests, they are tests no scoped run can select.
+  **`scripts/test-suite-index.sh --scope planningResolvesToTasks` answers
+  `-only-testing:CadenceTests/ListDetailPageTests`** — the unusable one. The script reads `struct X`
+  and never looks at the `@Suite` attribute above it, so for these nine it confidently returns the
+  wrong answer, which is worse than no answer: the runbook tells agents to trust it.
+  **`scripts/xcb.sh`'s zero-test guard cannot see this.** It counts results for the whole run, so a
+  suite that contributes nothing inside a multi-suite run is invisible; the guard fires only when a
+  suite is scoped alone. That is the [[T-552]] hazard surviving inside the mitigation for it.
+  The nine: `CadenceCapturePaletteTests`, `CadenceTodayOverdueSummarySurfaceTests`,
+  `CadenceTodayRolloverSurfaceTests`, `CalendarDateMemoryTests`, `CalendarDateMemoryWriterTests`,
+  `CalendarRestoredPositionTests`, `ListDetailPageTests`, `RootModalKeyDispositionTests`,
+  `SectionConfigDecodingTests`.
+  Fix shape, in order of value: (a) find the spelling that *does* select a display-named suite, or
+  establish there is none; (b) teach `test-suite-index.sh` to read the `@Suite` attribute and either
+  emit the working identifier or **refuse**, rather than emitting one that silently runs nothing;
+  (c) a target-wide test that no suite carries a display name, if (a) has no answer — a display name
+  is cosmetic and being scopable is not.
+
+- [T-668] **`cadenceFunctionBody` is a near-copy of the pre-[[T-644]] reader and still has its
+  defect.** Found 2026-09-01 while closing T-644. It lives at global scope in
+  `CadenceTests/FocusPickerPlayControlTests.swift:982`, takes the first `{` after the declaration
+  string, and is used at **83 call sites across 19 files** — so the fix that landed on
+  `CadenceSourceScan.functionBody(named:)` reaches none of them.
+  It has already cost a scan: `CadenceTodayRolloverSurfaceTests.theRollCommitsThroughThePendingChangeUnit`
+  widened to the whole file *because* this reader stops at `rollOver`'s `commit:` default. That is the
+  [[T-374]] shape — a helper copied instead of shared — committed inside the test target.
+  Fix: delete it and route its callers through `CadenceSourceScan`, or, if the arbitrary
+  declaration-prefix argument is load-bearing, give it the same parameter balancing and pin it with
+  the same fixture. Its callers are mostly whole-suite scans, so measure before assuming the change
+  is inert: unlike T-644, some of these 83 sites may be reading a default closure today.
+  Related residue: `CadenceDeleteConfirmationCommitTests` scans `CadenceTaskMutationSupport.swift`
+  whole because the old reader could not read `deleteTasks`. The reader can now; narrowing that scan
+  to the body is a small follow-up, but the needle there spans `processPendingChanges()` **and** the
+  gate, which is a claim about adjacency, so it is not a mechanical swap.
+
 ## Done
+
+- [T-644] **CLOSED 2026-09-01, `d5e3460`.** `functionBody(named:)` balances the parameter list
+  before it looks for the body, through a new `matchedRange(after:in:open:close:)` — `matchedBody`'s
+  span rather than a second matcher, so there is still one brace walker. **The population was 33
+  declarations, not "20+"**: measured by running both readers over every app source. **The blast
+  radius was one test**, also measured rather than assumed — of the 36 files that call
+  `functionBody(named:)`, only `CadenceTaskStatusEditingSurfaceTests.theSharedStatusHelpersStillReconcileNothing`
+  read one of the 33, and it was the one carrying the local workaround. That workaround is gone; with
+  the old reader and no workaround the test fails with *"toggleCompletion's body does not look like
+  the status helper: try $0.save()"*, which is the failing-first proof. 48 of the 52 suites that read
+  either reader re-ran green (593 tests); the other four are [[T-667]].
+  Mutation: `Task { await NotificationManager.shared.cancel(taskIDs: [task.id]) }` at the top of
+  `CadenceTaskMutationSupport.toggleCompletion` — invisible to the old reader, killed by
+  `theSharedStatusHelpersStillReconcileNothing()`.
+  Residue: [[T-668]] — `cadenceFunctionBody` in `FocusPickerPlayControlTests.swift` is a near-copy
+  with the same defect and 83 call sites.
+
+- [T-659] **CLOSED 2026-09-01, `d5e3460`.** The report search dropped `options: .backwards`, so the
+  comparison anchors on the **first** occurrence; the `catch` end stays backwards, because the last
+  failure branch is the strict end of that comparison.
+  **The before/after was measured, not argued.** The same mutation — a `dismiss()` added above the
+  `do`/`catch` in `CreateContextSheet.create`, the T-497 defect exactly — **survived** the old reader
+  (`theContextCreatorClosesOnlyOnACommittedInsert()` passed) and is **killed** by the new one. A
+  second mutation, `isEditing = false` above the catch in `SettingsTagsSection.saveEdits`, is killed
+  by `theInlineTagEditorsCollapseOnlyOnACommittedEdit()`.
+  All five calling suites and all 27 call sites re-ran green, **no pin went red**: no body in the app
+  legitimately writes its report twice. The separating fixture is
+  `CadenceSourceScanReaderTests.theOrderingReaderRefusesAReportWrittenOnBothSidesOfTheFailureBranch`,
+  with per-suite copies in `CadenceTagAndNoteCommitSurfaceTests` and
+  `CadenceCreateSheetCommitSurfaceTests`. `CadenceInlineTagCommitSurfaceTests.reportFollowsTheRefusal`
+  stays: the two readers now ask the same question, and what separates them is the *marker* — a
+  refusal **guard** rather than a `catch`.
 
 - [T-625] **CLOSED 2026-09-01** (`c5d45b3`). A claim-accuracy narrowing, as filed: no product
   change, and the "columns as their own rows" fix was deliberately **not** attempted — it is a new `@Model`
