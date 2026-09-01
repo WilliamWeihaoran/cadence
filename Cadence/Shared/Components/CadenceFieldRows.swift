@@ -111,7 +111,7 @@ private struct CadenceFieldSectionChrome: ViewModifier {
                 .padding(.top, 12)
                 .overlay(alignment: .top) {
                     Rectangle()
-                        .fill(Theme.borderSubtle.opacity(0.35))
+                        .fill(Theme.rowSeparator)
                         .frame(height: 1)
                 }
         }

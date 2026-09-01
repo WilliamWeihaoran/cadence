@@ -360,7 +360,7 @@ private struct iOSCalendarBundleTaskRow: View {
         .padding(.vertical, 11)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.35))
+                .fill(Theme.rowSeparator)
                 .frame(height: 1)
         }
         .contentShape(Rectangle())

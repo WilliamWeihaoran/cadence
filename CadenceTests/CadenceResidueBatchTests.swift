@@ -1,6 +1,7 @@
 import EventKit
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -306,5 +307,72 @@ struct IOSTaskDetailSheetResidueTests {
         let sheet = try sheetSource()
         #expect(sheet.contains("iOSTaskStatusActionsSection(task: task)"),
                 "the status well moved out of the sheet, so the routing assertions prove nothing")
+    }
+}
+
+/// **T-618.** `Theme.borderSubtle.opacity(0.35)` is this app's row-separator hairline, and it was
+/// typed out at four sites across three trees: a shared field section's top rule, an iOS subtask
+/// row, an iOS schedule row and an iOS block-detail row.
+///
+/// T-595 read the same four and left them alone because they **agree** — it called the repetition a
+/// genuine agreement rather than drift, which was right about the pixels and wrong about the name.
+/// Four sites already agreeing is the argument *for* a constant: `Theme.rowSeparator` records a
+/// decision four rows have already made, so the fifth row reads it instead of guessing `0.35`, and
+/// a deliberate change to the weight is one edit rather than a sweep.
+///
+/// **The fifth `0.35` in the tree is deliberately not one of these**, and finding that out is half
+/// the ticket. `FocusPickerSupportViews` strokes a card's *resting border* at the same alpha, as
+/// the unhovered arm of a hover pair. Same number, different job: folding it in would couple a
+/// hover state to a separator weight, and the next person to retune the rule between two rows would
+/// silently retune a card outline too.
+struct CadenceRowSeparatorWeightTests {
+    /// The four rules. Named individually rather than swept, because the claim is about these four
+    /// and a sweep would have to decide what counts as a separator to say anything at all.
+    private static let separatorSites = [
+        "Cadence/Shared/Components/CadenceFieldRows.swift",
+        "Cadence/iOS/iOSTaskDetailComponents.swift",
+        "Cadence/iOS/iOSTodaySchedulePanel.swift",
+        "Cadence/iOS/iOSCalendarBundleDetailSheet.swift",
+    ]
+
+    /// The name resolves to what the four sites drew. A hoist that changes a pixel is not a hoist.
+    @Test func theSeparatorTokenIsTheWeightTheFourRowsWereAlreadyDrawing() {
+        #expect(Theme.rowSeparator == Theme.borderSubtle.opacity(0.35))
+        #expect(Theme.rowSeparator != Theme.borderSubtle)
+        #expect(Theme.rowSeparator != Theme.rule)
+    }
+
+    /// The call sites read the name — which is the assertion above cannot make. A value-only pin
+    /// stays green while a fifth row spells `0.35` out again.
+    @Test func allFourRowSeparatorsReadTheOneName() throws {
+        for path in Self.separatorSites {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(source.count > 400, "\(path) read as \(source.count) characters")
+            #expect(
+                CadenceSourceScan.matchCount(#"Theme\.rowSeparator"#, in: source) == 1,
+                "\(path) does not draw the shared separator exactly once"
+            )
+            #expect(
+                !source.contains("Theme.borderSubtle.opacity(0.35)"),
+                "\(path) re-types the weight the token names"
+            )
+        }
+    }
+
+    /// The one site left alone, and why — pinned so that "convert the last one" reads as a decision
+    /// to reverse rather than a hoist someone forgot to finish.
+    @Test func theRemainingThirtyFivePercentBorderIsACardsRestingStrokeAndNotARule() throws {
+        let picker = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusPickerSupportViews.swift")
+        )
+        #expect(picker.contains("RoundedRectangle(cornerRadius: 8)"), "non-vacuity: wrong file read")
+        #expect(
+            picker.contains("isHovered ? tint.opacity(0.2) : Theme.borderSubtle.opacity(0.35)"),
+            "the resting arm of the hover pair changed shape; re-decide whether it is a separator"
+        )
+        #expect(
+            !picker.contains("Theme.rowSeparator"),
+            "a card's hover border now reads the row-separator token"
+        )
     }
 }

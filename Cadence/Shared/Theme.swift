@@ -293,6 +293,19 @@ nonisolated struct Theme {
     /// Standalone horizontal rules, which carry no other affordance to lean on.
     static let rule = Color(hex: "#52525b")
 
+    /// The 1pt rule **between stacked rows** — a subtask row, a schedule row, a block's task row,
+    /// a ruled field section's top edge.
+    ///
+    /// **T-618, and it is a record rather than a ruling.** Four sites across `Shared/`, `iOS/` and
+    /// the field rows had independently arrived at `borderSubtle` at 35%, and T-595 read them and
+    /// left them alone as a genuine agreement rather than drift. That was right about the pixels
+    /// and is exactly why the weight earns a name: four rows already decided, so the fifth should
+    /// read the decision instead of guessing, and changing it should be one edit.
+    ///
+    /// Distinct from `rule`, which is a *standalone* divider with nothing else to lean on and is
+    /// therefore drawn far stronger; and from `borderSubtle` itself, which outlines a surface.
+    static let rowSeparator = borderSubtle.opacity(0.35)
+
     // MARK: - Marker highlight
     // The `==highlight==` marker pen in the markdown editors. Semantic, not palette — it has to
     // read as a physical highlighter, so it deliberately keeps its warm hue through the neutral

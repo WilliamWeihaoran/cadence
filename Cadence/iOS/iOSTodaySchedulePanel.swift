@@ -660,7 +660,7 @@ private struct iOSScheduleReadyTaskRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.35))
+                .fill(Theme.rowSeparator)
                 .frame(height: 1)
         }
     }
