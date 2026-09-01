@@ -25,6 +25,9 @@ import Testing
 /// - `SettingsTagsSection.saveEdits` (the tag catalog card).
 /// - `TagPickerPopoverViews.saveEdits` and `.archive` (the picker's edit sheet).
 ///
+/// **T-652 added the third member of that set.** `TagPickerPopoverViews.restore` — the picker's
+/// own list, not its sheet — was missed by T-497 and by the sweep, for the reason its test records.
+///
 /// **Tier 3 is deliberately still exempt.** `iOSSearchSupportViews` and
 /// `iOSTaskDetailSheet.finishEditingAndDismiss` are "flush an in-place edit, then close" over a
 /// field the user still has focus in, and what *undo* means there is a product decision, not a
@@ -277,6 +280,53 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         }
     }
 
+    /// **T-652: the third member of the set [[T-497]] fixed two of.**
+    ///
+    /// `restore(_:)` un-archives the tag the query matched, then appends it to `selectedTags` and
+    /// blanks `query`. The chip arriving in the field and the search term vanishing are the only
+    /// things on screen that say the tag came back, and they ran whether or not the store took the
+    /// un-archive — leaving a selected chip for a tag every other picker in the app still hides.
+    ///
+    /// **Why the sweep caught its two siblings and not this one.** `CadenceSaveCommitRule`'s report
+    /// vocabulary is a closed list of *dismissals*: `dismiss…()`, `is/show<X> = false`,
+    /// `editing/selected/pending<X> = nil`, `presented<X> =`, `on(Save|Done|Complete|Commit)(`,
+    /// `return true` from a `-> Bool`, a non-`nil` answer from a `-> X?`. `saveEdits` and `archive`
+    /// both end in `editingTag = nil`, so both matched. `restore` reports by **adding** to a bound
+    /// selection and **clearing a search field** — `selectedTags.append(tag)`, `query = ""` — and
+    /// neither spelling is in that vocabulary at any width. It is a detector gap, not an oversight;
+    /// `docs/TODO.md` [[T-664]] carries it.
+    ///
+    /// **The notice is the popover's, not the edit sheet's.** Restore is pressed from the popover's
+    /// own list; that surface stays open over a refusal, so the sentence belongs there. `editFailureNotice`
+    /// is only ever rendered inside `TagEditSheet`, which is not on screen when this runs.
+    @Test func theTagPickerSelectsARestoredTagOnlyOnceTheStoreTookTheUnarchive() throws {
+        let picker = try scanned("Cadence/macOS/Views/TagPickerPopoverViews.swift")
+        let restore = try declarationBody(named: "restore", in: picker)
+
+        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: restore) == 0, "restore still swallows its save")
+        #expect(restore.contains("CadencePendingChangePersistence.commitEdit(in: modelContext)"))
+        // Two fields written, two fields restored — the same snapshot `archive` takes, inverted.
+        #expect(CadenceSourceScan.matchCount(#"tag\.\w+ = previous\w+"#, in: restore) == 2)
+        #expect(restore.contains("restoreFailureNotice = CadencePendingChangePersistence.editFailureNotice"))
+
+        // Both halves of the report, and both below the catch.
+        #expect(
+            reportFollowsTheCatch("selectedTags.append(tag)", in: restore),
+            "the chip is selected above the failure branch"
+        )
+        #expect(
+            reportFollowsTheCatch(#"query = """#, in: restore),
+            "the query clears above the failure branch"
+        )
+
+        // The sentence has somewhere to be shown on the surface that stays open.
+        #expect(
+            picker.contains("CadenceInlineFailureNotice(text: restoreFailureNotice)"),
+            "the popover never renders its restore failure notice"
+        )
+        #expect(CadenceSourceScan.matchCount(#"\.rollback\(\)"#, in: picker) == 0)
+    }
+
     // MARK: - Non-vacuity
 
     /// Non-vacuity for every scan above: the reader really opened these six files, `scanned` really
@@ -305,8 +355,20 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         do { try commit() } catch { notice = text; return }
         report()
         """
+        // T-659. The one a mutation found: a body that reports on **both** sides of the failure
+        // branch is the defect, not a pass. The old reader anchored on the last occurrence
+        // (`options: .backwards`) and called this ordered; anchoring on the first says no.
+        let bothSides = """
+        report()
+        do { try commit() } catch { notice = text; return }
+        report()
+        """
         #expect(!reportFollowsTheCatch("report()", in: broken))
         #expect(reportFollowsTheCatch("report()", in: fixed))
+        #expect(
+            !reportFollowsTheCatch("report()", in: bothSides),
+            "a body reporting above the failure branch as well as below it reads as ordered (T-659)"
+        )
         #expect(!reportFollowsTheCatch("report()", in: "do { try commit() } catch { return }"))
         #expect(!reportFollowsTheCatch("report()", in: "report()"), "a body with no catch is not ordered")
 

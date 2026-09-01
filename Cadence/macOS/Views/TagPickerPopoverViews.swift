@@ -16,6 +16,11 @@ struct TagPickerPopover: View {
     /// T-497: the edit sheet's own failure line. `editingTag = nil` is this popover's dismissal,
     /// so it only runs on a committed change and the sheet stays open over a refused one.
     @State private var editFailureNotice: String?
+    /// **T-652: the popover's own failure line**, and it is a second `@State` rather than a reuse
+    /// of `editFailureNotice` on purpose. Restore is pressed from the list below, not from the
+    /// edit sheet, and `editFailureNotice` is only ever rendered *inside* `TagEditSheet` — which is
+    /// not on screen when this runs. A refused restore needs its sentence where the press was.
+    @State private var restoreFailureNotice: String?
     @FocusState private var isSearchFocused: Bool
 
     private var activeTags: [Tag] {
@@ -122,6 +127,13 @@ struct TagPickerPopover: View {
                 .padding(6)
             }
             .frame(maxHeight: 220)
+
+            if let restoreFailureNotice {
+                Divider().background(Theme.borderSubtle)
+                CadenceInlineFailureNotice(text: restoreFailureNotice)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 8)
+            }
         }
         .frame(width: 240)
         .background(Theme.surfaceElevated)
@@ -140,6 +152,11 @@ struct TagPickerPopover: View {
                 onSave: { saveEdits(to: tag) },
                 onArchive: { archive(tag) }
             )
+        }
+        .onChange(of: query) {
+            // The notice names the tag the old query matched. Once the query moves on it is about
+            // something that is no longer on screen.
+            restoreFailureNotice = nil
         }
         .onAppear {
             DispatchQueue.main.async { isSearchFocused = true }
@@ -204,10 +221,33 @@ struct TagPickerPopover: View {
         query = ""
     }
 
+    /// **T-652, and the third member of the set [[T-497]] fixed two of.** `archive(_:)` one screen
+    /// down is this function inverted, and it was already correct; this one was not.
+    ///
+    /// The report half here is not a dismissal, which is why the sweep did not see it: nothing is
+    /// closed, nothing is set to `nil`. The chip arriving in the field and the search term
+    /// vanishing *are* the report — they say the tag came back — and they ran whether or not the
+    /// store took the un-archive, leaving a selected chip for a tag every other picker still hides.
+    ///
+    /// The undo is the same two-field snapshot `archive` takes, not `rollback()`: this popover is
+    /// opened from a task inspector that routinely has unrelated edits pending behind it. See
+    /// `CadencePendingChangePersistence.commitEdit`.
     private func restore(_ tag: Tag) {
+        let previousIsArchived = tag.isArchived
+        let previousUpdatedAt = tag.updatedAt
         tag.isArchived = false
         tag.updatedAt = Date()
-        try? modelContext.save()
+
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext) {
+                tag.isArchived = previousIsArchived
+                tag.updatedAt = previousUpdatedAt
+            }
+        } catch {
+            restoreFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        restoreFailureNotice = nil
         if !selectedTags.contains(where: { $0.id == tag.id }) {
             selectedTags.append(tag)
         }
