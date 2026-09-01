@@ -120,12 +120,14 @@ struct EditAreaSheet: View {
         area.desc = details
         area.colorHex = selectedColor
         area.icon = selectedIcon
+        // **T-624.** Before the assignment, because the comparison is the point: a *changed*
+        // selection came from a menu of live calendars, so this Mac has just seen that identifier,
+        // and recording it is what lets `CadenceCalendarLinkHealth` later vouch the calendar is
+        // gone rather than merely unknown here. An unchanged one may be another device's, and
+        // recording it would hand this Mac evidence it does not have. Settings has its own refresh;
+        // a list linked only from this sheet would otherwise never reach it.
+        CadenceCalendarLinkObservations.recordPick(selectedCalendarID, replacing: area.linkedCalendarID)
         area.linkedCalendarID = selectedCalendarID
-        // **T-624.** The pick came from a menu of live calendars, so this Mac has just seen the
-        // identifier; recording it here is what lets `CadenceCalendarLinkHealth` later vouch that
-        // the calendar is gone rather than merely unknown to this device. Settings has its own
-        // refresh, and a list linked only from this sheet would otherwise never reach it.
-        CadenceCalendarLinkObservations.record(selectedCalendarID)
         area.hideDueDateIfEmpty = hideDueDateIfEmpty
         area.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
     }
@@ -344,9 +346,10 @@ struct EditProjectSheet: View {
         project.colorHex = selectedColor
         project.icon = selectedIcon
         project.dueDate = hasDueDate ? DateFormatters.dateKey(from: dueDate) : ""
+        // **T-624**, as in `EditAreaSheet.applyEdits()` above — before the assignment, so the
+        // comparison still has the stored value to compare against.
+        CadenceCalendarLinkObservations.recordPick(selectedCalendarID, replacing: project.linkedCalendarID)
         project.linkedCalendarID = selectedCalendarID
-        // **T-624**, as in `EditAreaSheet.applyEdits()` above.
-        CadenceCalendarLinkObservations.record(selectedCalendarID)
         project.hideDueDateIfEmpty = hideDueDateIfEmpty
         project.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
     }

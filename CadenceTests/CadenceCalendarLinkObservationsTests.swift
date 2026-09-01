@@ -216,7 +216,7 @@ struct CadenceCalendarLinkObservationsTests {
         #expect(CadenceCalendarLinkObservations.observedCalendarIDs(from: "\n\ncal-a\n") == ["cal-a"])
     }
 
-    /// A pick comes from a menu of live calendars, so linking one is itself an observation. Without
+    /// A pick comes from a menu of live calendars, so making one is itself an observation. Without
     /// this, a calendar linked from the list editor by someone who never opens the calendar settings
     /// screen would be a link this device could never report as broken.
     @Test func recordingAPickAddsTheIdentifierAndIgnoresTheUnlinkSentinel() throws {
@@ -224,15 +224,53 @@ struct CadenceCalendarLinkObservationsTests {
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        CadenceCalendarLinkObservations.record("", defaults: defaults)
+        CadenceCalendarLinkObservations.recordPick("", replacing: "cal-work", defaults: defaults)
         #expect(defaults.string(forKey: CadenceCalendarLinkObservations.observedCalendarIDsKey) == nil)
 
-        CadenceCalendarLinkObservations.record("cal-work", defaults: defaults)
-        CadenceCalendarLinkObservations.record("cal-home", defaults: defaults)
-        CadenceCalendarLinkObservations.record("cal-work", defaults: defaults)
+        CadenceCalendarLinkObservations.recordPick("cal-work", replacing: "", defaults: defaults)
+        CadenceCalendarLinkObservations.recordPick("cal-home", replacing: "cal-work", defaults: defaults)
+        CadenceCalendarLinkObservations.recordPick("cal-work", replacing: "cal-home", defaults: defaults)
 
         let raw = defaults.string(forKey: CadenceCalendarLinkObservations.observedCalendarIDsKey) ?? ""
         #expect(CadenceCalendarLinkObservations.observedCalendarIDs(from: raw) == ["cal-home", "cal-work"])
+    }
+
+    /// **The hole in the first cut of this fix, found before it shipped and pinned here.**
+    ///
+    /// `EditAreaSheet` seeds its picker from the *stored* `linkedCalendarID`, so every save passes
+    /// an identifier back — including a save that only renamed the list. If recording were
+    /// unconditional, a rename would enter another device's identifier into this device's evidence,
+    /// and the very next render would report that device's perfectly good link as broken. That is
+    /// the false alarm the gate exists to remove, re-created by the thing meant to feed it.
+    ///
+    /// Only a **changed** selection is an observation, because only a changed selection came off a
+    /// menu of live calendars.
+    @Test func aSaveThatDidNotChangeTheCalendarRecordsNothing() throws {
+        let suiteName = "com.haoranwei.Cadence.tests.linkObservations.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // The list editor, opened on a list another device linked, saved after a rename.
+        CadenceCalendarLinkObservations.recordPick(
+            "cal-from-another-device",
+            replacing: "cal-from-another-device",
+            defaults: defaults
+        )
+        #expect(defaults.string(forKey: CadenceCalendarLinkObservations.observedCalendarIDsKey) == nil)
+
+        // And the whole point: with no observation, that link is not reported as broken here.
+        let home = area("Home", linkedTo: "cal-from-another-device")
+        #expect(
+            CadenceCalendarLinkHealth.missingLinks(
+                areas: [home],
+                projects: [],
+                liveCalendarIDs: ["cal-this-device"],
+                observedCalendarIDs: CadenceCalendarLinkObservations.observedCalendarIDs(
+                    from: defaults.string(forKey: CadenceCalendarLinkObservations.observedCalendarIDsKey) ?? ""
+                ),
+                isCalendarAccessAuthorized: true
+            ).isEmpty
+        )
     }
 
     /// The key is a preference, so renaming it silently drops every observation the installed build
@@ -284,9 +322,22 @@ struct CadenceCalendarLinkObservationsTests {
             try CadenceSourceScan.sourceFile("Cadence/macOS/Sheets/EditListSheet.swift")
         )
         #expect(
-            CadenceSourceScan.matchCount("CadenceCalendarLinkObservations\\.record\\(", in: editor) == 2,
-            "the list editor does not record both an area's and a project's calendar pick"
+            CadenceSourceScan.matchCount(
+                "CadenceCalendarLinkObservations\\.recordPick\\([^\n]*replacing:",
+                in: editor
+            ) == 2,
+            "the list editor does not record both an area's and a project's calendar pick, against the stored value"
         )
+        // Before the assignment, or `replacing:` is handed the value it is supposed to differ from
+        // and the guard is dead in both sheets at once.
+        for stored in ["area.linkedCalendarID", "project.linkedCalendarID"] {
+            let recordIndex = editor.range(of: "recordPick(selectedCalendarID, replacing: \(stored))")
+            let assignIndex = editor.range(of: "\(stored) = selectedCalendarID")
+            #expect(recordIndex != nil && assignIndex != nil)
+            if let recordIndex, let assignIndex {
+                #expect(recordIndex.lowerBound < assignIndex.lowerBound, "\(stored) is written before it is read")
+            }
+        }
     }
 
     /// A scan that reads nothing satisfies every assertion above, and the needle self-check keeps

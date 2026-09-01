@@ -90,12 +90,22 @@ nonisolated enum CadenceCalendarLinkObservations {
 
     /// Records a calendar the user has just picked for a list, from anywhere in the app.
     ///
-    /// A pick comes from a menu built out of live `EKCalendar`s, so the identifier is one this
-    /// device can see by construction. This exists because `observing(...)` only runs where the
+    /// A pick comes from a menu built out of live `EKCalendar`s, so a **changed** identifier is one
+    /// this device can see by construction. This exists because `observing(...)` only runs while the
     /// calendar settings surface is on screen, and the list editor can link a calendar without ever
     /// going there — an unrecorded link would then be one this device could never report as broken.
-    static func record(_ calendarID: String, defaults: UserDefaults = .standard) {
-        guard !calendarID.isEmpty else { return }
+    ///
+    /// `replacing:` is the whole guard, and it is not a micro-optimisation. A save that leaves the
+    /// calendar alone still passes the *stored* identifier, which may be one another device wrote;
+    /// recording that would manufacture evidence this device does not have and revive exactly the
+    /// false alarm the gate exists to remove — a list would need only a rename to start reporting
+    /// its own good link as broken. So an identifier is recorded only when the save changed it.
+    static func recordPick(
+        _ calendarID: String,
+        replacing storedCalendarID: String,
+        defaults: UserDefaults = .standard
+    ) {
+        guard !calendarID.isEmpty, calendarID != storedCalendarID else { return }
         let raw = defaults.string(forKey: observedCalendarIDsKey) ?? ""
         var ids = observedCalendarIDs(from: raw)
         guard ids.insert(calendarID).inserted else { return }
