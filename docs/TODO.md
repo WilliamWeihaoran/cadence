@@ -1055,20 +1055,15 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Report.** For `.thisAndFuture`, every later occurrence's rule changes in memory, the sheet closes,
   and **the row's existing "Couldn't Update the Series" alert has nowhere to fire.**
 
-- [T-635] **Roll Over hides the banner in persisted preferences whether or not the roll committed.**
-  VERIFIED, and **the only one of the fifteen whose false success outlives a rollback.**
-  `CadenceTodayRolloverSupport.swift:89-100` swallows and returns `todayKey` unconditionally;
-  `TasksPanel.swift:331-334` and `iOSTodayView.swift:152-158` assign it straight into the `@AppStorage`
-  `rolloverNoticeDismissedDate`. `rollOverTaskToToday:983-998` reaches
-  `deleteBundleIfFullySettled:1017-1030`, which does `modelContext.delete(bundle)`.
-  **Existence** (two frames down) **and Report** (the persisted dismissal). The banner stays hidden for
-  the rest of the day even if nothing was rolled.
-
 - [T-636] **The partly-confirmed residue from the CXT sweep — four narrower findings and one Codex
   missed.** VERIFIED 2026-09-01.
-  **(a)** The real root under CXT-005 is not the note repaint (which is the 96-of-112 category the rule
-  deliberately leaves alone) but `CadenceTaskMutationSupport.toggleCompletion:30-37` — **the app-wide
-  completion spine — swallowing a save over a recurrence insert.**
+  **(a) LANDED 2026-09-01 (`afff149`); the rest of this ticket is still open.** The real root under
+  CXT-005 was not the note repaint (which is the 96-of-112 category the rule deliberately leaves
+  alone) but `CadenceTaskMutationSupport.toggleCompletion:30-37` — **the app-wide completion spine —
+  swallowing a save over a recurrence insert.** It throws and takes `commit:` now, settling through a
+  shared `commitSettle` and restoring through `commitEdit`; `CadenceTaskStatusEditing` catches and
+  records on `CadenceTaskSettleFailureCenter`, which `iOSRootView` names once for all six surfaces.
+  `setStatus` is the same shape and is **still exempt** — see [[T-643]].
   **(b)** CXT-007 is a genuine **vocabulary gap**, not a new site class: `return true` from a Bool drop
   handler is a success report by the repo's own words (`TasksPanelDropCoordinator:29-32`: *"a silent
   accept says the move happened"*) but is outside `successReport`. Feeds [[T-627]] gap 4 and is adjacent
@@ -1127,7 +1122,66 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   refusal that happens before the commit and still has no sentence. Both notices already exist
   (`imageFailureNotice`), so this is a count and a message, not new plumbing.
 
+- [T-642] **The iOS settle-failure alert may be invisible from the two surfaces that are sheets.**
+  From [[T-636]](a). `CadenceTaskStatusEditing.toggleCompletion` records a refused settle on
+  `CadenceTaskSettleFailureCenter` and `iOSRootView` mounts the alert — one host for six surfaces,
+  the shape macOS already uses (`TaskCompletionAnimationManager.settleFailed` +
+  `macOSRootView`). But two of the six — `iOSTaskDetailSheet` and `iOSCalendarBundleDetailSheet` —
+  tick the circle from **inside a sheet the same shell is presenting**, and on iOS a view that is
+  already presenting cannot present again. `iOSRootView` records that constraint itself, for the
+  task inspector: *"a sheet that grows task rows of its own needs a nearer host"*.
+  **Unverified either way** — this was not run on a simulator, so the claim is "the alert may not
+  reach those two", not "it does not". Answer it by looking, and if it is real the fix is the
+  nearer-host pattern `iOSTaskInspectorHost` already spells, not a second flag.
+  The store is correct regardless: `commitSettle` puts the status, the timestamp and the successor
+  back before anything is recorded, so the circle re-draws open on its own.
+
+- [T-643] **`CadenceTaskMutationSupport.setStatus` is the other half of the completion spine, and
+  still swallows.** From [[T-636]](a), which fixed `toggleCompletion` beside it and left this one
+  because two of its surfaces were files another change owned. It is the same defect through a
+  different door: `applyStatusCompletion` reaches `markDone`/`markCancelled` →
+  `spawnNextOccurrenceIfNeeded` → `context.insert`, and `setStatus` ends `try? modelContext.save()`.
+  It is the last entry in that file's `existenceExemptions` line, and
+  `TaskEmbedFieldEditorPopover.content` is its indirect-report half.
+  **The plumbing exists now**: `CadenceTaskMutationSupport.commitSettle` is shared, and
+  `CadenceTaskSettleFailureCenter` is the surface the wrapper reports into. The work is making
+  `applyStatusCompletion` return the spawned task, threading `commit:`, and deciding what the
+  `.todo`/`.inProgress` branch's undo is — it inserts nothing, so it is a `commitEdit`.
+
+- [T-644] **`CadenceSourceScan.functionBody(named:)` reads the wrong span for any declaration with a
+  `commit:` default argument.** Found while landing [[T-636]](a). It takes the first `{` after
+  `func <name>(` as the body — which for
+  `commit: (ModelContext) throws -> Void = { try $0.save() }` is the **default closure**, so the
+  "body" it returns is `try $0.save()` and every `contains(…)` over it is answered by a
+  one-expression closure. Not an error, not a warning: a green assertion over the wrong text, the
+  same family as the `codeOnly` string-blanking trap.
+  `CadenceTaskStatusEditingSurfaceTests.theSharedStatusHelpersStillReconcileNothing` hit it the
+  moment `toggleCompletion` grew that parameter, and is worked around **locally** by stripping
+  `= { try $0.save() }` before the scan. The reader itself is still wrong, and the `commit:` default
+  is now the repo's standard spelling for a committing helper — 20+ declarations carry one.
+  Fix: balance the parameter list before looking for the body (`matchedBody(after:in:open:close:)`
+  already does parentheses), and pin it with a fixture that fails on the current reader.
+
 ## Done
+
+- [T-635] **CLOSED 2026-09-01 (`819fc2f`).** `rollOver` throws and takes `commit:`; both hosts write the
+  `@AppStorage` dismissal **only on the success path** and store `rollFailureNotice` otherwise. This
+  was the one false success in the T-627 ledger that outlives a rollback — a defaults write survives
+  the redraw, the relaunch and, since the key is deliberately shared, the other device.
+  **`commitDelete`, not `commitEdit`**: the roll reaches `deleteBundleIfFullySettled`, so a block
+  whose last active member was carried away has no object left to hand back and `rollback()` is the
+  only undo that makes it visible again.
+  **The sentence lives on the shared banner**, which is still on screen precisely because the
+  dismissal was not written. A notice owned by one host would be missing from the other — the
+  macOS-only shape [[T-195]] spent a ticket undoing.
+  **The ticket's line numbers had drifted and every claim in it was correct**: `TasksPanel` was
+  354-362 rather than 331-334, `rollOverTaskToToday` 999-1015, `deleteBundleIfFullySettled`
+  1033-1045.
+  Failing-first: three source scans red against unmodified source for the right reasons (no
+  `commitDelete`, no `try`/`catch` in either host, no `failureNotice` on the banner). **Four
+  mutations, all compiled, all killed** — `try?` on the commit; `commitEdit`-with-an-empty-undo in
+  place of `commitDelete`, which leaves the emptied block deleted; the banner's `failureRow` removed;
+  and the iOS host naming the refusal with a literal of its own.
 
 - [T-632] **CLOSED 2026-09-01 (`2177d1a`).** The kanban column editor commits before it closes.
   `saveSection` answers `Bool` and commits through `CadencePendingChangePersistence.commitEdit`
