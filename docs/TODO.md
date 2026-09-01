@@ -1399,7 +1399,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Done
 
-- [T-637] **CLOSED 2026-09-02, `7fd9b62`.** The icon-only-button rule sweeps `Cadence/` instead of
+- [T-637] **CLOSED 2026-09-02, `91d533c`.** The icon-only-button rule sweeps `Cadence/` instead of
   `Cadence/iOS/`, and `knownUnnamedIconButtonSites` is exact in both directions over all 565 files.
   **The 31/24 figure was re-measured rather than inherited** — it predated four batches that touched
   button surfaces — and it reproduced exactly: **31 sites in 24 files, 3 on iOS (unchanged) and 28 in
