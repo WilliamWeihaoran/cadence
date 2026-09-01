@@ -490,6 +490,15 @@ enum CadenceTaskMutationSupport {
     /// family's second sentence exists to deny.
     static let bundleSaveFailureNotice = "Couldn't save this block."
 
+    /// The alert title that carries `bundleSaveFailureNotice` on a surface with no inline place to
+    /// put it — the Mac's timeline, whose draft popover has already dismissed itself (T-636(e)).
+    ///
+    /// Beside its two siblings for the reason `bundleDeleteFailureAlertTitle` gives: the title and
+    /// the body travel together, so there is no arrangement in which one is updated alone. It says
+    /// "Create" rather than "Save" because `bundleEditFailureAlertTitle` is already the *edit*
+    /// family's title, and the two failures are different events.
+    static let bundleCreateFailureAlertTitle = "Couldn't Create Block"
+
     /// Shown when a block the user asked to delete could not be committed (T-322).
     ///
     /// It carries the delete family's second sentence — `deleteFailureNotice`,

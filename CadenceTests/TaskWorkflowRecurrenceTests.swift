@@ -334,7 +334,9 @@ struct TaskWorkflowRecurrenceTests {
         // The shared focus helper is the iOS focus timer's only completion path; macOS's focus
         // timer routes through `TaskWorkflowService.markDone`. Both must land on the same series
         // behavior or a recurring task silently dies when finished on the wrong platform.
-        CadenceFocusSupport.complete(task, elapsedSeconds: 25 * 60, modelContext: context)
+        // `complete` throws since T-636(c): it commits the settle rather than swallowing it, so
+        // the `save()` below is now the no-op it always should have been.
+        try CadenceFocusSupport.complete(task, elapsedSeconds: 25 * 60, modelContext: context)
         try context.save()
 
         #expect(task.isDone)

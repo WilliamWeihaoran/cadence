@@ -227,10 +227,71 @@ enum CadenceFocusSupport {
     /// Completion must route through `CadenceTaskRecurrenceWorkflowSupport` rather than setting
     /// `status`/`completedAt` inline: a recurring task finished here would otherwise go done with no
     /// successor, silently ending the series on whichever platform happened to use this helper.
-    static func complete(_ task: AppTask, elapsedSeconds: Int, modelContext: ModelContext) {
+    ///
+    /// **It throws and takes `commit:` now (T-636(c)).** It used to end `try? modelContext.save()`,
+    /// and `markDone` reaches `spawnNextOccurrenceIfNeeded` → `context.insert(nextTask)` — so
+    /// finishing a repeating task from the focus timer minted its successor as a *pending* row in
+    /// the app's one `ModelContext`, for the next unrelated `save()` to take or the next unrelated
+    /// `rollback()` to discard. That is [[T-636]](a)'s defect reached through the other door: the
+    /// completion spine's `toggleCompletion` was fixed there, and this helper is the second way a
+    /// task is settled.
+    ///
+    /// **The minutes are undone too, and that half is not decoration.** `logElapsedSeconds` writes
+    /// with `+=`, so the rule's standing justification for swallowing a commit — *"the next fetch
+    /// corrects it"* — does not hold: a fetch re-reads whatever the accumulator now holds, and an
+    /// accumulator that lost a write stays wrong for ever. `commitSettle` restores the status, the
+    /// timestamp and the successor; `BankedMinutes` restores the three counters it cannot see.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    static func complete(
+        _ task: AppTask,
+        elapsedSeconds: Int,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        let banked = BankedMinutes(task)
         logElapsedSeconds(elapsedSeconds, to: task)
-        CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
-        try? modelContext.save()
+        do {
+            try CadenceTaskMutationSupport.commitSettle(task, in: modelContext, commit: commit) {
+                CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
+            }
+        } catch {
+            banked.restore()
+            throw error
+        }
+    }
+
+    /// The three accumulators `logElapsedSeconds(_:to:)` adds to, captured before the write.
+    ///
+    /// A snapshot rather than a subtraction, for the reason `CadenceTaskFieldSnapshot` gives:
+    /// putting the old value back is an exact no-op when the commit lands and an exact undo when
+    /// it does not, whereas `-= minutes` would have to agree for ever with a rounding rule that
+    /// lives somewhere else.
+    ///
+    /// The container is captured as well as its count, because `restore()` must write back to the
+    /// object the write reached — not to whatever `task.project` answers afterwards.
+    private struct BankedMinutes {
+        private let task: AppTask
+        private let taskMinutes: Int
+        private let project: Project?
+        private let projectMinutes: Int
+        private let area: Area?
+        private let areaMinutes: Int
+
+        init(_ task: AppTask) {
+            self.task = task
+            taskMinutes = task.actualMinutes
+            project = task.project
+            projectMinutes = task.project?.loggedMinutes ?? 0
+            area = task.area
+            areaMinutes = task.area?.loggedMinutes ?? 0
+        }
+
+        func restore() {
+            task.actualMinutes = taskMinutes
+            project?.loggedMinutes = projectMinutes
+            area?.loggedMinutes = areaMinutes
+        }
     }
 
     private static func focusScore(for task: AppTask, todayKey: String) -> Int {

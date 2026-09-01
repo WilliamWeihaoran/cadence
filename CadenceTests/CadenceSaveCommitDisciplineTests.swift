@@ -1152,8 +1152,12 @@ enum CadenceSaveCommitRule {
         // throws, and `CadenceTaskStatusEditing` names the refusal on
         // `CadenceTaskSettleFailureCenter`. `setStatus` is the same shape and is still here,
         // because its surfaces are two files another change owns.
+        //
+        // `CadenceFocusSupport.complete` left with T-636(c) — the focus timer's own door onto the
+        // same recurrence insert. It throws, settles through the shared `commitSettle`, and puts
+        // the banked minutes back; `CadenceTaskStatusEditing.completeFocusSession` records the
+        // refusal and answers `false` so the stopwatch is not cleared over it.
         "Cadence/Shared/CadenceTaskMutationSupport.swift": ["setStatus"],
-        "Cadence/Shared/CadenceFocusPlanningSupport.swift": ["complete"],
         "Cadence/macOS/Views/ListNotesSupportViews.swift": ["toggleEmbeddedTask"],
         "Cadence/macOS/Views/NoteEditorPane.swift": ["toggleEmbeddedTask"],
         "Cadence/macOS/Views/NotePanel.swift": ["toggleEmbeddedTask"],
@@ -1311,8 +1315,12 @@ enum CadenceSaveCommitRule {
         ],
         // [[T-636]](e): `SchedulingActions.createTask`/`createBundle` insert into a context they
         // were handed and commit nothing, and the canvas that calls them commits nothing either.
+        // `SchedulePanel.body` left this list in that ticket: the panel owns the unit of work, so
+        // it commits it — through `SchedulingActions.insertBundle(title:…adding:in:commit:)`, the
+        // block and its members as one insert — and names a refusal in an alert on the panel. The
+        // two below are the same shape on two other canvases, still calling the pending spelling
+        // ([[T-655]]).
         "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift": ["body"],
-        "Cadence/macOS/Views/SchedulePanel.swift": ["body"],
         "Cadence/macOS/Views/TimelineDayCanvas.swift": ["body"],
         // [[T-636]](a): the completion spine again, reached from a control that has no `try?` at
         // all — which is why only this half can see these two.
@@ -1841,9 +1849,9 @@ enum CadenceSaveCommitRule {
         // the `catch`. Pinned by `CadenceNoteMoveCommitTests`.
         // [[T-633]]'s other half — the task sheet's own scope dialog — left with the row chip's,
         // through the same unit and into the same alert.
-        // [[T-636]](c): the focus session's completion, which clears the selection — the picker's
-        // only signal that the session ended — over a swallowed commit.
-        "Cadence/iOS/iOSFocusView.swift": ["complete"],
+        // [[T-636]](c) left too: `iOSFocusView.complete` guards its reset and its advance on
+        // `completeFocusSession`'s answer, so the stopwatch is cleared only once the store has the
+        // session it measured.
         // [[T-636]](a) from the note editor's task embed: `content` answers `true` to the popover
         // over `setStatus`, which reaches the recurrence insert.
         "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": ["content"],

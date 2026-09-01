@@ -38,6 +38,99 @@ enum SchedulingActions {
         return bundle
     }
 
+    /// Creates a scheduled block from a timeline drag, adds the tasks the user ticked to it, and
+    /// **commits the pair as one unit** ([[T-636]](e)).
+    ///
+    /// `createBundle(title:…)` above is right to commit nothing: it is handed a `ModelContext`, and
+    /// that signature is this repo's statement that the caller owns the unit of work. What was
+    /// missing is the caller doing so. Every timeline that offers "create block" ran
+    /// `createBundle` and then `addTask` per selection and then closed its draft popover, so a
+    /// refused store left a pending `TaskBundle` — and the membership edits that go with it — in
+    /// the app's one `ModelContext`, for the next unrelated `save()` to take or the next unrelated
+    /// `rollback()` to discard.
+    ///
+    /// **Both halves are one unit deliberately.** Committing the block and then adding its members
+    /// would put an empty block in the store and leave the memberships pending, which is the same
+    /// defect with a smaller blast radius. The undo is therefore two-sided as well:
+    /// `commitInsert` un-inserts the block, and `BundleMembership` puts back the five fields
+    /// `addTask` writes on each task it moved.
+    ///
+    /// It does **not** promise "nothing was changed" — the sentence for a refused creation is
+    /// `CadenceTaskMutationSupport.bundleSaveFailureNotice`, which deliberately has no such clause.
+    /// A task that was already in another block has that block's own member ordering renormalised
+    /// on the way out, and this restores the task rather than re-deriving its former siblings.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    @discardableResult
+    static func insertBundle(
+        title: String,
+        dateKey: String,
+        startMin: Int,
+        endMin: Int,
+        adding tasks: [AppTask],
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> TaskBundle {
+        // An explicit loop, not `tasks.map(BundleMembership.init)`: this module builds with
+        // `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so passing the initializer as a function
+        // value into `map`'s nonisolated closure is a warning, and the baseline here is zero.
+        var members: [BundleMembership] = []
+        for task in tasks {
+            members.append(BundleMembership(task))
+        }
+        let bundle = createBundle(
+            title: title,
+            dateKey: dateKey,
+            startMin: startMin,
+            endMin: endMin,
+            in: context
+        )
+        for task in tasks {
+            addTask(task, to: bundle)
+        }
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: bundle, in: context, commit: commit)
+        } catch {
+            for member in members {
+                member.restore()
+            }
+            throw error
+        }
+        return bundle
+    }
+
+    /// The fields `addTask(_:to:)` writes on the task it moves, captured before the write.
+    ///
+    /// The block itself is un-inserted by `commitInsert`, but that does not put the task back: it
+    /// was detached from whatever block it was in, given a `bundleOrder`, moved onto the block's
+    /// day, stripped of its time slot and of any calendar-event link. A refused creation that
+    /// restored only the block would leave the tasks scheduled somewhere the store never agreed to.
+    private struct BundleMembership {
+        private let task: AppTask
+        private let bundle: TaskBundle?
+        private let bundleOrder: Int
+        private let scheduledDate: String
+        private let scheduledStartMin: Int
+        private let calendarEventID: String
+
+        init(_ task: AppTask) {
+            self.task = task
+            bundle = task.bundle
+            bundleOrder = task.bundleOrder
+            scheduledDate = task.scheduledDate
+            scheduledStartMin = task.scheduledStartMin
+            calendarEventID = task.calendarEventID
+        }
+
+        func restore() {
+            task.bundle = bundle
+            task.bundleOrder = bundleOrder
+            task.scheduledDate = scheduledDate
+            task.scheduledStartMin = scheduledStartMin
+            task.calendarEventID = calendarEventID
+        }
+    }
+
     /// Create and insert a new scheduled task in a specific list/section.
     static func createTask(
         title: String,

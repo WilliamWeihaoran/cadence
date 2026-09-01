@@ -649,8 +649,17 @@ struct iOSFocusView: View {
         timerState.reset()
     }
 
+    /// **The clock is only cleared once the store has the session (T-636(c)).** Everything below
+    /// the guard is this screen's report that the session ended — the stopwatch back at zero and
+    /// the picker moved on — and the seconds it discards exist nowhere else, so running it over a
+    /// refused commit loses the work as well as lying about it. `iOSRootView` names the refusal
+    /// itself, through `CadenceTaskSettleFailureCenter`.
     private func complete(_ task: AppTask) {
-        CadenceTaskStatusEditing.completeFocusSession(task, elapsedSeconds: elapsedSeconds, in: modelContext)
+        guard CadenceTaskStatusEditing.completeFocusSession(
+            task,
+            elapsedSeconds: elapsedSeconds,
+            in: modelContext
+        ) else { return }
         resetTimer()
         if let next = pickItems.first(where: { $0.target != .task(task.id) }) {
             adopt(next)

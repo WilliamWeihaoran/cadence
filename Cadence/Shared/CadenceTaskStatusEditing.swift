@@ -97,14 +97,32 @@ enum CadenceTaskStatusEditing {
     /// A case of its own rather than "log, then call `toggleCompletion`", because
     /// `CadenceFocusSupport.complete` is a single save and splitting it would either reconcile
     /// twice or leave the logged minutes outside the transition.
+    ///
+    /// **It answers whether the change is in the store (T-636(c)).** `toggleCompletion` above
+    /// catches and records because its six surfaces cannot each own a notice; this one has exactly
+    /// one caller, `iOSFocusView.complete(_:)`, and that caller has something to do with the answer
+    /// the shared alert cannot do for it — the elapsed clock. Resetting it over a refused commit
+    /// discards the minutes for good, since the timer is the only place they existed. So the
+    /// refusal is recorded on `CadenceTaskSettleFailureCenter` for the sentence, *and* returned for
+    /// the clock.
+    ///
+    /// Nothing is reconciled on the failure path, for the reason `toggleCompletion` records:
+    /// `commitSettle` has already put the transition back, so there is none to reconcile.
+    @discardableResult
     static func completeFocusSession(
         _ task: AppTask,
         elapsedSeconds: Int,
         in context: ModelContext,
         reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceFocusSupport.complete(task, elapsedSeconds: elapsedSeconds, modelContext: context)
+    ) -> Bool {
+        do {
+            try CadenceFocusSupport.complete(task, elapsedSeconds: elapsedSeconds, modelContext: context)
+        } catch {
+            CadenceTaskSettleFailureCenter.shared.record()
+            return false
+        }
         reconcile(context, reconciler)
+        return true
     }
 
     // MARK: - The one reconcile
