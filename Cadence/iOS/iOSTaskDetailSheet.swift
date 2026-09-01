@@ -28,6 +28,8 @@ struct iOSTaskDetailSheet: View {
     @State private var deleteFailed = false
     @State private var isNotesFocused = false
     @State private var pendingRecurrenceChange: PendingRecurrenceChange?
+    /// Set when a recurrence edit did not reach the store. See `apply(_:scope:)`.
+    @State private var recurrenceUpdateFailure: String?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
 
@@ -110,6 +112,20 @@ struct iOSTaskDetailSheet: View {
                 }
             } message: {
                 Text(CadenceRecurrenceScopeCopy.taskScopeMessage)
+            }
+            // The same alert `iOSTaskRowRecurrenceScopeDialogModifier` raises, from the same copy:
+            // this sheet asks the same scope question about the same series (T-633).
+            .alert(
+                CadenceRecurrenceScopeCopy.taskScopeFailureTitle,
+                isPresented: Binding(
+                    get: { recurrenceUpdateFailure != nil },
+                    set: { if !$0 { recurrenceUpdateFailure = nil } }
+                ),
+                presenting: recurrenceUpdateFailure
+            ) { _ in
+                Button("OK", role: .cancel) { recurrenceUpdateFailure = nil }
+            } message: { notice in
+                Text(notice)
             }
             .iOSMarkdownReferenceSheets(
                 selectedNote: $selectedReferenceNote,
@@ -562,40 +578,60 @@ struct iOSTaskDetailSheet: View {
 
     private func applyPendingRecurrenceChange(scope: CadenceTaskRecurrenceEditScope) {
         guard let pendingRecurrenceChange else { return }
-        apply(pendingRecurrenceChange, scope: scope)
+        // Closed either way: the dialog dismisses itself on the button tap, and the alert below
+        // cannot present from behind it.
         self.pendingRecurrenceChange = nil
+        apply(pendingRecurrenceChange, scope: scope)
     }
 
+    /// **Commits, and says so when it could not (T-633).**
+    ///
+    /// This used to end `try? modelContext.save()` with `applyPendingRecurrenceChange` clearing the
+    /// pending change — the thing that closes the scope dialog — immediately before it. So a
+    /// refused write closed the dialog exactly as an accepted one does, having already rewritten
+    /// the rule on every later occurrence of the series in memory.
+    ///
+    /// `alsoRestoring:` carries those later occurrences, because that is how far the edit reaches:
+    /// `recurrenceTargets` is the same list `applyRecurrenceRule`/`applyRecurrenceEnd` walk, asked
+    /// for once rather than derived a second way. The row chip's copy of this dialog
+    /// (`iOSTaskRowRecurrenceScopeDialogModifier`) is the same shape, through the same unit.
     private func apply(_ change: PendingRecurrenceChange, scope: CadenceTaskRecurrenceEditScope) {
-        switch change {
-        case .rule(let rule):
-            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
-                rule,
-                to: task,
-                allTasks: allTasks,
-                scope: scope
-            )
-            if rule == .none {
-                // An end condition on a task that no longer repeats is meaningless, and leaving it
-                // behind would re-arm the moment repeating is switched back on.
+        let targets = CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets(
+            from: task,
+            allTasks: allTasks,
+            scope: scope
+        )
+        let landed = CadenceTaskFieldEditCommit.commit(task, alsoRestoring: targets, in: modelContext) {
+            switch change {
+            case .rule(let rule):
+                CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
+                    rule,
+                    to: task,
+                    allTasks: allTasks,
+                    scope: scope
+                )
+                if rule == .none {
+                    // An end condition on a task that no longer repeats is meaningless, and leaving
+                    // it behind would re-arm the moment repeating is switched back on.
+                    CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd(
+                        mode: .never,
+                        to: task,
+                        allTasks: allTasks,
+                        scope: scope
+                    )
+                }
+            case .end(let mode, let dateKey, let count):
                 CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd(
-                    mode: .never,
+                    mode: mode,
+                    endDateKey: dateKey,
+                    endCount: count,
                     to: task,
                     allTasks: allTasks,
                     scope: scope
                 )
             }
-        case .end(let mode, let dateKey, let count):
-            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd(
-                mode: mode,
-                endDateKey: dateKey,
-                endCount: count,
-                to: task,
-                allTasks: allTasks,
-                scope: scope
-            )
         }
-        try? modelContext.save()
+        recurrenceUpdateFailure = landed ? nil : CadencePendingChangePersistence.editFailureNotice
     }
 }
 

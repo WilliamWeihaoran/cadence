@@ -42,4 +42,20 @@ nonisolated enum CadenceRecurrenceScopeCopy {
     /// series.
     static let taskScopeMessage =
         "Choose whether this repeat change applies only here or to this task and future instances."
+
+    /// Title of the alert raised when a repeat change on a repeating **task** did not land.
+    ///
+    /// Here rather than in the two files that show it, for the reason the dialog's own prose is
+    /// here: the phone raises this scope question from a row chip and from the task sheet, and a
+    /// sentence spelled twice is a sentence that drifts (T-633).
+    static let taskScopeFailureTitle = "Couldn't Update the Series"
+
+    /// Shown when the rest of the series could not be read at all, so the scope the user chose
+    /// could not even be resolved to a list of tasks.
+    ///
+    /// Distinct from `CadencePendingChangePersistence.editFailureNotice`, which is what a refused
+    /// *commit* says: this one is about the read that comes first, and "Try again" is honest for it
+    /// in a way it would not be for a store that refused the write.
+    static let taskScopeLookupFailureNotice =
+        "Cadence couldn't load the rest of this repeating task, so nothing was changed. Try again."
 }

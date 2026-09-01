@@ -224,7 +224,7 @@ struct CadenceRecurrenceEndSurfaceTests {
         )
     }
 
-    /// Nothing outside the declaration types any of the four sentences again.
+    /// Nothing outside the declaration types any of the six sentences again.
     ///
     /// The absence half, over the whole tree rather than the six files above: a seventh surface
     /// raising this dialog with its own words is exactly the defect the convergence removed, and a
@@ -242,6 +242,11 @@ struct CadenceRecurrenceEndSurfaceTests {
             CadenceRecurrenceScopeCopy.eventScopeMessage,
             CadenceRecurrenceScopeCopy.taskScopeTitle,
             CadenceRecurrenceScopeCopy.taskScopeMessage,
+            // T-633 added the two failure sentences, and they converge for the same reason the
+            // dialog's own prose did: the phone asks this scope question from a row chip and from
+            // the task sheet, and both now have to say the same thing when it does not land.
+            CadenceRecurrenceScopeCopy.taskScopeFailureTitle,
+            CadenceRecurrenceScopeCopy.taskScopeLookupFailureNotice,
         ] {
             var typedIn: [String] = []
             for path in files {

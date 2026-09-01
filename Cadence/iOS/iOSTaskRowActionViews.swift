@@ -773,7 +773,9 @@ struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
     let task: AppTask
     @Binding var pendingRecurrenceRule: TaskRecurrenceRule?
     @Environment(\.modelContext) private var modelContext
-    @State private var seriesLookupFailed = false
+    /// The sentence to show, not a flag: the two ways this dialog fails are a series that could not
+    /// be read and a store that refused the write, and they are different sentences (T-633).
+    @State private var seriesUpdateFailure: String?
 
     private var isPresented: Binding<Bool> {
         Binding(
@@ -804,15 +806,38 @@ struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
         } message: {
             Text(CadenceRecurrenceScopeCopy.taskScopeMessage)
         }
-        .alert("Couldn't Update the Series", isPresented: $seriesLookupFailed) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Cadence couldn't load the rest of this repeating task, so nothing was changed. Try again.")
+        .alert(
+            CadenceRecurrenceScopeCopy.taskScopeFailureTitle,
+            isPresented: Binding(
+                get: { seriesUpdateFailure != nil },
+                set: { if !$0 { seriesUpdateFailure = nil } }
+            ),
+            presenting: seriesUpdateFailure
+        ) { _ in
+            Button("OK", role: .cancel) { seriesUpdateFailure = nil }
+        } message: { notice in
+            Text(notice)
         }
     }
 
+    /// **The commit is not swallowed and the dialog is not the report (T-633).**
+    ///
+    /// Closing the dialog — which is what `pendingRecurrenceRule = nil` does — used to be the last
+    /// thing that happened before `try? modelContext.save()`, so a refused write looked exactly
+    /// like an accepted one: for `.thisAndFuture` every later occurrence in the series had its rule
+    /// rewritten in memory, the sheet closed, and the alert two lines above had nothing that could
+    /// ever fire it. The alert already existed; this is the path to it.
+    ///
+    /// `CadenceTaskFieldEditCommit.commit` is the unit rather than a fourth hand-rolled snapshot:
+    /// it is the one macOS's `TaskEmbedFieldEditorPopover` reaches this same dialog through, and
+    /// its `alsoRestoring:` is there for exactly this edit — `.thisAndFuture` writes the rule to
+    /// every later occurrence, so the undo has to reach all of them, and the list is the one the
+    /// edit itself walks rather than a second derivation of it.
     private func applyPendingRecurrenceRule(scope: CadenceTaskRecurrenceEditScope) {
-        guard let pendingRecurrenceRule else { return }
+        guard let rule = pendingRecurrenceRule else { return }
+        // The dialog closes either way: a confirmation dialog dismisses itself on the button tap,
+        // and leaving the binding non-nil behind an alert would ask this row to present twice.
+        pendingRecurrenceRule = nil
 
         // "This and future" is the only scope that needs the rest of the series, and a failed
         // fetch must not quietly downgrade it to a one-occurrence edit — the user asked to change
@@ -823,20 +848,27 @@ struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
             do {
                 allTasks = try modelContext.fetch(FetchDescriptor<AppTask>(sortBy: [SortDescriptor(\.order)]))
             } catch {
-                self.pendingRecurrenceRule = nil
-                seriesLookupFailed = true
+                seriesUpdateFailure = CadenceRecurrenceScopeCopy.taskScopeLookupFailureNotice
                 return
             }
         }
 
-        CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
-            pendingRecurrenceRule,
-            to: task,
+        let targets = CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets(
+            from: task,
             allTasks: allTasks,
             scope: scope
         )
-        self.pendingRecurrenceRule = nil
-        try? modelContext.save()
+        let landed = CadenceTaskFieldEditCommit.commit(task, alsoRestoring: targets, in: modelContext) {
+            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
+                rule,
+                to: task,
+                allTasks: allTasks,
+                scope: scope
+            )
+        }
+        if !landed {
+            seriesUpdateFailure = CadencePendingChangePersistence.editFailureNotice
+        }
     }
 }
 

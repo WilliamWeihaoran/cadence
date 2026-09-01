@@ -1195,10 +1195,9 @@ enum CadenceSaveCommitRule {
 
         // MARK: Found by T-627's widened vocabulary and block window
         //
-        // [[T-633]]: `pendingRecurrenceRule = nil` is what closes the scope dialog, and it closes
-        // over a swallowed commit — so the row's own "Couldn't Update the Series" alert has
-        // nowhere to fire.
-        "Cadence/iOS/iOSTaskRowActionViews.swift": ["applyPendingRecurrenceRule"],
+        // [[T-633]] emptied this entry: the row chip's scope dialog commits through
+        // `CadenceTaskFieldEditCommit.commit(_:alsoRestoring:in:)` now and names a refusal in the
+        // "Couldn't Update the Series" alert that already existed and could never fire.
         // [[T-636]](b): `return true` from a `-> Bool` drop handler. The repo argued this one
         // itself, in `TasksPanelDropCoordinator`: "a silent accept says the move happened".
         "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift": ["unschedule"],
@@ -1840,8 +1839,8 @@ enum CadenceSaveCommitRule {
         // so the tail-only reading could not have seen it whatever the vocabulary said; the three
         // destination rows now hand their move to `moveNote`, which closes the popover only below
         // the `catch`. Pinned by `CadenceNoteMoveCommitTests`.
-        // [[T-633]], iOS's other half: the sheet's own scope dialog.
-        "Cadence/iOS/iOSTaskDetailSheet.swift": ["applyPendingRecurrenceChange"],
+        // [[T-633]]'s other half — the task sheet's own scope dialog — left with the row chip's,
+        // through the same unit and into the same alert.
         // [[T-636]](c): the focus session's completion, which clears the selection — the picker's
         // only signal that the session ended — over a swallowed commit.
         "Cadence/iOS/iOSFocusView.swift": ["complete"],
