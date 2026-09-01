@@ -68,13 +68,15 @@ struct MacTaskRow: View {
             if task.isCancelled {
                 // The fifth chip on this row, drawn like the other four. It set its own `10` and
                 // `6/3` while the do-date pill, the due-date pill, the bundle badge and the
-                // estimate chip beside it all read `metrics.secondaryFontSize` at `4/2` — which is
-                // the drift `CadenceTaskRowMetrics.desktop` exists to stop (T-597).
+                // estimate chip beside it all read `metrics.secondaryFontSize` at
+                // `CadenceTaskChipPadding.desktop*` — which is the drift `CadenceTaskRowMetrics.desktop`
+                // exists to stop (T-597). The plate was four inline `4/2` pairs until T-617; the bundle
+                // badge named there is not a fifth, because it draws no background and so has no plate.
                 Text("Cancelled")
                     .font(.system(size: metrics.secondaryFontSize, weight: .semibold))
                     .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)
+                    .padding(.vertical, CadenceTaskChipPadding.desktopVertical)
                     .background(Theme.dim.opacity(0.14))
                     .clipShape(Capsule())
                     .padding(.leading, metrics.badgeSpacing)
@@ -247,8 +249,8 @@ struct MacTaskRow: View {
             }
             .fixedSize(horizontal: true, vertical: false)
             .underline(isDoDateHovered)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
+            .padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)
+            .padding(.vertical, CadenceTaskChipPadding.desktopVertical)
             .background(isDoDateHovered ? Theme.surfaceElevated.opacity(0.55) : .clear)
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
@@ -282,8 +284,8 @@ struct MacTaskRow: View {
                     .foregroundStyle(isOverdue ? Theme.red : Theme.dim.opacity(0.68))
             }
             .underline(isDueDateHovered)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
+            .padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)
+            .padding(.vertical, CadenceTaskChipPadding.desktopVertical)
             .background(isDueDateHovered ? Theme.surfaceElevated.opacity(0.55) : .clear)
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
@@ -497,8 +499,8 @@ private struct MacTaskRowEstimateChip: View {
                     .lineLimit(1)
             }
             .foregroundStyle(Theme.dim.opacity(0.68))
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
+            .padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)
+            .padding(.vertical, CadenceTaskChipPadding.desktopVertical)
             .background(isHovered ? Theme.surfaceElevated.opacity(0.55) : .clear)
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }

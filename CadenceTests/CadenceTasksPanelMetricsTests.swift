@@ -47,8 +47,10 @@ struct CadenceTasksPanelMetricsTests {
         let window = String(row[chip.lowerBound...].prefix(400))
 
         #expect(window.contains("size: metrics.secondaryFontSize"))
-        #expect(window.contains(".padding(.horizontal, 4)"))
-        #expect(window.contains(".padding(.vertical, 2)"))
+        // T-617 hoisted the plate into `CadenceTaskChipPadding`; the chip still draws 4/2, and that
+        // it still *reads the same name as the four beside it* is what this line is about.
+        #expect(window.contains(".padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)"))
+        #expect(window.contains(".padding(.vertical, CadenceTaskChipPadding.desktopVertical)"))
         #expect(!window.contains("size: 10"))
         #expect(!window.contains(".padding(.horizontal, 6)"))
         #expect(!window.contains(".padding(.vertical, 3)"))
@@ -60,6 +62,97 @@ struct CadenceTasksPanelMetricsTests {
             CadenceSourceScan.matchCount("size: metrics\\.secondaryFontSize", in: row) == 6
         )
         #expect(CadenceSourceScan.matchCount("size: 10", in: row) == 0)
+    }
+
+    // MARK: - The chip plate, both platforms in one place
+
+    /// **T-617.** The macOS row typed its chip plate inline — `4` horizontal, `2` vertical — at
+    /// **four** sites in `TasksPanelComponents`: the Cancelled pill, the do-date pill, the due-date
+    /// pill and the estimate chip. (`docs/TODO.md` said five and the file's own comment names the
+    /// bundle badge as a fifth; the badge draws no background, so it has no plate and no inset.)
+    /// iOS had already named the same measurement, on `iOSTaskAttributeChipSize` — which is two
+    /// homes for one thing, the shape `CadenceTaskRowMetrics.desktop` exists to close.
+    ///
+    /// So the padding is stated once, in one shared type, **per platform**. The two numbers are
+    /// deliberately different and this hoist changed no pixel: nobody has put the two chips side by
+    /// side, and converging them would be a visual change nobody reviewed. Naming them together is
+    /// what makes the next divergence an edit here rather than a fifth literal there.
+    ///
+    /// Value and source assertions both, for the reason at the top of this file: a value test
+    /// cannot see a fifth chip spelled inline, and a source test cannot see the figure retuned.
+    @Test func bothPlatformsStateTheirChipPlateInOnePlace() throws {
+        #expect(CadenceTaskChipPadding.desktopHorizontal == 4)
+        #expect(CadenceTaskChipPadding.desktopVertical == 2)
+        #expect(CadenceTaskChipPadding.iOSStandardHorizontal == 9)
+        #expect(CadenceTaskChipPadding.iOSRowHorizontal == 7)
+
+        // One home is not one value. If these ever become equal it should be because someone
+        // looked at both chips and decided so, not because a hoist quietly merged them.
+        #expect(CadenceTaskChipPadding.desktopHorizontal != CadenceTaskChipPadding.iOSRowHorizontal)
+        #expect(CadenceTaskChipPadding.iOSRowHorizontal < CadenceTaskChipPadding.iOSStandardHorizontal)
+
+        let row = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift")
+        )
+        #expect(row.contains("struct MacTaskRow: View"), "non-vacuity: wrong file read")
+
+        // The call sites read the name. Counted exactly, and each one also named below: a value-only
+        // assertion stays green while a fifth chip spells `4` and `2` out again.
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopHorizontal"#, in: row) == 4
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopVertical"#, in: row) == 4
+        )
+        #expect(CadenceSourceScan.matchCount(#"\.padding\(\.horizontal, 4\)"#, in: row) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\.padding\(\.vertical, 2\)"#, in: row) == 0)
+
+        // Named, so a count that still adds to four while one chip drifts back cannot pass. The
+        // four anchors are in file order, so each region runs from its own chip to the next one and
+        // the regions do not overlap — one read of each figure in each, no chip covering another.
+        let chips = [
+            #"Text("Cancelled")"#,
+            "private var doDatePill",
+            "private var dueDateBadgeList",
+            "struct MacTaskRowEstimateChip",
+        ]
+        var cursor = row.startIndex
+        var bounds: [String.Index] = []
+        for chip in chips {
+            let found = try #require(
+                row.range(of: chip, range: cursor..<row.endIndex),
+                "\(chip) is no longer drawn by this row, or moved above the chip before it"
+            )
+            bounds.append(found.lowerBound)
+            cursor = found.upperBound
+        }
+        for (offset, chip) in chips.enumerated() {
+            let end = offset + 1 < bounds.count ? bounds[offset + 1] : row.endIndex
+            let region = String(row[bounds[offset]..<end])
+            #expect(
+                CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopHorizontal"#, in: region) == 1,
+                "\(chip) does not read the shared horizontal inset exactly once"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopVertical"#, in: region) == 1,
+                "\(chip) does not read the shared vertical inset exactly once"
+            )
+        }
+
+        // The other half of the one home: iOS reads it too, or the type is a macOS field wearing a
+        // shared name.
+        let mobile = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailComponents.swift")
+        )
+        #expect(mobile.contains("enum iOSTaskAttributeChipSize"), "non-vacuity: wrong file read")
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.iOSStandardHorizontal"#, in: mobile) == 1
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.iOSRowHorizontal"#, in: mobile) == 1
+        )
+        #expect(!mobile.contains("case .standard: return 9"))
+        #expect(!mobile.contains("case .row: return 7"))
     }
 
     // MARK: - The panel's headings

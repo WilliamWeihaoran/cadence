@@ -313,10 +313,13 @@ enum iOSTaskAttributeChipSize {
         }
     }
 
+    /// Stated in `CadenceTaskChipPadding`, beside macOS's, so the two chips' plates sit in one
+    /// place rather than in two (T-617). Still two different numbers: naming them together was not
+    /// a decision to converge them.
     var horizontalPadding: CGFloat {
         switch self {
-        case .standard: return 9
-        case .row: return 7
+        case .standard: return CadenceTaskChipPadding.iOSStandardHorizontal
+        case .row: return CadenceTaskChipPadding.iOSRowHorizontal
         }
     }
 
@@ -602,7 +605,7 @@ struct iOSSubtaskRow: View {
         .frame(minHeight: 44)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.35))
+                .fill(Theme.rowSeparator)
                 .frame(height: 1)
         }
     }

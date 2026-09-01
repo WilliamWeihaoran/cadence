@@ -174,6 +174,36 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
     )
 }
 
+/// The plate inset a task **attribute chip** draws — one home, two platforms, two values.
+///
+/// **T-617.** macOS's row typed `4` horizontal and `2` vertical inline at four sites in
+/// `TasksPanelComponents` (the Cancelled pill, the do-date pill, the due-date pill, the estimate
+/// chip); iOS had already named the same measurement on `iOSTaskAttributeChipSize`. That is two
+/// homes for one thing, which is the shape `CadenceTaskRowMetrics.desktop` exists to close — so
+/// the field does not go on `CadenceTaskRowMetrics` as a macOS-only entry, and it does not stay on
+/// the iOS enum either. Both numbers live here and `iOSTaskAttributeChipSize` reads them.
+///
+/// **Stated together, deliberately not merged.** 4 is not 7 and nothing here converges them: the
+/// two chips have never been compared on screen, and a silent visual change nobody reviewed is a
+/// worse outcome than a documented difference. Sitting side by side is the whole benefit — the next
+/// divergence is a visible edit in this type rather than a fifth literal at a call site.
+///
+/// The vertical inset is macOS-only because iOS's chip has none to name: `iOSTaskAttributeChip`
+/// fixes its plate at a 30pt height and insets horizontally only, so its vertical padding is a
+/// consequence of the height and the type ramp rather than a number anyone chose.
+nonisolated enum CadenceTaskChipPadding {
+    /// macOS task-row chips, horizontally.
+    static let desktopHorizontal: CGFloat = 4
+    /// macOS task-row chips, vertically. The row is a single fixed-height `HStack`, so this is a
+    /// real choice rather than a leftover — see `CadenceTaskRowMetrics.desktop.verticalPadding`.
+    static let desktopVertical: CGFloat = 2
+    /// `iOSTaskAttributeChip` at `.standard`: the create sheet's strip, the inspector breadcrumb.
+    static let iOSStandardHorizontal: CGFloat = 9
+    /// `iOSTaskAttributeChip` at `.row`: a task row's metadata strip, under a 13pt title. Tighter
+    /// than `.standard` because the row draws up to five of these on one line.
+    static let iOSRowHorizontal: CGFloat = 7
+}
+
 struct CadenceSubtaskProgress: Hashable {
     let completed: Int
     let total: Int
