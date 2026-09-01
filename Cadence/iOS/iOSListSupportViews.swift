@@ -272,7 +272,7 @@ struct iOSListPickerRow: View {
             iOSListIconBadge(icon: icon, colorHex: colorHex)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(title.isEmpty ? "Untitled" : title)
+                Text(TaskTitleSupport.displayTitle(title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
@@ -304,7 +304,7 @@ struct iOSArchivedListRow: View {
             iOSListIconBadge(icon: icon, colorHex: colorHex, isMuted: true)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(title.isEmpty ? "Untitled" : title)
+                Text(TaskTitleSupport.displayTitle(title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Theme.muted)
                     .lineLimit(1)

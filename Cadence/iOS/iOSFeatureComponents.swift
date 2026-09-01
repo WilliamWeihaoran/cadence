@@ -449,7 +449,7 @@ struct iOSFeatureSummaryRow: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
-                Text(subtitle.isEmpty ? "No context" : subtitle)
+                Text(TaskTitleSupport.displayTitle(subtitle, fallback: "No context"))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.subdued)
                     .lineLimit(2)

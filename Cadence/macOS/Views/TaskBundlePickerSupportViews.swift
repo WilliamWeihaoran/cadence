@@ -176,7 +176,7 @@ struct TaskBundleTaskPickerPanel: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color(hex: list.colorHex))
             VStack(alignment: .leading, spacing: 1) {
-                Text(list.title.isEmpty ? "Untitled List" : list.title)
+                Text(TaskTitleSupport.displayTitle(list.title, fallback: "Untitled List"))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
@@ -208,7 +208,7 @@ struct TaskBundleTaskPickerPanel: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color(hex: list.colorHex))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(list.title.isEmpty ? "Untitled List" : list.title)
+                    Text(TaskTitleSupport.displayTitle(list.title, fallback: "Untitled List"))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
@@ -240,7 +240,7 @@ struct TaskBundleTaskPickerPanel: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.amber)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(task.title.isEmpty ? "Untitled" : task.title)
+                    Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)

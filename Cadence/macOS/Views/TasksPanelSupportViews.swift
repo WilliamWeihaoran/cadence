@@ -96,7 +96,7 @@ struct SubtaskRow: View {
             }
             .buttonStyle(.cadencePlain)
 
-            Text(subtask.title.isEmpty ? "Untitled" : subtask.title)
+            Text(TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                 .font(.system(size: 13))
                 .foregroundStyle(subtask.isDone ? Theme.dim : Theme.muted)
                 .strikethrough(subtask.isDone, color: Theme.dim)

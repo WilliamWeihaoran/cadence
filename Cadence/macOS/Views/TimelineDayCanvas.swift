@@ -244,7 +244,7 @@ struct TimelineDayCanvas: View {
                 dateKey: dateKey,
                 onCreateTask: { title, containerSelection, sectionName, notes, subtaskTitles in
                     onCreateTask(
-                        title.isEmpty ? "New Task" : title,
+                        TaskTitleSupport.displayTitle(title, fallback: "New Task"),
                         start,
                         end,
                         containerSelection,

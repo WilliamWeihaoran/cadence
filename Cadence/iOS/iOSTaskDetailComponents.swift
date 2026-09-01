@@ -69,7 +69,7 @@ struct iOSTaskEditorTitleCard: View {
                     )
                 }
 
-                TextField("Untitled task", text: $task.title, axis: .vertical)
+                TextField("Task title", text: $task.title, axis: .vertical)
                     .font(.system(size: iOSTaskInspectorMetrics.titleSize, weight: .bold))
                     .foregroundStyle(isSettled ? Theme.dim : Theme.text)
                     .strikethrough(isSettled, color: Theme.dim)

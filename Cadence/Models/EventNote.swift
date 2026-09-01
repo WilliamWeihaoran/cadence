@@ -27,8 +27,7 @@ import Foundation
         self.eventDateKey = eventDateKey
         self.eventStartMin = eventStartMin
         self.eventEndMin = eventEndMin
-        let trimmedTitle = eventTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedTitle = trimmedTitle.isEmpty ? "Event Note" : trimmedTitle
+        let resolvedTitle = CadenceTitleNormalization.display(eventTitle, fallback: "Event Note")
         self.title = resolvedTitle
         self.content = "# \(resolvedTitle)\n\n"
     }

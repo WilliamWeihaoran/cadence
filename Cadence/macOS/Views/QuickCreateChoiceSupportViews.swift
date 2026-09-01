@@ -427,7 +427,7 @@ struct QuickCreateBundleTaskSelectionView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.amber)
-            Text(task.title.isEmpty ? "Untitled" : task.title)
+            Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)

@@ -383,7 +383,7 @@ private struct BundleTaskPopoverRow: View {
                 .frame(width: 18)
 
             VStack(alignment: .leading, spacing: CadenceBundleTaskRowMetrics.summarySpacing) {
-                Text(task.title.isEmpty ? "Untitled" : task.title)
+                Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                     .font(.system(size: CadenceBundleTaskRowMetrics.titleSize, weight: CadenceBundleTaskRowMetrics.titleWeight))
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                     .lineLimit(CadenceBundleTaskRowMetrics.titleLineLimit)

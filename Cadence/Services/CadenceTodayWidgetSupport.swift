@@ -189,7 +189,7 @@ nonisolated enum CadenceTodayWidgetSupport {
     private nonisolated static func widgetTask(_ task: AppTask) -> CadenceTodayWidgetTask {
         CadenceTodayWidgetTask(
             id: task.id,
-            title: task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled" : task.title,
+            title: CadenceTitleNormalization.display(task.title, fallback: CadenceTitleNormalization.defaultCompactTitle),
             priorityRaw: task.priority.rawValue,
             dueDate: task.dueDate,
             scheduledDate: task.scheduledDate,

@@ -208,7 +208,7 @@ enum CadenceEventNoteSupport {
             in: notes
         ) {
             if existing.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                existing.title = eventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Event Note" : eventTitle
+                existing.title = CadenceTitleNormalization.display(eventTitle, fallback: "Event Note")
             }
             if existing.calendarEventID.isEmpty || existing.calendarEventID != calendarEventID {
                 existing.calendarEventID = calendarEventID
@@ -223,7 +223,7 @@ enum CadenceEventNoteSupport {
             return existing
         }
 
-        let resolvedTitle = eventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Event Note" : eventTitle
+        let resolvedTitle = CadenceTitleNormalization.display(eventTitle, fallback: "Event Note")
         let created = Note(
             kind: .meeting,
             title: resolvedTitle,
@@ -243,7 +243,7 @@ enum CadenceEventNoteSupport {
         if !trimmedNativeNotes.isEmpty {
             return nativeNotes ?? trimmedNativeNotes
         }
-        let resolvedTitle = eventTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Event Note" : eventTitle
+        let resolvedTitle = CadenceTitleNormalization.display(eventTitle, fallback: "Event Note")
         return "# \(resolvedTitle)\n\n"
     }
 

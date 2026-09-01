@@ -426,7 +426,7 @@ enum MarkdownTaskEmbedDrawing {
         var rects: [MarkdownTaskEmbedSubtaskHitRect] = []
 
         for subtask in task.visibleSubtasks {
-            let title = subtask.title.isEmpty ? "Untitled subtask" : subtask.title
+            let title = TaskTitleSupport.displayTitle(subtask.title, fallback: "Untitled subtask")
             let titleWidth = title.size(withAttributes: subtaskAttributes(done: subtask.isDone)).width
             let width = min(max(58, titleWidth + 28), 150)
             guard x + width <= contentMaxX else { break }
@@ -508,7 +508,7 @@ enum MarkdownTaskEmbedDrawing {
             check.stroke()
         }
 
-        let title = subtask.title.isEmpty ? "Untitled subtask" : subtask.title
+        let title = TaskTitleSupport.displayTitle(subtask.title, fallback: "Untitled subtask")
         (title as NSString).draw(in: textRect, withAttributes: subtaskAttributes(done: subtask.isDone))
     }
 

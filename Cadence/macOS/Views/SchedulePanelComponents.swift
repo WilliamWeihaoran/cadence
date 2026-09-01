@@ -111,7 +111,7 @@ struct TaskDetailPopover: View {
                         onDeleteSubtask: { subtask in
                             deleteConfirmationManager.present(
                                 title: "Delete Subtask?",
-                                message: "This will permanently delete \"\(subtask.title.isEmpty ? "Untitled" : subtask.title)\"."
+                                message: "This will permanently delete \"\(TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))\"."
                             ) {
                                 deleteSubtask(subtask)
                             }

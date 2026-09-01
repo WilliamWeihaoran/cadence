@@ -370,7 +370,7 @@ struct iOSTaskRowGoalChip: View {
 
     var body: some View {
         iOSTaskAttributeChip(
-            title: goal.title.isEmpty ? "Goal" : goal.title,
+            title: TaskTitleSupport.displayTitle(goal.title, fallback: "Goal"),
             field: CadenceTaskControlAccessibility.milestone,
             systemImage: goal.icon,
             isSet: true,
@@ -481,7 +481,7 @@ struct iOSTaskRowSubtaskRow: View {
         } label: {
             HStack(spacing: 8) {
                 iOSTaskCompletionCircle(isDone: false, tint: Theme.dim, diameter: 12)
-                Text(subtask.title.isEmpty ? "Untitled" : subtask.title)
+                Text(TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.muted)
                     .lineLimit(1)

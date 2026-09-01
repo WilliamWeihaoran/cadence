@@ -135,8 +135,7 @@ struct CreateGoalSheet: View {
                         selectedID: $selectedParentGoalID,
                         noneTitle: "No parent goal",
                         noneSubtitle: "Keep as a top-level goal",
-                        searchPlaceholder: "Search goals",
-                        emptyText: "No matching goals"
+                        searchPlaceholder: "Search goals"
                     )
 
                     fieldLabel("Kind")

@@ -101,10 +101,9 @@ nonisolated struct MarkdownTaskEmbedRenderInfo: Hashable {
     }
 
     static func missing(reference: MarkdownTaskEmbedReference) -> MarkdownTaskEmbedRenderInfo {
-        let title = reference.title.trimmingCharacters(in: .whitespacesAndNewlines)
         return MarkdownTaskEmbedRenderInfo(
             id: reference.id,
-            title: title.isEmpty ? "Missing Task" : title,
+            title: TaskTitleSupport.displayTitle(reference.title, fallback: "Missing Task"),
             statusRaw: TaskStatus.cancelled.rawValue,
             priorityRaw: TaskPriority.none.rawValue,
             sectionName: "",

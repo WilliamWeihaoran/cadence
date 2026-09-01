@@ -306,7 +306,7 @@ struct iOSBoardTaskCard: View {
                 .buttonStyle(.iosPressable)
                 .accessibilityLabel(CadenceTaskQuerySupport.isFinishedTask(task) ? "Mark not done" : "Mark done")
 
-                Text(task.title.isEmpty ? "Untitled" : task.title)
+                Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                     .font(.system(size: isRegularWidth ? 15 : 14, weight: .medium))
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                     .strikethrough(task.isDone, color: Theme.dim)
@@ -512,7 +512,7 @@ struct iOSCalendarBoardBundleCard: View {
                             HStack(spacing: 5) {
                                 iOSTaskCompletionCircle(glyph: .resolve(task: task))
                                     .frame(width: 10, height: 10)
-                                Text(task.title.isEmpty ? "Untitled" : task.title)
+                                Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                                     .font(.system(size: 11, weight: .medium))
                                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text.opacity(0.85))
                                     .strikethrough(task.isDone, color: Theme.dim)

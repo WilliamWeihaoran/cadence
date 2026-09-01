@@ -45,8 +45,7 @@ struct HabitFormFields: View {
                 selectedID: $selectedGoalID,
                 noneTitle: "No goal",
                 noneSubtitle: "Track this habit independently",
-                searchPlaceholder: "Search goals",
-                emptyText: "No matching goals"
+                searchPlaceholder: "Search goals"
             )
 
             HabitFormLabel("Icon")

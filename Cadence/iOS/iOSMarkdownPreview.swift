@@ -380,7 +380,7 @@ private struct iOSMarkdownPreviewTaskEmbedBlock: View {
                             .buttonStyle(.plain)
                             .disabled(onToggleSubtask == nil || task.isMissing)
 
-                            Text(subtask.title.isEmpty ? "Untitled" : subtask.title)
+                            Text(TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(subtask.isDone ? Theme.dim : Theme.muted)
                                 .strikethrough(subtask.isDone, color: Theme.dim)

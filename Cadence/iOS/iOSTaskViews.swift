@@ -190,7 +190,7 @@ struct iOSTaskRow: View {
             // `CadenceTaskRowMetrics.titleLineLimit`, not a per-width or per-host number. Today used
             // to truncate to one line while the next tab along wrapped to two, and it is the day's
             // planning screen that could least afford to hide half a title.
-            Text(task.title.isEmpty ? "Untitled" : task.title)
+            Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                 .font(.system(size: metrics.titleFontSize, weight: .medium))
                 .foregroundStyle(isSettled ? Theme.dim : Theme.text)
                 .strikethrough(isSettled, color: Theme.dim)

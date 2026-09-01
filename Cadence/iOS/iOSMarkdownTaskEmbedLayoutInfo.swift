@@ -70,7 +70,7 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
         let y: CGFloat = 66
 
         for subtask in task.visibleSubtasks {
-            let title = subtask.title.isEmpty ? "Untitled" : subtask.title
+            let title = TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
             let prefix = subtask.isDone ? "[x] " : "[ ] "
             let text = prefix + title
             let available = max(0, width - x - 12)
@@ -207,7 +207,7 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
         x += 38
 
         for subtask in task.visibleSubtasks {
-            let title = subtask.title.isEmpty ? "Untitled" : subtask.title
+            let title = TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
             let prefix = subtask.isDone ? "[x] " : "[ ] "
             let text = prefix + title
             let available = max(0, width - x - 12)

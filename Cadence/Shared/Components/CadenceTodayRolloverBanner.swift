@@ -109,7 +109,7 @@ struct CadenceTodayRolloverBanner: View {
                     Circle()
                         .fill(Color(hex: task.containerColor))
                         .frame(width: 6, height: 6)
-                    Text(task.title.isEmpty ? "Untitled" : task.title)
+                    Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)

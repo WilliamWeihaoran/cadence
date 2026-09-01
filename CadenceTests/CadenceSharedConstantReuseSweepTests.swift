@@ -115,20 +115,12 @@ struct CadenceUndeclaredPlaceholderLabel {
     }
 }
 
+/// **Three, not four, since T-539.** `"Untitled task"` left this list by being *fixed*, which is
+/// the outcome the list is for: its entry said the answer was "say Task title", not "capitalise",
+/// and once the prompt said that, `everyUndeclaredPlaceholderLabelIsStillUndeclaredAndStillTyped`
+/// failed on the entry rather than letting it sit. An entry retiring itself is not the list
+/// shrinking under pressure — a *new* label still has to be declared or written down.
 let cadenceUndeclaredPlaceholderLabels: [CadenceUndeclaredPlaceholderLabel] = [
-    CadenceUndeclaredPlaceholderLabel(
-        "Untitled task",
-        path: "Cadence/iOS/iOSTaskDetailComponents.swift",
-        why: """
-        The one survivor of [[T-513]]'s lower-cased trio, and deliberately: it is a `TextField` \
-        prompt, not a label over a value. The other two were `Text(...)` rows showing a \
-        blank-titled task the way ~18 other surfaces show it, so they now read \
-        `TaskTitleSupport.defaultDisplayTitle`. A prompt is a different piece of copy — every other \
-        title prompt in the app is a noun phrase ("Task title", "Note title", "Column name"), so \
-        raising this one to "Untitled Task" would make it the only prompt phrased as a placeholder \
-        *value*. Filed rather than changed, because the fix is "say Task title", not "capitalise".
-        """
-    ),
     CadenceUndeclaredPlaceholderLabel(
         "Untitled subtask",
         path: "Cadence/macOS/Editor/MarkdownTaskEmbedDrawingSupport.swift",
@@ -636,8 +628,17 @@ struct CadenceSharedConstantReuseSweepTests {
         // call site far from them, so a pattern that stopped matching cannot pass as a clean tree.
         #expect(sites[CadenceTitleNormalization.defaultTaskTitle] != nil)
         #expect(sites[CadenceTitleNormalization.defaultAreaName] != nil)
-        #expect(sites[CadenceTitleNormalization.defaultCompactTitle]?.count ?? 0 >= 10,
-                "the harvest stopped reading the app's most common placeholder")
+        // **Re-baselined by T-609, and the shape changed as well as the number.** This was
+        // `count >= 10` over the files typing `"Untitled"` inline. T-609 routed 16 of them through
+        // `TaskTitleSupport.displayTitle` and the population fell to 9, so the floor went red on a
+        // change that made the tree *better* — which is what a bare count over a deliberately
+        // shrinking population always eventually does. Named witnesses hold the same claim without
+        // that failure mode: both of these type the compact label as a **stored default** on a
+        // model, not as a hand-spelled display fallback, so no de-duplication sweep can take them.
+        // A harvest that stopped matching loses both at once.
+        let compactSites = sites[CadenceTitleNormalization.defaultCompactTitle] ?? []
+        #expect(compactSites.contains("Cadence/Models/Note.swift"))
+        #expect(compactSites.contains("Cadence/Models/Document.swift"))
 
         let declared = try cadenceDeclaredPlaceholderLabels()
         #expect(declared.count >= 9, "non-vacuity: \(declared.count) declared placeholder labels")
@@ -674,7 +675,7 @@ struct CadenceSharedConstantReuseSweepTests {
         let declared = try cadenceDeclaredPlaceholderLabels()
         let family = CadenceTitleNormalization.defaultCompactTitle
 
-        #expect(cadenceUndeclaredPlaceholderLabels.count == 4,
+        #expect(cadenceUndeclaredPlaceholderLabels.count == 3,
                 "the recorded list changed size; re-read T-515's decision before adding to it")
 
         for entry in cadenceUndeclaredPlaceholderLabels {

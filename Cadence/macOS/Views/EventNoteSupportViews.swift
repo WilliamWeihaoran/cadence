@@ -64,7 +64,7 @@ struct EventNoteEditorSheet: View {
             NoteEditorPane(
                 note: note,
                 onPersistContent: commitEventNote,
-                headerDetail: eventTitle.isEmpty ? "Linked event note" : eventTitle,
+                headerDetail: CadenceTitleNormalization.display(eventTitle, fallback: "Linked event note"),
                 headerAccessory: AnyView(
                     HStack(spacing: 10) {
                         NoteActionMenu(note: note)
