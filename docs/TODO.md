@@ -626,12 +626,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-539] **`iOSTaskDetailComponents.swift:72` prompts with a placeholder value, not a noun phrase.** Its
-  title `TextField` prompts `"Untitled task"`, where every other title prompt in the app is a noun phrase
-  ("Task title", "Note title", "Column name", "Event title"). [[T-513]] left it deliberately: capitalising
-  it would make it the only prompt phrased as a value, and folding it into `defaultTaskTitle` would freeze
-  the drift under a change that looks like cleanup. The real fix is "Task title". It is currently the
-  first entry in `cadenceUndeclaredPlaceholderLabels`; **deleting that entry is part of the fix.**
 
 
 - [T-543] **Settings > Calendar's access card says two things and draws two glyphs.** macOS shows an
@@ -685,9 +679,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   not a recorded decision. [[T-533]]'s guard checks within `iOSFeatureViews.swift`; T-540's checks the two
   macOS goals files; neither crosses.
 
-- [T-550] **Two redundant `emptyText:` arguments.** `CreateGoalSheet.swift:139` and
-  `HabitsFormSupportViews.swift:49` pass `emptyText: "No matching goals"`, which is identical to
-  `GoalPickerViews`' own parameter default. Behaviour-neutral removal, [[T-374]] family.
 
 
 - [T-551] **[[T-495]]'s verdict holds but one supporting clause did not reproduce — and it is the one that
@@ -929,16 +920,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Harmless, but it is chrome asserting the container is something it is not, and it is the kind of
   line the next section view copies. Check `TasksPanel`'s overdue card stacks for the same shape.
 
-- [T-609] **25 sites still hand-spell an empty-title fallback instead of using the shared helper.**
-  Split from [[T-569]], which fixed the four calendar sites and **measured** the remainder rather than
-  estimating it: 25 across `Cadence/`, `CadenceWidgets/` and `CadenceMCPServer/` spell
-  `title.isEmpty ? "..." : title`. The shared `TaskTitleSupport.displayTitle(_:fallback:)` **trims
-  first**, so every one of these draws a blank line for a whitespace-only title.
-  Two things to decide before sweeping, not during: (a) the fallback copy is not uniform — some sites
-  say "Untitled", `displayTitle`'s own default is "Untitled Task", and T-569 deliberately preserved the
-  compact wording rather than promoting it, so a blind sweep would silently re-word ~25 strings;
-  (b) `CadenceMCPServer` and `CadenceWidgets` are separate targets, so check the helper is available
-  there before assuming one call fits all. Pin the result with a scan so the 26th site cannot appear.
 
 - [T-612] **A fourth spelling of the carried-day dim, and this one has no plate to move.**
   `iOSCalendarMonthAgendaViews.swift:477` (`Theme.dim` at full) x `:527` (`.opacity(0.5)` on the whole
@@ -1451,7 +1432,103 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   check immediately before committing that the index holds nothing but the agent's own paths. Belongs
   in `docs/SUBAGENT_RUNBOOK.md` beside the shared-file guidance.
 
+- [T-686] **The 29th empty-title site, left for its owner.** `TasksPanelComponents.swift:55`
+  (`MacTaskRow`) spells `task.title.isEmpty ? "Untitled" : task.title`, so the primary macOS task row
+  draws a blank line for a title of spaces — the one surface in [[T-609]]'s sweep that was **not**
+  fixed, because another agent held that file for the whole batch. One line:
+  `TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)`.
+  `CadenceEmptyTitleFallbackSweepTests.sitesLeftForAnotherOwner` names it as an exact expected set,
+  so **fixing it turns that test red** — delete the entry in the same change. Mutation M6 confirmed
+  that is what happens.
+
+- [T-687] **[[T-609]]'s scan has two measured blind spots, and one of them is bigger than T-609 was.**
+  Both were found *by* the T-609 work — the first by a surviving mutation, which is the argument for
+  mutating even a scan you are only reading through.
+  **(1) The fallback spelled as a constant, 27 sites in 15 files.** T-609's needle requires a string
+  *literal* between the `?` and the `:`, because that is the shape [[T-569]] measured. Allow a
+  constant — `goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title` — and the
+  same untrimmed ternary appears 27 more times. These are mostly sites [[T-505]]/[[T-513]] already
+  de-literalised: they read the right constant and still draw a blank line for a title of spaces, so
+  the constant sweep passes them and T-609's does not see them.
+  `iOSFeatureDetailViews.swift` (7), `iOSTrackingEditorSheets.swift` (3), `MarkdownNoteSupport.swift`
+  (2), `iOSFeatureViews.swift` (2), `iOSListSupportViews.swift` (2), `iOSSearchView.swift` (2), and
+  one each in `AIActionService`, `iOSInboxRemindersSection`, `iOSMarkdownAccessoryViews`,
+  `iOSTaskDetailSheetSections`, `iOSTaskRowActionViews`, `InboxSupportViews`, `LinksView`,
+  `SchedulePanelComponents`, `macOSRootSupportViews`.
+  **Not a blind sweep, and that is the whole ticket:** the 27 are **not uniform**. `LinksView.swift:102`
+  falls back to the URL string, `iOSListSupportViews.swift:797` to `link.url`, and
+  `MarkdownNoteSupport.swift:85`/`:86` to a *template's* title and subtitle. Those fall back to another
+  **real value**, not to a placeholder, so "should this branch trim?" is a decision per site. Widening
+  T-609's regex would have swept them behind one substitution — the mistake T-609 was explicitly told
+  to avoid one axis over.
+  **(2) The same shape on a `name`, 7 live sites.** T-609 is scoped to identifiers ending
+  `title`/`Title`. `GoalsSupportViews.swift:434` and `TaskBundlePickerSupportViews.swift:320`
+  (`task.containerName` → "Inbox"), `CadenceSearchCandidateSupport.swift:60` (→ "Inbox"),
+  `GoalListLinkHelpers.swift:103` (→ "No Context"), `iOSCalendarEventEditSheet.swift:395`
+  (→ "Unknown calendar"), `iOSRootSidebar.swift:776` (`item.name` → "Untitled"), and
+  `iOSColumnWindDownSupport.swift:50`, which is the trimmed-test/untrimmed-return spelling on
+  `config.name`. `iOSSettingsContextSection.swift:78` is the correct hand-spelling and is the control.
+  The boundary is written into `CadenceEmptyTitleFallbackSweepTests`' header with both counts, so the
+  scan says what it does **not** cover rather than implying it covers everything.
+
+- [T-688] **Two fallback strings that disagree with the family, and neither is decidable from the
+  literal.** Found while sweeping [[T-609]] and deliberately left, because T-609's rule was "route
+  through the trim, change no copy":
+  (1) `iOSTaskRowActionViews.swift:373` labels a blank-titled goal `"Goal"`, where
+  `CadenceTitleNormalization.defaultGoalTitle` is `"Untitled Goal"` and `:410` in the *same file*
+  already reads `defaultMilestoneTitle` — so the same nested goal reads two ways depending on which
+  chip you are looking at.
+  (2) `TimelineDayCanvas.swift:247` names a blank quick-created task `"New Task"`, and
+  `CadenceEventTitleSupport`'s header already argues the opposite case in writing: `"New Event"` was
+  retired for `"Untitled Event"` because an event created last year is not new but is still untitled.
+  The argument applies here unchanged, and this one is **stored**, not drawn.
+  Both are copy decisions. Neither is a de-duplication.
+
 ## Done
+
+- [T-609] **CLOSED 2026-09-02 (`f09d739`).** Swept, and **re-measured rather than inherited**. The
+  inline form `X.isEmpty ? "…" : X` where `X` is a title is **29 sites in 22 files**, and a second
+  spelling the ticket did not name — `X.trimmingCharacters(…).isEmpty ? "…" : X`, which tests the
+  *trimmed* value and returns the **untrimmed** one — adds **4 more in 2 files**. 32 of the 33 are
+  fixed; the 29th inline site, `TasksPanelComponents.swift:55` inside `MacTaskRow`, was another
+  agent's file for the whole batch and is [[T-686]].
+  **Premise correction:** "25 across `Cadence/`, `CadenceWidgets/` and `CadenceMCPServer/`" is wrong
+  about the spread. Both extra targets hold **zero** — `CadenceMCPServer`'s only `isEmpty ?` is
+  `parts.isEmpty ? nil : parts`, and `CadenceWidgets/` has none at all. Every site is under
+  `Cadence/`.
+  **(a), decided before sweeping: no copy changed.** Each site passes its own fallback explicitly —
+  "Untitled" (as `defaultCompactDisplayTitle`), "Untitled List", "Untitled subtask", "Missing Task",
+  "New Task", "Event Note", "Goal", "Linked event note", "No context". T-569's decision to keep the
+  compact wording stands; re-wording any of them is [[T-687]].
+  **(b), decided before sweeping: one call does *not* fit all.** `TaskTitleSupport` lives in
+  `Cadence/Shared/`, which neither extra target compiles, so the four sites in `Models/`, the widget
+  service and the two event-note surfaces read `CadenceTitleNormalization.display` in
+  `Cadence/Models/ModelEnums.swift` — the one tree all three targets build. `CadenceMCPServer` and
+  `CadenceWidgets` were built on their own schemes: 0 errors, 0 warnings, and the log names the
+  files that recompiled.
+  Two sites are behaviourally reachable and both were red first: the Today widget row drew
+  `"  Buy milk  "` untrimmed, and a meeting note's `# heading` wrote the padding into markdown.
+  Pinned by `CadenceEmptyTitleFallbackSweepTests` — two `CadenceScanInstrument` sweeps over all
+  three roots with a per-root witness, the `strippingComments`-vs-`codeOnly` reader pinned as its
+  own test, and the one skipped site held as an **exact expected set** so fixing it goes red rather
+  than silently widening. 8 mutations, all killed.
+
+- [T-539] **CLOSED 2026-09-02 (`f09d739`).** The prompt says "Task title". Premise verified at
+  `iOSTaskDetailComponents.swift:72`, unmoved. Its `cadenceUndeclaredPlaceholderLabels` entry is
+  deleted and the list's count assertion is 3 — and the deletion was **forced, not chosen**:
+  `everyUndeclaredPlaceholderLabelIsStillUndeclaredAndStillTyped` fails on an entry whose file no
+  longer types the literal, which is that list working as designed. Pinned twice, once at the line
+  and once over the tree: `everyTitlePromptInTheAppIsANounPhrase` harvests every
+  `TextField("…", text: $…title)` prompt in `Cadence/` and fails on any phrased as a placeholder
+  value, so "the only prompt phrased as a value" is now a claim a test can check rather than prose.
+
+- [T-550] **CLOSED 2026-09-02 (`f09d739`).** Both arguments deleted. Premise verified:
+  `GoalLinkPickerButton.emptyText` defaults to `"No matching goals"` at `GoalPickerViews.swift:89`
+  and both call sites passed exactly that. The guard is over the tree, not the two lines — no file
+  under `Cadence/` other than the declaration may spell `emptyText: "No matching goals"` — with the
+  default itself asserted, so the test stops meaning anything the moment the default changes rather
+  than quietly forgiving the argument.
+
 
 - [T-541] **CLOSED 2026-09-02, `c1b0c9b`.** Filtered the fallback too, as decided. The Goals
   detail pane resolves through `GoalAssignmentRules.selectedGoal(id:from:)`, whose every rung is
