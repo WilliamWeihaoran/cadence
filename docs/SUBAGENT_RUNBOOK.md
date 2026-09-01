@@ -197,7 +197,16 @@ with its own change.
 
 Rules:
 
-- Prefer `SIGTERM` for a runner that mutates anything, and give the trap a moment to run.
+- **`SIGTERM` is not the safe alternative it looks like.** Recorded 2026-09-01, twice in one batch.
+  A zsh `trap 'restore' EXIT INT TERM` whose handler restores but does **not** `exit` runs the restore
+  and then lets the runner carry on mutating — so the tree ends up mutated again, by a runner you
+  believe you stopped. The other agent hit the same hazard from the harness side: a foreground runner
+  reached the 10-minute tool cap, was `SIGTERM`'d, and its `EXIT` trap did not restore at all; mutation
+  M1 was left in the working tree. `SIGKILL` skips the trap and `SIGTERM` cannot be trusted to finish
+  it, so **neither signal is a restore**. End every handler with an explicit `exit`, and verify the
+  restore by grepping for the needle either way.
+- **Do not run a mutation batch in the foreground.** The 10-minute tool cap will cut it mid-mutation.
+  Put the whole loop in one script and background it.
 - If you must `kill -9`, **restore from the `cp` backup by hand in the same turn**, and confirm the
   restore by grepping for the needle rather than assuming it.
 - Release the lock with the same id you acquired under, in the same turn.

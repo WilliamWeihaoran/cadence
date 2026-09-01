@@ -1162,6 +1162,18 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Fix: balance the parameter list before looking for the body (`matchedBody(after:in:open:close:)`
   already does parentheses), and pin it with a fixture that fails on the current reader.
 
+- [T-650] **`scripts/test-host-lock.sh` has no fairness, and with 3-4 agents that is now the run's
+  main wall-clock cost.** Measured 2026-09-01 in the Batch A run: one agent's `acquire` was starved for
+  **~65 minutes** behind two siblings, with no queue and no ageing — it had to commit its green work
+  first and run its mutations afterwards to make progress at all. Every waiter races on release, so a
+  short run that arrives at the right instant beats a long one that has been waiting an hour.
+  The lock itself is correct and must stay: a UI-test run launches a real `Cadence.app`, and two
+  concurrent test hosts is the hazard it was written for (T-117). What is missing is only the ordering.
+  A ticket-and-turn file, or an ageing bonus, would do; the cheapest honest version is a FIFO of
+  waiter ids the releaser hands the lock to directly.
+  **Note the interaction with mutation runs**: a mutation batch is many short acquisitions in a row, so
+  a starved agent is starved repeatedly, not once.
+
 ## Done
 
 - [T-635] **CLOSED 2026-09-01 (`819fc2f`).** `rollOver` throws and takes `commit:`; both hosts write the
