@@ -94,6 +94,105 @@ struct CadenceScanInstrumentTests {
     }
 }
 
+// MARK: - T-644 / T-659: the readers the sweeps are built on
+
+/// The instrument above refuses a blinded *detector*. These are the layer under it: the two shared
+/// **readers** that decide which text a detector is even shown.
+///
+/// Both defects in this suite are the same shape and neither was an error or a warning — a green
+/// assertion over the wrong span. `functionBody(named:)` handed back a default closure instead of a
+/// function body; `reportFollowsTheCatch` answered a weaker question than its own name. A reader
+/// that reads slightly other than what the rule says makes every suite built on it less trustworthy
+/// than its green result looks, so the discriminating cases live here rather than only inside the
+/// suites that happen to call them.
+struct CadenceSourceScanReaderTests {
+
+    /// **T-644.** The exact shape that broke it: a `commit:` parameter defaulted to a closure. The
+    /// old reader took the first `{` after `func <name>(` and returned `try $0.save()`; the reader
+    /// balances the parameter list first, so it returns the body.
+    ///
+    /// The assertions are written in both directions on purpose. `contains("theRealBody()")` is
+    /// what the callers do and is what silently went green; `!contains("try $0.save()")` is what
+    /// says the returned span is not merely a *superset* that happens to include the body.
+    @Test func theFunctionBodyReaderSkipsADefaultedClosureInTheParameterList() {
+        let source = """
+        static func toggleCompletion(
+            _ task: Task,
+            in modelContext: ModelContext,
+            commit: (ModelContext) throws -> Void = { try $0.save() }
+        ) throws {
+            theRealBody()
+        }
+        """
+        let body = CadenceSourceScan.functionBody(named: "toggleCompletion", in: source)
+        #expect(body?.contains("theRealBody()") == true, "read \(body ?? "nil") instead of the body")
+        #expect(
+            body?.contains("try $0.save()") == false,
+            "the reader is still handing back the default closure (T-644)"
+        )
+    }
+
+    /// The same reader on the ordinary shape, so the fix is not "returns something bigger". A
+    /// signature with no brace in it must still read exactly as it did before.
+    @Test func theFunctionBodyReaderStillReadsAPlainSignatureUnchanged() {
+        let source = "func plain(a: Int, b: (Int) -> Int) -> Int {\n    a + b(a)\n}"
+        #expect(CadenceSourceScan.functionBody(named: "plain", in: source)?.contains("a + b(a)") == true)
+        #expect(CadenceSourceScan.functionBody(named: "absent", in: source) == nil)
+        // A signature whose parentheses never balance is a `nil`, not a body read off the end.
+        #expect(CadenceSourceScan.functionBody(named: "torn", in: "func torn(a: Int {\n    x\n") == nil)
+    }
+
+    /// `matchedRange` is `matchedBody`'s span, and the pairing has to stay honest: `upperBound` is
+    /// the index **of** the closing character, which is what lets `functionBody` resume from it.
+    @Test func theMatchedRangeAndMatchedBodyReadersAgreeOnTheSameSpan() throws {
+        let source = "func f(a: (Int) -> Int = { $0 }) { body() }"
+        let parameters = try #require(
+            CadenceSourceScan.matchedRange(
+                after: source.startIndex,
+                in: source,
+                open: "(",
+                close: ")"
+            )
+        )
+        #expect(String(source[parameters]) == "a: (Int) -> Int = { $0 }")
+        #expect(source[parameters.upperBound] == ")")
+        #expect(
+            CadenceSourceScan.matchedBody(after: source.startIndex, in: source, open: "(", close: ")")
+                == String(source[parameters])
+        )
+    }
+
+    /// **T-659.** The case a surviving mutation found: the report written on *both* sides of the
+    /// failure branch. A backwards search finds the copy below and calls the body ordered; the
+    /// forwards search anchors on the copy above and refuses it.
+    ///
+    /// This is the whole defect. The mutation added a second `newTagName = ""` at the top of
+    /// `iOSTaskTagPickerPopover.addTag` — clearing the field before the guard, the exact regression
+    /// the assertion exists to catch — and stayed green.
+    @Test func theOrderingReaderRefusesAReportWrittenOnBothSidesOfTheFailureBranch() {
+        let above = "report()\ndo { try commit() } catch { notice = text; return }"
+        let below = "do { try commit() } catch { notice = text; return }\nreport()"
+        let both = "report()\ndo { try commit() } catch { notice = text; return }\nreport()"
+
+        #expect(!CadenceCommitSurfaceScan.reportFollowsTheCatch("report()", in: above))
+        #expect(CadenceCommitSurfaceScan.reportFollowsTheCatch("report()", in: below))
+        #expect(
+            !CadenceCommitSurfaceScan.reportFollowsTheCatch("report()", in: both),
+            "the ordering reader still anchors on the last occurrence (T-659)"
+        )
+        // The `catch` end stays anchored on the *last* failure branch, so a report between two
+        // catches is not ordered either.
+        let betweenCatches = """
+        do { try one() } catch { return }
+        report()
+        do { try two() } catch { return }
+        """
+        #expect(!CadenceCommitSurfaceScan.reportFollowsTheCatch("report()", in: betweenCatches))
+        #expect(!CadenceCommitSurfaceScan.reportFollowsTheCatch("report()", in: "report()"))
+        #expect(!CadenceCommitSurfaceScan.reportFollowsTheCatch("absent()", in: below))
+    }
+}
+
 // MARK: - T-161, part two: the target scanned against itself
 
 /// Two of the five failure shapes are properties of the **test target**, not of any one test, and

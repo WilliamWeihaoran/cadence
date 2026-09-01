@@ -371,13 +371,14 @@ struct CadenceInlineTagCommitSurfaceTests {
     /// became a value. The question is the same: is the success report below the refusal or above
     /// it.
     ///
-    /// **It searches forwards, and `reportFollowsTheCatch` searches backwards. That is the whole
-    /// difference and it is load-bearing.** A backwards search asks "is *some* occurrence below the
-    /// refusal", which a defect can satisfy while still reporting above it: the mutation that put a
-    /// second `newTagName = ""` at the top of `addTag` — clearing the field before the guard, the
-    /// exact defect this test exists for — left the original below the guard and **survived**.
-    /// Anchoring on the *first* occurrence closes that, and costs nothing here because none of
-    /// these six bodies writes its report twice.
+    /// **It searches forwards, and so does `reportFollowsTheCatch` now.** It did not when this
+    /// helper was written, and that difference is why this one existed: a backwards search asks "is
+    /// *some* occurrence below the refusal", which a defect can satisfy while still reporting above
+    /// it. The mutation that put a second `newTagName = ""` at the top of `addTag` — clearing the
+    /// field before the guard, the exact defect this test exists for — left the original below the
+    /// guard and **survived** the shared reader. T-659 anchored that reader on the first occurrence
+    /// too, so the two now ask the same question; what still separates them is the *marker*, which
+    /// here is a refusal **guard** rather than a `catch`.
     ///
     /// `false` when either string is absent, so a renamed notice fails rather than passes.
     private func reportFollowsTheRefusal(marker: String, report: String, in body: String) -> Bool {

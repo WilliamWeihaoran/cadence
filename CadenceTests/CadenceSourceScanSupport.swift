@@ -44,10 +44,31 @@ enum CadenceSourceScan {
     }
 
     /// The text between the braces of `func <name>(`, found by brace matching from the first `{`
-    /// after the signature. Returns `nil` when the function is absent or its braces never balance.
+    /// **after the parameter list closes**. Returns `nil` when the function is absent or either
+    /// pair never balances.
+    ///
+    /// **T-644.** It used to take the first `{` after `func <name>(`, which is only the body when
+    /// the signature holds no brace of its own. For
+    /// `commit: (ModelContext) throws -> Void = { try $0.save() }` — now the repo's standard
+    /// spelling for a committing helper, on 33 declarations — that first `{` is the **default
+    /// closure**, so the "body" it returned was `try $0.save()` and every `contains(…)` over it was
+    /// answered by a one-expression closure. Not an error and not a warning: a green assertion over
+    /// the wrong text, the same family as `codeOnly`'s string blanking.
+    ///
+    /// Balancing the parentheses first is what fixes it, and it is the same matcher: `matchedRange`
+    /// already skips nested pairs, so a defaulted closure, a tuple, or a nested function type in
+    /// the signature all fall inside the parameter list rather than opening the body.
     static func functionBody(named name: String, in source: String) -> String? {
         guard let signature = source.range(of: "func \(name)(") else { return nil }
-        return matchedBody(after: signature.upperBound, in: source, open: "{", close: "}")
+        // The `(` that opens the parameter list is the last character the needle matched, so the
+        // parameter scan starts *on* it rather than after it.
+        guard let parameters = matchedRange(
+            after: source.index(before: signature.upperBound),
+            in: source,
+            open: "(",
+            close: ")"
+        ) else { return nil }
+        return matchedBody(after: parameters.upperBound, in: source, open: "{", close: "}")
     }
 
     /// The text between the first `open` at or after `start` and the `close` that balances it.
@@ -67,6 +88,20 @@ enum CadenceSourceScan {
         open opening: Character,
         close closing: Character
     ) -> String? {
+        matchedRange(after: start, in: source, open: opening, close: closing)
+            .map { String(source[$0]) }
+    }
+
+    /// `matchedBody`'s span rather than its text, so a caller that needs to keep reading past the
+    /// pair — `functionBody(named:)`, which must find the body's `{` past the parameter list's `)` —
+    /// does not need a second matcher to do it (T-644). `upperBound` is the index **of** the
+    /// closing character, so resuming a scan there is safe for any `open` that is not also `close`.
+    static func matchedRange(
+        after start: String.Index,
+        in source: String,
+        open opening: Character,
+        close closing: Character
+    ) -> Range<String.Index>? {
         guard let open = source.range(of: String(opening), range: start..<source.endIndex) else {
             return nil
         }
@@ -80,7 +115,7 @@ enum CadenceSourceScan {
             } else if character == closing {
                 depth -= 1
                 if depth == 0 {
-                    return String(source[source.index(after: open.lowerBound)..<index])
+                    return source.index(after: open.lowerBound)..<index
                 }
             }
             index = source.index(after: index)
@@ -399,25 +434,40 @@ extension CadenceSourceScan {
 /// two copies of it is two chances for one of them to stop discriminating.
 enum CadenceCommitSurfaceScan {
 
-    /// Whether `report` appears **after** the last `catch` in the body — i.e. below the failure
-    /// branch rather than above it.
+    /// Whether **every** occurrence of `report` in the body appears after the last `catch` — i.e.
+    /// below the failure branch rather than above it.
     ///
     /// Deliberately crude and checkable: an offset comparison. Each calling suite pins that it
     /// answers differently for the two orders.
+    ///
+    /// **T-659: the report search is forwards, and that is the whole assertion.** It used to be
+    /// `options: .backwards`, which anchored on the *last* occurrence and so answered "is **some**
+    /// occurrence below the failure branch" — weaker than the question every calling suite means to
+    /// ask, and satisfiable by the exact defect they guard against. Found by a surviving mutation
+    /// while landing T-631: a second `newTagName = ""` added at the **top** of
+    /// `iOSTaskTagPickerPopover.addTag`, clearing the field before the guard, left the original
+    /// below it and stayed green. Anchoring on the first occurrence closes that.
+    ///
+    /// The `catch` search stays backwards, and for the same reason: the *last* failure branch is
+    /// the strict end of that comparison, so the report must follow all of them.
     static func reportFollowsTheCatch(_ report: String, in body: String) -> Bool {
         guard let failure = body.range(of: "catch", options: .backwards),
-              let reported = body.range(of: report, options: .backwards) else { return false }
+              let reported = body.range(of: report) else { return false }
         return reported.lowerBound > failure.upperBound
     }
 
     /// The body of the one declaration named `name`.
     ///
-    /// `CadenceSourceScan.functionBody(named:)` cannot be used for these: a function taking
-    /// `commit: (ModelContext) throws -> Void = { try $0.save() }` puts a brace inside its
-    /// signature, and that reader takes the first `{` after the signature — so it would return
-    /// `try $0.save()` as the whole body and every `try?`-free assertion would pass vacuously.
-    /// `CadenceSaveCommitRule.declarations` skips a brace at non-zero paren depth, which is the
-    /// reason it exists, so the reader the rule uses is the reader these suites use.
+    /// **This used to be here because `functionBody(named:)` could not read these** — a function
+    /// taking `commit: (ModelContext) throws -> Void = { try $0.save() }` puts a brace inside its
+    /// signature, and that reader took the first `{` after it. T-644 fixed that reader, so the two
+    /// now agree on the span.
+    ///
+    /// It stays for the property the other one does not have: `CadenceSaveCommitRule.declarations`
+    /// enumerates **every** declaration, so this can assert there is exactly **one** named `name`.
+    /// `functionBody(named:)` takes the first match and says nothing about a second — and a sheet
+    /// that grows a second `saveEdits` is precisely how one of these assertions would start reading
+    /// a screen it was never about.
     static func declarationBody(named name: String, in source: String) throws -> String {
         let matches = CadenceSaveCommitRule.declarations(in: source).filter { $0.name == name }
         #expect(matches.count == 1, "expected one declaration named \(name), found \(matches.count)")

@@ -103,6 +103,17 @@ per-agent boilerplate.
   permanently, silently green. Use `strippingComments` for literal assertions and keep `codeOnly` for
   the instrument, and pin that the two readers genuinely differ so the pairing cannot collapse. Three
   agents hit this independently in one session; it is the single most repeated scan mistake here.
+- **The two other shared readers were the same trap and are fixed; do not re-introduce the
+  workarounds.** `CadenceSourceScan.functionBody(named:)` used to take the first `{` after
+  `func <name>(`, which for the repo's standard `commit: (ModelContext) throws -> Void = { try $0.save() }`
+  default is the *closure*, not the body — 33 declarations read as `try $0.save()`. It balances the
+  parameter list now (T-644), so **stripping `= { try $0.save() }` out of the text before scanning is
+  no longer needed and should be deleted where you find it**. `CadenceCommitSurfaceScan.reportFollowsTheCatch`
+  searched the report `.backwards`, so it answered "is *some* occurrence below the failure branch" and
+  a body reporting on **both** sides passed; it anchors on the first occurrence now (T-659). Both were
+  found by a *surviving mutation*, not by reading — which is the argument for mutating even the code
+  you are only reading through. Fixtures for both:
+  `CadenceTests/CadenceTestTargetHygieneTests.swift`, `CadenceSourceScanReaderTests`.
 - **`try? save()` has a rule now** (`AGENTS.md`, "The `try? save()` rule"), enforced by
   `CadenceSaveCommitDisciplineTests`. Its two exemption lists carry the known remaining sites **by
   function name**, and a stale entry fails the suite — so if you fix one, delete its entry in the same

@@ -483,8 +483,10 @@ struct CadenceTodayRolloverSurfaceTests {
     /// The commit itself: through `CadencePendingChangePersistence`, not a swallowed `save()`.
     @Test func theRollCommitsThroughThePendingChangeUnit() throws {
         // The whole file rather than one body: `cadenceFunctionBody` stops at the first `{` after
-        // the declaration, which is now the `commit:` default argument. Reading the file is the
-        // stronger claim anyway — nothing here may swallow a commit, not just this one function.
+        // the declaration, which is now the `commit:` default argument. That is the **T-644**
+        // defect in a second, copied reader — `CadenceSourceScan.functionBody(named:)` balances the
+        // parameter list now, `cadenceFunctionBody` still does not ([[T-668]]). Reading the file is
+        // the stronger claim anyway — nothing here may swallow a commit, not just this one function.
         let source = try strippingComments(sourceFile("Cadence/Shared/CadenceTodayRolloverSupport.swift"))
         #expect(
             !source.contains("try? modelContext.save()"),

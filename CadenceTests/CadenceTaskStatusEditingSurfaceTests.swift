@@ -237,19 +237,20 @@ struct CadenceTaskStatusEditingSurfaceTests {
     /// — a cancel by id, which needs no store read and no desired-set computation — so a file-wide
     /// ban would be a rule this repository does not actually hold.
     @Test func theSharedStatusHelpersStillReconcileNothing() throws {
-        // The `commit:` default arguments are removed first, and that is load-bearing rather than
-        // tidy: `functionBody(named:)` stops at the first `{` after the name, which for a
-        // declaration carrying `= { try $0.save() }` is the default closure and not the body. Since
-        // T-636 gave `toggleCompletion` such a parameter, scanning the raw text here would read a
-        // one-expression closure and find no `HabitNotificationReconcileSupport` in it — a green
-        // assertion over the wrong span.
+        // This used to strip `= { try $0.save() }` out of the text first, because
+        // `functionBody(named:)` stopped at the first `{` after the name — which for a declaration
+        // carrying that default is the closure and not the body, so the scan read a one-expression
+        // closure and found no `HabitNotificationReconcileSupport` in it. **T-644 fixed the reader**
+        // (it balances the parameter list now), so the workaround is gone and the raw text is
+        // scanned. `CadenceSourceScanReaderTests.theFunctionBodyReaderSkipsADefaultedClosureInTheParameterList`
+        // pins the reader; the assertion below pins that this file still has the shape it must skip.
         let mutationLayer = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift")
-        ).replacingOccurrences(of: "= { try $0.save() }", with: "")
+        )
         #expect(mutationLayer.count > 400)
         #expect(
-            !mutationLayer.contains("= { try $0.save() }"),
-            "the commit defaults are still in the text the body reader walks"
+            mutationLayer.contains("commit: (ModelContext) throws -> Void = { try $0.save() }"),
+            "the commit default this scan reads past is gone; re-derive what the body reader must skip"
         )
 
         for name in ["toggleCompletion", "setStatus", "applyStatusCompletion"] {

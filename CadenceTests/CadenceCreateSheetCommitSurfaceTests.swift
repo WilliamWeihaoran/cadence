@@ -204,8 +204,18 @@ struct CadenceCreateSheetCommitSurfaceTests {
         do { try commit() } catch { notice = text; return }
         dismiss()
         """
+        // T-659: reporting below the failure branch as well as above it is still the defect.
+        let bothSides = """
+        dismiss()
+        do { try commit() } catch { notice = text; return }
+        dismiss()
+        """
         #expect(!CadenceCommitSurfaceScan.reportFollowsTheCatch("dismiss()", in: broken))
         #expect(CadenceCommitSurfaceScan.reportFollowsTheCatch("dismiss()", in: fixed))
+        #expect(
+            !CadenceCommitSurfaceScan.reportFollowsTheCatch("dismiss()", in: bothSides),
+            "a sheet that dismisses above the failure branch as well as below it reads as ordered (T-659)"
+        )
         #expect(
             !CadenceCommitSurfaceScan.reportFollowsTheCatch("dismiss()", in: "dismiss()"),
             "a body with no catch is not ordered"

@@ -154,9 +154,13 @@ struct CadenceDeleteConfirmationCommitTests {
         #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).map(\.title) == ["Inside the area"])
 
         // Where the gate is. Scoped by its neighbour rather than by
-        // `CadenceSourceScan.functionBody(named:)`, which cannot read this particular function:
-        // `deleteTasks` declares `willDelete: (Set<UUID>) -> Void = { _ in }`, and the helper takes
-        // the first `{` after the signature — so it returns the *default closure* and not the body.
+        // `CadenceSourceScan.functionBody(named:)`, which used to be unable to read this particular
+        // function: `deleteTasks` declares `willDelete: (Set<UUID>) -> Void = { _ in }`, and the
+        // helper took the first `{` after the signature — so it returned the *default closure*.
+        // **T-644 fixed the reader**; this scan is still whole-file because the needle below spans
+        // `processPendingChanges()` and the gate together, which is a claim about their adjacency
+        // rather than about one body. Narrowing it to `deleteTasks` is [[T-668]]'s follow-up, not a
+        // limitation of the reader any more.
         let core = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift")
         )
