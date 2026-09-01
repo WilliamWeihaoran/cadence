@@ -721,20 +721,41 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `GoalPickerViews.swift` and `HabitsFormSupportViews.swift` — **the last two are already [[T-550]]'s
   redundant `emptyText:` arguments, so sequence the two tickets together.**
 
-- [T-558] **`TildeContainerPickerSupport.flatContainers` drops every context-less list — the fifth instance
-  of this shape.** `macOS/Views/TildeContainerPicker.swift:56-79` is `for context in contexts { areas.filter
-  { $0.context?.id == context.id } … }`, so a list with `context == nil` matches no iteration and is never
-  appended. **This is the only source of rows for the `~` list-search panel on both macOS composers**
-  (`TaskTitleEntryField.swift:248`, `QuickCreateChoicePopover.swift:310`), so a task cannot be filed into a
-  context-less list from either. Same fix as [[T-538]]: append the unfiled lists after the loop, keyed on the
-  *offered* context set so an archived context's lists are caught too.
+- [T-683] **`CreateGoalSheet`'s linked-list picker is the sixth instance of the context fold, and its
+  catch-all asks the wrong question.** `macOS/Sheets/CreateGoalSheet.swift` buckets lists with
+  `ForEach(allContexts) { ctx in ForEach(areas.filter { $0.context?.id == ctx.id }) … }` and then appends a
+  `Section("No Context")` built from `$0.context == nil`. Right for a list with no context, **wrong for one
+  whose context exists but was not offered** — the ordinary state of an archived one, and exactly the
+  distinction [[T-534]], [[T-538]] and [[T-558]] each had to make. Latent rather than live: `allContexts` is
+  an unfiltered `@Query`, so nothing is dropped today. The fix is one call to the now-shared
+  `CadenceSidebarLists.isOffered(_:among:)`. Found while closing T-558; the file belonged to another agent
+  in that batch, which is why it is a ticket and not a commit. Recorded in
+  `CadenceContextlessListSurfaceTests.knownContextDerivedListSites`.
+  **The heading has three spellings and two of them mean one thing.** "Other"
+  (`CadenceSidebarLists.ungroupedTitle`, both sidebars and the container picker) and "No Context" (here and
+  `GoalLinkCandidateGroup.title`, both goal-attach sheets on both platforms) are the same bucket under two
+  words; "No context" — the macOS context picker's own none-row — is a different idea, an unset *field*.
+  Converging the first two is a user-visible copy decision, so it is named here rather than done quietly.
 
-- [T-559] **macOS can now see a context-less list but still cannot create or correct one.** `CreateListSheet`
-  takes a **non-optional** `let context: Context` and titles itself "in \(context.name)"; `EditAreaSheet` and
-  `EditProjectSheet` have **no context control at all**. So a Mac user sees the row under "Other" and has no
-  way to file it. `CadenceContextPickerSupport` and the keyboard-first `CadenceContextPickerList` already
-  exist; the work is a `ListEditorContextRow` beside `ListEditorCalendarRow`, plus making
-  `CreateListSheet.context` optional.
+- [T-684] **The `~` list panel still cannot show a task the list it is already in, when that list is
+  archived or completed.** This is [[T-534]]'s *first* defect — the one
+  `CadencePickerSupport.selectable(_:selectedID:)` exists for — and `TildeContainerPickerSupport.flatContainers`
+  is the one list-offering surface that never learned it: it filters on `$0.isActive` and takes no
+  `selection:` parameter at all, while `TildeContainerPicker` **is** handed a `selection` for the checkmark.
+  So the panel can highlight a row it will not draw. [[T-558]] fixed the context-less half of the same
+  function and deliberately did not widen into this one. Fix is T-534's shape:
+  `flatContainers(query:contexts:areas:projects:selection:)` narrowing through `pickableAreas` /
+  `pickableProjects`, as `ContainerPickerFilterSupport.groups` already does. Both macOS composers already
+  hold a selection to pass.
+
+- [T-685] **iOS's list editor cannot undo the half of a context move that it cascades.**
+  `iOSListEditorViews.save()` snapshots `CadenceListEditSnapshot(area, tasks: area.tasks ?? [])`, but the
+  `reassignTasks` it then runs calls `CadenceTaskMutationSupport.reassignInheritedContext`, which by design
+  also re-points the tasks of every child project whose own `context` is `nil` ([[T-340]]). Those tasks are
+  written and **not** snapshotted, so a refused save restores the area and leaves its child projects' tasks
+  pointing at the context the save did not land. [[T-559]] added
+  `CadenceTaskMutationSupport.inheritedContextTargets(area:project:)` for exactly this and the macOS editors
+  read it; iOS should read it instead of `area.tasks ?? []`. One line plus an iOS-simulator build.
 
 - [T-560] **The test target leaks a directory into the user's real app container on every run, and it is
   live.** `~/Library/Containers/com.haoranwei.Cadence/Data/tmp/` holds **3,268** UUID directories, each with
@@ -1485,6 +1506,47 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Both are copy decisions. Neither is a de-duplication.
 
 ## Done
+
+- [T-558] **`TildeContainerPickerSupport.flatContainers` drops every context-less list — the fifth instance
+  of this shape.** `macOS/Views/TildeContainerPicker.swift` was `for context in contexts { areas.filter
+  { $0.context?.id == context.id } … }`, so a list with `context == nil` matched no iteration and was never
+  appended — and that function is the only source of rows for the `~` list-search panel on both macOS
+  composers, so a context-less list was one no task could be filed into from the Mac at all.
+  **Closed 2026-09-02 in `3c90473`. The trailing bucket is keyed on the *offered* contexts, not on
+  `context == nil`, so an archived context's lists land there too — and the fifth instance is the part worth
+  the work, so the membership rule itself moved to `CadenceSidebarLists.isOffered(_:among:)` and the three
+  surfaces that each asked it their own way now read it: this panel, `ContainerPickerFilterSupport` (private
+  copy deleted) and `GoalLinkPresentation.candidateGroups` — **which was keyed on `context == nil` and is a
+  sixth instance, fixed here rather than filed**, latent only because every caller passes an unfiltered
+  context query. Failing-first is real: the four new tests ran against unmodified source and all four failed
+  on the missing bucket. Five mutations (bucket deleted / keyed on nil / bucket first / `isOffered` accepts
+  nil / goal links keyed on nil) each killed a different named set. The fixture orders Garage at 5 rather
+  than 0 on purpose — at 0 the "offer every context" and "offer only Work" results coincide, and a test that
+  cannot tell them apart is green against the bug it exists for. **Not observed on screen**, deliberately:
+  a debug build vends no AX window tree, so a screenshot would be zero evidence.**
+
+- [T-559] **macOS can now see a context-less list but still cannot create or correct one.** `CreateListSheet`
+  took a non-optional `let context: Context` and titled itself "in \(context.name)"; `EditAreaSheet` and
+  `EditProjectSheet` had no context control at all.
+  **Closed 2026-09-02 in `ed7347e`.** All three sheets draw a `ListEditorContextRow` over the existing
+  `CadenceContextPickerList`, so the archive rule and T-446's "show the assigned one even when it is no
+  longer offerable" rule are read rather than respelled; the sidebar's catch-all header gets a "+" that opens
+  the sheet already on "No context". **The eyebrow's right-hand note is deleted rather than given a fallback
+  string** — the ticket's real question was what it says with no context, and the answer is that it should
+  never have been the thing saying it now that every list sheet carries a row that both states the context
+  and sets it. `titleTrailing` had one caller and is gone. **Adding the control without T-293 would have
+  shipped that bug a second time**: `AppTask.context` is a denormalized copy, so `applyEdits()` re-points the
+  list's tasks, guarded on an actual change so a rename dirties nothing, over a new
+  `CadenceTaskMutationSupport.inheritedContextTargets(area:project:)` — because the reassignment also cascades
+  into child projects with no context of their own ([[T-340]]) and a snapshot taken from `area.tasks` alone
+  cannot undo that half. **A `CadenceListEditSnapshot` de-dupe was written and then reverted**: the two
+  overlapping task sets restore identically, so it was code with no observable effect and no mutation could
+  have killed it. Three mutations (cascade dropped, sheets skip the re-point, catch-all loses its "+") each
+  killed a different named test. **`CadenceContextlessListSurfaceTests` is the fifth-instance pin and is
+  worth more than either fix**: it runs all four list-offering entry points over one fixture holding a
+  context-less list of each kind *and* a list under an unoffered context, and carries a ledger of the 27
+  sites in 9 files that derive lists from a context, each with a note on how it reaches the leftovers.
+  **Not observed on screen**, same reason as T-558.
 
 - [T-609] **CLOSED 2026-09-02 (`f09d739`).** Swept, and **re-measured rather than inherited**. The
   inline form `X.isEmpty ? "…" : X` where `X` is a title is **29 sites in 22 files**, and a second
