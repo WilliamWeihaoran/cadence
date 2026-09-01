@@ -34,18 +34,63 @@ enum NoteActionSupport {
         CadenceNoteClipboard.copyMarkdownLink(to: note)
     }
 
-    static func move(_ note: Note, toArea area: Area?, modelContext: ModelContext?) {
+    /// Files a note under an area, or under nothing.
+    ///
+    /// **Throwing, and taking a non-optional context, for the reason `appendSummary` above is
+    /// (T-630).** This used to repoint the note and run `try? modelContext?.save()`, and the row
+    /// that called it had already closed the picker — so the popover shutting was the user's only
+    /// success signal and it shut either way. A refused commit left the note repointed in the app's
+    /// single `ModelContext`, waiting for the next unrelated `save()` to finish it or the next
+    /// `rollback()` to throw it away, with nothing left on screen to disagree.
+    ///
+    /// The undo is a field snapshot rather than `modelContext.rollback()`, for the reason
+    /// `CadencePendingChangePersistence.commitEdit` documents: one context app-wide, so a refused
+    /// move must not take the note somebody is editing behind the popover with it.
+    ///
+    /// The optionality went with the `try?`. Both call sites pass an `@Environment(\.modelContext)`
+    /// value, which is never nil; all `ModelContext?` ever bought was a second silent no-op beside
+    /// the swallowed one.
+    static func move(
+        _ note: Note,
+        toArea area: Area?,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        let previousArea = note.area
+        let previousProject = note.project
+        let previousUpdatedAt = note.updatedAt
         note.area = area
         note.project = nil
         note.updatedAt = Date()
-        try? modelContext?.save()
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+            note.area = previousArea
+            note.project = previousProject
+            note.updatedAt = previousUpdatedAt
+        }
     }
 
-    static func move(_ note: Note, toProject project: Project?, modelContext: ModelContext?) {
+    /// The project half of `move(_:toArea:modelContext:commit:)`, undoing the same three fields.
+    ///
+    /// Written out rather than routed through a shared private helper: a third declaration named
+    /// `move` in this file would make every `declarationBody(named: "move")` reader ambiguous, and
+    /// the saving is four lines.
+    static func move(
+        _ note: Note,
+        toProject project: Project?,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        let previousArea = note.area
+        let previousProject = note.project
+        let previousUpdatedAt = note.updatedAt
         note.area = nil
         note.project = project
         note.updatedAt = Date()
-        try? modelContext?.save()
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+            note.area = previousArea
+            note.project = previousProject
+            note.updatedAt = previousUpdatedAt
+        }
     }
 }
 
@@ -81,6 +126,9 @@ struct NoteActionMenu: View {
     @State private var isRunning = false
     @State private var showsPicker = false
     @State private var page: NoteActionPage = .root
+    /// Set when a move is refused, cleared on every page change. Drawn on the Move page, which is
+    /// still open because the row no longer closes it before the store has answered.
+    @State private var moveFailureNotice: String?
 
     private var showsMoveDestinationSection: Bool {
         note.kind == .list && (!areas.isEmpty || !projects.isEmpty)
@@ -108,6 +156,10 @@ struct NoteActionMenu: View {
             .onChange(of: showsPicker) { _, isShowing in
                 if !isShowing { page = .root }
             }
+            // A refusal belongs to the page it happened on. Leaving the Move page — by the back
+            // bar, or by the popover closing and resetting to `.root` — clears it, so the notice
+            // cannot reappear over an unrelated visit.
+            .onChange(of: page) { _, _ in moveFailureNotice = nil }
             .sheet(item: $payload, content: reviewSheet)
             .alert("AI Action Failed", isPresented: Binding(
                 get: { errorMessage != nil },
@@ -210,6 +262,11 @@ struct NoteActionMenu: View {
     @ViewBuilder
     private var movePage: some View {
         NoteActionSubmenuHeader(title: "Move Note") { page = .root }
+        if let moveFailureNotice {
+            CadenceInlineFailureNotice(text: moveFailureNotice)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+        }
         noListDestination
         areaDestinations
         projectDestinations
@@ -221,8 +278,7 @@ struct NoteActionMenu: View {
             subtitle: "Keep it loose in notes",
             isSelected: note.area == nil && note.project == nil
         ) {
-            dismissPicker()
-            NoteActionSupport.move(note, toArea: nil, modelContext: modelContext)
+            moveNote { try NoteActionSupport.move(note, toArea: nil, modelContext: modelContext) }
         }
     }
 
@@ -236,8 +292,7 @@ struct NoteActionMenu: View {
                     subtitle: "Area",
                     isSelected: note.area?.id == area.id
                 ) {
-                    dismissPicker()
-                    NoteActionSupport.move(note, toArea: area, modelContext: modelContext)
+                    moveNote { try NoteActionSupport.move(note, toArea: area, modelContext: modelContext) }
                 }
             }
         }
@@ -253,8 +308,7 @@ struct NoteActionMenu: View {
                     subtitle: "Project",
                     isSelected: note.project?.id == project.id
                 ) {
-                    dismissPicker()
-                    NoteActionSupport.move(note, toProject: project, modelContext: modelContext)
+                    moveNote { try NoteActionSupport.move(note, toProject: project, modelContext: modelContext) }
                 }
             }
         }
@@ -322,6 +376,22 @@ struct NoteActionMenu: View {
         } else {
             try NoteActionSupport.appendSummary(markdown, to: note, modelContext: modelContext)
         }
+    }
+
+    /// Runs a destination row's move and closes the popover **only if it committed**.
+    ///
+    /// All three rows go through it so there is one answer to "what does the picker do when the
+    /// store refuses", and so the ordering cannot drift back: a row that dismissed for itself would
+    /// be reporting a success it had not waited for.
+    private func moveNote(_ apply: () throws -> Void) {
+        do {
+            try apply()
+        } catch {
+            moveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        moveFailureNotice = nil
+        dismissPicker()
     }
 
     private func dismissPicker() {

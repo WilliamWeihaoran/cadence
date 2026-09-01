@@ -1713,11 +1713,10 @@ enum CadenceSaveCommitRule {
 
         // MARK: Found by T-627's widened vocabulary and block window
         //
-        // [[T-630]]: macOS Move Note. `dismissPicker()` runs *before* the move, so the tail-only
-        // reading could not have seen it whatever the vocabulary said.
-        "Cadence/macOS/Views/AIActionsSupportViews.swift": [
-            "areaDestinations", "noListDestination", "projectDestinations",
-        ],
+        // T-630 emptied macOS Move Note out of this list. `dismissPicker()` ran *before* the move,
+        // so the tail-only reading could not have seen it whatever the vocabulary said; the three
+        // destination rows now hand their move to `moveNote`, which closes the popover only below
+        // the `catch`. Pinned by `CadenceNoteMoveCommitTests`.
         // [[T-635]]: Roll Over, and the only entry in any of these four lists whose false success
         // **outlives the rollback** — the dismissal is an `@AppStorage` write, so the banner stays
         // hidden for the rest of the day whether or not anything rolled.
