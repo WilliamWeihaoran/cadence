@@ -2,13 +2,22 @@ import Foundation
 import Testing
 @testable import Cadence
 
-/// **The accessibility rules for the touch tree, which the tooltip sweep cannot reach** (T-611).
+/// **The control-accessibility rules the tooltip sweep cannot reach** (T-611, widened by T-637).
 ///
-/// `CadenceControlAccessibilityLabelTests` carries the app-wide rules, and its widest one keys on
-/// `.help(…)`. That modifier does not exist on iOS, so the sweep T-594 widened is *structurally*
-/// blind to `Cadence/iOS/`: it reports zero offenders there and would do so if every button on the
-/// phone were unnamed. `theTooltipSweepFindsNothingOnATreeThatCannotDrawTooltips` below states that
-/// as a measurement rather than leaving it as an assumption.
+/// `CadenceControlAccessibilityLabelTests` carries the app's widest rule, and it keys on
+/// `.help(…)`. That modifier does not exist on iOS, so that sweep is *structurally* blind to
+/// `Cadence/iOS/`: it reports zero offenders there and would do so if every button on the phone
+/// were unnamed. `theTooltipSweepFindsNothingOnATreeThatCannotDrawTooltips` below states that as a
+/// measurement rather than leaving it as an assumption.
+///
+/// **The icon-only rule below is app-wide now, despite the file's name.** T-611 seeded it here
+/// because that was the tree with no rule at all, and scoped it to `Cadence/iOS/` for a reason that
+/// has since expired: T-610 was rewriting `knownUnnamedTooltipSites` over the same file set at the
+/// time, and two exact ledgers over one moving file set means every tooltip fix has to edit both.
+/// T-610 settled at one entry, so T-637 widened the sweep to `Cadence/` and left it here rather
+/// than moving 150 lines of brace-walking between two suites mid-batch. A `.help` tooltip is a
+/// pointer affordance; it is not an accessible name, which is why the same control can be clean
+/// under one rule and an offender under the other.
 ///
 /// Its own file rather than a section of the other one, because these two suites are edited by
 /// different tickets at the same time and share nothing but the reading helpers.
@@ -20,27 +29,37 @@ import Testing
 /// **Deliberately not `@MainActor`.** Everything below is source text and `nonisolated` values.
 struct CadenceIOSControlAccessibilityTests {
 
-    /// **The sites this rule has not reached yet, by file and count.**
+    /// **The sites this rule has not reached yet, by file and count, with the ticket that owns each.**
     ///
-    /// Seeded by T-611, which needed a rule that works where the app-wide tooltip sweep cannot: `.help(…)` is a
-    /// pointer affordance, `Cadence/iOS/` does not use it, and the widened tooltip sweep is
-    /// therefore *structurally* blind to every touch surface in the app — it reports 0 offenders
-    /// there and would do so if every button on the phone were unnamed. This one keys on the
-    /// control instead: a `Button` whose entire label is a bare `Image` has no visible text for
-    /// VoiceOver to fall back on, so it must state a name.
+    /// A `Button` whose entire label is a bare `Image` has no visible text for VoiceOver to fall
+    /// back on, so it must state a name. Seeded by T-611 over `Cadence/iOS/`; widened to the whole
+    /// app by T-637, which measured **31 sites in 24 files** — 28 of them macOS, and 22 of the 24
+    /// files. The macOS remainder is largely the *same controls* `knownUnnamedTooltipSites` tracked
+    /// until T-610 emptied it: they gained a `.help` string and are still nameless as bare glyphs.
     ///
     /// Exact, like the tooltip ledger and for the same reason: a new one fails, and so does a stale
     /// entry, so fixing one means deleting its line in the same change. The number is meant to go
     /// down.
     ///
-    /// **Scoped to `Cadence/iOS/` on purpose, and that is a debt rather than a boundary.** Run over
-    /// the whole app the same detector finds **31 sites in 24 files** (measured 2026-09-01), 28 of
-    /// them macOS — it was 48 in 35 before T-610's sweep of `knownUnnamedTooltipSites` landed, which
-    /// is the clearest evidence that the macOS remainder is largely the *same controls* that ledger
-    /// already tracks, seen through a second lens. Pinning them exactly here as well would mean
-    /// every future tooltip fix has to edit two ledgers, and the second is the one nobody would know
-    /// to look for. So the rule earns the tree that had **no** rule at all first, and widening it to
-    /// `Cadence/macOS/` is filed rather than done.
+    /// **T-637 ledgered rather than fixed**, deliberately: the 31 are spread over 24 files that
+    /// three agents were editing in the same batch, and a widening that lands with an exact ledger
+    /// is a complete deliverable on its own. The three follow-ups are grouped by *fix shape*, not
+    /// by folder, because the same shape repeats across folders:
+    ///
+    /// - **T-672 — the search field's clear button, ten near-copies (10 sites, 10 files).** The
+    ///   identical `if !query.isEmpty { Button { query = "" } label: { Image("xmark.circle.fill") } }`
+    ///   in ten pickers. One shared component named once, per the repo's "prefer one shared
+    ///   component over near-copies" rule; this is a duplication finding that a naming rule found.
+    /// - **T-673 — a row's own glyph never says which row (8 sites, 5 files).** Six `xmark`
+    ///   removals (a subtask, a picked task, a detached goal link) and two completion circles. The
+    ///   T-594 shape: the action is guessable from the glyph and the *subject* is not, so the name
+    ///   has to carry the item.
+    /// - **T-674 — icon-only helpers and chrome (10 sites, 9 files).** Steppers, timeline
+    ///   navigation, and four private `iconButton`-shaped helpers that take a symbol and no name.
+    ///   The fix is T-611's compile gate rather than a label at each call site: make the helper's
+    ///   name parameter a `let` with no default so the next caller cannot omit it.
+    ///
+    /// The three iOS entries stay with **T-611**, which filed them.
     ///
     /// **`Cadence/iOS/iOSTaskRowActionViews.swift` is absent, and that is the finding T-611 did not
     /// expect.** The ticket read "1 accessibility label across 25 buttons"; 24 of those 25 are
@@ -48,19 +67,45 @@ struct CadenceIOSControlAccessibilityTests {
     /// **no** icon-only button at all. Its real gap was the opposite shape — a chip that draws a
     /// *value* and never says which field the value belongs to — and no rule about button labels can
     /// see that one, which is why `iOSTaskAttributeChip.field` is a required initialiser parameter
-    /// rather than a third sweep here.
+    /// rather than a third sweep here. `aMenuItemSpelledAsALabelIsNotAnIconOnlyButton` pins that
+    /// distinction on a literal, so the count above cannot be inflated by self-naming labels.
     private static let knownUnnamedIconButtonSites: [String: Int] = [
-        "Cadence/iOS/iOSMarkdownPreview.swift": 2,
-        "Cadence/iOS/iOSTaskDetailSheet.swift": 1,
+        "Cadence/iOS/iOSMarkdownPreview.swift": 2,                          // T-611
+        "Cadence/iOS/iOSTaskDetailSheet.swift": 1,                          // T-611
+        "Cadence/macOS/CadenceCalendarPicker.swift": 1,                     // T-672
+        "Cadence/macOS/Services/SchedulingService.swift": 2,                // T-674 (zoom −/+)
+        "Cadence/macOS/Sheets/CreateTaskSheet.swift": 1,                    // T-673
+        "Cadence/macOS/Sheets/ListEditorSupportViews.swift": 1,             // T-674
+        "Cadence/macOS/Views/CadenceContextPicker.swift": 1,                // T-672
+        "Cadence/macOS/Views/ContainerPickerSupportViews.swift": 1,         // T-672
+        "Cadence/macOS/Views/FocusBundleTaskSupportViews.swift": 1,         // T-674
+        "Cadence/macOS/Views/GlobalSearchSupportViews.swift": 1,            // T-672
+        "Cadence/macOS/Views/GoalPickerViews.swift": 1,                     // T-672
+        "Cadence/macOS/Views/GoalTimelineSupportViews.swift": 1,            // T-672
+        "Cadence/macOS/Views/GoalTimelineView.swift": 1,                    // T-674
+        "Cadence/macOS/Views/GoalsSupportViews.swift": 2,                   // T-673 (detach ×2)
+        "Cadence/macOS/Views/HabitsFormSupportViews.swift": 1,              // T-674
+        "Cadence/macOS/Views/HabitsSupportViews.swift": 1,                  // T-673 (done circle)
+        "Cadence/macOS/Views/KanbanColumnSupportViews.swift": 1,            // T-674
+        "Cadence/macOS/Views/QuickCreateChoiceSupportViews.swift": 2,       // T-673 (remove ×2)
+        "Cadence/macOS/Views/SettingsSupportViews.swift": 1,                // T-674
+        "Cadence/macOS/Views/SidebarComponents.swift": 1,                   // T-674
+        "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift": 2,        // T-672 ×1, T-674 ×1
+        "Cadence/macOS/Views/TaskTitleInlineTagPicker.swift": 1,            // T-672
+        "Cadence/macOS/Views/TasksPanelSupportViews.swift": 3,              // T-672 ×1, T-673 ×2
+        "Cadence/macOS/Views/TildeContainerPicker.swift": 1,                // T-672
     ]
 
-    @Test func noIconOnlyButtonOnTheTouchSurfacesIsLeftWithoutAnAccessibleName() throws {
+    @Test func noIconOnlyButtonInTheAppIsLeftWithoutAnAccessibleName() throws {
         let offenders = try unnamedIconButtonInstrument().sweep(
-            try CadenceSourceScan.swiftFiles(under: "Cadence/iOS"),
-            // 105 files at the time of writing; the floor only rules out a walk that found one
-            // folder and called it the tree.
-            atLeast: 80,
-            including: "Cadence/iOS/iOSTaskRowActionViews.swift",
+            try CadenceSourceScan.swiftFiles(under: "Cadence"),
+            // 565 files at the time of writing; the floor only rules out a walk that found one
+            // folder and called it the app.
+            atLeast: 400,
+            // A *macOS* witness, and that is T-637's widening stated as a compile-checked
+            // argument: under T-611's `Cadence/iOS` walk this path is not in the list at all and
+            // the sweep throws `walkMissedItsWitness` before it counts anything.
+            including: "Cadence/macOS/Views/TasksPanelSupportViews.swift",
             read: CadenceSourceScan.sourceFile
         )
 
@@ -69,7 +114,7 @@ struct CadenceIOSControlAccessibilityTests {
             unexpected.isEmpty,
             """
             \(unexpected.sorted()) draws a Button whose whole label is an Image and states no \
-            name. Add .accessibilityLabel(…) (T-611).
+            name. Add .accessibilityLabel(…) (T-611/T-637).
             """
         )
         let fixed = Set(Self.knownUnnamedIconButtonSites.keys).subtracting(offenders)
@@ -83,15 +128,82 @@ struct CadenceIOSControlAccessibilityTests {
     /// offender, so path-level equality above would not notice the one.
     @Test func theUnnamedIconButtonLedgerStatesHowManySitesEachFileStillHas() throws {
         var actual: [String: Int] = [:]
-        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/iOS") {
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
             let count = Self.unnamedIconButtonCount(in: try CadenceSourceScan.sourceFile(path))
             if count > 0 { actual[path] = count }
         }
         #expect(actual == Self.knownUnnamedIconButtonSites, "measured: \(actual.sorted { $0.key < $1.key })")
-        // The headline, so the report and the ledger cannot disagree: T-611 measured 3 on iOS.
-        #expect(actual.values.reduce(0, +) == 3)
+        // The headline, so the report and the ledger cannot disagree: T-637 measured 31 in 24.
+        #expect(actual.values.reduce(0, +) == 31)
+        #expect(actual.count == 24)
         // And the file the ticket was filed about is clean — see the ledger's own note.
         #expect(actual["Cadence/iOS/iOSTaskRowActionViews.swift"] == nil)
+    }
+
+    /// **The split T-637 widened into, as a number rather than a claim.**
+    ///
+    /// The whole deliverable of that ticket is *reach*: T-611's sweep read 105 files and found 3,
+    /// and the same detector over 565 finds 31. Both halves are asserted, because either one alone
+    /// would survive the widening being reverted — the iOS total is unchanged by it, and a bare
+    /// app-wide total does not say the extra 28 are somewhere new.
+    @Test func theIconOnlyRuleReachesTheDesktopTreeAndNotOnlyTheTouchTree() throws {
+        let ledger = Self.knownUnnamedIconButtonSites
+        let touch = ledger.filter { $0.key.hasPrefix("Cadence/iOS/") }
+        let desktop = ledger.filter { $0.key.hasPrefix("Cadence/macOS/") }
+
+        // T-611's population, unchanged: 3 sites in 2 files.
+        #expect(touch.values.reduce(0, +) == 3)
+        #expect(touch.count == 2)
+        // T-637's: 28 sites in 22 files that the iOS-scoped walk could not see.
+        #expect(desktop.values.reduce(0, +) == 28)
+        #expect(desktop.count == 22)
+        // Nothing else — `Cadence/Shared/`, `Models/` and `Services/` are swept and clean, which
+        // is a measurement of those trees, not an exclusion of them.
+        #expect(touch.count + desktop.count == ledger.count)
+
+        // And the walk really does hand the sweep all three trees, not just the two with offenders.
+        let walked = Set(try CadenceSourceScan.swiftFiles(under: "Cadence"))
+        for witness in [
+            "Cadence/iOS/iOSTaskRowActionViews.swift",
+            "Cadence/macOS/Views/TasksPanelSupportViews.swift",
+            "Cadence/Shared/CadenceRootShellLayout.swift",
+            "Cadence/Services/CadenceSchema.swift",
+        ] {
+            #expect(walked.contains(witness), "the app-wide walk missed \(witness)")
+        }
+    }
+
+    /// **A `Label(_:systemImage:)` names itself, and the count above must not be inflated by one.**
+    ///
+    /// Pinned on a literal rather than on a file, because the file that taught T-611 this
+    /// (`iOSTaskRowActionViews.swift`) can lose its menu at any time and take the evidence with it.
+    /// The mistake it guards is a real one: "1 accessibility label across 25 buttons" was the
+    /// original T-611 report, and 24 of the 25 were self-naming menu items.
+    @Test func aMenuItemSpelledAsALabelIsNotAnIconOnlyButton() throws {
+        let instrument = try unnamedIconButtonInstrument()
+
+        #expect(
+            instrument.fires(on: """
+            Button(role: .destructive) {
+                delete()
+            } label: {
+                Label("Delete task", systemImage: "trash")
+            }
+            """) == false,
+            "a Label(_:systemImage:) menu item is being counted as an unnamed icon-only button"
+        )
+        // The same call with the label swapped for a bare glyph *is* one, so the negative above is
+        // about `Label` and not about the surrounding shape.
+        #expect(
+            instrument.fires(on: """
+            Button(role: .destructive) {
+                delete()
+            } label: {
+                Image(systemName: "trash")
+            }
+            """),
+            "non-vacuity: the detector does not fire on the bare-glyph twin either"
+        )
     }
 
     /// **The tooltip sweep really is blind here**, which is the whole reason this rule exists.
@@ -117,6 +229,10 @@ struct CadenceIOSControlAccessibilityTests {
         let offending = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheet.swift")
         #expect(instrument.fires(on: offending), "the detector cannot see an unnamed icon-only button")
 
+        // T-637's half: the same detector, on a file T-611's walk never handed it.
+        let desktop = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelSupportViews.swift")
+        #expect(instrument.fires(on: desktop), "the detector cannot see the desktop tree's bare glyphs")
+
         let clean = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskRowActionViews.swift")
         #expect(clean.contains("Button {"), "non-vacuity: the row's buttons are gone")
         #expect(instrument.fires(on: clean) == false, "a Label(_:systemImage:) reads as unnamed")
@@ -133,6 +249,39 @@ struct CadenceIOSControlAccessibilityTests {
             }
             """) == false,
             "the detector fires on a button that draws its own text"
+        )
+    }
+
+    /// **A tooltip is not a name, stated as a fixture** — which is the premise T-637 rests on.
+    ///
+    /// The ledger's claim is that most of the 28 macOS sites are controls `knownUnnamedTooltipSites`
+    /// released: they took a `.help(…)` and are clean under *that* rule while still announcing
+    /// nothing as a bare glyph. If this detector treated `.help` as a name, widening it would have
+    /// found almost none of them and the empty result would have read as good news.
+    @Test func aTooltipIsNotAnAccessibleNameForABareGlyph() throws {
+        let instrument = try unnamedIconButtonInstrument()
+
+        #expect(
+            instrument.fires(on: """
+            Button(action: action) {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.cadencePlain)
+            .help("Delete task")
+            """),
+            "a `.help` tooltip is being accepted as an accessible name"
+        )
+        // `.cadenceControlLabel` is the modifier that sets *both* from one string, so it — and only
+        // it — clears the control.
+        #expect(
+            instrument.fires(on: """
+            Button(action: action) {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.cadencePlain)
+            .cadenceControlLabel("Delete task")
+            """) == false,
+            "the shared name-and-tooltip modifier reads as unnamed"
         )
     }
 

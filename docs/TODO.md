@@ -1057,15 +1057,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   The mode would have shipped with the `nil` assertion still green. The test now reads
   `project.pbxproj` too. Residue from that reading: [[T-665]].
 
-- [T-637] **Widen the icon-only-button ledger from `Cadence/iOS/` to the whole app.** From [[T-611]],
-  which scoped its new detector to iOS deliberately: at the time, [[T-610]] was still rewriting
-  `knownUnnamedTooltipSites` over the same moving file set, and **two exact ledgers over one file set
-  means every tooltip fix has to edit both.** T-610 has now settled at one remaining entry, so the
-  conflict is gone.
-  The same detector measures **31 unnamed icon-only buttons in 24 files** app-wide (down from 48/35
-  before T-610 landed), **28 of them macOS and largely the controls the tooltip ledger just released** —
-  i.e. controls that gained a `.help` label but still have no accessible name as a bare glyph.
-
 - [T-648] **A note's embedded task card repaints over a swallowed save, in four editors.** VERIFIED
   while fixing [[T-629]] in the same file. `NotePanel.toggleEmbeddedSubtask` / `renameEmbeddedTask`,
   `ListNotesSupportViews`' and `NoteEditorPane`'s copies of both, and
@@ -1358,7 +1349,89 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   to the body is a small follow-up, but the needle there spans `processPendingChanges()` **and** the
   gate, which is a claim about adjacency, so it is not a mechanical swap.
 
+- [T-672] **Ten copies of the search field's clear button, and not one of them has a name.** From
+  [[T-637]], which widened the icon-only-button ledger to the whole app and found them. Every
+  picker in the app spells the same control by hand —
+  `if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") } }` —
+  and none states an accessible name, so ten different search fields each carry a glyph VoiceOver
+  reads as nothing. The ten, with the line at the time of measurement:
+  `CadenceCalendarPicker.swift:185`, `Views/CadenceContextPicker.swift:174`,
+  `Views/ContainerPickerSupportViews.swift:271`, `Views/GlobalSearchSupportViews.swift:218`,
+  `Views/GoalPickerViews.swift:193`, `Views/GoalTimelineSupportViews.swift:312`,
+  `Views/TaskBundlePickerSupportViews.swift:153`, `Views/TaskTitleInlineTagPicker.swift:99`,
+  `Views/TasksPanelSupportViews.swift:378`, `Views/TildeContainerPicker.swift:212`.
+  **This is a duplication finding that an accessibility rule happened to surface**, so fix it as
+  one: a shared `Cadence/Shared/` clear-button component that names itself, per the root guide's
+  "prefer one shared component over near-copies". They already differ in ways nobody chose — font
+  size 11 vs 12 vs 16, `Theme.dim` vs `Theme.dim.opacity(0.5)` vs `0.55`, and four of the ten
+  restore focus to the field afterwards while six do not. Deleting the ten entries' share of
+  `knownUnnamedIconButtonSites` is part of the change; the ledger is exact, so a partial fix fails.
+
+- [T-673] **A row's remove/complete glyph never says which row it belongs to (8 sites, 5 files).**
+  From [[T-637]]. Six bare `xmark` buttons remove a thing — a draft subtask
+  (`Sheets/CreateTaskSheet.swift:188`, `Views/QuickCreateChoiceSupportViews.swift:158`), a task
+  picked into a block (`:438`), a goal's linked item (`Views/GoalsSupportViews.swift:381` and
+  `:443`), a saved subtask (`Views/TasksPanelSupportViews.swift:108`) — and two completion circles
+  tick one (`Views/TasksPanelSupportViews.swift:92`, `Views/HabitsSupportViews.swift:86`).
+  **This is the [[T-594]] shape rather than a missing string.** The action is guessable from the
+  glyph; the *subject* is not, and a list of eight identical "Remove" announcements is no better
+  than eight silent ones. Each name has to carry the item, which means the row has to hand it down —
+  the same conclusion `iOSTaskAttributeChip.field` reached on the phone. The two circles should take
+  `CadenceTaskCompletionState.accessibilityActionLabel`, which already exists and which iOS's circle
+  was pointed at in [[T-611]]; macOS's subtask circle still spells its own state.
+
+- [T-674] **Ten icon-only controls in helpers and chrome, four of them behind a helper that takes a
+  symbol and no name (10 sites, 9 files).** From [[T-637]]. Steppers and navigation —
+  `TimelineZoomControl`'s `minus`/`plus` (`Services/SchedulingService.swift:369`, `:382`),
+  `HabitsFormSupportViews.stepButton:270`, `GoalTimelineView.timelineNavButton:341`,
+  `TaskBundlePickerSupportViews`' back chevron `:132` — plus `SidebarComponents`' add-list `plus`
+  `:126`, `KanbanColumnSupportViews`' column-editor `ellipsis` `:347`, and three private
+  icon-button helpers: `SettingsSupportViews.actionButton:149`,
+  `FocusBundleTaskSupportViews.focusRowIconButton:152`, and
+  `Sheets/ListEditorSupportViews.ListEditorIconCell:272`.
+  **The last one is the interesting one and it sets the fix shape.** `ListEditorIconCell` already
+  takes `var accessibilityLabel: String? = nil` and applies it through
+  `ListEditorOptionalControlLabel` — so the mechanism is built, and **one of its two call sites
+  passes a string**. A defaulted optional name is a name nobody adds. Do what [[T-611]] did to
+  `iOSTaskAttributeChip`: make the parameter a `let` with no default, so the next caller **fails to
+  build** rather than fails a sweep. The other three helpers should gain the same required
+  parameter in the same change.
+
 ## Done
+
+- [T-637] **CLOSED 2026-09-02, `7fd9b62`.** The icon-only-button rule sweeps `Cadence/` instead of
+  `Cadence/iOS/`, and `knownUnnamedIconButtonSites` is exact in both directions over all 565 files.
+  **The 31/24 figure was re-measured rather than inherited** — it predated four batches that touched
+  button surfaces — and it reproduced exactly: **31 sites in 24 files, 3 on iOS (unchanged) and 28 in
+  22 macOS files**. Two independent readings agree: the suite's own sweep, and a line-numbered port of
+  `unnamedIconButtonCount` run outside the test target, which returned the same 24 files with the same
+  per-file counts and gave the line numbers the three follow-up tickets cite.
+  **The widening is pinned by the walk, not by a comment.** The sweep's `including:` witness is now
+  `Cadence/macOS/Views/TasksPanelSupportViews.swift`, so re-scoping the walk to `Cadence/iOS` throws
+  `walkMissedItsWitness` before it counts anything — that is mutation **M4**, killed by
+  `noIconOnlyButtonInTheAppIsLeftWithoutAnAccessibleName` and
+  `theUnnamedIconButtonLedgerStatesHowManySitesEachFileStillHas`.
+  **The count is not inflated by self-naming menu items**, which is what made T-611's original
+  "1 label across 25 buttons" wrong. `aMenuItemSpelledAsALabelIsNotAnIconOnlyButton` pins the
+  `Label(_:systemImage:)` case on a literal instead of on a file that can lose its menu; teaching the
+  detector to count `Label(` (**M2**) kills it and three others.
+  **A tooltip is not a name, and that is a fixture now too.** `aTooltipIsNotAnAccessibleNameForABareGlyph`
+  fires on a `.help`-only glyph and stays quiet on `.cadenceControlLabel`. Accepting `.help` as a name
+  (**M3**) kills it — and, measured, changes the ledger by **zero**: none of the 31 carries a `.help`
+  in its modifier chain today, so the "same controls the tooltip ledger released" reading is about
+  which controls they are, not about text still present at the site.
+  All seven mutations were killed, each by a named test, in an isolated `git archive` tree under one
+  lease: M1 blinded `namesItself` (6 kills), M2 counted `Label(` (4), M3 accepted `.help` (1), M4
+  reverted the scope (2), M5 dropped a ledger line (3), M6 added a stale one for a clean file (3),
+  M7 changed a count by one (2). M5 and M6 are the bidirectional check: an unlisted offender and a
+  stale entry each fail, so a ledger that merely *contained* the offenders would not pass.
+  **Ledgered rather than fixed, deliberately** — 24 files with three agents editing that set — and every
+  site is attributed: iOS's 3 stay with [[T-611]]; macOS's 28 split into [[T-672]] (10 copies of the
+  search field's clear button), [[T-673]] (8 row glyphs that never name their row) and [[T-674]] (10
+  helpers and chrome, including one whose optional label parameter is the reason it has no label).
+  Not done: the suite is still called `CadenceIOSControlAccessibilityTests` while carrying an app-wide
+  rule. Moving 150 lines of brace-walking between two suites mid-batch was the larger risk; the file's
+  header says so.
 
 - [T-644] **CLOSED 2026-09-01, `d5e3460`.** `functionBody(named:)` balances the parameter list
   before it looks for the body, through a new `matchedRange(after:in:open:close:)` — `matchedBody`'s
