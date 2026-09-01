@@ -1064,25 +1064,52 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   shared `commitSettle` and restoring through `commitEdit`; `CadenceTaskStatusEditing` catches and
   records on `CadenceTaskSettleFailureCenter`, which `iOSRootView` names once for all six surfaces.
   `setStatus` is the same shape and is **still exempt** — see [[T-643]].
-  **(b)** CXT-007 is a genuine **vocabulary gap**, not a new site class: `return true` from a Bool drop
-  handler is a success report by the repo's own words (`TasksPanelDropCoordinator:29-32`: *"a silent
-  accept says the move happened"*) but is outside `successReport`. Feeds [[T-627]] gap 4 and is adjacent
-  to [[T-607]].
+  **(b) LANDED 2026-09-01.** CXT-007's own sentence — `return true` from a `-> Bool` drop handler,
+  by the repo's own words (`TasksPanelDropCoordinator:29-32`: *"a silent accept says the move
+  happened"*) — **was already in `successReport`**: [[T-627]] gap 4 put it there, gated on the
+  declaration's return type, and the two sites it found
+  (`CalendarPageBoardSupportViews.unschedule`, `TasksPanelSupport.assignTask`) have been ledgered
+  against this ticket since. The gate is load-bearing and stays: a `return true` inside a
+  `removeAll { … }` predicate is not a report, and
+  `returningTrueIsASuccessReportOnlyFromADeclarationThatAnswersBool` pins that, with a fixture that
+  is exactly that shape. The one sub-case the gate does hide — a `return true` from
+  a Bool-answering **closure** inside a `var body` — has **zero instances**: measured 2026-09-01,
+  no `dropDestination` / `onDrop` / `performDrop` body in the app holds a swallowed commit.
+  What was genuinely missing was the **other half of the same sentence**. `Bool` and `Optional` are
+  the two return types in which a declaration can say *"it did not work"*, so they are the two in
+  which the answer **is** the report — and the Optional spelling was outside the vocabulary.
+  `successReport` reads it now: a `-> X?` that returns anything other than `nil` in the swallowed
+  commit's own block. **37 flagged declarations became 39**, and both new ones are real:
+  `iOSMarkdownEditingSurface.toggleEmbeddedSubtask` ([[T-648]]) and
+  `MarkdownEditorView.createInlineTag` ([[T-631]]'s second half — the phantom tag is written into
+  the note's text, not only into Settings › Tags). Scoped to the frame that *builds* the answer;
+  one frame down it adds three sites and all three are forwards, recorded at the call site.
   **(c)** CXT-008's real half is `CadenceFocusPlanningSupport.swift:230-234` swallowing over a
   recurrence insert. Separately, `logElapsedSeconds:182-192` uses **accumulating** `+=` writes, so the
   rule's standing justification for `try?` — *"the next fetch corrects it"* — **does not hold there**.
   Same shape as [[T-621]].
-  **(d)** CXT-012 and CXT-015 are **materially weaker than filed and outside the rule entirely**
-  (EventKit, not a `ModelContext` commit) — and **not silent**: every failure goes through `record()` and
-  both hosts mount `.calendarWriteFailureAlert()`. The residue is only lost draft text, a parity gap
-  with `iOSCalendarEventEditSheet`.
+  **(d) RESOLVED DOWNWARD 2026-09-01 — both are non-defects under this rule.** Re-checked against
+  the source rather than the report. CXT-012 and CXT-015 are EventKit writes, not `ModelContext`
+  commits, so the `try? save()` rule does not reach them at all: there is no pending change, no
+  single shared context, and nothing for a later unrelated `save()` to take. Nor are they silent —
+  every failure path in `CalendarManager` (`createStandaloneEvent`, both `updateEvent` overloads,
+  `deleteEvent`, `save(_:span:describing:)`) returns through `record(_:)`, which sets
+  `lastWriteFailure`, and both macOS hosts mount the alert that presents it
+  (`SchedulePanel.swift:180`, `CalendarPageView.swift:149`). The single deliberate exception —
+  `updateEventNotes(calendarEventID:)` returning `.eventNotFound` unrecorded — carries its own doc
+  saying why (a debounced flush would raise the modal on a loop) and reports inline instead.
+  **The one real residue is lost draft text**, and it is a parity gap rather than a swallowed
+  failure: iOS keeps the sheet open on a refused write, macOS closes the popover and discards the
+  title, notes, calendar and time range. Filed as [[T-658]]; the CXT ids are closed here.
   **(e) A bigger sibling Codex missed on the same canvas:** `SchedulePanel.swift:124-126`'s
   `onCreateBundle` calls `SchedulingActions.createBundle` (`SchedulingService.swift:29-39`,
   `context.insert(bundle)`, **no save**) then `finishDraftCreation()`. That is a real half-3 defect where
   the event branch beside it is not.
-  **CXT-003 is DISPROVED and should be closed as not-a-defect** — `linkedCalendarID` is an in-place field
-  edit, nothing inserts, deletes, dismisses or reports, and macOS is `do/catch` with a `print`, not a
-  `try?`. It belongs under [[T-614]]'s open question if anywhere.
+  **CXT-003 is CLOSED as not-a-defect, 2026-09-01** — re-checked and confirmed: `linkedCalendarID`
+  is an in-place field edit on an object the store already holds, nothing inserts, deletes,
+  dismisses or reports, and the macOS path is `do/catch` with a `print`, not a `try?`. It is the
+  96-of-112 category the rule deliberately leaves alone. If it belongs anywhere it is under
+  [[T-614]]'s open question, which is the user's to decide and is **not** started here.
 
 - [T-637] **Widen the icon-only-button ledger from `Cadence/iOS/` to the whole app.** From [[T-611]],
   which scoped its new detector to iOS deliberately: at the time, [[T-610]] was still rewriting
@@ -1109,9 +1136,13 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `TaskEmbedFieldEditorPopover` was fixed for: the card shows values the store does not hold and nothing
   else on screen disagrees. `CadenceTaskFieldEditCommit.commit` is the existing unit and the popover
   already calls `onChanged()` only below its `catch`, so the fix is mechanical.
-  **Why the rule does not catch it:** half 2's report vocabulary reads `return true` from a `-> Bool`,
-  and "returns render info the caller draws" is a different spelling of the same claim. Recorded in
-  `docs/CODEX_TODO.md`'s embedded-card section and never given an id until now.
+  **The rule catches one of the four now.** [[T-636]](b) widened `successReport` to the Optional
+  half of "the answer is the report", so `iOSMarkdownEditingSurface.toggleEmbeddedSubtask` — which
+  answers `MarkdownTaskEmbedRenderInfo?` and returns `.task(task)` over the swallowed commit — is
+  flagged and **ledgered against this ticket** in `reportExemptions`. The three macOS copies answer
+  `Void` and hand the same render info **sideways** instead, through `refreshEmbeddedTask` one
+  frame down; the detector still cannot see that spelling, which is [[T-657]]. Fixing any of the
+  four means deleting the matching ledger line in the same change.
 
 - [T-649] **A partly-failed image insertion says nothing about the part that failed.** VERIFIED.
   `iOSMarkdownEditingSurface.insertPickedImages` drops any picked item whose
@@ -1161,6 +1192,42 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   is now the repo's standard spelling for a committing helper — 20+ declarations carry one.
   Fix: balance the parameter list before looking for the body (`matchedBody(after:in:open:close:)`
   already does parentheses), and pin it with a fixture that fails on the current reader.
+
+- [T-657] **The save-commit detector cannot see a success report handed *sideways* one frame down.**
+  Found while landing [[T-636]](b), and it is the reason three of [[T-648]]'s four sites are not in
+  the ledger. Half 2 already follows the **swallow** one frame down (`indirectReportOffenders`,
+  [[T-566]]); it does not follow the **report**. `NotePanel.toggleEmbeddedSubtask` /
+  `renameEmbeddedTask` and the `ListNotesSupportViews` and `NoteEditorPane` copies of both answer
+  `Void`, swallow the commit, and then call `refreshEmbeddedTask(task)` — whose whole body is
+  `editorTextView?.markdownTaskEmbeds[id] = MarkdownTaskEmbedRenderInfo.task(task)` plus a redraw.
+  That is the identical claim `iOSMarkdownEditingSurface` makes by *returning* the same value, and
+  the detector sees the iOS one and not the macOS three.
+  Two pieces are needed and neither is free, which is why this is a ticket rather than part of
+  T-636(b): a base spelling for "assign freshly built render info into something the view draws"
+  (the app's only name for it today is the `MarkdownTaskEmbedRenderInfo` type itself, which is one
+  ticket's worth of vocabulary), and a **report**-one-frame-down index over same-file callees whose
+  bodies are nothing but a report. Measure the false-positive cost of the second before shipping
+  it: the block window is what keeps half 2 honest, and following calls out of it widens that
+  window. Until then the three macOS sites are recorded in T-648's prose only.
+
+- [T-658] **A refused macOS calendar write closes the popover and loses the whole draft; iOS keeps
+  it.** From [[T-636]](d), which resolved CXT-012 and CXT-015 downward — those are EventKit, not a
+  `ModelContext` commit, and they are **not** silent (`CalendarManager.record(_:)` →
+  `lastWriteFailure` → `.calendarWriteFailureAlert()`, mounted at `SchedulePanel.swift:180` and
+  `CalendarPageView.swift:149`). This is the residue that survived that reading, and it is a parity
+  gap rather than a swallowed failure.
+  macOS discards the typed `CalendarWriteFailure?` at the call site and closes regardless:
+  `CalendarBoardItemSupportViews.swift:168,177` (save) and `:186,187` (delete),
+  `TimelineEventBlock.swift:123,132`, and quick-create, where the callback type is narrowed to
+  `Void` before it reaches the editor that owns the draft (`TimelineDayCanvas.swift:33,261,263`,
+  supplied by `SchedulePanel.swift:133` and `CalendarPageMonthSupportViews.swift:606`). The user
+  loses the title, notes, chosen calendar and time range, then gets a global alert with nothing to
+  retype into.
+  iOS is the shape to copy: `iOSCalendarEventEditSheet` keeps the sheet open and writes
+  `CadenceCalendarEventEditingSupport.saveFailureNotice(for:)` / `deleteFailureNotice(for:)`, and
+  `iOSCalendarQuickCreateSheet` captures the typed create result. The shared copy already exists in
+  `CadenceCalendarEventEditingSupport`, so this is threading a return value and one notice, not new
+  plumbing.
 
 - [T-650] **`scripts/test-host-lock.sh` has no fairness, and with 3-4 agents that is now the run's
   main wall-clock cost.** Measured 2026-09-01 in the Batch A run: one agent's `acquire` was starved for

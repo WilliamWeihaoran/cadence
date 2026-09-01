@@ -103,9 +103,10 @@ breaks the rule if any of three halves is true:
 1. **Existence** — the function inserts or deletes, **in its own frame or one below**: a pending
    change travels up through every frame *handed* a `ModelContext` and stops at the first that was not.
 2. **Report** — something **anywhere in the swallowed commit's own block** says it worked: `dismiss…()`,
-   `is/show<X> = false`, `editing/selected/pending<X> = nil`, `presentedX = …`, `onSave(…)`, `return true`
-   from a `-> Bool`, an `@AppStorage` write. A "swallowed commit" is `try?` on a `save()` **or** a
-   `Cadence*Persistence` helper — the commit surface, not the method name — **one frame down included**.
+   `is/show<X> = false`, `editing/selected/pending<X> = nil`, `presentedX = …`, `onSave(…)`, an
+   `@AppStorage` write, or **the answer itself** — `return true` from a `-> Bool`, a non-`nil` return
+   from a `-> X?`. A "swallowed commit" is `try?` on a `save()` **or** a `Cadence*Persistence` helper —
+   the commit surface, not the method name — **one frame down included**.
 3. **Commit reach** — the function inserts **or deletes** and reaches no commit at all. A declaration
    **handed** a `ModelContext` is exempt by rule; one that reached for an ambient context must commit.
 

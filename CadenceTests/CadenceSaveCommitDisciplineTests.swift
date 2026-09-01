@@ -744,6 +744,100 @@ struct CadenceSaveCommitDisciplineTests {
         #expect(CadenceSaveCommitRule.reportOffenders(in: predicate).isEmpty)
     }
 
+    /// **T-636(b): the Optional half of the same sentence.** `Bool` and `Optional` are the two
+    /// return types that can say "it did not work", so they are the two in which the answer *is*
+    /// the report. This app hands a repainted card back that way — `MarkdownTaskEmbedRenderInfo` —
+    /// and the vocabulary had never seen the spelling.
+    ///
+    /// Three negatives, and each one is a different way the widening could have been too wide: the
+    /// failure answer (`return nil`), no answer at all (`-> Void`), and a return type that belongs
+    /// to a **closure parameter** rather than to this declaration.
+    @Test func returningSomethingOtherThanNilIsASuccessReportFromADeclarationThatAnswersAnOptional() throws {
+        let renderInfo = """
+        private func toggleEmbeddedSubtask(taskID: UUID, subtaskID: UUID) -> MarkdownTaskEmbedRenderInfo? {
+            guard let task = embeddedTask(id: taskID),
+                  let subtask = (task.subtasks ?? []).first(where: { $0.id == subtaskID }) else {
+                return nil
+            }
+            subtask.isDone.toggle()
+            try? modelContext.save()
+            return MarkdownTaskEmbedRenderInfo.task(task)
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: renderInfo) == ["toggleEmbeddedSubtask"])
+
+        let refusing = renderInfo.replacingOccurrences(
+            of: "return MarkdownTaskEmbedRenderInfo.task(task)",
+            with: "return nil"
+        )
+        #expect(CadenceSaveCommitRule.reportOffenders(in: refusing).isEmpty)
+
+        let answerless = """
+        private func toggleEmbeddedSubtask(taskID: UUID, subtaskID: UUID) {
+            guard let subtask = subtask(taskID: taskID, subtaskID: subtaskID) else { return }
+            subtask.isDone.toggle()
+            try? modelContext.save()
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: answerless).isEmpty)
+
+        // The `$` anchor earning its place: the only `-> …?` in this signature belongs to a
+        // **closure the caller passes in**, and this declaration's own answer is a `String`, which
+        // has no way to say "it did not work" and so cannot be a report. Reading the parameter's
+        // return type as the declaration's would make every handler-taking mutation an offender.
+        let closureParameter = """
+        private func retitle(_ task: AppTask, resolving lookup: (UUID) -> Tag?) -> String {
+            task.title = draft
+            try? modelContext.save()
+            return task.title
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: closureParameter).isEmpty)
+    }
+
+    /// The Optional spelling reads the frame that **builds** the answer, not one frame down — and
+    /// the negative is the shape that decided it. `macOSRootCommandSupport.handle` answers
+    /// `NSEvent?` with the polarity inverted: `nil` is how "I consumed the event" is spelled, so a
+    /// non-`nil` answer says the frame did *not* act.
+    @Test func theOptionalAnswerIsNotReadThroughAFrameThatMerelyForwardsIt() throws {
+        let router = """
+        enum RootCommandEventSupport {
+            static func handleCommandKeyEvent(_ event: NSEvent, context: RootCommandContext) -> NSEvent? {
+                context.hoveredTask.map { toggleTodayDate(for: $0) }
+                try? context.modelContext.save()
+                return nil
+            }
+        }
+        """
+        let forwarding = """
+        enum RootCommandSupport {
+            static func handle(_ event: NSEvent, context: RootCommandContext) -> NSEvent? {
+                guard event.modifierFlags.contains(.command) else { return event }
+                return RootCommandEventSupport.handleCommandKeyEvent(event, context: context)
+            }
+        }
+        """
+        let swallowing = index(over: ["events.swift": router, "root.swift": forwarding])
+        #expect(swallowing.namesRead > 0, "non-vacuity: the swallowing index read nothing")
+        #expect(
+            CadenceSaveCommitRule.indirectReportOffenders(in: forwarding, swallowing: swallowing).isEmpty
+        )
+
+        // The same forward, said with a spelling the vocabulary *does* read one frame down, so the
+        // negative above is about the Optional answer rather than about the fixture being inert.
+        let dismissing = forwarding.replacingOccurrences(
+            of: "return RootCommandEventSupport.handleCommandKeyEvent(event, context: context)",
+            with: """
+            RootCommandEventSupport.handleCommandKeyEvent(event, context: context)
+                        dismiss()
+                        return nil
+            """
+        )
+        #expect(
+            CadenceSaveCommitRule.indirectReportOffenders(in: dismissing, swallowing: swallowing) == ["handle"]
+        )
+    }
+
     /// **Gap 4, the sharpest spelling.** Every other report in the vocabulary is state a redraw can
     /// repair. An `@AppStorage` write is not: it is the one false success that **outlives the
     /// rollback**, and Roll Over spells it as an assignment *from* the swallowing call — so the
@@ -1109,6 +1203,22 @@ enum CadenceSaveCommitRule {
         // itself, in `TasksPanelDropCoordinator`: "a silent accept says the move happened".
         "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift": ["unschedule"],
         "Cadence/macOS/Views/TasksPanelSupport.swift": ["assignTask"],
+
+        // MARK: Found by T-636(b)'s Optional half of the same sentence
+        //
+        // [[T-648]]: ticking a subtask on a task card embedded in a note. The subtask flips, the
+        // commit is swallowed, and the answer is `MarkdownTaskEmbedRenderInfo.task(task)` — the
+        // render info the editor repaints the card from. The card then shows a tick the store may
+        // not hold. **Its three macOS siblings are not in here**, because they answer `Void` and
+        // hand the same render info sideways instead, through `refreshEmbeddedTask` one frame
+        // down; the detector cannot see that spelling yet (T-657).
+        "Cadence/iOS/iOSMarkdownEditingSurface.swift": ["toggleEmbeddedSubtask"],
+        // [[T-631]], its second half. `createInlineTag` was already in `existenceExemptions` —
+        // `TagSupport.resolveTags` inserts the `Tag` row one frame down — and the Optional spelling
+        // shows the other end of it: the swallowed commit is followed by `return .tag(tag)`, the
+        // suggestion the editor then writes into the note. The phantom tag is not only in
+        // Settings › Tags, it is in the note's text.
+        "Cadence/macOS/Editor/MarkdownEditorView.swift": ["createInlineTag"],
         // `Cadence/iOS/iOSListSupportViews.swift: ["addLink"]` was the third entry — [[T-507]],
         // held here rather than fixed to keep two agents out of one file. It is fixed now:
         // `addLink` catches the insert and leaves the form open with an `actionError`, the way
@@ -1583,7 +1693,11 @@ enum CadenceSaveCommitRule {
         let persisted = persistedReport(in: source)
         for declaration in declarations(in: source) {
             let body = Array(declaration.body)
-            let vocabulary = successReport(returning: declaration.signature, persisted: persisted)
+            let vocabulary = successReport(
+                returning: declaration.signature,
+                persisted: persisted,
+                buildingItsOwnAnswer: true
+            )
             let cancelled = cancelledWorkItemNames(in: declaration.body)
             var index = 0
             while index < body.count {
@@ -1677,7 +1791,20 @@ enum CadenceSaveCommitRule {
         var names: [String] = []
         let persisted = persistedReport(in: source)
         for declaration in parsed where !direct.contains(declaration.name) {
-            let vocabulary = successReport(returning: declaration.signature, persisted: persisted)
+            // **`buildingItsOwnAnswer: false`**, and it is measured rather than cautious. The
+            // Optional spelling is a claim by the frame that *builds* the answer; one frame down,
+            // an Optional handed back is a forward. Extending it here adds exactly three sites over
+            // 564 files and all three are forwards: `CadenceTaskMutationSupport.insertBundle` is
+            // **handed** a `ModelContext` and returns its bundle to the caller that owns the
+            // commit, and `macOSRootCommandSupport.handle` /
+            // `RootCommandEventSupport.handleCommandKeyEvent` answer `NSEvent?` with the polarity
+            // **inverted** — `nil` is how "I consumed the event" is spelled there, so a non-`nil`
+            // answer says the frame did *not* act.
+            let vocabulary = successReport(
+                returning: declaration.signature,
+                persisted: persisted,
+                buildingItsOwnAnswer: false
+            )
             let cancelled = cancelledWorkItemNames(in: declaration.text)
             for call in declaration.calls
             where !isRecursive(call, in: declaration)
@@ -2005,14 +2132,41 @@ enum CadenceSaveCommitRule {
         Set(CadenceSourceScan.captures("\\b(pending[A-Z]\\w*)\\s*\\??\\.\\s*cancel\\(", in: body).map(\.text))
     }
 
-    private static func successReport(returning signature: String, persisted: String?) -> String {
+    private static func successReport(
+        returning signature: String,
+        persisted: String?,
+        buildingItsOwnAnswer: Bool
+    ) -> String {
         var spellings = [successReport]
         if let persisted { spellings.append(persisted) }
         if CadenceSourceScan.matchCount("->\\s*Bool\\b", in: signature) > 0 {
             spellings.append("\\breturn true\\b")
         }
+        if buildingItsOwnAnswer, CadenceSourceScan.matchCount(optionalAnswer, in: signature) > 0 {
+            spellings.append(nonNilAnswer)
+        }
         return spellings.joined(separator: "|")
     }
+
+    /// A declaration that answers an **Optional** — T-636(b), and the sibling of `return true`.
+    ///
+    /// `Bool` and `Optional` are the only two return types in which a declaration can say *"it did
+    /// not work"*, so they are the only two in which the **answer itself** is a report. T-627 put
+    /// `return true` from a `-> Bool` in the vocabulary on exactly that argument, quoting
+    /// `TasksPanelDropCoordinator`: *"a silent accept says the move happened"*. The other half of
+    /// the same sentence was never written down, and it is the spelling this app actually uses for
+    /// a card it redraws: `iOSMarkdownEditingSurface.toggleEmbeddedSubtask` ticks a subtask,
+    /// swallows the commit, and hands back `MarkdownTaskEmbedRenderInfo.task(task)` — which is what
+    /// repaints the embed inside the note. Returning render info the caller draws is the same claim
+    /// as returning `true`.
+    ///
+    /// `$`-anchored so it reads the declaration's **own** return type rather than a closure
+    /// parameter's: `onSelect: (AppTask) -> Tag?` in an argument list is a callee's answer, not
+    /// this one's.
+    private static let optionalAnswer = "->\\s*[\\w.]+\\?\\s*$"
+    /// `return` of anything that is not `nil`. The failure answer of an Optional is spelled exactly
+    /// one way, so everything else is the success answer.
+    private static let nonNilAnswer = "\\breturn\\s+(?!nil\\b)\\S"
 
     /// Writing an `@AppStorage` property, spelled for the file that declares one — T-627 gap 4, and
     /// the sharpest member of the vocabulary.
