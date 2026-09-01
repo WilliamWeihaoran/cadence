@@ -1049,12 +1049,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `SchedulePanelComponents.TaskDetailPopover.createTag`. A phantom tag appears in Settings > Tags on the
   next unrelated save from any screen.
 
-- [T-633] **iOS recurrence scope edits close the dialog, then swallow.** VERIFIED.
-  `iOSTaskRowActionViews.swift:339-346` and `:816-823`; the series path sets
-  `pendingRecurrenceRule = nil` — **which is what closes the scope dialog** — and then swallows.
-  **Report.** For `.thisAndFuture`, every later occurrence's rule changes in memory, the sheet closes,
-  and **the row's existing "Couldn't Update the Series" alert has nowhere to fire.**
-
 - [T-636] **The partly-confirmed residue from the CXT sweep — four narrower findings and one Codex
   missed.** VERIFIED 2026-09-01.
   **(a) LANDED 2026-09-01 (`afff149`); the rest of this ticket is still open.** The real root under
@@ -1084,10 +1078,17 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `MarkdownEditorView.createInlineTag` ([[T-631]]'s second half — the phantom tag is written into
   the note's text, not only into Settings › Tags). Scoped to the frame that *builds* the answer;
   one frame down it adds three sites and all three are forwards, recorded at the call site.
-  **(c)** CXT-008's real half is `CadenceFocusPlanningSupport.swift:230-234` swallowing over a
-  recurrence insert. Separately, `logElapsedSeconds:182-192` uses **accumulating** `+=` writes, so the
-  rule's standing justification for `try?` — *"the next fetch corrects it"* — **does not hold there**.
-  Same shape as [[T-621]].
+  **(c) LANDED 2026-09-01 (`7ca3c29`).** `CadenceFocusSupport.complete` throws and takes `commit:`; it
+  settles through the shared `CadenceTaskMutationSupport.commitSettle` and restores the three
+  accumulators `logElapsedSeconds` writes with `+=`, which is the half the rule's standing
+  *"the next fetch corrects it"* does not cover — a fetch re-reads whatever the counter now holds,
+  so a lost `+=` stays lost, and `actualMinutes` feeds an hours-based `Goal`.
+  `CadenceTaskStatusEditing.completeFocusSession` records the refusal on
+  `CadenceTaskSettleFailureCenter` **and answers `false`**, because `iOSFocusView.complete` has
+  something to do with that answer the shared alert cannot: the elapsed seconds exist nowhere but
+  the stopwatch, so `resetTimer()` over a refusal loses them for good.
+  Pinned by `CadenceFocusSessionAndBlockCommitTests`. **Residue: [[T-654]]**, the block timer's own
+  door onto the same accumulators. The general `+=` merge question stays [[T-621]]'s.
   **(d) RESOLVED DOWNWARD 2026-09-01 — both are non-defects under this rule.** Re-checked against
   the source rather than the report. CXT-012 and CXT-015 are EventKit writes, not `ModelContext`
   commits, so the `try? save()` rule does not reach them at all: there is no pending change, no
@@ -1101,10 +1102,17 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **The one real residue is lost draft text**, and it is a parity gap rather than a swallowed
   failure: iOS keeps the sheet open on a refused write, macOS closes the popover and discards the
   title, notes, calendar and time range. Filed as [[T-658]]; the CXT ids are closed here.
-  **(e) A bigger sibling Codex missed on the same canvas:** `SchedulePanel.swift:124-126`'s
-  `onCreateBundle` calls `SchedulingActions.createBundle` (`SchedulingService.swift:29-39`,
-  `context.insert(bundle)`, **no save**) then `finishDraftCreation()`. That is a real half-3 defect where
-  the event branch beside it is not.
+  **(e) LANDED 2026-09-01 (`7ca3c29`) for `SchedulePanel`; two sibling canvases remain as [[T-655]].**
+  Confirmed as filed: `onCreateBundle` called `SchedulingActions.createBundle`
+  (`context.insert(bundle)`, no save), added the ticked tasks, and let `finishDraftCreation()`
+  dismiss the draft popover. `SchedulingActions.insertBundle(title:dateKey:startMin:endMin:adding:in:commit:)`
+  is the committing unit now — the block **and** its membership as one insert, because committing
+  the block first would store an empty one and leave the member edits pending — and it restores the
+  five fields `addTask` writes on each member when the commit is refused. The `do/catch` lives in
+  `SchedulePanel`, which is the frame that owns the unit of work, and the refusal is an alert on the
+  panel: the popover is gone by the time the store answers.
+  The event branch beside it was left alone, as filed — EventKit failures already travel through
+  `CalendarManager.lastWriteFailure` to `.calendarWriteFailureAlert()`.
   **CXT-003 is CLOSED as not-a-defect, 2026-09-01** — re-checked and confirmed: `linkedCalendarID`
   is an in-place field edit on an object the store already holds, nothing inserts, deletes,
   dismisses or reports, and the macOS path is `do/catch` with a `print`, not a `try?`. It is the
@@ -1241,7 +1249,64 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Note the interaction with mutation runs**: a mutation batch is many short acquisitions in a row, so
   a starved agent is starved repeatedly, not once.
 
+- [T-654] **The block focus timer banks its minutes over a swallowed save, then clears the clock.**
+  Found while landing [[T-636]](c), which fixed the single-task door beside it.
+  `iOSFocusView.logBundleSession` calls `CadenceFocusSupport.logElapsedSeconds(_:across:)` →
+  `CadenceFocusBundleSupport.distributeMinutes`, which writes `AppTask.actualMinutes` and the
+  container's `loggedMinutes` with `+=` for every ticked member, then runs
+  `try? modelContext.save()` and `resetTimer()`. Same defect and same fix as (c): the accumulators
+  make *"the next fetch corrects it"* false, and the reset destroys the only copy of the seconds.
+  **No half of the rule can see it**, which is the interesting part: nothing is inserted or deleted,
+  and `resetTimer()` is not in half 2's success vocabulary. macOS's bundle timer commits through the
+  same helper and belongs in the same pass.
+
+- [T-655] **Two more canvases create a block and commit nothing.** The rest of [[T-636]](e), which
+  fixed `SchedulePanel` and left these because the closure is copied into three files.
+  `CalendarPageMonthSupportViews.body` (`SchedulingActions.createTask(title:dateKey:…)` and
+  `createBundle(title:…in:)`) and `TimelineDayCanvas.body` (`createBundle(from:adding:in:)`) still
+  insert into a context they were handed and commit nothing; both hold their
+  `commitReachExemptions` entries. The committing unit already exists —
+  `SchedulingActions.insertBundle(title:…adding:in:commit:)` — so the month grid is a small change
+  plus a notice; `createTask` and `createBundle(from:adding:)` still need one each.
+  **Watch the detector while doing it**: the commit index needs *every* overload of a name on a type
+  to commit before it vouches for the name, so fixing one `createBundle` overload silences nothing
+  until its sibling is fixed too. That is why (e) added a differently-named function rather than
+  changing the existing one.
+
+- [T-656] **A shared picker closes itself over its caller's swallowed save, and no half of the rule
+  can see it.** Found while landing [[T-633]].
+  `CadenceChoicePopoverList`'s row button is `selection = row.value; isPresented = false`
+  (`Cadence/Shared/Components/CadenceChoicePicker.swift:127-129`). The `selection` binding's *setter*
+  is the caller's mutation: for the repeat chip it is `iOSTaskRecurrenceSelection.select`, whose
+  non-series branch runs `applyRecurrenceRule` and `try? modelContext.save()`. So the popover
+  closing **is** the success report, and it is unconditional.
+  **Structurally invisible to the detector**: the report is in a different file from the swallow,
+  and the link between them is a `Binding` setter rather than a call, which is not a call-graph
+  edge. Same family as [[T-657]] but a different mechanism — sideways through a binding rather than
+  through a return.
+  This is a class, not a site: every picker built on `CadenceChoicePopoverList` /
+  `iOSChoicePopoverList` whose selection setter swallows a commit has it. Count them before choosing
+  a fix; the cheapest honest shape is probably for the setter to answer and the list to close only
+  on success.
+
 ## Done
+
+- [T-633] **CLOSED 2026-09-01 (`e96c3e9`).** Both iOS scope dialogs commit now, through
+  `CadenceTaskFieldEditCommit.commit(_:alsoRestoring:in:)` — the unit macOS's
+  `TaskEmbedFieldEditorPopover` already reaches this same dialog through, whose `alsoRestoring:`
+  exists for exactly this edit. `recurrenceTargets(from:allTasks:scope:)` is what is passed as that
+  list, so `.thisAndFuture`'s undo reaches every later occurrence rather than only the tapped one,
+  and the list is the one the edit itself walks rather than a second derivation of it.
+  `iOSTaskRowActionViews.applyPendingRecurrenceRule` left `reportExemptions` and the sheet's
+  `applyPendingRecurrenceChange` left `indirectReportExemptions`; the second site was named in the
+  ledger rather than in the ticket, and is the same defect one frame down.
+  **The alert existed and needed a path — and a second sentence.** "Couldn't Update the Series" and
+  the series-lookup notice moved to `CadenceRecurrenceScopeCopy`, where the dialog's own prose
+  already lives, and `noSurfaceTypesARecurrenceScopeSentenceOutAgain` now pins six sentences instead
+  of four. A refused *commit* reads `CadencePendingChangePersistence.editFailureNotice` instead:
+  "Try again" is honest for a read that failed and not for a store that refused a write.
+  Pinned by `CadenceRecurrenceScopeCommitTests`. **Residue: [[T-656]]**, the non-series path, whose
+  report is a shared picker's `isPresented = false` in another file.
 
 - [T-635] **CLOSED 2026-09-01 (`819fc2f`).** `rollOver` throws and takes `commit:`; both hosts write the
   `@AppStorage` dismissal **only on the success path** and store `rollFailureNotice` otherwise. This
