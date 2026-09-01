@@ -236,7 +236,7 @@ struct CadenceTodayRolloverSurfaceTests {
             return task
         }
 
-        let dismissed = CadenceTodayRolloverSupport.rollOver(tasks, todayKey: "2026-08-20", modelContext: context)
+        let dismissed = try CadenceTodayRolloverSupport.rollOver(tasks, todayKey: "2026-08-20", modelContext: context)
 
         #expect(dismissed == "2026-08-20")
         #expect(tasks.allSatisfy { $0.scheduledDate == "2026-08-20" })
@@ -302,7 +302,9 @@ struct CadenceTodayRolloverSurfaceTests {
 
     @Test func macOSTodayDrawsTheSameSharedBanner() throws {
         let panel = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanel.swift"))
-        #expect(panel.contains("CadenceTodayRolloverBanner(tasks: derived.overdoTasks, style: .panelBand)"))
+        #expect(panel.contains("CadenceTodayRolloverBanner("))
+        #expect(panel.contains("tasks: derived.overdoTasks,"))
+        #expect(panel.contains("style: .panelBand,"))
         #expect(panel.contains("CadenceTodayRolloverSupport.isNoticeVisible("))
         #expect(panel.contains("CadenceTodayRolloverSupport.rollOver("))
         #expect(panel.contains("CadenceTodayRolloverSupport.dismissedDateStorageKey"))
@@ -409,6 +411,133 @@ struct CadenceTodayRolloverSurfaceTests {
                 == Set(legacyGrouped(showRolloverNotice: false).map(\.id)))
         #expect(derived.todayGroupedTaskItems(showRolloverNotice: true).count
                 == derived.todayGroupedTaskItems(showRolloverNotice: false).count - legacyOverdo.count)
+    }
+
+    // MARK: - T-635: the roll commits, and the dismissal follows the commit
+
+    /// A commit that always refuses, the way every other save-commit suite here spells it.
+    private struct CommitRefused: Error {}
+
+    /// **The one false success in the T-627 ledger that outlives a rollback.**
+    ///
+    /// `rollOver` used to end `try? modelContext.save()` and `return todayKey` unconditionally,
+    /// and both hosts assigned that return straight into the `@AppStorage`
+    /// `rolloverNoticeDismissedDate`. So a refused roll hid the banner for the rest of the day over
+    /// a store that still held yesterday's plans — every other report in the rule's vocabulary is
+    /// state a redraw repairs, and a defaults write is not.
+    ///
+    /// It is an *existence* change too, two frames down: `rollOverTaskToToday` reaches
+    /// `deleteBundleIfFullySettled`, which does `modelContext.delete(bundle)`. That is why the
+    /// commit goes through `commitDelete` — the emptied block has to come back.
+    @Test func aRefusedRollThrowsAndPutsTheEmptiedBlockBack() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let carried = AppTask(title: "Carry me")
+        let finished = AppTask(title: "Already done")
+        finished.status = .done
+        let bundle = TaskBundle(title: "Yesterday", dateKey: "2026-08-19", startMin: 600, durationMinutes: 30)
+        [carried, finished].forEach(context.insert)
+        context.insert(bundle)
+        [carried, finished].forEach { CadenceTaskMutationSupport.addTask($0, to: bundle, modelContext: context) }
+        try context.save()
+
+        #expect(throws: (any Error).self) {
+            try CadenceTodayRolloverSupport.rollOver(
+                [carried],
+                todayKey: "2026-08-20",
+                modelContext: context
+            ) { _ in throw CommitRefused() }
+        }
+
+        #expect(
+            try context.fetch(FetchDescriptor<TaskBundle>()).map(\.id) == [bundle.id],
+            "the emptied block was left deleted over a refused commit"
+        )
+    }
+
+    /// The same commit, accepted. Without this the test above passes on a `rollOver` that rolls
+    /// nothing at all.
+    @Test func anAcceptedRollCommitsTheBlockDeletionAndReturnsTheDayKey() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let carried = AppTask(title: "Carry me")
+        let finished = AppTask(title: "Already done")
+        finished.status = .done
+        let bundle = TaskBundle(title: "Yesterday", dateKey: "2026-08-19", startMin: 600, durationMinutes: 30)
+        [carried, finished].forEach(context.insert)
+        context.insert(bundle)
+        [carried, finished].forEach { CadenceTaskMutationSupport.addTask($0, to: bundle, modelContext: context) }
+        try context.save()
+
+        let dismissed = try CadenceTodayRolloverSupport.rollOver(
+            [carried],
+            todayKey: "2026-08-20",
+            modelContext: context
+        )
+
+        #expect(dismissed == "2026-08-20")
+        #expect(carried.scheduledDate == "2026-08-20")
+        #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
+    }
+
+    /// The commit itself: through `CadencePendingChangePersistence`, not a swallowed `save()`.
+    @Test func theRollCommitsThroughThePendingChangeUnit() throws {
+        // The whole file rather than one body: `cadenceFunctionBody` stops at the first `{` after
+        // the declaration, which is now the `commit:` default argument. Reading the file is the
+        // stronger claim anyway — nothing here may swallow a commit, not just this one function.
+        let source = try strippingComments(sourceFile("Cadence/Shared/CadenceTodayRolloverSupport.swift"))
+        #expect(
+            !source.contains("try? modelContext.save()"),
+            "rollOver still swallows its commit"
+        )
+        #expect(source.contains("try CadencePendingChangePersistence.commitDelete("))
+        #expect(
+            source.contains("commit: (ModelContext) throws -> Void"),
+            "rollOver does not take the injectable commit the refusal tests need"
+        )
+        // Non-vacuity: the stripper left the code, and this really is the roll's own file.
+        #expect(source.contains("static func rollOver("))
+    }
+
+    /// **The persisted dismissal is written only on the success path, on both platforms.**
+    ///
+    /// Scanned rather than exercised because the write is `@AppStorage` inside a `View`, and
+    /// `Cadence/iOS/` is invisible to this macOS-built target either way. The claim is narrow and
+    /// mechanical: the call is a `try` inside a `do`, the refusal is caught, and the notice the
+    /// catch stores is the shared one — so no host can grow a second sentence for it.
+    @Test func neitherHostPersistsTheDismissalWithoutCatchingTheRefusal() throws {
+        for path in ["Cadence/iOS/iOSTodayView.swift", "Cadence/macOS/Views/TasksPanel.swift"] {
+            let body = try cadenceFunctionBody(
+                "private func rollOverPastDoTasks()",
+                in: try strippingComments(sourceFile(path))
+            )
+            #expect(
+                body.contains("try CadenceTodayRolloverSupport.rollOver("),
+                "\(path) does not let a refused roll reach it"
+            )
+            #expect(body.contains("catch"), "\(path) has no catch for the refusal")
+            #expect(
+                body.contains("CadenceTodayRolloverSupport.rollFailureNotice"),
+                "\(path) does not name the refusal with the shared sentence"
+            )
+        }
+    }
+
+    /// And the banner is where it lands: the offer stays on screen — the dismissal was not
+    /// written — so the sentence belongs under the copy that made the offer, once, for both
+    /// platforms.
+    @Test func theSharedBannerCarriesTheRefusalUnderTheOffer() throws {
+        let banner = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTodayRolloverBanner.swift"))
+        #expect(banner.contains("let failureNotice: String?"))
+        #expect(banner.contains("Text(failureNotice)"))
+
+        for path in ["Cadence/iOS/iOSTodayTaskSections.swift", "Cadence/macOS/Views/TasksPanel.swift"] {
+            let source = try strippingComments(sourceFile(path))
+            #expect(
+                source.contains("failureNotice:"),
+                "\(path) draws the banner without passing the refusal through"
+            )
+        }
     }
 
     // MARK: - Fixtures

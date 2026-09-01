@@ -18,6 +18,9 @@ struct TasksPanel: View {
     let enableControls: Bool
     let useStandardHeaderHeight: Bool
     @AppStorage(CadenceTodayRolloverSupport.dismissedDateStorageKey) private var rolloverNoticeDismissedDate = ""
+    /// Set when the roll was refused, and read by the banner, which is still on screen because the
+    /// dismissal above was not written. Cleared by the next roll that lands.
+    @State private var rolloverFailureNotice: String?
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var isCompletedCollapsed = true
     @State private var localSortMode: CadenceTaskSortMode = .macOSTodayDefault
@@ -214,7 +217,11 @@ struct TasksPanel: View {
         let showsRollover = shouldShowRolloverNotice(derived)
 
         if showsRollover {
-            CadenceTodayRolloverBanner(tasks: derived.overdoTasks, style: .panelBand) {
+            CadenceTodayRolloverBanner(
+                tasks: derived.overdoTasks,
+                style: .panelBand,
+                failureNotice: rolloverFailureNotice
+            ) {
                 rollOverPastDoTasks()
             }
         }
@@ -351,13 +358,26 @@ struct TasksPanel: View {
         )
     }
 
+    /// **The dismissal is written only when the roll committed (T-635).**
+    ///
+    /// It used to be assigned from a `rollOver` that swallowed its save and returned today's key
+    /// either way — and this one is an `@AppStorage` write, so unlike every other false success in
+    /// the ledger it survived the rollback, the redraw and the relaunch: the banner stayed hidden
+    /// for the rest of the day, on this Mac and on the phone, over yesterday's plans that were
+    /// still exactly where they were.
     private func rollOverPastDoTasks() {
-        withAnimation(.easeOut(duration: 0.2)) {
-            rolloverNoticeDismissedDate = CadenceTodayRolloverSupport.rollOver(
-                derivedState.overdoTasks,
-                todayKey: todayKey,
-                modelContext: modelContext
-            )
+        do {
+            let dismissed = try withAnimation(.easeOut(duration: 0.2)) {
+                try CadenceTodayRolloverSupport.rollOver(
+                    derivedState.overdoTasks,
+                    todayKey: todayKey,
+                    modelContext: modelContext
+                )
+            }
+            rolloverFailureNotice = nil
+            rolloverNoticeDismissedDate = dismissed
+        } catch {
+            rolloverFailureNotice = CadenceTodayRolloverSupport.rollFailureNotice
         }
     }
 

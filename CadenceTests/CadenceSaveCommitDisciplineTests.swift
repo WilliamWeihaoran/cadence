@@ -1070,9 +1070,6 @@ enum CadenceSaveCommitRule {
         // unrelated save.
         "Cadence/Shared/CadenceNotePlanningSupport.swift": ["update"],
         "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": ["body"],
-        // [[T-635]]: Roll Over reaches `deleteBundleIfFullySettled`, which deletes the block, over
-        // a swallowed commit. The `@AppStorage` half of the same ticket is in the report ledger.
-        "Cadence/Shared/CadenceTodayRolloverSupport.swift": ["rollOver"],
         // T-497 emptied the rest of this list: `CadenceNoteFolderSupport.createNote`,
         // `SettingsTagsSection.createTag`, `iOSSettingsTagsSection.createTag` and
         // `iOSCalendarEventEditSheet.openEventNote` all commit through `commitInsert` now, and are
@@ -1711,11 +1708,6 @@ enum CadenceSaveCommitRule {
         // so the tail-only reading could not have seen it whatever the vocabulary said; the three
         // destination rows now hand their move to `moveNote`, which closes the popover only below
         // the `catch`. Pinned by `CadenceNoteMoveCommitTests`.
-        // [[T-635]]: Roll Over, and the only entry in any of these four lists whose false success
-        // **outlives the rollback** — the dismissal is an `@AppStorage` write, so the banner stays
-        // hidden for the rest of the day whether or not anything rolled.
-        "Cadence/iOS/iOSTodayView.swift": ["rollOverPastDoTasks"],
-        "Cadence/macOS/Views/TasksPanel.swift": ["rollOverPastDoTasks"],
         // [[T-633]], iOS's other half: the sheet's own scope dialog.
         "Cadence/iOS/iOSTaskDetailSheet.swift": ["applyPendingRecurrenceChange"],
         // [[T-636]](c): the focus session's completion, which clears the selection — the picker's

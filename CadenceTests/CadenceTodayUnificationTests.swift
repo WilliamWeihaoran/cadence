@@ -768,7 +768,7 @@ struct CadenceTodayListGroupingTests {
         // Banner up: the row is in the banner and nowhere else, so Errands has no group.
         #expect(todayGroups(noticeVisible: true).isEmpty)
 
-        CadenceTodayRolloverSupport.rollOver(pastDo, todayKey: todayKey, modelContext: modelContext)
+        try CadenceTodayRolloverSupport.rollOver(pastDo, todayKey: todayKey, modelContext: modelContext)
         #expect(leftover.scheduledDate == todayKey)
 
         // Rolled: it is in its list, and the page has grown a list group rather than a date one.

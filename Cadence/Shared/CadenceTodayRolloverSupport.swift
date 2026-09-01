@@ -82,20 +82,47 @@ enum CadenceTodayRolloverSupport {
         return todayTasks.filter { !withheld.contains($0.id) }
     }
 
+    /// The sentence the banner shows when the roll was refused (T-635).
+    ///
+    /// It carries the delete family's second clause — `CadenceTaskMutationSupport.deleteFailureNotice`,
+    /// `bundleDeleteFailureNotice` and `CadenceListDeletionKind.deleteFailureNotice` all promise the
+    /// same thing — because `rollOver` commits through `commitDelete`, whose `rollback()` puts the
+    /// emptied block and the tasks' own slots back. The promise is earned rather than claimed.
+    ///
+    /// It names the roll rather than saying "these changes", for the reason the other four notices
+    /// name their own object: four screens, four nouns, one shape.
+    static let rollFailureNotice = "Couldn't roll these tasks over. Nothing was changed."
+
     /// Performs the roll and returns the day key to store as dismissed.
     ///
-    /// One save for the whole batch. The per-task slot clearing is
+    /// One commit for the whole batch. The per-task slot clearing is
     /// `CadenceTaskMutationSupport.rollOverTaskToToday`.
+    ///
+    /// **It throws, and that is the whole of T-635.** This used to end `try? modelContext.save()`
+    /// and `return todayKey` unconditionally, and both hosts assigned the return straight into the
+    /// `@AppStorage` `rolloverNoticeDismissedDate`. Every other false success in the save-commit
+    /// ledger is state a redraw repairs; a defaults write is not, so a refused roll hid the banner
+    /// for the rest of the day over a store that still held yesterday's plans — and hid it on the
+    /// *other* device too, since the key is deliberately shared.
+    ///
+    /// `commitDelete` rather than `commitEdit`, because the roll is an existence change two frames
+    /// down: `rollOverTaskToToday` reaches `deleteBundleIfFullySettled`, which does
+    /// `modelContext.delete(bundle)`. A block whose last active member was carried away has no
+    /// object left to hand back, so `rollback()` is the only undo that makes it visible again —
+    /// the same reasoning `CadenceTaskMutationSupport.deleteBundle` records.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult
     static func rollOver(
         _ tasks: [AppTask],
         todayKey: String,
-        modelContext: ModelContext
-    ) -> String {
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> String {
         for task in tasks {
             CadenceTaskMutationSupport.rollOverTaskToToday(task, todayKey: todayKey, modelContext: modelContext)
         }
-        try? modelContext.save()
+        try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)
         return todayKey
     }
 }

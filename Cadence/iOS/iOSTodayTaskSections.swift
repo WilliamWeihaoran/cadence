@@ -7,6 +7,10 @@ import SwiftUI
 /// `iOSBundleFormingDrop`.
 struct iOSTodayRolloverNotice {
     let tasks: [AppTask]
+    /// `CadenceTodayRolloverSupport.rollFailureNotice` when the last roll was refused (T-635).
+    /// Part of the same opt-in for the same reason: a refused roll leaves the offer on screen, so
+    /// the sentence travels with the offer rather than with a second piece of state.
+    let failureNotice: String?
     let onRollOver: () -> Void
 }
 
@@ -115,7 +119,11 @@ struct iOSTodayTaskSections: View {
         if rolloverNotice != nil || !(overdueSummaries?.isEmpty ?? true) {
             VStack(alignment: .leading, spacing: metrics.groupSpacing) {
                 if let rolloverNotice {
-                    CadenceTodayRolloverBanner(tasks: rolloverNotice.tasks, style: .card) {
+                    CadenceTodayRolloverBanner(
+                        tasks: rolloverNotice.tasks,
+                        style: .card,
+                        failureNotice: rolloverNotice.failureNotice
+                    ) {
                         rolloverNotice.onRollOver()
                     }
                 }

@@ -25,6 +25,9 @@ struct iOSTodayView: View {
     /// The **same** `UserDefaults` key macOS's Today reads — see
     /// `CadenceTodayRolloverSupport.dismissedDateStorageKey` for why one key rather than two.
     @AppStorage(CadenceTodayRolloverSupport.dismissedDateStorageKey) private var rolloverNoticeDismissedDate = ""
+    /// Set when the roll was refused, and carried into the banner — which is still on screen,
+    /// because the dismissal above was not written. Cleared by the next roll that lands.
+    @State private var rolloverFailureNotice: String?
     /// Written by the rollover banner's confirm, and — in DEBUG — by the sample-data seeder. It was
     /// inside the `#if DEBUG` below when the seeder was its only writer.
     @Environment(\.modelContext) private var modelContext
@@ -107,7 +110,11 @@ struct iOSTodayView: View {
     /// banner opts in whole — the tasks and the action are useless apart.
     private var rolloverNotice: iOSTodayRolloverNotice? {
         guard isRolloverNoticeVisible else { return nil }
-        return iOSTodayRolloverNotice(tasks: pastDoTasks, onRollOver: rollOverPastDoTasks)
+        return iOSTodayRolloverNotice(
+            tasks: pastDoTasks,
+            failureNotice: rolloverFailureNotice,
+            onRollOver: rollOverPastDoTasks
+        )
     }
 
     /// The day's past-due lists and columns, or `nil` when there are none — the second half of
@@ -149,13 +156,23 @@ struct iOSTodayView: View {
         pendingListOpen = request
     }
 
+    /// **The dismissal is written only when the roll committed (T-635).** macOS's `TasksPanel`
+    /// says the same thing in the same words; see it for why an `@AppStorage` write is the one
+    /// false success in the save-commit ledger that outlives a rollback — and why hiding this
+    /// banner over a refused roll hid it on the Mac too, since the key is deliberately shared.
     private func rollOverPastDoTasks() {
-        withAnimation(.easeOut(duration: 0.2)) {
-            rolloverNoticeDismissedDate = CadenceTodayRolloverSupport.rollOver(
-                pastDoTasks,
-                todayKey: todayKey,
-                modelContext: modelContext
-            )
+        do {
+            let dismissed = try withAnimation(.easeOut(duration: 0.2)) {
+                try CadenceTodayRolloverSupport.rollOver(
+                    pastDoTasks,
+                    todayKey: todayKey,
+                    modelContext: modelContext
+                )
+            }
+            rolloverFailureNotice = nil
+            rolloverNoticeDismissedDate = dismissed
+        } catch {
+            rolloverFailureNotice = CadenceTodayRolloverSupport.rollFailureNotice
         }
     }
 

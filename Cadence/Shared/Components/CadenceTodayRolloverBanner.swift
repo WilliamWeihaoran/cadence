@@ -22,12 +22,22 @@ enum CadenceTodayRolloverBannerStyle {
 struct CadenceTodayRolloverBanner: View {
     let tasks: [AppTask]
     var style: CadenceTodayRolloverBannerStyle = .card
+    /// `CadenceTodayRolloverSupport.rollFailureNotice` when the last roll was refused, `nil`
+    /// otherwise (T-635).
+    ///
+    /// It belongs here rather than on either host for the reason the offer itself does: a refused
+    /// roll leaves the banner **on screen** — the dismissal is written only on the success path
+    /// now — so the sentence goes under the copy that made the offer, in the one place both
+    /// platforms already share. A notice owned by one host would be missing from the other, which
+    /// is precisely the macOS-only shape T-195 spent a ticket undoing.
+    let failureNotice: String?
     let onRollOver: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             headerRow
             taskRows
+            failureRow
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -72,6 +82,20 @@ struct CadenceTodayRolloverBanner: View {
             }
             .buttonStyle(.plain)
             .fixedSize()
+        }
+    }
+
+    /// The refusal, under the rows it failed to move. Nothing at all when the last roll landed —
+    /// `@ViewBuilder` rather than an `if` around the whole `VStack`, so the banner's spacing is
+    /// unchanged in the ordinary case.
+    @ViewBuilder
+    private var failureRow: some View {
+        if let failureNotice {
+            Text(failureNotice)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.red)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 10)
         }
     }
 
