@@ -22,6 +22,29 @@ nonisolated struct CadenceMissingCalendarLink: Identifiable, Hashable, Sendable 
     let calendarID: String
 }
 
+/// One **inactive** list — archived, completed, paused or cancelled — that still holds a calendar
+/// link.
+///
+/// **T-557.** The same shape as `CadenceMissingCalendarLink` and deliberately not the same type:
+/// nothing here is broken. The link is intact and dormant, and saying so is the whole point.
+nonisolated struct CadenceDormantCalendarLink: Identifiable, Hashable, Sendable {
+    /// The `Area.id` or `Project.id`, which is what the disconnect writes back through.
+    let id: UUID
+    let kind: CadenceMissingCalendarLink.ListKind
+    let name: String
+    let icon: String
+    let colorHex: String
+    /// The stored identifier. Kept for parity with the missing-link row and **never resolved
+    /// against EventKit here** — see `CadenceCalendarLinkHealth.dormantLinks(areas:projects:)`.
+    let calendarID: String
+    /// The list's own status word — "Archived", "Completed", "Paused", "Cancelled" — read from
+    /// `CadenceListSearchLifecycle`, which is where this app already spells them. The section
+    /// heading says "dormant"; the row says which kind of dormant, because `Area` has three
+    /// inactive states and `Project` four and collapsing them is how a cancelled project comes to
+    /// be labelled archived.
+    let statusLabel: String
+}
+
 /// **T-400.** Whether a list's calendar link still points at a calendar that exists.
 ///
 /// `Area.linkedCalendarID` and `Project.linkedCalendarID` store an `EKCalendar.calendarIdentifier`
@@ -171,6 +194,110 @@ nonisolated enum CadenceCalendarLinkHealth {
             icon: icon,
             colorHex: colorHex,
             calendarID: linkedCalendarID
+        )
+    }
+
+    // MARK: - T-557: a link on an inactive list
+
+    /// The eyebrow above the dormant-link card, drawn only when `dormantLinks` is non-empty.
+    /// Deliberately parallel to `brokenLinksSectionTitle`, and deliberately not the same word:
+    /// these links are not broken.
+    static let dormantLinksSectionTitle = "Dormant Calendar Links"
+
+    /// The one spelling of the disconnect, read by both the broken row and the dormant row on both
+    /// platforms — four call sites that had begun as two copies of the same two words.
+    static let removeLinkLabel = "Remove Link"
+
+    /// Every **inactive** list that still holds a calendar link, areas first, each group in the
+    /// order given.
+    ///
+    /// **T-557.** Archiving a list keeps its `linkedCalendarID`, so un-archiving restores the
+    /// connection intact — that is the decision, not an oversight. What was missing is any way to
+    /// *see* it: `missingLinks` above narrows to active lists by the policy stated in its own
+    /// contract, the connect menu offers active lists only, and the per-calendar summary in
+    /// Settings lists active connections only. So the stored identifier survived in a place with
+    /// no reader and no control, and the only way to clear it was to un-archive the list first.
+    ///
+    /// **This is an addition to that active-only policy, not a reversal of it.** `missingLinks` is
+    /// untouched and still reports active lists only: an archived list's link is not *missing*, it
+    /// is dormant, and the two want opposite things from the user — a re-pick and nothing at all.
+    ///
+    /// **It asks EventKit nothing, and that is load-bearing (T-624).** There is no
+    /// `liveCalendarIDs`, no `observedCalendarIDs` and no authorization flag in this signature,
+    /// because whether an inactive list holds a link is a fact about this app's own store and not
+    /// about any calendar. So this cannot call a link dead on a device that has never seen its
+    /// calendar — it never calls a link dead at all — and it cannot weaken the evidence gate
+    /// `CadenceCalendarLinkObservations` exists to hold. The row it feeds offers a disconnect and
+    /// no re-pick for the same reason: a re-pick writes a fresh identifier into a CloudKit-synced
+    /// property, which is exactly the clobber T-624 removed.
+    ///
+    /// Disjoint from `missingLinks` by construction: that one filters `isActive`, this one filters
+    /// its negation, so no list can appear in both cards.
+    static func dormantLinks(areas: [Area], projects: [Project]) -> [CadenceDormantCalendarLink] {
+        let areaLinks = areas.filter { !$0.isActive }.compactMap { area in
+            dormantLink(
+                id: area.id,
+                kind: .area,
+                name: CadenceTitleNormalization.display(
+                    area.name,
+                    fallback: CadenceTitleNormalization.defaultAreaName
+                ),
+                icon: area.icon,
+                colorHex: area.colorHex,
+                linkedCalendarID: area.linkedCalendarID,
+                statusLabel: CadenceListSearchSupport.lifecycle(of: area).statusLabel
+            )
+        }
+        let projectLinks = projects.filter { !$0.isActive }.compactMap { project in
+            dormantLink(
+                id: project.id,
+                kind: .project,
+                name: CadenceTitleNormalization.display(
+                    project.name,
+                    fallback: CadenceTitleNormalization.defaultProjectName
+                ),
+                icon: project.icon,
+                colorHex: project.colorHex,
+                linkedCalendarID: project.linkedCalendarID,
+                statusLabel: CadenceListSearchSupport.lifecycle(of: project).statusLabel
+            )
+        }
+        return areaLinks + projectLinks
+    }
+
+    /// What the dormant row says under the list's name.
+    ///
+    /// Says the link is **kept**, because that is the behaviour and because the alternative
+    /// reading — "this is broken, fix it" — is the one the row must not invite. It names no
+    /// calendar: the stored identifier may well be one another device issued, and resolving it
+    /// against this device's EventKit is the question T-624 stopped asking.
+    static func dormantLinkSummary(for link: CadenceDormantCalendarLink) -> String {
+        switch link.kind {
+        case .area:
+            "This area is not active, so Cadence has stopped mirroring it. The Apple calendar link is kept and resumes if the area becomes active again."
+        case .project:
+            "This project is not active, so Cadence has stopped mirroring it. The Apple calendar link is kept and resumes if the project becomes active again."
+        }
+    }
+
+    private static func dormantLink(
+        id: UUID,
+        kind: CadenceMissingCalendarLink.ListKind,
+        name: String,
+        icon: String,
+        colorHex: String,
+        linkedCalendarID: String,
+        statusLabel: String
+    ) -> CadenceDormantCalendarLink? {
+        guard !linkedCalendarID.isEmpty else { return nil }
+        return CadenceDormantCalendarLink(
+            id: id,
+            kind: kind,
+            name: name,
+            icon: icon,
+            colorHex: colorHex,
+            calendarID: linkedCalendarID,
+            statusLabel: statusLabel
         )
     }
 }

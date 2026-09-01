@@ -60,6 +60,46 @@ struct iOSCalendarSettingsSection: View {
         observedCalendarIDsRaw = raw
     }
 
+    /// **T-557.** Inactive lists that still hold a calendar link.
+    ///
+    /// No live set, no observed set and no authorization state: see
+    /// `CadenceCalendarLinkHealth.dormantLinks(areas:projects:)` for why asking EventKit nothing is
+    /// what keeps this card clear of T-624's evidence gate.
+    private var dormantLinks: [CadenceDormantCalendarLink] {
+        CadenceCalendarLinkHealth.dormantLinks(areas: areas, projects: projects)
+    }
+
+    private var dormantLinksCard: some View {
+        iOSSettingsCard {
+            VStack(spacing: 0) {
+                let links = dormantLinks
+                ForEach(Array(links.enumerated()), id: \.element.id) { index, link in
+                    iOSDormantCalendarLinkRow(
+                        link: link,
+                        onDisconnect: { disconnect(link) }
+                    )
+
+                    if index < links.count - 1 {
+                        iOSRowDivider(leadingInset: 24)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Clears a dormant link. The only write this card makes, and the only one it may make: a
+    /// re-pick would put a fresh `EKCalendar.calendarIdentifier` into a CloudKit-synced property,
+    /// which is the clobber T-624 removed.
+    private func disconnect(_ link: CadenceDormantCalendarLink) {
+        switch link.kind {
+        case .area:
+            areas.first { $0.id == link.id }?.linkedCalendarID = ""
+        case .project:
+            projects.first { $0.id == link.id }?.linkedCalendarID = ""
+        }
+        saveCalendarLinks()
+    }
+
     private var missingLinksCard: some View {
         iOSSettingsCard {
             VStack(spacing: 0) {
@@ -97,6 +137,17 @@ struct iOSCalendarSettingsSection: View {
                 calendarsCard
             } else {
                 accessCard
+            }
+
+            // **Outside the authorization branch, deliberately** (T-557). Every other card here
+            // asks EventKit something and so has to wait for permission to ask it. This one asks
+            // only this app's own store — which inactive lists still hold a `linkedCalendarID` —
+            // and its only control clears one. Gating it on a calendar permission would hide a
+            // purely local fact behind an unrelated question, which is a smaller version of the
+            // invisibility the card exists to end.
+            if !dormantLinks.isEmpty {
+                CadenceSettingsSectionLabel(text: CadenceCalendarLinkHealth.dormantLinksSectionTitle)
+                dormantLinksCard
             }
 
             iOSCalendarWorkHoursSection()
@@ -292,7 +343,7 @@ private struct iOSMissingCalendarLinkRow: View {
                 }
             }
 
-            Button("Remove Link", role: .destructive, action: onUnlink)
+            Button(CadenceCalendarLinkHealth.removeLinkLabel, role: .destructive, action: onUnlink)
         } label: {
             Image(systemName: "wrench.and.screwdriver")
                 .font(.system(size: 13, weight: .semibold))
@@ -307,6 +358,65 @@ private struct iOSMissingCalendarLinkRow: View {
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("Fix broken calendar link")
+    }
+}
+
+/// One dormant list-to-calendar link, with the one way out of it.
+///
+/// **No re-pick, and no calendar named.** The link is not broken, so there is nothing to repair;
+/// the row's job is to say the connection is still there and let the user end it. It resolves the
+/// stored identifier against nothing, which is what keeps it silent on a device that has never seen
+/// the calendar (T-624).
+private struct iOSDormantCalendarLinkRow: View {
+    let link: CadenceDormantCalendarLink
+    let onDisconnect: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+            iOSIconTile(
+                systemImage: link.icon,
+                color: Color(hex: link.colorHex),
+                size: 34,
+                iconSize: 15
+            )
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(link.name)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+
+                    Text(link.statusLabel)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Theme.surfaceElevated)
+                        .clipShape(Capsule())
+                }
+
+                Text(CadenceCalendarLinkHealth.dormantLinkSummary(for: link))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.subdued)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                // `Theme.dim` on its own 12% wash, which is what macOS's
+                // `SettingsActionButton(tone: .tinted(Theme.dim))` renders for the same control:
+                // a quiet secondary action, not a red one. Nothing here is broken.
+                iOSActionButton(
+                    title: CadenceCalendarLinkHealth.removeLinkLabel,
+                    role: .secondary,
+                    size: .compact,
+                    tint: Theme.dim,
+                    action: onDisconnect
+                )
+                .padding(.top, 2)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
     }
 }
 

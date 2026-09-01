@@ -229,10 +229,248 @@ struct CadenceCalendarLinkHealthTests {
             // unlink, and nothing preselects or reorders them by name.
             #expect(code.contains("onRelink"))
             #expect(code.contains("onUnlink"))
-            #expect(code.contains("Remove Link"))
+            #expect(code.contains("CadenceCalendarLinkHealth.removeLinkLabel"))
+            #expect(
+                CadenceSourceScan.matchCount("\"Remove Link\"", in: code) == 0,
+                "\(path) spells the disconnect itself; four rows want those two words now"
+            )
             #expect(
                 CadenceSourceScan.matchCount("calendar\\.title *==", in: code) == 0,
                 "\(path) compares a calendar title, which is the auto-match T-390 refused"
+            )
+        }
+    }
+
+    // MARK: - T-557: a link on an inactive list is dormant, not broken
+
+    /// **An archived list keeps its link, and now something says so.**
+    ///
+    /// `missingLinks` narrows to active lists by the policy in its own contract — the connect menu
+    /// offers active lists only, so a broken-link row for a list the menu cannot reach would be a
+    /// break with no repair beside it. That policy is right and is untouched here. What it left is
+    /// a stored `linkedCalendarID` surviving in a place with no reader and no control: the only way
+    /// to clear an archived list's link was to un-archive the list first.
+    ///
+    /// `dormantLinks` is the addition, not the reversal. The same archived list is absent from one
+    /// and present in the other.
+    @Test func anArchivedListsCalendarLinkIsReportedDormantAndNeverMissing() {
+        let shelved = area("Home", linkedTo: "cal-home", status: .archived)
+
+        // Full evidence that this link *would* be reported broken if it were active: the identifier
+        // is one this device has seen and no live calendar carries it any more.
+        let missing = CadenceCalendarLinkHealth.missingLinks(
+            areas: [shelved],
+            projects: [],
+            liveCalendarIDs: ["cal-work"],
+            observedCalendarIDs: ["cal-home", "cal-work"],
+            isCalendarAccessAuthorized: true
+        )
+        #expect(missing.isEmpty, "the active-only policy was widened")
+
+        let dormant = CadenceCalendarLinkHealth.dormantLinks(areas: [shelved], projects: [])
+        #expect(dormant.count == 1)
+        #expect(dormant.first?.name == "Home")
+        #expect(dormant.first?.kind == .area)
+        #expect(dormant.first?.calendarID == "cal-home")
+        #expect(dormant.first?.statusLabel == "Archived")
+    }
+
+    /// **The two cards can never describe the same list.**
+    ///
+    /// One filters `isActive`, the other its negation, so the sets are disjoint by construction —
+    /// which is what stops the new card from reading as a second opinion on the first.
+    @Test func aDormantLinkAndAMissingLinkAreNeverTheSameList() {
+        let live = area("Work", linkedTo: "cal-gone")
+        let shelved = area("Home", linkedTo: "cal-gone", status: .archived)
+        let finished = project("Launch", linkedTo: "cal-gone", status: .done)
+
+        let missing = CadenceCalendarLinkHealth.missingLinks(
+            areas: [live, shelved],
+            projects: [finished],
+            liveCalendarIDs: [],
+            observedCalendarIDs: ["cal-gone"],
+            isCalendarAccessAuthorized: true
+        )
+        let dormant = CadenceCalendarLinkHealth.dormantLinks(areas: [live, shelved], projects: [finished])
+
+        #expect(missing.map(\.id) == [live.id])
+        #expect(dormant.map(\.id) == [shelved.id, finished.id])
+        #expect(Set(missing.map(\.id)).isDisjoint(with: Set(dormant.map(\.id))))
+    }
+
+    /// **The dormant card asks EventKit nothing, which is what keeps it clear of T-624.**
+    ///
+    /// T-624's rule is that a device may call a link dead only for an identifier it has itself seen
+    /// alive. A new surface for archived links could undo that by judging liveness on a device with
+    /// no evidence. This one cannot: whether an inactive list holds a link is a fact about this
+    /// app's own store, so the detector takes no live set, no observed set and no authorization
+    /// state, and the four combinations of those inputs leave both answers unmoved.
+    @Test func aDormantLinkIsReportedIdenticallyWhateverThisDeviceHasSeen() {
+        let shelved = area("Home", linkedTo: "cal-home", status: .archived)
+        let dormant = CadenceCalendarLinkHealth.dormantLinks(areas: [shelved], projects: [])
+        #expect(dormant.count == 1)
+
+        // Every combination of "is it live here" × "has this device seen it", plus the unauthorized
+        // case. Four evidence states and one blind one; none may produce a broken-link row for an
+        // archived list, and none changes what the dormant card holds.
+        let evidence: [(live: Set<String>, observed: Set<String>, authorized: Bool)] = [
+            (["cal-home"], ["cal-home"], true),
+            (["cal-home"], [], true),
+            ([], ["cal-home"], true),
+            ([], [], true),
+            ([], ["cal-home"], false),
+        ]
+        #expect(evidence.count == 5)
+        for state in evidence {
+            let missing = CadenceCalendarLinkHealth.missingLinks(
+                areas: [shelved],
+                projects: [],
+                liveCalendarIDs: state.live,
+                observedCalendarIDs: state.observed,
+                isCalendarAccessAuthorized: state.authorized
+            )
+            #expect(missing.isEmpty, "an archived link was reported broken with evidence \(state)")
+        }
+        #expect(CadenceCalendarLinkHealth.dormantLinks(areas: [shelved], projects: []) == dormant)
+    }
+
+    /// An inactive list with no link at all is the common case, and `""` is in no set — the same
+    /// emptiness guard `missingLinks` needs, for the same reason.
+    @Test func anInactiveListWithNoCalendarLinkIsNotDormant() {
+        let shelved = area("Home", linkedTo: "", status: .archived)
+        let finished = project("Launch", linkedTo: "", status: .cancelled)
+
+        #expect(CadenceCalendarLinkHealth.dormantLinks(areas: [shelved], projects: [finished]).isEmpty)
+    }
+
+    /// **The row says which kind of inactive, because there are four of them.**
+    ///
+    /// `AreaStatus` has three cases and `ProjectStatus` five, and the settings surface that already
+    /// collapses them says `isDone ? "Completed" : "Archived"` — which labels a cancelled project
+    /// "Archived". The status word is read from `CadenceListSearchLifecycle`, where this app
+    /// already spells all five, so a paused project cannot be mislabelled here.
+    @Test func aDormantLinkCarriesItsListsOwnStatusWord() {
+        let done = area("Home", linkedTo: "cal-a", status: .done)
+        let archivedProject = project("Launch", linkedTo: "cal-b", status: .archived)
+        let paused = project("Rewrite", linkedTo: "cal-c", status: .paused)
+        let cancelled = project("Scrapped", linkedTo: "cal-d", status: .cancelled)
+
+        let links = CadenceCalendarLinkHealth.dormantLinks(
+            areas: [done],
+            projects: [archivedProject, paused, cancelled]
+        )
+        #expect(links.count == 4)
+        #expect(links.map(\.statusLabel) == ["Completed", "Archived", "Paused", "Cancelled"])
+        // Areas first, then projects, each group in the order given — the same ordering contract
+        // `missingLinks` states.
+        #expect(links.map(\.name) == ["Home", "Launch", "Rewrite", "Scrapped"])
+    }
+
+    /// An unnamed list draws a row with a placeholder, not a blank line (the T-577 class). The
+    /// broken-link row still passes the raw name; this one does not, and the difference is
+    /// deliberate rather than an oversight.
+    @Test func anUnnamedInactiveListStillHasSomethingToPutOnItsDormantRow() {
+        let unnamed = area("   ", linkedTo: "cal-home", status: .archived)
+        let unnamedProject = project("", linkedTo: "cal-work", status: .archived)
+
+        let links = CadenceCalendarLinkHealth.dormantLinks(areas: [unnamed], projects: [unnamedProject])
+        #expect(links.count == 2)
+        #expect(links.map(\.name) == [
+            CadenceTitleNormalization.defaultAreaName,
+            CadenceTitleNormalization.defaultProjectName,
+        ])
+    }
+
+    /// **The detector's own signature is the guarantee, and this is it read back off the source.**
+    ///
+    /// The behavioural test above shows the answer does not move with the evidence; this shows the
+    /// evidence is not even in scope, so no later edit can quietly start consulting it. A
+    /// `liveCalendarIDs` in this body would be the beginning of an archived list being called
+    /// broken on a device that has never seen its calendar.
+    @Test func theDormantLinkDetectorNamesNoEventKitInputAtAll() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceCalendarLinkHealth.swift")
+        #expect(raw.count > 1_000, "that is not the file")
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(code != raw, "the stripper blanked no comments in a file that has them")
+
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "dormantLinks", in: code),
+            "dormantLinks(areas:projects:) is no longer declared here"
+        )
+        // Non-vacuity: this really is the detector's body and not an empty match. The needles are
+        // things the *body* spells — `CadenceDormantCalendarLink` is in the return type, which is
+        // outside it, and asserting on that is how a body assertion silently stops being one.
+        #expect(body.contains("dormantLink("))
+        #expect(body.contains("return areaLinks + projectLinks"))
+        #expect(body.contains("!$0.isActive"))
+        for input in ["liveCalendarIDs", "observedCalendarIDs", "isCalendarAccessAuthorized", "EKCalendar"] {
+            #expect(
+                !body.contains(input),
+                "dormantLinks consults \(input); an archived link must not be judged against EventKit"
+            )
+        }
+        // And the active-only detector beside it still consults all three.
+        let missingBody = try #require(CadenceSourceScan.functionBody(named: "missingLinks", in: code))
+        for input in ["liveCalendarIDs", "observedCalendarIDs", "isCalendarAccessAuthorized"] {
+            #expect(missingBody.contains(input), "missingLinks stopped reading \(input)")
+        }
+    }
+
+    /// **Both surfaces draw the card, neither gates it on calendar access, and neither offers a
+    /// re-pick.**
+    ///
+    /// Source-shape, and stated as such: `Cadence/iOS/` sits inside `#if os(iOS)` and this target
+    /// compiles only one of the two.
+    ///
+    /// The ordering assertion is the placement half. Every other card in this section asks EventKit
+    /// something and waits for permission to ask it; this one asks only the app's own store, so it
+    /// renders after the authorization branch closes rather than inside it. A user whose Mac has
+    /// never been granted calendar access can still see and clear a link another device wrote.
+    @Test func bothCalendarSettingsSurfacesDrawTheDormantLinkCardOutsideTheAccessBranch() throws {
+        for (path, accessCardNeedle) in [
+            ("Cadence/macOS/Views/SettingsListManagementSections.swift", "calendarAccessCard"),
+            ("Cadence/iOS/iOSCalendarSettingsSection.swift", "accessCard"),
+        ] {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            #expect(raw.count > 1_000, "\(path) read as \(raw.count) characters; that is not the file")
+            let code = CadenceSourceScan.strippingComments(raw)
+            #expect(code != raw, "\(path) lost no comment text; the stripper did not run")
+
+            // Read once, from the shared detector, with exactly the two arguments it takes.
+            #expect(
+                CadenceSourceScan.matchCount(
+                    "CadenceCalendarLinkHealth\\.dormantLinks\\(areas: areas, projects: projects\\)",
+                    in: code
+                ) == 1,
+                "\(path) does not read the shared dormant-link detector exactly once"
+            )
+            #expect(
+                code.contains("CadenceCalendarLinkHealth.dormantLinksSectionTitle"),
+                "\(path) does not read the shared section title"
+            )
+            #expect(
+                code.contains("CadenceCalendarLinkHealth.dormantLinkSummary(for: link)"),
+                "\(path) does not read the shared dormant summary"
+            )
+
+            // The one control, and only that one: the disconnect writes the empty identifier and
+            // there is no `onRelink` on this row.
+            #expect(
+                CadenceSourceScan.matchCount("private func disconnect\\(", in: code) == 1,
+                "\(path) has no single disconnect, or more than one"
+            )
+            let disconnect = try #require(CadenceSourceScan.functionBody(named: "disconnect", in: code))
+            #expect(CadenceSourceScan.matchCount("linkedCalendarID = \"\"", in: disconnect) == 2)
+            #expect(!disconnect.contains("calendarIdentifier"))
+
+            // Placement: after the access branch, not inside it.
+            let authorizationBranch = try #require(code.range(of: "if calendarManager.isAuthorized"))
+            let accessCard = try #require(code.range(of: accessCardNeedle))
+            let dormantCard = try #require(code.range(of: "if !dormantLinks.isEmpty"))
+            #expect(authorizationBranch.lowerBound < accessCard.lowerBound)
+            #expect(
+                accessCard.upperBound < dormantCard.lowerBound,
+                "\(path) draws the dormant card before the access branch has closed"
             )
         }
     }

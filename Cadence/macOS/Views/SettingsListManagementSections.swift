@@ -31,6 +31,17 @@ struct SettingsCalendarSection: View {
             } else {
                 calendarAccessCard
             }
+
+            // **Outside the authorization branch, deliberately** (T-557). Every other card here
+            // asks EventKit something and so has to wait for permission to ask it. This one asks
+            // only this app's own store — which inactive lists still hold a `linkedCalendarID` —
+            // and its only control clears one. Gating it on a calendar permission would hide a
+            // purely local fact behind an unrelated question, which is a smaller version of the
+            // invisibility the card exists to end.
+            if !dormantLinks.isEmpty {
+                SettingsSectionLabel(text: CadenceCalendarLinkHealth.dormantLinksSectionTitle)
+                dormantLinksCard
+            }
         }
         .onAppear { refreshCalendarObservations() }
         .onChange(of: calendarManager.storeVersion) { refreshCalendarObservations() }
@@ -84,6 +95,46 @@ struct SettingsCalendarSection: View {
         let raw = CadenceCalendarLinkObservations.rawObservedCalendarIDs(from: updated)
         guard raw != observedCalendarIDsRaw else { return }
         observedCalendarIDsRaw = raw
+    }
+
+    /// **T-557.** Inactive lists that still hold a calendar link.
+    ///
+    /// No live set, no observed set and no authorization state: see
+    /// `CadenceCalendarLinkHealth.dormantLinks(areas:projects:)` for why asking EventKit nothing is
+    /// what keeps this card clear of T-624's evidence gate.
+    private var dormantLinks: [CadenceDormantCalendarLink] {
+        CadenceCalendarLinkHealth.dormantLinks(areas: areas, projects: projects)
+    }
+
+    private var dormantLinksCard: some View {
+        SettingsCard {
+            VStack(spacing: 0) {
+                let links = dormantLinks
+                ForEach(Array(links.enumerated()), id: \.element.id) { index, link in
+                    SettingsDormantCalendarLinkRow(
+                        link: link,
+                        onDisconnect: { disconnect(link) }
+                    )
+
+                    if index < links.count - 1 {
+                        CadenceRowDivider(leadingInset: 44)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Clears a dormant link. The only write this card makes, and the only one it may make: a
+    /// re-pick would put a fresh `EKCalendar.calendarIdentifier` into a CloudKit-synced property,
+    /// which is the clobber T-624 removed.
+    private func disconnect(_ link: CadenceDormantCalendarLink) {
+        switch link.kind {
+        case .area:
+            areas.first { $0.id == link.id }?.linkedCalendarID = ""
+        case .project:
+            projects.first { $0.id == link.id }?.linkedCalendarID = ""
+        }
+        saveCalendarLinks()
     }
 
     private var missingLinksCard: some View {
@@ -287,7 +338,7 @@ private struct SettingsMissingCalendarLinkRow: View {
 
             Divider()
 
-            Button("Remove Link", role: .destructive, action: onUnlink)
+            Button(CadenceCalendarLinkHealth.removeLinkLabel, role: .destructive, action: onUnlink)
         } label: {
             Text("Fix")
                 .font(.system(size: 11, weight: .semibold))
@@ -297,6 +348,57 @@ private struct SettingsMissingCalendarLinkRow: View {
         .fixedSize()
         .accessibilityLabel("Fix calendar link")
         .help("Link this list to a calendar that exists, or remove the link")
+    }
+}
+
+/// One dormant list-to-calendar link, with the one way out of it.
+///
+/// **No re-pick, and no calendar named.** The link is not broken, so there is nothing to repair;
+/// the row's job is to say the connection is still there and let the user end it. It resolves the
+/// stored identifier against nothing, which is what keeps it silent on a device that has never seen
+/// the calendar (T-624).
+private struct SettingsDormantCalendarLinkRow: View {
+    let link: CadenceDormantCalendarLink
+    let onDisconnect: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: link.icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color(hex: link.colorHex))
+                .frame(width: 20)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(link.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+
+                    Text(link.statusLabel)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Theme.surfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+
+                Text(CadenceCalendarLinkHealth.dormantLinkSummary(for: link))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            SettingsActionButton(tone: .tinted(Theme.dim), action: onDisconnect) {
+                Text(CadenceCalendarLinkHealth.removeLinkLabel)
+            }
+            .padding(.top, 1)
+        }
+        .padding(.vertical, 10)
     }
 }
 
