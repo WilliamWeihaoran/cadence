@@ -327,6 +327,135 @@ struct CadenceTodayUnificationTests {
         }
     }
 
+    /// **Today's rows are the shared row, at the panel's own insets (T-608).**
+    ///
+    /// `TasksPanelSectionViews` re-implemented `TaskListInteractiveRow` line for line — the
+    /// `.draggable`, the `.dropDestination` with its `isTargeted:` write-back, the 2pt top
+    /// indicator, the 0.15s `.easeInOut` on `dragOverTaskID`, and the asymmetric insert/remove
+    /// transition — while the shared row had taken `leadingInset`/`trailingInset` as parameters the
+    /// whole time.
+    ///
+    /// **This test is deliberately not "the shared row is called".** The shared row's *default*
+    /// leading inset is the list detail's 52, which clears furniture Today's rows do not have, so a
+    /// call site that converges and forgets the argument indents Today's rows by 52 under a heading
+    /// at 16 — the "header indented from its rows" defect inverted. So the insets are named at the
+    /// call site and counted here, and the value assertions below say why those two numbers are not
+    /// interchangeable.
+    ///
+    /// **The convergence was not a no-op, and this records the one thing that changed.** Today
+    /// overlaid the indicator on the *unpadded* row and padded the result, so the indicator was
+    /// inset twice — 32pt from the pane's leading edge over a row whose content starts at 16.
+    /// `TaskListInteractiveRow` overlays the *padded* row, so the indicator starts where the row it
+    /// points at starts. That ordering is pinned below, because it is the only way "same behaviour"
+    /// would have been a lie.
+    @Test func todaysRowsAreTheSharedInteractiveRowAtThePanelsOwnInsets() throws {
+        // The two numbers, and why naming the argument is load-bearing: an omitted `leadingInset:`
+        // silently means 52.
+        #expect(TasksPanelMetrics.horizontalInset == 16)
+        #expect(TaskListDisplayMetrics.taskTrailingInset == 12)
+        #expect(TaskListDisplayMetrics.taskLeadingInset == 52)
+        #expect(
+            TasksPanelMetrics.horizontalInset != TaskListDisplayMetrics.taskLeadingInset,
+            "the shared row's default leading inset is no longer distinguishable from Today's"
+        )
+
+        let sections = "Cadence/macOS/Views/TasksPanelSectionViews.swift"
+        let listDetail = "Cadence/macOS/Views/ListDetailSupportViews.swift"
+
+        // The call sites below name `todayRowLeadingInset`, so its *definition* has to be pinned
+        // too — otherwise retuning it to the list detail's 52 passes every assertion here while
+        // moving every row on the page.
+        #expect(
+            try strippingComments(sourceFile(sections))
+                .contains("private let todayRowLeadingInset: CGFloat = TasksPanelMetrics.horizontalInset")
+        )
+
+        // MARK: one construction of the row itself, app-wide
+        //
+        // The strongest form of "the copy is gone": after the convergence, `MacTaskRow` is built at
+        // exactly one site in `Cadence/`, inside `TaskListDisplayRow`. A fifth surface that wants a
+        // task row has to reach that component or change this number on purpose. The `> 0`
+        // self-check below is what keeps a scan that reads nothing from passing the `== 1`.
+        #expect(try liveTextOccurrences(of: "MacTaskRow(") == 1)
+        #expect(try liveTextOccurrences(of: "TaskListDisplayRow(") > 0, "self-check: the scan reads code")
+
+        // MARK: the intent groups — the interactive row, insets named
+        let intent = try declarationBody(of: "TasksPanelIntentSectionView", in: sections)
+        #expect(intent.contains("var body: some View"), "non-vacuity: empty declaration slice")
+        #expect(occurrences(of: "TaskListInteractiveRow(", in: intent) == 1)
+        #expect(occurrences(of: "leadingInset: todayRowLeadingInset", in: intent) == 1)
+        #expect(
+            occurrences(of: "trailingInset: TaskListDisplayMetrics.taskTrailingInset", in: intent) == 1
+        )
+
+        // The five behaviours that were re-implemented here, each named rather than counted in
+        // aggregate. `dropDestination` is the exception and stays at exactly one: the *section
+        // header* still accepts a dropped task, and only the row's copy went.
+        for reimplementation in [
+            "MacTaskRow(",
+            ".draggable(",
+            "isTargeted:",
+            "Rectangle()",
+            ".animation(.easeInOut(duration: 0.15)",
+            ".transition(.asymmetric(",
+        ] {
+            #expect(
+                !intent.contains(reimplementation),
+                "TasksPanelIntentSectionView re-implements \(reimplementation) instead of using the shared row"
+            )
+        }
+        #expect(
+            occurrences(of: ".dropDestination(for: String.self)", in: intent) == 1,
+            "the group header's own drop target is gone, or a row's has grown back"
+        )
+
+        // MARK: the Completed group — the display row plus a drag, the shape All Tasks uses
+        let completed = try declarationBody(of: "TasksPanelCompletedSectionView", in: sections)
+        #expect(completed.contains("var body: some View"), "non-vacuity: empty declaration slice")
+        #expect(occurrences(of: "TaskListDisplayRow(", in: completed) == 1)
+        #expect(occurrences(of: "leadingInset: todayRowLeadingInset", in: completed) == 1)
+        #expect(
+            occurrences(of: "trailingInset: TaskListDisplayMetrics.taskTrailingInset", in: completed) == 1
+        )
+        #expect(
+            occurrences(of: ".draggable(taskDragPayload(task))", in: completed) == 1,
+            "the day's finished rows stopped being draggable"
+        )
+        for reimplementation in ["MacTaskRow(", ".transition(.asymmetric("] {
+            #expect(
+                !completed.contains(reimplementation),
+                "TasksPanelCompletedSectionView re-implements \(reimplementation)"
+            )
+        }
+
+        // MARK: the shared row still does all of it — otherwise "converged" only means "deleted"
+        let display = try declarationBody(of: "TaskListDisplayRow", in: listDetail)
+        let interactive = try declarationBody(of: "TaskListInteractiveRow", in: listDetail)
+        #expect(display.contains("MacTaskRow(task: task"), "non-vacuity: empty declaration slice")
+        #expect(occurrences(of: ".padding(.leading, leadingInset)", in: display) == 1)
+        #expect(occurrences(of: ".padding(.trailing, trailingInset)", in: display) == 1)
+        #expect(display.contains(".transition(.asymmetric("))
+        #expect(interactive.contains(".draggable(taskDragPayload(task))"))
+        #expect(interactive.contains(".dropDestination(for: String.self)"))
+        #expect(interactive.contains("isTargeted:"))
+        #expect(interactive.contains(".animation(.easeInOut(duration: 0.15), value: dragOverTaskID)"))
+
+        // MARK: and the indicator is inset once, over the padded row
+        //
+        // One `.padding(.leading, leadingInset)` in the interactive row, and it is the
+        // *indicator's own*, applied after the overlay opens. Re-pad the row here — the shape
+        // Today had — and this becomes two, which is the double inset spelled out.
+        #expect(occurrences(of: ".padding(.leading, leadingInset)", in: interactive) == 1)
+        let rowCall = try #require(interactive.range(of: "TaskListDisplayRow("))
+        let overlay = try #require(interactive.range(of: ".overlay(alignment: .top)"))
+        let indicatorInset = try #require(interactive.range(of: ".padding(.leading, leadingInset)"))
+        #expect(rowCall.upperBound < overlay.lowerBound)
+        #expect(
+            overlay.upperBound < indicatorInset.lowerBound,
+            "the indicator is no longer drawn over the already-padded row"
+        )
+    }
+
     // MARK: - The header: no identity tile, anywhere
 
     /// **The user's call, and it reversed the brief.** macOS was to gain iOS's identity tile; what
@@ -1195,6 +1324,14 @@ private func expectCallSites(
             sourceLocation: sourceLocation
         )
     }
+}
+
+/// How many times `needle` appears in an already-comment-stripped slice.
+///
+/// A literal count, not a regex: every needle it is asked for here is punctuation-heavy SwiftUI
+/// chaining, and escaping those into a pattern is how a needle quietly stops matching.
+private func occurrences(of needle: String, in source: String) -> Int {
+    source.components(separatedBy: needle).count - 1
 }
 
 /// Fails if `name` appears anywhere in `Cadence/` as live code rather than inside a comment.

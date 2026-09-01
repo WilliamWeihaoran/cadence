@@ -88,6 +88,23 @@ private let todayRowLeadingInset: CGFloat = TasksPanelMetrics.horizontalInset
 /// both headings ask `CadenceTaskGroupHeadingMetrics.showsCapsule`, so neither invents a `0` for a
 /// group that does not know its own size.
 ///
+/// **The rows are `TaskListInteractiveRow`, not a fourth copy of it (T-608).** This drew
+/// `MacTaskRow` and then re-implemented the shared row's whole chain around it — `.draggable`, the
+/// `.dropDestination` with its `isTargeted:` write-back, the 2pt top indicator, the 0.15s
+/// `.easeInOut` on `dragOverTaskID`, and the asymmetric insert/remove transition — while the shared
+/// row had taken `leadingInset`/`trailingInset` as parameters the whole time. Passing the panel's
+/// two insets is the entire difference the copy existed for.
+///
+/// **It was not quite a copy, and the difference was a defect.** The overlay went on the *unpadded*
+/// row and the padding on the result, so Today's drop indicator was inset twice: 32pt from the
+/// pane's leading edge over a row whose content starts at 16. The shared row overlays the padded
+/// row, so the indicator now starts where the row it points at starts. Pinned by
+/// `CadenceTodayUnificationTests.todaysRowsAreTheSharedInteractiveRowAtThePanelsOwnInsets`.
+///
+/// An `opacity` parameter went with the copy. It was declared with the group and **never passed by
+/// the one call site**, so it dimmed nothing from the day it landed; iOS dims its Completed group,
+/// and this was the intent groups.
+///
 /// The disclosure chevron comes with the header now, rather than being wrapped around it here.
 struct TasksPanelIntentSectionView: View {
     let title: String
@@ -103,8 +120,6 @@ struct TasksPanelIntentSectionView: View {
     let areas: [Area]
     let projects: [Project]
     let isCollapsed: Bool
-    /// Dimmed as a whole rather than row by row, the way iOS dims its Completed group.
-    var opacity: Double = 1
     @Binding var dragOverTaskID: UUID?
     let onToggle: () -> Void
     let taskDragPayload: (AppTask) -> String
@@ -136,33 +151,24 @@ struct TasksPanelIntentSectionView: View {
                     // .showsContainerChip), which is off inside a list group and on inside Overdue,
                     // so the one duplication `.todayGrouped` existed to avoid is still avoided
                     // without losing the date.
-                    MacTaskRow(task: task, style: .standard, showsContainer: showsContainer, contexts: contexts, areas: areas, projects: projects)
-                        .opacity(opacity)
-                        .draggable(taskDragPayload(task))
-                        .dropDestination(for: String.self) { items, _ in
-                            guard let payload = items.first else { return false }
-                            return onDropOnTaskPayload(payload, task)
-                        } isTargeted: { isOver in
-                            if isOver { dragOverTaskID = task.id }
-                            else if dragOverTaskID == task.id { dragOverTaskID = nil }
-                        }
-                        .overlay(alignment: .top) {
-                            if dragOverTaskID == task.id {
-                                Rectangle()
-                                    .fill(Theme.blue)
-                                    .frame(height: 2)
-                                    .padding(.leading, todayRowLeadingInset)
-                                    .padding(.trailing, TaskListDisplayMetrics.taskTrailingInset)
-                                    .transition(.opacity)
-                            }
-                        }
-                        .animation(.easeInOut(duration: 0.15), value: dragOverTaskID)
-                        .padding(.leading, todayRowLeadingInset)
-                        .padding(.trailing, TaskListDisplayMetrics.taskTrailingInset)
-                        .transition(.asymmetric(
-                            insertion: .opacity,
-                            removal: .opacity.combined(with: .move(edge: .top))
-                        ))
+                    //
+                    // Both insets are named rather than left to default. `TaskListInteractiveRow`
+                    // defaults to the **list detail's** 52, which clears leading furniture Today's
+                    // rows do not have — an omitted argument here would indent the rows past their
+                    // own heading rather than fail.
+                    TaskListInteractiveRow(
+                        task: task,
+                        style: .standard,
+                        showsContainer: showsContainer,
+                        contexts: contexts,
+                        areas: areas,
+                        projects: projects,
+                        leadingInset: todayRowLeadingInset,
+                        trailingInset: TaskListDisplayMetrics.taskTrailingInset,
+                        dragOverTaskID: $dragOverTaskID,
+                        taskDragPayload: taskDragPayload,
+                        onDropOnTaskPayload: onDropOnTaskPayload
+                    )
                 }
             }
         }
@@ -225,15 +231,22 @@ struct TasksPanelCompletedSectionView: View {
             .padding(.bottom, TasksPanelMetrics.sectionHeaderBottomInset)
 
             if !isCollapsed {
+                // `TaskListDisplayRow` plus a `.draggable`, which is exactly the shape
+                // `TasksListCompletedSectionView` uses on All Tasks: finished rows can still be
+                // dragged out, and nothing can be dropped onto them, so there is no indicator and
+                // no `dragOverTaskID` to bind.
                 ForEach(tasks) { task in
-                    MacTaskRow(task: task, style: .standard, showsContainer: showsContainer, contexts: contexts, areas: areas, projects: projects)
-                        .draggable(taskDragPayload(task))
-                        .padding(.leading, todayRowLeadingInset)
-                        .padding(.trailing, TaskListDisplayMetrics.taskTrailingInset)
-                        .transition(.asymmetric(
-                            insertion: .opacity,
-                            removal: .opacity.combined(with: .move(edge: .top))
-                        ))
+                    TaskListDisplayRow(
+                        task: task,
+                        style: .standard,
+                        showsContainer: showsContainer,
+                        contexts: contexts,
+                        areas: areas,
+                        projects: projects,
+                        leadingInset: todayRowLeadingInset,
+                        trailingInset: TaskListDisplayMetrics.taskTrailingInset
+                    )
+                    .draggable(taskDragPayload(task))
                 }
             }
         }

@@ -302,6 +302,20 @@ struct TaskListDisplayRow: View {
     }
 }
 
+/// The primary macOS task row wherever a task can be dragged, dropped onto, or reordered: list
+/// detail, All Tasks, and — since T-608 — Today, which used to re-implement this whole chain around
+/// its own `MacTaskRow`.
+///
+/// **The overlay goes over the *padded* row, and that ordering is the reason Today's copy was worth
+/// removing rather than keeping.** `TaskListDisplayRow` applies the insets; the indicator is padded
+/// by the same two figures on top of that, so it spans exactly the row's content. Pad again out
+/// here and the indicator is inset twice — which is what Today drew, 16pt in from the row it was
+/// pointing at, on both sides. Pinned by
+/// `CadenceTodayUnificationTests.todaysRowsAreTheSharedInteractiveRowAtThePanelsOwnInsets`.
+///
+/// The insets are parameters because the two surfaces genuinely disagree: 52 clears a list detail's
+/// leading furniture, and Today's rows sit directly under a 16pt panel heading. The default is the
+/// list detail's, so a caller that needs the other one has to say so.
 struct TaskListInteractiveRow: View {
     let task: AppTask
     var style: MacTaskRowStyle = .standard
