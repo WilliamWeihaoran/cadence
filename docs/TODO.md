@@ -1027,36 +1027,35 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   time this build runs is never reported again. Seeding the set from every currently-linked id would
   bring that row back and defeat the gate for exactly the cross-device case, so it is not done.
 
-- [T-625] **T-358's two-device section merge claim is broader than what its test pins.** VERIFIED
-  2026-09-01 from CXT-022 — confirmed as a **claim-accuracy** finding, not a new defect.
-  `SectionConfigRoundTripTests.swift:143-193` is headed "Two devices, one blob" but performs two
-  sequential edits **against one `Area` instance** — that proves stale-editor merging, not isolated
-  replica convergence. There is no import-side hook; nothing calls the merge when CloudKit lands a
-  `sectionConfigsRaw` string.
-  **The file is already partly honest** — its doc says "Order is last-writer-wins, and deliberately
-  so", citing the absent `SchemaMigrationPlan`. What overstates is the opening paragraph and the test's
-  section heading.
-  **T-358 is CLOSED** (`docs/TODO_DONE.md:183`, landed `859e270`), so this is a narrowing, not open
-  ground. The cheap and correct action is the doc/test rename; the "columns as their own rows" fix is a
-  new `@Model` **plus** migrating existing JSON, which is a data migration this repo cannot cheaply do.
-  **The real risk is the one Codex named: a closed ticket that reads stronger than the code, so the
-  next reviewer declines the real work.** That is [[T-565]]'s class.
-
-- [T-626] **iOS omits the background mode CloudKit silent-sync needs — latent, not shipping.** VERIFIED
-  2026-09-01 from CXT-016 — source fact confirmed, **and Codex under-stated it in one way and
-  over-severed it in another.**
-  **Stronger than filed:** the *registration* is macOS-only too. `CadenceAppDelegate` is wrapped in
-  `#if os(macOS)` and is the sole caller of `registerForRemoteNotifications()`; there is **no
-  `UIApplicationDelegateAdaptor` anywhere**. On iOS, Cadence neither declares the capability nor
-  registers.
-  **But impact on any shipping build today is zero.** `docs/apple-release-readiness.md` contains no
-  occurrence of "iOS", "iPhone" or "iPad" — the channels are Mac App Store and Developer ID. iOS builds
-  but is not distributed.
-  **Implementation wrinkle Codex did not mention:** one app target shares one `Info.plist`, so adding
-  `UIBackgroundModes` puts it in the **macOS** bundle too — and the `#expect(info["UIBackgroundModes"]
-  == nil)` it would break is a *deliberate* App Store review-hygiene check
-  (`AppStoreReviewReadinessTests.swift:33`), not an oversight. Do this when iOS ships, with that test's
-  intent addressed rather than deleted.
+- [T-626] **iOS omits the background mode CloudKit silent-sync needs — latent, and BLOCKED ON iOS
+  DISTRIBUTION. Do not implement this until that changes.** VERIFIED 2026-09-01 from CXT-016;
+  all three source facts re-verified 2026-09-01 while closing [[T-652]].
+  **The gate, plainly.** iOS is built but not distributed: `docs/apple-release-readiness.md` contains
+  no occurrence of "iOS", "iPhone" or "iPad" — the two channels are the Mac App Store and Developer
+  ID. So the impact on any shipping build today is **zero**, and the ticket's whole cost is a
+  regression risk in the bundle that *does* ship.
+  **The defect is broader than filed: iOS does not register either.** `CadenceAppDelegate` is
+  `Cadence/macOS/Services/CadenceAppDelegate.swift`, installed by `@NSApplicationDelegateAdaptor`,
+  and there is **no `UIApplicationDelegateAdaptor` anywhere in the repo**. It is the sole caller of
+  `registerForRemoteNotifications()`, which
+  `CadenceLaunchWiringTests.onlyTheRegistrarAsksAppKitToRegister` pins to that one file. On iOS,
+  Cadence neither declares the capability nor registers for it.
+  **Why it cannot be done by accident, and what to do when it can be done.** One app target, one
+  `Cadence/Info.plist` (`INFOPLIST_FILE` names it in Debug and Release alike), so `UIBackgroundModes`
+  added for iOS also ships in the **macOS** bundle — and the
+  `#expect(info["UIBackgroundModes"] == nil)` it would break is a *deliberate* App Store
+  review-hygiene check, not an oversight. That test
+  (`AppStoreReviewReadinessTests.appInfoPlistContainsReviewReadyPrivacyKeys`) now **says so in its
+  own doc comment**, including the instruction for the day iOS ships: satisfy the assertion's
+  *intent* — "the macOS bundle declares no background mode" — by splitting the plist per platform or
+  conditionalising the key, and re-point the `#expect`. Deleting the line removes the check rather
+  than satisfying it.
+  **The same change also closed the hole that made the guard bypassable.** `GENERATE_INFOPLIST_FILE
+  = YES`, so the shipped plist is that file merged with the target's `INFOPLIST_KEY_*` build
+  settings — and ticking Background Modes in Xcode's capability editor writes
+  `INFOPLIST_KEY_UIBackgroundModes` into `project.pbxproj` and never touches `Cadence/Info.plist`.
+  The mode would have shipped with the `nil` assertion still green. The test now reads
+  `project.pbxproj` too. Residue from that reading: [[T-665]].
 
 - [T-637] **Widen the icon-only-button ledger from `Cadence/iOS/` to the whole app.** From [[T-611]],
   which scoped its new detector to iOS deliberately: at the time, [[T-610]] was still rewriting
@@ -1239,17 +1238,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   undo means under the user's caret is the question `commitEdit`'s doc leaves open. Do not fold that
   one in with the other three.
 
-- [T-652] **`TagPickerPopoverViews.restore(_:)` un-archives a tag over a swallowed save, then
-  selects it.** VERIFIED 2026-09-01 while landing [[T-631]].
-  `Cadence/macOS/Views/TagPickerPopoverViews.swift`: `tag.isArchived = false; tag.updatedAt = Date();
-  try? modelContext.save()` and then `selectedTags.append(tag)` and `query = ""`. **Report half** —
-  the chip appearing and the query clearing are the only thing that says the tag came back, and they
-  run whether or not it did.
-  **Its two siblings in the same file were fixed and this one was missed.** [[T-497]] took
-  `saveEdits` and `archive` — `restore` is the third member of that set and reads exactly like them.
-  The undo is a two-field snapshot (`isArchived`, `updatedAt`) through `commitEdit`, which is what
-  `archive` already does one screen over.
-
 - [T-653] **Two `TagSupport` maintenance exemptions are justified by a rationale that stopped being
   true.** VERIFIED 2026-09-01 while landing [[T-631]]. `existenceExemptions` holds
   `seedDefaultTags`, `deduplicateTags` and `syncAllNoteTagsFromMarkdown` under "launch-time
@@ -1317,7 +1305,79 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   that cannot mean anything on the other side. Neither has been decided. Note the import side is
   unsettled anyway ([[T-274]]), so this is not urgent.
 
+- [T-664] **The `try? save()` rule's report vocabulary has no spelling for "the surface filled
+  itself in".** Found — and then *measured* — while fixing [[T-652]].
+  `CadenceSaveCommitRule.successReport` is a closed list of **dismissals**: `dismiss…()`,
+  `is/show<X> = false`, `editing/selected/pending<X> = nil`, `presented<X> =`,
+  `on(Save|Done|Complete|Commit)(`, plus `return true` from a `-> Bool` and a non-`nil` answer from
+  a `-> X?`. That is exactly why [[T-497]] caught `TagPickerPopoverViews.saveEdits` and `.archive`
+  — both end `editingTag = nil` — and did not catch `.restore`, which reports by **appending to a
+  bound selection and blanking a search field**: `selectedTags.append(tag)`, `query = ""`. A
+  surface that stays open and merely *fills in* is invisible to the rule.
+  **Measured, not inferred.** Restoring the pre-fix `restore` as a mutation and re-running
+  `CadenceSaveCommitDisciplineTests` left that suite **green**; only the new hand-written pin
+  failed. And a scan of `Cadence/` at `4f74ff9` for the shape — a swallowed `save()` in a
+  declaration that also `\w+.append(`s and also assigns `= ""` — found **exactly one** site, and it
+  was `restore`. After the fix it is zero.
+  **So this is a guard to add, not a backlog to work**, and its whole cost is false positives:
+  `.append(` and `= ""` are far commoner than any dismissal, and the `pending<X> = nil` spelling
+  already needed a `cancel()` discriminator to be worth two of them. Measure the false-positive
+  count *before* widening; if the plain spelling costs more than it finds, scope it (a `@State` /
+  `@Binding` target, or `= ""` only in a block that also appends).
+
+- [T-665] **Four Info.plist keys are declared twice, in the file and in build settings.** Found
+  while closing the review-hygiene half of [[T-626]]. The app target sets
+  `GENERATE_INFOPLIST_FILE = YES` **and** `INFOPLIST_FILE = Cadence/Info.plist`, and then spells
+  `CFBundleIconName`, `ITSAppUsesNonExemptEncryption`, `NSCalendarsFullAccessUsageDescription` and
+  `NSRemindersFullAccessUsageDescription` as `INFOPLIST_KEY_*` build settings **as well as** in
+  `Cadence/Info.plist`. Two sources of truth for four shipped values, and the usage strings are
+  long sentences that App Review reads — editing one copy and shipping the other is a quiet way to
+  ship the wrong words.
+  **Which copy wins was not measured**, deliberately: the finding is the duplication, and the fix
+  (pick one home per key — the file, where the other five of its nine keys already live alone) does
+  not depend on
+  the answer. `AppStoreReviewReadinessTests.appInfoPlistContainsReviewReadyPrivacyKeys` reads the
+  **file**, so today it is asserting over the copy that may not be the one that ships.
+
 ## Done
+
+- [T-625] **CLOSED 2026-09-01** (`c5d45b3`). A claim-accuracy narrowing, as filed: no product
+  change, and the "columns as their own rows" fix was deliberately **not** attempted — it is a new `@Model`
+  plus a migration of every existing JSON blob, and this project has no `SchemaMigrationPlan`.
+  `CadenceSectionConfigMerge`'s opening paragraph now says what the type is — **a write-time merge
+  and only a write-time merge** — and names the ordering in which two devices actually converge
+  (the peer's blob already in `current` when the local save runs) versus the one in which nothing
+  merges at all. The test section is `One store, one blob: stale-snapshot writes`, not
+  `Two devices, one blob`.
+  **The correction is asserted, not merely reworded**, which is the part that keeps it from rotting:
+  `SectionConfigRoundTripTests.aPeersBlobLandingAfterALocalMergeReplacesItWholeBecauseNothingMergesOnImport`
+  builds two genuinely separate `Area` replicas, lets each merge correctly against its own store,
+  then lands B's `sectionConfigsRaw` on A the way CloudKit lands it — one whole string straight onto
+  the stored property — and asserts A's rename is gone. It fails the day an import-side hook appears,
+  which is the only way the narrowed prose can go stale.
+  Re-verified while closing: `CadenceSectionConfigMerge.merged` has exactly two callers
+  (`applySectionConfigEdits`, `mutateSectionConfigs`); all four of *their* callers are local editors
+  saving; and the repo contains no `NSPersistentStoreRemoteChange` / `didChangeExternally` /
+  `CKDatabaseSubscription` observer at all.
+
+- [T-652] **CLOSED 2026-09-01** (`d4f6b52`). `TagPickerPopoverViews.restore(_:)` commits through
+  `CadencePendingChangePersistence.commitEdit` with the same two-field (`isArchived`, `updatedAt`)
+  undo `archive` already takes, and the chip and the cleared query now run only below the `catch`.
+  **The failure sentence is the popover's, not the edit sheet's** — restore is pressed from the
+  popover's own results list and that surface stays open over a refusal, while `editFailureNotice`
+  is only ever rendered *inside* `TagEditSheet`. So it is a second `@State`, `restoreFailureNotice`,
+  rendered under the list and cleared when the query moves on.
+  **Failing-first**: the new pin failed with 7 issues against unmodified source, each naming the
+  right absence (`try?` count 1 not 0, no `commitEdit`, 0 undo fields, no notice, both report halves
+  above the catch, no inline notice on the popover).
+  **Mutation-tested**, five mutations, five killed by
+  `theTagPickerSelectsARestoredTagOnlyOnceTheStoreTookTheUnarchive` by name: the original swallowed
+  save restored, the report hoisted above the commit, the shared notice replaced by a hand-typed
+  sentence, the notice never rendered, and half the undo dropped.
+  **Why T-497's sweep missed it is the interesting part, and it is a detector gap, not an
+  oversight** — restoring the defect leaves `CadenceSaveCommitDisciplineTests` green, because the
+  rule's report vocabulary has no spelling for a surface that stays open and fills itself in. Filed
+  as [[T-664]] with the measurement.
 
 - [T-636] **CLOSED 2026-09-01.** All five parts resolved across two batches: (a) `afff149`,
   (b) `a84aced`, (c) and (e) `7ca3c29`, (d) resolved downward. **Two of the five were not what the
