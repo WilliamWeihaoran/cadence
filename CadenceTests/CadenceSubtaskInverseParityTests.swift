@@ -137,6 +137,97 @@ struct CadenceSubtaskInverseParityTests {
         }
     }
 
+    // MARK: - T-634: what a refused subtask commit leaves on the parent
+
+    /// **Measurement, and the reason both task-detail surfaces carry one extra line.**
+    ///
+    /// `commitInsert`'s undo is `modelContext.delete(model)`, and `insertSubtask` had already
+    /// written the row into `parent.subtasks`. The delete does **not** reach back into that array
+    /// before the surface re-renders — the mirror image of the T-296 window this file already pins
+    /// on the delete side — so a refused insert would leave a phantom subtask on screen. The
+    /// caller's answer is the `CadenceListEditSnapshot` idiom shrunk to its one field: capture
+    /// `task.subtasks` before the insert, put it back in the `catch`.
+    ///
+    /// The assertion order is load-bearing. Reading the array *before* the repair is the whole
+    /// measurement; a test that only checked the end state would stay green if `commitInsert`
+    /// started propagating on its own, and would tell nobody the extra line had become dead.
+    @Test func arefusedSubtaskInsertLeavesAPhantomOnTheParentUntilTheCallerDropsIt() throws {
+        let container = try makeContainer()
+        let modelContext = ModelContext(container)
+
+        let task = AppTask(title: "Renew the passport")
+        modelContext.insert(task)
+        try modelContext.save()
+
+        let restored = task.subtasks ?? []
+        let subtask = try #require(
+            CadenceTaskMutationSupport.insertSubtask(
+                titled: "Book the appointment",
+                into: task,
+                modelContext: modelContext
+            )
+        )
+        #expect((task.subtasks ?? []).map(\.title) == ["Book the appointment"])
+
+        #expect(throws: CommitRefused.self) {
+            try CadencePendingChangePersistence.commitInsert(of: subtask, in: modelContext) { _ in
+                throw CommitRefused()
+            }
+        }
+
+        // The store never took it, and the parent's array has not noticed.
+        #expect(try fetchSubtasks(in: container).isEmpty)
+        #expect((task.subtasks ?? []).map(\.title) == ["Book the appointment"])
+
+        // The one line each surface adds.
+        task.subtasks = restored
+        #expect((task.subtasks ?? []).isEmpty)
+    }
+
+    /// The same question on the delete side, and it answers the opposite way round.
+    ///
+    /// `commitDelete` undoes with `rollback()`, which un-deletes the row — but `deleteSubtask` also
+    /// *edited* `parent.subtasks` to drop it, and a rollback's undo of an edit is not visible on an
+    /// already-materialised object until something refetches (T-402, pinned by
+    /// `rollbackRestoresAnEditOnlyOnceSomethingRefreshesTheObject`). So a refused delete would take
+    /// the row off the screen while the store still holds it: the user's subtask silently comes
+    /// back on the next launch. Same repair, same captured array.
+    @Test func arefusedSubtaskDeleteLeavesTheRowMissingFromTheParentUntilTheCallerPutsItBack() throws {
+        let container = try makeContainer()
+        let modelContext = ModelContext(container)
+
+        let task = AppTask(title: "Pack for the trip")
+        modelContext.insert(task)
+        let subtask = try #require(
+            CadenceTaskMutationSupport.insertSubtask(
+                titled: "Find the passport",
+                into: task,
+                modelContext: modelContext
+            )
+        )
+        try modelContext.save()
+        #expect(try fetchSubtasks(in: container).count == 1)
+
+        let restored = task.subtasks ?? []
+        CadenceTaskMutationSupport.deleteSubtask(subtask, parent: task, modelContext: modelContext)
+        #expect((task.subtasks ?? []).isEmpty)
+
+        #expect(throws: CommitRefused.self) {
+            try CadencePendingChangePersistence.commitDelete(in: modelContext) { _ in
+                throw CommitRefused()
+            }
+        }
+
+        // The rollback put the row back in the store; it did not put it back on the parent.
+        #expect(try fetchSubtasks(in: container).count == 1)
+        #expect((task.subtasks ?? []).isEmpty)
+
+        task.subtasks = restored
+        #expect((task.subtasks ?? []).map(\.title) == ["Find the passport"])
+    }
+
+    private struct CommitRefused: Error {}
+
     // MARK: - T-294: recurrence copies own their back-reference
 
     /// The assertion the old recurrence test could not make. It read `next.subtasks` — the parent's

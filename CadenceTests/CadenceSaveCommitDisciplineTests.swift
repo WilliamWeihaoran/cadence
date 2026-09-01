@@ -1070,8 +1070,6 @@ enum CadenceSaveCommitRule {
         // unrelated save.
         "Cadence/Shared/CadenceNotePlanningSupport.swift": ["update"],
         "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": ["body"],
-        // [[T-634]]: adding and removing a subtask from the task-detail sheet.
-        "Cadence/iOS/iOSTaskDetailSheet.swift": ["addSubtask", "deleteSubtask"],
         // [[T-635]]: Roll Over reaches `deleteBundleIfFullySettled`, which deletes the block, over
         // a swallowed commit. The `@AppStorage` half of the same ticket is in the report ledger.
         "Cadence/Shared/CadenceTodayRolloverSupport.swift": ["rollOver"],
@@ -1197,7 +1195,7 @@ enum CadenceSaveCommitRule {
         "Cadence/iOS/iOSTaskDetailComponents.swift": ["addTag"],
         "Cadence/macOS/Sheets/CreateTaskSheet.swift": ["createTag"],
         "Cadence/macOS/Views/InlineTaskComposerView.swift": ["createTag"],
-        "Cadence/macOS/Views/SchedulePanelComponents.swift": ["addSubtask", "body", "createTag"],
+        "Cadence/macOS/Views/SchedulePanelComponents.swift": ["createTag"],
         // `NoteEditorPane` carries four spellings of the same two defects: the tag one above
         // (`createTag`, `noteTagsBinding`, and `persistEditorContentIfNeeded` through
         // `syncNoteTagsFromMarkdown`) and [[T-634]]'s subtask one in `body`.

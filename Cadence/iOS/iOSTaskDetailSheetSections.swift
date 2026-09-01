@@ -409,6 +409,9 @@ struct iOSTaskSubtasksSection: View {
     let subtasks: [Subtask]
     let newSubtaskTitle: Binding<String>
     let canAddSubtask: Bool
+    /// The red line under the composer when an add or a delete was refused (T-634). `nil` when the
+    /// last one landed, which is the only state the section had before.
+    let failureNotice: String?
     let onAdd: () -> Void
     let onDelete: (Subtask) -> Void
 
@@ -416,6 +419,9 @@ struct iOSTaskSubtasksSection: View {
         iOSEditorSection(title: "Subtasks", style: .ruled, contentSpacing: 10) {
             subtaskList
             subtaskComposer
+            if let failureNotice {
+                CadenceInlineFailureNotice(text: failureNotice)
+            }
         }
     }
 

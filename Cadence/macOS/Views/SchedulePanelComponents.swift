@@ -15,6 +15,8 @@ struct TaskDetailPopover: View {
 
     @State private var showPriorityPicker = false
     @State private var newSubtaskTitle = ""
+    /// Set when a subtask insert or delete was refused by the store. See `addSubtask()`.
+    @State private var subtaskFailureNotice: String?
     @State private var presentationMode: TaskDetailPresentationMode = .full
     @FocusState private var subtaskFieldFocused: Bool
 
@@ -105,10 +107,14 @@ struct TaskDetailPopover: View {
                                 title: "Delete Subtask?",
                                 message: "This will permanently delete \"\(subtask.title.isEmpty ? "Untitled" : subtask.title)\"."
                             ) {
-                                CadenceTaskMutationSupport.deleteSubtask(subtask, parent: task, modelContext: modelContext)
+                                deleteSubtask(subtask)
                             }
                         }
                     )
+
+                    if let subtaskFailureNotice {
+                        CadenceInlineFailureNotice(text: subtaskFailureNotice)
+                    }
                 }
 
                 if presentationMode == .full {
@@ -144,13 +150,54 @@ struct TaskDetailPopover: View {
         }
     }
 
+    /// **T-634.** This reached no commit at all, and cleared the field regardless.
+    ///
+    /// `insertSubtask` is handed a `ModelContext`, so by the `try? save()` rule its caller owns the
+    /// unit of work — and this popover is presented from seven surfaces, none of which committed
+    /// on its behalf. The subtask sat pending until some unrelated screen's save happened to take
+    /// it, or a `rollback()` threw it away, while the emptied field said it had landed.
+    ///
+    /// `restored` is the `CadenceListEditSnapshot` idiom shrunk to its one field. `commitInsert`'s
+    /// own undo deletes the row it inserted, but `insertSubtask` had also appended it to
+    /// `task.subtasks`, and that delete does not reach the array before this popover re-renders —
+    /// measured by `arefusedSubtaskInsertLeavesAPhantomOnTheParentUntilTheCallerDropsIt`. Without
+    /// the restore a refused insert leaves a subtask row on screen that no longer exists anywhere.
     private func addSubtask() {
-        guard CadenceTaskMutationSupport.insertSubtask(
+        let restored = task.subtasks ?? []
+        guard let inserted = CadenceTaskMutationSupport.insertSubtask(
             titled: newSubtaskTitle,
             into: task,
             modelContext: modelContext
-        ) != nil else { return }
+        ) else { return }
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: inserted, in: modelContext)
+        } catch {
+            task.subtasks = restored
+            subtaskFailureNotice = CadenceTaskInspectorSupport.subtaskAddFailureNotice
+            return
+        }
+        subtaskFailureNotice = nil
         newSubtaskTitle = ""
+    }
+
+    /// The delete half of T-634, and the mirror image of the restore above.
+    ///
+    /// `commitDelete` undoes with `rollback()`, which un-deletes the row in the store — but
+    /// `deleteSubtask` had also *edited* `task.subtasks` to drop it, and a rollback's undo of an
+    /// edit is invisible until something refetches (T-402). So the row would come off the screen
+    /// and stay in the store: gone until the next launch brought it back. Pinned by
+    /// `arefusedSubtaskDeleteLeavesTheRowMissingFromTheParentUntilTheCallerPutsItBack`.
+    private func deleteSubtask(_ subtask: Subtask) {
+        let restored = task.subtasks ?? []
+        CadenceTaskMutationSupport.deleteSubtask(subtask, parent: task, modelContext: modelContext)
+        do {
+            try CadencePendingChangePersistence.commitDelete(in: modelContext)
+        } catch {
+            task.subtasks = restored
+            subtaskFailureNotice = CadenceTaskInspectorSupport.subtaskDeleteFailureNotice
+            return
+        }
+        subtaskFailureNotice = nil
     }
 
     private func focusSubtaskFieldIfRequested() {

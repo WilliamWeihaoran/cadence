@@ -504,7 +504,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(counter.runs == 0)
     }
 
-    // MARK: - The four surfaces
+    // MARK: - The surfaces
 
     private struct SaveSurface {
         let path: String
@@ -544,7 +544,31 @@ struct CadenceEditorSaveCommitSurfaceTests {
                 path: "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift",
                 function: "commit",
                 successSpellings: ["onChanged()"]
-            )
+            ),
+
+            // T-634: the task-detail subtask field, on both platforms. Clearing the draft is the
+            // report here — the field emptying is what tells the user the row was taken — so it
+            // may only happen once the insert has landed.
+            SaveSurface(
+                path: "Cadence/macOS/Views/SchedulePanelComponents.swift",
+                function: "addSubtask",
+                successSpellings: ["newSubtaskTitle = \"\""]
+            ),
+            SaveSurface(
+                path: "Cadence/macOS/Views/SchedulePanelComponents.swift",
+                function: "deleteSubtask",
+                successSpellings: ["subtaskFailureNotice = nil"]
+            ),
+            SaveSurface(
+                path: "Cadence/iOS/iOSTaskDetailSheet.swift",
+                function: "addSubtask",
+                successSpellings: ["newSubtaskTitle = \"\""]
+            ),
+            SaveSurface(
+                path: "Cadence/iOS/iOSTaskDetailSheet.swift",
+                function: "deleteSubtask",
+                successSpellings: ["subtaskFailureNotice = nil"]
+            ),
         ]
     }
 
@@ -553,7 +577,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
     /// Position alone is not control flow, so each branch has to `return` as well — otherwise the
     /// notice is set and the next statements dismiss over it anyway.
     @Test func everyEditorCommitsBeforeItReportsSuccess() throws {
-        let failureBranch = #"(saveFailureNotice|failureNotice) = (CadencePendingChangePersistence\.editFailureNotice|CadenceTaskFieldEditCommit\.saveFailureNotice)\s*return"#
+        let failureBranch = #"(saveFailureNotice|subtaskFailureNotice|failureNotice) = (CadencePendingChangePersistence\.editFailureNotice|CadenceTaskFieldEditCommit\.saveFailureNotice|CadenceTaskInspectorSupport\.subtask(Add|Delete)FailureNotice)\s*return"#
 
         for surface in saveSurfaces {
             let raw = try CadenceSourceScan.sourceFile(surface.path)
@@ -647,6 +671,35 @@ struct CadenceEditorSaveCommitSurfaceTests {
         // the undo shape a delete *does* want.
         #expect(CadenceSourceScan.matchCount(#"commitCascade\("#, in: sheet) == 2)
         #expect(CadenceSourceScan.matchCount(#"modelContext\.rollback\(\)"#, in: sheet) == 0)
+    }
+
+    /// Both subtask surfaces take the one-field snapshot, and both put it back (T-634).
+    ///
+    /// The restore is invisible to `everyEditorCommitsBeforeItReportsSuccess`, which reads only the
+    /// order of the failure branch, and neither function is reachable behaviourally: both are
+    /// `private func`s on SwiftUI views and one of them is under `Cadence/iOS/`, which this target
+    /// does not compile. *Why* the restore is needed is measured in
+    /// `CadenceSubtaskInverseParityTests` — `commitInsert`'s delete and `commitDelete`'s rollback
+    /// each fix the store and leave `task.subtasks` disagreeing with it. This is what keeps the two
+    /// platforms spelling the repair, and spelling it the same way.
+    @Test func bothSubtaskSurfacesPutTheParentsArrayBackOnARefusedCommit() throws {
+        for path in [
+            "Cadence/macOS/Views/SchedulePanelComponents.swift",
+            "Cadence/iOS/iOSTaskDetailSheet.swift"
+        ] {
+            let source = try scanned(path)
+            for name in ["addSubtask", "deleteSubtask"] {
+                let body = try #require(bodies(of: name, in: source, expected: 1).first)
+                #expect(
+                    body.contains("let restored = task.subtasks ?? []"),
+                    "\(path): \(name)() takes no snapshot of the parent's array"
+                )
+                #expect(
+                    CadenceSourceScan.matchCount(#"task\.subtasks = restored"#, in: body) == 1,
+                    "\(path): \(name)() does not put the parent's array back"
+                )
+            }
+        }
     }
 
     /// The popover's single refresh call, and the two dismissals that are now guarded on it.

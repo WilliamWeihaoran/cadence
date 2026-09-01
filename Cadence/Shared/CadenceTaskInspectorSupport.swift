@@ -56,6 +56,25 @@ enum CadenceTaskInspectorSupport {
         return CadenceTaskPresentationSupport.estimateLabel(minutes: minutes)
     }
 
+    // MARK: - Subtask commit copy (T-634)
+
+    /// The sentence the inspector's subtask field shows when its insert was refused.
+    ///
+    /// It stops at "Couldn't add this subtask." and does **not** promise "nothing was changed",
+    /// which is the second sentence `CadencePendingChangePersistence.editFailureNotice` and
+    /// `CadenceTaskMutationSupport.deleteFailureNotice` both carry. That promise is only ever true
+    /// because an undo ran first; here the undo is the caller's own two lines — `commitInsert`
+    /// deletes the row, and the surface puts `task.subtasks` back — so the shorter sentence is the
+    /// one that stays honest if either half is ever dropped. Same reason
+    /// `TaskCreationService.saveFailureNotice` is one clause long.
+    static let subtaskAddFailureNotice = "Couldn't add this subtask."
+
+    /// The delete-side sentence, and it *does* carry the second clause: `commitDelete` rolls the
+    /// delete back and the surface restores the parent's array, so by the time this is read the
+    /// subtask really is still there. Word for word `CadenceTaskMutationSupport.deleteFailureNotice`
+    /// with the noun changed, because the two are the same event one level apart.
+    static let subtaskDeleteFailureNotice = "Couldn't delete this subtask. Nothing was removed."
+
     // MARK: - Status actions
 
     /// The two status transitions that are not completion.

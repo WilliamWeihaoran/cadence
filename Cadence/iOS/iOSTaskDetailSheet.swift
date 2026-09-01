@@ -14,6 +14,8 @@ struct iOSTaskDetailSheet: View {
     @Query(sort: \Goal.order) private var goals: [Goal]
     @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var newSubtaskTitle = ""
+    /// Set when a subtask insert or delete was refused by the store. See `addSubtask()`.
+    @State private var subtaskFailureNotice: String?
     @State private var newTagName = ""
     @State private var scheduledDate = Date()
     @State private var dueDate = Date()
@@ -308,6 +310,7 @@ struct iOSTaskDetailSheet: View {
             subtasks: sortedSubtasks,
             newSubtaskTitle: $newSubtaskTitle,
             canAddSubtask: canAddSubtask,
+            failureNotice: subtaskFailureNotice,
             onAdd: addSubtask,
             onDelete: deleteSubtask
         )
@@ -456,19 +459,48 @@ struct iOSTaskDetailSheet: View {
         )
     }
 
+    /// **T-634.** This cleared the field *first* and swallowed the save after it, so an emptied
+    /// composer reported a subtask the store may never have taken. `insertSubtask` is handed a
+    /// `ModelContext` and commits nothing of its own, which is what put the insert one frame below
+    /// the `try?`.
+    ///
+    /// `restored` is the same one-field snapshot macOS's `TaskDetailPopover.addSubtask` takes, and
+    /// for the same measured reason: `commitInsert` deletes the row it inserted, but the row is
+    /// also in `task.subtasks` and the delete does not reach that array before the sheet
+    /// re-renders. See `arefusedSubtaskInsertLeavesAPhantomOnTheParentUntilTheCallerDropsIt`.
     private func addSubtask() {
-        guard CadenceTaskMutationSupport.insertSubtask(
+        let restored = task.subtasks ?? []
+        guard let inserted = CadenceTaskMutationSupport.insertSubtask(
             titled: newSubtaskTitle,
             into: task,
             modelContext: modelContext
-        ) != nil else { return }
+        ) else { return }
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: inserted, in: modelContext)
+        } catch {
+            task.subtasks = restored
+            subtaskFailureNotice = CadenceTaskInspectorSupport.subtaskAddFailureNotice
+            return
+        }
+        subtaskFailureNotice = nil
         newSubtaskTitle = ""
-        try? modelContext.save()
     }
 
+    /// The delete half of T-634. `commitDelete`'s `rollback()` un-deletes the row but does not put
+    /// it back on `task.subtasks`, which `deleteSubtask` edited — so without the restore a refused
+    /// delete takes the subtask off the screen and leaves it in the store. Pinned by
+    /// `arefusedSubtaskDeleteLeavesTheRowMissingFromTheParentUntilTheCallerPutsItBack`.
     private func deleteSubtask(_ subtask: Subtask) {
+        let restored = task.subtasks ?? []
         CadenceTaskMutationSupport.deleteSubtask(subtask, parent: task, modelContext: modelContext)
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitDelete(in: modelContext)
+        } catch {
+            task.subtasks = restored
+            subtaskFailureNotice = CadenceTaskInspectorSupport.subtaskDeleteFailureNotice
+            return
+        }
+        subtaskFailureNotice = nil
     }
 
     private func toggleCompletion() {
