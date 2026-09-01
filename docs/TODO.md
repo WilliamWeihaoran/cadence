@@ -854,22 +854,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   removes browse-all-notes from the rail and leaves other narrow hosts index-only.
   **Nobody has looked at this on a device.** The whole analysis is arithmetic and source reading. Before
   committing, capture the rail at 1366 and at 836 on a simulator.
-- [T-606] **macOS Today adopts iOS's named sort set. DECIDED 2026-08-31.**
-  macOS has two chips - Sort (Custom/Date/Priority) x Order (Ascending/Descending), default Date +
-  Ascending (`TasksPanel.swift:341-352`, `Models/TaskOrdering.swift:16-28`). iOS has one control -
-  List Order / Priority / Do Date / Due Date / Newest, default Priority
-  (`CadenceTaskPlanningSupport.CadenceTaskSortMode`). Only "Priority" is common, and **macOS's "Date"
-  does not say which date, on a page whose whole vocabulary is do-date vs due-date.**
-  **User's decision: adopt iOS's named set on macOS.** The separate Order chip goes; direction folds
-  into the named modes.
-  **Handle the persisted preference deliberately - this is the one hazard in this batch.**
-  `TaskOrdering` and the Order chip are very likely persisted. Removing enum cases can strand a stored
-  value that no longer decodes, and this project has **no `SchemaMigrationPlan`**, so a stored-property
-  change is dangerous. Before editing: find every persisted read/write of sort and order, decide the
-  mapping for each retiring case (Custom -> List Order, Date -> Do Date is the likely intent but
-  **verify against what macOS actually sorts by** rather than assuming), and make an unknown stored
-  value fall back rather than crash or silently re-sort. **If the mapping cannot be proven from the
-  code, stop and report rather than guessing.**
+- [T-639] **`Cadence/macOS/Views/TaskSortHelpers.swift` is now production-dead.** Found by [[T-606]].
+  `taskPriorityRank` already had **zero** production callers at HEAD; `taskSortPrecedes` lost its last
+  one (`TasksPanel`) when Today moved to the named sort set. Only `TrackingDeleteHelpersTests` and a doc
+  comment in `CadenceTargetSourceMembershipTests` still reference them, so removal touches tests as well
+  as source — which is why it was split out rather than done in passing.
+  Check whether the tests are testing the helper or using it as a fixture before deleting; a test that
+  exercises a dead helper is dead too, but a test that *uses* it needs a replacement.
+
+- [T-640] **`CadenceTaskQuerySupport.sortDateKey` is a private twin of `TaskOrdering.dateSortKey`.**
+  Found by [[T-606]] while proving its mapping: the two are identical **down to the `"9999-99-99"`
+  sentinel**. `Cadence/Models/AGENTS.md` records consolidating that spelling across five files; this one
+  survived the sweep.
+  **It is harmless today precisely because they agree — which is exactly the condition that stops
+  holding quietly.** The whole T-606 mapping proof rested on them being character-identical; if one
+  drifts, that proof silently becomes false and Today's sort diverges from every other surface's.
 
 - [T-608] **Converge macOS Today's row block onto `TaskListInteractiveRow`.** Proposed by the T-593
   agent, deliberately not done. The Today block in `TasksPanelSectionViews` is a line-for-line
@@ -1197,6 +1196,35 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   doc. A mechanical sweep would break it.
 
 ## Done
+
+- [T-606] **CLOSED 2026-09-01 (`4f4ab61`).** macOS Today draws one Sort chip over iOS's named set;
+  the Order chip is gone and direction folds into the modes.
+  **The briefed hazard was disarmed by the audit, not by luck.** The preference lives in six
+  `UserDefaults` keys and nowhere else — nothing on a SwiftData model, no reference from
+  `CadenceMCPServer`, `CadenceWidgets`, the MCP DTOs, the export service or `PrivacyDataResetService`.
+  **So no `SchemaMigrationPlan` is implicated and ZERO enum cases were removed** — five of the six macOS
+  surfaces still speak the two-chip vocabulary.
+  **Mapping proven from the comparators, not the labels:** `.date` sorts `scheduledDate`, which
+  `AppTask.swift:227` calls *"the day this is time-blocked"* — the do date — and
+  `CadenceTaskQuerySupport.sortDateKey` is **character-identical** to `TaskOrdering.dateSortKey`,
+  `"9999-99-99"` sentinel included. Custom->List Order, Date+Asc->Do Date and Priority+Desc->Priority
+  are exact. **Date+Desc and Priority+Asc have no iOS equivalent and genuinely re-order those users'
+  rows** — neither was ever a default, and a test **asserts they differ** so the cost is recorded rather
+  than buried.
+  **macOS keeps `.doDate` as its default rather than iOS's `.priority`, deliberately.** macOS shipped
+  Date+Ascending, so taking iOS's default would have silently re-sorted every user who never opened the
+  chip. Adopting iOS's *named set* was the decision; adopting its *default* was not. **Do not "fix" the
+  inconsistency.**
+  New `todaySortMode` key wins when it decodes, else the retired `todaySortField` is mapped, else the
+  default; retired keys are read but **never written or cleared**, so a rolled-back build still finds
+  its preference.
+  **A hygiene guard caught a real leak mid-work:** the first defaults test minted a suite from `UUID()`,
+  which strands a preference plist in the app's own container on every run ([[T-516]]) — the container
+  the brief forbids touching. Rewritten onto the shared `withTemporaryDefaults` helper. **The guard was
+  right and the new test was wrong.**
+  Ten tests; eight mutations, each confirmed applied *and* compiled, all killed by name. Two source-scan
+  tests were killed by no mutation and **that is reported rather than claimed as coverage**.
+
 
 - [T-603] **CLOSED 2026-09-01 (`e7e58fc`).** The square cell fill and the `radiusControl` ring are
   gone; a selected day is marked by the badge's solid circle alone — which
