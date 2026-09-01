@@ -425,7 +425,7 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
 
     private static func recurrenceSortKey(for task: AppTask) -> String {
         [
-            recurrenceSortDateKey(for: task) ?? "9999-12-31",
+            recurrenceSortDateKey(for: task) ?? TaskOrdering.noDateSortKey,
             String(format: "%04d", max(0, task.scheduledStartMin)),
             String(format: "%08d", task.recurrenceOccurrenceIndex),
             task.createdAt.ISO8601Format(),

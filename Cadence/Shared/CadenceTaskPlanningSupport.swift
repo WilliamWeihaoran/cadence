@@ -43,7 +43,12 @@ extension CadenceTaskSortMode {
     ///   **Exact, from either direction.**
     /// - `.date` is `TaskOrdering.dateSortKey(scheduledDate)`, then timed-before-untimed, then
     ///   `scheduledStartMin`, then the fallback. `.doDate` is those four steps in that order, and
-    ///   its private `sortDateKey` is character-identical to `dateSortKey` (`"9999-99-99"`).
+    ///   it calls `TaskOrdering.dateSortKey` too. It did not when this was written: it had a
+    ///   private `sortDateKey` that was character-identical, which made this mapping proof rest on
+    ///   two texts agreeing rather than on one function. T-640 deleted the twin, and
+    ///   `TaskOrderingTests.everyMigratedMacOSTodaySortModeAgreesWithItsRetiredComparator` now
+    ///   asserts all three mappings pair-by-pair, so a divergence fails a test instead of quietly
+    ///   splitting the two Todays.
     ///   **Exact from `Ascending`**, which was macOS's default. It is the *do* date on both sides:
     ///   the label said only "Date", on a page whose whole vocabulary is do-date vs due-date, which
     ///   is the reason this ticket exists.

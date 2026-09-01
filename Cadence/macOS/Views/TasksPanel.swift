@@ -449,7 +449,8 @@ struct TasksPanel: View {
     /// by the chips, and it was unreachable (T-487).
     ///
     /// Since T-606 the second half is `CadenceTaskQuerySupport.sortTasks` — the same call iOS's
-    /// Today makes — rather than `taskSortPrecedes`, so the two Todays now agree on the sort as
+    /// Today makes — rather than `taskSortPrecedes` (deleted with its file by T-639, having lost
+    /// its last caller here), so the two Todays now agree on the sort as
     /// well as on the rank. The rank stays spelled out here rather than calling the shared
     /// `sortTodayTasks`, because `macOSTodayLeadsItsSortWithTheSharedRank` pins this file's one
     /// `CadenceTaskQuerySupport.todayRank` call site and that pin is the guard against macOS

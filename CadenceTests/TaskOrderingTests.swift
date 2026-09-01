@@ -242,6 +242,102 @@ struct TaskOrderingTests {
         #expect(GoalContributionResolver.summary(for: goal, now: base).nextActionTitle == forward)
     }
 
+    // MARK: - The mapping T-606 rested on, and the sentinel it rested on
+
+    /// T-606 retired macOS Today's `TaskSortField` + `TaskSortDirection` chips for the shared
+    /// `CadenceTaskSortMode` set, and the argument that no user's rows would move was a *reading*:
+    /// the two comparators were held to be step-for-step identical for the three reachable
+    /// mappings. One of those steps was identical only by coincidence of text —
+    /// `CadenceTaskQuerySupport` carried a `private sortDateKey` twin of `TaskOrdering.dateSortKey`,
+    /// down to the `"9999-99-99"` sentinel, and the proof held exactly as long as nobody edited one
+    /// of them. T-640 deleted the twin; this asserts the mapping instead of re-reading it.
+    ///
+    /// Pair-by-pair rather than list-by-list on purpose: two comparators can agree on the sorted
+    /// output of one input permutation and still disagree on a pair, because `sorted(by:)` does not
+    /// ask every pair.
+    @Test func everyMigratedMacOSTodaySortModeAgreesWithItsRetiredComparator() {
+        let tasks = tieHeavySet()
+
+        // Non-vacuity, in the terms of the comparator being checked: without an undated task the
+        // sentinel branch is never evaluated, and without both a timed and an untimed task on one
+        // date the step below it is never evaluated either.
+        #expect(tasks.contains { $0.scheduledDate.isEmpty })
+        #expect(tasks.contains { $0.scheduledDate == "2026-05-11" && $0.scheduledStartMin >= 0 })
+        #expect(tasks.contains { $0.scheduledDate == "2026-05-11" && $0.scheduledStartMin < 0 })
+        #expect(Set(tasks.map(\.priority)).count > 1)
+
+        // The three mappings `migratedFromMacOSTodaySortField` makes, each with the direction the
+        // doc comment calls exact.
+        let mappings: [(TaskSortField, TaskSortDirection, CadenceTaskSortMode)] = [
+            (.custom, .ascending, .listOrder),
+            (.date, .ascending, .doDate),
+            (.priority, .descending, .priority)
+        ]
+
+        var comparedPairs = 0
+        for (field, direction, mode) in mappings {
+            #expect(CadenceTaskSortMode.migratedFromMacOSTodaySortField(field.rawValue) == mode)
+            for lhs in tasks {
+                for rhs in tasks where lhs.id != rhs.id {
+                    comparedPairs += 1
+                    #expect(
+                        TaskOrdering.precedes(lhs, rhs, field: field, direction: direction)
+                            == CadenceTaskQuerySupport.sortTasks(lhs, rhs, sortMode: mode),
+                        "\(field)/\(direction) and \(mode) disagree on \(lhs.title) vs \(rhs.title)"
+                    )
+                }
+            }
+        }
+
+        // Every ordered pair of seven distinct tasks, three times over.
+        #expect(comparedPairs == 3 * 7 * 6)
+    }
+
+    /// The sentinel is one `static let`, and the count is one.
+    ///
+    /// Two spellings once lived across five files. The sweep that consolidated them left three
+    /// literals behind, all agreeing with `noDateSortKey` and therefore invisible:
+    /// `CadenceTaskQuerySupport.sortDateKey`, `CadenceCalendarPlanningSupport.railAnchorKey`, and
+    /// `CadenceTaskRecurrenceWorkflowSupport.recurrenceSortKey` — the last of which carried the
+    /// *other* spelling, `"9999-12-31"`, which is the exact pair `TaskOrdering`'s own doc comment
+    /// says would split undated work if one comparator ever saw both. T-640 removed all three.
+    ///
+    /// Agreement between texts is not an invariant; agreement enforced by there being one text is.
+    @Test func theNoDateSentinelLiteralIsSpelledOnceInProductionSource() throws {
+        let sentinel = #""9999-[0-9]{2}-[0-9]{2}""#
+        let instrument = try CadenceScanInstrument(
+            "hand-spelled no-date sentinel",
+            fires: #"let key = dateKey.isEmpty ? "9999-99-99" : dateKey"#,
+            andNotOn: #"let key = dateKey.isEmpty ? TaskOrdering.noDateSortKey : dateKey"#,
+            by: { CadenceSourceScan.matchCount(sentinel, in: $0) > 0 }
+        )
+
+        var files = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        files += try CadenceSourceScan.swiftFiles(under: "CadenceWidgets")
+        files += try CadenceSourceScan.swiftFiles(under: "CadenceMCPServer")
+        let read = CadenceSourceScan.strippedSourceReader()
+
+        let hits = try instrument.sweep(
+            files,
+            // The same floor `CadenceEmptyStateAuditTests` uses for the `Cadence` tree, plus the
+            // two extra roots — the widget and MCP targets sort tasks too, and a twin growing
+            // there is the case `TaskOrdering` was moved into `Models/` to prevent.
+            atLeast: 310,
+            including: "Cadence/Models/TaskOrdering.swift",
+            read: read
+        )
+
+        // The one declaration, named. Not "at most one" and not a floor: the whole finding is that
+        // extra copies are undetectable while they still agree.
+        #expect(hits == ["Cadence/Models/TaskOrdering.swift"])
+        #expect(
+            CadenceSourceScan.matchCount(
+                sentinel,
+                in: try read("Cadence/Models/TaskOrdering.swift")
+            ) == 1
+        )
+    }
+
     // MARK: - Fixtures
 
     /// Deliberate ties at every rung: duplicate dates, duplicate start minutes, duplicate

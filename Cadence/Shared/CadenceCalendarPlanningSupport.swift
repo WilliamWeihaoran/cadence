@@ -383,7 +383,7 @@ enum CalendarBoardPlannerSupport {
     static func railAnchorKey(for task: AppTask) -> String {
         [task.scheduledDate, task.dueDate]
             .filter { !$0.isEmpty }
-            .min() ?? "9999-99-99"
+            .min() ?? TaskOrdering.noDateSortKey
     }
 
     static func boardTaskSort(_ lhs: AppTask, _ rhs: AppTask) -> Bool {

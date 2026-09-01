@@ -197,9 +197,14 @@ struct TrackingDeleteHelpersTests {
     ///
     /// The point of the loop is that it names **every** spelling a test can reach, over **every**
     /// case. The previous version asserted the enum's own constants and exactly one forwarder, so
-    /// swapping `.none` and `.low` inside `taskPriorityRank` — the spelling that drives every
-    /// macOS task sort — left the suite green while a low-priority task sorted below an
-    /// unprioritised one. Anything that re-grows a hand-written switch has to fail here.
+    /// swapping `.none` and `.low` inside any of the others left the suite green while a
+    /// low-priority task sorted below an unprioritised one. Anything that re-grows a hand-written
+    /// switch has to fail here.
+    ///
+    /// A third spelling used to be asserted here: `taskPriorityRank` in
+    /// `macOS/Views/TaskSortHelpers.swift`, described above as "the spelling that drives every
+    /// macOS task sort". It drove nothing — `TaskOrdering.precedes` reads `priority.rank`
+    /// directly — and the file is gone (T-639).
     @Test func priorityRankIsOneOrderingSharedByEveryCaller() {
         #expect(TaskPriority.high.rank > TaskPriority.medium.rank)
         #expect(TaskPriority.medium.rank > TaskPriority.low.rank)
@@ -211,18 +216,17 @@ struct TrackingDeleteHelpersTests {
         for priority in TaskPriority.allCases {
             #expect(CadenceTaskQuerySupport.priorityRank(priority) == priority.rank)
             #expect(CalendarBoardPlannerSupport.priorityRank(priority) == priority.rank)
-#if os(macOS)
-            #expect(taskPriorityRank(priority) == priority.rank)
-#endif
         }
     }
 
-    /// `taskSortPrecedes` is the comparator behind every macOS "sort by priority", and it is the
-    /// only consumer of `taskPriorityRank`. Asserting the forwarder is not enough on its own —
-    /// the comparator could stop calling it. This pins the pair `TaskSortHelperTests` never
-    /// compares: `.low` against `.none`.
-    @Test func macOSPrioritySortRanksALowPriorityTaskAboveAnUnprioritisedOne() {
-#if os(macOS)
+    /// Asserting the rank forwarders is not enough on its own — the comparator could stop calling
+    /// them. This pins the pair the rank loop above cannot reach: `.low` against `.none`, through
+    /// `TaskOrdering.precedes` itself.
+    ///
+    /// It used to go through `taskSortPrecedes`, a macOS-only forwarder with no production caller
+    /// of its own, deleted by T-639. The assertions are the same ones; only the spelling under
+    /// test changed, from a wrapper nothing ran to the comparator every surface runs.
+    @Test func prioritySortRanksALowPriorityTaskAboveAnUnprioritisedOne() {
         let low = AppTask(title: "Low")
         low.priority = .low
         low.order = 1
@@ -230,10 +234,9 @@ struct TrackingDeleteHelpersTests {
         unset.priority = TaskPriority.none
         unset.order = 0
 
-        #expect(taskSortPrecedes(low, unset, field: .priority, direction: .descending))
-        #expect(!taskSortPrecedes(unset, low, field: .priority, direction: .descending))
+        #expect(TaskOrdering.precedes(low, unset, field: .priority, direction: .descending))
+        #expect(!TaskOrdering.precedes(unset, low, field: .priority, direction: .descending))
         // Ascending is the same ordering read backwards, not a different ordering.
-        #expect(taskSortPrecedes(unset, low, field: .priority, direction: .ascending))
-#endif
+        #expect(TaskOrdering.precedes(unset, low, field: .priority, direction: .ascending))
     }
 }

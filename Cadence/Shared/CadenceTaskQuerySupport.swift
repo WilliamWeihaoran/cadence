@@ -478,8 +478,8 @@ enum CadenceTaskQuerySupport {
             }
             return TaskOrdering.fallbackPrecedes(lhs, rhs)
         case .doDate:
-            let leftDate = sortDateKey(lhs.scheduledDate)
-            let rightDate = sortDateKey(rhs.scheduledDate)
+            let leftDate = TaskOrdering.dateSortKey(lhs.scheduledDate)
+            let rightDate = TaskOrdering.dateSortKey(rhs.scheduledDate)
             if leftDate != rightDate {
                 return leftDate < rightDate
             }
@@ -508,7 +508,9 @@ enum CadenceTaskQuerySupport {
     /// The one date-bucketing rule: due-before-today wins, then due-today, and only tasks in
     /// neither due bucket can be "do today". Internal rather than `private` so tests reach the
     /// copy production runs — a `private` spelling here is what kept a dead twin alive in
-    /// `TaskSortHelpers`.
+    /// `TaskSortHelpers`, and what kept this type's own `sortDateKey` twin of
+    /// `TaskOrdering.dateSortKey` out of the five-file sweep that consolidated the rest (T-640).
+    /// That file is gone (T-639) and so is the twin.
     static func dateBuckets(for tasks: [AppTask], todayKey: String) -> CadenceTaskDateBuckets {
         var overdueIDs = Set<UUID>()
         var dueTodayIDs = Set<UUID>()
@@ -539,9 +541,5 @@ enum CadenceTaskQuerySupport {
         sectionNames.firstIndex {
             $0.caseInsensitiveCompare(name) == .orderedSame
         } ?? Int.max
-    }
-
-    private static func sortDateKey(_ dateKey: String) -> String {
-        dateKey.isEmpty ? "9999-99-99" : dateKey
     }
 }

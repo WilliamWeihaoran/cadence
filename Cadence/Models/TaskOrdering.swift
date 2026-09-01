@@ -45,6 +45,10 @@ nonisolated enum TaskOrdering {
     /// five files. They never met inside one comparator, so they never disagreed — but
     /// `"9999-99-99" > "9999-12-31"` lexically, so the first comparator to mix them would have
     /// sorted undated work into two different places.
+    ///
+    /// The consolidation missed three literals, which stayed invisible for exactly as long as they
+    /// agreed with this one (T-640). It is now a single spelling by test:
+    /// `TaskOrderingTests.theNoDateSentinelLiteralIsSpelledOnceInProductionSource`.
     static let noDateSortKey = "9999-99-99"
 
     /// Maps an empty date key onto `noDateSortKey`, leaving real keys untouched.

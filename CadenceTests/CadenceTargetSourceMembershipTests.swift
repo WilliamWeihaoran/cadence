@@ -28,11 +28,10 @@ import Testing
 /// The original guard read *capitalised identifiers* on the reference side and
 /// `struct`/`class`/`enum`/`actor`/`protocol`/`typealias` on the declaration side. That is the
 /// shape `aaa0064` had, and it is blind to the other way a target boundary gets crossed: a
-/// **top-level `func`**. `Cadence/macOS/Views/TaskSortHelpers.swift` declares
-/// `taskPriorityRank(_:)` and `taskSortPrecedes(_:_:field:direction:)` at file scope;
-/// `CalendarPageMonthGridSupport.swift` declares `monthStart(for:calendar:)` and three more. None
-/// of those files is in the MCP or widget source list, and a member calling `monthStart(...)`
-/// produced no capitalised token at all, so the sweep read the call and saw nothing.
+/// **top-level `func`**. `Cadence/macOS/Views/CalendarPageMonthGridSupport.swift` declares
+/// `monthStart(for:calendar:)` at file scope, and three more beside it. That file is in neither
+/// the MCP nor the widget source list, and a member calling `monthStart(...)` produced no
+/// capitalised token at all, so the sweep read the call and saw nothing.
 ///
 /// `mcpSourcesOnlyCallTopLevelFunctionsThatTargetCompiles` closes it, and it goes through
 /// `CadenceScanInstrument` rather than sweeping directly: the positive witness is a synthetic call
@@ -176,16 +175,16 @@ struct CadenceTargetSourceMembershipTests {
     /// T-435. The reference scan above reads *capitalised* identifiers, so a call to a top-level
     /// `func` crosses a target boundary without producing a single token it looks at.
     /// `Cadence/macOS/Views/CalendarPageMonthGridSupport.swift` declares `monthStart(for:calendar:)`
-    /// at file scope and `TaskSortHelpers.swift` declares `taskPriorityRank(_:)`; neither file is in
-    /// the MCP source list, and `monthStart(for: date, calendar: .current)` in a member read as
-    /// nothing at all. This is that hole closed, for the target where it can actually ship broken.
+    /// at file scope; that file is not in the MCP source list, and
+    /// `monthStart(for: date, calendar: .current)` in a member read as nothing at all. This is that
+    /// hole closed, for the target where it can actually ship broken.
     ///
     /// It runs through `CadenceScanInstrument` rather than sweeping directly, because the repo has
     /// **no** violations of this rule today: "no member calls an unreachable free function" is what
     /// a working repo and a detector that never fires both look like, and the constructor is the
     /// only thing that tells them apart. The witness is drawn from the live unreachable set rather
-    /// than written as a literal name, so adding `TaskSortHelpers.swift` to this target retunes the
-    /// control instead of breaking it.
+    /// than written as a literal name, so adding `CalendarPageMonthGridSupport.swift` to this
+    /// target retunes the control instead of breaking it.
     @Test func mcpSourcesOnlyCallTopLevelFunctionsThatTargetCompiles() throws {
         let target = try TargetSourceGraph(
             name: "CadenceMCPServer",
