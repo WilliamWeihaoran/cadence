@@ -57,6 +57,10 @@ struct MarkdownEditor: View {
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
     @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var textView: CadenceTextView?
+    /// Set when an image insertion's commit is refused (T-629). Drawn under the toolbar, on the
+    /// first text column, because the editor has no sheet to close and no other way to say that the
+    /// picture the user just pasted is not in the store.
+    @State private var imageFailureNotice: String?
 
     // MARK: - Reference candidates
     //
@@ -127,6 +131,13 @@ struct MarkdownEditor: View {
                 .zIndex(10)
             }
 
+            if let imageFailureNotice {
+                CadenceInlineFailureNotice(text: imageFailureNotice)
+                    .padding(.horizontal, MarkdownEditorMetrics.firstTextColumnInset)
+                    .padding(.bottom, 6)
+                    .zIndex(5)
+            }
+
             MarkdownEditorView(
                 text: $text,
                 slashCommands: availableSlashCommands,
@@ -157,13 +168,40 @@ struct MarkdownEditor: View {
         }
     }
 
+    /// Mints the asset rows for a paste, a drop or the file panel, and hands back only the ones the
+    /// store actually took.
+    ///
+    /// **T-629.** `MarkdownImageAssetService.createAsset` does `modelContext.insert(asset)` and
+    /// nothing else, so this frame owns the commit — and it used to swallow it. The picture still
+    /// rendered, because the context held the row; it stopped rendering the first time anything
+    /// unrelated called `rollback()` on the app's single context, and by then the note had already
+    /// been given a `![…](cadence-image://<uuid>)` reference to an asset that had never existed.
+    /// Nothing rewrites a note to drop such a reference, so the loss is permanent.
+    ///
+    /// **This agrees with T-620 (`9d38854`) rather than cutting across it.** That fix made the
+    /// delete sweep a candidate-set delete because an asset whose owning row has not imported from
+    /// CloudKit yet is indistinguishable from an unreferenced one — deletion errs toward keeping.
+    /// So does this: a refused commit un-inserts the assets and writes **no reference at all**,
+    /// costing the user the paste rather than leaving a token pointing at nothing. Neither end ever
+    /// leaves markdown referencing an asset the store does not hold.
+    ///
+    /// `[]` is already this function's refusal (`allowsImageInsertion`), and
+    /// `CadenceTextView.insertMarkdownImages` no-ops on an empty list, so a refused commit reaches
+    /// the text layer as "there are no images", which is exactly true.
     private func createAssets(images: [NSImage], urls: [URL]) -> [MarkdownImageAsset] {
         guard allowsImageInsertion else { return [] }
         var assets = MarkdownImageAssetService.createAssets(fromFileURLs: urls, in: modelContext)
         assets.append(contentsOf: images.compactMap {
             MarkdownImageAssetService.createAsset(from: $0, in: modelContext)
         })
-        try? modelContext.save()
+        guard !assets.isEmpty else { return [] }
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: assets, in: modelContext)
+        } catch {
+            imageFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return []
+        }
+        imageFailureNotice = nil
         return assets
     }
 

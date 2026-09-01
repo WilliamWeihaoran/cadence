@@ -59,6 +59,10 @@ struct iOSMarkdownEditingSurface: View {
     @State private var selectedRange = NSRange(location: 0, length: 0)
     @State private var isImagePickerPresented = false
     @State private var selectedImageItems: [PhotosPickerItem] = []
+    /// Set when an image insertion's commit is refused (T-629). Drawn under the format toolbar,
+    /// because this editor has no sheet to close and no other way to say that the picture the user
+    /// just pasted or picked is not in the store.
+    @State private var imageFailureNotice: String?
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
     @State private var selectedEmbeddedTask: AppTask?
     /// Held rather than computed in `body`. Backlinks run a regex over *every* other note's content,
@@ -154,6 +158,12 @@ struct iOSMarkdownEditingSurface: View {
                 templateKind: templateKind,
                 applyTemplate: applyTemplate
             )
+
+            if let imageFailureNotice {
+                CadenceInlineFailureNotice(text: imageFailureNotice)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+            }
 
             if let context = referenceCompletionContext {
                 iOSMarkdownReferenceCompletionStrip(
@@ -329,6 +339,20 @@ struct iOSMarkdownEditingSurface: View {
         isImagePickerPresented = true
     }
 
+    /// The photos-picker door.
+    ///
+    /// **T-629.** `MarkdownImageAssetService.createAsset` does `modelContext.insert(asset)` and
+    /// nothing else, so this frame owns the commit — and it used to swallow it. The picture still
+    /// rendered, because the context held the row; it stopped the first time anything unrelated
+    /// called `rollback()` on the app's single context, and by then the draft had already been
+    /// given a `![…](cadence-image://<uuid>)` reference to an asset that never existed. Nothing
+    /// rewrites a note to drop such a reference, so the loss is permanent.
+    ///
+    /// **The direction of the refusal agrees with T-620 (`9d38854`)**, which made the delete sweep
+    /// a candidate-set delete so an asset whose owner has not synced yet is kept rather than
+    /// collected. Both ends now refuse to leave markdown pointing at a row the store does not hold:
+    /// here the commit's undo removes the assets and the markdown is never written, so a refused
+    /// insertion costs the user the pictures and nothing else.
     @MainActor
     private func insertPickedImages(_ items: [PhotosPickerItem]) async {
         defer { selectedImageItems = [] }
@@ -341,7 +365,13 @@ struct iOSMarkdownEditingSurface: View {
             insertedAssets.append(asset)
         }
         guard !insertedAssets.isEmpty else { return }
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: insertedAssets, in: modelContext)
+        } catch {
+            imageFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        imageFailureNotice = nil
 
         let markdown = insertedAssets
             .map { MarkdownImageAssetService.markdown(for: $0) }
@@ -360,14 +390,24 @@ struct iOSMarkdownEditingSurface: View {
     /// The paste door. Returning `[]` is how the refusal reaches UIKit: `insertPastedImages`
     /// declines on an empty result and `iOSMarkdownTextView.paste(_:)` falls through to
     /// `super.paste`, so a refused image paste is an ordinary paste rather than a swallowed one.
+    ///
+    /// **T-629 gave it a second reason to answer `[]`**: a commit the store refused. Same sentence
+    /// as `insertPickedImages` above — the assets are un-inserted, no reference is written, and the
+    /// notice says so — reached through the answer this door already had rather than a second
+    /// refusal mechanism.
     private func createPastedImageAssets(_ images: [UIImage]) -> [MarkdownImageAsset] {
         guard allowsImageInsertion else { return [] }
         let assets = images.compactMap { image in
             MarkdownImageAssetService.createAsset(from: image, in: modelContext)
         }
-        if !assets.isEmpty {
-            try? modelContext.save()
+        guard !assets.isEmpty else { return [] }
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: assets, in: modelContext)
+        } catch {
+            imageFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return []
         }
+        imageFailureNotice = nil
         return assets
     }
 

@@ -1058,10 +1058,13 @@ enum CadenceSaveCommitRule {
         "Cadence/macOS/Views/ListNotesSupportViews.swift": ["toggleEmbeddedTask"],
         "Cadence/macOS/Views/NoteEditorPane.swift": ["toggleEmbeddedTask"],
         "Cadence/macOS/Views/NotePanel.swift": ["toggleEmbeddedTask"],
-        // [[T-629]]: a markdown image asset inserted by `MarkdownImageAssetService.createAsset`
-        // and committed by a `try?`. The note keeps a `![…](asset-id)` reference either way.
-        "Cadence/iOS/iOSMarkdownEditingSurface.swift": ["createPastedImageAssets", "insertPickedImages"],
-        "Cadence/macOS/Editor/MarkdownEditorView.swift": ["createAssets", "createInlineTag"],
+        // T-629 emptied the two image doors out of this list: macOS's `createAssets` and iOS's
+        // `createPastedImageAssets`/`insertPickedImages` commit through `commitInsert` now and
+        // write no reference over a refused commit, pinned by
+        // `CadenceMarkdownImageCommitSurfaceTests`. `createInlineTag` stays because it is a
+        // different ticket's shape — [[T-631]]'s: `TagSupport.resolveTags` inserts the `Tag` row
+        // one frame down.
+        "Cadence/macOS/Editor/MarkdownEditorView.swift": ["createInlineTag"],
         // [[T-631]]'s family: `TagSupport.resolveTags`/`setTags` insert the `Tag` row, the caller
         // swallows the commit, and a phantom tag turns up in Settings › Tags on the next
         // unrelated save.
