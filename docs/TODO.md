@@ -1269,6 +1269,20 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   verbatim. Re-run each calling suite after: a body that legitimately writes its report twice would
   start failing, and if one exists it is worth knowing about.
 
+- [T-660] **The agent-guide cap is stated in one unit and enforced in another, and it has now cost a
+  batch.** `AgentContextBudgetTests.expectLineCount` splits on `"\n"` with
+  `omittingEmptySubsequences: false`, so a file ending in a trailing newline — every file here — counts
+  **one higher than `wc -l`**. The limit is 200 by that count, i.e. **199 by `wc -l`**.
+  Measured 2026-09-01: a Batch B agent added one line to `AGENTS.md`, checked `wc -l`, read **200**,
+  reported *"AGENTS.md is at 200 lines, the cap"* and committed. The integration pass at merged HEAD
+  came back `** TEST FAILED **` with `(lineCount → 201) <= (limit → 200)`. The agent was careful and
+  measured; the instrument disagreed with the rule's own wording.
+  Neither the test's failure message nor `AGENTS.md` says which count is meant, so **every agent that
+  reaches for the obvious tool gets the wrong answer by exactly one.**
+  Fix shape: make the message self-describing — report both counts, or name the `wc -l` equivalent in
+  the same sentence — and say the unit wherever the cap is written down. This is the [[T-644]] /
+  [[T-659]] family: an instrument that reads something slightly other than what the rule says.
+
 ## Done
 
 - [T-636] **CLOSED 2026-09-01.** All five parts resolved across two batches: (a) `afff149`,

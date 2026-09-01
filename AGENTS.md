@@ -44,8 +44,7 @@ bare `xcodebuild`. Warning baseline is zero; any new warning is a regression.
 - `Cadence/Services/` - shared services, migrations, notifications, markdown logic, AI, MCP.
 - `Cadence/Shared/` - theme tokens, shared components, date/time utilities, presentation helpers.
 - `Cadence/macOS/` - primary desktop app surface.
-- `Cadence/macOS/Views/` - macOS feature screens and support views.
-- `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, hotkeys, deletion, scheduling.
+- `Cadence/macOS/Views/`, `.../Services/` - feature screens; focus, calendar, hotkey, deletion, scheduling.
 - `Cadence/macOS/Editor/` - AppKit-backed markdown editor bridge. High risk.
 - `Cadence/iOS/` - large iOS/iPadOS surface, not a stub; parity with macOS is not guaranteed.
 - `CadenceWidgets/` - widget extension; the `Cadence` scheme already builds it.
