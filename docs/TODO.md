@@ -1039,76 +1039,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`AppStoreReviewReadinessTests.swift:33`), not an oversight. Do this when iOS ships, with that test's
   intent addressed rather than deleted.
 
-- [T-636] **The partly-confirmed residue from the CXT sweep — four narrower findings and one Codex
-  missed.** VERIFIED 2026-09-01.
-  **(a) LANDED 2026-09-01 (`afff149`); the rest of this ticket is still open.** The real root under
-  CXT-005 was not the note repaint (which is the 96-of-112 category the rule deliberately leaves
-  alone) but `CadenceTaskMutationSupport.toggleCompletion:30-37` — **the app-wide completion spine —
-  swallowing a save over a recurrence insert.** It throws and takes `commit:` now, settling through a
-  shared `commitSettle` and restoring through `commitEdit`; `CadenceTaskStatusEditing` catches and
-  records on `CadenceTaskSettleFailureCenter`, which `iOSRootView` names once for all six surfaces.
-  `setStatus` is the same shape and is **still exempt** — see [[T-643]].
-  **(b) LANDED 2026-09-01.** CXT-007's own sentence — `return true` from a `-> Bool` drop handler,
-  by the repo's own words (`TasksPanelDropCoordinator:29-32`: *"a silent accept says the move
-  happened"*) — **was already in `successReport`**: [[T-627]] gap 4 put it there, gated on the
-  declaration's return type, and the two sites it found
-  (`CalendarPageBoardSupportViews.unschedule`, `TasksPanelSupport.assignTask`) have been ledgered
-  against this ticket since. The gate is load-bearing and stays: a `return true` inside a
-  `removeAll { … }` predicate is not a report, and
-  `returningTrueIsASuccessReportOnlyFromADeclarationThatAnswersBool` pins that, with a fixture that
-  is exactly that shape. The one sub-case the gate does hide — a `return true` from
-  a Bool-answering **closure** inside a `var body` — has **zero instances**: measured 2026-09-01,
-  no `dropDestination` / `onDrop` / `performDrop` body in the app holds a swallowed commit.
-  What was genuinely missing was the **other half of the same sentence**. `Bool` and `Optional` are
-  the two return types in which a declaration can say *"it did not work"*, so they are the two in
-  which the answer **is** the report — and the Optional spelling was outside the vocabulary.
-  `successReport` reads it now: a `-> X?` that returns anything other than `nil` in the swallowed
-  commit's own block. **37 flagged declarations became 39**, and both new ones are real:
-  `iOSMarkdownEditingSurface.toggleEmbeddedSubtask` ([[T-648]]) and
-  `MarkdownEditorView.createInlineTag` ([[T-631]]'s second half — the phantom tag is written into
-  the note's text, not only into Settings › Tags). Scoped to the frame that *builds* the answer;
-  one frame down it adds three sites and all three are forwards, recorded at the call site.
-  **(c) LANDED 2026-09-01 (`7ca3c29`).** `CadenceFocusSupport.complete` throws and takes `commit:`; it
-  settles through the shared `CadenceTaskMutationSupport.commitSettle` and restores the three
-  accumulators `logElapsedSeconds` writes with `+=`, which is the half the rule's standing
-  *"the next fetch corrects it"* does not cover — a fetch re-reads whatever the counter now holds,
-  so a lost `+=` stays lost, and `actualMinutes` feeds an hours-based `Goal`.
-  `CadenceTaskStatusEditing.completeFocusSession` records the refusal on
-  `CadenceTaskSettleFailureCenter` **and answers `false`**, because `iOSFocusView.complete` has
-  something to do with that answer the shared alert cannot: the elapsed seconds exist nowhere but
-  the stopwatch, so `resetTimer()` over a refusal loses them for good.
-  Pinned by `CadenceFocusSessionAndBlockCommitTests`. **Residue: [[T-654]]**, the block timer's own
-  door onto the same accumulators. The general `+=` merge question stays [[T-621]]'s.
-  **(d) RESOLVED DOWNWARD 2026-09-01 — both are non-defects under this rule.** Re-checked against
-  the source rather than the report. CXT-012 and CXT-015 are EventKit writes, not `ModelContext`
-  commits, so the `try? save()` rule does not reach them at all: there is no pending change, no
-  single shared context, and nothing for a later unrelated `save()` to take. Nor are they silent —
-  every failure path in `CalendarManager` (`createStandaloneEvent`, both `updateEvent` overloads,
-  `deleteEvent`, `save(_:span:describing:)`) returns through `record(_:)`, which sets
-  `lastWriteFailure`, and both macOS hosts mount the alert that presents it
-  (`SchedulePanel.swift:180`, `CalendarPageView.swift:149`). The single deliberate exception —
-  `updateEventNotes(calendarEventID:)` returning `.eventNotFound` unrecorded — carries its own doc
-  saying why (a debounced flush would raise the modal on a loop) and reports inline instead.
-  **The one real residue is lost draft text**, and it is a parity gap rather than a swallowed
-  failure: iOS keeps the sheet open on a refused write, macOS closes the popover and discards the
-  title, notes, calendar and time range. Filed as [[T-658]]; the CXT ids are closed here.
-  **(e) LANDED 2026-09-01 (`7ca3c29`) for `SchedulePanel`; two sibling canvases remain as [[T-655]].**
-  Confirmed as filed: `onCreateBundle` called `SchedulingActions.createBundle`
-  (`context.insert(bundle)`, no save), added the ticked tasks, and let `finishDraftCreation()`
-  dismiss the draft popover. `SchedulingActions.insertBundle(title:dateKey:startMin:endMin:adding:in:commit:)`
-  is the committing unit now — the block **and** its membership as one insert, because committing
-  the block first would store an empty one and leave the member edits pending — and it restores the
-  five fields `addTask` writes on each member when the commit is refused. The `do/catch` lives in
-  `SchedulePanel`, which is the frame that owns the unit of work, and the refusal is an alert on the
-  panel: the popover is gone by the time the store answers.
-  The event branch beside it was left alone, as filed — EventKit failures already travel through
-  `CalendarManager.lastWriteFailure` to `.calendarWriteFailureAlert()`.
-  **CXT-003 is CLOSED as not-a-defect, 2026-09-01** — re-checked and confirmed: `linkedCalendarID`
-  is an in-place field edit on an object the store already holds, nothing inserts, deletes,
-  dismisses or reports, and the macOS path is `do/catch` with a `print`, not a `try?`. It is the
-  96-of-112 category the rule deliberately leaves alone. If it belongs anywhere it is under
-  [[T-614]]'s open question, which is the user's to decide and is **not** started here.
-
 - [T-637] **Widen the icon-only-button ledger from `Cadence/iOS/` to the whole app.** From [[T-611]],
   which scoped its new detector to iOS deliberately: at the time, [[T-610]] was still rewriting
   `knownUnnamedTooltipSites` over the same moving file set, and **two exact ledgers over one file set
@@ -1340,6 +1270,81 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   start failing, and if one exists it is worth knowing about.
 
 ## Done
+
+- [T-636] **CLOSED 2026-09-01.** All five parts resolved across two batches: (a) `afff149`,
+  (b) `a84aced`, (c) and (e) `7ca3c29`, (d) resolved downward. **Two of the five were not what the
+  ticket said**, and both corrections came from an agent reading the source rather than the audit:
+  (b)'s named gap was already closed, and the real gap was the other half of the same sentence;
+  (d)'s two findings turned out to be outside the rule entirely. Residue: [[T-654]], [[T-655]],
+  [[T-657]], [[T-658]], and [[T-643]].
+  **(a) LANDED (`afff149`).** The real root under
+  CXT-005 was not the note repaint (which is the 96-of-112 category the rule deliberately leaves
+  alone) but `CadenceTaskMutationSupport.toggleCompletion:30-37` — **the app-wide completion spine —
+  swallowing a save over a recurrence insert.** It throws and takes `commit:` now, settling through a
+  shared `commitSettle` and restoring through `commitEdit`; `CadenceTaskStatusEditing` catches and
+  records on `CadenceTaskSettleFailureCenter`, which `iOSRootView` names once for all six surfaces.
+  `setStatus` is the same shape and is **still exempt** — see [[T-643]].
+  **(b) LANDED 2026-09-01.** CXT-007's own sentence — `return true` from a `-> Bool` drop handler,
+  by the repo's own words (`TasksPanelDropCoordinator:29-32`: *"a silent accept says the move
+  happened"*) — **was already in `successReport`**: [[T-627]] gap 4 put it there, gated on the
+  declaration's return type, and the two sites it found
+  (`CalendarPageBoardSupportViews.unschedule`, `TasksPanelSupport.assignTask`) have been ledgered
+  against this ticket since. The gate is load-bearing and stays: a `return true` inside a
+  `removeAll { … }` predicate is not a report, and
+  `returningTrueIsASuccessReportOnlyFromADeclarationThatAnswersBool` pins that, with a fixture that
+  is exactly that shape. The one sub-case the gate does hide — a `return true` from
+  a Bool-answering **closure** inside a `var body` — has **zero instances**: measured 2026-09-01,
+  no `dropDestination` / `onDrop` / `performDrop` body in the app holds a swallowed commit.
+  What was genuinely missing was the **other half of the same sentence**. `Bool` and `Optional` are
+  the two return types in which a declaration can say *"it did not work"*, so they are the two in
+  which the answer **is** the report — and the Optional spelling was outside the vocabulary.
+  `successReport` reads it now: a `-> X?` that returns anything other than `nil` in the swallowed
+  commit's own block. **37 flagged declarations became 39**, and both new ones are real:
+  `iOSMarkdownEditingSurface.toggleEmbeddedSubtask` ([[T-648]]) and
+  `MarkdownEditorView.createInlineTag` ([[T-631]]'s second half — the phantom tag is written into
+  the note's text, not only into Settings › Tags). Scoped to the frame that *builds* the answer;
+  one frame down it adds three sites and all three are forwards, recorded at the call site.
+  **(c) LANDED 2026-09-01 (`7ca3c29`).** `CadenceFocusSupport.complete` throws and takes `commit:`; it
+  settles through the shared `CadenceTaskMutationSupport.commitSettle` and restores the three
+  accumulators `logElapsedSeconds` writes with `+=`, which is the half the rule's standing
+  *"the next fetch corrects it"* does not cover — a fetch re-reads whatever the counter now holds,
+  so a lost `+=` stays lost, and `actualMinutes` feeds an hours-based `Goal`.
+  `CadenceTaskStatusEditing.completeFocusSession` records the refusal on
+  `CadenceTaskSettleFailureCenter` **and answers `false`**, because `iOSFocusView.complete` has
+  something to do with that answer the shared alert cannot: the elapsed seconds exist nowhere but
+  the stopwatch, so `resetTimer()` over a refusal loses them for good.
+  Pinned by `CadenceFocusSessionAndBlockCommitTests`. **Residue: [[T-654]]**, the block timer's own
+  door onto the same accumulators. The general `+=` merge question stays [[T-621]]'s.
+  **(d) RESOLVED DOWNWARD 2026-09-01 — both are non-defects under this rule.** Re-checked against
+  the source rather than the report. CXT-012 and CXT-015 are EventKit writes, not `ModelContext`
+  commits, so the `try? save()` rule does not reach them at all: there is no pending change, no
+  single shared context, and nothing for a later unrelated `save()` to take. Nor are they silent —
+  every failure path in `CalendarManager` (`createStandaloneEvent`, both `updateEvent` overloads,
+  `deleteEvent`, `save(_:span:describing:)`) returns through `record(_:)`, which sets
+  `lastWriteFailure`, and both macOS hosts mount the alert that presents it
+  (`SchedulePanel.swift:180`, `CalendarPageView.swift:149`). The single deliberate exception —
+  `updateEventNotes(calendarEventID:)` returning `.eventNotFound` unrecorded — carries its own doc
+  saying why (a debounced flush would raise the modal on a loop) and reports inline instead.
+  **The one real residue is lost draft text**, and it is a parity gap rather than a swallowed
+  failure: iOS keeps the sheet open on a refused write, macOS closes the popover and discards the
+  title, notes, calendar and time range. Filed as [[T-658]]; the CXT ids are closed here.
+  **(e) LANDED 2026-09-01 (`7ca3c29`) for `SchedulePanel`; two sibling canvases remain as [[T-655]].**
+  Confirmed as filed: `onCreateBundle` called `SchedulingActions.createBundle`
+  (`context.insert(bundle)`, no save), added the ticked tasks, and let `finishDraftCreation()`
+  dismiss the draft popover. `SchedulingActions.insertBundle(title:dateKey:startMin:endMin:adding:in:commit:)`
+  is the committing unit now — the block **and** its membership as one insert, because committing
+  the block first would store an empty one and leave the member edits pending — and it restores the
+  five fields `addTask` writes on each member when the commit is refused. The `do/catch` lives in
+  `SchedulePanel`, which is the frame that owns the unit of work, and the refusal is an alert on the
+  panel: the popover is gone by the time the store answers.
+  The event branch beside it was left alone, as filed — EventKit failures already travel through
+  `CalendarManager.lastWriteFailure` to `.calendarWriteFailureAlert()`.
+  **CXT-003 is CLOSED as not-a-defect, 2026-09-01** — re-checked and confirmed: `linkedCalendarID`
+  is an in-place field edit on an object the store already holds, nothing inserts, deletes,
+  dismisses or reports, and the macOS path is `do/catch` with a `print`, not a `try?`. It is the
+  96-of-112 category the rule deliberately leaves alone. If it belongs anywhere it is under
+  [[T-614]]'s open question, which is the user's to decide and is **not** started here.
+
 - [T-631] **CLOSED 2026-09-01 (`0ddbbb7`).** All six inline "create tag" doors commit through
   `TagSupport.resolveTagsCommittingInsertions(named:in:commit:)` /
   `TagSupport.committedTag(named:in:)`, which live in
