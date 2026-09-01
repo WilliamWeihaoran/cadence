@@ -220,19 +220,17 @@ struct CadenceCalendarLinkObservationsTests {
     /// this, a calendar linked from the list editor by someone who never opens the calendar settings
     /// screen would be a link this device could never report as broken.
     @Test func recordingAPickAddsTheIdentifierAndIgnoresTheUnlinkSentinel() throws {
-        let suiteName = "com.haoranwei.Cadence.tests.linkObservations.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        try withTemporaryDefaults("CadenceTests.linkObservations") { defaults in
+            CadenceCalendarLinkObservations.recordPick("", replacing: "cal-work", defaults: defaults)
+            #expect(defaults.string(forKey: CadenceCalendarLinkObservations.observedCalendarIDsKey) == nil)
 
-        CadenceCalendarLinkObservations.recordPick("", replacing: "cal-work", defaults: defaults)
-        #expect(defaults.string(forKey: CadenceCalendarLinkObservations.observedCalendarIDsKey) == nil)
+            CadenceCalendarLinkObservations.recordPick("cal-work", replacing: "", defaults: defaults)
+            CadenceCalendarLinkObservations.recordPick("cal-home", replacing: "cal-work", defaults: defaults)
+            CadenceCalendarLinkObservations.recordPick("cal-work", replacing: "cal-home", defaults: defaults)
 
-        CadenceCalendarLinkObservations.recordPick("cal-work", replacing: "", defaults: defaults)
-        CadenceCalendarLinkObservations.recordPick("cal-home", replacing: "cal-work", defaults: defaults)
-        CadenceCalendarLinkObservations.recordPick("cal-work", replacing: "cal-home", defaults: defaults)
-
-        let raw = defaults.string(forKey: CadenceCalendarLinkObservations.observedCalendarIDsKey) ?? ""
-        #expect(CadenceCalendarLinkObservations.observedCalendarIDs(from: raw) == ["cal-home", "cal-work"])
+            let raw = defaults.string(forKey: CadenceCalendarLinkObservations.observedCalendarIDsKey) ?? ""
+            #expect(CadenceCalendarLinkObservations.observedCalendarIDs(from: raw) == ["cal-home", "cal-work"])
+        }
     }
 
     /// **The hole in the first cut of this fix, found before it shipped and pinned here.**
@@ -246,31 +244,29 @@ struct CadenceCalendarLinkObservationsTests {
     /// Only a **changed** selection is an observation, because only a changed selection came off a
     /// menu of live calendars.
     @Test func aSaveThatDidNotChangeTheCalendarRecordsNothing() throws {
-        let suiteName = "com.haoranwei.Cadence.tests.linkObservations.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        try withTemporaryDefaults("CadenceTests.linkObservations") { defaults in
+            // The list editor, opened on a list another device linked, saved after a rename.
+            CadenceCalendarLinkObservations.recordPick(
+                "cal-from-another-device",
+                replacing: "cal-from-another-device",
+                defaults: defaults
+            )
+            #expect(defaults.string(forKey: CadenceCalendarLinkObservations.observedCalendarIDsKey) == nil)
 
-        // The list editor, opened on a list another device linked, saved after a rename.
-        CadenceCalendarLinkObservations.recordPick(
-            "cal-from-another-device",
-            replacing: "cal-from-another-device",
-            defaults: defaults
-        )
-        #expect(defaults.string(forKey: CadenceCalendarLinkObservations.observedCalendarIDsKey) == nil)
-
-        // And the whole point: with no observation, that link is not reported as broken here.
-        let home = area("Home", linkedTo: "cal-from-another-device")
-        #expect(
-            CadenceCalendarLinkHealth.missingLinks(
-                areas: [home],
-                projects: [],
-                liveCalendarIDs: ["cal-this-device"],
-                observedCalendarIDs: CadenceCalendarLinkObservations.observedCalendarIDs(
-                    from: defaults.string(forKey: CadenceCalendarLinkObservations.observedCalendarIDsKey) ?? ""
-                ),
-                isCalendarAccessAuthorized: true
-            ).isEmpty
-        )
+            // And the whole point: with no observation, that link is not reported as broken here.
+            let home = area("Home", linkedTo: "cal-from-another-device")
+            #expect(
+                CadenceCalendarLinkHealth.missingLinks(
+                    areas: [home],
+                    projects: [],
+                    liveCalendarIDs: ["cal-this-device"],
+                    observedCalendarIDs: CadenceCalendarLinkObservations.observedCalendarIDs(
+                        from: defaults.string(forKey: CadenceCalendarLinkObservations.observedCalendarIDsKey) ?? ""
+                    ),
+                    isCalendarAccessAuthorized: true
+                ).isEmpty
+            )
+        }
     }
 
     /// The key is a preference, so renaming it silently drops every observation the installed build

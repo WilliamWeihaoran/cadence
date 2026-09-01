@@ -1306,32 +1306,41 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the answer. `AppStoreReviewReadinessTests.appInfoPlistContainsReviewReadyPrivacyKeys` reads the
   **file**, so today it is asserting over the copy that may not be the one that ships.
 
-- [T-667] **Nine suites cannot be reached by `-only-testing:` at all, and the repo's own tool hands
+- [T-667] **Three suites cannot be reached by `-only-testing:` at all, and the repo's own tool hands
   you the identifier that runs nothing.** Found 2026-09-01 while measuring [[T-644]]'s blast radius:
   a 52-suite scoped run reported `** TEST SUCCEEDED **` over 593 tests, and **four of the 52 had
   executed nothing**. Caught only by diffing the `✔ Suite` lines against the requested flags.
-  The four carry `@Suite("display name")`. Measured, both spellings, each on its own:
-  `-only-testing:CadenceTests/ListDetailPageTests` → `Executed 0 tests`, exit 0;
-  `-only-testing:CadenceTests/List detail page resolution` → `Executed 0 tests`, exit 0. In a **full**
-  run the suite does execute, printing `◇ Suite "List detail page resolution" started` — so these are
-  not dead tests, they are tests no scoped run can select.
-  **`scripts/test-suite-index.sh --scope planningResolvesToTasks` answers
-  `-only-testing:CadenceTests/ListDetailPageTests`** — the unusable one. The script reads `struct X`
-  and never looks at the `@Suite` attribute above it, so for these nine it confidently returns the
-  wrong answer, which is worse than no answer: the runbook tells agents to trust it.
+  **The trigger was mis-attributed when filed, and the corrected rule is narrower and stranger.**
+  The original entry blamed `@Suite("display name")` and listed nine suites. Measured 2026-09-01 by
+  running each alone, one full build per probe:
+  - `CadenceTodayRolloverSurfaceTests` — `@Suite("Today rollover")`, cases are bare `@Test func` →
+    **25 tests executed.** Selectable.
+  - `CadenceTestTargetHygieneTests` — no suite display name, cases are `@Test("…")` →
+    **14 tests executed.** Selectable.
+  - `ListDetailPageTests` — `@Suite("List detail page resolution")` **and** `@Test("…")` cases →
+    **0 tests**, exit 0.
+  - `MarkdownTableMobileEditingTests` — same combination → **0 tests**, exit 0.
+  **So neither attribute is sufficient on its own; a suite is unreachable only when it carries a
+  `@Suite` display name *and* its cases carry `@Test` display names.** Cross-tabulating the eight
+  display-named suite files against their case style, exactly **three** qualify:
+  `ListDetailPageTests` (9 cases), `RootModalKeyDispositionTests` (6), `MarkdownTableMobileEditingTests`
+  (27) — **42 tests**, not nine suites' worth. The other five display-named suites select normally.
+  In a **full** run all of them execute, printing `◇ Suite "…" started` — so these are not dead
+  tests, they are tests no scoped run can select.
+  **Consequence, and it is the reason this was worth measuring rather than trusting:**
+  `CadenceTodayRolloverSurfaceTests` was on the original list and is *not* affected, so the four
+  mutations [[T-635]] killed inside it stand. **No scoped run in this session touched any of the
+  three real offenders**, so nothing already landed is in doubt.
+  **`scripts/test-suite-index.sh --scope` still hands out the unusable identifier** for those three —
+  it reads `struct X` and never looks at the attributes, so it confidently returns an answer that runs
+  nothing, which is worse than no answer because the runbook tells agents to trust it.
   **`scripts/xcb.sh`'s zero-test guard cannot see this.** It counts results for the whole run, so a
-  suite that contributes nothing inside a multi-suite run is invisible; the guard fires only when a
+  suite contributing nothing inside a multi-suite run is invisible; the guard fires only when such a
   suite is scoped alone. That is the [[T-552]] hazard surviving inside the mitigation for it.
-  The nine: `CadenceCapturePaletteTests`, `CadenceTodayOverdueSummarySurfaceTests`,
-  `CadenceTodayRolloverSurfaceTests`, `CalendarDateMemoryTests`, `CalendarDateMemoryWriterTests`,
-  `CalendarRestoredPositionTests`, `ListDetailPageTests`, `RootModalKeyDispositionTests`,
-  `SectionConfigDecodingTests`.
-  Fix shape, in order of value: (a) find the spelling that *does* select a display-named suite, or
-  establish there is none; (b) teach `test-suite-index.sh` to read the `@Suite` attribute and either
-  emit the working identifier or **refuse**, rather than emitting one that silently runs nothing;
-  (c) a target-wide test that no suite carries a display name, if (a) has no answer — a display name
-  is cosmetic and being scopable is not.
-
+  Fix shape, in order of value: (a) find the spelling that *does* select one of the three, or
+  establish there is none; (b) teach `test-suite-index.sh` to read the attributes and either emit a
+  working identifier or refuse; (c) make the guard able to notice a requested suite that contributed
+  nothing, which is the only check that would have caught this without a human diffing log lines.
 - [T-668] **`cadenceFunctionBody` is a near-copy of the pre-[[T-644]] reader and still has its
   defect.** Found 2026-09-01 while closing T-644. It lives at global scope in
   `CadenceTests/FocusPickerPlayControlTests.swift:982`, takes the first `{` after the declaration
