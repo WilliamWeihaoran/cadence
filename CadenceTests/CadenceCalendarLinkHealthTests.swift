@@ -37,6 +37,7 @@ struct CadenceCalendarLinkHealthTests {
             areas: [area("Home", linkedTo: "cal-gone")],
             projects: [],
             liveCalendarIDs: ["cal-work", "cal-personal"],
+            observedCalendarIDs: ["cal-gone", "cal-work", "cal-personal"],
             isCalendarAccessAuthorized: true
         )
 
@@ -51,6 +52,7 @@ struct CadenceCalendarLinkHealthTests {
             areas: [area("Home", linkedTo: "cal-work")],
             projects: [project("Launch", linkedTo: "cal-work")],
             liveCalendarIDs: ["cal-work"],
+            observedCalendarIDs: ["cal-work"],
             isCalendarAccessAuthorized: true
         )
 
@@ -64,6 +66,7 @@ struct CadenceCalendarLinkHealthTests {
             areas: [area("Home", linkedTo: "")],
             projects: [project("Launch", linkedTo: "")],
             liveCalendarIDs: ["cal-work"],
+            observedCalendarIDs: ["cal-work"],
             isCalendarAccessAuthorized: true
         )
 
@@ -78,6 +81,7 @@ struct CadenceCalendarLinkHealthTests {
             areas: [area("Home", linkedTo: "cal-gone")],
             projects: [project("Launch", linkedTo: "cal-also-gone")],
             liveCalendarIDs: [],
+            observedCalendarIDs: ["cal-gone", "cal-also-gone"],
             isCalendarAccessAuthorized: false
         )
 
@@ -89,6 +93,7 @@ struct CadenceCalendarLinkHealthTests {
             areas: [area("Home", linkedTo: "cal-gone")],
             projects: [],
             liveCalendarIDs: [],
+            observedCalendarIDs: ["cal-gone"],
             isCalendarAccessAuthorized: true
         )
         #expect(authorized.count == 1)
@@ -104,6 +109,7 @@ struct CadenceCalendarLinkHealthTests {
             areas: [home],
             projects: [],
             liveCalendarIDs: ["cal-after"],
+            observedCalendarIDs: ["cal-before", "cal-after"],
             isCalendarAccessAuthorized: true
         )
 
@@ -121,6 +127,7 @@ struct CadenceCalendarLinkHealthTests {
             areas: [area("Archived Home", linkedTo: "cal-gone", status: .archived)],
             projects: [project("Finished Launch", linkedTo: "cal-gone", status: .done)],
             liveCalendarIDs: ["cal-work"],
+            observedCalendarIDs: ["cal-gone", "cal-work"],
             isCalendarAccessAuthorized: true
         )
 
@@ -132,6 +139,7 @@ struct CadenceCalendarLinkHealthTests {
             areas: [area("Home", linkedTo: "cal-gone")],
             projects: [project("Launch", linkedTo: "cal-gone")],
             liveCalendarIDs: [],
+            observedCalendarIDs: ["cal-gone"],
             isCalendarAccessAuthorized: true
         )
 
@@ -150,6 +158,7 @@ struct CadenceCalendarLinkHealthTests {
             areas: [home],
             projects: [],
             liveCalendarIDs: [],
+            observedCalendarIDs: ["cal-gone"],
             isCalendarAccessAuthorized: true
         ).first
 
@@ -224,6 +233,52 @@ struct CadenceCalendarLinkHealthTests {
             #expect(
                 CadenceSourceScan.matchCount("calendar\\.title *==", in: code) == 0,
                 "\(path) compares a calendar title, which is the auto-match T-390 refused"
+            )
+        }
+    }
+
+    // MARK: - T-624: this device may only judge a calendar it has seen
+
+    /// **T-624 — the evidence gate.**
+    ///
+    /// `linkedCalendarID` is an `EKCalendar.calendarIdentifier`, which Apple documents as local to
+    /// one device, and it is stored on a **CloudKit-synced** model. So a link written on one device
+    /// arrives on another as an identifier that device's EventKit has never issued. Detection read
+    /// as "not in this device's live set", which cannot tell that case apart from a calendar Apple
+    /// Calendar actually deleted — and the repair beside it writes straight back to the same synced
+    /// field, so the second device's answer overwrites the first device's.
+    ///
+    /// **Whether the identifiers really do differ across this user's devices is not measured here**
+    /// and cannot be without touching EventKit. This gate does not depend on it. It replaces
+    /// "absent" with "was here and is gone": a device declares a link dead only for an identifier
+    /// it has previously seen alive. If identifiers are shared across devices, every device
+    /// observes the id and the behaviour is exactly what it was; if they are not, the device that
+    /// never issued the id stays silent instead of offering a repair that would clobber a working
+    /// link. Either way, **a repair on one device cannot invalidate another device's link.**
+    @Test func neitherSettingsSurfaceJudgesALinkAgainstCalendarsItHasNeverSeen() throws {
+        let health = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceCalendarLinkHealth.swift")
+        )
+        #expect(
+            health.contains("observedCalendarIDs: Set<String>"),
+            "the detector still judges a link from the live set alone"
+        )
+
+        for path in [
+            "Cadence/macOS/Views/SettingsListManagementSections.swift",
+            "Cadence/iOS/iOSCalendarSettingsSection.swift"
+        ] {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            #expect(raw.count > 1_000, "\(path) read as \(raw.count) characters; that is not the file")
+            let code = CadenceSourceScan.strippingComments(raw)
+
+            #expect(
+                code.contains("observedCalendarIDs:"),
+                "\(path) does not pass what this device has actually seen"
+            )
+            #expect(
+                code.contains("CadenceCalendarLinkObservations"),
+                "\(path) does not maintain the device-local observation set"
             )
         }
     }

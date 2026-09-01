@@ -11,6 +11,8 @@ struct SettingsCalendarSection: View {
     let modelContext: ModelContext
 
     @AppStorage(CalendarVisibilityPreferences.hiddenCalendarIDsKey) private var hiddenCalendarIDsRaw = ""
+    /// **T-624.** Device-local, never synced: the identifiers this Mac has seen EventKit carry.
+    @AppStorage(CadenceCalendarLinkObservations.observedCalendarIDsKey) private var observedCalendarIDsRaw = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -30,6 +32,8 @@ struct SettingsCalendarSection: View {
                 calendarAccessCard
             }
         }
+        .onAppear { refreshCalendarObservations() }
+        .onChange(of: calendarManager.storeVersion) { refreshCalendarObservations() }
     }
 
     private var activeAreas: [Area] {
@@ -58,8 +62,28 @@ struct SettingsCalendarSection: View {
             areas: areas,
             projects: projects,
             liveCalendarIDs: Set(calendars.map(\.calendarIdentifier)),
+            observedCalendarIDs: CadenceCalendarLinkObservations.observedCalendarIDs(from: observedCalendarIDsRaw),
             isCalendarAccessAuthorized: calendarManager.isAuthorized
         )
+    }
+
+    /// **T-624.** Learns the identifiers this Mac can currently see behind a live link, and forgets
+    /// the ones no list points at any more.
+    ///
+    /// Run on appear *and* on a store change, because a cold launch renders this screen before
+    /// EventKit has finished handing over its calendars, and run again after every link write —
+    /// a calendar linked here is by definition one this device can see, and waiting for the next
+    /// appearance to notice would leave that link unvouched-for in between.
+    private func refreshCalendarObservations() {
+        let updated = CadenceCalendarLinkObservations.observing(
+            linkedCalendarIDs: CadenceCalendarLinkObservations.linkedCalendarIDs(areas: areas, projects: projects),
+            liveCalendarIDs: Set(calendars.map(\.calendarIdentifier)),
+            isCalendarAccessAuthorized: calendarManager.isAuthorized,
+            observed: CadenceCalendarLinkObservations.observedCalendarIDs(from: observedCalendarIDsRaw)
+        )
+        let raw = CadenceCalendarLinkObservations.rawObservedCalendarIDs(from: updated)
+        guard raw != observedCalendarIDsRaw else { return }
+        observedCalendarIDsRaw = raw
     }
 
     private var missingLinksCard: some View {
@@ -198,6 +222,7 @@ struct SettingsCalendarSection: View {
         } catch {
             print("SettingsCalendarSection: failed to save calendar links: \(error)")
         }
+        refreshCalendarObservations()
     }
 }
 

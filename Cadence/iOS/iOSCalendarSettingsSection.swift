@@ -11,6 +11,8 @@ struct iOSCalendarSettingsSection: View {
     let modelContext: ModelContext
 
     @AppStorage(CalendarVisibilityPreferences.hiddenCalendarIDsKey) private var hiddenCalendarIDsRaw = ""
+    /// **T-624.** Device-local, never synced: the identifiers this device has seen EventKit carry.
+    @AppStorage(CadenceCalendarLinkObservations.observedCalendarIDsKey) private var observedCalendarIDsRaw = ""
 
     private var activeAreas: [Area] {
         areas.filter(\.isActive)
@@ -38,8 +40,24 @@ struct iOSCalendarSettingsSection: View {
             areas: areas,
             projects: projects,
             liveCalendarIDs: Set(calendars.map(\.calendarIdentifier)),
+            observedCalendarIDs: CadenceCalendarLinkObservations.observedCalendarIDs(from: observedCalendarIDsRaw),
             isCalendarAccessAuthorized: calendarManager.isAuthorized
         )
+    }
+
+    /// **T-624.** The macOS surface's `refreshCalendarObservations()`, same rule and same three
+    /// call sites: appear, store change, and every link write. See
+    /// `CadenceCalendarLinkObservations` for why the record is device-local.
+    private func refreshCalendarObservations() {
+        let updated = CadenceCalendarLinkObservations.observing(
+            linkedCalendarIDs: CadenceCalendarLinkObservations.linkedCalendarIDs(areas: areas, projects: projects),
+            liveCalendarIDs: Set(calendars.map(\.calendarIdentifier)),
+            isCalendarAccessAuthorized: calendarManager.isAuthorized,
+            observed: CadenceCalendarLinkObservations.observedCalendarIDs(from: observedCalendarIDsRaw)
+        )
+        let raw = CadenceCalendarLinkObservations.rawObservedCalendarIDs(from: updated)
+        guard raw != observedCalendarIDsRaw else { return }
+        observedCalendarIDsRaw = raw
     }
 
     private var missingLinksCard: some View {
@@ -85,7 +103,9 @@ struct iOSCalendarSettingsSection: View {
         }
         .onAppear {
             calendarManager.refreshAuthorizationState()
+            refreshCalendarObservations()
         }
+        .onChange(of: calendarManager.storeVersion) { refreshCalendarObservations() }
     }
 
     private var calendarsCard: some View {
@@ -206,6 +226,7 @@ struct iOSCalendarSettingsSection: View {
 
     private func saveCalendarLinks() {
         try? modelContext.save()
+        refreshCalendarObservations()
     }
 }
 

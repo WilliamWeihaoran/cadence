@@ -121,6 +121,11 @@ struct EditAreaSheet: View {
         area.colorHex = selectedColor
         area.icon = selectedIcon
         area.linkedCalendarID = selectedCalendarID
+        // **T-624.** The pick came from a menu of live calendars, so this Mac has just seen the
+        // identifier; recording it here is what lets `CadenceCalendarLinkHealth` later vouch that
+        // the calendar is gone rather than merely unknown to this device. Settings has its own
+        // refresh, and a list linked only from this sheet would otherwise never reach it.
+        CadenceCalendarLinkObservations.record(selectedCalendarID)
         area.hideDueDateIfEmpty = hideDueDateIfEmpty
         area.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
     }
@@ -340,6 +345,8 @@ struct EditProjectSheet: View {
         project.icon = selectedIcon
         project.dueDate = hasDueDate ? DateFormatters.dateKey(from: dueDate) : ""
         project.linkedCalendarID = selectedCalendarID
+        // **T-624**, as in `EditAreaSheet.applyEdits()` above.
+        CadenceCalendarLinkObservations.record(selectedCalendarID)
         project.hideDueDateIfEmpty = hideDueDateIfEmpty
         project.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
     }
