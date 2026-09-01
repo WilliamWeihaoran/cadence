@@ -137,6 +137,102 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         task.recurrenceSpawnedTaskID = nextTask.id
     }
 
+    // MARK: - Forked successor chains (T-622)
+
+    /// One spawned occurrence's identity: which series, and where in it.
+    ///
+    /// Both halves are already written on every successor by `makeNextRecurringTask`, which is why
+    /// [[T-622]] needs no stored property: a fork is *identifiable* today, it was simply never
+    /// collapsed.
+    nonisolated struct OccurrenceKey: Hashable, Sendable {
+        let seriesID: UUID
+        let occurrenceIndex: Int
+    }
+
+    /// The occurrences two devices minted for the same slot in one series.
+    ///
+    /// **How the fork happens.** `spawnNextOccurrenceIfNeeded` guards on
+    /// `recurrenceSpawnedTaskID == nil` against the **local replica** and then inserts. Two devices
+    /// completing the same occurrence before their records meet each insert a successor and each
+    /// write their own id into a single `String` pointer, so CloudKit keeps both tasks and can name
+    /// only one of them as the successor. The outcome is proliferation: a second occurrence with
+    /// its own reminders, in the same list, on the same day.
+    ///
+    /// **Only spawned rows are grouped.** A non-empty `recurrenceSeriesIDRaw` is required because
+    /// the computed `recurrenceSeriesID` falls back to the task's own `id` — grouping on the
+    /// computed value would put every non-recurring task in a series of its own and invite a future
+    /// reader to widen this by accident. `recurrenceOccurrenceIndex > 0` excludes the series
+    /// origin, whose series id *is* its own id and therefore cannot collide with another row.
+    static func duplicateOccurrenceGroups(among tasks: [AppTask]) -> [[AppTask]] {
+        var groups: [OccurrenceKey: [AppTask]] = [:]
+        for task in tasks where !task.recurrenceSeriesIDRaw.isEmpty && task.recurrenceOccurrenceIndex > 0 {
+            let key = OccurrenceKey(
+                seriesID: task.recurrenceSeriesID,
+                occurrenceIndex: task.recurrenceOccurrenceIndex
+            )
+            groups[key, default: []].append(task)
+        }
+        return groups.values.filter { $0.count > 1 }
+    }
+
+    /// Which row of a forked group survives, and which of the others may be removed.
+    ///
+    /// **The survivor is the lowest `id.uuidString`, and nothing else, because the rule has to give
+    /// the same answer on every device.** A rule that reads local state — "keep the one that was
+    /// completed", "keep the newest", "keep the first the fetch returned" — is not a tie-break, it
+    /// is a second fork: device A keeps X and deletes Y while device B keeps Y and deletes X, and
+    /// the occurrence disappears entirely. Turning a duplicate into a *deletion* is strictly worse
+    /// than the duplicate. `id` is immutable, synced with the record, and totally ordered, so every
+    /// device that can see the group computes the same survivor with no coordination.
+    ///
+    /// **Only untouched clones are removed.** The survivor is chosen without reference to work, so
+    /// the protection for work lives here instead: a row is removable only if it still looks like
+    /// the copy the spawn made — open, never settled, no time logged, not in a bundle, no successor
+    /// of its own, no ticked subtask, and the same title/notes/dates as the survivor. Anything else
+    /// is a task the user has acted on, and it stays. That is the answer to "what about a duplicate
+    /// that has already been completed or has reminders scheduled": a **completed** one is never
+    /// collected, and a removable one's reminders go with it, because the delete runs through
+    /// `CadenceTaskMutationSupport.deleteTasks`, which cancels a deleted task's notifications.
+    ///
+    /// The cost of that conservatism, stated: if the *lowest-id* row is the pristine one and
+    /// another in the group has been worked on, nothing is removed and the user still sees two
+    /// occurrences. Leaving a visible duplicate is the right side of this trade — it is the side
+    /// the user can fix.
+    ///
+    /// Residual, also stated: a device holding a *stale* replica of a row that was completed
+    /// elsewhere sees a pristine clone and removes it. What is lost is that occurrence's completion
+    /// stamp, not its content — a spawned successor's fields are a copy of its predecessor's — and
+    /// the survivor is still there to complete. Closing that needs a sync-state gate the app does
+    /// not have ([[T-623]]).
+    static func collapsibleDuplicateOccurrences(
+        among group: [AppTask]
+    ) -> (survivor: AppTask, removable: [AppTask])? {
+        guard group.count > 1,
+              let survivor = group.min(by: { $0.id.uuidString < $1.id.uuidString })
+        else { return nil }
+        let removable = group.filter { $0 !== survivor && isUntouchedClone($0, of: survivor) }
+        guard !removable.isEmpty else { return nil }
+        return (survivor, removable)
+    }
+
+    /// Whether this row still looks exactly like the copy `makeNextRecurringTask` produced.
+    ///
+    /// Every field checked is one that copy sets or leaves at its default, so "unchanged" is a
+    /// question with an answer. Deliberately strict: a `false` here costs a visible duplicate, a
+    /// wrong `true` costs the user's work.
+    private static func isUntouchedClone(_ task: AppTask, of survivor: AppTask) -> Bool {
+        task.status == .todo
+            && task.completedAt == nil
+            && task.actualMinutes == 0
+            && task.bundle == nil
+            && task.recurrenceSpawnedTaskID == nil
+            && task.title == survivor.title
+            && task.notes == survivor.notes
+            && task.dueDate == survivor.dueDate
+            && task.scheduledDate == survivor.scheduledDate
+            && (task.subtasks ?? []).allSatisfy { !$0.isDone }
+    }
+
     static func ensureRecurrenceSeriesMetadata(for task: AppTask) {
         if task.recurrenceSeriesIDRaw.isEmpty {
             task.recurrenceSeriesIDRaw = task.id.uuidString

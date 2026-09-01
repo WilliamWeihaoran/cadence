@@ -590,4 +590,224 @@ struct DataIntegrityRepairServiceTests {
         #expect(read.movedTasks == 4)
         #expect(read.habitRemindersCleared == 0)
     }
+
+    // MARK: - T-622, forked recurring successor chains
+
+    /// Two devices, one occurrence, two successors.
+    ///
+    /// `spawnNextOccurrenceIfNeeded` guards on `recurrenceSpawnedTaskID == nil` against the local
+    /// replica, so each device inserted a successor for occurrence 1 and each wrote its own id into
+    /// a single `String` pointer. CloudKit keeps both rows: the user sees the same occurrence twice,
+    /// in the same list, each with its own reminders.
+    ///
+    /// The fixture is built the way the fork actually arrives — both rows carry the series id and
+    /// occurrence index the spawn writes — rather than by calling `markDone` twice, which cannot
+    /// reach this: one object, one pointer, and the second call returns immediately.
+    ///
+    /// Asserted by identity. "One task is left" is equally true of the run that kept the wrong one,
+    /// and the survivor rule is the part that has to hold on both devices at once.
+    @Test func repairCollapsesTwoDevicesForkedSuccessorsOntoOneOccurrence() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let fork = try forkedSeries(in: modelContext)
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.duplicateRecurrenceOccurrencesRemoved == 1)
+        #expect(report.changed)
+        let remaining = try modelContext.fetch(FetchDescriptor<AppTask>()).map(\.id)
+        #expect(remaining.count == 2, "the origin and exactly one successor")
+        #expect(remaining.contains(fork.lowerID))
+        #expect(!remaining.contains(fork.higherID))
+        // The series stays walkable: the predecessor points at the row that survived, not at the
+        // nil `repairDanglingRecurrenceLinks` would otherwise leave behind.
+        #expect(fork.origin.recurrenceSpawnedTaskID == fork.lowerID)
+    }
+
+    /// **The survivor cannot depend on anything local.** Both devices see the same two rows in
+    /// whatever order their own fetch returns them, and if the rule reads that order — or "the
+    /// newest", or "the completed one" — device A keeps X while device B keeps Y, each deletes the
+    /// other, and the occurrence is gone. A duplicate the user can see is recoverable; a deletion
+    /// neither device intended is not.
+    ///
+    /// So this runs the collapse against both permutations of the same pair and requires the same
+    /// survivor, and it seeds `createdAt` in the *opposite* order to `id` so a rule that reached for
+    /// creation time would answer differently in one of the two runs.
+    @Test func theSurvivingOccurrenceIsTheSameOnEveryDeviceWhateverTheLocalOrder() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let fork = try forkedSeries(in: modelContext)
+        try modelContext.save()
+
+        let pair = [fork.lower, fork.higher]
+        let forward = try #require(
+            CadenceTaskRecurrenceWorkflowSupport.collapsibleDuplicateOccurrences(among: pair)
+        )
+        let backward = try #require(
+            CadenceTaskRecurrenceWorkflowSupport.collapsibleDuplicateOccurrences(among: Array(pair.reversed()))
+        )
+
+        #expect(forward.survivor.id == fork.lowerID)
+        #expect(backward.survivor.id == fork.lowerID)
+        #expect(forward.removable.map(\.id) == [fork.higherID])
+        #expect(backward.removable.map(\.id) == [fork.higherID])
+    }
+
+    /// A duplicate the user has already completed is **not** collected, even though it is the one
+    /// the deterministic rule would otherwise remove.
+    ///
+    /// This is the half that decides whether the pass is safe to run unattended: the survivor is
+    /// chosen without looking at work, so the protection for work is the removability test. A
+    /// settled occurrence carries a `completedAt` the user earned and, through
+    /// `GoalContributionSummary`, a contribution to goal progress.
+    @Test func aDuplicateOccurrenceTheUserAlreadyCompletedIsLeftAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let fork = try forkedSeries(in: modelContext)
+        fork.higher.status = .done
+        fork.higher.completedAt = Date(timeIntervalSince1970: 5_000)
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.duplicateRecurrenceOccurrencesRemoved == 0)
+        let remaining = try modelContext.fetch(FetchDescriptor<AppTask>()).map(\.id)
+        #expect(remaining.contains(fork.higherID), "a completed occurrence was collected as a clone")
+        #expect(remaining.contains(fork.lowerID))
+    }
+
+    /// The same protection for a duplicate the user only *edited*. Renaming one of the two is the
+    /// cheapest way a person disambiguates a fork they can see, and it must not be what marks that
+    /// row as disposable.
+    @Test func aDuplicateOccurrenceTheUserEditedIsLeftAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let fork = try forkedSeries(in: modelContext)
+        fork.higher.title = "Water the plants — the real one"
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.duplicateRecurrenceOccurrencesRemoved == 0)
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).count == 3)
+    }
+
+    /// Two occurrences of one series at *different* indexes are the series working, not a fork.
+    /// Grouping on the series alone would collapse a recurring task's entire future into one row.
+    @Test func consecutiveOccurrencesOfOneSeriesAreNotDuplicates() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let seriesID = UUID()
+        let first = occurrence(seriesID: seriesID, index: 1, in: modelContext)
+        let second = occurrence(seriesID: seriesID, index: 2, in: modelContext)
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.duplicateRecurrenceOccurrencesRemoved == 0)
+        let remaining = Set(try modelContext.fetch(FetchDescriptor<AppTask>()).map(\.id))
+        #expect(remaining == [first.id, second.id])
+    }
+
+    /// Non-recurring tasks carry an empty `recurrenceSeriesIDRaw`, and the computed
+    /// `recurrenceSeriesID` falls back to the task's own `id` — so a pass that grouped on the
+    /// computed value would put every ordinary task in a series. Two plain tasks, index 0, left
+    /// alone.
+    @Test func ordinaryTasksAreNeverGroupedAsRecurringDuplicates() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let one = AppTask(title: "Buy milk")
+        let two = AppTask(title: "Buy milk")
+        modelContext.insert(one)
+        modelContext.insert(two)
+        try modelContext.save()
+
+        #expect(CadenceTaskRecurrenceWorkflowSupport.duplicateOccurrenceGroups(among: [one, two]).isEmpty)
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+        #expect(report.duplicateRecurrenceOccurrencesRemoved == 0)
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).count == 2)
+    }
+
+    /// A collected duplicate takes its copied subtasks with it. The spawn copies them
+    /// (`makeNextRecurringTask`), so collapsing through anything other than the shared delete core
+    /// would leave `Subtask` rows whose parent no longer exists — orphans this service is
+    /// explicitly not allowed to clean up later.
+    @Test func collapsingADuplicateOccurrenceTakesItsCopiedSubtasksWithIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let fork = try forkedSeries(in: modelContext)
+        for task in [fork.lower, fork.higher] {
+            let step = Subtask(title: "Fill the can")
+            step.parentTask = task
+            modelContext.insert(step)
+        }
+        try modelContext.save()
+        #expect(try modelContext.fetch(FetchDescriptor<Subtask>()).count == 2)
+
+        _ = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        let subtasks = try modelContext.fetch(FetchDescriptor<Subtask>())
+        #expect(subtasks.count == 1)
+        #expect(subtasks.first?.parentTask?.id == fork.lowerID)
+    }
+
+    // MARK: - T-622 fixtures
+
+    private struct ForkedSeries {
+        let origin: AppTask
+        let lower: AppTask
+        let higher: AppTask
+        var lowerID: UUID { lower.id }
+        var higherID: UUID { higher.id }
+    }
+
+    /// An origin plus the two successors two devices minted for occurrence 1.
+    ///
+    /// `createdAt` is seeded so the *higher*-id row is the older one, which is what makes
+    /// `theSurvivingOccurrenceIsTheSameOnEveryDeviceWhateverTheLocalOrder` able to tell a
+    /// uuid rule from a timestamp rule.
+    private func forkedSeries(in modelContext: ModelContext) throws -> ForkedSeries {
+        let origin = AppTask(title: "Water the plants")
+        origin.recurrenceRule = .daily
+        origin.recurrenceSeriesIDRaw = origin.id.uuidString
+        origin.status = .done
+        origin.completedAt = Date(timeIntervalSince1970: 1_000)
+        modelContext.insert(origin)
+
+        let seriesID = origin.recurrenceSeriesID
+        let first = occurrence(seriesID: seriesID, index: 1, in: modelContext)
+        let second = occurrence(seriesID: seriesID, index: 2, in: modelContext)
+        // The two rows are the same occurrence, so give the second the same index as the first;
+        // `occurrence` only differs them so the ids are distinct objects.
+        second.recurrenceOccurrenceIndex = 1
+
+        let ordered = [first, second].sorted { $0.id.uuidString < $1.id.uuidString }
+        let lower = ordered[0]
+        let higher = ordered[1]
+        lower.createdAt = Date(timeIntervalSince1970: 2_000)
+        higher.createdAt = Date(timeIntervalSince1970: 1_500)
+        // Each device recorded *its own* successor. The store keeps one string, and this is the
+        // branch this replica happens to hold.
+        origin.recurrenceSpawnedTaskID = higher.id
+        return ForkedSeries(origin: origin, lower: lower, higher: higher)
+    }
+
+    private func occurrence(seriesID: UUID, index: Int, in modelContext: ModelContext) -> AppTask {
+        let task = AppTask(title: "Water the plants")
+        task.recurrenceRule = .daily
+        task.recurrenceSeriesIDRaw = seriesID.uuidString
+        task.recurrenceOccurrenceIndex = index
+        task.dueDate = "2026-09-02"
+        modelContext.insert(task)
+        return task
+    }
+
 }

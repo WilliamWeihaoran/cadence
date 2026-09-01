@@ -654,7 +654,7 @@ enum CadenceTaskMutationSupport {
     ///
     /// Saving is deliberately the caller's: the two surfaces differ on whether a subtask edit
     /// commits immediately or rides the enclosing sheet's save.
-    static func deleteSubtask(_ subtask: Subtask, parent: AppTask? = nil, modelContext: ModelContext) {
+    nonisolated static func deleteSubtask(_ subtask: Subtask, parent: AppTask? = nil, modelContext: ModelContext) {
         let subtaskID = subtask.id
         if let owner = parent ?? subtask.parentTask {
             owner.subtasks = (owner.subtasks ?? []).filter { $0.id != subtaskID }
@@ -663,7 +663,16 @@ enum CadenceTaskMutationSupport {
         modelContext.delete(subtask)
     }
 
-    static func detachRelationships(for task: AppTask) {
+    /// **`nonisolated` so the one spelling of "sever every reference to this task" is reachable
+    /// from shared, non-main-actor code.** The project sets `SWIFT_DEFAULT_ACTOR_ISOLATION =
+    /// MainActor`, so this enum is main-actor isolated by default, while
+    /// `DataIntegrityRepairService` and `CadenceTaskRecurrenceWorkflowSupport` are `nonisolated` —
+    /// and T-622's duplicate-occurrence collapse lives in the second and runs from the first. The
+    /// body touches only `@Model` types, which are themselves nonisolated (the whole recurrence
+    /// workflow mutates `AppTask` from a `nonisolated enum` already), so the isolation was
+    /// incidental rather than a guarantee. Making it explicit is what stops the collapse pass from
+    /// growing a second, drifting copy of this list.
+    nonisolated static func detachRelationships(for task: AppTask) {
         let taskID = task.id
 
         // Legacy rows written by an earlier build can still carry a calendar event identifier.

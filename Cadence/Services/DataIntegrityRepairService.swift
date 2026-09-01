@@ -13,6 +13,7 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     var duplicateProjectsMerged: Int = 0
     var duplicateNotesMerged: Int = 0
     var duplicateHabitCompletionsRemoved: Int = 0
+    var duplicateRecurrenceOccurrencesRemoved: Int = 0
     var habitRemindersCleared: Int = 0
     var movedAreas: Int = 0
     var movedProjects: Int = 0
@@ -30,6 +31,7 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
             duplicateProjectsMerged > 0 ||
             duplicateNotesMerged > 0 ||
             duplicateHabitCompletionsRemoved > 0 ||
+            duplicateRecurrenceOccurrencesRemoved > 0 ||
             habitRemindersCleared > 0 ||
             movedAreas > 0 ||
             movedProjects > 0 ||
@@ -90,6 +92,7 @@ nonisolated extension DataIntegrityRepairReport {
         duplicateProjectsMerged = try container.decodeIfPresent(Int.self, forKey: .duplicateProjectsMerged) ?? 0
         duplicateNotesMerged = try container.decodeIfPresent(Int.self, forKey: .duplicateNotesMerged) ?? 0
         duplicateHabitCompletionsRemoved = try container.decodeIfPresent(Int.self, forKey: .duplicateHabitCompletionsRemoved) ?? 0
+        duplicateRecurrenceOccurrencesRemoved = try container.decodeIfPresent(Int.self, forKey: .duplicateRecurrenceOccurrencesRemoved) ?? 0
         habitRemindersCleared = try container.decodeIfPresent(Int.self, forKey: .habitRemindersCleared) ?? 0
         movedAreas = try container.decodeIfPresent(Int.self, forKey: .movedAreas) ?? 0
         movedProjects = try container.decodeIfPresent(Int.self, forKey: .movedProjects) ?? 0
@@ -108,8 +111,8 @@ nonisolated extension DataIntegrityRepairReport {
 ///
 /// The main shape it repairs is the *same* row present twice, which is what a restore, a CloudKit
 /// round trip or a pre-merge migration leaves behind. It merges duplicate `Context`, `Area`,
-/// `Project` and `Note` rows, collapses duplicate habit-days, and re-points the tasks, notes,
-/// documents, links and goal links each merge would otherwise strand.
+/// `Project` and `Note` rows, collapses duplicate habit-days and forked recurring occurrences, and
+/// re-points the tasks, notes, documents, links and goal links each merge would otherwise strand.
 ///
 /// One counter is not a merge: `habitRemindersCleared` (T-428) clears a `Habit.reminderMinuteOfDay`
 /// outside `0...1439`. It is here rather than beside the sweeps because its predicate reads a
@@ -245,6 +248,7 @@ nonisolated enum DataIntegrityRepairService {
 
         repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
         repairDuplicateHabitCompletions(in: store, modelContext: context, report: &report)
+        repairDuplicateRecurrenceOccurrences(in: store, modelContext: context, report: &report)
         repairOutOfRangeHabitReminders(in: store, report: &report)
     }
 
@@ -330,6 +334,104 @@ nonisolated enum DataIntegrityRepairService {
                 modelContext: modelContext
             )
         }
+    }
+
+    /// T-622: two devices can each complete the same occurrence of a recurring task and each spawn
+    /// a successor for the slot after it.
+    ///
+    /// `spawnNextOccurrenceIfNeeded` guards on `recurrenceSpawnedTaskID == nil` against the local
+    /// replica and then inserts, and the pointer it writes is a single `String` — so CloudKit keeps
+    /// both successors and can name only one. Nothing collapsed them: this service had a
+    /// duplicate-habit-completion pass and a duplicate-note pass and **no duplicate-task pass of
+    /// any kind**. The user sees the same occurrence twice, in the same list, each with its own
+    /// reminders, and the series continues down whichever branch their device happens to point at.
+    ///
+    /// **This is a duplicate pass, not the orphan sweep the header rules out.** Its predicate is
+    /// "these two rows claim the same slot in the same series", which needs to see *both* rows —
+    /// so a half-synced store collapses less and never destroys something unique, which is the
+    /// monotonicity every other pass here has. `CadenceTaskRecurrenceWorkflowSupport` owns the
+    /// survivor rule and the removability test, deliberately not restated here: the same reason
+    /// the habit-day collapse lives in `CadenceHabitCompletionStore`.
+    ///
+    /// **The predecessor is re-pointed at the survivor, not cleared.** Each device wrote its own
+    /// successor's id into the single `recurrenceSpawnedTaskIDRaw`, so the replica that recorded
+    /// the *removed* branch would otherwise be left pointing at nothing — and a series whose
+    /// pointer is nil spawns a second successor the next time anyone completes it, which is the
+    /// fork again. `repairDanglingRecurrenceLinks` is deliberately **not** used here: clearing the
+    /// pointer is right when the user deleted an occurrence and wrong when the occurrence is still
+    /// there under a different id.
+    ///
+    /// Deferred commit: `repairIfNeeded` saves once, after every pass, when anything changed.
+    private static func repairDuplicateRecurrenceOccurrences(
+        in store: RepairStore,
+        modelContext: ModelContext,
+        report: inout DataIntegrityRepairReport
+    ) {
+        let groups = CadenceTaskRecurrenceWorkflowSupport.duplicateOccurrenceGroups(among: store.tasks)
+        var survivorByRemovedID: [UUID: UUID] = [:]
+        for group in groups {
+            guard let collapse = CadenceTaskRecurrenceWorkflowSupport
+                .collapsibleDuplicateOccurrences(among: group) else { continue }
+            for removed in collapse.removable {
+                survivorByRemovedID[removed.id] = collapse.survivor.id
+            }
+        }
+        guard !survivorByRemovedID.isEmpty else { return }
+
+        // Recorded before the delete, while the pointers still name the rows that are going.
+        var rePointing: [(AppTask, UUID)] = []
+        for task in store.tasks where survivorByRemovedID[task.id] == nil {
+            guard let spawnedID = task.recurrenceSpawnedTaskID,
+                  let survivorID = survivorByRemovedID[spawnedID] else { continue }
+            rePointing.append((task, survivorID))
+        }
+
+        var removedIDs: [UUID] = []
+        for group in groups {
+            removedIDs += collapseDuplicateOccurrences(among: group, modelContext: modelContext)
+        }
+
+        for (predecessor, survivorID) in rePointing {
+            predecessor.recurrenceSpawnedTaskID = survivorID
+        }
+        // The removed rows may have carried a scheduled-start reminder. One cancel for the whole
+        // pass, the same shape `deleteContext` uses for the habits a context cascade takes.
+        Task { await NotificationManager.shared.cancel(taskIDs: removedIDs) }
+        report.duplicateRecurrenceOccurrencesRemoved += removedIDs.count
+    }
+
+    /// Removes the untouched clones of one forked occurrence and returns their ids.
+    ///
+    /// **The rule is `CadenceTaskRecurrenceWorkflowSupport`'s; only the mechanics are here.**
+    /// `collapsibleDuplicateOccurrences` decides the survivor and what may go, beside the spawn
+    /// that writes the slot — the `CadenceHabitCompletionStore.collapseDuplicates` arrangement. The
+    /// delete cannot live there: that file compiles into `CadenceMCPServer` and the widget target,
+    /// neither of which has `CadenceTaskMutationSupport`, which is where the one spelling of
+    /// severing a task's references lives.
+    ///
+    /// Deliberately does **not** save, and deliberately does not touch bundles: a removable row has
+    /// `bundle == nil` by `isUntouchedClone`, so there is no bundle left holding a stale member.
+    /// Relationship severing goes through `CadenceTaskMutationSupport.detachRelationships`, and the
+    /// copied subtasks through `deleteSubtask`, rather than a second spelling of either.
+    ///
+    /// Notification cancellation is the caller's, so one collapse of several groups issues one
+    /// cancel rather than one per row.
+    private static func collapseDuplicateOccurrences(
+        among group: [AppTask],
+        modelContext: ModelContext
+    ) -> [UUID] {
+        guard let collapse = CadenceTaskRecurrenceWorkflowSupport
+            .collapsibleDuplicateOccurrences(among: group) else { return [] }
+        var removedIDs: [UUID] = []
+        for task in collapse.removable {
+            for subtask in task.subtasks ?? [] {
+                CadenceTaskMutationSupport.deleteSubtask(subtask, parent: task, modelContext: modelContext)
+            }
+            CadenceTaskMutationSupport.detachRelationships(for: task)
+            removedIDs.append(task.id)
+            modelContext.delete(task)
+        }
+        return removedIDs
     }
 
     private static func mergeContext(
