@@ -309,11 +309,29 @@ struct CadenceCalendarLinkObservationsTests {
                 "\(path) does not pass its observation set to the detector"
             )
             // Refreshed on appear *and* when the store changes: a calendar list that arrives after
-            // the screen is already up is the ordinary case on a cold launch.
+            // the screen is already up is the ordinary case on a cold launch. And after every link
+            // write, because a calendar linked here is by definition one this device can see.
+            //
+            // **Exact, not `>=`.** This assertion was written `>= 3` against four real occurrences
+            // — the declaration plus three call sites — so deleting the post-write refresh left
+            // three and the guard passed. A mutation that dropped it survived, which is how the
+            // hole was found; `== 4` is what makes each of the three call sites load-bearing.
             #expect(code.contains("refreshCalendarObservations()"), "\(path) has no refresh")
             #expect(
-                CadenceSourceScan.matchCount("refreshCalendarObservations\\(\\)", in: code) >= 3,
-                "\(path) refreshes from fewer places than appear, store change, and link write"
+                CadenceSourceScan.matchCount("refreshCalendarObservations\\(\\)", in: code) == 4,
+                "\(path) does not declare the refresh and call it on appear, on store change, and after a link write"
+            )
+            for site in [".onAppear", ".onChange(of: calendarManager.storeVersion)"] {
+                #expect(code.contains(site), "\(path) lost the \(site) hook the refresh hangs off")
+            }
+            // The third call site by name rather than by count: it is the one a mutation deleted
+            // and got away with, and it is the one that matters most — the link the user just made
+            // is the link this device most needs to be able to vouch for.
+            let saver = try #require(code.range(of: "private func saveCalendarLinks()"))
+            let saverBody = code[saver.upperBound...].prefix(400)
+            #expect(
+                saverBody.contains("refreshCalendarObservations()"),
+                "\(path) commits a link write without recording that this device saw the calendar"
             )
         }
 
