@@ -1007,6 +1007,25 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Guard worth knowing:** `CadenceEventKitPlatformParityTests` **fails if a second `linkedCalendar*`
   property appears** — the repo has already armed itself against the alternative branch. The suggested
   device-local preferences map needs no stored property.
+  **NARROWED 2026-09-01 in `892b866`, and deliberately left open.** The half that is a *defect*
+  rather than a premise is fixed, and fixed **without depending on the unmeasured fact**:
+  `CadenceCalendarLinkHealth.missingLinks` now takes an `observedCalendarIDs` set and reports a link
+  dead only for an identifier **this device has itself seen alive**. The record is
+  `CadenceCalendarLinkObservations`, device-local in `UserDefaults` — **no stored property**, so
+  T-390's `SchemaMigrationPlan` block and the parity guard above are untouched. Under one shared
+  identifier space every device observes every linked calendar and [[T-400]]'s report is exactly what
+  it was; under device-local ones the device with no evidence stays quiet. **Either way a repair on
+  one device can no longer invalidate another device's link**, which is the whole ping-pong.
+  **Why it stays open.** Nobody has measured whether the identifiers really differ across this user's
+  devices, and nobody here could: it needs an EventKit call on the user's own Mac, which raises a TCC
+  prompt. *If* they differ, a link made on one device still does not **function** on the other —
+  `CadenceEventNoteSupport` matches `calendarID` exactly — it now merely fails quietly instead of
+  offering a repair that overwrites the good side. Making the link portable is T-390's
+  companion-metadata branch and is still blocked on a `SchemaMigrationPlan`.
+  **Accepted cost, recorded so the next reader does not file it as a regression.** The observation set
+  starts empty and only ever learns *live* identifiers, so a link that is **already** dead the first
+  time this build runs is never reported again. Seeding the set from every currently-linked id would
+  bring that row back and defeat the gate for exactly the cross-device case, so it is not done.
 
 - [T-625] **T-358's two-device section merge claim is broader than what its test pins.** VERIFIED
   2026-09-01 from CXT-022 — confirmed as a **claim-accuracy** finding, not a new defect.
@@ -1282,6 +1301,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Fix shape: make the message self-describing — report both counts, or name the `wc -l` equivalent in
   the same sentence — and say the unit wherever the cap is written down. This is the [[T-644]] /
   [[T-659]] family: an instrument that reads something slightly other than what the rule says.
+
+- [T-661] **The portable export carries a device-local calendar identifier.** Found while landing
+  [[T-624]]'s evidence gate; not fixed, and it is a decision rather than a bug.
+  `CadenceArchiveArea` and `CadenceArchiveProject`
+  (`Cadence/Services/CadenceDataExportService.swift:289` and `:327`) copy `linkedCalendarID` straight
+  into the archive. That field is an `EKCalendar.calendarIdentifier`, which Apple documents as local
+  to one device, so an archive restored on a different machine carries a link naming a calendar that
+  machine never issued — the same shape as T-624, one layer out, and with the same blocker: a
+  *portable* link needs the title/source T-390 declined to store, which needs a `SchemaMigrationPlan`.
+  T-624's gate does not reach this: it makes the imported link silent rather than falsely repairable,
+  which is the right failure but is not portability.
+  **The cheap half is a sentence, not code** — either say in the export docs that calendar links do
+  not survive a cross-device restore, or drop the field from the archive rather than shipping a value
+  that cannot mean anything on the other side. Neither has been decided. Note the import side is
+  unsettled anyway ([[T-274]]), so this is not urgent.
 
 ## Done
 
