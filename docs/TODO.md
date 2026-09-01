@@ -938,12 +938,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   undoes it — which is the shape the `try? save()` rule exists to catch, but the write itself is a field
   edit. Answer it once in `AGENTS.md`, then make both platforms match.
 
-- [T-615] **`RootTimelineSidebarPane` says "timeline" twice.** `macOSRootSupportViews.swift:327-352`
-  titles itself "Today Timeline" and then hosts the standard `SchedulePanel`. Before [[T-602]] that pane
-  said the word three times; it now says it twice. Noticed by the T-602 agent and deliberately left —
-  reversible either way, and small enough that it wants a decision rather than a guess: drop the pane's
-  own title, or drop the hosted panel's when it is hosted there.
-
 - [T-616] **`cornerRadius: 7` at 55 sites with no token, and `Theme`'s radius scale has nothing at 7.**
   Measured by the [[T-596]] agent while disproving that ticket's "inner-pill idiom" claim: the token
   spelling `Theme.radiusControl - 3` stands at **2** sites against **55** bare literals. `Theme`'s scale
@@ -952,16 +946,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   If it should, name it once and sweep. If it should not, 55 sites are drawing a radius the design
   system does not contain, which is a bigger finding than the drift. Decide before sweeping; a
   mechanical replace would enshrine an accident 55 times.
-
-- [T-617] **The macOS chip padding `4/2` is typed inline at five sites in `TasksPanelComponents.swift`.**
-  From [[T-597]]. `CadenceTaskRowMetrics` has no chip-padding field. **Adding one needs an iOS answer
-  decided with it** (`iOSTaskAttributeChipSize`), or the two platforms gain two different homes for the
-  same measurement — which is the shape this whole batch has been closing.
-
-- [T-618] **`Theme.borderSubtle.opacity(0.35)` is the app's row-separator weight at five sites, with no
-  shared constant.** Across Shared, iOS and macOS. From [[T-595]], which identified it as a genuine
-  agreement rather than drift and therefore deliberately left it alone — it deserves a name precisely
-  *because* five sites already agree, so the constant would record a decision rather than impose one.
 
 - [T-619] **The two platforms' timed grids draw different hour ladders.** macOS `CalendarVisualStyle`
   0.36/0.30 at 0.95/0.85pt against iOS's 0.46/0.20 at 0.5pt. Out of scope for [[T-595]]/[[T-596]], which
@@ -1406,7 +1390,58 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   build** rather than fails a sweep. The other three helpers should gain the same required
   parameter in the same change.
 
+- [T-675] **The app has three row-separator weights and only one of them is named.** Found while
+  closing [[T-618]], which named the 0.35 one as `Theme.rowSeparator` over four agreeing sites. The
+  other two are in `Cadence/macOS/Views/GoalTimelineSupportViews.swift`: a goal row's bottom rule
+  `:252` and a bar's bottom edge `:113` draw `Theme.borderSubtle.opacity(0.55)`, while three 1pt
+  rules doing the same job — `:85`, `:213`, and the iOS row `iOSListSupportViews.swift:10` documents
+  as the same idiom — draw plain `Theme.borderSubtle`. So one file draws two of the three weights,
+  eleven lines apart in one case.
+  **This is a decision, not a hoist**, which is why T-618 stopped at the four that agreed. 0.35, 0.55
+  and 1.0 over the same near-black border on the same surface are three visibly different rules
+  between two rows; picking one is a look at the screen, and a mechanical sweep onto
+  `Theme.rowSeparator` would be exactly the unreviewed visual change T-617 and T-618 both refused.
+  Decide the weight, then name the survivors on `Theme` beside `rowSeparator` and `rule`.
+
 ## Done
+
+- [T-615] **CLOSED 2026-09-02, `d06be27`.** Decided the second way: the pane keeps "Today Timeline"
+  and the hosted panel drops its heading. A page header does not describe the page the user is
+  already on, and that does not stop at the outermost header — the second one is the one to drop,
+  because the first is the one the user read. The panel's divider went with its header; the pane
+  draws that rule itself, so keeping both left two hairlines with nothing between them.
+  `SchedulePanelPresentation.hosted` is opt-in, and **that is the load-bearing half**: `SchedulePanel`
+  has four hosts, and the other three — Today's schedule column (`TodayView.swift:34`), the focus
+  screen (`FocusView.swift:306`), the focus sidebar (`FocusSidebarSupportViews.swift:68`) — have
+  nothing above them naming the column, so an unconditional drop would have left three unnamed
+  columns to fix one named twice. `theTimelinePaneNamesItselfOnceAndTheOtherHostsStillNameThemselves`
+  names all four hosts one at a time and sweeps `Cadence/` through a `CadenceScanInstrument` for a
+  fifth; the instrument's lookbehind is load-bearing, since `iOSSchedulePanel(` contains the needle.
+  Three mutations, all killed: reverting the call site, inverting `drawsOwnHeader`, and — the pin
+  that matters — silencing `TodayView`'s header instead.
+
+- [T-617] **CLOSED 2026-09-02, `bf19c5d`.** One shared home, per-platform values:
+  `CadenceTaskChipPadding` in `Cadence/Shared/CadenceTaskPresentationSupport.swift` states macOS's
+  `4`/`2` and iOS's `9`/`7`, and both platforms read it — the macOS row's four chips and
+  `iOSTaskAttributeChipSize.horizontalPadding`. Not a field on `CadenceTaskRowMetrics`, which would
+  have been the second home this batch has been closing; not converged either, because nobody has
+  compared the two chips on screen and no pixel moved here.
+  **The ticket said five sites and it is four.** The row's own comment named the bundle badge as the
+  fifth; the badge draws no background, so it has no plate and no inset. The four are the Cancelled
+  pill, the do-date pill, the due-date pill and the estimate chip. The pin asserts each of the four
+  *reads the shared name exactly once* over four non-overlapping regions, so a fifth chip spelled
+  inline cannot pass a count that still adds up. Three mutations, all killed.
+
+- [T-618] **CLOSED 2026-09-02, `695a9ea`.** `Theme.rowSeparator = borderSubtle.opacity(0.35)`, read
+  by all four sites: `Shared/Components/CadenceFieldRows.swift`, `iOS/iOSTaskDetailComponents.swift`,
+  `iOS/iOSTodaySchedulePanel.swift`, `iOS/iOSCalendarBundleDetailSheet.swift`.
+  **The ticket said five, and the fifth is the finding.** `Views/FocusPickerSupportViews.swift:216`
+  spells the same alpha as the *unhovered arm of a hover pair* — a card's resting border, not a rule
+  between rows. Same number, different job; folding it in would have coupled a hover state to a
+  separator weight. It is left alone and `theRemainingThirtyFivePercentBorderIsACardsRestingStrokeAndNotARule`
+  pins that decision, so it reads as a judgement rather than a sweep someone forgot to finish.
+  Two mutations, both killed: retuning the token, and reverting one call site.
+  Filed [[T-675]] for what this turned up — two *other* row-separator weights, unnamed.
 
 - [T-639] **CLOSED 2026-09-02, `5b0c2b8`.** Both helpers were dead: `taskPriorityRank` had no caller
   at all — `TaskOrdering.precedes` reads `priority.rank` directly, so the comment calling it "the
