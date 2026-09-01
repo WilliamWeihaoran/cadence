@@ -12,24 +12,41 @@ import Testing
 /// edits to objects the store already holds*, and nothing after it tells the user it worked. Two
 /// halves, and a site fails the rule if either one holds:
 ///
-/// 1. **Existence.** The function that reaches the save also calls `modelContext.insert(…)` or
-///    `modelContext.delete(…)`. Commit it through `CadencePendingChangePersistence.commitInsert`
-///    or `commitDelete` and throw.
-/// 2. **Report.** Something in the same block *after* the save dismisses, opens a sheet on what
-///    was just written, or calls a completion handler — `dismiss()`, `isPresented = false`,
-///    `presentedNote = …`, `onSave(…)`. Commit it through
-///    `CadencePendingChangePersistence.commitEdit(in:undo:)` and throw; the caller catches and
-///    names the failure where the user is already looking.
+/// 1. **Existence.** The function that reaches the save also inserts or deletes. Commit it through
+///    `CadencePendingChangePersistence.commitInsert` or `commitDelete` and throw.
+/// 2. **Report.** Something in the same block dismisses, opens a sheet on what was just written, or
+///    calls a completion handler — `dismiss()`, `isPresented = false`, `presentedNote = …`,
+///    `onSave(…)`. Commit it through `CadencePendingChangePersistence.commitEdit(in:undo:)` and
+///    throw; the caller catches and names the failure where the user is already looking.
 ///    **And one frame down (T-566).** The same report over a *callee* that swallows — the button
 ///    calls `save()`, `save()` calls a shared mutation, the mutation holds the `try?`. Every frame
 ///    passes the reading above, and the sheet still closes over a store that refused. Same fix,
 ///    applied to whichever frame owns the commit.
-/// 3. **Commit reach.** The function inserts and reaches **no commit at all** — added by T-503,
-///    because halves 1 and 2 both key on the *presence* of a `try? …save()` and so a function that
-///    never commits passed both. Twenty-one declarations were in that state; four of them also
-///    reported success. The other seventeen are subtracted **by rule** rather than by name: a
-///    declaration handed a `ModelContext` is one whose caller owns the unit of work. See
-///    `commitReachOffenders`.
+/// 3. **Commit reach.** The function changes existence and reaches **no commit at all** — added by
+///    T-503, because halves 1 and 2 both key on the *presence* of a `try? …save()` and so a
+///    function that never commits passed both. Twenty-one declarations were in that state; four of
+///    them also reported success. The ~17 helpers the half must not fire on are subtracted **by
+///    rule** rather than by name: a declaration handed a `ModelContext` is one whose caller owns
+///    the unit of work. See `commitReachOffenders`.
+///
+/// **T-627 closed four measured blind spots, and they moved the count from 7 declarations to 53.**
+/// A faithful emulation over all 563 files reproduced the six exemption entries exactly and
+/// reported nothing else — which was the non-vacuity evidence *and* the proof that none of an
+/// external audit's fifteen sites was caught by any half. The four:
+///
+/// - **Gap 1.** Only half 2 followed a call one frame down. Existence and commit reach both
+///   required a literal `insert(`/`delete(` in the declaration's own body, and this app puts the
+///   mutation one frame away from the button by design. `ExistenceIndex`.
+/// - **Gap 2.** `declarations(in:)` parsed `func` and the literal `var body`, so a screen written
+///   as `private var columnEditor: some View` was invisible to every half. `declarationHead`.
+/// - **Gap 3.** Half 3 keyed on `insert(` only, so "delete and never commit" was covered by
+///   nothing at all. `existenceCall`.
+/// - **Gap 4.** `successReport` was a closed vocabulary missing this app's actual dismissals, and
+///   it read only the text *after* the save while three real sites dismiss first. `successReport`,
+///   `persistedReport`, and the whole-block window in `reportOffenders`.
+///
+/// The four exemption lists carry what that widening found. They are a schedule, not a silence:
+/// nearly every entry names the ticket that owns its fix, and fixing one deletes its line.
 ///
 /// **Why these and not "handle errors properly".** All three are decidable by reading one function,
 /// which is what makes them enforceable below and applicable by a reviewer without judgement. And
@@ -61,10 +78,16 @@ struct CadenceSaveCommitDisciplineTests {
 
     // MARK: - The sweep
 
-    /// Half 1: no swallowed save sits in a function that also inserts or deletes.
+    /// Half 1: no swallowed save sits in a function that changes existence — its own, or one
+    /// frame down (T-627 gap 1).
     @Test func noSwallowedSaveCommitsAnInsertOrADelete() throws {
+        let existence = try existenceIndexOverTheApp()
+        // Non-vacuity for the index, the same handle the one-frame-down report half carries: an
+        // empty one silently narrows this half back to the literal-insert reading it had.
+        #expect(existence.namesRead >= 30, "the existence index read \(existence.namesRead) callee names")
+
         let offenders = try saveCommitSweep(
-            instrument: CadenceSaveCommitRule.existenceInstrument(),
+            instrument: CadenceSaveCommitRule.existenceInstrument(changing: existence),
             allowed: CadenceSaveCommitRule.existenceExemptions
         )
         #expect(
@@ -128,8 +151,12 @@ struct CadenceSaveCommitDisciplineTests {
     /// empty, because the ~17 helpers it must not fire on are subtracted by
     /// `commitReachOffenders`' signature rule rather than by name.
     @Test func noInsertIsLeftPendingWithNoCommitAnywhereInItsDeclaration() throws {
+        let existence = try existenceIndexOverTheApp()
+        #expect(existence.namesRead >= 30, "the existence index read \(existence.namesRead) callee names")
+        #expect(existence.committersRead >= 100, "the commit index read \(existence.committersRead) names")
+
         let offenders = try saveCommitSweep(
-            instrument: CadenceSaveCommitRule.commitReachInstrument(),
+            instrument: CadenceSaveCommitRule.commitReachInstrument(changing: existence),
             allowed: CadenceSaveCommitRule.commitReachExemptions
         )
         #expect(
@@ -398,12 +425,411 @@ struct CadenceSaveCommitDisciplineTests {
     /// An index over fixtures rather than over the tree, for the tests above. Not `throws`: the
     /// builder is `rethrows` and a dictionary read cannot fail, so the fixture spelling is the one
     /// place this API is used without a file read behind it.
+    // MARK: - The four blind spots T-627 closed
+
+    /// **Gap 1.** Half 1 followed a call one frame down for the *report* half only (T-566); the
+    /// *existence* half still needed a literal `insert(` in the swallowing declaration's own body.
+    /// This app puts the two in different frames as a matter of style, so that reading found six of
+    /// the fifteen sites an external audit had to find by hand.
+    ///
+    /// The negative is the same helper with the insert **committed**, which is what keeps the
+    /// already-fixed sites quiet: a callee that commits is not something its caller inherits.
+    @Test func halfOneFollowsAPendingInsertIntoAHelperThatWasHandedTheContext() throws {
+        let sheet = """
+        struct Editor: View {
+            private func addImage(_ data: Data) {
+                MarkdownImageAssetService.createAsset(data, in: modelContext)
+                try? modelContext.save()
+            }
+        }
+        """
+        let pending = """
+        enum MarkdownImageAssetService {
+            static func createAsset(_ data: Data, in modelContext: ModelContext) -> MarkdownImageAsset {
+                let asset = MarkdownImageAsset(data: data)
+                modelContext.insert(asset)
+                return asset
+            }
+        }
+        """
+        let committed = """
+        enum MarkdownImageAssetService {
+            static func createAsset(_ data: Data, in modelContext: ModelContext) throws -> MarkdownImageAsset {
+                let asset = MarkdownImageAsset(data: data)
+                modelContext.insert(asset)
+                try CadencePendingChangePersistence.commitInsert(of: asset, in: modelContext)
+                return asset
+            }
+        }
+        """
+        let leaves = existence(over: ["service.swift": pending, "sheet.swift": sheet])
+        #expect(leaves.namesRead == 1, "the existence index read \(leaves.namesRead) callee names")
+        #expect(CadenceSaveCommitRule.existenceOffenders(in: sheet, changing: leaves) == ["addImage"])
+
+        let commits = existence(over: ["service.swift": committed, "sheet.swift": sheet])
+        #expect(commits.namesRead == 0, "a callee that commits is not a pending existence change")
+        #expect(CadenceSaveCommitRule.existenceOffenders(in: sheet, changing: commits).isEmpty)
+    }
+
+    /// **Gap 1, and why the index travels more than one frame.** Ticking a recurring task's circle
+    /// on macOS is four frames deep and only the last one inserts. The three in between each
+    /// disclaim ownership in their signature — which is half 3's own exemption rule, read forwards
+    /// — so the obligation lands on `write`, the first frame that did not.
+    ///
+    /// This fixture also pins the recursion guard: `TaskWorkflowService.markDone` forwards to
+    /// `CadenceTaskRecurrenceWorkflowSupport.markDone`, and a guard that dropped a call whose
+    /// *name* matched its declaration's would read that forward as recursion and lose the chain.
+    @Test func halfThreeCarriesAPendingInsertUpThroughEveryFrameThatDisclaimsOwnership() throws {
+        let manager = """
+        final class TaskCompletionAnimationManager {
+            private func write(_ task: AppTask) {
+                TaskWorkflowService.markDone(task, in: context)
+            }
+        }
+        """
+        let workflow = """
+        enum TaskWorkflowService {
+            static func markDone(_ task: AppTask, in context: ModelContext) {
+                CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: context)
+            }
+        }
+        """
+        let committingWorkflow = """
+        enum TaskWorkflowService {
+            static func markDone(_ task: AppTask, in context: ModelContext) throws {
+                CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: context)
+                try context.save()
+            }
+        }
+        """
+        let recurrence = """
+        enum CadenceTaskRecurrenceWorkflowSupport {
+            static func markDone(_ task: AppTask, in context: ModelContext) {
+                spawnNextOccurrenceIfNeeded(from: task, in: context)
+            }
+
+            private static func spawnNextOccurrenceIfNeeded(from task: AppTask, in context: ModelContext) {
+                context.insert(makeNextRecurringTask(from: task))
+            }
+        }
+        """
+        let pending = existence(over: [
+            "manager.swift": manager, "recurrence.swift": recurrence, "workflow.swift": workflow,
+        ])
+        #expect(
+            CadenceSaveCommitRule.commitReachOffenders(in: manager, changing: pending) == ["write"],
+            "the chain is three frames long and only the fourth inserts"
+        )
+
+        // The nearest negative, and it is this ticket's own fix in miniature: one frame in the
+        // middle commits, and the obligation stops there instead of reaching the button.
+        let stopped = existence(over: [
+            "manager.swift": manager, "recurrence.swift": recurrence, "workflow.swift": committingWorkflow,
+        ])
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: manager, changing: stopped).isEmpty)
+    }
+
+    /// The commit index resolves a call by name and type and **cannot see an argument list**, so a
+    /// name is only allowed to vouch for itself when every overload of it agrees.
+    ///
+    /// Measured, and it cost a real finding before the rule existed: `SchedulingActions` declares
+    /// two `createBundle(…in:)`. One forwards to `CadenceTaskMutationSupport.insertBundle`, which
+    /// commits; the other inserts and does not. Letting the committing one vouch for the name made
+    /// the timeline canvas and the schedule panel — [[T-636]](e)'s two sites — go quiet.
+    @Test func theCommitIndexNeedsEveryOverloadOfANameToAgreeBeforeItVouchesForIt() throws {
+        let mutation = """
+        enum CadenceTaskMutationSupport {
+            static func insertBundle(from task: AppTask, modelContext: ModelContext) {
+                modelContext.insert(TaskBundle(title: task.title))
+                try? modelContext.save()
+            }
+        }
+        """
+        let committingOverload = """
+            static func createBundle(from task: AppTask, in context: ModelContext) {
+                CadenceTaskMutationSupport.insertBundle(from: task, modelContext: context)
+            }
+        """
+        let pendingOverload = """
+            static func createBundle(title: String, in context: ModelContext) -> TaskBundle {
+                let bundle = TaskBundle(title: title)
+                context.insert(bundle)
+                return bundle
+            }
+        """
+        let canvas = """
+        struct TimelineDayCanvas: View {
+            var body: some View {
+                TimelineCanvas(onCreateBundle: { title in
+                    SchedulingActions.createBundle(title: title, in: modelContext)
+                })
+            }
+        }
+        """
+        func actions(_ overloads: String...) -> String {
+            "enum SchedulingActions {\n\(overloads.joined(separator: "\n"))\n}"
+        }
+
+        let split = existence(over: [
+            "actions.swift": actions(pendingOverload, committingOverload),
+            "canvas.swift": canvas,
+            "mutation.swift": mutation,
+        ])
+        #expect(
+            CadenceSaveCommitRule.commitReachOffenders(in: canvas, changing: split) == ["body"],
+            "one committing overload must not vouch for its inserting sibling"
+        )
+
+        // The nearest negative: the same call, with the committing spelling the *only* one that
+        // name has. Now the name genuinely does commit, and the canvas is clean.
+        let unanimous = existence(over: [
+            "actions.swift": actions(committingOverload),
+            "canvas.swift": canvas,
+            "mutation.swift": mutation,
+        ])
+        #expect(unanimous.committersRead >= 1, "the commit index read \(unanimous.committersRead) names")
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: canvas, changing: unanimous).isEmpty)
+    }
+
+    /// **Gap 3.** Half 3 keyed on `insert(` alone, so "delete and never commit at all" was covered
+    /// by nothing: half 1 sees the delete but needs a `try?` that is not there, and half 3 saw only
+    /// inserts. That is exactly where the bundle popover's end actions sat.
+    @Test func halfThreeReadsADeleteThatReachesNoCommitAndNotOneThatDoes() throws {
+        let pending = """
+        private func endBundle() {
+            detachMembers(bundle)
+            modelContext.delete(bundle)
+            showPopover = false
+        }
+        """
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: pending, changing: .init()) == ["endBundle"])
+
+        let committed = """
+        private func endBundle() {
+            detachMembers(bundle)
+            modelContext.delete(bundle)
+            try? modelContext.save()
+        }
+        """
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: committed, changing: .init()).isEmpty)
+    }
+
+    /// **Gap 2.** `declarations(in:)` parsed `func` and the literal `var body`, so a whole screen
+    /// written as `private var columnEditor: some View` was invisible to all four halves — 7 of 102
+    /// swallowed-commit matches in the app sat outside every parsed declaration.
+    ///
+    /// The negative is the stored property beside it. A *computed* property opens its brace on its
+    /// own line; a stored one does not open one at all, and a reader that let it reach forward for
+    /// the next `{` would file somebody else's offences under a `CGFloat`'s name — which is what
+    /// the first spelling of this fix did.
+    @Test func theDeclarationSplitReadsAComputedPropertyAndNotAStoredOne() throws {
+        let source = """
+        struct Column: View {
+            var verticalOffset: CGFloat = 0
+
+            private var columnEditor: some View {
+                Button("Save") {
+                    try? modelContext.save()
+                    showEditor = false
+                }
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.declarations(in: source).map(\.name) == ["columnEditor"])
+        #expect(CadenceSaveCommitRule.reportOffenders(in: source) == ["columnEditor"])
+    }
+
+    /// **Gap 4, the window.** Half 2 read only the text *after* the save, and three measured sites
+    /// dismiss first — macOS's Move Note calls `dismissPicker()` and then moves the note. Ordering
+    /// was never the claim the rule makes.
+    ///
+    /// The negative is what the tail reading was accidentally protecting: `context.isArchived =
+    /// false` is a **model field** being edited above a swallowed save, in four settings screens.
+    /// Reading the whole block makes the vocabulary's `(?<![.\w])` anchor load-bearing.
+    @Test func halfTwoReadsTheWholeBlockSoADismissalBeforeTheSaveStillCounts() throws {
+        let dismissesFirst = """
+        private func move(to list: TaskList) {
+            dismissPicker()
+            note.list = list
+            try? modelContext.save()
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: dismissesFirst) == ["move"])
+
+        let editsAModelField = """
+        private func restore(_ context: Context) {
+            context.isArchived = false
+            try? modelContext.save()
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: editsAModelField).isEmpty)
+
+        // A closure is its own block, so the discrimination the tail reading was really carrying —
+        // a `var body` with an autosave in one closure and a `dismiss()` in an unrelated one — is
+        // kept by the block scoping rather than by the direction.
+        let twoClosures = """
+        var body: some View {
+            Toggle("Done", isOn: $done)
+                .onChange(of: done) { _, _ in
+                    try? modelContext.save()
+                }
+                .toolbar {
+                    Button("Close") { dismiss() }
+                }
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: twoClosures).isEmpty)
+    }
+
+    /// **Gap 4, the vocabulary.** Four spellings this app dismisses with that the closed list had
+    /// never been shown: `showEditor = false`, `selectedBundleID = nil`, `pendingRecurrenceRule =
+    /// nil`, and a named `dismissPicker()`.
+    ///
+    /// `self.` counts and a model field does not, and both halves of that are measured: the same
+    /// file writes `pendingRecurrenceRule = nil` in a binding and `self.pendingRecurrenceRule =
+    /// nil` in a method, and they are the same dismissal.
+    @Test func theVocabularyReadsThisAppsDismissalsAndNotAModelFieldThatHappensToStartWithIs() throws {
+        for dismissal in [
+            "showEditor = false",
+            "selectedBundleID = nil",
+            "self.pendingRecurrenceRule = nil",
+            "dismissPicker()",
+        ] {
+            let source = """
+            private func finish() {
+                task.title = title
+                try? modelContext.save()
+                \(dismissal)
+            }
+            """
+            #expect(CadenceSaveCommitRule.reportOffenders(in: source) == ["finish"], "\(dismissal)")
+        }
+
+        for fieldEdit in ["task.isFlagged = false", "bundle.selectedTaskID = nil"] {
+            let source = """
+            private func finish() {
+                try? modelContext.save()
+                \(fieldEdit)
+            }
+            """
+            #expect(CadenceSaveCommitRule.reportOffenders(in: source).isEmpty, "\(fieldEdit)")
+        }
+    }
+
+    /// **Gap 4, the drop handler.** A `-> Bool` handler has no sheet to close: its answer *is* the
+    /// report, and `TasksPanelDropCoordinator` already says so — "a silent accept says the move
+    /// happened".
+    ///
+    /// The negative is the same two words inside a predicate closure, in a declaration that answers
+    /// nothing. Scoping the needle to the declaration's return type is what keeps it off every
+    /// `guard`-shaped `return true` in the app.
+    @Test func returningTrueIsASuccessReportOnlyFromADeclarationThatAnswersBool() throws {
+        let dropHandler = """
+        private func assignTask(_ id: UUID, to list: TaskList) -> Bool {
+            task.list = list
+            try? modelContext.save()
+            return true
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: dropHandler) == ["assignTask"])
+
+        let predicate = """
+        private func prune() {
+            items.removeAll { item in
+                try? modelContext.save()
+                return true
+            }
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: predicate).isEmpty)
+    }
+
+    /// **Gap 4, the sharpest spelling.** Every other report in the vocabulary is state a redraw can
+    /// repair. An `@AppStorage` write is not: it is the one false success that **outlives the
+    /// rollback**, and Roll Over spells it as an assignment *from* the swallowing call — so the
+    /// report sits textually before the call as well as outside the old vocabulary.
+    @Test func writingAnAppStorageOverASwallowedCommitIsASuccessReport() throws {
+        let rollover = """
+        enum CadenceTodayRolloverSupport {
+            static func rollOver(_ tasks: [AppTask], todayKey: String, modelContext: ModelContext) -> String {
+                for task in tasks { modelContext.delete(task.bundle) }
+                try? modelContext.save()
+                return todayKey
+            }
+        }
+        """
+        let persisting = """
+        struct TasksPanel: View {
+            @AppStorage(CadenceTodayRolloverSupport.dismissedDateStorageKey) private var rolloverNoticeDismissedDate = ""
+
+            private func rollOverPastDoTasks() {
+                rolloverNoticeDismissedDate = CadenceTodayRolloverSupport.rollOver(
+                    overdoTasks,
+                    todayKey: todayKey,
+                    modelContext: modelContext
+                )
+            }
+        }
+        """
+        let swallowing = index(over: ["rollover.swift": rollover, "panel.swift": persisting])
+        #expect(
+            CadenceSaveCommitRule.indirectReportOffenders(in: persisting, swallowing: swallowing)
+                == ["rollOverPastDoTasks"]
+        )
+
+        // The nearest negative: the same assignment to ordinary view state, which a redraw
+        // repairs. Only the defaults write survives the next launch.
+        let transient = persisting.replacingOccurrences(
+            of: "@AppStorage(CadenceTodayRolloverSupport.dismissedDateStorageKey) private var",
+            with: "@State private var"
+        )
+        #expect(
+            CadenceSaveCommitRule.indirectReportOffenders(in: transient, swallowing: swallowing).isEmpty
+        )
+    }
+
+    /// A `pending<Something> = nil` that the declaration also `cancel()`s is a scheduled unit of
+    /// work being cleared, not a screen closing. Measured: the discriminator is worth exactly two
+    /// false positives, and without it the `pending` spelling costs more than it finds.
+    @Test func clearingACancelledWorkItemIsNotADismissal() throws {
+        let workItem = """
+        private func scheduleRefresh() {
+            pendingAppDataRefresh?.cancel()
+            let item = DispatchWorkItem {
+                try? modelContext.save()
+                pendingAppDataRefresh = nil
+            }
+            pendingAppDataRefresh = item
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: workItem).isEmpty)
+
+        let dialog = """
+        private func applyPendingRecurrenceRule() {
+            task.recurrenceRule = pendingRecurrenceRule
+            try? modelContext.save()
+            pendingRecurrenceRule = nil
+        }
+        """
+        #expect(CadenceSaveCommitRule.reportOffenders(in: dialog) == ["applyPendingRecurrenceRule"])
+    }
+
     private func index(over sources: [String: String]) -> CadenceSaveCommitRule.SwallowingIndex {
         CadenceSaveCommitRule.swallowingIndex(over: sources.keys.sorted()) { sources[$0] ?? "" }
     }
 
+    private func existence(over sources: [String: String]) -> CadenceSaveCommitRule.ExistenceIndex {
+        CadenceSaveCommitRule.existenceIndex(over: sources.keys.sorted()) { sources[$0] ?? "" }
+    }
+
     private func swallowingIndexOverTheApp() throws -> CadenceSaveCommitRule.SwallowingIndex {
         try CadenceSaveCommitRule.swallowingIndex(over: try saveCommitSwiftFiles()) {
+            CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0))
+        }
+    }
+
+    private func existenceIndexOverTheApp() throws -> CadenceSaveCommitRule.ExistenceIndex {
+        try CadenceSaveCommitRule.existenceIndex(over: try saveCommitSwiftFiles()) {
             CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0))
         }
     }
@@ -432,8 +858,8 @@ struct CadenceSaveCommitDisciplineTests {
             dismiss()
         }
         """
-        #expect(CadenceSaveCommitRule.commitReachOffenders(in: handed).isEmpty)
-        #expect(CadenceSaveCommitRule.commitReachOffenders(in: ambient) == ["create"])
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: handed, changing: .init()).isEmpty)
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: ambient, changing: .init()) == ["create"])
 
         // `commit:` is a commit being handed *in*, which is the opposite claim from a context being
         // handed in, so it must not exempt anything on its own.
@@ -444,7 +870,7 @@ struct CadenceSaveCommitDisciplineTests {
             dismiss()
         }
         """
-        #expect(CadenceSaveCommitRule.commitReachOffenders(in: handedACommitOnly) == ["create"])
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: handedACommitOnly, changing: .init()) == ["create"])
     }
 
     /// The seventeenth: `CadenceWriteService.createTask` owns its context and does commit — through
@@ -468,7 +894,7 @@ struct CadenceSaveCommitDisciplineTests {
             try context.save()
         }
         """
-        #expect(CadenceSaveCommitRule.commitReachOffenders(in: reaching).isEmpty)
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: reaching, changing: .init()).isEmpty)
 
         let notReaching = """
         func createTask() throws {
@@ -483,7 +909,7 @@ struct CadenceSaveCommitDisciplineTests {
             recordAudit(entries)
         }
         """
-        #expect(CadenceSaveCommitRule.commitReachOffenders(in: notReaching) == ["createTask"])
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: notReaching, changing: .init()) == ["createTask"])
 
         // Only *this* file. The call graph stops at the file boundary, which is the honest limit of
         // a text scan, and it errs toward reporting — the safe direction for a half whose exemption
@@ -495,7 +921,7 @@ struct CadenceSaveCommitDisciplineTests {
             try SomeOtherFile.saveEverything(context)
         }
         """
-        #expect(CadenceSaveCommitRule.commitReachOffenders(in: acrossFiles) == ["createTask"])
+        #expect(CadenceSaveCommitRule.commitReachOffenders(in: acrossFiles, changing: .init()) == ["createTask"])
     }
 
     /// The `presented… =` spelling half 2 gained with T-503, and the reason it is `=(?!=)`: these
@@ -530,10 +956,19 @@ struct CadenceSaveCommitDisciplineTests {
         // a *pair* of declarations, so checking it against an empty index would read every entry
         // as stale.
         let swallowing = try swallowingIndexOverTheApp()
+        let existence = try existenceIndexOverTheApp()
         for (rule, exemptions, offenders) in [
-            ("existence", CadenceSaveCommitRule.existenceExemptions, CadenceSaveCommitRule.existenceOffenders),
+            (
+                "existence",
+                CadenceSaveCommitRule.existenceExemptions,
+                { CadenceSaveCommitRule.existenceOffenders(in: $0, changing: existence) }
+            ),
             ("report", CadenceSaveCommitRule.reportExemptions, CadenceSaveCommitRule.reportOffenders),
-            ("commit reach", CadenceSaveCommitRule.commitReachExemptions, CadenceSaveCommitRule.commitReachOffenders),
+            (
+                "commit reach",
+                CadenceSaveCommitRule.commitReachExemptions,
+                { CadenceSaveCommitRule.commitReachOffenders(in: $0, changing: existence) }
+            ),
             (
                 "report one frame down",
                 CadenceSaveCommitRule.indirectReportExemptions,
@@ -598,10 +1033,47 @@ enum CadenceSaveCommitRule {
         // idempotent and re-run every launch, so a refused commit costs one launch's worth of
         // seeding and repairs itself; and `saveChanges:`/`save:` already let a caller that *does*
         // have a unit of work take the commit over. Filed as the follow-up's lowest tier.
-        "Cadence/Services/TagSupport.swift": ["seedDefaultTags", "deduplicateTags"],
+        // `syncAllNoteTagsFromMarkdown` joined them with T-627: it is the same shape one frame
+        // down — `syncNoteTagsFromMarkdown` inserts the `Tag` rows — and it carries the same
+        // `saveChanges:` opt-out for a caller that owns the unit of work.
+        "Cadence/Services/TagSupport.swift": ["seedDefaultTags", "deduplicateTags", "syncAllNoteTagsFromMarkdown"],
         // UI-test scaffolding. It runs only under `CadenceUITestSupport`'s launch argument, and
         // there is no user to tell.
         "Cadence/Services/CadenceUITestSupport.swift": ["seedDataIfNeeded"],
+
+        // MARK: Found by T-627's widening, held for the tickets that own them
+        //
+        // Everything below is a *new* sighting of an old shape: half 1 now follows a call one
+        // frame down, so the frame holding the `try?` and the frame holding the `insert` no
+        // longer have to be the same frame. Each entry names the ticket that owns the fix, and
+        // fixing one means deleting its line here in the same change — that is what
+        // `everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule` is for.
+
+        // [[T-636]](a) and its family: the completion spine. `TaskWorkflowService.markDone` →
+        // `CadenceTaskRecurrenceWorkflowSupport.markDone` → `spawnNextOccurrenceIfNeeded`, which
+        // inserts the successor. Every surface that ticks a checkbox over a swallowed save is one
+        // of these, and they must be fixed together or the spine grows a second answer.
+        "Cadence/Shared/CadenceTaskMutationSupport.swift": ["setStatus", "toggleCompletion"],
+        "Cadence/Shared/CadenceFocusPlanningSupport.swift": ["complete"],
+        "Cadence/macOS/Views/ListNotesSupportViews.swift": ["toggleEmbeddedTask"],
+        "Cadence/macOS/Views/NoteEditorPane.swift": ["toggleEmbeddedTask"],
+        "Cadence/macOS/Views/NotePanel.swift": ["toggleEmbeddedTask"],
+        // [[T-629]]: a markdown image asset inserted by `MarkdownImageAssetService.createAsset`
+        // and committed by a `try?`. The note keeps a `![…](asset-id)` reference either way.
+        "Cadence/iOS/iOSMarkdownEditingSurface.swift": ["createPastedImageAssets", "insertPickedImages"],
+        "Cadence/macOS/Editor/MarkdownEditorView.swift": ["createAssets", "createInlineTag"],
+        // [[T-631]]'s family: `TagSupport.resolveTags`/`setTags` insert the `Tag` row, the caller
+        // swallows the commit, and a phantom tag turns up in Settings › Tags on the next
+        // unrelated save.
+        "Cadence/Shared/CadenceNotePlanningSupport.swift": ["update"],
+        "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": ["body"],
+        // [[T-634]]: adding and removing a subtask from the task-detail sheet.
+        "Cadence/iOS/iOSTaskDetailSheet.swift": ["addSubtask", "deleteSubtask"],
+        // [[T-635]]: Roll Over reaches `deleteBundleIfFullySettled`, which deletes the block, over
+        // a swallowed commit. The `@AppStorage` half of the same ticket is in the report ledger.
+        "Cadence/Shared/CadenceTodayRolloverSupport.swift": ["rollOver"],
+        // [[T-628]](b): the bundle popover's end actions, reached from the calendar board.
+        "Cadence/macOS/Views/CalendarBoardItemSupportViews.swift": ["bundleDetailPopover"],
         // T-497 emptied the rest of this list: `CadenceNoteFolderSupport.createNote`,
         // `SettingsTagsSection.createTag`, `iOSSettingsTagsSection.createTag` and
         // `iOSCalendarEventEditSheet.openEventNote` all commit through `commitInsert` now, and are
@@ -625,6 +1097,21 @@ enum CadenceSaveCommitRule {
         // "Flush an in-place edit, then close." Both are live instances of half 2.
         "Cadence/iOS/iOSSearchSupportViews.swift": ["body"],
         "Cadence/iOS/iOSTaskDetailSheet.swift": ["finishEditingAndDismiss"],
+
+        // MARK: Found by T-627's widened vocabulary and block window
+        //
+        // [[T-633]]: `pendingRecurrenceRule = nil` is what closes the scope dialog, and it closes
+        // over a swallowed commit — so the row's own "Couldn't Update the Series" alert has
+        // nowhere to fire.
+        "Cadence/iOS/iOSTaskRowActionViews.swift": ["applyPendingRecurrenceRule"],
+        // [[T-632]]: the kanban column editor. Missed twice over — `showEditor = false` was
+        // outside the vocabulary, and the whole thing lives in `private var columnEditor: some
+        // View`, which nothing parsed.
+        "Cadence/macOS/Views/KanbanSectionColumnView.swift": ["columnEditor"],
+        // [[T-636]](b): `return true` from a `-> Bool` drop handler. The repo argued this one
+        // itself, in `TasksPanelDropCoordinator`: "a silent accept says the move happened".
+        "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift": ["unschedule"],
+        "Cadence/macOS/Views/TasksPanelSupport.swift": ["assignTask"],
         // `Cadence/iOS/iOSListSupportViews.swift: ["addLink"]` was the third entry — [[T-507]],
         // held here rather than fixed to keep two agents out of one file. It is fixed now:
         // `addLink` catches the insert and leaves the form open with an `actionError`, the way
@@ -633,7 +1120,7 @@ enum CadenceSaveCommitRule {
         // stale one — which is exactly how it was meant to leave.
     ]
 
-    static func existenceInstrument() throws -> CadenceScanInstrument {
+    static func existenceInstrument(changing index: ExistenceIndex) throws -> CadenceScanInstrument {
         try CadenceScanInstrument(
             "swallowed save over an insert or delete",
             fires: """
@@ -650,7 +1137,7 @@ enum CadenceSaveCommitRule {
                 try CadencePendingChangePersistence.commitInsert(of: tag, in: modelContext)
             }
             """,
-            by: { !existenceOffenders(in: $0).isEmpty }
+            by: { !existenceOffenders(in: $0, changing: index).isEmpty }
         )
     }
 
@@ -682,15 +1169,65 @@ enum CadenceSaveCommitRule {
         )
     }
 
-    /// The exemption list for half 3, and it is **empty** — deliberately, and that is the claim.
+    /// The exemption list for half 3. **It was empty until T-627, and the emptiness was the
+    /// claim** — worth reading before adding to it.
     ///
-    /// Half 1 and half 2 each carry a handful of sites held back on a product decision. Half 3
-    /// carries none, because the ~17 declarations it must not fire on are subtracted by the rule
-    /// below rather than by name. An entry appearing here would mean the mechanical exemption has
-    /// stopped describing the population, which is worth noticing rather than papering over.
-    static let commitReachExemptions: [String: [String]] = [:]
+    /// T-503 could keep it empty because half 3 only looked for a literal `insert(` in a
+    /// declaration's own body, and the ~17 helpers that shape catches are all subtracted by the
+    /// signature rule below. T-627 widened the half twice: it reads `delete(` as well (gap 3), and
+    /// it follows a pending existence change **up** through every frame that disclaims ownership
+    /// (gap 1). The population that widening describes is much larger than the one the mechanical
+    /// exemption was built for, and *that* is what these entries record. The signature rule has not
+    /// stopped working; it never covered these.
+    ///
+    /// Every entry is a real finding. The list is a schedule, not a silence: fixing one deletes its
+    /// line here in the same change, because
+    /// `everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule` fails on a stale entry.
+    static let commitReachExemptions: [String: [String]] = [
+        // [[T-631]]'s family, and the largest: `TagSupport.resolveTags` and `setTags` insert the
+        // `Tag` row into the ambient context and commit nothing, so every composer that offers
+        // "create tag" leaves one pending. `TaskCreationService.createTask` commits `[task] +
+        // subtasks` and not the tag, so a refused task commit un-inserts the task and leaves the
+        // tag behind.
+        "Cadence/iOS/iOSCreateTaskSheet.swift": ["markerSuggestions"],
+        "Cadence/iOS/iOSTaskDetailComponents.swift": ["addTag"],
+        "Cadence/macOS/Sheets/CreateTaskSheet.swift": ["createTag"],
+        "Cadence/macOS/Views/InlineTaskComposerView.swift": ["createTag"],
+        "Cadence/macOS/Views/SchedulePanelComponents.swift": ["addSubtask", "body", "createTag"],
+        // `NoteEditorPane` carries four spellings of the same two defects: the tag one above
+        // (`createTag`, `noteTagsBinding`, and `persistEditorContentIfNeeded` through
+        // `syncNoteTagsFromMarkdown`) and [[T-634]]'s subtask one in `body`.
+        "Cadence/macOS/Views/NoteEditorPane.swift": [
+            "body", "createTag", "noteTagsBinding", "persistEditorContentIfNeeded",
+        ],
+        // [[T-636]](e): `SchedulingActions.createTask`/`createBundle` insert into a context they
+        // were handed and commit nothing, and the canvas that calls them commits nothing either.
+        "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift": ["body"],
+        "Cadence/macOS/Views/SchedulePanel.swift": ["body"],
+        "Cadence/macOS/Views/TimelineDayCanvas.swift": ["body"],
+        // [[T-636]](a): the completion spine again, reached from a control that has no `try?` at
+        // all — which is why only this half can see these two.
+        "Cadence/macOS/Views/FocusView.swift": ["timerControls"],
+        "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": ["setStatus"],
+        // [[T-628]], both halves, and the two this ticket's own fix removes. (a) ticking a
+        // recurring task's circle spawns the successor with no commit boundary at all; (b) the
+        // bundle popover's Complete/Unbundle/Delete detach the members and delete the bundle,
+        // then close.
+        "Cadence/macOS/Services/TaskCompletionAnimationManager.swift": ["write"],
+        "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift": ["body"],
+        "Cadence/macOS/Views/TimelineBundleBlock.swift": ["body"],
+        // **Not a defect, and the one entry here that is a limit of the scan rather than a
+        // finding.** `CadenceWriteService.resolvedTags` reaches for the service's own stored
+        // `context`, so the signature rule cannot subtract it — but the unit of work is owned by
+        // `createTask` in the same file, which commits through `saveNotifyAndAudit`. The rule
+        // reads "reaches a commit" downwards through same-file calls and has no reading for
+        // "my *caller* in this file commits"; adding one would silence real defects, because
+        // `body` calling a broken `createTag()` is exactly that shape. Held as a named
+        // false positive rather than paid for with a weaker rule.
+        "Cadence/Services/MCPReadOnly/CadenceWriteService.swift": ["resolvedTags"],
+    ]
 
-    static func commitReachInstrument() throws -> CadenceScanInstrument {
+    static func commitReachInstrument(changing index: ExistenceIndex) throws -> CadenceScanInstrument {
         try CadenceScanInstrument(
             "an insert that reaches no commit at all",
             fires: """
@@ -709,7 +1246,7 @@ enum CadenceSaveCommitRule {
                 return subtask
             }
             """,
-            by: { !commitReachOffenders(in: $0).isEmpty }
+            by: { !commitReachOffenders(in: $0, changing: index).isEmpty }
         )
     }
 
@@ -740,14 +1277,16 @@ enum CadenceSaveCommitRule {
     /// commit reached through a closure argument or another file is invisible to it. That is the
     /// usual honest limit of a text scan; it errs toward reporting, which is the safe direction for
     /// a rule whose exemption list is meant to stay empty.
-    static func commitReachOffenders(in source: String) -> [String] {
-        let all = declarations(in: source)
-        let committing = committingDeclarationNames(in: all)
-        return all
+    static func commitReachOffenders(in source: String, changing index: ExistenceIndex) -> [String] {
+        let parsed = parsedDeclarations(in: source)
+        let committing = committingNames(in: parsed, index: index)
+        let local = pendingExistenceNames(in: parsed, committing: committing, index: index)
+        return parsed
             .filter { declaration in
-                CadenceSourceScan.matchCount(insertCall, in: declaration.body) > 0
-                    && CadenceSourceScan.matchCount(handedAModelContext, in: declaration.signature) == 0
-                    && !committing.contains(declaration.name)
+                (declaration.changesExistenceDirectly
+                    || changesExistenceOneFrameDown(declaration, local: local, index: index))
+                    && !declaration.disclaimsOwnership
+                    && !commitsItself(declaration, committing: committing, index: index)
             }
             .map(\.name)
             .uniqued()
@@ -758,24 +1297,31 @@ enum CadenceSaveCommitRule {
     /// A fixed point rather than one hop: `CadenceWriteService.createTask` reaches `context.save()`
     /// through *two* forwarding spellings of `saveNotifyAndAudit`, and stopping at one hop would
     /// have needed a by-name exemption for a function that obeys the rule.
-    private static func committingDeclarationNames(
-        in declarations: [(name: String, signature: String, body: String)]
+    /// Every declaration in the file that reaches a commit, directly or through a call.
+    ///
+    /// **The cross-file half applies only to a frame that disclaims ownership, and the asymmetry is
+    /// measured rather than tidy.** A helper handed a `ModelContext` is one link in the chain the
+    /// existence index propagates along, so "does this frame commit?" has to have the same reach as
+    /// "does this frame leave something pending" — otherwise [[T-628]]'s own fix reads as an
+    /// offence for ever, because `SchedulingActions.completeBundle` commits through
+    /// `CadenceTaskMutationSupport.deleteBundle` in another file.
+    ///
+    /// A `var body`, or anything else that reached for an ambient context, keeps the same-file
+    /// reading. It calls dozens of things and a great many of them commit *something* somewhere;
+    /// letting that count made four real half-3 offenders go quiet in one measurement, including
+    /// the task inspector's own completion path. The conservative reading errs toward reporting,
+    /// which is the safe direction for the frame that owns the unit of work.
+    fileprivate static func committingNames(
+        in declarations: [ParsedDeclaration],
+        index: ExistenceIndex,
+        seed: Set<String> = []
     ) -> Set<String> {
-        var committing = Set(
-            declarations
-                .filter { CadenceSourceScan.matchCount(commitCall, in: $0.body) > 0 }
-                .map(\.name)
-        )
+        var committing = seed.union(declarations.filter(\.reachesACommitDirectly).map(\.name))
         var changed = true
         while changed {
             changed = false
             for declaration in declarations where !committing.contains(declaration.name) {
-                let callsACommitter = committing.contains { callee in
-                    callee != "body"
-                        && callee != declaration.name
-                        && CadenceSourceScan.matchCount("\\b\(callee)\\s*\\(", in: declaration.body) > 0
-                }
-                if callsACommitter {
+                if commitsItself(declaration, committing: committing, index: index) {
                     committing.insert(declaration.name)
                     changed = true
                 }
@@ -784,40 +1330,273 @@ enum CadenceSaveCommitRule {
         return committing
     }
 
-    private static let insertCall = "(modelContext|context|ctx)\\??\\.insert\\("
+    /// Whether this one declaration reaches a commit, given what is known so far.
+    ///
+    /// The per-declaration form of `committingNames`, which answers by *name*. Both readings are
+    /// needed: a bare call inside a file can only be resolved by name, and publishing a name to the
+    /// cross-file index needs every overload to agree.
+    private static func commitsItself(
+        _ declaration: ParsedDeclaration,
+        committing: Set<String>,
+        index: ExistenceIndex
+    ) -> Bool {
+        if declaration.reachesACommitDirectly { return true }
+        return declaration.calls.contains { call in
+            guard call.callee != "body", !isRecursive(call, in: declaration) else { return false }
+            guard let qualifier = call.qualifier else { return committing.contains(call.callee) }
+            return declaration.disclaimsOwnership && index.commits(call.callee, on: qualifier)
+        }
+    }
+
+    /// Changing what the store holds, and it is `insert` **or** `delete` — gap 3 of T-627.
+    ///
+    /// Half 1 read both from the start; half 3 read only `insert(` for its first two tickets, so
+    /// "delete and never commit at all" was covered by nothing at all: half 1 sees the delete but
+    /// needs a `try?` that is not there, half 3 sees the missing commit but only for inserts.
+    /// `SchedulingService.completeBundle` sat in exactly that hole ([[T-628]]).
+    private static let existenceCall = "(modelContext|context|ctx)\\??\\.(insert|delete)\\("
     /// "My caller owns the unit of work", spelled as a signature. `:\s*ModelContext\b` and not
     /// merely `ModelContext`, so that `commit: (ModelContext) throws -> Void` — which is a
     /// *commit* being handed in, the opposite claim — does not exempt anything.
     private static let handedAModelContext = ":\\s*ModelContext\\b"
     private static let commitCall = "\\.save\\(\\)|CadencePendingChangePersistence\\.commit\\w*"
 
-    /// Half 1: declarations holding both a swallowed save and an insert or a delete.
-    static func existenceOffenders(in source: String) -> [String] {
-        let existence = "(modelContext|context|ctx)\\??\\.(insert|delete)\\("
-        return declarations(in: source)
-            .filter {
-                CadenceSourceScan.matchCount(swallowedSave, in: $0.body) > 0
-                    && CadenceSourceScan.matchCount(existence, in: $0.body) > 0
+    /// Half 1: declarations holding both a swallowed save and an existence change — **theirs, or
+    /// one frame down** (gap 1 of T-627).
+    ///
+    /// The literal-`insert(`-in-my-own-body reading is the one this app is worst suited to. Its
+    /// mutations live one frame away from the button by design, so the frame that swallows the
+    /// commit and the frame that calls `context.insert` are routinely different frames, and each
+    /// read on its own is clean. `MarkdownEditorView` is the plain case: it swallows a save over
+    /// `MarkdownImageAssetService.createAsset`, and the insert is in `createAsset` ([[T-629]]).
+    static func existenceOffenders(in source: String, changing index: ExistenceIndex) -> [String] {
+        let parsed = parsedDeclarations(in: source)
+        let local = pendingExistenceNames(
+            in: parsed,
+            committing: committingNames(in: parsed, index: index),
+            index: index
+        )
+        return parsed
+            .filter { declaration in
+                declaration.swallowsDirectly
+                    && (declaration.changesExistenceDirectly
+                        || changesExistenceOneFrameDown(declaration, local: local, index: index))
             }
             .map(\.name)
             .uniqued()
     }
 
-    /// Half 2: declarations where something in the save's **own block**, after it, reports success.
+    // MARK: - Existence, one frame down (T-627 gap 1)
+
+    /// The callees that leave an existence change **pending on their caller**: a declaration that
+    /// inserts or deletes and does not itself reach a commit.
+    ///
+    /// Keyed by name **and enclosing type**, exactly as `SwallowingIndex` is and for the measured
+    /// reason recorded there — resolving a qualified call by bare name reported 17 sites where the
+    /// pairing reported 2, because `save`, `create` and `persistNote` are each declared in several
+    /// files here.
+    ///
+    /// **Only declarations handed a `ModelContext` are in here, and that is the whole design.**
+    /// Half 3's exemption already says such a declaration is *not* the party that decides when to
+    /// commit — its caller owns the unit of work. Read forwards instead of backwards, that is a
+    /// propagation rule: a pending insert or delete travels up through every handed-a-context frame
+    /// and stops at the first frame that was **not** handed one. That frame is the offender, and it
+    /// is the only one reported, so a chain N frames deep yields one finding rather than N.
+    ///
+    /// It also terminates for free. Chasing *every* callee would report every screen that
+    /// transitively touches `TagSupport.resolveTags`; chasing only the frames that disclaim
+    /// ownership reports the frame that has it.
+    ///
+    /// Transitive rather than one hop, because this app's chains are long: ticking a recurring
+    /// task's circle on macOS goes `TaskCompletionAnimationManager.write` →
+    /// `TaskWorkflowService.markDone(_:in:)` → `CadenceTaskRecurrenceWorkflowSupport.markDone` →
+    /// `spawnNextOccurrenceIfNeeded`, and only the fourth frame holds `context.insert` ([[T-628]]).
+    /// The middle three all disclaim ownership in their signatures.
+    ///
+    /// **A callee that commits is not in here**, which is what keeps the properly-fixed sites
+    /// quiet: `CadencePendingChangePersistence.commitInsert` inserts and saves, and a caller of
+    /// `CadenceTaskMutationSupport.deleteBundle` — [[T-322]]'s throwing sibling — reaches a commit
+    /// through it rather than inheriting a pending delete.
+    struct ExistenceIndex {
+        fileprivate var typesByName: [String: Set<String>] = [:]
+        /// The other half: every declaration in the app that **reaches a commit**, resolved the
+        /// same way. Half 3 read this same question one file at a time, and after T-628 that was
+        /// not enough — the fix routes `SchedulingActions.completeBundle` through
+        /// `CadenceTaskMutationSupport.deleteBundle`, whose `commitDelete` is in another file, so a
+        /// same-file-only reading would have called the fixed code an offender for ever.
+        fileprivate var committersByName: [String: Set<String>] = [:]
+
+        /// How many distinct callee names the index holds; the non-vacuity handle for a builder
+        /// that silently read nothing, the same one `SwallowingIndex.namesRead` gives.
+        var namesRead: Int { typesByName.count }
+
+        /// How many distinct committing callee names it holds. Separate from `namesRead` because
+        /// the two halves fail differently: an empty pending map makes the sweep blind, an empty
+        /// committer map makes it *loud*, and a sweep should be able to say which.
+        var committersRead: Int { committersByName.count }
+
+        fileprivate func holds(_ callee: String, on qualifier: String) -> Bool {
+            typesByName[callee]?.contains(qualifier) ?? false
+        }
+
+        fileprivate func commits(_ callee: String, on qualifier: String) -> Bool {
+            committersByName[callee]?.contains(qualifier) ?? false
+        }
+    }
+
+    static func existenceIndex(
+        over files: [String],
+        read: (String) throws -> String
+    ) rethrows -> ExistenceIndex {
+        let parsed = try files.map { parsedDeclarations(in: try read($0)) }
+        var index = ExistenceIndex()
+
+        // Two fixed points, in this order and not interleaved. Both grow monotonically, and a name
+        // entering the committing set has to *remove* it from the pending one — so computing them
+        // together would leave whatever the first round decided about a declaration whose callee
+        // only became a committer later. Committing does not depend on pending, so running it to
+        // completion first is both correct and cheaper.
+        var committing = [Set<String>](repeating: [], count: parsed.count)
+        var changed = true
+        while changed {
+            changed = false
+            for (fileIndex, declarations) in parsed.enumerated() {
+                let names = committingNames(in: declarations, index: index, seed: committing[fileIndex])
+                if names != committing[fileIndex] {
+                    committing[fileIndex] = names
+                    changed = true
+                }
+                // **Published only when every overload of that name on that type commits.** The
+                // index resolves a call by name and type and cannot see an argument list, so one
+                // committing overload would vouch for its siblings: `SchedulingActions` declares
+                // two `createBundle(…in:)`, and the one that forwards to
+                // `CadenceTaskMutationSupport.insertBundle` does commit while the one the timeline
+                // canvas calls inserts and does not. Unanimity is the safe direction here — a
+                // missing committer costs a report, a wrong one costs the finding.
+                for declaration in declarations where names.contains(declaration.name) {
+                    let overloads = declarations.filter {
+                        $0.name == declaration.name && $0.type == declaration.type
+                    }
+                    guard overloads.allSatisfy({ commitsItself($0, committing: names, index: index) }),
+                          index.committersByName[declaration.name]?.contains(declaration.type) != true
+                    else { continue }
+                    index.committersByName[declaration.name, default: []].insert(declaration.type)
+                    changed = true
+                }
+            }
+        }
+
+        var reached = [Set<String>](repeating: [], count: parsed.count)
+        changed = true
+        while changed {
+            changed = false
+            for (fileIndex, declarations) in parsed.enumerated() {
+                let names = pendingExistenceNames(
+                    in: declarations,
+                    committing: committing[fileIndex],
+                    index: index,
+                    seed: reached[fileIndex]
+                )
+                guard names != reached[fileIndex] else { continue }
+                for name in names.subtracting(reached[fileIndex]) {
+                    for declaration in declarations where declaration.name == name {
+                        index.typesByName[name, default: []].insert(declaration.type)
+                    }
+                }
+                reached[fileIndex] = names
+                changed = true
+            }
+        }
+        return index
+    }
+
+    /// The declarations in one file that leave an existence change pending **on their caller**:
+    /// handed a context, reaching no commit, and inserting or deleting either directly or through
+    /// another such declaration.
+    ///
+    /// `body` is excluded because it is not a callee — nothing in this app calls `body(` — so an
+    /// entry for it could only ever collide with a same-named function elsewhere.
+    fileprivate static func pendingExistenceNames(
+        in declarations: [ParsedDeclaration],
+        committing: Set<String>,
+        index: ExistenceIndex,
+        seed: Set<String> = []
+    ) -> Set<String> {
+        var names = seed
+        var changed = true
+        while changed {
+            changed = false
+            for declaration in declarations
+            where declaration.name != "body"
+                && declaration.disclaimsOwnership
+                && !names.contains(declaration.name)
+                && !commitsItself(declaration, committing: committing, index: index) {
+                let reaches = declaration.changesExistenceDirectly
+                    || changesExistenceOneFrameDown(declaration, local: names, index: index)
+                if reaches {
+                    names.insert(declaration.name)
+                    changed = true
+                }
+            }
+        }
+        return names
+    }
+
+    private static func changesExistenceOneFrameDown(
+        _ declaration: ParsedDeclaration,
+        local: Set<String>,
+        index: ExistenceIndex
+    ) -> Bool {
+        declaration.calls.contains { call in
+            guard !isRecursive(call, in: declaration) else { return false }
+            guard let qualifier = call.qualifier else { return local.contains(call.callee) }
+            return index.holds(call.callee, on: qualifier)
+        }
+    }
+
+    /// Whether a call is the declaration calling **itself**, which the fixed points below must not
+    /// count as reaching anything.
+    ///
+    /// Name equality alone is the wrong test, and it cost a real finding: `TaskWorkflowService`
+    /// declares `markDone(_:in:)` and forwards to `CadenceTaskRecurrenceWorkflowSupport.markDone`,
+    /// which is where the recurrence insert lives. A bare-name recursion guard reads that forward
+    /// as self-recursion, drops it, and the whole macOS completion spine goes quiet — the chain
+    /// [[T-628]](a) is about. A *qualified* call is only recursive when the qualifier is the
+    /// declaration's own enclosing type.
+    fileprivate static func isRecursive(
+        _ call: (qualifier: String?, callee: String, end: Int),
+        in declaration: ParsedDeclaration
+    ) -> Bool {
+        guard call.callee == declaration.name else { return false }
+        guard let qualifier = call.qualifier else { return true }
+        return qualifier == declaration.type
+    }
+
+    /// Half 2: declarations where something in the save's **own block** reports success.
     ///
     /// The save's own block rather than the whole declaration, because the whole declaration is
     /// wrong in the direction that matters: a `var body` holding an autosave in one closure and a
     /// `dismiss()` in an unrelated one is not this defect, and a rule that called it one would be
     /// silenced by an exemption instead of obeyed.
+    ///
+    /// **The whole block, not the tail after the save** — gap 4 of T-627. The rule read downwards
+    /// only, and three measured sites dismiss *first*: `AIActionsSupportViews`' destination rows
+    /// call `dismissPicker()` and then move the note ([[T-630]]). Ordering was never the claim —
+    /// "the screen moved on over a store that refused" is true whichever line came first, and a
+    /// closure is its own block, so the discrimination the tail reading was protecting is the block
+    /// scoping rather than the direction.
     static func reportOffenders(in source: String) -> [String] {
         var names: [String] = []
+        let persisted = persistedReport(in: source)
         for declaration in declarations(in: source) {
             let body = Array(declaration.body)
+            let vocabulary = successReport(returning: declaration.signature, persisted: persisted)
+            let cancelled = cancelledWorkItemNames(in: declaration.body)
             var index = 0
             while index < body.count {
                 guard let save = nextSave(in: body, from: index) else { break }
-                let tail = String(body[save.end..<blockEnd(in: body, from: save.end)])
-                if CadenceSourceScan.matchCount(successReport, in: tail) > 0 {
+                let block = String(body[blockStart(in: body, before: save.start)..<blockEnd(in: body, from: save.end)])
+                if reportsSuccess(in: block, vocabulary: vocabulary, ignoring: cancelled) {
                     names.append(declaration.name)
                     break
                 }
@@ -903,14 +1682,17 @@ enum CadenceSaveCommitRule {
         let reached = localSwallowingNames(in: parsed, index: index)
         let direct = Set(reportOffenders(in: source))
         var names: [String] = []
+        let persisted = persistedReport(in: source)
         for declaration in parsed where !direct.contains(declaration.name) {
+            let vocabulary = successReport(returning: declaration.signature, persisted: persisted)
+            let cancelled = cancelledWorkItemNames(in: declaration.text)
             for call in declaration.calls
-            where call.callee != declaration.name
+            where !isRecursive(call, in: declaration)
                 && reachesASwallow(call.qualifier, call.callee, reached: reached, index: index) {
-                let tail = String(
-                    declaration.body[call.end..<blockEnd(in: declaration.body, from: call.end)]
-                )
-                if CadenceSourceScan.matchCount(successReport, in: tail) > 0 {
+                let opens = blockStart(in: declaration.body, before: call.end)
+                let closes = blockEnd(in: declaration.body, from: call.end)
+                let block = String(declaration.body[opens..<closes])
+                if reportsSuccess(in: block, vocabulary: vocabulary, ignoring: cancelled) {
                     names.append(declaration.name)
                     break
                 }
@@ -931,6 +1713,27 @@ enum CadenceSaveCommitRule {
         // with `isPresented = false`. Not blocked on anything — the popover holds no draft, so the
         // fix is the ordinary `commitEdit(in:undo:)` one — just out of T-566's scope.
         "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": ["select"],
+
+        // MARK: Found by T-627's widened vocabulary and block window
+        //
+        // [[T-630]]: macOS Move Note. `dismissPicker()` runs *before* the move, so the tail-only
+        // reading could not have seen it whatever the vocabulary said.
+        "Cadence/macOS/Views/AIActionsSupportViews.swift": [
+            "areaDestinations", "noListDestination", "projectDestinations",
+        ],
+        // [[T-635]]: Roll Over, and the only entry in any of these four lists whose false success
+        // **outlives the rollback** — the dismissal is an `@AppStorage` write, so the banner stays
+        // hidden for the rest of the day whether or not anything rolled.
+        "Cadence/iOS/iOSTodayView.swift": ["rollOverPastDoTasks"],
+        "Cadence/macOS/Views/TasksPanel.swift": ["rollOverPastDoTasks"],
+        // [[T-633]], iOS's other half: the sheet's own scope dialog.
+        "Cadence/iOS/iOSTaskDetailSheet.swift": ["applyPendingRecurrenceChange"],
+        // [[T-636]](c): the focus session's completion, which clears the selection — the picker's
+        // only signal that the session ended — over a swallowed commit.
+        "Cadence/iOS/iOSFocusView.swift": ["complete"],
+        // [[T-636]](a) from the note editor's task embed: `content` answers `true` to the popover
+        // over `setStatus`, which reaches the recurrence insert.
+        "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": ["content"],
     ]
 
     static func indirectReportInstrument(swallowing index: SwallowingIndex) throws -> CadenceScanInstrument {
@@ -996,7 +1799,7 @@ enum CadenceSaveCommitRule {
                 && !declaration.throwsItsAnswer
                 && !names.contains(declaration.name) {
                 let reaches = declaration.swallowsDirectly || declaration.calls.contains {
-                    $0.callee != declaration.name
+                    !isRecursive($0, in: declaration)
                         && reachesASwallow($0.qualifier, $0.callee, reached: names, index: index)
                 }
                 if reaches {
@@ -1021,8 +1824,16 @@ enum CadenceSaveCommitRule {
     fileprivate struct ParsedDeclaration {
         let name: String
         let type: String
+        let signature: String
         let throwsItsAnswer: Bool
         let swallowsDirectly: Bool
+        /// Whether the declaration's **own** body calls `insert(` or `delete(` on a context.
+        let changesExistenceDirectly: Bool
+        let reachesACommitDirectly: Bool
+        /// "My caller owns the unit of work", read off the signature — half 3's exemption rule,
+        /// which is also what makes a pending existence change propagate past this frame.
+        let disclaimsOwnership: Bool
+        let text: String
         let body: [Character]
         /// Every call in the body, as its qualifier (`nil` for a bare call), its callee, and the
         /// offset just past the opening paren — which is where the block tail is read from.
@@ -1039,8 +1850,13 @@ enum CadenceSaveCommitRule {
             ParsedDeclaration(
                 name: declaration.name,
                 type: type,
+                signature: declaration.signature,
                 throwsItsAnswer: declaration.signature.contains("throws"),
                 swallowsDirectly: CadenceSourceScan.matchCount(swallowedSave, in: declaration.body) > 0,
+                changesExistenceDirectly: CadenceSourceScan.matchCount(existenceCall, in: declaration.body) > 0,
+                reachesACommitDirectly: CadenceSourceScan.matchCount(commitCall, in: declaration.body) > 0,
+                disclaimsOwnership: CadenceSourceScan.matchCount(handedAModelContext, in: declaration.signature) > 0,
+                text: declaration.body,
                 body: Array(declaration.body),
                 calls: callSites(in: declaration.body)
             )
@@ -1083,6 +1899,11 @@ enum CadenceSaveCommitRule {
 
     private static let callSite = "(?:\\b(\\w+)\\s*\\.\\s*)?\\b(\\w+)\\s*\\("
     private static let typeDeclaration = "\\b(?:enum|struct|final class|class|actor|extension)\\s+(\\w+)"
+    /// A `func` head, or a property head that carries a **type annotation**. The annotation is what
+    /// separates a computed property from a stored one for this reader's purposes: `var draft = ""`
+    /// never opens a brace, so requiring the `:` keeps the match set close to the declarations that
+    /// actually have bodies without needing to look ahead for one.
+    private static let declarationHead = "func\\s+([A-Za-z_]\\w*)\\s*[(<]|var\\s+([A-Za-z_]\\w*)\\s*:"
 
     /// What "swallowed" means, and it is **not** `save` (T-508).
     ///
@@ -1123,10 +1944,108 @@ enum CadenceSaveCommitRule {
     ///   `=`: `presentedEventNote == nil` is how these sheets are *bound*, and a needle that read
     ///   a comparison as an assignment would fire on every one of them.
     ///
+    /// **T-627 gap 4 added the four spellings this app actually dismisses with**, measured rather
+    /// than imagined. The vocabulary was assembled from three tickets' worth of sheets and had
+    /// stopped describing the codebase around it:
+    ///
+    /// - `show<Something> = false` — the sibling of the `is` flag above, and the one macOS reaches
+    ///   for: `showEditor = false` closes the kanban column editor ([[T-632]]), `showPopover =
+    ///   false` closes the bundle popover ([[T-628]]).
+    /// - `selected<Something> = nil` / `pending<Something> = nil` — a selection cleared *is* the
+    ///   dismissal for a popover bound to it (`selectedBundleID = nil`), and
+    ///   `pendingRecurrenceRule = nil` is literally what closes iOS's recurrence-scope dialog
+    ///   ([[T-633]]). The same sentence `editing<Something> = nil` already said for inline editors.
+    /// - `dismiss<Something>()` — the app's own named dismissals, `dismissPicker()` ([[T-630]]).
+    ///   `\bdismiss` and not `\bdismiss\(\)`, so a helper that closes the thing counts as
+    ///   closing the thing.
+    ///
+    /// **A flag spelling is `(?<![.\\w])`-anchored, and that is not decoration.** Every one of these
+    /// names a piece of *view* state — the screen's own `@State`, which is the only thing that can
+    /// move on. `context.isArchived = false` is a **model field** being edited, which is the case
+    /// the rule deliberately leaves alone, and it appears above a swallowed save in four settings
+    /// screens. The tail-only window used to hide that by accident; reading the whole block makes
+    /// the anchor load-bearing.
+    ///
     /// Widening it is how the rule grows. A spelling that is not here is not covered, which is the
     /// honest limit of a text scan and the reason the rule is also written in `AGENTS.md` for a
     /// reader.
-    private static let successReport = "\\bdismiss\\(\\)|\\bis[A-Z]\\w*\\s*=\\s*false|\\bon(Save|Done|Complete|Commit)\\(|\\bediting[A-Z]\\w*\\s*=\\s*nil|\\bpresented[A-Z]\\w*\\s*=(?!=)"
+    private static let successReport: String = {
+        var spellings = ["\\bdismiss\\w*\\(", "\\bon(Save|Done|Complete|Commit)\\("]
+        spellings.append(viewState + "(is|show)[A-Z]\\w*\\s*=\\s*false")
+        spellings.append(viewState + "(editing|selected|pending)[A-Z]\\w*\\s*=\\s*nil")
+        spellings.append(viewState + "presented[A-Z]\\w*\\s*=(?!=)")
+        return spellings.joined(separator: "|")
+    }()
+
+    /// A flag that belongs to the **view**: unqualified, or written through `self.`.
+    ///
+    /// Both spellings appear in the same file — `iOSTaskRowActionViews` writes
+    /// `pendingRecurrenceRule = nil` in a binding and `self.pendingRecurrenceRule = nil` in a
+    /// method, and they are the same dismissal — so neither anchor alone describes the app.
+    private static let viewState = "(?:(?<![.\\w])|(?<=\\bself\\.))"
+
+    /// The vocabulary a declaration with this signature reports success in.
+    ///
+    /// **`return true` is a success report, but only from a `-> Bool`** — T-627 gap 4, and the repo
+    /// had already written the argument down: `TasksPanelDropCoordinator` says of a drop handler
+    /// that *"a silent accept says the move happened"*. A drop handler has no sheet to close and no
+    /// completion handler to call; its answer **is** the report, and returning `true` over a
+    /// swallowed commit tells the drag it landed. Scoping the needle to the return type is what
+    /// keeps it from firing on every `guard`-shaped `return true` in the app.
+    /// Whether anything in `block` reports success, discounting `pending…` names the enclosing
+    /// declaration **cancels**.
+    ///
+    /// `pendingRecurrenceRule = nil` closes iOS's recurrence-scope dialog ([[T-633]]);
+    /// `pendingAppDataRefresh = nil` clears a `DispatchWorkItem` that has just run, and
+    /// `pendingFallbackContentSyncTask = nil` a `Task`. Both spellings are `pending<Something> =
+    /// nil`, and the readable difference is that a unit of work is the kind of thing you
+    /// `cancel()`. Measured: the discriminator is worth exactly two false positives, and without
+    /// it the `pending` spelling costs more than it finds.
+    private static func reportsSuccess(
+        in block: String,
+        vocabulary: String,
+        ignoring cancelled: Set<String>
+    ) -> Bool {
+        guard !cancelled.isEmpty else { return CadenceSourceScan.matchCount(vocabulary, in: block) > 0 }
+        guard let regex = try? NSRegularExpression(pattern: vocabulary) else { return false }
+        return regex.matches(in: block, range: NSRange(block.startIndex..., in: block)).contains { match in
+            guard let range = Range(match.range, in: block) else { return false }
+            return !cancelled.contains { block[range].hasPrefix($0) || block[range].hasPrefix("self.\($0)") }
+        }
+    }
+
+    private static func cancelledWorkItemNames(in body: String) -> Set<String> {
+        Set(CadenceSourceScan.captures("\\b(pending[A-Z]\\w*)\\s*\\??\\.\\s*cancel\\(", in: body).map(\.text))
+    }
+
+    private static func successReport(returning signature: String, persisted: String?) -> String {
+        var spellings = [successReport]
+        if let persisted { spellings.append(persisted) }
+        if CadenceSourceScan.matchCount("->\\s*Bool\\b", in: signature) > 0 {
+            spellings.append("\\breturn true\\b")
+        }
+        return spellings.joined(separator: "|")
+    }
+
+    /// Writing an `@AppStorage` property, spelled for the file that declares one — T-627 gap 4, and
+    /// the sharpest member of the vocabulary.
+    ///
+    /// Every other spelling here reports success to a screen, and a screen is redrawn. A defaults
+    /// write **outlives the rollback**: [[T-635]]'s Roll Over assigns
+    /// `rolloverNoticeDismissedDate = CadenceTodayRolloverSupport.rollOver(…)`, which returns
+    /// today's key whether or not the roll committed, and the banner then stays hidden for the rest
+    /// of the day over a store that may hold nothing. It is also gap 4's "assigned *from* the
+    /// swallowing call" case: the report is the assignment, and it sits textually **before** the
+    /// call rather than after it — invisible to the tail reading this half used to do.
+    ///
+    /// `nil` when the file declares none, so the needle is never an empty alternation.
+    private static func persistedReport(in source: String) -> String? {
+        let names = CadenceSourceScan
+            .captures("@AppStorage\\([^)]*\\)[^\n]*?\\bvar\\s+(\\w+)", in: source)
+            .map(\.text)
+        guard !names.isEmpty else { return nil }
+        return viewState + "(" + Set(names).sorted().joined(separator: "|") + ")\\s*=(?!=)"
+    }
 
     private static func nextSave(in body: [Character], from start: Int) -> (start: Int, end: Int)? {
         let text = String(body[start...])
@@ -1136,6 +2055,23 @@ enum CadenceSaveCommitRule {
         let offset = text.distance(from: text.startIndex, to: range.lowerBound)
         let length = text.distance(from: range.lowerBound, to: range.upperBound)
         return (start + offset, start + offset + length)
+    }
+
+    /// The index at which the block enclosing `start` opens, or 0 when `start` is at the
+    /// declaration's own top level.
+    private static func blockStart(in body: [Character], before start: Int) -> Int {
+        var depth = 0
+        var index = min(start, body.count) - 1
+        while index >= 0 {
+            if body[index] == "}" {
+                depth += 1
+            } else if body[index] == "{" {
+                if depth == 0 { return index + 1 }
+                depth -= 1
+            }
+            index -= 1
+        }
+        return 0
     }
 
     /// The index at which the block enclosing `start` closes.
@@ -1154,7 +2090,16 @@ enum CadenceSaveCommitRule {
         return body.count
     }
 
-    /// Every `func name(…) { … }` and `var body { … }` in the source, innermost last.
+    /// Every `func name(…) { … }` and every **computed property** `var name: T { … }` in the
+    /// source, innermost last.
+    ///
+    /// **`var body` was once the only property spelling, and that was gap 2 of T-627.** This app
+    /// writes whole screens as `private var columnEditor: some View { … }`, and everything inside
+    /// one of those was invisible to all four halves: measured over 563 files, 7 of 102
+    /// swallowed-commit matches sat outside every parsed declaration, one of them a live Report
+    /// offender (`KanbanSectionColumnView.columnEditor`). Matching `var name:` rather than the
+    /// literal `body` costs nothing — a *stored* property has no `{` before the next declaration
+    /// head, so the body finder below already skips it.
     ///
     /// The opening brace is the first `{` found at **paren depth zero**, which is what skips a
     /// default argument's closure — see
@@ -1165,24 +2110,30 @@ enum CadenceSaveCommitRule {
     /// **handed** a `ModelContext` is one whose caller owns the unit of work.
     static func declarations(in source: String) -> [(name: String, signature: String, body: String)] {
         let characters = Array(source)
-        let pattern = "func\\s+([A-Za-z_]\\w*)\\s*[(<]|var\\s+(body)\\b"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        guard let regex = try? NSRegularExpression(pattern: declarationHead) else { return [] }
 
         let matches = regex.matches(in: source, range: NSRange(source.startIndex..., in: source))
         var found: [(name: String, signature: String, body: String)] = []
         for (position, match) in matches.enumerated() {
             guard let whole = Range(match.range, in: source) else { continue }
-            var name = "body"
-            if let identifier = Range(match.range(at: 1), in: source) {
-                name = String(source[identifier])
-            }
+            let isProperty = Range(match.range(at: 1), in: source) == nil
+            guard let identifier = Range(match.range(at: 1), in: source)
+                ?? Range(match.range(at: 2), in: source) else { continue }
+            let name = String(source[identifier])
             let start = source.distance(from: source.startIndex, to: whole.lowerBound)
             // A declaration's body must open before the *next* declaration begins. Without that
             // bound, a protocol requirement or a `func` with no body swallows the next
             // declaration's braces and every offence inside it is filed under the wrong name.
-            let limit = position + 1 < matches.count
+            var limit = position + 1 < matches.count
                 ? source.distance(from: source.startIndex, to: Range(matches[position + 1].range, in: source)?.lowerBound ?? source.endIndex)
                 : characters.count
+            // A **property** head must open its brace on its own line, which is what separates a
+            // computed property from a stored one. `var verticalOffset: CGFloat = 0` otherwise
+            // reaches forward for somebody else's `{` and files their offences under its name —
+            // measured, and it produced a finding attributed to a `CGFloat`.
+            if isProperty, let newline = characters[start..<limit].firstIndex(where: \.isNewline) {
+                limit = newline
+            }
 
             var parenDepth = 0
             var index = start
