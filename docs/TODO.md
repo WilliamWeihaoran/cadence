@@ -854,37 +854,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   removes browse-all-notes from the rail and leaves other narrow hosts index-only.
   **Nobody has looked at this on a device.** The whole analysis is arithmetic and source reading. Before
   committing, capture the rail at 1366 and at 836 on a simulator.
-- [T-603] **iOS month grid: one selection layer, not three. DECIDED 2026-08-31 - badge only.**
-  `iOSCalendarMonthViews.swift:414-419` with `:437` and `:445` currently paint (a) a square-cornered
-  `Theme.blue.opacity(0.075)` cell fill, (b) a `RoundedRectangle(Theme.radiusControl)` ring inset 4pt
-  at `Theme.blue.opacity(0.65)`, 1.5pt, and (c) a wash behind the day badge - three layers, two radii,
-  for one state. **User's decision: drop the fill and the ring, keep the badge wash.**
-  This is also the convergent answer: the compact cell beside it already uses badge-only
-  (`iOSCalendarMonthAgendaViews.swift:499-533`) and macOS uses badge plus a plate change, so all three
-  month surfaces end up agreeing and no new value is invented.
-
-- [T-604] **iOS calendar sheets: all three `.ruled`. DECIDED 2026-08-31.**
-  Quick-create (`iOSCalendarQuickCreateSheet.swift:309-491`) is `.ruled`; the event-edit and
-  block-detail sheets are the default `.card`. Two of them draw a "Schedule" section, one ruled and one
-  carded, so the same section reads as two different components.
-  **User's decision: converge all three on `.ruled`**, matching the style's own doc
-  (`CadenceFieldRows.swift:42-44`): `.ruled` is *"for compact sheets where a stack of cards would read
-  as a stack of unrelated boxes"*, and all three are compact sheets sharing one section vocabulary.
-  Chrome (toolbar vs circular buttons) is **out of scope** unless converging the section style makes a
-  sheet incoherent; if it does, report rather than expanding.
-
-- [T-605] **macOS Today's headings converge on the 14pt bold style. DECIDED 2026-08-31.**
-  Today draws `CadenceTaskGroupHeading` - 10pt uppercase eyebrow, single count capsule, no bar
-  (`TasksPanelSectionViews.swift:122-153`). All Tasks, Inbox and list detail draw `TaskListGroupHeader`
-  - 3x22pt accent bar, 14pt bold sentence-case title, split "3 / 7" overdue/regular counts
-  (`ListDetailSupportViews.swift:99-180`).
-  **User's decision: move Today onto `TaskListGroupHeader`.** macOS becomes internally consistent and
-  Today gains the split counts the other three already show; one screen changes rather than three.
-  **Accepted consequence: macOS and iOS headings now differ** (iOS routes Today, Inbox and All Tasks
-  through the eyebrow style). That divergence is deliberate as of this decision - **record it in a
-  comment so it is not re-filed later as drift.** *Adjacent to [[T-496]], which is about tracking on
-  the uppercase tier, not which tier Today sits on.*
-
 - [T-606] **macOS Today adopts iOS's named sort set. DECIDED 2026-08-31.**
   macOS has two chips - Sort (Custom/Date/Priority) x Order (Ascending/Descending), default Date +
   Ascending (`TasksPanel.swift:341-352`, `Models/TaskOrdering.swift:16-28`). iOS has one control -
@@ -1228,6 +1197,45 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   doc. A mechanical sweep would break it.
 
 ## Done
+
+- [T-603] **CLOSED 2026-09-01 (`e7e58fc`).** The square cell fill and the `radiusControl` ring are
+  gone; a selected day is marked by the badge's solid circle alone — which
+  `iOSCalendarMonthCompactDayCell` beside it already did. Today's 0.045 wash stays, because `isToday`
+  is a different fact.
+  **Premise correction: macOS's month grid has NO per-day selection state at all** —
+  `CalendarPageMonthSupportViews` contains no `isSelected`; its plate change is in-month vs carried-day.
+  The decision is unaffected (nothing on macOS had to move), but **"all three month surfaces agree" was
+  wrong** — it is "the two iOS grids agree, and macOS has no opinion."
+  An over-broad first assertion also matched `iOSCalendarMiniChip`'s plate and was narrowed to a window
+  over the day cell — caught by the agent's own collateral pass, not by review.
+
+- [T-604] **CLOSED 2026-09-01 (`dac9110`).** Both sheets moved to `style: .ruled`, so the "Schedule"
+  group is one component across all three.
+  **The scope grew beyond `style:` and the reason is sound — I verified it.** `.ruled` **draws no
+  card**, and both pre-existing `.ruled` sheets frame their form in `cardPadding` inside
+  `Theme.radiusPanel`. Converting `style:` alone would have left the two sheets' fields lying directly
+  on near-black and the Schedule group *still* reading as two components. Each converted sheet gained
+  quick-create's frame figure for figure. That is the section style's own structure, not the chrome the
+  ticket excluded — **toolbars and buttons are untouched.**
+  Two knock-ons fell out: the block title's `surfaceElevated.opacity(0.65)` well became the new plate on
+  itself and was removed, and its literal `16`/`18` became the shared `groupSpacing`/`gutter` — identical
+  values, nothing moves.
+
+- [T-605] **CLOSED 2026-09-01 (`36c2809`).** Today's headings now draw the accent bar, the 14pt bold
+  sentence-case title and the split "3 / 7" counts. **`TasksPanelIntentSectionHeader` was deleted, not
+  rewritten** — its chevron and hover fill are the shared header's own, so keeping the wrapper would
+  have meant **two hover layers at two radii**. macOS now has exactly one group header.
+  The deliberate macOS/iOS divergence is recorded in **three** places — the section view's doc,
+  `CadenceTaskGroupHeading`'s doc (which used to call itself "one heading for Today on both platforms"),
+  and the test. **Do not re-file it as drift.**
+  **A collateral pin moved and the pin was the stale half:** T-161's
+  `bothPlatformsDrawTheSharedTaskGroupHeading` encoded exactly the arrangement this ticket reverses. It
+  was replaced by a test asserting **0** call sites there — *the number was not bumped* — plus pins on
+  `TaskListGroupHeader` at 2/2/1 across Today, All Tasks and Inbox, and a requirement that the deleted
+  wrapper have no live mention.
+  Accepted degeneracy, stated rather than hidden: inside "Overdue" the split reads flag-N over "0
+  tasks" — not a new state, an all-overdue All Tasks group has read that since the header existed.
+
 
 - [T-598] **CLOSED 2026-09-01 (`43c2294`).** New `CadenceStartTimeFieldRow` owns the label, glyph,
   tint and popover; all three sheets are one line each. **"Start" won** — the neighbours are
