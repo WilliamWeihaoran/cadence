@@ -1017,21 +1017,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`AppStoreReviewReadinessTests.swift:33`), not an oversight. Do this when iOS ships, with that test's
   intent addressed rather than deleted.
 
-- [T-629] **Markdown image insertion writes references for asset rows the store may never hold.**
-  VERIFIED. `MarkdownEditorView.swift:160-167`, `iOSMarkdownEditingSurface.swift:332-349` and `:362-371`
-  each call `MarkdownImageAssetService.createAsset(... in: modelContext)` — which does
-  `modelContext.insert(asset)` — then `try? modelContext.save()`. **Existence, one frame down.**
-  The image renders until an unrelated `rollback()` discards the pending insert; the note then holds
-  permanently broken `![...](asset-id)` references. **Note the interaction with [[T-620]]:** that ticket
-  is the same asset type being deleted too eagerly; this one is it never being committed.
-
-- [T-630] **macOS Move Note closes the picker before the move, and swallows the failure.** VERIFIED.
-  `AIActionsSupportViews.swift:37-48` swallows `try? modelContext?.save()`; the destination rows at
-  `:224`, `:239`, `:256` call `dismissPicker()` (-> `showsPicker = false`) **before** the move.
-  **Report, one frame up.** Missed for three independent reasons — non-`body` computed var (gap 2),
-  dismissal precedes the call, and `dismissPicker()` is outside the vocabulary (gap 4). **The closing
-  popover is the only success signal the user gets.**
-
 - [T-631] **Typing a new tag then pressing Cancel leaves the tag pending in the shared context.**
   VERIFIED. `TagSupport.resolveTags:195` does `context.insert(tag)`; `CreateTaskSheet:486`,
   `InlineTaskComposerView:251` and `iOSCreateTaskSheet:228` call it from the ambient context.
@@ -1113,7 +1098,61 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Note the exception before sweeping: `MarkdownRenderedBlockTruncation.overflowLabel(unit:)` draws a
   **spaced** `"+ 4 more rows"` — a different sentence with a pluralised unit, recorded in that helper's
   doc. A mechanical sweep would break it.
+
+- [T-648] **A note's embedded task card repaints over a swallowed save, in four editors.** VERIFIED
+  while fixing [[T-629]] in the same file. `NotePanel.toggleEmbeddedSubtask` / `renameEmbeddedTask`,
+  `ListNotesSupportViews`' and `NoteEditorPane`'s copies of both, and
+  `iOSMarkdownEditingSurface.toggleEmbeddedSubtask` each mutate the task, run
+  `try? modelContext.save()`, and then hand back fresh `MarkdownTaskEmbedRenderInfo` — which is exactly
+  what repaints the rendered card inside the note. **This is [[T-366]] again**, the defect
+  `TaskEmbedFieldEditorPopover` was fixed for: the card shows values the store does not hold and nothing
+  else on screen disagrees. `CadenceTaskFieldEditCommit.commit` is the existing unit and the popover
+  already calls `onChanged()` only below its `catch`, so the fix is mechanical.
+  **Why the rule does not catch it:** half 2's report vocabulary reads `return true` from a `-> Bool`,
+  and "returns render info the caller draws" is a different spelling of the same claim. Recorded in
+  `docs/CODEX_TODO.md`'s embedded-card section and never given an id until now.
+
+- [T-649] **A partly-failed image insertion says nothing about the part that failed.** VERIFIED.
+  `iOSMarkdownEditingSurface.insertPickedImages` drops any picked item whose
+  `try? await item.loadTransferable(type: Data.self)` returns nil and any whose `createAsset` returns
+  nil, then writes references for the survivors; macOS's `MarkdownEditorView.createAssets` does the same
+  through two `compactMap`s. Pick eight photos, get six, and neither editor says which two are missing
+  or why. [[T-629]] gave both doors a notice for a refused **commit**; this is the other half — a
+  refusal that happens before the commit and still has no sentence. Both notices already exist
+  (`imageFailureNotice`), so this is a count and a message, not new plumbing.
+
 ## Done
+
+- [T-630] **CLOSED 2026-09-01 (`c15cace`).** Both `NoteActionSupport.move` helpers `throw` and commit
+  through `CadencePendingChangePersistence.commitEdit(in:commit:undo:)`, and the three destination rows
+  hand their move to one `moveNote` that dismisses only below the `catch`. The undo is a snapshot of
+  `area`, `project` and `updatedAt` rather than `rollback()` — one `ModelContext` app-wide, so a refused
+  move must not take the note somebody is typing behind the popover with it. `ModelContext?` became
+  `ModelContext` in the same change: that optionality is the shape half 3 of the rule *exempts* while
+  the body did what half 2 forbids, and both call sites already passed a non-optional `@Environment`
+  value, so it only ever bought a second silent no-op.
+  The refusal is a `CadenceInlineFailureNotice` on the Move page, which is still open because the row
+  no longer closes it — the popover shutting was the whole (false) success signal.
+  Pinned by `CadenceNoteMoveCommitTests`: three behavioural tests against a real container with a
+  `commit` that throws, three source scans for the row ordering. The
+  `indirectReportExemptions` entry is deleted in the same change.
+
+- [T-629] **CLOSED 2026-09-01 (`24f9066`).** All three image doors — macOS `createAssets`, iOS
+  `insertPickedImages` and `createPastedImageAssets` — commit through `commitInsert`, which un-inserts
+  the whole batch when the store refuses, and write **no** `![…](cadence-image://…)` reference in that
+  case. The batch rather than the first asset, because a multi-image paste writes one reference each.
+  **It errs in the same direction as [[T-620]] deliberately.** That fix made the delete sweep a
+  candidate-set delete because an asset whose owner has not synced yet is indistinguishable from an
+  unreferenced one, and paid for it in leaked bytes. This pays the same way from the other end: a
+  refused insertion costs the user the paste rather than leaving a token pointing at nothing. The
+  shared invariant is that neither end leaves markdown referencing an asset the store does not hold.
+  `[]` was already both platforms' refusal (`allowsImageInsertion`; `insertMarkdownImages` no-ops on an
+  empty list), so a refused commit reaches the text layer as "there are no images", which is true. Both
+  editors gained an `imageFailureNotice`, because neither has a sheet to close. `resizeImage` /
+  `resizeImageAsset` keep their `try?` on purpose — an in-place field edit on a row the store already
+  holds, reporting nothing, is what the rule still allows.
+  Pinned by `CadenceMarkdownImageCommitSurfaceTests`; both `existenceExemptions` entries deleted, with
+  `MarkdownEditorView` keeping `createInlineTag` because that is [[T-631]]'s shape.
 
 - [T-641] **CLOSED 2026-09-01 (`1425fde`).** Fixed by the agent that shipped it, and it named its own
   mistake precisely: *"I checked the constraint for the source and not for the destination."*
