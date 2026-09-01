@@ -427,13 +427,6 @@ private struct iOSCalendarMonthDayCell: View {
                 cellPlate
                 if let cellWash { cellWash }
             }
-            .overlay {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                        .strokeBorder(Theme.blue.opacity(0.65), lineWidth: 1.5)
-                        .padding(4)
-                }
-            }
             // One cell, one weight. These two edges drew 0.30 and 0.42 — see
             // `iOSCalendarHairlineMetrics`, which is also where the timed canvas's column edge now
             // reads from, because a day ruled off from the next day is the same line in both.
@@ -474,21 +467,27 @@ private struct iOSCalendarMonthDayCell: View {
     ///
     /// The plate answers one question only — which month is this day in — so it is split from the
     /// accent wash below rather than being the same `Color` property answering both. It had to be:
-    /// a single property returning the wash *instead of* the plate would have made a selected
-    /// carried day indistinguishable from a selected in-month one, which is the fact the whole
+    /// a single property returning the wash *instead of* the plate would have made a today carried
+    /// in from the next month indistinguishable from an in-month one, which is the fact the whole
     /// change is about.
     private var cellPlate: Color {
         isCurrentMonth ? Theme.surface : Theme.bg
     }
 
-    /// Today's and the selection's accent, drawn *over* whichever plate the cell has. So a today
-    /// carried in from next month keeps the carried plate and is marked by its ring instead — the
-    /// "not this month" band stays unbroken, which is `CalendarMonthDayEmphasis.cellBackground`'s
-    /// rule too.
+    /// Today's accent, drawn *over* whichever plate the cell has, so a today carried in from the
+    /// next month keeps the carried plate — the "not this month" band stays unbroken, which is
+    /// `CalendarMonthDayEmphasis.cellBackground`'s rule too.
+    ///
+    /// **Selection is not here (T-603).** This cell used to state one fact with three layers at two
+    /// radii: a square-cornered `Theme.blue.opacity(0.075)` fill across the whole cell, a
+    /// `Theme.radiusControl` ring inset 4pt over it, *and* the solid badge behind the day number
+    /// that `CadenceCalendarDayBadge.selected` already specifies. The badge is the layer that
+    /// survives, which is the one hover/selection layer at one radius the repo asks for — and it is
+    /// the convergent answer as well as the minimal one: `iOSCalendarMonthCompactDayCell` beside it
+    /// already marks selection with the badge alone, so the two grids in this feature no longer
+    /// disagree about what a tapped day looks like.
     private var cellWash: Color? {
-        if isSelected { return Theme.blue.opacity(0.075) }
-        if isToday { return Theme.blue.opacity(0.045) }
-        return nil
+        isToday ? Theme.blue.opacity(0.045) : nil
     }
 
     private var dateBadgeFill: Color {

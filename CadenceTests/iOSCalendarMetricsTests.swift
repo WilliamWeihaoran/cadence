@@ -570,4 +570,88 @@ struct iOSCalendarMetricsTests {
             "the schedule row switches on priority again"
         )
     }
+
+    // MARK: - One selection layer on the month grid (T-603)
+
+    /// **Three layers at two radii, for one state.** `iOSCalendarMonthDayCell` marked the selected
+    /// day with a square-cornered `Theme.blue.opacity(0.075)` wash across the whole cell, *plus* a
+    /// `Theme.radiusControl` ring inset 4pt over the top of it, *plus* the solid accent circle
+    /// behind the day number that `CadenceCalendarDayBadge.selected` already specifies. The repo's
+    /// rule is one hover/selection layer at one radius; the badge is the layer that survives.
+    ///
+    /// It is also the convergent answer rather than a new one. `iOSCalendarMonthCompactDayCell`
+    /// in the agenda grid beside it has always marked selection with the badge alone, so the two
+    /// grids in the same feature stop disagreeing about what a tapped day looks like, and macOS's
+    /// month grid — which has no per-day selection state at all — is not asked to change.
+    ///
+    /// **Today's wash stays and is a different fact.** `isToday` is not `isSelected`: macOS's
+    /// `CalendarMonthDayEmphasis.cellWash` marks today's cell the same way, so removing it here
+    /// would have converged one pair by breaking another.
+    @Test func theMonthGridMarksASelectedDayWithItsBadgeAlone() throws {
+        // The mapping the surviving layer comes from, and the fact that it genuinely distinguishes
+        // the four states — a badge-only selection is only sufficient because the badge differs.
+        #expect(CadenceCalendarDayBadge.style(isToday: false, isSelected: true).fill == .solid)
+        #expect(CadenceCalendarDayBadge.style(isToday: false, isSelected: false).fill == .none)
+        #expect(CadenceCalendarDayBadge.style(isToday: true, isSelected: false).fill == .wash)
+        // Today *and* selected still says both, through the ring the badge owns.
+        #expect(CadenceCalendarDayBadge.style(isToday: true, isSelected: true).showsTodayRing)
+        #expect(!CadenceCalendarDayBadge.style(isToday: false, isSelected: true).showsTodayRing)
+
+        let grid = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMonthViews.swift")
+        )
+        let agenda = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMonthAgendaViews.swift")
+        )
+
+        // Non-vacuity: the right files, past the comment stripper, still holding both cells and
+        // still reading the shared badge — so a zero below cannot come from an empty read.
+        #expect(grid.contains("private struct iOSCalendarMonthDayCell: View"))
+        #expect(agenda.contains("private struct iOSCalendarMonthCompactDayCell: View"))
+        for source in [grid, agenda] {
+            #expect(source.contains("CadenceCalendarDayBadge.style(isToday: isToday, isSelected: isSelected)"))
+        }
+
+        // The two retired layers, by the shapes they were spelled in. The cell wash is keyed on
+        // `isSelected` and the ring is the only `strokeBorder` a `RoundedRectangle` had in here.
+        #expect(
+            CadenceSourceScan.matchCount(#"if isSelected \{ return Theme\.blue"#, in: grid) == 0,
+            "the month cell still washes the whole cell for the selected day"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"Theme\.blue\.opacity\(0\.075\)"#, in: grid) == 0,
+            "the retired selection wash is still spelled in the month grid"
+        )
+        // Scoped to the cell rather than to the file: `iOSCalendarMiniChip` further down draws its
+        // own plate at `Theme.radiusControl`, and that is a chip, not a second selection layer. The
+        // cell itself should now contain no rounded rectangle at all — its shapes are the badge's
+        // circle and two hairline `Rectangle`s.
+        let cellStart = try #require(grid.range(of: "private struct iOSCalendarMonthDayCell: View"))
+        let cellEnd = try #require(grid.range(of: "struct iOSCalendarMiniChip: View"))
+        let cell = String(grid[cellStart.lowerBound..<cellEnd.lowerBound])
+        #expect(cell.contains("CadenceCalendarDayBadge"), "non-vacuity: the cell window is the cell")
+        #expect(
+            CadenceSourceScan.matchCount(#"RoundedRectangle"#, in: cell) == 0,
+            "the month cell still draws a rounded selection ring at a second radius"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"strokeBorder\(Theme\.blue\.opacity"#, in: cell) == 0,
+            "the month cell still strokes a washed-accent selection border"
+        )
+
+        // The layer that survives, counted at both cells rather than merely present at one: the
+        // whole point is that the two grids agree.
+        for (name, source) in [("grid", grid), ("agenda", agenda)] {
+            #expect(
+                CadenceSourceScan.matchCount(#"CadenceCalendarDayBadge\.washOpacity"#, in: source) == 1,
+                "the \(name) cell no longer draws the shared badge wash exactly once"
+            )
+        }
+
+        // Today's wash is still here, and still the only thing left in `cellWash`.
+        #expect(
+            grid.contains("isToday ? Theme.blue.opacity(0.045) : nil"),
+            "today's cell wash was removed along with the selection's"
+        )
+    }
 }
