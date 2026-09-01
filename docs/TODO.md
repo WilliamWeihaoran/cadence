@@ -1055,49 +1055,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`AppStoreReviewReadinessTests.swift:33`), not an oversight. Do this when iOS ships, with that test's
   intent addressed rather than deleted.
 
-- [T-627] **The save-commit detector has four measured blind spots, and they matter more than any
-  single site they hide.** VERIFIED 2026-09-01. A faithful Python emulation of all four halves of
-  `CadenceSaveCommitDisciplineTests` was run over all 562 files under `Cadence/`. **It reproduced the
-  six exemption entries exactly and reported nothing else** — that exact reproduction is the
-  non-vacuity evidence, and it means **none of Codex's fifteen sites is caught by any half.**
-  **Gap 1 — only half 2 follows a call one frame down.** [[T-566]] widened the *Report* half across
-  files; the *Existence* and *Commit reach* halves still require a literal
-  `(modelContext|context|ctx)\.insert(`/`.delete(` in the declaration's **own** body. Measured with a
-  type-keyed one-hop resolver: **6** declarations swallow a commit and change existence one frame down,
-  and **22** reach no commit at all while changing existence one frame down. **This one gap accounts for
-  six of the nine confirmed findings.** Worth more than any ticket below.
-  **Gap 2 — `declarations(in:)` parses only `func ...` and `var body`.** Anything inside
-  `private var someSection: some View` is invisible to every half. Measured: 7 of 102 swallowed-commit
-  matches sit outside every parsed declaration, and one is a live Report offender.
-  **Gap 3 — half 3 keys on `.insert(` only, never `.delete(`.** "Delete and never commit at all" is
-  covered by nothing: half 1 sees deletes but requires a `try?` that is not there, half 3 sees no-commit
-  but only for inserts.
-  **Gap 4 — `successReport` is a closed vocabulary** that misses this app's actual dismissals
-  (`showEditor = false`, `showPopover = false`, `selectedBundleID = nil`, `pendingRecurrenceRule = nil`,
-  `dismissPicker()`, `return true` from a Bool drop handler, an `@AppStorage` assigned *from* the
-  swallowing call) **and requires the report to sit textually after the save** — three sites dismiss
-  first.
-  Close the gaps before fixing the sites, or the sites come back.
-
-- [T-628] **Two macOS paths change existence with no commit boundary at all.** VERIFIED, and the
-  strongest of the fifteen. **Both were spot-checked directly.**
-  **(a) Task-status controls.** `TaskCompletionAnimationManager.write:163-183` -> `TaskWorkflowService`
-  (`:6-25`, **no save**) -> `CadenceTaskRecurrenceWorkflowSupport.markDone` ->
-  `spawnNextOccurrenceIfNeeded:127-136` does `context.insert(nextTask)`. Reached from
-  `TimelineTaskBlock:69`, `TasksPanelComponents:584`, `macOSRootCommandEventSupport:149`, and the
-  inspector at `TaskInspectorContentSupportViews:306-311`. **Tick a recurring task's circle on macOS and
-  the successor is created with no commit** — the next unrelated `rollback()` from any delete path
-  discards both.
-  **(b) Bundle popover end actions.** `SchedulingService.completeBundle:165-179` marks members done
-  (recurrence insert), detaches them, then `context.delete(bundle)` — **no save**. `unbundle:187-190`
-  the same; `deleteBundle:207` forwards to it. Hosts then close (`showPopover = false`,
-  `selectedBundleID = nil`). **The correct throwing sibling already exists and is unused here:**
-  `CadenceTaskMutationSupport.deleteBundle:1050-1066` (`commitDelete` + `bundleDeleteFailureNotice`),
-  which is [[T-322]]'s fix that iOS already uses.
-  The app's own position is recorded at `SettingsView.swift:292`: autosave's default `true` applies, but
-  *"eventually" is the whole problem* — [[T-327]] measured a delete flushed by nobody coming back next
-  launch.
-
 - [T-629] **Markdown image insertion writes references for asset rows the store may never hold.**
   VERIFIED. `MarkdownEditorView.swift:160-167`, `iOSMarkdownEditingSurface.swift:332-349` and `:362-371`
   each call `MarkdownImageAssetService.createAsset(... in: modelContext)` — which does
@@ -1195,7 +1152,67 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **spaced** `"+ 4 more rows"` — a different sentence with a pluralised unit, recorded in that helper's
   doc. A mechanical sweep would break it.
 
+- [T-641] **T-622 broke the `CadenceMCPServer` target — same trap, other side.** Reproduced
+  2026-09-01: `mcpServerSourcesOnlyReferenceTypesThatTargetCompiles` fails because
+  `DataIntegrityRepairService.swift` now references `CadenceTaskMutationSupport` and
+  `NotificationManager`, **neither of which the MCP target compiles.** `-scheme Cadence` stays green
+  while `-scheme CadenceMCPServer` does not build — precisely the break that test exists to catch, and
+  which it records as having shipped once before.
+  **The agent had already dodged this trap from the other side** and its reasoning was right: it moved
+  the collapse *out* of `CadenceTaskRecurrenceWorkflowSupport` because that file compiles into the MCP
+  and widget targets. The destination it chose has the same constraint.
+  Two real options: add the declaring files to the MCP Sources phase **and everything they transitively
+  pull in** (`NotificationManager` likely drags a lot — check the closure first), or keep the call on
+  the app side so the collapse computes *what* to remove and an app-side caller does the reminder
+  cancellation and subtask deletion. The second matches how the rule and the mechanics were already
+  split. **Do not weaken or exempt the test.**
+  Assigned back to the agent that wrote it. Verify with `-scheme CadenceMCPServer` directly, not just
+  the app scheme — that is the whole point.
+
 ## Done
+
+- [T-627] **CLOSED 2026-09-01 (`91fe8e4`).** All four gaps closed. **The flagged population went from
+  7 declarations in 6 files to 56 in 43** — the 49 new ones **ledgered, not fixed**, nearly all naming
+  the ticket that owns them (T-629..T-636). The ledger is exact in both directions, which is what makes
+  the widening safe to land *before* the fixes.
+  **Gap 1 is not one hop.** A pending existence change travels up through every frame *handed* a
+  `ModelContext` and stops at the first that was not — **half 3's own exemption rule read forwards.** It
+  terminates for free (chasing every callee would report every screen that transitively touches
+  `TagSupport.resolveTags`) and reaches **four frames deep**, which the macOS completion spine needs.
+  **The recursion guard was keyed on name alone, and that cost the biggest finding:**
+  `TaskWorkflowService.markDone` forwards to `CadenceTaskRecurrenceWorkflowSupport.markDone`, a bare-name
+  guard read that as self-recursion, **and the whole completion spine went quiet.** Keyed on type as well
+  now.
+  **Three measured costs, each pinned:** (i) reading the whole block exposed `context.isArchived = false`
+  — a *model field* — above a swallowed save in four settings screens, so the flag spellings needed a
+  `(?<![.\w])`-with-`self.` anchor; (ii) a `pending<X> = nil` the same declaration also `cancel()`s is a
+  work item, not a screen — worth exactly two false positives; (iii) **the commit index publishes a name
+  only when every overload agrees** — `SchedulingActions` has two `createBundle(...in:)` and only one
+  commits, and letting it vouch for its sibling silenced two real findings.
+  Half 3's exemption list is no longer empty **and the doc says why** — the signature rule never covered
+  the population gaps 1 and 3 added. One entry is a **named false positive**
+  (`CadenceWriteService.resolvedTags`) rather than a weakened rule. `AGENTS.md` restates the rule in the
+  same eight lines; still 199/200.
+
+- [T-628] **CLOSED 2026-09-01 (`79aa8f6`), and the detector confirms it** — the four ledger entries
+  [[T-627]] filed for these sites went stale **in the same commit that fixed them**.
+  **(a)** The boundary goes at `TaskCompletionAnimationManager.write`, the first frame not handed a
+  context. `spawnNextOccurrenceIfNeeded` now returns the successor so `commitInsert` can un-insert it;
+  status, `completedAt` and `recurrenceSpawnedTaskID` are snapshotted and restored, the circle re-draws
+  open, and the failure is named. `rollback()` was **refused** for the reason `commitEdit`'s doc gives.
+  **The inspector's Mark done was a second, un-funnelled path nobody had counted** — it reaches
+  `markDone` without the manager, so it carries its own inline notice.
+  **(b)** Complete / Unbundle / Delete all route through `CadenceTaskMutationSupport.deleteBundle` —
+  T-322's throwing sibling, which iOS already used — rather than a fourth copy of the member loop;
+  **`detachBundleMembers` is deleted.** All three throw and take `commit:`, both hosts **close only on
+  success**, and the timeline hover-delete moved to `presentRefusable`.
+  **A collateral pin moved and the pin was stale:** `noStatusIsAssignedDirectlyInTheAnimationManager`
+  named the literal call spellings; its claim — one funnel, once per transition — is unchanged, the
+  funnel just gained a committing spelling. Re-pointed, with the uncommitted spellings pinned at **zero**.
+  Refusals are asserted through a **second `ModelContext` on the same container**, and the tests say why:
+  `rollback()` un-deletes unconditionally but does not visibly undo a field edit, so the live
+  `bundle.tasks` still reads empty while the store is correct throughout.
+
 
 - [T-606] **CLOSED 2026-09-01 (`4f4ab61`).** macOS Today draws one Sort chip over iOS's named set;
   the Order chip is gone and direction folds into the modes.
