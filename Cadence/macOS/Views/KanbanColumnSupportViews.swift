@@ -432,6 +432,10 @@ struct KanbanSectionEditorPopover: View {
     @Binding var editorColorHex: String
     @Binding var editorDueDate: Date
     @Binding var editorHasDueDate: Bool
+    /// The red line a refused column write leaves behind (T-632); `nil` when the last one landed.
+    /// It sits at the foot of the popover rather than beside one control because three different
+    /// buttons can set it, and the popover staying open is half the message.
+    let failureNotice: String?
     let onNameChanged: () -> Void
     let onColorSelected: () -> Void
     let onDueDateChanged: () -> Void
@@ -567,6 +571,10 @@ struct KanbanSectionEditorPopover: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.cadencePlain)
+            }
+
+            if let failureNotice {
+                CadenceInlineFailureNotice(text: failureNotice)
             }
         }
         .padding(14)

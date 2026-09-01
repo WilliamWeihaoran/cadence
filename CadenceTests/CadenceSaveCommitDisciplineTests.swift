@@ -1103,10 +1103,6 @@ enum CadenceSaveCommitRule {
         // over a swallowed commit — so the row's own "Couldn't Update the Series" alert has
         // nowhere to fire.
         "Cadence/iOS/iOSTaskRowActionViews.swift": ["applyPendingRecurrenceRule"],
-        // [[T-632]]: the kanban column editor. Missed twice over — `showEditor = false` was
-        // outside the vocabulary, and the whole thing lives in `private var columnEditor: some
-        // View`, which nothing parsed.
-        "Cadence/macOS/Views/KanbanSectionColumnView.swift": ["columnEditor"],
         // [[T-636]](b): `return true` from a `-> Bool` drop handler. The repo argued this one
         // itself, in `TasksPanelDropCoordinator`: "a silent accept says the move happened".
         "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift": ["unschedule"],

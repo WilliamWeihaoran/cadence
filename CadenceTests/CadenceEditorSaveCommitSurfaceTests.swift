@@ -569,6 +569,20 @@ struct CadenceEditorSaveCommitSurfaceTests {
                 function: "deleteSubtask",
                 successSpellings: ["subtaskFailureNotice = nil"]
             ),
+
+            // T-632: the kanban column editor. `showEditor = false` is the report — the popover
+            // closing is the only thing that says the archive landed — and `saveSection` answers
+            // `true` for the same reason, because the completion toggle closes on that answer.
+            SaveSurface(
+                path: "Cadence/macOS/Views/KanbanSectionColumnView.swift",
+                function: "saveSection",
+                successSpellings: ["return true"]
+            ),
+            SaveSurface(
+                path: "Cadence/macOS/Views/KanbanSectionColumnView.swift",
+                function: "toggleSectionArchive",
+                successSpellings: ["showEditor = false"]
+            )
         ]
     }
 
@@ -700,6 +714,92 @@ struct CadenceEditorSaveCommitSurfaceTests {
                 )
             }
         }
+    }
+
+    /// The kanban column editor snapshots the container it is about to write, and closes on the
+    /// commit rather than on the tap (T-632).
+    ///
+    /// `everyEditorCommitsBeforeItReportsSuccess` pins the order of the failure branch in
+    /// `saveSection` and `toggleSectionArchive`. It cannot see the two things that make the
+    /// failure branch mean anything: that there is an undo at all, and that the *completion*
+    /// button — whose write happens inside `SectionCompletionAnimationManager` rather than in a
+    /// function of its own — re-reads the flag before it closes the popover.
+    @Test func theKanbanColumnEditorSnapshotsWhatItWritesAndClosesOnTheCommit() throws {
+        let column = try scanned("Cadence/macOS/Views/KanbanSectionColumnView.swift")
+
+        // No swallow left anywhere in the file, and no rollback: an edit undo is a field snapshot.
+        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: column) == 0)
+        #expect(CadenceSourceScan.matchCount(#"modelContext\.rollback\(\)"#, in: column) == 0)
+
+        for name in ["saveSection", "toggleSectionArchive"] {
+            let body = try #require(bodies(of: name, in: column, expected: 1).first)
+            #expect(body.contains("editSnapshot(settling:"), "\(name)() commits with no snapshot taken")
+            #expect(body.contains("undo: { undo?.restore() }"), "\(name)() commits with no undo")
+        }
+
+        // The snapshot is handed the same set the settle walks, not a second walk of its own.
+        let snapshot = try #require(bodies(of: "editSnapshot", in: column, expected: 1).first)
+        #expect(snapshot.contains("TaskContainerLifecycleService.remainingActiveTasks(in: column, area: area, project: project)"))
+        #expect(snapshot.contains("CadenceListEditSnapshot(area, tasks: settling)"))
+        #expect(snapshot.contains("CadenceListEditSnapshot(project, tasks: settling)"))
+
+        // The completion button's own gate, and the reset that keeps it from latching shut.
+        let toggle = try #require(bodies(of: "toggleCompletionFromEditor", in: column, expected: 1).first)
+        #expect(toggle.contains("guard saveFailureNotice == nil else { return }"))
+        let open = try #require(bodies(of: "openSectionEditor", in: column, expected: 1).first)
+        #expect(open.contains("saveFailureNotice = nil"))
+    }
+
+    /// **T-632, behaviourally.** Composes exactly what `KanbanSectionColumnView.saveSection`
+    /// composes — the column blob write plus `TaskContainerLifecycleService`'s settle — under a
+    /// refused commit, and asserts the snapshot puts *both* halves back.
+    ///
+    /// The tasks are the half that hurts and the half a `rollback()` could not have restored
+    /// (T-402): the defect was a column marked completed, its open work marked done, and the editor
+    /// closed over a save nobody checked. Asserting the column alone would pass with the settle
+    /// left applied.
+    @Test func arefusedKanbanColumnWriteRestoresTheColumnAndTheWorkItSettled() throws {
+        let modelContext = ModelContext(try container())
+        let area = Area(name: "Board")
+        modelContext.insert(area)
+        area.sectionConfigs = [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing")
+        ]
+        let open = AppTask(title: "still open")
+        open.sectionName = "Doing"
+        open.area = area
+        modelContext.insert(open)
+        area.tasks = [open]
+        try modelContext.save()
+
+        let column = try #require(area.sectionConfigs.first { $0.name == "Doing" })
+        let settling = TaskContainerLifecycleService.remainingActiveTasks(in: column, area: area, project: nil)
+        // Non-vacuity: the settle below really does have something to settle.
+        #expect(settling.map(\.title) == ["still open"])
+
+        let undo = CadenceListEditSnapshot(area, tasks: settling)
+        var completed = column
+        completed.isCompleted = true
+        completed.isArchived = true
+        KanbanSectionStateSupport.saveSection(updatedSection: completed, area: area, project: nil)
+        TaskContainerLifecycleService.completeRemainingActiveTasks(in: completed, area: area, project: nil, in: modelContext)
+        #expect(area.sectionConfigs.first { $0.name == "Doing" }?.isCompleted == true)
+        #expect(open.isDone)
+
+        #expect(throws: CommitRefused.self) {
+            try CadencePendingChangePersistence.commitEdit(
+                in: modelContext,
+                commit: { _ in throw CommitRefused() },
+                undo: undo.restore
+            )
+        }
+
+        let restored = area.sectionConfigs.first { $0.name == "Doing" }
+        #expect(restored?.isCompleted == false)
+        #expect(restored?.isArchived == false)
+        #expect(open.status == .todo)
+        #expect(open.completedAt == nil)
     }
 
     /// The popover's single refresh call, and the two dismissals that are now guarded on it.

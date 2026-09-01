@@ -44,6 +44,9 @@ struct ListSectionKanbanColumn: View {
     @State private var headerDueDate = Date()
     @State private var headerDueDateViewMonth = Date()
     @State private var isHovered = false
+    /// Set when a column write was refused by the store, and drawn inside the editor popover. The
+    /// popover staying open *is* the report of failure here — see `toggleSectionArchive()`.
+    @State private var saveFailureNotice: String?
     /// Both halves come from one call, so they cannot disagree about what "over" means. See
     /// `KanbanBoardSupport.columnHalves` for why this is not `isDone` (T-381 / T-399).
     private var columnHalves: (active: [AppTask], completed: [AppTask]) {
@@ -327,6 +330,10 @@ struct ListSectionKanbanColumn: View {
     }
 
     private func openSectionEditor() {
+        // A notice belongs to the attempt that produced it. Without this, a refused archive would
+        // still be showing its red line the next time the popover opened — and `toggleCompletionFromEditor`
+        // reads the same flag to decide whether it may close, so a stale one would hold the popover shut.
+        saveFailureNotice = nil
         editorBase = section
         editorName = section.name
         editorColorHex = section.colorHex
@@ -377,6 +384,7 @@ struct ListSectionKanbanColumn: View {
             editorColorHex: $editorColorHex,
             editorDueDate: $editorDueDate,
             editorHasDueDate: $editorHasDueDate,
+            failureNotice: saveFailureNotice,
             onNameChanged: saveSectionChanges,
             onColorSelected: saveSectionChanges,
             onDueDateChanged: saveSectionChanges,
@@ -386,26 +394,8 @@ struct ListSectionKanbanColumn: View {
                     config.dueDate = ""
                 }
             },
-            onToggleCompletion: {
-                toggleSectionCompletion()
-                showEditor = false
-            },
-            onToggleArchive: {
-                var shouldCancelActiveTasks = false
-                updateSection { config in
-                    let willArchive = !config.isArchived
-                    config.isArchived.toggle()
-                    shouldCancelActiveTasks = willArchive && !config.isCompleted
-                    if !config.isArchived {
-                        config.isCompleted = false
-                    }
-                }
-                if shouldCancelActiveTasks {
-                    TaskContainerLifecycleService.cancelRemainingActiveTasks(in: section, area: area, project: project, in: modelContext)
-                }
-                try? modelContext.save()
-                showEditor = false
-            },
+            onToggleCompletion: toggleCompletionFromEditor,
+            onToggleArchive: toggleSectionArchive,
             onDelete: {
                 deleteConfirmationManager.present(
                     title: "Delete Column?",
@@ -486,7 +476,7 @@ struct ListSectionKanbanColumn: View {
         sectionCompletionAnimationManager.toggleCompletion(
             for: section,
             getCurrent: currentSection,
-            save: saveSection
+            save: { _ = saveSection($0) }
         )
     }
 
@@ -500,15 +490,97 @@ struct ListSectionKanbanColumn: View {
         return nil
     }
 
-    private func saveSection(_ updatedSection: TaskSectionConfig) {
+    /// Writes the column and commits it, answering `false` when the store refused (T-632).
+    ///
+    /// The `try? modelContext.save()` that used to end this function is the swallow both editor
+    /// lifecycle buttons closed over, and it was invisible to the rule's Report half twice over:
+    /// the report sits in `columnEditor`, a computed property nothing parsed, and `showEditor =
+    /// false` was outside the vocabulary.
+    ///
+    /// **The undo is a field snapshot, never `modelContext.rollback()`** — `CadenceListEditSnapshot`
+    /// carries the reason, and the leading one is that this app has a single `ModelContext`, so a
+    /// rollback would discard pending work the board knows nothing about. It is the right shape
+    /// here because the write is field edits only: the column lives in the container's
+    /// `sectionConfigsRaw` blob, and `TaskContainerLifecycleService` settles through
+    /// `CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries`, which deliberately does
+    /// **not** spawn a successor occurrence. There is nothing here to un-insert.
+    @discardableResult
+    private func saveSection(_ updatedSection: TaskSectionConfig) -> Bool {
         let current = currentSection()
+        let undo = editSnapshot(settling: updatedSection)
         KanbanSectionStateSupport.saveSection(updatedSection: updatedSection, area: area, project: project)
         if updatedSection.isCompleted && current?.isCompleted != true {
             TaskContainerLifecycleService.completeRemainingActiveTasks(in: updatedSection, area: area, project: project, in: modelContext)
         } else if updatedSection.isArchived && !updatedSection.isCompleted && current?.isArchived != true {
             TaskContainerLifecycleService.cancelRemainingActiveTasks(in: updatedSection, area: area, project: project, in: modelContext)
         }
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: { undo?.restore() })
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return false
+        }
+        saveFailureNotice = nil
+        return true
+    }
+
+    /// The column's container captured before a write, holding the open tasks a lifecycle settle
+    /// can reach — the same set `TaskContainerLifecycleService` is about to walk, rather than a
+    /// second walk that happens to agree today.
+    ///
+    /// `nil` only for a column belonging to neither an area nor a project, which the board does not
+    /// draw; the callers spell that as "restore nothing" rather than as a refusal, because a write
+    /// with no container to snapshot has no container to have changed either.
+    private func editSnapshot(settling column: TaskSectionConfig) -> CadenceListEditSnapshot? {
+        let settling = TaskContainerLifecycleService.remainingActiveTasks(in: column, area: area, project: project)
+        if let area { return CadenceListEditSnapshot(area, tasks: settling) }
+        if let project { return CadenceListEditSnapshot(project, tasks: settling) }
+        return nil
+    }
+
+    /// The editor's Archive / Unarchive button, and the popover now closes only once the store has
+    /// taken it (T-632).
+    ///
+    /// It used to flip the flag, settle the column's open tasks, `try? modelContext.save()` and
+    /// close — so the popover closing was the report of success, and it happened either way. On a
+    /// refused commit the archive is undone, the notice appears under the buttons, and the popover
+    /// stays open on the column that did not move.
+    private func toggleSectionArchive() {
+        let undo = editSnapshot(settling: section)
+        var shouldCancelActiveTasks = false
+        updateSection { config in
+            let willArchive = !config.isArchived
+            config.isArchived.toggle()
+            shouldCancelActiveTasks = willArchive && !config.isCompleted
+            if !config.isArchived {
+                config.isCompleted = false
+            }
+        }
+        if shouldCancelActiveTasks {
+            TaskContainerLifecycleService.cancelRemainingActiveTasks(in: section, area: area, project: project, in: modelContext)
+        }
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: { undo?.restore() })
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        saveFailureNotice = nil
+        showEditor = false
+    }
+
+    /// The editor's completion button, and the reason it tests a notice rather than a return value.
+    ///
+    /// **Reopening is synchronous; completing is not.** `SectionCompletionAnimationManager` writes
+    /// a reopen immediately, straight through `saveSection`, and defers a *completion* behind a
+    /// 2.5-second countdown drawn on the column itself. So a refused reopen is exactly the T-632
+    /// defect — the column stayed completed with the editor gone and nothing on screen saying why —
+    /// while a completion has nothing to have failed at yet by the time this returns. One flag
+    /// covers both: it is set only when a commit was actually attempted and refused.
+    private func toggleCompletionFromEditor() {
+        toggleSectionCompletion()
+        guard saveFailureNotice == nil else { return }
+        showEditor = false
     }
 
     private var isPendingCompletion: Bool {
