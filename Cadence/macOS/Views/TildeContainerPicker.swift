@@ -32,12 +32,26 @@ struct TildeContainerItem: Identifiable {
 
 /// The non-view half of the `~` panel: which containers it offers, and what committing one means.
 enum TildeContainerPickerSupport {
-    /// Inbox, then each context's active areas and active projects in `order`, filtered by a
-    /// case-insensitive **prefix** match on the name.
+    /// Inbox, then each context's active areas and active projects in `order`, then the lists that
+    /// belong to none of the offered contexts — all filtered by a case-insensitive **prefix** match
+    /// on the name.
     ///
     /// Prefix rather than `contains`, and unsorted within a context beyond `order`: this is the
     /// list the user is looking at while typing, and reordering it under a keystroke moves the
     /// highlighted row out from under Enter.
+    ///
+    /// **The trailing bucket is the whole of T-558, and it is the fifth time this shape has been
+    /// filed.** The body was a `for context in contexts` whose only membership test was
+    /// `$0.context?.id == context.id`, so a list with `context == nil` was reached by no iteration
+    /// and appended nowhere. Not un-grouped — *absent*, from the only source of rows the `~` panel
+    /// has on either macOS composer, which is a list no task can be filed into from the Mac at all.
+    /// `Area.context` and `Project.context` both default to `nil` and iOS's list editor writes it
+    /// from a "None" row in every mode, so this is a state a shipping surface makes.
+    ///
+    /// Keyed on the **offered** contexts (`CadenceSidebarLists.isOffered`) rather than on
+    /// `context == nil`, so a list whose context exists but was not handed to this function lands
+    /// in the same place — the rule T-534's picker and T-538's two sidebars already apply. There is
+    /// no heading here because this panel has no headings; the bucket is a position, not a section.
     static func flatContainers(
         query: String,
         contexts: [Context],
@@ -48,35 +62,49 @@ enum TildeContainerPickerSupport {
         func matches(_ name: String) -> Bool {
             needle.isEmpty || name.lowercased().hasPrefix(needle)
         }
+        func areaItem(_ area: Area) -> TildeContainerItem {
+            TildeContainerItem(
+                tag: .area(area.id),
+                icon: area.icon,
+                name: area.name,
+                color: Color(hex: area.colorHex)
+            )
+        }
+        func projectItem(_ project: Project) -> TildeContainerItem {
+            TildeContainerItem(
+                tag: .project(project.id),
+                icon: project.icon,
+                name: project.name,
+                color: Color(hex: project.colorHex)
+            )
+        }
+
+        let offerableAreas = areas.filter { $0.isActive && matches($0.name) }
+        let offerableProjects = projects.filter { $0.isActive && matches($0.name) }
+        let offered = Set(contexts.map(\.id))
 
         var result: [TildeContainerItem] = []
         if matches("Inbox") {
             result.append(TildeContainerItem(tag: .inbox, icon: "tray", name: "Inbox", color: Theme.dim))
         }
         for context in contexts {
-            for area in areas.filter({ $0.isActive && $0.context?.id == context.id }).sorted(by: { $0.order < $1.order })
-            where matches(area.name) {
-                result.append(
-                    TildeContainerItem(
-                        tag: .area(area.id),
-                        icon: area.icon,
-                        name: area.name,
-                        color: Color(hex: area.colorHex)
-                    )
-                )
-            }
-            for project in projects.filter({ $0.isActive && $0.context?.id == context.id }).sorted(by: { $0.order < $1.order })
-            where matches(project.name) {
-                result.append(
-                    TildeContainerItem(
-                        tag: .project(project.id),
-                        icon: project.icon,
-                        name: project.name,
-                        color: Color(hex: project.colorHex)
-                    )
-                )
-            }
+            result += offerableAreas
+                .filter { $0.context?.id == context.id }
+                .sorted { $0.order < $1.order }
+                .map(areaItem)
+            result += offerableProjects
+                .filter { $0.context?.id == context.id }
+                .sorted { $0.order < $1.order }
+                .map(projectItem)
         }
+        result += offerableAreas
+            .filter { !CadenceSidebarLists.isOffered($0.context?.id, among: offered) }
+            .sorted { $0.order < $1.order }
+            .map(areaItem)
+        result += offerableProjects
+            .filter { !CadenceSidebarLists.isOffered($0.context?.id, among: offered) }
+            .sorted { $0.order < $1.order }
+            .map(projectItem)
         return result
     }
 

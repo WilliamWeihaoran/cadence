@@ -109,6 +109,22 @@ nonisolated enum CadenceSidebarLists {
     /// lose rows that are on screen today. They get a section instead.
     static let ungroupedTitle = "Other"
 
+    /// Whether a list's context is one of the ones a control was actually handed.
+    ///
+    /// **The membership half of the catch-all, and it is shared because it is the half that keeps
+    /// getting respelled.** Five surfaces have now been filed for folding over contexts and losing
+    /// the lists that match none of them (T-534, T-538, T-558), and the fix each time is a bucket
+    /// keyed on this question rather than on `context == nil` — because "no context" and "a context
+    /// this caller did not offer" are the same row to the user and different expressions in code.
+    /// An archived context is the ordinary way to reach the second case: every sidebar and picker
+    /// filters those out of what it offers, and the lists inside one do not disappear with it.
+    ///
+    /// Takes the id rather than the model so it stays in `Shared/` beside the title it pairs with.
+    static func isOffered(_ contextID: UUID?, among offered: Set<UUID>) -> Bool {
+        guard let contextID else { return false }
+        return offered.contains(contextID)
+    }
+
     /// The region, top to bottom, for the iPad column — which renders flattened `Item`s.
     ///
     /// `contexts` supplies the order and the naming. **A section with no rows is dropped** here,
@@ -132,7 +148,9 @@ nonisolated enum CadenceSidebarLists {
     /// cosmetic: the macOS header *does* carry a control — the "+" that opens `CreateListSheet`,
     /// which is the only way to make a list in a given context on that platform — so dropping an
     /// empty context there would make a newly created context unusable. The catch-all is never
-    /// kept when empty either way; it has no control to offer under any spelling.
+    /// kept when empty either way: it draws a "+" on macOS since T-559, but that button only
+    /// pre-selects "No context" in a sheet every other header can also reach, so an empty catch-all
+    /// would be a heading over nothing that offers nothing the column does not already offer.
     static func sections<Element>(
         contexts: [ContextRef],
         elements: [Element],
@@ -149,7 +167,7 @@ nonisolated enum CadenceSidebarLists {
         var ungrouped: [Decorated] = []
 
         for entry in decorated {
-            if let contextID = entry.item.contextID, known.contains(contextID) {
+            if let contextID = entry.item.contextID, isOffered(contextID, among: known) {
                 byContext[contextID, default: []].append(entry)
             } else {
                 ungrouped.append(entry)

@@ -27,11 +27,21 @@ struct CadenceTildeContainerPickerTests {
         let projects: [Project]
         let modelContext: ModelContext
         let sectionedProject: Project
+        /// `contexts` minus Home, for the tests that ask what happens to a list whose context is
+        /// real but was not handed to the panel.
+        let workOnly: [Context]
     }
 
     /// Two contexts so the per-context grouping is observable, and one archived list of each kind
     /// so "active only" is observable. Orders are inserted counter to the array order so a result
     /// in `order` cannot be confused for a result in insertion order.
+    ///
+    /// **Three of the lists have no context at all (T-558)**, one of them archived, because the
+    /// panel used to drop every one of them: the body iterated contexts, so `context == nil`
+    /// matched no iteration and was appended nowhere. Garage is ordered 5 rather than 0 so the
+    /// unfiled bucket's own ordering is distinguishable from the per-context one — with Garage at
+    /// 0 the "offer every context" and "offer only Work" results happen to coincide, and a test
+    /// that cannot tell them apart is green against the bug it exists for.
     private func makeListFixture() throws -> ListFixture {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
@@ -57,26 +67,41 @@ struct CadenceTildeContainerPickerTests {
         shelved.status = .archived
 
         let garage = Area(name: "Garage", context: home)
-        garage.order = 0
+        garage.order = 5
+
+        // No context at all — the state iOS's list editor writes from its "None" row, in new and
+        // edit mode alike, and the one the Mac now makes too.
+        let looseEnds = Area(name: "Loose Ends")
+        looseEnds.order = 3
+        let lost = Area(name: "Lost")
+        lost.order = 4
+        lost.status = .archived
+        let stray = Project(name: "Stray")
+        stray.order = 2
 
         for model in [work, home] { modelContext.insert(model) }
-        for model in [operations, admin, retired, garage] { modelContext.insert(model) }
-        for model in [cadence, shelved] { modelContext.insert(model) }
+        for model in [operations, admin, retired, garage, looseEnds, lost] { modelContext.insert(model) }
+        for model in [cadence, shelved, stray] { modelContext.insert(model) }
         try modelContext.save()
 
         return ListFixture(
             contexts: [work, home],
-            areas: [operations, admin, retired, garage],
-            projects: [cadence, shelved],
+            areas: [operations, admin, retired, garage, looseEnds, lost],
+            projects: [cadence, shelved, stray],
             modelContext: modelContext,
-            sectionedProject: cadence
+            sectionedProject: cadence,
+            workOnly: [work]
         )
     }
 
     private func names(query: String, _ fixture: ListFixture) -> [String] {
+        names(query: query, offering: fixture.contexts, fixture)
+    }
+
+    private func names(query: String, offering contexts: [Context], _ fixture: ListFixture) -> [String] {
         TildeContainerPickerSupport.flatContainers(
             query: query,
-            contexts: fixture.contexts,
+            contexts: contexts,
             areas: fixture.areas,
             projects: fixture.projects
         )
@@ -90,7 +115,44 @@ struct CadenceTildeContainerPickerTests {
     @Test func theTildeListIsInboxThenEachContextsActiveAreasThenItsActiveProjects() throws {
         let fixture = try makeListFixture()
 
-        #expect(names(query: "", fixture) == ["Inbox", "Admin", "Operations", "Cadence", "Garage"])
+        #expect(
+            names(query: "", fixture)
+                == ["Inbox", "Admin", "Operations", "Cadence", "Garage", "Loose Ends", "Stray"]
+        )
+    }
+
+    /// **T-558.** A list with no context is offered, after every context's, areas before projects
+    /// and each in `order` — and the archived one of them is still absent, so the trailing bucket
+    /// is the same filter as the rest of the panel rather than an unguarded `append`.
+    @Test func theTildeListEndsWithTheListsThatBelongToNoOfferedContext() throws {
+        let fixture = try makeListFixture()
+
+        let offered = names(query: "", fixture)
+        #expect(offered.suffix(2) == ["Loose Ends", "Stray"])
+        #expect(offered.contains("Lost") == false)
+    }
+
+    /// Keyed on the **offered** contexts, not on `context == nil`. Home's list is filed and active;
+    /// a panel that was not handed Home has no heading for it either way, and dropping it would be
+    /// the same defect with a different cause. Garage sorts after Loose Ends here and before it in
+    /// the test above, which is what makes the two results distinguishable.
+    @Test func aListWhoseContextWasNotOfferedJoinsTheSameTrailingBucket() throws {
+        let fixture = try makeListFixture()
+
+        #expect(
+            names(query: "", offering: fixture.workOnly, fixture)
+                == ["Inbox", "Admin", "Operations", "Cadence", "Loose Ends", "Garage", "Stray"]
+        )
+    }
+
+    /// The query narrows the trailing bucket exactly as it narrows the rest — "lo" reaches the
+    /// active unfiled area and not the archived one beside it.
+    @Test func theTildeQueryPrefixMatchesInsideTheTrailingBucketToo() throws {
+        let fixture = try makeListFixture()
+
+        #expect(names(query: "lo", fixture) == ["Loose Ends"])
+        #expect(names(query: "st", fixture) == ["Stray"])
+        #expect(names(query: "loose e", fixture) == ["Loose Ends"])
     }
 
     /// **Prefix, not `contains`.** "ad" finds Admin; "min", which is inside it, finds nothing —

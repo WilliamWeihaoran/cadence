@@ -234,13 +234,29 @@ enum GoalLinkPresentation {
             needle.isEmpty || name.lowercased().contains(needle)
         }
 
+        let offered = Set(contexts.map(\.id))
+
+        /// `nil` asks for the leftovers, and **it is not the same question as `context == nil`**
+        /// (T-558). This used to be one `$0.context?.id == context?.id`, which reads well and
+        /// answers "unfiled" as "has no context at all" — so a list whose context exists but was
+        /// not handed in, the ordinary state of an archived one, matched no offered group *and*
+        /// failed the `nil` test, and was offered by this sheet nowhere. Every caller currently
+        /// passes an unfiltered context query, so that was latent rather than live; it is the
+        /// fifth-instance shape either way and it is keyed on the offered set now, the way
+        /// `CadenceSidebarLists.isOffered` keys it everywhere else.
         func targets(in context: Context?) -> [GoalLinkTarget] {
+            func owns(_ owner: Context?) -> Bool {
+                guard let context else {
+                    return !CadenceSidebarLists.isOffered(owner?.id, among: offered)
+                }
+                return owner?.id == context.id
+            }
             let contextAreas = areas
-                .filter { $0.context?.id == context?.id && matches($0.name) }
+                .filter { owns($0.context) && matches($0.name) }
                 .sorted { $0.order < $1.order }
                 .map(GoalLinkTarget.area)
             let contextProjects = projects
-                .filter { $0.context?.id == context?.id && matches($0.name) }
+                .filter { owns($0.context) && matches($0.name) }
                 .sorted { $0.order < $1.order }
                 .map(GoalLinkTarget.project)
             return contextAreas + contextProjects

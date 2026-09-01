@@ -18,7 +18,9 @@ enum ContainerPickerFilterSupport {
     /// The bucket is keyed on the **offered** contexts rather than on `context == nil`, so a list
     /// whose context exists but was not handed to the picker lands in the same place. That is the
     /// rule `CadenceSidebarLists.sections` already applies to these two models on the iPad sidebar,
-    /// and the heading's wording is taken from there rather than respelled.
+    /// and both the heading's wording and the membership test itself are read from there rather
+    /// than respelled — `CadenceSidebarLists.isOffered`, which T-558 made shared after the fifth
+    /// surface was filed for asking the question its own way.
     struct Group: Identifiable {
         let contextID: UUID?
         let title: String
@@ -87,8 +89,8 @@ enum ContainerPickerFilterSupport {
             )
         }
 
-        let looseAreas = offerableAreas.filter { !isOffered($0.context, among: offered) }
-        let looseProjects = offerableProjects.filter { !isOffered($0.context, among: offered) }
+        let looseAreas = offerableAreas.filter { !CadenceSidebarLists.isOffered($0.context?.id, among: offered) }
+        let looseProjects = offerableProjects.filter { !CadenceSidebarLists.isOffered($0.context?.id, among: offered) }
         if !looseAreas.isEmpty || !looseProjects.isEmpty {
             groups.append(
                 Group(
@@ -101,13 +103,6 @@ enum ContainerPickerFilterSupport {
             )
         }
         return groups
-    }
-
-    /// Whether a list's context is one of the ones this picker was handed. `nil` is not offered,
-    /// and neither is a context the caller left out — both belong under the catch-all.
-    private static func isOffered(_ context: Context?, among offered: Set<UUID>) -> Bool {
-        guard let context else { return false }
-        return offered.contains(context.id)
     }
 
     /// The flat order the arrow-key highlight walks. Must stay in the order the rows render.
