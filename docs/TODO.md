@@ -1128,13 +1128,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   before T-610 landed), **28 of them macOS and largely the controls the tooltip ledger just released** —
   i.e. controls that gained a `.help` label but still have no accessible name as a bare glyph.
 
-- [T-638] **Eight `"+N more"` literals still spelled inline, plus one deliberate exception.** From
-  [[T-598]], which hoisted the four calendar sites to `CadenceTaskSurfaceOptions.moreLabel(hidden:)` and
-  left the already-agreeing eight alone as out of scope.
-  Note the exception before sweeping: `MarkdownRenderedBlockTruncation.overflowLabel(unit:)` draws a
-  **spaced** `"+ 4 more rows"` — a different sentence with a pluralised unit, recorded in that helper's
-  doc. A mechanical sweep would break it.
-
 - [T-648] **A note's embedded task card repaints over a swallowed save, in four editors.** VERIFIED
   while fixing [[T-629]] in the same file. `NotePanel.toggleEmbeddedSubtask` / `renameEmbeddedTask`,
   `ListNotesSupportViews`' and `NoteEditorPane`'s copies of both, and
@@ -1290,6 +1283,27 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   on success.
 
 ## Done
+
+- [T-638] **CLOSED 2026-09-01 (`3cfd576`).** All eight read
+  `CadenceTaskSurfaceOptions.moreLabel(hidden:)` now — the two markdown task-embed draw calls, both
+  iOS board cards, the iOS task row, the iOS markdown preview, the kanban card, and the macOS
+  timeline bundle block.
+  **The sweep is the larger half of the change.** T-598 left the eight because they already agreed
+  with the constant; what nothing could catch was a *ninth*.
+  `CadenceSharedConstantReuseSweepTests` harvests non-interpolated `static let` strings only, and
+  this line is interpolated by nature, so a new surface typing `"+\(n) more"` was guarded by no test
+  at all — which is how eight copies came to sit beside a constant that already said it.
+  `CadenceTaskSurfaceOptionsTests.onlyTheSharedHelperSpellsTheOverflowLine` walks `Cadence/` and
+  `CadenceWidgets/` and allows the line in exactly one file, the one that declares it.
+  **The exception the ticket named is real and needed no exception list.**
+  `MarkdownRenderedBlockTruncation.overflowLabel(unit:)`'s `"+ 4 more rows"` and
+  `iOSTodaySchedulePanel`'s `"+3 more in Today"` both continue past the word `more`, and the needle
+  is anchored on the literal's closing quote, so neither can be swept up by a change to the file
+  list. A mutation injecting both spellings into an untouched file leaves the sweep green.
+  Failing-first: the sweep named exactly the six files holding the eight sites. **Four mutations,
+  all compiled**: reverting one converted site, respelling `moreLabel` the spaced way, and injecting
+  a thirteenth site into `TasksListView` were all killed; the two-neighbour control survived, as
+  designed.
 
 - [T-633] **CLOSED 2026-09-01 (`e96c3e9`).** Both iOS scope dialogs commit now, through
   `CadenceTaskFieldEditCommit.commit(_:alsoRestoring:in:)` — the unit macOS's
