@@ -813,11 +813,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Use `strippingComments`, never `codeOnly` — `codeOnly` blanks string literals too, which is what
   made an earlier copy scan permanently and silently green.
 
-- [T-572] **The iOS Board's day columns are unreadable to VoiceOver.**
-  `iOSCalendarBoardView.swift:315-343` has no `accessibilityLabel`; macOS
-  `CalendarBoardDayColumnSupportViews.swift:121` announces "<long date>, N scheduled items". The
-  correct pattern is one file over.
-
 - [T-584] *(**premise CORRECTED 2026-08-31 — this ticket, written by the coordinator, overstated the
   defect in two ways.** (1) **It is not an unnoticed bug; it is a recorded decision.**
   `CadenceTodayLayoutSupportTests.swift:142` `everyInspectorWidthTheTargetIPadsProduceFallsBackToOneNotesColumn`
@@ -944,26 +939,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   hairline and a Retina hairline are genuinely different physical things, so do not assume they should
   match before checking.
 
-- [T-620] **A note or list delete can permanently erase an image the user pasted into a different
-  note.** VERIFIED 2026-09-01 from CXT-017 — **confirmed, and the mechanism is pinned green by an
-  existing test.**
-  `CadenceListDeleteHelpers.deleteUnreferencedMarkdownImageAssets` fetches
-  `FetchDescriptor<MarkdownImageAsset>()` — *every* asset in the store — and deletes any the remaining
-  markdown does not reference. Four user paths reach it: context, project and area delete
-  (`:79`, `:113`, `:136`) and single-note delete (`CadenceNoteActionSupport.swift:42`).
-  **The globality is measured, not inferred:** `CadenceMarkdownSourceInventoryTests.swift:150-186`
-  inserts an `orphan` asset unrelated to the delete and asserts it is collected.
-  **The repo already contains the correct reasoning, on the same model type, in the other direction.**
-  `DataIntegrityRepairServiceTests.swift:258-271` documents why *repair* must not collect an orphaned
-  `MarkdownImageAsset`: *"an unowned row is indistinguishable from one whose owner has not arrived."*
-  `MarkdownImageAsset` has **no relationship to `Note` or `AppTask`**, so CloudKit has nothing to order
-  the two records by. Delete does the opposite of repair with the same row type.
-  **Consequence: silent, permanent loss of `.externalStorage` bytes**, with the later-arriving note
-  keeping a `cadence-image://` reference that no longer resolves. Not self-healing.
-  Fix shape: a candidate-set delete rather than a global GC. **No stored-property change, so no
-  migration cost.** Reasoned half: that an asset can be local while its owning markdown has not
-  imported. Settle with two devices, or a CloudKit Dashboard read.
-
 - [T-621] **Focus minutes are read-modify-write counters, so two devices lose sessions.** VERIFIED
   2026-09-01 from CXT-021 — confirmed.
   Three increment sites, all `x += minutes` on CloudKit-synced scalars:
@@ -979,19 +954,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Migration note: a new `@Model` is additive (no `SchemaMigrationPlan` needed for a new entity) but must
   be added to `CadenceSchema`, `PrivacyDataResetService`, the export DTOs and the MCP surface per
   `Cadence/Models/AGENTS.md`. **The real cost is backfilling without double-counting.**
-
-- [T-622] **Two devices can complete one recurring task and fork its successor chain.** VERIFIED
-  2026-09-01 from CXT-019 — mechanism confirmed, reachability reasoned.
-  `CadenceTaskRecurrenceWorkflowSupport.swift:128` guards on `recurrenceSpawnedTaskID == nil` reading
-  only the local replica, then inserts a fresh `AppTask` and writes a scalar pointer.
-  `recurrenceSpawnedTaskIDRaw` is a single `String`, so CloudKit can name only one successor.
-  **The "no repair exists" half is measured** — every `func` in `DataIntegrityRepairService` was read:
-  it has duplicate-habit-completion and duplicate-note passes, and **no duplicate-task pass of any
-  kind**. `TaskWorkflowRecurrenceTests` covers rapid duplicate calls on one object, which cannot reach
-  this.
-  Outcome is proliferation, not loss — a duplicate occupying the same `(seriesID, index)` with its own
-  reminders. **Cheapest of the confirmed set: no stored-property change, the identity fields already
-  exist, and the repo has the pattern in `CadenceHabitCompletionStore.collapseDuplicates`.**
 
 - [T-623] **Hard list deletion walks only the local replica.** VERIFIED 2026-09-01 from CXT-018 —
   mechanism confirmed, **but Codex mis-severed it and the fix it proposes is the most expensive of the
@@ -1177,6 +1139,24 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Mutation N3 reintroduced the exact break and turned the guard red** — so the test catches this, not
   merely a rearrangement of it.
 
+- [T-622] **CLOSED 2026-09-01 (`2437da7`, target-membership follow-up `1425fde`).** A forked series is
+  collapsed back onto one occurrence. No stored property added — `recurrenceSeriesIDRaw` and
+  `recurrenceOccurrenceIndex` were already written on every successor, so the fork was always
+  identifiable and simply never collapsed. **The survivor is the lowest `id.uuidString` and nothing
+  else**, because the rule must give the same answer on every device: a rule that reads local state
+  (keep the completed one, keep the newest) is not a tie-break but a second fork, and each device
+  would then delete the row the other kept. Work is protected by a removability test rather than by
+  the choice of survivor — a row goes only if it still looks like the copy the spawn made. The
+  predecessor is **re-pointed** at the survivor, not cleared, because a nil pointer respawns the fork.
+
+- [T-620] **CLOSED 2026-09-01 (`9d38854`).** `deleteUnreferencedMarkdownImageAssets` is now a
+  candidate-set delete: it considers only the assets the markdown *being deleted* referenced, and all
+  four paths supply their own set. This is `DataIntegrityRepairService`'s own reasoning applied to the
+  same model type from the other side — repair refuses to collect an orphaned `MarkdownImageAsset`
+  because an unowned row is indistinguishable from one whose owner has not arrived, and the type has no
+  relationship to `Note` or `AppTask` for CloudKit to order by. **The cost is a leak rather than a
+  loss**, the direction this area already errs in. It is also the definition both confirmation sheets
+  already promised, so the counts shown and the effect of the button stopped differing.
 
 - [T-627] **CLOSED 2026-09-01 (`91fe8e4`).** All four gaps closed. **The flagged population went from
   7 declarations in 6 files to 56 in 43** — the 49 new ones **ledgered, not fixed**, nearly all naming
