@@ -43,12 +43,34 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-645] **The kanban column editor's other three writes reach no commit at all, and one of them
+  closes the popover.** Found while fixing [[T-632]], deliberately left out of that change.
+  `KanbanSectionColumnView.columnEditor`'s `onDelete` runs `moveTasks(...)`, `removeSection()` and
+  then `showEditor = false` with **no commit anywhere**; `saveSectionChanges` and `onClearDate` write
+  the container's `sectionConfigsRaw` blob and also commit nothing. None of the three is visible to
+  the `try? save()` rule: a `TaskSectionConfig` is a struct inside a JSON blob rather than a `@Model`,
+  so half 3's `modelContext.delete(` never fires, and there is no `try?` for half 2 to key on. They
+  ride the next autosave today. `saveSectionChanges` runs on **every keystroke** of the rename field,
+  so this is not simply "add a commit" — the rename needs a commit point that is not per-character,
+  which is why it was not folded into T-632.
 
+- [T-646] **A refused column completion has nowhere to appear, because the write happens 2.5 seconds
+  after the popover closes.** Found while fixing [[T-632]]. `SectionCompletionAnimationManager`
+  writes a *reopen* synchronously — that half is fixed, and `toggleCompletionFromEditor` now holds
+  the popover open on it — but a *completion* is deferred behind a 2.5s countdown on a detached
+  `Task`, and `beginCompletion`'s `save(current)` discards the answer. So a completion whose commit
+  the store refuses is undone correctly (the column visibly stays active) and reported to nobody:
+  `saveSection` sets `saveFailureNotice` into a popover that is already gone. The countdown is the
+  only reason this is not a false success today. Wants either a column-level notice outside the
+  popover, or a rule that the countdown holds the editor open.
 
-
-
-
-
+- [T-647] **`NoteEditorPane.body`'s commit-reach exemption is attributed to the wrong ticket.**
+  `CadenceSaveCommitRule.commitReachExemptions` says its `body` entry is "[[T-634]]'s subtask one".
+  T-634 is fixed and did not touch that file: `NoteEditorPane` contains no `insertSubtask` and no
+  `deleteSubtask` at all, and its only subtask code (`toggleEmbeddedSubtask`) is a field edit. The
+  entry is still a real finding — `body` is reported — but the surviving cause is almost certainly
+  the T-631 tag family the same comment names, and the comment now sends the next reader looking for
+  a defect that is not there. Re-attribute it, or say what `body` actually reaches.
 
 - [T-447] *(narrowed 2026-08-30: both landings reviewed. T-281 is a faithful but visually inert extraction — the two headers were already byte-identical before it. T-283's renames are correct and complete. Defects found and filed separately as [[T-492]] and [[T-493]]. Predicate two is effectively answered off-device already: the commit outcome is covered in `CadenceEventKitPlatformParityTests` and its position by `theEventSheetKeepsItsCommitNoticeInsideTheHeader` — only the pixel is left. Predicate one is narrowed by `nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader`: **nothing in `Cadence/` writes that environment key**, so only SwiftUI's own re-derivation inside NavigationStack -> HStack -> .frame remains device-only. That residue belongs with T-55 / T-280.)* **Nothing rendered the two iOS surfaces [[T-281]] and [[T-283]] changed.** Both landed on
   source-scan evidence plus four green scheme builds (`Cadence` macOS, `CadenceWidgets`,
@@ -1027,27 +1049,11 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `SchedulePanelComponents.TaskDetailPopover.createTag`. A phantom tag appears in Settings > Tags on the
   next unrelated save from any screen.
 
-- [T-632] **macOS kanban column archive/complete closes the editor over a swallowed save.** VERIFIED.
-  `KanbanSectionColumnView.swift:393-407` saves-and-swallows then `showEditor = false`; `:389-391`
-  toggles completion through `saveSection:503-512` (swallows) then closes. **Report.** Missed because
-  both sit in `private var columnEditor: some View` (gap 2) *and* `showEditor = false` is outside the
-  vocabulary (gap 4).
-  **Codex's sub-claim disproved:** the lifecycle settle does *not* need existence cleanup —
-  `CadenceTaskContainerLifecycleService.settle` calls `settleWithoutAdvancingSeries`, which explicitly
-  does not spawn a successor. The batch is field edits only.
-
 - [T-633] **iOS recurrence scope edits close the dialog, then swallow.** VERIFIED.
   `iOSTaskRowActionViews.swift:339-346` and `:816-823`; the series path sets
   `pendingRecurrenceRule = nil` — **which is what closes the scope dialog** — and then swallows.
   **Report.** For `.thisAndFuture`, every later occurrence's rule changes in memory, the sheet closes,
   and **the row's existing "Couldn't Update the Series" alert has nowhere to fire.**
-
-- [T-634] **Adding a subtask from the task-detail popover reaches no commit — from seven surfaces.**
-  VERIFIED. macOS `SchedulePanelComponents.swift:103-109` and `:147-154` route through
-  `deleteSubtask`/`insertSubtask` and **reach no commit at all**; `addSubtask` clears the draft
-  regardless. iOS `iOSTaskDetailSheet.swift:459-467` clears the draft *then* swallows; `:469-472` the
-  same for delete. **Commit reach (macOS), Existence (iOS)**, both one frame down. This popover is
-  presented from **seven** surfaces.
 
 - [T-635] **Roll Over hides the banner in persisted preferences whether or not the roll committed.**
   VERIFIED, and **the only one of the fifteen whose false success outlives a rollback.**
@@ -1122,6 +1128,48 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`imageFailureNotice`), so this is a count and a message, not new plumbing.
 
 ## Done
+
+- [T-632] **CLOSED 2026-09-01 (`2177d1a`).** The kanban column editor commits before it closes.
+  `saveSection` answers `Bool` and commits through `CadencePendingChangePersistence.commitEdit`
+  under a `CadenceListEditSnapshot` undo; the archive closure is now `toggleSectionArchive()`, a
+  named function, so `showEditor = false` is the last statement after a commit that returned rather
+  than the first after a `try?`. A refused write draws `CadenceInlineFailureNotice` at the foot of
+  the popover and leaves the popover open on the column that did not move.
+  **The ticket's disproved sub-claim held up:** the settle is field edits only —
+  `TaskContainerLifecycleService` routes through `settleWithoutAdvancingSeries`, which does not
+  spawn a successor — so the undo is a snapshot and not an un-insert. That is also why the undo is
+  not `modelContext.rollback()`: one `ModelContext` app-wide, and an edit's rollback is invisible
+  until something refetches (T-402).
+  **What the ticket did not say, and what shaped the fix:** `SectionCompletionAnimationManager`
+  writes a *reopen* synchronously and defers a *completion* behind a 2.5-second countdown. Only the
+  reopen could ever have been closed over, which is why the completion button is gated on the notice
+  flag rather than on a return value — a completion has nothing to have failed at by the time the
+  button returns. The deferred half's refusal still has nowhere to appear; filed as [[T-646]].
+  The other three writes in the same popover reach no commit at all and are [[T-645]].
+
+- [T-634] **CLOSED 2026-09-01 (`673dd13`).** Both task-detail subtask surfaces commit, and neither
+  reports before the commit returns. macOS's `TaskDetailPopover.addSubtask` reached **no commit at
+  all** and emptied the field anyway; the delete was an inline closure in `body` with the same
+  problem; iOS cleared the field and *then* swallowed. All four now go through
+  `CadencePendingChangePersistence.commitInsert` / `commitDelete`, and the report — the field
+  emptying — happens only after. The macOS entries left `commitReachExemptions` and the iOS pair
+  left `existenceExemptions` in the same change.
+  **A second defect fell out of the fix, and it is measured rather than argued.** Neither shared
+  commit unit is sufficient on its own here, and they fail in opposite directions:
+  `commitInsert`'s undo deletes the row, but `insertSubtask` had also appended it to
+  `task.subtasks` and the delete does not reach that array before the surface re-renders — a refused
+  insert would have drawn a **phantom subtask that exists nowhere**. `commitDelete`'s `rollback()`
+  un-deletes the row in the store but does not put it back on the array `deleteSubtask` edited — a
+  refused delete would have **hidden a live subtask until the next launch**. Both are pinned by
+  `arefusedSubtaskInsertLeavesAPhantomOnTheParentUntilTheCallerDropsIt` and
+  `arefusedSubtaskDeleteLeavesTheRowMissingFromTheParentUntilTheCallerPutsItBack`, whose assertion
+  order is load-bearing: reading the array *before* the repair is the whole measurement. The repair
+  is one captured array per call site — `CadenceListEditSnapshot`'s idiom shrunk to its one field —
+  and `bothSubtaskSurfacesPutTheParentsArrayBackOnARefusedCommit` keeps both platforms spelling it.
+  The two sentences are `CadenceTaskInspectorSupport.subtaskAddFailureNotice` /
+  `subtaskDeleteFailureNotice`, in the one file both surfaces already share; only the delete one
+  promises "Nothing was removed", because only the delete side's undo makes that true.
+  Residue filed: [[T-647]].
 
 - [T-630] **CLOSED 2026-09-01 (`c15cace`).** Both `NoteActionSupport.move` helpers `throw` and commit
   through `CadencePendingChangePersistence.commitEdit(in:commit:undo:)`, and the three destination rows
