@@ -38,6 +38,11 @@ nonisolated enum CadenceMCPStorePreparation {
     static func prepare(in context: ModelContext, source: String) -> Int {
         NoteMigrationService.migrateAndRecordFailure(in: context, source: source)
         TagSupport.syncAllNoteTagsFromMarkdown(in: context)
+        // No `removingForkedOccurrences:`, and that is an answer rather than an omission (T-622).
+        // Removing a task means severing every inverse that names it and cancelling its reminders,
+        // and this target compiles neither the one spelling of the first nor a notification centre
+        // to do the second. A fork it leaves alone is collapsed by the app's next startup repair;
+        // a fork this process half-removed would not be.
         DataIntegrityRepairService.repairAndRecordFailure(in: context, source: source)
         return stepCount
     }

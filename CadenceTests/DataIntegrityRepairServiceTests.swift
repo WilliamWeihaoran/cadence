@@ -613,7 +613,11 @@ struct DataIntegrityRepairServiceTests {
         let fork = try forkedSeries(in: modelContext)
         try modelContext.save()
 
-        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
 
         #expect(report.duplicateRecurrenceOccurrencesRemoved == 1)
         #expect(report.changed)
@@ -672,7 +676,11 @@ struct DataIntegrityRepairServiceTests {
         fork.higher.completedAt = Date(timeIntervalSince1970: 5_000)
         try modelContext.save()
 
-        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
 
         #expect(report.duplicateRecurrenceOccurrencesRemoved == 0)
         let remaining = try modelContext.fetch(FetchDescriptor<AppTask>()).map(\.id)
@@ -691,7 +699,11 @@ struct DataIntegrityRepairServiceTests {
         fork.higher.title = "Water the plants — the real one"
         try modelContext.save()
 
-        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
 
         #expect(report.duplicateRecurrenceOccurrencesRemoved == 0)
         #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).count == 3)
@@ -708,7 +720,11 @@ struct DataIntegrityRepairServiceTests {
         let second = occurrence(seriesID: seriesID, index: 2, in: modelContext)
         try modelContext.save()
 
-        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
 
         #expect(report.duplicateRecurrenceOccurrencesRemoved == 0)
         let remaining = Set(try modelContext.fetch(FetchDescriptor<AppTask>()).map(\.id))
@@ -730,7 +746,11 @@ struct DataIntegrityRepairServiceTests {
         try modelContext.save()
 
         #expect(CadenceTaskRecurrenceWorkflowSupport.duplicateOccurrenceGroups(among: [one, two]).isEmpty)
-        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
         #expect(report.duplicateRecurrenceOccurrencesRemoved == 0)
         #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).count == 2)
     }
@@ -752,11 +772,79 @@ struct DataIntegrityRepairServiceTests {
         try modelContext.save()
         #expect(try modelContext.fetch(FetchDescriptor<Subtask>()).count == 2)
 
-        _ = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+        _ = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
 
         let subtasks = try modelContext.fetch(FetchDescriptor<Subtask>())
         #expect(subtasks.count == 1)
         #expect(subtasks.first?.parentTask?.id == fork.lowerID)
+    }
+
+    /// **A repair handed no remover collapses nothing, and that is the MCP tool's real answer.**
+    ///
+    /// `DataIntegrityRepairService.swift` is in `CadenceMCPServer`'s explicit Sources phase; the
+    /// task-deletion core and `NotificationManager` are not. So the *decision* lives in the service
+    /// and the *removal* is handed in, and a process with no deletion core hands in nothing. What
+    /// this pins is that `nil` means **inert** rather than half-done: the duplicate is still there,
+    /// the counter is zero, `changed` is false, and the predecessor still points where it did — so
+    /// the app's next startup repair sees exactly the fork it would have seen anyway.
+    @Test func aRepairWithNoRemoverLeavesTheForkExactlyAsItFoundIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let fork = try forkedSeries(in: modelContext)
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.duplicateRecurrenceOccurrencesRemoved == 0)
+        #expect(report.changed == false)
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).count == 3)
+        #expect(fork.origin.recurrenceSpawnedTaskID == fork.higherID)
+
+        // Non-vacuity: the same store, with the app's remover, does collapse. Without this the
+        // test above is equally true of a fixture that was never a fork.
+        let collapsed = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
+        #expect(collapsed.duplicateRecurrenceOccurrencesRemoved == 1)
+    }
+
+    /// **The app's startup repair must supply the remover, and only a scan can say so.**
+    ///
+    /// The seam defaults to `nil` so the twenty-odd existing callers did not have to change, which
+    /// means the one call site where forgetting it costs the user anything —
+    /// `PersistenceController.performStartupMaintenance`, the launch that actually runs against
+    /// their store — is protected by nothing the type system can see. Dropping the argument there
+    /// compiles, every other test stays green, and forked occurrences quietly stop being collapsed
+    /// on every device forever.
+    ///
+    /// Asserted against the stripped source so a commented-out call cannot satisfy it, and paired
+    /// with a negative: the MCP-side maintenance must *not* name the remover, because that file is
+    /// in `CadenceMCPServer`'s Sources phase and this one is not — which is the whole reason the
+    /// seam exists. `CadenceTargetSourceMembershipTests` enforces that boundary in general; this
+    /// names the specific pair so a future edit that "fixes" the asymmetry has to read why.
+    @Test func theAppStartupRepairSuppliesTheForkedOccurrenceRemover() throws {
+        let startup = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
+        )
+        #expect(startup.contains("removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders"))
+        // Non-vacuity for the read itself: an empty or wrong file would satisfy every `!contains`.
+        #expect(startup.contains("DataIntegrityRepairService.repairAndRecordFailure"))
+
+        let mcp = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift")
+        )
+        #expect(mcp.contains("DataIntegrityRepairService.repairAndRecordFailure"))
+        #expect(
+            !mcp.contains("CadenceForkedOccurrenceRemover"),
+            "the MCP target does not compile the remover; naming it here is the aaa0064 break again"
+        )
     }
 
     // MARK: - T-622 fixtures

@@ -106,7 +106,18 @@ struct PersistenceController {
         // empty only because sync has not landed.
         let migrationReport = NoteMigrationService.migrateAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
         let syncedNoteTags = TagSupport.syncAllNoteTagsFromMarkdown(in: context, saveChanges: false)
-        let repairReport = DataIntegrityRepairService.repairAndRecordFailure(in: context, source: "app-startup", saveChanges: false)
+        // `removingForkedOccurrences:` is the app supplying the half of T-622's collapse that
+        // `DataIntegrityRepairService` cannot spell: it is in `CadenceMCPServer`'s explicit source
+        // list and the task-deletion core is not. Omitting it here would leave forked recurring
+        // occurrences uncollapsed on the one launch that matters, silently, so
+        // `DataIntegrityRepairServiceTests.theAppStartupRepairSuppliesTheForkedOccurrenceRemover`
+        // pins that this argument is present.
+        let repairReport = DataIntegrityRepairService.repairAndRecordFailure(
+            in: context,
+            source: "app-startup",
+            saveChanges: false,
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
         let changedStore = (migrationReport?.insertedTotal ?? 0) > 0 ||
             syncedNoteTags ||
             repairReport?.changed == true

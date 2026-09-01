@@ -106,6 +106,33 @@ nonisolated extension DataIntegrityRepairReport {
     }
 }
 
+/// How T-622's forked-occurrence collapse actually removes the rows it decided on.
+///
+/// **This is a seam because `DataIntegrityRepairService.swift` is in `CadenceMCPServer`'s explicit
+/// Sources phase and the removal is not.** Deleting an `AppTask` properly means severing every
+/// inverse that names it and taking its subtasks with it, and this repository has exactly one
+/// spelling of that — `CadenceTaskMutationSupport.detachRelationships` / `deleteSubtask` — in a
+/// file the MCP target does not compile. Cancelling the removed rows' reminders needs
+/// `NotificationManager`, which it does not compile either and, being a command-line tool with no
+/// notification centre, has no business running. Adding both files (and their own closures) to
+/// that target to serve one pass is a large source list bought for nothing;
+/// re-spelling `detachRelationships` beside the pass is the drift this repository forbids. So the
+/// *decision* stays here, where the report and the counter are, and the *removal* is handed in.
+///
+/// `nil` means "this process has no task-deletion core", which is the MCP tool's true answer, not
+/// a silent skip: `CadenceStoreMaintenance.prepare` says so at its call. The app supplies
+/// `CadenceForkedOccurrenceRemover.removeAndCancelReminders`, and
+/// `DataIntegrityRepairServiceTests.theAppStartupRepairSuppliesTheForkedOccurrenceRemover` pins
+/// that it does — the one thing a default of `nil` cannot enforce on its own.
+///
+/// Same shape and same reason as `CadenceListTaskSweep`: a piece of a cascade that cannot be
+/// spelled where the cascade lives, named at file scope so nobody has to write the function type
+/// out and hope it still means the same thing.
+///
+/// - Parameters are the rows `collapsibleDuplicateOccurrences` chose to remove and the context
+///   holding them; the return is the ids actually removed, which is what the report counts.
+typealias CadenceForkedOccurrenceRemoval = ([AppTask], ModelContext) -> [UUID]
+
 /// **Scope: duplicate rows, the references a merge invalidates, and single-row fields that name
 /// something impossible. Not an orphan sweep** (T-328).
 ///
@@ -170,7 +197,8 @@ nonisolated enum DataIntegrityRepairService {
     static func repairIfNeeded(
         in context: ModelContext,
         source: String = "unknown",
-        saveChanges: Bool = true
+        saveChanges: Bool = true,
+        removingForkedOccurrences remove: CadenceForkedOccurrenceRemoval? = nil
     ) throws -> DataIntegrityRepairReport {
         var report = DataIntegrityRepairReport(
             source: source,
@@ -180,7 +208,7 @@ nonisolated enum DataIntegrityRepairService {
         )
 
         do {
-            try repair(in: context, report: &report)
+            try repair(in: context, remove: remove, report: &report)
             if report.changed && saveChanges {
                 try context.save()
             }
@@ -203,10 +231,16 @@ nonisolated enum DataIntegrityRepairService {
     static func repairAndRecordFailure(
         in context: ModelContext,
         source: String,
-        saveChanges: Bool = true
+        saveChanges: Bool = true,
+        removingForkedOccurrences remove: CadenceForkedOccurrenceRemoval? = nil
     ) -> DataIntegrityRepairReport? {
         do {
-            return try repairIfNeeded(in: context, source: source, saveChanges: saveChanges)
+            return try repairIfNeeded(
+                in: context,
+                source: source,
+                saveChanges: saveChanges,
+                removingForkedOccurrences: remove
+            )
         } catch {
             return lastReport()
         }
@@ -217,7 +251,11 @@ nonisolated enum DataIntegrityRepairService {
         return try? JSONDecoder().decode(DataIntegrityRepairReport.self, from: data)
     }
 
-    private static func repair(in context: ModelContext, report: inout DataIntegrityRepairReport) throws {
+    private static func repair(
+        in context: ModelContext,
+        remove: CadenceForkedOccurrenceRemoval?,
+        report: inout DataIntegrityRepairReport
+    ) throws {
         let store = try RepairStore(
             contexts: context.fetch(FetchDescriptor<Context>()),
             areas: context.fetch(FetchDescriptor<Area>()),
@@ -248,7 +286,12 @@ nonisolated enum DataIntegrityRepairService {
 
         repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
         repairDuplicateHabitCompletions(in: store, modelContext: context, report: &report)
-        repairDuplicateRecurrenceOccurrences(in: store, modelContext: context, report: &report)
+        repairDuplicateRecurrenceOccurrences(
+            in: store,
+            modelContext: context,
+            remove: remove,
+            report: &report
+        )
         repairOutOfRangeHabitReminders(in: store, report: &report)
     }
 
@@ -365,8 +408,10 @@ nonisolated enum DataIntegrityRepairService {
     private static func repairDuplicateRecurrenceOccurrences(
         in store: RepairStore,
         modelContext: ModelContext,
+        remove: CadenceForkedOccurrenceRemoval?,
         report: inout DataIntegrityRepairReport
     ) {
+        guard let remove else { return }
         let groups = CadenceTaskRecurrenceWorkflowSupport.duplicateOccurrenceGroups(among: store.tasks)
         var survivorByRemovedID: [UUID: UUID] = [:]
         for group in groups {
@@ -388,50 +433,15 @@ nonisolated enum DataIntegrityRepairService {
 
         var removedIDs: [UUID] = []
         for group in groups {
-            removedIDs += collapseDuplicateOccurrences(among: group, modelContext: modelContext)
+            guard let collapse = CadenceTaskRecurrenceWorkflowSupport
+                .collapsibleDuplicateOccurrences(among: group) else { continue }
+            removedIDs += remove(collapse.removable, modelContext)
         }
 
         for (predecessor, survivorID) in rePointing {
             predecessor.recurrenceSpawnedTaskID = survivorID
         }
-        // The removed rows may have carried a scheduled-start reminder. One cancel for the whole
-        // pass, the same shape `deleteContext` uses for the habits a context cascade takes.
-        Task { await NotificationManager.shared.cancel(taskIDs: removedIDs) }
         report.duplicateRecurrenceOccurrencesRemoved += removedIDs.count
-    }
-
-    /// Removes the untouched clones of one forked occurrence and returns their ids.
-    ///
-    /// **The rule is `CadenceTaskRecurrenceWorkflowSupport`'s; only the mechanics are here.**
-    /// `collapsibleDuplicateOccurrences` decides the survivor and what may go, beside the spawn
-    /// that writes the slot — the `CadenceHabitCompletionStore.collapseDuplicates` arrangement. The
-    /// delete cannot live there: that file compiles into `CadenceMCPServer` and the widget target,
-    /// neither of which has `CadenceTaskMutationSupport`, which is where the one spelling of
-    /// severing a task's references lives.
-    ///
-    /// Deliberately does **not** save, and deliberately does not touch bundles: a removable row has
-    /// `bundle == nil` by `isUntouchedClone`, so there is no bundle left holding a stale member.
-    /// Relationship severing goes through `CadenceTaskMutationSupport.detachRelationships`, and the
-    /// copied subtasks through `deleteSubtask`, rather than a second spelling of either.
-    ///
-    /// Notification cancellation is the caller's, so one collapse of several groups issues one
-    /// cancel rather than one per row.
-    private static func collapseDuplicateOccurrences(
-        among group: [AppTask],
-        modelContext: ModelContext
-    ) -> [UUID] {
-        guard let collapse = CadenceTaskRecurrenceWorkflowSupport
-            .collapsibleDuplicateOccurrences(among: group) else { return [] }
-        var removedIDs: [UUID] = []
-        for task in collapse.removable {
-            for subtask in task.subtasks ?? [] {
-                CadenceTaskMutationSupport.deleteSubtask(subtask, parent: task, modelContext: modelContext)
-            }
-            CadenceTaskMutationSupport.detachRelationships(for: task)
-            removedIDs.append(task.id)
-            modelContext.delete(task)
-        }
-        return removedIDs
     }
 
     private static func mergeContext(
