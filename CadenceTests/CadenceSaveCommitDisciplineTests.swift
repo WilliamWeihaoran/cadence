@@ -1297,21 +1297,20 @@ enum CadenceSaveCommitRule {
     /// `TaskInspectorContentSupportViews.body` and `TimelineBundleBlock.body` were listed here for
     /// exactly one commit.
     static let commitReachExemptions: [String: [String]] = [
-        // [[T-631]]'s family, and the largest: `TagSupport.resolveTags` and `setTags` insert the
-        // `Tag` row into the ambient context and commit nothing, so every composer that offers
-        // "create tag" leaves one pending. `TaskCreationService.createTask` commits `[task] +
-        // subtasks` and not the tag, so a refused task commit un-inserts the task and leaves the
-        // tag behind.
-        "Cadence/iOS/iOSCreateTaskSheet.swift": ["markerSuggestions"],
-        "Cadence/iOS/iOSTaskDetailComponents.swift": ["addTag"],
-        "Cadence/macOS/Sheets/CreateTaskSheet.swift": ["createTag"],
-        "Cadence/macOS/Views/InlineTaskComposerView.swift": ["createTag"],
-        "Cadence/macOS/Views/SchedulePanelComponents.swift": ["createTag"],
-        // `NoteEditorPane` carries four spellings of the same two defects: the tag one above
-        // (`createTag`, `noteTagsBinding`, and `persistEditorContentIfNeeded` through
-        // `syncNoteTagsFromMarkdown`) and [[T-634]]'s subtask one in `body`.
+        // [[T-631]] emptied the five entries that used to open this list — `CreateTaskSheet`,
+        // `InlineTaskComposerView`, `SchedulePanelComponents`, `iOSCreateTaskSheet` and
+        // `iOSTaskDetailComponents` — along with `NoteEditorPane.createTag` below. All six reach
+        // `TagSupport.committedTag` now, which commits the rows it minted through `commitInsert`
+        // and answers `nil` rather than an unsaved `Tag` for the picker to draw a chip from.
+        // Pinned by `CadenceInlineTagCommitSurfaceTests`.
+        //
+        // `NoteEditorPane` keeps two of its four: `noteTagsBinding` and
+        // `persistEditorContentIfNeeded` write through `TagSupport.setTags` /
+        // `syncNoteTagsFromMarkdown` on the debounced autosave path, where what an undo means under
+        // the user's caret is the question `commitEdit`'s doc leaves open. `body` is [[T-634]]'s
+        // subtask one.
         "Cadence/macOS/Views/NoteEditorPane.swift": [
-            "body", "createTag", "noteTagsBinding", "persistEditorContentIfNeeded",
+            "body", "noteTagsBinding", "persistEditorContentIfNeeded",
         ],
         // [[T-636]](e): `SchedulingActions.createTask`/`createBundle` insert into a context they
         // were handed and commit nothing, and the canvas that calls them commits nothing either.

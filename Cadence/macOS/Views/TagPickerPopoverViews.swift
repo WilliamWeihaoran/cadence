@@ -6,7 +6,7 @@ struct TagPickerPopover: View {
     @Environment(\.modelContext) private var modelContext
     @Binding var selectedTags: [Tag]
     let allTags: [Tag]
-    let onCreateTag: (String) -> Tag
+    let onCreateTag: (String) -> Tag?
 
     @State private var query = ""
     @State private var editingTag: Tag?
@@ -189,9 +189,15 @@ struct TagPickerPopover: View {
         }
     }
 
+    /// **T-631.** `onCreateTag` answers `nil` when the store refused the new tag, and this stops
+    /// there: no chip is selected, and the query stays in the field so the name the user typed is
+    /// still on screen to try again with. Clearing it was this control's only report that the tag
+    /// had been made, and it used to run whether or not one had been.
+    ///
+    /// The sentence explaining *why* belongs to the surface that owns the `ModelContext` and ran
+    /// the commit — the composer, the inspector, the note header — which is where it is shown.
     private func createQueriedTagIfNeeded() {
-        guard canCreate else { return }
-        let tag = onCreateTag(query)
+        guard canCreate, let tag = onCreateTag(query) else { return }
         if !selectedTags.contains(where: { $0.id == tag.id }) {
             selectedTags.append(tag)
         }

@@ -176,17 +176,43 @@ nonisolated enum TagSupport {
     /// collapsed to 0, scrambling tag order.
     ///
     /// Optional rather than empty so the compiler makes each caller say what it wants: the
-    /// inline pickers fall back to an unsaved `Tag`, and the three overwriting callers refuse to
-    /// write anything at all.
+    /// overwriting callers refuse to write anything at all, and the pickers that offer "create
+    /// tag" go through `resolveTagsCommittingInsertions(named:in:commit:)` in
+    /// `Cadence/Shared/CadenceInlineTagCreation.swift` and show a notice.
+    ///
+    /// **It is handed its `ModelContext`, so the caller owns the unit of work** — that signature is
+    /// the statement, and it is why half 3 of the `try? save()` rule exempts this declaration and
+    /// charges its callers instead. T-631 is what happens when every caller takes that exemption
+    /// and none of them commits.
     static func resolveTags(named names: [String], in context: ModelContext) -> [Tag]? {
+        resolution(named: names, in: context)?.tags
+    }
+
+    /// The resolved tags **and the subset this call inserted**, which is what an undo needs to know.
+    ///
+    /// Split out rather than having `resolveTagsCommittingInsertions` re-derive the new rows from
+    /// the returned array: "which of these did I just mint" is only knowable here, and a second
+    /// reading of it — by id, by `isInserted`, by comparing against a fetch — is a second chance to
+    /// hand `commitInsert` a row it must not delete.
+    ///
+    /// **Internal rather than private, and that is a target boundary rather than a preference.**
+    /// This file compiles into `CadenceWidgets` as well as the app, and
+    /// `CadencePendingChangePersistence` does not — so the two committing spellings live in
+    /// `Cadence/Shared/CadenceInlineTagCreation.swift`, which the widget never sees, and reach this
+    /// through the module rather than through `private`.
+    static func resolution(
+        named names: [String],
+        in context: ModelContext
+    ) -> (tags: [Tag], inserted: [Tag])? {
         let normalizedNames = normalizedTagNames(names)
-        guard !normalizedNames.isEmpty else { return [] }
+        guard !normalizedNames.isEmpty else { return ([], []) }
 
         guard let existing = try? context.fetch(FetchDescriptor<Tag>()) else { return nil }
         var bySlug = tagsBySlug(existing)
         let nextOrderBase = (existing.map(\.order).max() ?? -1) + 1
 
-        return normalizedNames.enumerated().map { offset, name in
+        var inserted: [Tag] = []
+        let tags = normalizedNames.enumerated().map { offset, name -> Tag in
             let tagSlug = slug(for: name)
             if let tag = bySlug[tagSlug] {
                 return tag
@@ -194,8 +220,10 @@ nonisolated enum TagSupport {
             let tag = Tag(name: name, slug: tagSlug, order: nextOrderBase + offset)
             context.insert(tag)
             bySlug[tagSlug] = tag
+            inserted.append(tag)
             return tag
         }
+        return (tags, inserted)
     }
 
     static func setTags(named names: [String], on task: AppTask, in context: ModelContext) {

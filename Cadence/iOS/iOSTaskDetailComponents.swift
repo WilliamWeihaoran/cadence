@@ -415,6 +415,8 @@ struct iOSTaskTagPickerPopover: View {
     /// SwiftData. Defaults to nothing, which is what a not-yet-created task wants.
     var onCommit: () -> Void = {}
     @Environment(\.modelContext) private var modelContext
+    /// Set when the store refused the tag the field just tried to create. See `addTag()`.
+    @State private var tagFailureNotice: String?
 
     private var availableTags: [Tag] {
         TagSupport.uniqueBySlug(allTags.filter { !$0.isArchived })
@@ -452,6 +454,12 @@ struct iOSTaskTagPickerPopover: View {
             Rectangle()
                 .fill(Theme.borderSubtle)
                 .frame(height: 1)
+
+            if let tagFailureNotice {
+                CadenceInlineFailureNotice(text: tagFailureNotice)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 8)
+            }
 
             HStack(spacing: 8) {
                 TextField("New tag", text: $newTagName)
@@ -524,10 +532,21 @@ struct iOSTaskTagPickerPopover: View {
         onCommit()
     }
 
+    /// **T-631.** This inserted a `Tag` one frame down in `TagSupport.resolveTags`, into the
+    /// popover's ambient `ModelContext`, and committed nothing — while clearing the field and
+    /// running `onCommit()`, which is the whole report that the tag was made. So a refused store
+    /// left the name gone from the field and the row pending for another screen's save.
+    ///
+    /// Clearing the field now happens on the committed path alone, the way
+    /// `iOSSettingsTagsSection.createTag` — the same act, one screen over — already did.
     private func addTag() {
         let name = trimmedNewTagName
         guard !name.isEmpty else { return }
-        guard let tag = TagSupport.resolveTags(named: [name], in: modelContext)?.first else { return }
+        guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
+            tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        tagFailureNotice = nil
         if !isSelected(tag) {
             selectedTags = TagSupport.sorted(selectedTags + [tag])
         }

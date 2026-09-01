@@ -5,7 +5,7 @@ import SwiftData
 struct TagPickerControl: View {
     @Binding var selectedTags: [Tag]
     let allTags: [Tag]
-    let onCreateTag: (String) -> Tag
+    let onCreateTag: (String) -> Tag?
     var showsLabel: Bool = false
     /// Glyph on the picker trigger. Defaults to the tag icon, which reads as "this is the tag
     /// control" — right inside a task inspector, where it sits in a column of labelled fields.

@@ -17,6 +17,8 @@ struct TaskDetailPopover: View {
     @State private var newSubtaskTitle = ""
     /// Set when a subtask insert or delete was refused by the store. See `addSubtask()`.
     @State private var subtaskFailureNotice: String?
+    /// Set when the store refused a tag created from the header's picker. See `createTag(_:)`.
+    @State private var tagFailureNotice: String?
     @State private var presentationMode: TaskDetailPresentationMode = .full
     @FocusState private var subtaskFieldFocused: Bool
 
@@ -79,6 +81,10 @@ struct TaskDetailPopover: View {
                         availableSections: availableSections,
                         onCreateTag: createTag
                     )
+
+                    if let tagFailureNotice {
+                        CadenceInlineFailureNotice(text: tagFailureNotice)
+                    }
 
                     TaskDetailScheduleGroupSection(task: task)
                 } else {
@@ -218,8 +224,21 @@ struct TaskDetailPopover: View {
         }
     }
 
-    private func createTag(_ name: String) -> Tag {
-        TagSupport.resolveTags(named: [name], in: modelContext)?.first ?? Tag(name: name)
+    /// **T-631**, and the third spelling of `addSubtask`'s sentence in this one popover: the
+    /// inspector reached for its ambient `ModelContext`, inserted a `Tag` one frame down in
+    /// `TagSupport.resolveTags`, and committed nothing. The tag sat pending behind whatever the
+    /// user did next, and the picker drew a chip for it either way.
+    ///
+    /// The notice sits under the header section rather than beside the chips, next to the one
+    /// `addSubtask` and `deleteSubtask` already use, so the popover has one place it says a write
+    /// was refused.
+    private func createTag(_ name: String) -> Tag? {
+        guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
+            tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return nil
+        }
+        tagFailureNotice = nil
+        return tag
     }
 }
 #endif

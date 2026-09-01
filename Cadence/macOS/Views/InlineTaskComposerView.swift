@@ -248,8 +248,19 @@ struct InlineTaskComposer: View {
         entryGeneration += 1
     }
 
-    private func createTag(_ name: String) -> Tag {
-        TagSupport.resolveTags(named: [name], in: modelContext)?.first ?? Tag(name: name)
+    /// **T-631**, and the same sentence `create()` above already makes about the task: the composer
+    /// says nothing happened unless it did.
+    ///
+    /// It used to reach for the ambient `ModelContext`, insert a `Tag` one frame down in
+    /// `TagSupport.resolveTags`, and commit nothing — so a tag typed into a card the user then
+    /// abandoned stayed pending, for the next unrelated save anywhere in the app to take.
+    private func createTag(_ name: String) -> Tag? {
+        guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
+            actionError = CadencePendingChangePersistence.editFailureNotice
+            return nil
+        }
+        actionError = nil
+        return tag
     }
 }
 #endif

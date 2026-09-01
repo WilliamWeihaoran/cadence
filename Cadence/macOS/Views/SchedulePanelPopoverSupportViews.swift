@@ -24,7 +24,7 @@ struct TaskDetailHeaderSection: View {
     let taskContainerBinding: Binding<TaskContainerSelection>
     let taskTagsBinding: Binding<[Tag]>
     let availableSections: [String]
-    let onCreateTag: (String) -> Tag
+    let onCreateTag: (String) -> Tag?
 
     /// Priority tile width + the title row's spacing, so everything under the title row lines up
     /// with the title text rather than with the tile.

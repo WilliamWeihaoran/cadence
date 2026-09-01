@@ -20,7 +20,7 @@ struct TaskTitleEntryField: View {
     let containerSelection: Binding<TaskContainerSelection>?
     let sectionName: Binding<String>?
     let selectedTags: Binding<[Tag]>?
-    let onCreateTag: ((String) -> Tag)?
+    let onCreateTag: ((String) -> Tag?)?
 
     @State private var tildeMode: TaskTitleTildeMode = .none
     @State private var tildeSearchQuery = ""
@@ -55,7 +55,7 @@ struct TaskTitleEntryField: View {
         containerSelection: Binding<TaskContainerSelection>? = nil,
         sectionName: Binding<String>? = nil,
         selectedTags: Binding<[Tag]>? = nil,
-        onCreateTag: ((String) -> Tag)? = nil,
+        onCreateTag: ((String) -> Tag?)? = nil,
         onDateNudge: ((Int) -> Void)? = nil,
         onSubmit: (() -> Void)? = nil
     ) {
@@ -400,9 +400,12 @@ struct TaskTitleEntryField: View {
         TaskPickerHighlightSupport.clampedIndex(index, count: count)
     }
 
+    /// **T-631.** A `nil` from `onCreateTag` means the store refused the tag and it has been taken
+    /// back out, so nothing is selected and the `#` panel stays open over the name still in its
+    /// field. Selecting a chip for a row the store does not hold is the report this used to make.
     private func createInlineTag() {
-        guard let onCreateTag else { return }
-        selectInlineTagItem(onCreateTag(tagSearchQuery))
+        guard let onCreateTag, let tag = onCreateTag(tagSearchQuery) else { return }
+        selectInlineTagItem(tag)
     }
 
     /// Toggles, rather than only adding.

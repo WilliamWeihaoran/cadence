@@ -483,8 +483,22 @@ struct CreateTaskSheet: View {
         )
     }
 
-    private func createTag(_ name: String) -> Tag {
-        TagSupport.resolveTags(named: [name], in: modelContext)?.first ?? Tag(name: name)
+    /// **T-631, half 3 of the `try? save()` rule.** This reached for the sheet's ambient
+    /// `ModelContext`, inserted a `Tag` one frame down in `TagSupport.resolveTags`, and committed
+    /// nothing — so a tag typed here and then abandoned with Cancel stayed *pending* for whatever
+    /// unrelated screen saved next. `createTask` un-inserts `[task] + subtasks` on a refusal and
+    /// never knew about the tag, so even a refused Add left one behind.
+    ///
+    /// The old `?? Tag(name: name)` fallback went with it. It returned a `Tag` the store had never
+    /// been asked about, which the picker then drew as a chip; there is nothing to draw now, and
+    /// the sheet's own notice line says why.
+    private func createTag(_ name: String) -> Tag? {
+        guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
+            actionError = CadencePendingChangePersistence.editFailureNotice
+            return nil
+        }
+        actionError = nil
+        return tag
     }
 
 }

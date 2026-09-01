@@ -41,6 +41,8 @@ struct NoteEditorPane: View {
     @State private var derivedState = NoteEditorDerivedState()
     @State private var pendingDerivedStateTask: Task<Void, Never>?
     @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
+    /// Set when the store refused a tag created from the chips. See `createTag(_:)`.
+    @State private var tagFailureNotice: String?
 
     private var titleBinding: Binding<String> {
         Binding(
@@ -176,12 +178,21 @@ struct NoteEditorPane: View {
     /// only place tags are read or written. Writes go through
     /// `TagSupport.setTags(...writeFrontmatter: true)`.
     private var noteTagControl: some View {
-        TagPickerControl(
-            selectedTags: noteTagsBinding,
-            allTags: tags,
-            onCreateTag: createTag,
-            triggerSymbol: "plus"
-        )
+        VStack(alignment: .trailing, spacing: 3) {
+            TagPickerControl(
+                selectedTags: noteTagsBinding,
+                allTags: tags,
+                onCreateTag: createTag,
+                triggerSymbol: "plus"
+            )
+            // Here rather than in `noteHeader`, because the chips are drawn twice: the full header
+            // draws them in its title row and the compact one parks them in the format toolbar. A
+            // notice attached to the header would be missing from the list-detail Notes tab, which
+            // is the surface most likely to be open when a save is refused.
+            if let tagFailureNotice {
+                CadenceInlineFailureNotice(text: tagFailureNotice)
+            }
+        }
         .fixedSize()
     }
 
@@ -407,8 +418,22 @@ struct NoteEditorPane: View {
         refreshDerivedState(for: content)
     }
 
-    private func createTag(_ name: String) -> Tag {
-        TagSupport.resolveTags(named: [name], in: modelContext)?.first ?? Tag(name: name)
+    /// **T-631.** The note's chips reached for the pane's ambient `ModelContext`, inserted a `Tag`
+    /// one frame down in `TagSupport.resolveTags`, and committed nothing — so a tag typed here sat
+    /// pending until some other screen's save took it, and the chip was drawn regardless.
+    ///
+    /// `noteTagsBinding` and `persistEditorContentIfNeeded` are the *other* two tag writes on this
+    /// pane and they are not this ticket: both go through `TagSupport.setTags` /
+    /// `syncNoteTagsFromMarkdown` on the debounced autosave path, where "what does an undo mean
+    /// under the user's caret" is the unsettled question `commitEdit`'s doc describes. They keep
+    /// their entries in `CadenceSaveCommitRule.commitReachExemptions`.
+    private func createTag(_ name: String) -> Tag? {
+        guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
+            tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return nil
+        }
+        tagFailureNotice = nil
+        return tag
     }
 
     private func openNoteReference(id: UUID?, title: String) {

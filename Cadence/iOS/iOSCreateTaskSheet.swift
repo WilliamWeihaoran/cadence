@@ -227,9 +227,7 @@ struct iOSCreateTaskSheet: View {
                 },
                 onCreateTag: { name in
                     title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
-                    if let tag = TagSupport.resolveTags(named: [name], in: modelContext)?.first {
-                        select(tag)
-                    }
+                    createTag(name)
                 }
             )
         }
@@ -292,6 +290,24 @@ struct iOSCreateTaskSheet: View {
     private func select(_ tag: Tag) {
         guard !selectedTags.contains(where: { $0.id == tag.id }) else { return }
         selectedTags = TagSupport.sorted(selectedTags + [tag])
+    }
+
+    /// **T-631**, and macOS's `CreateTaskSheet.createTag` is the same function.
+    ///
+    /// The `#` suggestion row reached for the sheet's ambient `ModelContext`, inserted a `Tag` one
+    /// frame down in `TagSupport.resolveTags`, and committed nothing — so a tag typed into a sheet
+    /// the user then cancelled stayed pending for the next unrelated save anywhere in the app, and
+    /// turned up in Settings › Tags with nothing to explain it.
+    ///
+    /// No chip is selected over a refusal: the notice above the title field is the whole report,
+    /// and it is the one `create()` below already uses.
+    private func createTag(_ name: String) {
+        guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
+            actionError = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        actionError = nil
+        select(tag)
     }
 
     private func normalizeSection() {
