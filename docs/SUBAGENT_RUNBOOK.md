@@ -55,6 +55,22 @@ per-agent boilerplate.
   command line is `/bin/zsh ./run-batch.sh`. A liveness check written that way reports a healthy run as
   gone, which is how one agent came to launch a duplicate runner. Same family as the `pgrep -f
   xcodebuild` warning: match on something the process actually spells.
+- **A `pgrep -f` inside a script that names that script matches the script itself.** The widened form
+  of the bullet above: a watcher loop polling `pgrep -f 'run-mutations-<tag>.sh'` from *inside*
+  `run-mutations-<tag>.sh` always finds one match — its own command line — so it never exits. Measured
+  2026-09-02; three such loops would have spun forever after their batch ended. Exclude your own pid
+  (`pgrep -f … | grep -v "^$$\$"`) or match on something only the target spells.
+- **`scripts/xcb.sh test` takes the test-host lock itself.** Wrapping it in an outer
+  `test-host-lock.sh acquire` deadlocks the runner against its own lease. If you need one lease across
+  many runs — and with a sibling mid-mutation you do, because `acquire` polls every 10s with no queue
+  and a runner that releases and re-acquires immediately always wins — take the lease once and use
+  `xcb.sh <id> raw test …`, which skips the lock and keeps the zero-test guard and the counters.
+  Measured 2026-09-02: ten separate `xcb.sh test` calls starved for 21 minutes; restructured, the next
+  batch acquired in 20 seconds.
+- **A `while read` loop must not bind a variable named `path`.** In zsh `path` is tied to `$PATH`, so
+  `while read -r id suite path desc` **empties `$PATH`** for the body. Every command then fails to
+  execute with an empty error message, which reads as a broken script rather than a broken shell. It
+  cost one agent a full twelve-mutation run.
 - **Killing a queued batch does not kill the `acquire` waiting for it.** `pkill -f 'run-batch-<tag>.sh'`
   matches the runner and **not** its `scripts/test-host-lock.sh acquire ...` child, which is a separate
   command line. The orphan keeps waiting, takes the lock minutes later with nobody left to run under
@@ -196,6 +212,19 @@ Two rules, and they generalise well past this script:
 - **A probe tolerates its own failure.** Code whose job is to look around and report must never
   take the run down with it. Assign with `|| true` / `|| continue`, and keep stderr -- when a probe
   fails, the reason *is* the finding.
+
+## Never assert a numeric floor over a population the repo is shrinking
+
+Three instances in one run, 2026-09-01/02. `matchCount(…) >= 3` over **four** real occurrences let a
+mutation deleting one of them survive. A four-site hoist counted `== 4` in aggregate, so one site
+drifting back inline while another gained a duplicate would have passed. And
+`everyPlaceholderLabelInTheAppIsDeclaredOrRecorded`'s `count >= 10` had already sagged to **9** —
+because the whole point of that ledger is that the population keeps shrinking, so a floor written
+once is guaranteed to stop holding.
+
+A floor is not a weak assertion, it is an assertion about the wrong thing. Assert the **exact** count
+*and* name each occurrence, or split the file into regions and require each to read the value exactly
+once — an aggregate that still totals four cannot tell you the four are where you left them.
 
 This is the same shape as the `CadenceSourceScan.codeOnly` trap: an instrument broke, and the
 breakage read as a verdict. Prefer detectors that fail loud over detectors that fail silent, and
