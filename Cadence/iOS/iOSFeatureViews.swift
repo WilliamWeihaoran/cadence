@@ -20,33 +20,25 @@ struct iOSGoalsView: View {
     }
 
     private var activeGoals: [Goal] {
-        goals.filter { $0.status != .done }
+        GoalAssignmentRules.activeGoals(from: goals)
     }
 
     /// Genuine directions, plus any nested goal whose parent is completed — without the second
     /// half those milestones would have no row to appear under and drop off the screen.
     private var topLevelGoals: [Goal] {
-        let activeIDs = Set(activeGoals.map(\.id))
-        return activeGoals.filter { goal in
-            guard let parent = goal.parentGoal else { return true }
-            return !activeIDs.contains(parent.id)
-        }
+        GoalAssignmentRules.activeTopLevelGoals(from: goals)
     }
 
     private func milestones(of goal: Goal) -> [Goal] {
         GoalAssignmentRules.milestones(of: goal).filter { $0.status != .done }
     }
 
-    /// A selected id that no longer resolves falls through to the default rather than resolving to
-    /// nothing: the goal can disappear from under the selection at any time — deleted on the Mac
-    /// and arriving over CloudKit, or deleted from the compact list — and returning `nil` there
-    /// left the iPad detail pane reading "No goal selected" for as long as the view stayed alive,
-    /// with no way to pick anything again.
+    /// The detail pane's subject, and the row that draws as selected. Every rung of the resolution
+    /// is filtered to active goals, so this pane can never show a goal the list above has no row
+    /// for — see `GoalAssignmentRules.selectedGoal(id:from:)`, which holds the reasoning and the
+    /// tests, including why the fall-through the deleted-out-from-under-you case needs survives it.
     private var selected: Goal? {
-        if let selectedID, let match = goals.first(where: { $0.id == selectedID }) {
-            return match
-        }
-        return topLevelGoals.first ?? activeGoals.first ?? goals.first
+        GoalAssignmentRules.selectedGoal(id: selectedID, from: goals)
     }
 
     var body: some View {
@@ -228,12 +220,18 @@ struct iOSGoalsView: View {
     /// chooser that says "No goals yet" — a list with no items to select from.
     ///
     /// T-519's `unselectedDetail` needed a branch because its picker could be full while nothing
-    /// was selected. **This pane has no such case.** `selected` falls back through
-    /// `topLevelGoals.first ?? activeGoals.first ?? goals.first`, so it is `nil` exactly when
-    /// `goals` is empty, and an empty `goals` makes `activeGoals.count` zero — which is the
-    /// condition `iOSFeatureListPane` draws its empty panel on. So every reader of this branch is
-    /// looking at the chooser's empty panel at the same moment, and a `pickItems.isEmpty` guard
-    /// copied from Focus would be a branch that never takes its other side.
+    /// was selected. **This pane has no such case.** `GoalAssignmentRules.selectedGoal(id:from:)`
+    /// resolves only among active goals, so it is `nil` exactly when `activeGoals` is empty —
+    /// which is `activeGoals.count == 0`, the condition `iOSFeatureListPane` draws its empty panel
+    /// on. So every reader of this branch is looking at the chooser's empty panel at the same
+    /// moment, and a `pickItems.isEmpty` guard copied from Focus would be a branch that never
+    /// takes its other side.
+    ///
+    /// **T-541 made that an equality rather than an implication.** It used to hold by way of
+    /// "`nil` only when `goals` is empty, and an empty `goals` makes the count zero" — true, but
+    /// one-directional, and the gap was reachable: with every goal completed the count was zero
+    /// and `selected` was not `nil`, so the chooser drew its empty panel while this branch went
+    /// untaken and the pane rendered a completed goal.
     @ViewBuilder
     private var detailPane: some View {
         if let goal = selected {

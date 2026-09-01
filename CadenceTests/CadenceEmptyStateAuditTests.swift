@@ -1243,13 +1243,27 @@ struct CadenceEmptyStateAuditTests {
         #expect(emptyStateOccurrences(of: "No goal selected", in: code) == 0)
         #expect(emptyStateOccurrences(of: "No habit selected", in: code) == 0)
 
-        // What makes the unconditional branch correct: `nil` here means "nothing exists".
+        // What makes the unconditional branch correct: `nil` here means "nothing the list would
+        // draw a row for exists".
+        //
+        // **T-541 moved this half of the pin out of the file.** The fallback used to be spelled
+        // here as `topLevelGoals.first ?? activeGoals.first ?? goals.first` — and that last,
+        // unfiltered rung was the defect: with every goal completed the chooser drew its empty
+        // panel while this pane rendered a completed goal. The resolution is
+        // `GoalAssignmentRules.selectedGoal(id:from:)` now, which this target can *call*, so the
+        // "`nil` exactly when the chooser is empty" claim is asserted behaviourally in
+        // `GoalPresentationTests` instead of read off the source. What stays here is that this
+        // pane resolves through that one rule and holds no fallback of its own.
         #expect(
             emptyStateOccurrences(
-                of: "return topLevelGoals.first ?? activeGoals.first ?? goals.first",
+                of: "GoalAssignmentRules.selectedGoal(id: selectedID, from: goals)",
                 in: code
             ) == 1,
-            "the goals fallback no longer resolves through the whole collection"
+            "the goals detail pane no longer resolves through the shared rule"
+        )
+        #expect(
+            emptyStateOccurrences(of: "?? goals.first", in: code) == 0,
+            "the goals fallback resolves through the whole collection again"
         )
         #expect(
             emptyStateOccurrences(of: "return dueToday.first ?? habits.first", in: code) == 1,

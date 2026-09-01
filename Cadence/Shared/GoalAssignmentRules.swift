@@ -23,6 +23,53 @@ enum GoalAssignmentRules {
         (goal.subGoals ?? []).sorted { $0.order < $1.order }
     }
 
+    /// Goals still in flight — the only ones the Goals screen draws a row for.
+    ///
+    /// **T-541.** The iOS Goals screen filters completed goals out of its list and counts what is
+    /// left, so `status != .done` is not a presentation detail of one pane: it decides which goals
+    /// exist as far as that screen is concerned. It lives here so the pane beside the list cannot
+    /// answer the question differently from the list.
+    static func activeGoals(from goals: [Goal]) -> [Goal] {
+        goals.filter { $0.status != .done }
+    }
+
+    /// The rows the Goals list draws at the top level: genuine directions, plus any active
+    /// milestone whose parent is completed — without the second half those milestones would have
+    /// no row to appear under and drop off the screen.
+    static func activeTopLevelGoals(from goals: [Goal]) -> [Goal] {
+        let active = activeGoals(from: goals)
+        let activeIDs = Set(active.map(\.id))
+        return active.filter { goal in
+            guard let parent = goal.parentGoal else { return true }
+            return !activeIDs.contains(parent.id)
+        }
+    }
+
+    /// The goal the Goals **detail** pane shows, given whatever the user last selected.
+    ///
+    /// **T-541 — every rung of this is filtered, and that is the whole point.** The detail pane
+    /// used to resolve a selected id against the unfiltered collection and fall back to
+    /// `goals.first`, so with every goal completed the chooser drew "No goals yet" while the pane
+    /// beside it rendered a completed goal in full. It is the mirror image of [[T-514]]/[[T-534]]:
+    /// there the list had no row for where you were, here the detail showed what the list had
+    /// filtered away.
+    ///
+    /// **The deleted-out-from-under-you case this fallback exists for still holds.** A selected id
+    /// that no longer resolves — the goal deleted on the Mac and the deletion arriving over
+    /// CloudKit, or deleted from the compact list — still falls through to a default rather than to
+    /// `nil`, which is what kept the iPad detail pane from reading as permanently unselectable.
+    /// What it no longer does is resurrect a goal the list refuses to show.
+    ///
+    /// So this returns `nil` exactly when `activeGoals(from:)` is empty, which is exactly the count
+    /// the list draws its empty panel on: both sides go empty together.
+    static func selectedGoal(id: UUID?, from goals: [Goal]) -> Goal? {
+        let active = activeGoals(from: goals)
+        if let id, let match = active.first(where: { $0.id == id }) {
+            return match
+        }
+        return activeTopLevelGoals(from: goals).first ?? active.first
+    }
+
     /// Whether `goal` may own milestones of its own.
     ///
     /// Goals nest exactly one level: a top-level goal is a direction and its sub-goals read as
