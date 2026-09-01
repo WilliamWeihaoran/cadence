@@ -51,14 +51,23 @@ struct iOSCalendarBundleDetailSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                // T-604: `.ruled` groups need a plate to be ruled *on*, and the figures are
+                // `iOSEditorSheetMetrics`' rather than this sheet's own 16/18 — which happened to
+                // match `groupSpacing` and the compact `gutter` exactly, so nothing moves and the
+                // agreement stops being a coincidence. Same frame as
+                // `iOSCalendarQuickCreateSheet` and `iOSCalendarEventEditSheet`, because all three
+                // now draw the same "Schedule" group.
+                VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
                     titleSection
                     scheduleSection
                     taskSection
                     focusSection
                     deleteSection
                 }
-                .padding(18)
+                .padding(iOSEditorSheetMetrics.cardPadding)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
+                .padding(iOSEditorSheetMetrics.gutter(isRegularWidth: false))
             }
             .scrollIndicators(.hidden)
             .background(Theme.bg.ignoresSafeArea())
@@ -123,15 +132,16 @@ struct iOSCalendarBundleDetailSheet: View {
     // one that needs its own spacing: at the 0 default the title field and the summary row below it
     // sat flush against each other.
     private var titleSection: some View {
-        iOSEditorSection(title: "Block", contentSpacing: 10) {
+        iOSEditorSection(title: "Block", style: .ruled, contentSpacing: 10) {
+            // No inset well (T-604). It was `Theme.surfaceElevated.opacity(0.65)`, which was
+            // legible only because the group sat on a `.card` — on the sheet's own elevated plate
+            // it is the plate, at 65%, on itself. The sibling sheets' subject field is bare 22pt
+            // bold and reads from `iOSEditorSheetMetrics`, so this is now the third caller of one
+            // decision rather than a fourth literal.
             TextField("Block title", text: $title)
                 .textInputAutocapitalization(.words)
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: iOSEditorSheetMetrics.titleSize, weight: .bold))
                 .foregroundStyle(Theme.text)
-                .padding(.horizontal, 12)
-                .frame(minHeight: 52)
-                .background(Theme.surfaceElevated.opacity(0.65))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             HStack(spacing: 8) {
                 Label(
@@ -153,7 +163,7 @@ struct iOSCalendarBundleDetailSheet: View {
     }
 
     private var scheduleSection: some View {
-        iOSEditorSection(title: "Schedule") {
+        iOSEditorSection(title: "Schedule", style: .ruled) {
             iOSEditorFieldRow(label: "Date", systemImage: "calendar", color: Theme.blue) {
                 CadenceDatePicker(selection: dateBinding)
             }
@@ -188,7 +198,7 @@ struct iOSCalendarBundleDetailSheet: View {
     }
 
     private var taskSection: some View {
-        iOSEditorSection(title: "Tasks") {
+        iOSEditorSection(title: "Tasks", style: .ruled) {
             if bundle.sortedTasks.isEmpty {
                 VStack(spacing: 9) {
                     Image(systemName: "tray.full")

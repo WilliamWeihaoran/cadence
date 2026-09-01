@@ -190,4 +190,97 @@ struct iOSEditorSheetMetricsTests {
         #expect(iOSEditorSheetMetrics.secondaryColumnMaxWidth > 0)
         #expect(iOSEditorSheetMetrics.twoColumnMaxWidth > 0)
     }
+
+    // MARK: - One section style across the three calendar sheets (T-604)
+
+    /// **The same "Schedule" group, drawn as two different components.** Quick-create built its
+    /// groups with `iOSEditorSection(style: .ruled)` — hairline-separated rows on the sheet's own
+    /// plate — while the event-edit and block-detail sheets took the `.card` default, so a reader
+    /// moving between two sheets in one feature saw the identical Date / Start / Duration stack
+    /// once as ruled rows and once as a raised card. All three are `.ruled` now, which is what
+    /// `CadenceFieldSectionStyle.ruled`'s own doc asks for: *compact sheets where a stack of cards
+    /// would read as a stack of unrelated boxes*.
+    ///
+    /// **The plate came with it, and had to.** `.ruled` draws no card of its own, so a ruled group
+    /// needs a surface to be ruled *on*; quick-create and the task inspector both already framed
+    /// their form in `cardPadding` inside `Theme.radiusPanel`. Converting the section style without
+    /// that frame would have left the two sheets' fields lying directly on `Theme.bg` and the
+    /// convergence unachieved — the Schedule group would still have read as two components, just
+    /// two different ones. So the frame is pinned here beside the style.
+    @Test func allThreeCalendarSheetsDrawRuledSections() throws {
+        // The style's own contract, so the assertions below are about a decision and not a spelling.
+        #expect(CadenceFieldSectionStyle.ruled != CadenceFieldSectionStyle.card)
+
+        let sheets = [
+            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift": 6,
+            "Cadence/iOS/iOSCalendarEventEditSheet.swift": 7,
+            "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 3
+        ]
+
+        for (path, expected) in sheets {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+
+            // Non-vacuity: the right file, past the comment stripper, still building sections.
+            #expect(code.contains("iOSEditorSection("), "non-vacuity: \(path)")
+
+            let sections = CadenceSourceScan.matchCount(#"iOSEditorSection\("#, in: code)
+            let ruled = CadenceSourceScan.matchCount(#"style: \.ruled"#, in: code)
+            #expect(
+                sections == expected,
+                "\(path) declares \(sections) sections, expected \(expected) — re-count before bumping"
+            )
+            #expect(
+                ruled == sections,
+                "\(path) draws \(sections) sections but only \(ruled) of them ruled"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"style: \.card"#, in: code) == 0,
+                "\(path) still asks for a carded group"
+            )
+
+            // The frame a ruled form is ruled on, in the shared figures rather than three literals.
+            #expect(
+                code.contains("iOSEditorSheetMetrics.cardPadding"),
+                "\(path) does not pad its form with the shared card padding"
+            )
+            #expect(
+                code.contains("cornerRadius: Theme.radiusPanel"),
+                "\(path) does not frame its ruled form at the shared panel radius"
+            )
+            #expect(
+                code.contains("iOSEditorSheetMetrics.gutter(isRegularWidth:"),
+                "\(path) does not inset its sheet by the shared gutter"
+            )
+            #expect(
+                code.contains("iOSEditorSheetMetrics.groupSpacing"),
+                "\(path) does not space its groups by the shared figure"
+            )
+        }
+
+        // The detector is not blind: it separates the two spellings it has to tell apart.
+        #expect(CadenceSourceScan.matchCount(#"style: \.ruled"#, in: "iOSEditorSection(title: nil, style: .ruled) {") == 1)
+        #expect(CadenceSourceScan.matchCount(#"style: \.card"#, in: "iOSEditorSection(title: nil, style: .ruled) {") == 0)
+        #expect(CadenceSourceScan.matchCount(#"iOSEditorSection\("#, in: "iOSEditorSection(title: \"Schedule\") {") == 1)
+    }
+
+    /// The one field each of the three sheets exists to fill in, read from one place. The block
+    /// sheet drew its title at a literal 22 inside an inset well of `Theme.surfaceElevated` at 65%
+    /// — legible only while the group sat on a card, and invisible once the group sat on the
+    /// sheet's own elevated plate. It is a bare field at the shared size now, like its two
+    /// siblings.
+    @Test func theBlockSheetsTitleFieldJoinedTheSharedSubjectSize() throws {
+        let code = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift")
+        )
+        #expect(code.contains("struct iOSCalendarBundleDetailSheet: View"))
+        #expect(code.contains("size: iOSEditorSheetMetrics.titleSize, weight: .bold"))
+        #expect(
+            CadenceSourceScan.matchCount(#"Theme\.surfaceElevated\.opacity\(0\.65\)"#, in: code) == 0,
+            "the block title still sits in a well that is its own plate at 65%"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"size: 22, weight: \.bold"#, in: code) == 0,
+            "the block title still names its own size"
+        )
+    }
 }

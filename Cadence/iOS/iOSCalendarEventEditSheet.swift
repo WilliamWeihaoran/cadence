@@ -157,7 +157,15 @@ struct iOSCalendarEventEditSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
+                // T-604: `.ruled` groups need a plate to be ruled *on*. This is
+                // `iOSCalendarQuickCreateSheet`'s frame, figure for figure — `cardPadding` inside
+                // `Theme.radiusPanel`, `gutter` outside it — because the two sheets now draw the
+                // same "Schedule" group and a group is only the same component if the surface
+                // under it is too.
                 formLayout
+                    .padding(iOSEditorSheetMetrics.cardPadding)
+                    .background(Theme.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
                     .padding(iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))
             }
             .background(Theme.bg)
@@ -235,12 +243,12 @@ struct iOSCalendarEventEditSheet: View {
         VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
             readOnlyNotice
             actionErrorNotice
-            titleCard
-            scheduleCard
-            calendarCard
-            eventNoteCard
-            notesCard
-            deleteCard
+            titleSection
+            scheduleSection
+            calendarSection
+            eventNoteSection
+            notesSection
+            deleteButton
         }
     }
 
@@ -253,9 +261,9 @@ struct iOSCalendarEventEditSheet: View {
                 // save, a refused delete, and now a refused event-note commit — was invisible at
                 // regular width. Both notices sit in both layouts now.
                 actionErrorNotice
-                titleCard
-                scheduleCard
-                calendarCard
+                titleSection
+                scheduleSection
+                calendarSection
             }
             .frame(
                 minWidth: iOSEditorSheetMetrics.primaryColumnMinWidth,
@@ -264,9 +272,9 @@ struct iOSCalendarEventEditSheet: View {
             )
 
             VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
-                eventNoteCard
-                notesCard
-                deleteCard
+                eventNoteSection
+                notesSection
+                deleteButton
             }
             .frame(
                 minWidth: iOSEditorSheetMetrics.secondaryColumnMinWidth,
@@ -281,13 +289,14 @@ struct iOSCalendarEventEditSheet: View {
     /// An untitled `iOSEditorSection`, not a hand-rolled card. Both notices used to build the card
     /// themselves — `.padding(16).cadenceCard(background: Theme.surface, cornerRadius:
     /// Theme.radiusCard)` — which is `iOSEditorSection(title: nil)` with two numbers changed: 16pt
-    /// of padding where every card beside them on this sheet uses 14, and the default 14/6 shadow
-    /// where they use 12/5. Two near-copies of a shared component, drifting in exactly the places
-    /// a copy drifts.
+    /// of padding where every group beside them on this sheet used 14, and the default 14/6 shadow
+    /// where they used 12/5. Two near-copies of a shared component, drifting in exactly the places
+    /// a copy drifts. Since T-604 the shared component draws no card here at all, which is the
+    /// point: one style decision, taken once, moves every group on the sheet together.
     @ViewBuilder
     private var actionErrorNotice: some View {
         if let actionError {
-            iOSEditorSection(title: nil) {
+            iOSEditorSection(title: nil, style: .ruled) {
                 Text(actionError)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.red)
@@ -302,7 +311,7 @@ struct iOSCalendarEventEditSheet: View {
     @ViewBuilder
     private var readOnlyNotice: some View {
         if !isEditable {
-            iOSEditorSection(title: nil) {
+            iOSEditorSection(title: nil, style: .ruled) {
                 HStack(alignment: .top, spacing: 12) {
                     iOSIconTile(systemImage: "lock.fill", color: Theme.amber, size: 34, iconSize: 15)
 
@@ -316,8 +325,8 @@ struct iOSCalendarEventEditSheet: View {
         }
     }
 
-    private var titleCard: some View {
-        iOSEditorSection(title: "Event") {
+    private var titleSection: some View {
+        iOSEditorSection(title: "Event", style: .ruled) {
             TextField("Event title", text: $title, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: iOSEditorSheetMetrics.titleSize, weight: .bold))
@@ -332,8 +341,8 @@ struct iOSCalendarEventEditSheet: View {
     // `contentSpacing` stays at its 0 default: every gap in here is an `iOSEditorDivider`, which
     // already pads itself 9pt each side. Adding 10 on top double-counted it and gave a 44pt row an
     // 83pt pitch — the same measurement that was taken out of the task inspector.
-    private var scheduleCard: some View {
-        iOSEditorSection(title: "Schedule") {
+    private var scheduleSection: some View {
+        iOSEditorSection(title: "Schedule", style: .ruled) {
             Toggle(isOn: $isAllDay) {
                 iOSEditorInlineLabel(label: "All day", systemImage: "sun.max", color: Theme.amber)
             }
@@ -377,8 +386,8 @@ struct iOSCalendarEventEditSheet: View {
         .disabled(!isEditable)
     }
 
-    private var calendarCard: some View {
-        iOSEditorSection(title: "Apple Calendar") {
+    private var calendarSection: some View {
+        iOSEditorSection(title: "Apple Calendar", style: .ruled) {
             if !isEditable {
                 // The event's real calendar, stated plainly. A picker here could only offer
                 // calendars this event cannot move to.
@@ -414,8 +423,8 @@ struct iOSCalendarEventEditSheet: View {
         }
     }
 
-    private var eventNoteCard: some View {
-        iOSEditorSection(title: "Event Note") {
+    private var eventNoteSection: some View {
+        iOSEditorSection(title: "Event Note", style: .ruled) {
             HStack(alignment: .center, spacing: 12) {
                 // 34/15, the same tile the read-only notice above draws. It was 34/16: one sheet,
                 // two rows, one tile size, two glyph sizes — a tile resized without its glyph, in
@@ -445,8 +454,8 @@ struct iOSCalendarEventEditSheet: View {
         }
     }
 
-    private var notesCard: some View {
-        iOSEditorSection(title: "Notes") {
+    private var notesSection: some View {
+        iOSEditorSection(title: "Notes", style: .ruled) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Apple Calendar note")
                     .font(.system(size: 12, weight: .semibold))
@@ -526,7 +535,7 @@ struct iOSCalendarEventEditSheet: View {
     /// Absent, not disabled, on a read-only event: EventKit refuses the removal, so the button
     /// raised a confirmation dialog for a delete that could never happen.
     @ViewBuilder
-    private var deleteCard: some View {
+    private var deleteButton: some View {
         if isEditable {
             iOSActionButton(
                 title: "Delete Event",
