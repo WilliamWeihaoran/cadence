@@ -1151,25 +1151,32 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Note the exception before sweeping: `MarkdownRenderedBlockTruncation.overflowLabel(unit:)` draws a
   **spaced** `"+ 4 more rows"` — a different sentence with a pluralised unit, recorded in that helper's
   doc. A mechanical sweep would break it.
-
-- [T-641] **T-622 broke the `CadenceMCPServer` target — same trap, other side.** Reproduced
-  2026-09-01: `mcpServerSourcesOnlyReferenceTypesThatTargetCompiles` fails because
-  `DataIntegrityRepairService.swift` now references `CadenceTaskMutationSupport` and
-  `NotificationManager`, **neither of which the MCP target compiles.** `-scheme Cadence` stays green
-  while `-scheme CadenceMCPServer` does not build — precisely the break that test exists to catch, and
-  which it records as having shipped once before.
-  **The agent had already dodged this trap from the other side** and its reasoning was right: it moved
-  the collapse *out* of `CadenceTaskRecurrenceWorkflowSupport` because that file compiles into the MCP
-  and widget targets. The destination it chose has the same constraint.
-  Two real options: add the declaring files to the MCP Sources phase **and everything they transitively
-  pull in** (`NotificationManager` likely drags a lot — check the closure first), or keep the call on
-  the app side so the collapse computes *what* to remove and an app-side caller does the reminder
-  cancellation and subtask deletion. The second matches how the rule and the mechanics were already
-  split. **Do not weaken or exempt the test.**
-  Assigned back to the agent that wrote it. Verify with `-scheme CadenceMCPServer` directly, not just
-  the app scheme — that is the whole point.
-
 ## Done
+
+- [T-641] **CLOSED 2026-09-01 (`1425fde`).** Fixed by the agent that shipped it, and it named its own
+  mistake precisely: *"I checked the constraint for the source and not for the destination."*
+  **It kept the call on the app side, after checking the closure rather than assuming.**
+  `CadenceTaskMutationSupport` pulls `CadencePendingChangePersistence`, `NotificationManager` and the
+  bundle helpers; `NotificationManager` is `@MainActor`, `@Observable`, `UserNotifications`-backed and
+  drags the habit-reminder planning chain behind it — **a large source list added to a command-line tool
+  with no notification centre and no business cancelling a reminder**, when the small explicit list is
+  exactly the property the test protects. Re-spelling `detachRelationships` beside the pass was the
+  other exit and is the drift this repo forbids.
+  The seam is `CadenceForkedOccurrenceRemoval`, declared at file scope where it is consumed — **the same
+  shape and the same reason as `CadenceListTaskSweep`**, which exists for precisely this "a piece of the
+  cascade cannot be spelled where the cascade lives" problem. Decision stays in the service; removal
+  moved to a new app-only file; `PersistenceController` supplies it; **`CadenceStoreMaintenance` supplies
+  none, with a comment saying that is the process's answer rather than an omission** — a fork it leaves
+  alone is collapsed by the app's next startup repair, whereas a fork it half-removed would not be.
+  **Two things the seam's `nil` default could have hidden are now pinned:** that `nil` is *inert* rather
+  than half-done (nothing removed, counter zero, `changed == false`, pointer untouched), and that the one
+  call site where forgetting costs the user everything actually passes it — the default meant ~20
+  existing callers did not change, leaving that site protected by nothing the compiler sees.
+  **Verified against `-scheme CadenceMCPServer` directly**, and the split proven real: the MCP build
+  compiled `DataIntegrityRepairService.swift` and did **not** compile the new remover.
+  **Mutation N3 reintroduced the exact break and turned the guard red** — so the test catches this, not
+  merely a rearrangement of it.
+
 
 - [T-627] **CLOSED 2026-09-01 (`91fe8e4`).** All four gaps closed. **The flagged population went from
   7 declarations in 6 files to 56 in 43** — the 49 new ones **ledgered, not fixed**, nearly all naming
