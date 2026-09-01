@@ -871,21 +871,30 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   removes browse-all-notes from the rail and leaves other narrow hosts index-only.
   **Nobody has looked at this on a device.** The whole analysis is arithmetic and source reading. Before
   committing, capture the rail at 1366 and at 836 on a simulator.
-- [T-639] **`Cadence/macOS/Views/TaskSortHelpers.swift` is now production-dead.** Found by [[T-606]].
-  `taskPriorityRank` already had **zero** production callers at HEAD; `taskSortPrecedes` lost its last
-  one (`TasksPanel`) when Today moved to the named sort set. Only `TrackingDeleteHelpersTests` and a doc
-  comment in `CadenceTargetSourceMembershipTests` still reference them, so removal touches tests as well
-  as source — which is why it was split out rather than done in passing.
-  Check whether the tests are testing the helper or using it as a fixture before deleting; a test that
-  exercises a dead helper is dead too, but a test that *uses* it needs a replacement.
+- [T-669] **`CadenceTaskQuerySupport.sortTasks` re-implements two of `TaskOrdering.precedes`'
+  branches, and the equality is now proved.** Found by [[T-640]]. `.doDate` is fourteen lines that
+  step through exactly what `.date` + `.ascending` does, and `.priority` is the same shape against
+  `.priority` + `.descending`; `.listOrder` already delegates its tie-break. This was left alone
+  because T-640's brief was the sentinel, not the comparator — but the ticket ended up **asserting**
+  the equivalence, pair-by-pair over every ordered pair of a tie-heavy set, in
+  `TaskOrderingTests.everyMigratedMacOSTodaySortModeAgreesWithItsRetiredComparator`.
+  So the replacement is mechanical and already covered: have the two branches call
+  `TaskOrdering.precedes` and the test goes from proving they agree to being unfalsifiable, which is
+  the signal to delete it or narrow it to `.listOrder`.
+  This is the shared comparator every iOS surface sorts through, so it is not a passing edit; do it
+  as its own change and re-run the iOS Today suites.
 
-- [T-640] **`CadenceTaskQuerySupport.sortDateKey` is a private twin of `TaskOrdering.dateSortKey`.**
-  Found by [[T-606]] while proving its mapping: the two are identical **down to the `"9999-99-99"`
-  sentinel**. `Cadence/Models/AGENTS.md` records consolidating that spelling across five files; this one
-  survived the sweep.
-  **It is harmless today precisely because they agree — which is exactly the condition that stops
-  holding quietly.** The whole T-606 mapping proof rested on them being character-identical; if one
-  drifts, that proof silently becomes false and Today's sort diverges from every other surface's.
+- [T-670] **Two `priorityRank` spellings are out of reach of the test that claims to name every
+  one.** Found by [[T-639]]. `TrackingDeleteHelpersTests.priorityRankIsOneOrderingSharedByEveryCaller`
+  says its point is that it "names **every** spelling a test can reach" — true, and the reachable set
+  is two. `CadenceTodayWidgetSupport.priorityRank` (`Services/CadenceTodayWidgetSupport.swift:200`)
+  and `GoalContributionSummary.priorityRank` (`Models/GoalContributionSummary.swift:205`) are both
+  `private static func` forwarders to `TaskPriority.rank`, so the loop cannot see them and neither
+  can any other test.
+  Harmless while they forward. The failure mode is the one that ticket exists for: someone re-grows a
+  hand-written switch inside a `private` forwarder, and the guard that was written to catch exactly
+  that is structurally unable to. Either drop them for `priority.rank` at the four call sites, or
+  make them internal so the loop can name them — the second is cheaper and keeps the local spelling.
 
 - [T-608] **Converge macOS Today's row block onto `TaskListInteractiveRow`.** Proposed by the T-593
   agent, deliberately not done. The Today block in `TasksPanelSectionViews` is a line-for-line
@@ -1398,6 +1407,55 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   parameter in the same change.
 
 ## Done
+
+- [T-639] **CLOSED 2026-09-02, `5b0c2b8`.** Both helpers were dead: `taskPriorityRank` had no caller
+  at all — `TaskOrdering.precedes` reads `priority.rank` directly, so the comment calling it "the
+  spelling that drives every macOS task sort" was already false — and `taskSortPrecedes` had only the
+  `TasksPanel` call [[T-606]] removed. The file itself was swept into `91d533c` by a concurrent agent's
+  commit; `5b0c2b8` carries the rest.
+  **Non-vacuity, since the evidence for a deletion is that a caller would have been caught.** The
+  detector is the compiler over a full build of every target: a clean macOS build and a clean
+  `generic/platform=iOS Simulator` build, both 0 errors and 0 warnings, with all six edited files
+  confirmed recompiled. The *positive control* put one call to each symbol back into
+  `TasksPanel.compareTasksForCurrentSort` — the exact site that held the last one — and the build
+  failed 65 with `cannot find 'taskSortPrecedes' in scope` and `cannot find 'taskPriorityRank' in
+  scope`. Restored, rebuilt clean.
+  **The two referencing tests were different cases, which is why the ticket said to check.**
+  `priorityRankIsOneOrderingSharedByEveryCaller` was *testing* the helper, as one of three rank
+  spellings; the other two are live, so the dead third came out and the test stands.
+  `macOSPrioritySortRanksALowPriorityTaskAboveAnUnprioritisedOne` was *using* it as the spelling for
+  the comparator, so it needed the replacement the ticket predicted: same three assertions, now
+  against `TaskOrdering.precedes`, no longer `#if os(macOS)`, renamed
+  `prioritySortRanksALowPriorityTaskAboveAnUnprioritisedOne`. Mutation: swap `.low` and `.none` in
+  `TaskPriority.rank` — killed by both, by name.
+  `CadenceTargetSourceMembershipTests`' doc comments named the deleted file twice as the example of a
+  non-member declaring a top-level `func`; both now name `CalendarPageMonthGridSupport.swift`, which
+  the same comments already cite. The suite draws its witness from the live unreachable set rather
+  than a literal name, so nothing in it broke — 6 tests green.
+  Residue: [[T-670]].
+
+- [T-640] **CLOSED 2026-09-02, `5b0c2b8`.** The private twin is gone, and **it was not the only
+  survivor of that sweep**. Three literals were left, not one: `CadenceTaskQuerySupport.sortDateKey`,
+  `CadenceCalendarPlanningSupport.railAnchorKey`, and — carrying the *other* spelling —
+  `CadenceTaskRecurrenceWorkflowSupport.recurrenceSortKey` at `"9999-12-31"`, which is precisely the
+  pair `TaskOrdering.noDateSortKey`'s own doc comment says would split undated work if one comparator
+  ever met both. All three read `TaskOrdering` now.
+  **Restoring the agreement is not asserting it**, so both halves are pinned, in `TaskOrderingTests`:
+  `everyMigratedMacOSTodaySortModeAgreesWithItsRetiredComparator` runs all three retired macOS Today
+  mappings over **every ordered pair** of the tie-heavy set (126 comparisons; pair-by-pair because two
+  comparators can agree on one sorted permutation and still disagree on a pair), and
+  `theNoDateSentinelLiteralIsSpelledOnceInProductionSource` sweeps `Cadence` + `CadenceWidgets` +
+  `CadenceMCPServer` through `CadenceScanInstrument` and requires the literal in exactly one file,
+  exactly once — the named file, not a floor.
+  **Both are needed, and a mutation is the argument.** M2 replaced `dateSortKey` in the do-date branch
+  with an inline `"9999-12-31"`: it compiled, it sorted identically, and the pairwise test **passed**.
+  Only the literal count killed it. A divergent-but-equivalent spelling is behaviourally invisible,
+  which is the whole finding, restated as an experiment.
+  Mutations, all killed by name: M1 hand-spelled sentinel back into `railAnchorKey` → literal count.
+  M2 as above → literal count only. M3 do-date comparison reversed, M4 timed-before-untimed flipped,
+  M5 priority comparison reversed → all three killed by the pairwise test. 28 tests green across the
+  three suites before mutation.
+  Residue: [[T-669]].
 
 - [T-637] **CLOSED 2026-09-02, `91d533c`.** The icon-only-button rule sweeps `Cadence/` instead of
   `Cadence/iOS/`, and `knownUnnamedIconButtonSites` is exact in both directions over all 565 files.
