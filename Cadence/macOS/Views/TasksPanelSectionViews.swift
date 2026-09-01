@@ -74,13 +74,28 @@ private let todayRowLeadingInset: CGFloat = TasksPanelMetrics.horizontalInset
 /// iOS already called — rather than from a second macOS copy of the same four predicates, which is
 /// what `todayDateSections` was: the same buckets under the names "Past Due" and "Do Today".
 ///
-/// The disclosure chevron is kept, and is the one thing iOS's group header does not have. It is a
-/// pointer affordance over persisted per-section state (`collapsedGroupIDs`), not a difference in
-/// how the row is *drawn* — the heading itself is `CadenceTaskGroupHeading`, shared.
+/// **The heading is `TaskListGroupHeader` — macOS's, not the shared eyebrow (T-605).** Today drew
+/// `CadenceTaskGroupHeading`: a 10pt uppercase eyebrow with one count capsule and no accent bar,
+/// while All Tasks, Inbox and list detail all drew the 3×22pt bar, the 14pt bold sentence-case
+/// title and the split overdue/regular counts. One desktop app, two group headings, and Today was
+/// the minority of one — so Today moves and the other three do not.
+///
+/// **macOS and iOS now differ here, deliberately.** iOS routes Today, Inbox and All Tasks through
+/// `CadenceTaskGroupHeading`, and that stays: a 3pt bar plus a chevron plus two capsules is a
+/// pointer-density row, and the eyebrow is the phone's. `CadenceTaskGroupHeading`'s own doc used to
+/// call itself "one heading for Today on both platforms" and no longer does. **This divergence is
+/// the decision, not drift — do not re-file it.** What is still shared is the *rule* about counts:
+/// both headings ask `CadenceTaskGroupHeadingMetrics.showsCapsule`, so neither invents a `0` for a
+/// group that does not know its own size.
+///
+/// The disclosure chevron comes with the header now, rather than being wrapped around it here.
 struct TasksPanelIntentSectionView: View {
     let title: String
     let accent: Color
     let tasks: [AppTask]
+    /// Today's own `yyyy-MM-dd`, handed down rather than recomputed per section, so every group on
+    /// the page splits its counts against one day.
+    let todayKey: String
     /// The panel's surface answer, narrowed by the group's own — see `TasksPanel.options` and
     /// `CadenceTodayTaskGroup.showsContainerChip`.
     let showsContainer: Bool
@@ -153,49 +168,23 @@ struct TasksPanelIntentSectionView: View {
         }
     }
 
+    /// The split the other three macOS task surfaces already show, from the same two functions
+    /// they call — `TasksPanelSupport.overdueCount` / `.regularCount`, which exclude completed
+    /// tasks so a ticked-off row with a past due date stops inflating the flag.
+    ///
+    /// Inside "Overdue" the split degenerates — every open row is late, so the flag holds the whole
+    /// group and the neutral capsule reads `0`. That is not a new state: a list group on All Tasks
+    /// whose open work is all overdue has read exactly that since the header existed. Special-casing
+    /// it here would put a fifth rule in the one place this ticket is removing a rule from.
     private var header: some View {
-        TasksPanelIntentSectionHeader(
+        TaskListGroupHeader(
             title: title,
-            accent: accent,
-            count: tasks.count,
             isCollapsed: isCollapsed,
+            overdueCount: TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey),
+            regularCount: TasksPanelSupport.regularCount(in: tasks, todayKey: todayKey),
+            accent: accent,
             onToggle: onToggle
         )
-    }
-}
-
-/// Chevron, then `CadenceTaskGroupHeading`. One hover layer, at `CollapsibleTaskGroupHeader`'s
-/// radius and fill — the same neutral wash the rows below take, and the only one on this row.
-struct TasksPanelIntentSectionHeader: View {
-    let title: String
-    let accent: Color
-    let count: Int
-    let isCollapsed: Bool
-    let onToggle: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: onToggle) {
-            HStack(spacing: 8) {
-                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-
-                CadenceTaskGroupHeading(title: title, tint: accent, count: count)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(shape.fill(TaskHoverVisuals.hoverFill(isHovered: isHovered)))
-            .contentShape(shape)
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-    }
-
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
     }
 }
 
@@ -219,11 +208,16 @@ struct TasksPanelCompletedSectionView: View {
             // There was an `else` here drawing `CompletedSectionHeader`'s neutral "Completed" for
             // the `.byDoDate` logbook — everything ever finished, a different thing from the day's
             // work. It went with the mode, and so did that header (T-487).
-            TasksPanelIntentSectionHeader(
+            //
+            // A plain `count:`, not the overdue/regular split the groups above take — and for the
+            // same reason `TasksListCompletedSectionView` on All Tasks takes one. The split counts
+            // *open* work, so on a group where every row is done it would report "0 tasks" over a
+            // list of finished ones. Done work has one number.
+            TaskListGroupHeader(
                 title: CadenceTodayPresentationSupport.completedSectionTitle,
-                accent: CadenceTodayPresentationSupport.completedSectionAccent,
                 count: tasks.count,
                 isCollapsed: isCollapsed,
+                accent: CadenceTodayPresentationSupport.completedSectionAccent,
                 onToggle: onToggle
             )
             .padding(.horizontal, TasksPanelMetrics.horizontalInset)

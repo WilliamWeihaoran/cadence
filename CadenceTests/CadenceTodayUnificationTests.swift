@@ -172,16 +172,85 @@ struct CadenceTodayUnificationTests {
         #expect(CadencePageHeaderMetrics.countFillOpacity == 0.12)
     }
 
-    /// **The T-161 test for the heading.** Today's section header on both platforms must be the
-    /// shared row. macOS is the one that had drifted furthest — sentence case, 11pt, neutral
-    /// `Theme.dim`, and a red/neutral "3 / 7" pair beside it — so a revert here is the likely one.
-    @Test func bothPlatformsDrawTheSharedTaskGroupHeading() throws {
+    /// **This pin was T-161's and it is stale — the decision it encoded has been reversed (T-605).**
+    ///
+    /// It asserted that macOS Today and iOS Today both drew `CadenceTaskGroupHeading`, one call
+    /// site each. That was the right answer to the question T-161 asked (*do the two Todays look
+    /// the same?*) and the wrong answer to the question that turned out to matter more: **macOS
+    /// Today was the only task surface on its own platform drawing that heading.** All Tasks, Inbox
+    /// and list detail draw `TaskListGroupHeader` — 3×22pt accent bar, 14pt bold sentence case,
+    /// split overdue/regular counts — so cross-platform agreement was being bought with a
+    /// three-against-one split inside the desktop app. The user's decision moves Today, and the
+    /// number below is not bumped: the call site is **gone**, and the assertion now says which
+    /// header each platform draws rather than that they draw the same one.
+    ///
+    /// **The resulting divergence is deliberate. Do not re-file it as drift** — the reasoning is on
+    /// `TasksPanelIntentSectionView` and on `CadenceTaskGroupHeading` itself, and this test is the
+    /// third place it is written down so that a future convergence sweep meets an argument rather
+    /// than a bare inconsistency.
+    @Test func eachPlatformsTodayDrawsItsOwnPlatformsGroupHeading() throws {
+        // iOS keeps the shared eyebrow, and is the only caller of it that this pins.
         try expectCallSites(
             of: "CadenceTaskGroupHeading",
             at: [
-                "Cadence/macOS/Views/TasksPanelSectionViews.swift": 1,
+                "Cadence/macOS/Views/TasksPanelSectionViews.swift": 0,
                 "Cadence/iOS/iOSTaskGroupSection.swift": 1,
             ]
+        )
+
+        // macOS Today draws the header its three siblings draw — twice: the intent groups and the
+        // Completed group. Counted, so a change that converts one and leaves the other fails here
+        // rather than shipping a page with two headings on it again.
+        try expectCallSites(
+            of: "TaskListGroupHeader(",
+            at: [
+                "Cadence/macOS/Views/TasksPanelSectionViews.swift": 2,
+                "Cadence/macOS/Views/TasksListView.swift": 2,
+                "Cadence/macOS/Views/InboxSupportViews.swift": 1,
+            ]
+        )
+
+        // And the retired wrapper is gone rather than merely unused — a chevron-plus-eyebrow row
+        // left in the file is the same fork with a longer fuse.
+        try expectNoLiveMention(of: "TasksPanelIntentSectionHeader")
+
+        // The rule that did *not* fork: both headings still ask one function whether a count may be
+        // drawn at all, so the divergence is in the drawing and not in the semantics.
+        #expect(!CadenceTaskGroupHeadingMetrics.showsCapsule(for: nil))
+        #expect(CadenceTaskGroupHeadingMetrics.showsCapsule(for: 0))
+        try expectCallSites(
+            of: "CadenceTaskGroupHeadingMetrics.showsCapsule",
+            at: [
+                "Cadence/Shared/Components/CadenceTaskGroupHeading.swift": 1,
+                "Cadence/macOS/Views/ListDetailSupportViews.swift": 1,
+            ]
+        )
+    }
+
+    /// **Today gains the split counts, from the same two functions the other three surfaces call.**
+    ///
+    /// Not a fifth copy of "how many of these are late": `TasksPanelSupport.overdueCount` and
+    /// `.regularCount` both exclude completed tasks, which is the drift `ListDetailComponents` was
+    /// caught in once already — a ticked-off task with a past due date counted as overdue on one
+    /// screen and not on the other two.
+    @Test func todaysGroupsSplitTheirCountsThroughTheSharedPair() throws {
+        let overdue = TasksPanelSupport.overdueCount(in: [], todayKey: "2026-08-31")
+        #expect(overdue == nil, "an empty group must not claim to be zero days late")
+        #expect(TasksPanelSupport.regularCount(in: [], todayKey: "2026-08-31") == 0)
+
+        let sections = try strippingComments(
+            sourceFile("Cadence/macOS/Views/TasksPanelSectionViews.swift")
+        )
+        #expect(sections.contains("struct TasksPanelIntentSectionView: View"), "non-vacuity")
+        #expect(sections.contains("TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey)"))
+        #expect(sections.contains("TasksPanelSupport.regularCount(in: tasks, todayKey: todayKey)"))
+
+        // The Completed group deliberately does **not** take the split: it counts open work, so on
+        // a group where every row is done it would report "0 tasks" over a list of finished ones.
+        // `count:` is the convenience init, and `TasksListCompletedSectionView` takes it too.
+        #expect(
+            CadenceSourceScan.matchCount(#"count: tasks\.count"#, in: sections) == 1,
+            "the Completed group no longer heads itself with a single number"
         )
     }
 

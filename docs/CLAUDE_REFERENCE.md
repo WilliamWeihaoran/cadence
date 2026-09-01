@@ -612,7 +612,7 @@ re-cancel.
 section, and was checked rather than repeated.** The sentence read: "the section's header count is
 a separate decision: `completedTaskCount` counts `isDone` only, so the section can show three rows
 above a count of two (T-208, open)". Both counts a user actually reads there are `tasks.count` over
-the settled array — `TasksPanelIntentSectionHeader(count:)` / `iOSTaskGroupSection`'s capsule for
+the settled array — `TaskListGroupHeader(count:)` / `iOSTaskGroupSection`'s capsule for
 the section, and `CadenceTodaySummary.completedCount` for the `· N done` in the column header — so
 a cancelled row is counted by both. `completedTaskCount`'s `isDone`-only rule is real and
 deliberate (`CadenceTaskQuerySharedSupport`), but it has exactly **three** call sites — the iOS

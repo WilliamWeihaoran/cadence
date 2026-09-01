@@ -478,9 +478,12 @@ struct TaskPickerRowHover: ViewModifier {
 // numbers, and `CompletedSectionHeader` was the neutral "Completed" heading over the `.byDoDate`
 // logbook. Between them they had three call sites — `TasksPanelGroupSectionView`,
 // `TasksPanelFlatSectionView` and `TasksPanelCompletedSectionView`'s `else` — and all three were
-// `.byDoDate`'s, so both went with the mode (T-487). The surviving group headers are
-// `TaskListGroupHeader` (`ListDetailSupportViews`, drawn by All Tasks, Inbox and list detail) and
-// `TasksPanelIntentSectionHeader` (`TasksPanelSectionViews`, drawn by Today).
+// `.byDoDate`'s, so both went with the mode (T-487). `TasksPanelIntentSectionHeader` was here too
+// until T-605 — the chevron-plus-`CadenceTaskGroupHeading` row Today drew — and it went the same
+// way, into its one surviving sibling. **There is now exactly one macOS group header:**
+// `TaskListGroupHeader` (`ListDetailSupportViews`), drawn by Today, All Tasks, Inbox and list
+// detail. Anything new that heads a group of tasks on this platform is that, or it is a fifth
+// spelling of it.
 
 // `CompletedSectionHeader` was here — the neutral "Completed" heading the `.byDoDate` logbook
 // drew instead of Today's "Completed Today". It had one call site, inside the `else` of

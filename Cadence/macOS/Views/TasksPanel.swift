@@ -238,6 +238,7 @@ struct TasksPanel: View {
                 title: group.title,
                 accent: group.accent,
                 tasks: group.tasks,
+                todayKey: todayKey,
                 showsContainer: options.showsContainerChip && group.showsContainerChip,
                 contexts: contexts,
                 areas: areas,
