@@ -1563,16 +1563,23 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 - [T-704] **[[T-560]]'s leak was cleaned and its mechanism closed, but never reproduced — so it is not
   known to be fixed.** Two instrumented runs on 2026-09-02 (21 tests, 19 of them building and saving
-  through an in-memory `ModelContainer` in the *unfixed* shape) created zero
-  `<app container>/tmp/<UUID>/inMemory_store_ckAssets` directories, and none has appeared since 14:18
-  that day. Yet 3,652 of them existed, in bursts whose sizes match the test counts of the suites being
-  run. Something gates whether CloudKit mirroring initialises on a given run — an iCloud account or
-  network state, a `NSPersistentCloudKitContainer` setup path taken only sometimes — and it is not
-  established. **The measurement is one line and costs nothing**, so the cheap answer is to watch it:
-  `ls -1 ~/Library/Containers/com.haoranwei.Cadence/Data/tmp | wc -l` before and after a test run. If
-  it climbs again with `CadenceTestStore` in place, the cause is somewhere other than
-  `cloudKitDatabase`, and `CadenceInMemoryStoreHygieneTests` is guarding the wrong thing. If it stays
-  at 5 through a week of batches, close this and let [[T-560]]'s fix stand.
+  through an in-memory `ModelContainer` in the *unfixed* shape, plus a third of 40 tests after the fix)
+  created zero `<app container>/tmp/<UUID>/inMemory_store_ckAssets` directories. **The leak is not
+  dormant, though — it just never fires on the run doing the measuring.** 34 directories appeared
+  between 18:23 and 19:15 on 2026-09-02, *after* the residue was purged, in two identical cycles of
+  3 / 10 / 4 spaced 41 minutes apart: the signature of another agent re-running a fixed trio of suites,
+  one directory per test. Not correlated with UI-test activity (`CadenceUITestStores` was busy
+  17:35-18:16 and again from 20:14, the leak fell entirely between them).
+  So something gates whether CloudKit mirroring initialises — an iCloud or network state, a
+  `NSPersistentCloudKitContainer` setup path taken only sometimes, or simply a tree that predates
+  `b31d0b9` — and it is not established. **The measurement is one line:**
+  `ls -1 ~/Library/Containers/com.haoranwei.Cadence/Data/tmp | wc -l` before and after a run.
+  The decisive observation is cheap and someone will make it for free: once `b31d0b9` is in every
+  agent's archive tree, that trio either stops leaking or it does not. If the count climbs again with
+  `CadenceTestStore` everywhere, the cause is somewhere other than `cloudKitDatabase` and
+  `CadenceInMemoryStoreHygieneTests` is guarding the wrong thing — **and the 3 / 10 / 4 burst sizes are
+  the best lead there is**, because they name the suites: find the three whose test counts are 3, 10
+  and 4 in the tree that leaked.
 
 - [T-705] **Nothing prunes an orphaned shared-DerivedData entry, and the judgement [[T-517]] said no
   script should make unattended is now mechanical.** T-517 declined to automate the cleanup because
@@ -1660,10 +1667,14 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   10 = `CadenceScheduleOrderingTests`, 4 = `CadenceModelContextRefreshTests`, that triple repeating
   through 2026-09-01), i.e. one per **container**, not per run. But two instrumented runs on 2026-09-02
   covering 21 tests — 19 of them building *and saving through* an in-memory container in the unfixed
-  shape, including `CadenceScheduleOrderingTests` itself — created **zero** directories, and nothing has
-  leaked since 14:18 that day. So the fix is correct on its own terms (a unit test has no business
-  attaching a mirroring delegate) and is the only mechanism that fits the residue, and it is **not**
-  demonstrated to be the fix. [[T-704]] carries the open question and the one-line way to re-measure it.
+  shape, including `CadenceScheduleOrderingTests` itself — created **zero** directories. A third run
+  after the fix, 40 tests over five suites, also created zero. **Meanwhile the leak went on happening
+  on other agents' runs**: 34 directories appeared between 18:23 and 19:15 that evening, after the
+  purge, in two identical cycles of 3 / 10 / 4 spaced 41 minutes apart. So the burst-size evidence is
+  confirmed on fresh data and the fix is still unproven — it has never been observed either failing or
+  succeeding on a run that was going to leak. So the fix is correct on its own terms (a unit test has
+  no business attaching a mirroring delegate) and is the only mechanism that fits the residue, and it
+  is **not** demonstrated to be the fix. [[T-704]] carries the open question and the way to settle it.
 
 - [T-517] **~1.7 GB of shared DerivedData belongs to scratch trees that no longer exist.**
   **Closed 2026-09-02 in `b31d0b9`.** 13 of the 14 entries removed, 1.68 GB (3.5 GB -> 1.8 GB).
