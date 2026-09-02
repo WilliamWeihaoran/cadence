@@ -118,8 +118,15 @@ struct PersistenceController {
             saveChanges: false,
             removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
         )
+        // T-621's store-wide pass, safe here by the same argument the repair above uses: it only
+        // ever raises a counter and is a pure function of the counter and the ledger's rows, so a
+        // launch that races the first CloudKit import computes a total that is too low and leaves
+        // the counter alone. `bank` already heals the subject it writes to; this is for the task
+        // nobody opens again, whose stale total an hours-mode `Goal` is still reading.
+        let reconciledFocusMinutes = CadenceFocusLedger.reconcile(in: context)
         let changedStore = (migrationReport?.insertedTotal ?? 0) > 0 ||
             syncedNoteTags ||
+            reconciledFocusMinutes ||
             repairReport?.changed == true
 
         guard changedStore, context.hasChanges else { return }

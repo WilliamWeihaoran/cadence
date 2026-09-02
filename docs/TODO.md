@@ -1816,18 +1816,19 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   item stayed on the hardware list for weeks because of an untested claim about the tooling rather than
   about the app. Re-triage before anyone carries it to a device.
 
-- [T-742] **The focus ledger's store-wide reconcile is written and tested, and nothing calls it.**
-  Residue of [[T-621]], which landed `CadenceFocusLedger.reconcile(in:)` but not its launch hook —
-  `PersistenceController.swift` belonged to another agent in that batch. `bank` heals the subject it
-  writes to, so a task you focus again is already correct; a task nobody opens again keeps whatever
-  the merge left it, and an hours-mode `Goal` reading it stays wrong.
-  The change is one line in `performStartupMaintenance`, beside `DataIntegrityRepairService`, plus
-  its term in `changedStore`:
-  `let reconciledFocusMinutes = CadenceFocusLedger.reconcile(in: context)`.
-  Safe there by the same argument that file already applies to the repair: the pass only ever
-  raises and is a pure function of the rows, so the launch that races the first CloudKit import is a
-  no-op rather than a loss. Worth a test that the startup path calls it, in the shape of
-  `DataIntegrityRepairServiceTests.theAppStartupRepairSuppliesTheForkedOccurrenceRemover`.
+- [T-742] **CLOSED 2026-09-03 by the coordinator.** [[T-621]] wrote and tested
+  `CadenceFocusLedger.reconcile(in:)` and could not wire it, because
+  `Cadence/Services/PersistenceController.swift` belonged to a sibling agent in the same batch —
+  the file-ownership rule working, at the cost of one line. Both owners finished, so it is wired
+  now, in `performStartupMaintenance` beside the integrity repair and folded into `changedStore`.
+  **One correction to the line this ticket prescribed:** `reconcile(in:)` answers `Bool`, not a
+  count, so the `changedStore` term is the answer itself and not `> 0`. Caught by the compiler
+  on the first build, which is the cheap end of the T-565 class — a ticket describing an API it
+  did not re-read.
+  Safe at launch by the same argument the repair above it uses, and the comment says so: the pass
+  only ever raises and is a pure function of the counter and the ledger rows, so a launch racing
+  the first CloudKit import computes a total that is too low and leaves the counter alone.
+  macOS build green, 0 errors, 0 warnings.
 
 - [T-743] **Merging two duplicate lists strands the surviving list's focus ledger.**
   `DataIntegrityRepairService.mergeArea` / `mergeProject` reconcile `loggedMinutes` with
