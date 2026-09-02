@@ -603,6 +603,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
             emptyStoreRowCounter(Cadence.Tag.self),
             emptyStoreRowCounter(AppTask.self),
             emptyStoreRowCounter(TaskBundle.self),
+            emptyStoreRowCounter(FocusSessionLog.self),
             emptyStoreRowCounter(Subtask.self),
             emptyStoreRowCounter(DailyNote.self),
             emptyStoreRowCounter(WeeklyNote.self),
