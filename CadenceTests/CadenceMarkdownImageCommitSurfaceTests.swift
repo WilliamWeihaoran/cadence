@@ -196,6 +196,95 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         #expect(resize.contains("try? modelContext.save()"))
     }
 
+    // MARK: - T-649: the items lost before the commit ever happens
+
+    /// **The sentence, on its own.** `CadenceMarkdownImageInsertionNotice` is shared and
+    /// unconditional, so unlike the doors it can be exercised rather than scanned — which matters,
+    /// because "eight in, six out" is an arithmetic claim and the three doors all delegate it here.
+    ///
+    /// The `nil`s are the load-bearing half. A door with nothing to insert and a door that lost
+    /// nothing both get `nil`, and assigning that result is how a clean insertion **clears** the
+    /// notice an earlier failure left on screen. A function that returned a sentence for
+    /// `attempted == accepted` would leave the editor permanently accusing itself.
+    @Test func theImageInsertionNoticeCountsWhatTheDoorLostBeforeTheCommit() {
+        let notice = CadenceMarkdownImageInsertionNotice.notice(attempted:accepted:)
+
+        // Nothing lost, nothing said — including the empty door, and including a nonsense pair no
+        // caller should produce, because a scan helper must not assert on malformed input.
+        #expect(notice(0, 0) == nil)
+        #expect(notice(8, 8) == nil)
+        #expect(notice(1, 2) == nil)
+
+        // The ticket's own example, and the singular beside it.
+        #expect(notice(8, 6) == "Added 6 of 8 images. 2 couldn't be read.")
+        #expect(notice(8, 7) == "Added 7 of 8 images. One couldn't be read.")
+        #expect(notice(2, 1) == "Added 1 of 2 images. One couldn't be read.")
+
+        // Nothing survived: there is no partial success to report, so the sentence is a refusal.
+        #expect(notice(1, 0) == "Couldn't add that image. It may be damaged or in a format Cadence can't read.")
+        #expect(
+            notice(3, 0) == "Couldn't add any of those 3 images. They may be damaged or in a format Cadence can't read."
+        )
+
+        // The count in the sentence is the count the caller passed, not a constant: the two halves
+        // of every partial sentence move independently.
+        #expect(notice(20, 19)?.contains("19 of 20") == true)
+        #expect(notice(20, 5)?.contains("15 couldn't be read") == true)
+    }
+
+    /// macOS's single funnel counts what it was handed and reports what it lost — on both exits,
+    /// because "no asset survived" is the same defect with the count at its maximum.
+    ///
+    /// It reaches the same `imageFailureNotice` T-629 writes to, deliberately: the assertion that
+    /// the file still declares exactly one such `@State` is what keeps a second notice from being
+    /// bolted on beside the first.
+    @Test func themacOSImageFunnelNamesTheItemsItDroppedBeforeTheCommit() throws {
+        let source = try CadenceCommitSurfaceScan.scanned(Self.macEditor)
+        let create = try CadenceCommitSurfaceScan.declarationBody(named: "createAssets", in: source)
+
+        #expect(create.contains("let attempted = urls.count + images.count"), "the funnel counts nothing")
+        let reported = CadenceSourceScan.matchCount("CadenceMarkdownImageInsertionNotice.notice", in: create)
+        #expect(reported == 2, "the funnel reports on \(reported) of its two exits")
+        #expect(create.contains("accepted: assets.count"), "the surviving-asset exit reports a hardcoded count")
+        // The empty exit used to be a bare `return []`; it is the maximal loss, not the silent one.
+        #expect(!create.contains("guard !assets.isEmpty else { return [] }"))
+
+        // One notice for the whole door, still, and still drawn.
+        #expect(
+            CadenceSourceScan.matchCount("@State private var imageFailureNotice", in: source) == 1,
+            "the macOS editor grew a second image notice"
+        )
+        #expect(source.contains("CadenceInlineFailureNotice(text: imageFailureNotice)"))
+    }
+
+    /// Both iOS doors, which lose items in different places: the picker's `continue` covers a photo
+    /// the picker cannot vend *and* one `UIImage` cannot decode, and the paste door's `compactMap`
+    /// covers the second alone.
+    @Test func bothiOSImageDoorsNameTheItemsTheyDroppedBeforeTheCommit() throws {
+        let source = try CadenceCommitSurfaceScan.scanned(Self.iosSurface)
+
+        let picked = try CadenceCommitSurfaceScan.declarationBody(named: "insertPickedImages", in: source)
+        #expect(picked.contains("let attempted = items.count"), "the picker counts nothing")
+        #expect(CadenceSourceScan.matchCount("CadenceMarkdownImageInsertionNotice.notice", in: picked) == 2)
+        #expect(picked.contains("accepted: insertedAssets.count"))
+        #expect(!picked.contains("guard !insertedAssets.isEmpty else { return }"))
+
+        let pasted = try CadenceCommitSurfaceScan.declarationBody(named: "createPastedImageAssets", in: source)
+        #expect(pasted.contains("let attempted = images.count"), "the paste door counts nothing")
+        #expect(CadenceSourceScan.matchCount("CadenceMarkdownImageInsertionNotice.notice", in: pasted) == 2)
+        #expect(pasted.contains("accepted: assets.count"))
+        #expect(!pasted.contains("guard !assets.isEmpty else { return [] }"))
+
+        // `allowsImageInsertion` is untouched on purpose: a door closed by configuration is not a
+        // door that lost the user's pictures, and it has nothing to say.
+        #expect(pasted.contains("guard allowsImageInsertion else { return [] }"))
+
+        #expect(
+            CadenceSourceScan.matchCount("@State private var imageFailureNotice", in: source) == 1,
+            "the iOS editor grew a second image notice"
+        )
+    }
+
     // MARK: - The scan read what it claims to
 
     /// Both files are real, long, and carry the needles a blanked reader could not produce.

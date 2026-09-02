@@ -57,9 +57,10 @@ struct MarkdownEditor: View {
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
     @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var textView: CadenceTextView?
-    /// Set when an image insertion's commit is refused (T-629). Drawn under the toolbar, on the
-    /// first text column, because the editor has no sheet to close and no other way to say that the
-    /// picture the user just pasted is not in the store.
+    /// Set when an image insertion loses pictures — because the store refused the commit (T-629),
+    /// or because the decoder refused some of the items before it (T-649). Drawn under the toolbar,
+    /// on the first text column, because the editor has no sheet to close and no other way to say
+    /// that a picture the user just pasted is not in the note.
     @State private var imageFailureNotice: String?
 
     // MARK: - Reference candidates
@@ -188,20 +189,39 @@ struct MarkdownEditor: View {
     /// `[]` is already this function's refusal (`allowsImageInsertion`), and
     /// `CadenceTextView.insertMarkdownImages` no-ops on an empty list, so a refused commit reaches
     /// the text layer as "there are no images", which is exactly true.
+    ///
+    /// **T-649 is the other half of the same door.** The two `compactMap`s above drop every image
+    /// the decoder refuses, and until this ticket the survivors were committed and referenced with
+    /// no sentence about the rest — drop eight pictures, get six, and nothing says which count was
+    /// real. The loss is counted here and reported through the *same* `imageFailureNotice` the
+    /// commit refusal uses, because a door with two notices is a door the user has to look at
+    /// twice. The two never collide: this branch runs only when a commit landed.
     private func createAssets(images: [NSImage], urls: [URL]) -> [MarkdownImageAsset] {
         guard allowsImageInsertion else { return [] }
+        // Every caller has already established that these are images — the panel sets
+        // `allowedContentTypes = [.image]`, and the paste and drop paths read through
+        // `MarkdownImageAssetService.imageFileURLs(from:)`, which filters on `UTType.image`. So an
+        // item counted here and not returned is one the decoder refused, which is exactly what
+        // T-649's sentence claims.
+        let attempted = urls.count + images.count
         var assets = MarkdownImageAssetService.createAssets(fromFileURLs: urls, in: modelContext)
         assets.append(contentsOf: images.compactMap {
             MarkdownImageAssetService.createAsset(from: $0, in: modelContext)
         })
-        guard !assets.isEmpty else { return [] }
+        guard !assets.isEmpty else {
+            imageFailureNotice = CadenceMarkdownImageInsertionNotice.notice(attempted: attempted, accepted: 0)
+            return []
+        }
         do {
             try CadencePendingChangePersistence.commitInsert(of: assets, in: modelContext)
         } catch {
             imageFailureNotice = CadencePendingChangePersistence.editFailureNotice
             return []
         }
-        imageFailureNotice = nil
+        imageFailureNotice = CadenceMarkdownImageInsertionNotice.notice(
+            attempted: attempted,
+            accepted: assets.count
+        )
         return assets
     }
 

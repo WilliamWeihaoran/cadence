@@ -59,9 +59,10 @@ struct iOSMarkdownEditingSurface: View {
     @State private var selectedRange = NSRange(location: 0, length: 0)
     @State private var isImagePickerPresented = false
     @State private var selectedImageItems: [PhotosPickerItem] = []
-    /// Set when an image insertion's commit is refused (T-629). Drawn under the format toolbar,
-    /// because this editor has no sheet to close and no other way to say that the picture the user
-    /// just pasted or picked is not in the store.
+    /// Set when an image insertion loses pictures — because the store refused the commit (T-629),
+    /// or because an item could not be read before it (T-649). Drawn under the format toolbar,
+    /// because this editor has no sheet to close and no other way to say that a picture the user
+    /// just pasted or picked is not in the note.
     @State private var imageFailureNotice: String?
     /// Set when an edit made on a task card embedded in this note was refused (T-648). Its own
     /// slot rather than `imageFailureNotice`'s: the two name different acts, and a picked image
@@ -363,9 +364,16 @@ struct iOSMarkdownEditingSurface: View {
     /// collected. Both ends now refuse to leave markdown pointing at a row the store does not hold:
     /// here the commit's undo removes the assets and the markdown is never written, so a refused
     /// insertion costs the user the pictures and nothing else.
+    /// **T-649 is the other half of the same door.** Each `continue` below is a photo the user
+    /// picked and will not get: `loadTransferable` answers `nil` for an item the picker cannot
+    /// vend, and `createAsset(fromImageData:)` answers `nil` for data `UIImage` cannot decode.
+    /// Both were silent, so picking eight and getting six said nothing at all. The loss is counted
+    /// and reported through the *same* `imageFailureNotice` as the refused commit above, because a
+    /// door with two notices is a door the user has to look at twice.
     @MainActor
     private func insertPickedImages(_ items: [PhotosPickerItem]) async {
         defer { selectedImageItems = [] }
+        let attempted = items.count
         var insertedAssets: [MarkdownImageAsset] = []
         for item in items {
             guard let data = try? await item.loadTransferable(type: Data.self),
@@ -374,14 +382,20 @@ struct iOSMarkdownEditingSurface: View {
             }
             insertedAssets.append(asset)
         }
-        guard !insertedAssets.isEmpty else { return }
+        guard !insertedAssets.isEmpty else {
+            imageFailureNotice = CadenceMarkdownImageInsertionNotice.notice(attempted: attempted, accepted: 0)
+            return
+        }
         do {
             try CadencePendingChangePersistence.commitInsert(of: insertedAssets, in: modelContext)
         } catch {
             imageFailureNotice = CadencePendingChangePersistence.editFailureNotice
             return
         }
-        imageFailureNotice = nil
+        imageFailureNotice = CadenceMarkdownImageInsertionNotice.notice(
+            attempted: attempted,
+            accepted: insertedAssets.count
+        )
 
         let markdown = insertedAssets
             .map { MarkdownImageAssetService.markdown(for: $0) }
@@ -405,19 +419,30 @@ struct iOSMarkdownEditingSurface: View {
     /// as `insertPickedImages` above — the assets are un-inserted, no reference is written, and the
     /// notice says so — reached through the answer this door already had rather than a second
     /// refusal mechanism.
+    ///
+    /// **T-649 is the `compactMap`.** An image `normalizedImageData` cannot decode used to vanish
+    /// out of the middle of a paste with no sentence; the count is reported through the same
+    /// notice, and the pictures that did decode are still pasted.
     private func createPastedImageAssets(_ images: [UIImage]) -> [MarkdownImageAsset] {
         guard allowsImageInsertion else { return [] }
+        let attempted = images.count
         let assets = images.compactMap { image in
             MarkdownImageAssetService.createAsset(from: image, in: modelContext)
         }
-        guard !assets.isEmpty else { return [] }
+        guard !assets.isEmpty else {
+            imageFailureNotice = CadenceMarkdownImageInsertionNotice.notice(attempted: attempted, accepted: 0)
+            return []
+        }
         do {
             try CadencePendingChangePersistence.commitInsert(of: assets, in: modelContext)
         } catch {
             imageFailureNotice = CadencePendingChangePersistence.editFailureNotice
             return []
         }
-        imageFailureNotice = nil
+        imageFailureNotice = CadenceMarkdownImageInsertionNotice.notice(
+            attempted: attempted,
+            accepted: assets.count
+        )
         return assets
     }
 
