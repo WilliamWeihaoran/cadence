@@ -68,9 +68,9 @@ below.
   (`pgrep -f … | grep -v "^$$\$"`) or match on something only the target spells.
 - **`scripts/xcb.sh test` takes the test-host lock itself.** Wrapping it in an outer
   `test-host-lock.sh acquire` deadlocks the runner against its own lease. If you need one lease across
-  many runs — and with a sibling mid-mutation you do, because `acquire` polls every 10s with no queue
-  and a runner that releases and re-acquires immediately always wins — take the lease once and use
-  `xcb.sh <id> raw test …`, which skips the lock and keeps the zero-test guard and the counters.
+  many runs — a mutation batch is a dozen short acquisitions, and since T-650 each one queues behind
+  every sibling that arrived first rather than winning by re-acquiring fast — take the lease once and
+  use `xcb.sh <id> raw test …`, which skips the lock and keeps the zero-test guard and the counters.
   Measured 2026-09-02: ten separate `xcb.sh test` calls starved for 21 minutes; restructured, the next
   batch acquired in 20 seconds.
 - **A `while read` loop must not bind a variable named `path`.** In zsh `path` is tied to `$PATH`, so
@@ -85,7 +85,8 @@ below.
   at 15:41, found at 15:57 with zero live test hosts. Kill the acquire too
   (`pkill -f 'test-host-lock.sh acquire .* <your-id>'`), and if you find the lock held under **your own
   id** by a dead pid with zero live test hosts, `release <your-id>` is the fix — that is your lease,
-  not somebody else's.
+  not somebody else's. Since T-650 the orphan at least waits its turn instead of ahead of it, and its
+  queue ticket disappears the moment it does die — `test-host-lock.sh status` lists the whole queue.
 - **If you pass an id to `acquire`, pass the same id to `release`.** The trap idiom in the script's
   header defaults the id to `$PPID`; if you acquired under a name, that mismatches, `release` finds
   your own pid alive and **refuses**, and the lock strands until its lease expires. One agent lost 19
