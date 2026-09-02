@@ -603,6 +603,7 @@ struct CadencePrivacyDataResetSurfaceTests {
             probe { Tag(name: "errand") },
             probe { AppTask(title: "Buy milk") },
             probe { TaskBundle(title: "Morning", dateKey: "2026-08-20", startMin: 540, durationMinutes: 60) },
+            probe { FocusSessionLog(minutes: 25, previousMinutes: 0, loggedAt: Date(), dayKey: "2026-08-20") },
             probe { Subtask(title: "Find the receipt") },
             probe { DailyNote(date: "2026-08-20") },
             probe { WeeklyNote(weekKey: "2026-W34") },

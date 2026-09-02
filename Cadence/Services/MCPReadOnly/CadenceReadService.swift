@@ -314,6 +314,7 @@ final class CadenceReadService {
             summary: taskSummary(task),
             notes: task.notes,
             actualMinutes: task.actualMinutes,
+            focusSessionCount: (task.focusSessions ?? []).count,
             subtasks: subtasks,
             createdAt: format(task.createdAt),
             completedAt: task.completedAt.map(format)

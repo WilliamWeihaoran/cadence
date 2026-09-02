@@ -382,6 +382,7 @@ struct CadenceMarkdownSourceInventoryTests {
     private static let entitiesWithoutMarkdown: Set<String> = [
         "Area",
         "Context",
+        "FocusSessionLog",
         "Goal",
         "GoalListLink",
         "Habit",
@@ -412,6 +413,7 @@ struct CadenceMarkdownSourceInventoryTests {
             "sectionNamesRaw", "sectionConfigsRaw"
         ],
         "Context": ["name", "colorHex", "icon"],
+        "FocusSessionLog": ["dayKey"],
         "DailyNote": ["date"],
         "Document": ["title"],
         "EventNote": ["calendarEventID", "calendarID", "title", "eventDateKey"],

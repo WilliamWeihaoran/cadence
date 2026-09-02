@@ -231,7 +231,7 @@ extension CadenceFocusSupport {
     /// `#if os(macOS)`, which is why an iPhone could not run a block's timer at all. The last member
     /// absorbs the remainder rather than each share being rounded independently, so the minutes
     /// handed out always total exactly what the stopwatch measured.
-    static func distributeMinutes(_ totalMinutes: Int, across tasks: [AppTask]) {
+    static func distributeMinutes(_ totalMinutes: Int, across tasks: [AppTask], in modelContext: ModelContext) {
         guard totalMinutes > 0, !tasks.isEmpty else { return }
         let weights = tasks.map { max($0.estimatedMinutes, 5) }
         let totalWeight = max(weights.reduce(0, +), 1)
@@ -249,12 +249,7 @@ extension CadenceFocusSupport {
                 remaining -= minutes
             }
             guard minutes > 0 else { continue }
-            task.actualMinutes += minutes
-            if let project = task.project {
-                project.loggedMinutes += minutes
-            } else if let area = task.area {
-                area.loggedMinutes += minutes
-            }
+            CadenceFocusLedger.bank(minutes, forTaskAndItsList: task, in: modelContext)
         }
     }
 
@@ -264,8 +259,8 @@ extension CadenceFocusSupport {
     /// is worth — rather than re-deriving it, for the same reason the log-session seeds do: a second
     /// rounding rule here would make the same clock log a different number depending on whether the
     /// subject was a task or a block.
-    static func logElapsedSeconds(_ seconds: Int, across tasks: [AppTask]) {
-        distributeMinutes(minutes(fromElapsedSeconds: seconds), across: tasks)
+    static func logElapsedSeconds(_ seconds: Int, across tasks: [AppTask], in modelContext: ModelContext) {
+        distributeMinutes(minutes(fromElapsedSeconds: seconds), across: tasks, in: modelContext)
     }
 
     /// Leave one focus subject for another: bank the seconds the outgoing one earned, then hand the
@@ -315,9 +310,13 @@ extension CadenceFocusSupport {
 
         switch outgoing {
         case .task(let task):
-            logElapsedSeconds(seconds, to: task)
+            logElapsedSeconds(seconds, to: task, in: modelContext)
         case .bundle(let bundle, let selectedTaskIDs):
-            logElapsedSeconds(seconds, across: selectedTasks(in: bundle, selectedTaskIDs: selectedTaskIDs))
+            logElapsedSeconds(
+                seconds,
+                across: selectedTasks(in: bundle, selectedTaskIDs: selectedTaskIDs),
+                in: modelContext
+            )
         }
         try? modelContext.save()
         return reset

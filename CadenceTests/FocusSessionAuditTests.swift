@@ -67,10 +67,10 @@ struct FocusManagerEndSessionTests {
         context.insert(task)
 
         let manager = FocusManager.shared
-        manager.startFocus(task: task)
+        manager.startFocus(task: task, in: context)
         manager.elapsed = 25 * 60
 
-        manager.endSession()
+        manager.endSession(in: context)
 
         #expect(task.actualMinutes == 25)
         #expect(project.loggedMinutes == 25)
@@ -99,10 +99,10 @@ struct FocusManagerEndSessionTests {
         context.insert(second)
 
         let manager = FocusManager.shared
-        manager.startFocus(bundle: bundle)
+        manager.startFocus(bundle: bundle, in: context)
         manager.elapsed = 20 * 60
 
-        manager.endSession()
+        manager.endSession(in: context)
 
         #expect(first.actualMinutes + second.actualMinutes == 20)
         #expect(manager.activeSession == nil)

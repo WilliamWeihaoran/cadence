@@ -54,11 +54,12 @@ struct CadenceFocusBundleParityTests {
     /// The whole stopwatch reading is handed out — no minute is lost to independently rounded
     /// shares — and it is weighted by estimate, so the 45-minute member of a 60-minute block gets
     /// three quarters of the session rather than half of it.
-    @Test func aBundleSessionSplitsItsMinutesByEstimateAndLosesNoneOfThem() {
+    @Test func aBundleSessionSplitsItsMinutesByEstimateAndLosesNoneOfThem() throws {
+        let context = ModelContext(try CadenceTestStore.container())
         let block = bundle("Sweep", estimates: [45, 15])
         let members = block.sortedTasks
 
-        CadenceFocusSupport.distributeMinutes(60, across: members)
+        CadenceFocusSupport.distributeMinutes(60, across: members, in: context)
 
         #expect(members.map(\.actualMinutes) == [45, 15])
         #expect(members.reduce(0) { $0 + $1.actualMinutes } == 60)
@@ -67,11 +68,12 @@ struct CadenceFocusBundleParityTests {
     /// The remainder lands on the last member rather than evaporating. Three equal members over
     /// 100 minutes is 33.33…, and three independently rounded 33s would log 99 minutes of a
     /// 100-minute session.
-    @Test func theLastMemberAbsorbsTheRemainderSoTheTotalIsExact() {
+    @Test func theLastMemberAbsorbsTheRemainderSoTheTotalIsExact() throws {
+        let context = ModelContext(try CadenceTestStore.container())
         let block = bundle("Uneven", estimates: [10, 10, 10])
         let members = block.sortedTasks
 
-        CadenceFocusSupport.distributeMinutes(100, across: members)
+        CadenceFocusSupport.distributeMinutes(100, across: members, in: context)
 
         #expect(members.reduce(0) { $0 + $1.actualMinutes } == 100)
         #expect(members.map(\.actualMinutes) == [33, 33, 34])
@@ -94,7 +96,7 @@ struct CadenceFocusBundleParityTests {
         context.insert(block)
         for member in members { context.insert(member) }
 
-        CadenceFocusSupport.distributeMinutes(40, across: members)
+        CadenceFocusSupport.distributeMinutes(40, across: members, in: context)
 
         #expect(project.loggedMinutes == 20)
         #expect(area.loggedMinutes == 20)
@@ -104,13 +106,14 @@ struct CadenceFocusBundleParityTests {
     /// stopwatch reading is worth — so the same clock logs the same number whether the subject is a
     /// task or a block. A second rounding rule here is exactly the divergence the focus audit found
     /// between the timer and the log-session sheets.
-    @Test func aBundleStopwatchRoundsTheSameWayASingleTaskStopwatchDoes() {
+    @Test func aBundleStopwatchRoundsTheSameWayASingleTaskStopwatchDoes() throws {
+        let context = ModelContext(try CadenceTestStore.container())
         for seconds in [0, 20, 61, 90, 3_660] {
             let block = bundle("Rounding", estimates: [30])
             let single = AppTask(title: "Alone")
 
-            CadenceFocusSupport.logElapsedSeconds(seconds, across: block.sortedTasks)
-            CadenceFocusSupport.logElapsedSeconds(seconds, to: single)
+            CadenceFocusSupport.logElapsedSeconds(seconds, across: block.sortedTasks, in: context)
+            CadenceFocusSupport.logElapsedSeconds(seconds, to: single, in: context)
 
             #expect(block.sortedTasks[0].actualMinutes == single.actualMinutes)
             #expect(single.actualMinutes == CadenceFocusSupport.minutes(fromElapsedSeconds: seconds))
@@ -144,13 +147,15 @@ struct CadenceFocusBundleParityTests {
     }
 
     /// Unticking a member excludes it from the time log, which is the only thing the ticks do.
-    @Test func onlyTickedMembersReceiveTheSessionsTime() {
+    @Test func onlyTickedMembersReceiveTheSessionsTime() throws {
+        let context = ModelContext(try CadenceTestStore.container())
         let block = bundle("Partial", estimates: [30, 30])
         let members = block.sortedTasks
 
         CadenceFocusSupport.logElapsedSeconds(
             30 * 60,
-            across: CadenceFocusSupport.selectedTasks(in: block, selectedTaskIDs: [members[0].id])
+            across: CadenceFocusSupport.selectedTasks(in: block, selectedTaskIDs: [members[0].id]),
+            in: context
         )
 
         #expect(members[0].actualMinutes == 30)
@@ -346,11 +351,12 @@ struct CadenceFocusBundleParityTests {
 #if os(macOS)
     /// The Mac's spelling stays — the log-session popovers read better in `FocusSessionSupport`'s
     /// vocabulary — but it must forward rather than keep a body, or the two platforms drift again.
-    @Test func theMacBundleTimerStillDistributesThroughTheSharedHelper() {
+    @Test func theMacBundleTimerStillDistributesThroughTheSharedHelper() throws {
+        let context = ModelContext(try CadenceTestStore.container())
         let block = bundle("Sweep", estimates: [45, 15])
         let members = block.sortedTasks
 
-        FocusSessionSupport.distributeBundleMinutes(60, across: members)
+        FocusSessionSupport.distributeBundleMinutes(60, across: members, in: context)
 
         #expect(members.map(\.actualMinutes) == [45, 15])
     }
@@ -371,7 +377,7 @@ struct CadenceFocusBundleParityTests {
         context.insert(block)
         for member in block.sortedTasks { context.insert(member) }
 
-        manager.startFocus(bundle: block)
+        manager.startFocus(bundle: block, in: context)
 
         #expect(manager.selectedBundleTaskIDs == CadenceFocusSupport.defaultSelectedTaskIDs(for: block))
     }

@@ -436,12 +436,13 @@ struct TaskBundleTests {
     }
 
     @Test func bundleFocusLoggingDistributesByEstimate() throws {
+        let context = ModelContext(try CadenceTestStore.container())
         let short = AppTask(title: "Short")
         short.estimatedMinutes = 10
         let long = AppTask(title: "Long")
         long.estimatedMinutes = 20
 
-        FocusSessionSupport.distributeBundleMinutes(30, across: [short, long])
+        FocusSessionSupport.distributeBundleMinutes(30, across: [short, long], in: context)
 
         #expect(short.actualMinutes == 10)
         #expect(long.actualMinutes == 20)

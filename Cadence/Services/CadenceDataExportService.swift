@@ -92,6 +92,7 @@ nonisolated enum CadenceDataExportService {
             tags: try records(Tag.self, in: modelContext, CadenceArchiveTag.init),
             tasks: try records(AppTask.self, in: modelContext, CadenceArchiveTask.init),
             taskBundles: try records(TaskBundle.self, in: modelContext, CadenceArchiveTaskBundle.init),
+            focusSessions: try records(FocusSessionLog.self, in: modelContext, CadenceArchiveFocusSessionLog.init),
             subtasks: try records(Subtask.self, in: modelContext, CadenceArchiveSubtask.init),
             notes: try records(Note.self, in: modelContext, CadenceArchiveNote.init),
             savedLinks: try records(SavedLink.self, in: modelContext, CadenceArchiveSavedLink.init),
@@ -205,6 +206,7 @@ nonisolated struct CadenceArchive: Codable, Equatable, Sendable {
     var tags: [CadenceArchiveTag]
     var tasks: [CadenceArchiveTask]
     var taskBundles: [CadenceArchiveTaskBundle]
+    var focusSessions: [CadenceArchiveFocusSessionLog]
     var subtasks: [CadenceArchiveSubtask]
     var notes: [CadenceArchiveNote]
     var savedLinks: [CadenceArchiveSavedLink]
@@ -233,6 +235,7 @@ nonisolated struct CadenceArchive: Codable, Equatable, Sendable {
         "Tag": \.tags.count,
         "AppTask": \.tasks.count,
         "TaskBundle": \.taskBundles.count,
+        "FocusSessionLog": \.focusSessions.count,
         "Subtask": \.subtasks.count,
         "Note": \.notes.count,
         "SavedLink": \.savedLinks.count,
@@ -490,6 +493,32 @@ nonisolated struct CadenceArchiveTaskBundle: Codable, Equatable, Identifiable, S
         startMin = model.startMin
         durationMinutes = model.durationMinutes
         createdAt = CadenceArchiveTimestamp.normalized(model.createdAt)
+    }
+}
+
+/// One row of the focus-time ledger. Exported because it is the only record of *when* logged time
+/// was logged — the counters it reconciles are a single cumulative number — and because an archive
+/// restored without it would hand every counter a ledger claiming a legacy total of whatever the
+/// counter already held.
+nonisolated struct CadenceArchiveFocusSessionLog: Codable, Equatable, Identifiable, Sendable {
+    var id: UUID
+    var minutes: Int
+    var previousMinutes: Int
+    var loggedAt: Date
+    var dayKey: String
+    var taskID: UUID?
+    var areaID: UUID?
+    var projectID: UUID?
+
+    init(_ model: FocusSessionLog) {
+        id = model.id
+        minutes = model.minutes
+        previousMinutes = model.previousMinutes
+        loggedAt = CadenceArchiveTimestamp.normalized(model.loggedAt)
+        dayKey = model.dayKey
+        taskID = model.task?.id
+        areaID = model.area?.id
+        projectID = model.project?.id
     }
 }
 

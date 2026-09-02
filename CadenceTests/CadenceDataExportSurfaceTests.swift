@@ -549,6 +549,7 @@ struct CadenceDataExportSurfaceTests {
             exportProbe { Tag(name: "errand") },
             exportProbe { AppTask(title: "Buy milk") },
             exportProbe { TaskBundle(title: "Morning", dateKey: "2026-08-20", startMin: 540, durationMinutes: 60) },
+            exportProbe { FocusSessionLog(minutes: 25, previousMinutes: 0, loggedAt: Date(), dayKey: "2026-08-20") },
             exportProbe { Subtask(title: "Find the receipt") },
             exportProbe { DailyNote(date: "2026-08-20") },
             exportProbe { WeeklyNote(weekKey: "2026-W34") },

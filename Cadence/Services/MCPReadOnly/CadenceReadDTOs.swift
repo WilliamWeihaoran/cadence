@@ -173,6 +173,12 @@ nonisolated struct CadenceTaskDetail: Codable, Sendable {
     let summary: CadenceTaskSummary
     let notes: String
     let actualMinutes: Int
+    /// How many `FocusSessionLog` rows stand behind `actualMinutes`.
+    ///
+    /// The counter is still the total a client should read; this says how much of it the ledger can
+    /// account for. `0` on a task whose `actualMinutes` is non-zero means every minute on it
+    /// predates the ledger (T-621), which is the one thing a client cannot infer from the counter.
+    let focusSessionCount: Int
     let subtasks: [CadenceSubtaskSummary]
     let createdAt: String
     let completedAt: String?

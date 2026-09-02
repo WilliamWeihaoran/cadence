@@ -894,7 +894,7 @@ struct FocusEntryGateCallSiteTests {
         #expect(body.contains("CadenceFocusSupport.canFocus(task)"))
         #expect(body.contains("!task.isDone") == false)
         // Non-vacuity: this really is the slot's body, spacer and all.
-        #expect(body.contains("focusManager.startFocus(task: task)"))
+        #expect(body.contains("focusManager.startFocus(task: task, in: modelContext)"))
         #expect(body.contains("Color.clear"))
     }
 

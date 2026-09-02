@@ -71,7 +71,9 @@ TASK_SUMMARY_KEYS = {
     "estimatedMinutes", "container", "goal", "sectionName", "tags", "isDone", "isCancelled",
 }
 TASK_SUMMARY_OPTIONAL = {"container", "goal"}
-TASK_DETAIL_KEYS = {"summary", "notes", "actualMinutes", "subtasks", "createdAt", "completedAt"}
+TASK_DETAIL_KEYS = {
+    "summary", "notes", "actualMinutes", "focusSessionCount", "subtasks", "createdAt", "completedAt"
+}
 TASK_DETAIL_OPTIONAL = {"completedAt"}
 TAG_SUMMARY_KEYS = {"id", "slug", "name", "colorHex", "description", "isArchived"}
 TAG_DETAIL_KEYS = {"summary", "taskCount", "noteCount", "createdAt", "updatedAt"}

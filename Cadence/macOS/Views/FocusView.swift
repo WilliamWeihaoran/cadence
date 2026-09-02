@@ -58,7 +58,7 @@ struct FocusView: View {
             FocusSessionHeader(
                 task: task,
                 estimateLabel: durationLabel(for: task),
-                onClose: { focusManager.endSession() }
+                onClose: { focusManager.endSession(in: modelContext) }
             )
 
             GeometryReader { proxy in
@@ -86,7 +86,7 @@ struct FocusView: View {
                         FocusSidebar(
                             task: task,
                             nextTasks: Array(readyTasks.filter { $0.id != task.id }.prefix(4)),
-                            onSelectTask: { focusManager.startFocus(task: $0) }
+                            onSelectTask: { focusManager.startFocus(task: $0, in: modelContext) }
                         )
                         .frame(
                             minWidth: CadenceDesktopSplitLayout.focusSidebarPaneMinWidth,
@@ -166,7 +166,7 @@ struct FocusView: View {
             FocusBundleHeader(
                 bundle: bundle,
                 selectedCount: selectedBundleTasks(bundle).count,
-                onClose: { focusManager.endSession() }
+                onClose: { focusManager.endSession(in: modelContext) }
             )
 
             GeometryReader { proxy in
@@ -200,7 +200,7 @@ struct FocusView: View {
                         FocusBundleSidebar(
                             bundle: bundle,
                             nextTasks: Array(readyTasks.filter { !bundle.sortedTasks.map(\.id).contains($0.id) }.prefix(4)),
-                            onSelectTask: { focusManager.startFocus(task: $0) }
+                            onSelectTask: { focusManager.startFocus(task: $0, in: modelContext) }
                         )
                         .frame(
                             minWidth: CadenceDesktopSplitLayout.focusSidebarPaneMinWidth,
@@ -260,6 +260,7 @@ struct FocusView: View {
                             hours: hours,
                             minutes: minutes,
                             tasks: selectedBundleTasks(bundle),
+                            modelContext: modelContext,
                             focusManager: focusManager
                         )
                         showLogSheet = false
@@ -289,8 +290,8 @@ struct FocusView: View {
                         clockDisplay: clockDisplay,
                         searchText: $idleSearchText,
                         items: focusPickerItems,
-                        onSelectTask: { focusManager.startFocus(task: $0) },
-                        onSelectBundle: { focusManager.startFocus(bundle: $0) }
+                        onSelectTask: { focusManager.startFocus(task: $0, in: modelContext) },
+                        onSelectBundle: { focusManager.startFocus(bundle: $0, in: modelContext) }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }

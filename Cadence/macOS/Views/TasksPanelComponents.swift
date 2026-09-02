@@ -199,7 +199,7 @@ struct MacTaskRow: View {
             // was the *only* surface in the app asking the question, and the three iOS entry points
             // added since did not ask it at all (T-276).
             if CadenceFocusSupport.canFocus(task) {
-                Button { focusManager.startFocus(task: task) } label: {
+                Button { focusManager.startFocus(task: task, in: modelContext) } label: {
                     Image(systemName: "play.fill")
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(Theme.onColor)

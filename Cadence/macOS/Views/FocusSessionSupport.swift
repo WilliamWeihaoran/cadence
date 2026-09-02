@@ -38,14 +38,7 @@ enum FocusSessionSupport {
         focusManager: FocusManager
     ) {
         let totalMinutes = hours * 60 + minutes
-        if totalMinutes > 0 {
-            task.actualMinutes += totalMinutes
-            if let project = task.project {
-                project.loggedMinutes += totalMinutes
-            } else if let area = task.area {
-                area.loggedMinutes += totalMinutes
-            }
-        }
+        CadenceFocusLedger.bank(totalMinutes, forTaskAndItsList: task, in: modelContext)
 
         if complete {
             TaskWorkflowService.markDone(task, in: modelContext)
@@ -58,9 +51,10 @@ enum FocusSessionSupport {
         hours: Int,
         minutes: Int,
         tasks: [AppTask],
+        modelContext: ModelContext,
         focusManager: FocusManager
     ) {
-        distributeBundleMinutes(hours * 60 + minutes, across: tasks)
+        distributeBundleMinutes(hours * 60 + minutes, across: tasks, in: modelContext)
         focusManager.reset()
     }
 
@@ -68,8 +62,8 @@ enum FocusSessionSupport {
     /// `Shared/` under T-242 — it touched nothing but models, and living behind `#if os(macOS)` is
     /// why an iPhone could not run a block's timer at all. The Mac's spelling stays because the
     /// popovers here read better in this file's vocabulary; it must not grow a body again.
-    static func distributeBundleMinutes(_ totalMinutes: Int, across tasks: [AppTask]) {
-        CadenceFocusSupport.distributeMinutes(totalMinutes, across: tasks)
+    static func distributeBundleMinutes(_ totalMinutes: Int, across tasks: [AppTask], in modelContext: ModelContext) {
+        CadenceFocusSupport.distributeMinutes(totalMinutes, across: tasks, in: modelContext)
     }
 
 }

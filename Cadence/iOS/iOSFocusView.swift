@@ -674,7 +674,8 @@ struct iOSFocusView: View {
     private func logBundleSession(_ bundle: TaskBundle) {
         CadenceFocusSupport.logElapsedSeconds(
             elapsedSeconds,
-            across: CadenceFocusSupport.selectedTasks(in: bundle, selectedTaskIDs: selectedBundleTaskIDs)
+            across: CadenceFocusSupport.selectedTasks(in: bundle, selectedTaskIDs: selectedBundleTaskIDs),
+            in: modelContext
         )
         try? modelContext.save()
         resetTimer()

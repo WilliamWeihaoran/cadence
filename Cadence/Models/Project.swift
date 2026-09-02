@@ -36,6 +36,10 @@ import Foundation
     @Relationship(inverse: \Note.project) var notes: [Note]? = nil
     @Relationship(inverse: \SavedLink.project) var links: [SavedLink]? = nil
     @Relationship(inverse: \GoalListLink.project) var goalLinks: [GoalListLink]? = nil
+    /// Every increment this list's `loggedMinutes` has taken since the ledger landed.
+    /// `.nullify` for the reason `AppTask.focusSessions` gives. See `FocusSessionLog`.
+    @Relationship(deleteRule: .nullify, inverse: \FocusSessionLog.project)
+    var focusSessions: [FocusSessionLog]? = nil
 
     /// The context a task filed in this project belongs to.
     ///

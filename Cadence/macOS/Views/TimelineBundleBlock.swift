@@ -118,7 +118,7 @@ struct TimelineBundleBlock: View {
                     areas: areas,
                     projects: projects,
                     onFocus: {
-                        focusManager.startFocus(bundle: bundle)
+                        focusManager.startFocus(bundle: bundle, in: modelContext)
                         selectedBundleID = nil
                     },
                     onAddTask: { task in

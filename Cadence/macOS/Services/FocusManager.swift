@@ -1,4 +1,5 @@
 #if os(macOS)
+import SwiftData
 import SwiftUI
 
 @Observable
@@ -38,9 +39,9 @@ final class FocusManager {
 
     /// Begin focusing on a task, navigating to the focus view.
     /// If switching to a different task, commits any accumulated elapsed time first.
-    func startFocus(task: AppTask) {
+    func startFocus(task: AppTask, in modelContext: ModelContext) {
         if activeTask?.id != task.id || activeBundle != nil {
-            commitElapsed()
+            commitElapsed(in: modelContext)
         }
         activeSession = .task(task)
         selectedBundleTaskIDs.removeAll()
@@ -48,9 +49,9 @@ final class FocusManager {
         wantsNavToFocus = true
     }
 
-    func startFocus(bundle: TaskBundle) {
+    func startFocus(bundle: TaskBundle, in modelContext: ModelContext) {
         if activeBundle?.id != bundle.id || activeTask != nil {
-            commitElapsed()
+            commitElapsed(in: modelContext)
         }
         activeSession = .bundle(bundle)
         selectedBundleTaskIDs = CadenceFocusSupport.defaultSelectedTaskIDs(for: bundle)
@@ -67,15 +68,22 @@ final class FocusManager {
     /// running the timer for 25 minutes produced different totals on the same Mac; and the
     /// bundle branch below rolls up too, so a bundle timer credited the list and a single-task
     /// timer did not. It now goes through the same shared helper iOS uses.
-    func commitElapsed() {
+    ///
+    /// **It takes a `ModelContext` because banking now inserts.** Since T-621 each increment is a
+    /// `FocusSessionLog` row, so this is a pending change and the rule that governs one
+    /// (`AGENTS.md`, "The `try? save()` rule") requires the caller to own the commit rather than
+    /// this helper to reach for an ambient store. That is why `startFocus` and `endSession` take
+    /// one too: they are the frames that bank on the user's behalf.
+    func commitElapsed(in modelContext: ModelContext) {
         guard elapsed > 0 else { return }
         switch activeSession {
         case .task(let task):
-            CadenceFocusSupport.logElapsedSeconds(elapsed, to: task)
+            CadenceFocusSupport.logElapsedSeconds(elapsed, to: task, in: modelContext)
         case .bundle(let bundle):
             CadenceFocusSupport.logElapsedSeconds(
                 elapsed,
-                across: CadenceFocusSupport.selectedTasks(in: bundle, selectedTaskIDs: selectedBundleTaskIDs)
+                across: CadenceFocusSupport.selectedTasks(in: bundle, selectedTaskIDs: selectedBundleTaskIDs),
+                in: modelContext
             )
         case nil:
             break
@@ -94,8 +102,8 @@ final class FocusManager {
     /// `case nil` branch and zeroed `elapsed`, so a 25-minute session closed rather than switched
     /// away from logged nothing at all. `startFocus` already commits on a switch; closing is the
     /// same act of leaving a session, so it commits too.
-    func endSession() {
-        commitElapsed()
+    func endSession(in modelContext: ModelContext) {
+        commitElapsed(in: modelContext)
         activeSession = nil
         selectedBundleTaskIDs.removeAll()
         reset()

@@ -9,6 +9,7 @@ nonisolated enum CadenceSchema {
         Tag.self,
         AppTask.self,
         TaskBundle.self,
+        FocusSessionLog.self,
         Subtask.self,
         DailyNote.self,
         WeeklyNote.self,

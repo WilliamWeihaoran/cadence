@@ -261,6 +261,13 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
     var bundleOrder: Int = 0
     var subtasks: [Subtask]? = nil
     var tags: [Tag]? = nil
+    /// Every increment this task's `actualMinutes` has taken since the ledger landed.
+    ///
+    /// `.nullify`, not `.cascade`: deleting a task has never decremented its list's
+    /// `loggedMinutes`, and a cascade here would start doing exactly that the next time
+    /// `CadenceFocusLedger.reconcile(in:)` ran. See `FocusSessionLog`.
+    @Relationship(deleteRule: .nullify, inverse: \FocusSessionLog.task)
+    var focusSessions: [FocusSessionLog]? = nil
 
     // MARK: - Computed
 
@@ -563,5 +570,232 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
         self.dateKey = dateKey
         self.startMin = startMin
         self.durationMinutes = max(durationMinutes, 5)
+    }
+}
+
+/// One increment to a focus-time counter, recorded as its own row.
+///
+/// **Why the row exists.** `AppTask.actualMinutes`, `Area.loggedMinutes` and
+/// `Project.loggedMinutes` are CloudKit-synced scalars written with `+=`. Two devices that each
+/// bank a session read the same starting value, each write their own sum, and the record that
+/// arrives second wins — so one of the two sessions is gone. Not merely a wrong stat:
+/// `GoalContributionSummary.summary(for:)` folds `actualMinutes` into an hours-mode goal's
+/// progress, so a dropped session is wrong goal progress. The repo already met the same shape one
+/// level up — `DataIntegrityRepairService` reconciles two duplicate lists' `loggedMinutes` with
+/// `max`, not `sum`, because a sum there would double-count — which is the tell that a counter is
+/// the wrong carrier for something that happens on more than one device. A row per increment
+/// cannot be clobbered that way: CloudKit merges *rows*, and two devices that each insert one end
+/// up holding both.
+///
+/// **The counters stay, and that is deliberate.** Around twenty surfaces read them — duration
+/// labels on task rows, timeline blocks, markdown task embeds, the inspector, the export archive,
+/// the MCP task detail, goal progress — and they are what updates the instant a session is banked,
+/// before any sync. So the write sites still do the `+=`; the row is recorded beside it, and the
+/// rows are what turn a clobbered counter back into a correct one — `CadenceFocusLedger.bank`
+/// corrects the subject it is about to write to, and `CadenceFocusLedger.reconcile(in:)` corrects
+/// a whole store. Making the ledger the only reader would mean rewriting every one of those
+/// surfaces in the same change, and a surface missed would show a user their logged time
+/// vanishing — strictly worse than the defect being fixed.
+///
+/// **`previousMinutes` is the field that makes reconciliation possible.** It is the counter's value
+/// immediately before this increment, on the device that wrote it. The ledger starts life with no
+/// idea what the counter already held — there is no `SchemaMigrationPlan` in this project and no
+/// migration hook to hang a one-time backfill on — but the *minimum* `previousMinutes` across a
+/// subject's rows is exactly the counter's value at the moment the very first row was written,
+/// which is that legacy total. Each device's own `previousMinutes` only ever climbs from there, so
+/// the minimum is stable no matter how many devices, in what order, wrote rows.
+///
+/// **Exactly one of `task` / `area` / `project` is set.** A session against a task inside a project
+/// moves two counters, so it writes two rows; the two counters reconcile independently.
+@Model final class FocusSessionLog {
+    var id: UUID = UUID()
+    /// Minutes added to the subject's counter by this increment. Always positive.
+    var minutes: Int = 0
+    /// The subject's counter immediately before this increment, on the writing device.
+    var previousMinutes: Int = 0
+    var loggedAt: Date = Date()
+    /// `yyyy-MM-dd` for `loggedAt`, so a per-day rollup is a string compare like every other
+    /// day-scoped query in the app rather than date math over every row.
+    var dayKey: String = ""
+
+    var task: AppTask? = nil
+    var area: Area? = nil
+    var project: Project? = nil
+
+    init(minutes: Int, previousMinutes: Int, loggedAt: Date, dayKey: String) {
+        self.minutes = minutes
+        self.previousMinutes = previousMinutes
+        self.loggedAt = loggedAt
+        self.dayKey = dayKey
+    }
+}
+
+/// The one place focus minutes are banked, and the one place they are reconciled.
+///
+/// `nonisolated` for the reason `TaskOrdering` is: `Cadence/Models/` compiles straight into
+/// `CadenceWidgets` and into `CadenceMCPServer`, which is on Swift 6 where main-actor inference
+/// on a shared helper is an error rather than a warning.
+nonisolated enum CadenceFocusLedger {
+    /// Bank `minutes` against a task **and the list that owns it** — the three counters a focus
+    /// session moves, in one spelling.
+    ///
+    /// **The context is a parameter, not `task.modelContext`, and that is the rule rather than a
+    /// preference** (`AGENTS.md`, "The `try? save()` rule", half 3). Banking a session now *inserts*
+    /// — it used to be nothing but field edits — so it is a pending change, and a declaration that
+    /// reaches for an ambient context to insert into has to commit. Taking the context says the
+    /// caller owns the unit of work, which is true here: every focus path already commits after
+    /// banking. `CadenceSaveCommitDisciplineTests` caught the first spelling of this, which read
+    /// `task.modelContext` and committed nothing on the macOS timer's path.
+    ///
+    /// The project-before-area precedence is the one the three former increment sites already had
+    /// (`CadenceFocusSupport.logElapsedSeconds(_:to:)`, `CadenceFocusSupport.distributeMinutes`,
+    /// `FocusSessionSupport.logSession`): a task in a project rolls up to the project only, because
+    /// the project rolls up to the area itself.
+    static func bank(
+        _ minutes: Int,
+        forTaskAndItsList task: AppTask,
+        in modelContext: ModelContext,
+        now: Date = Date()
+    ) {
+        guard minutes > 0 else { return }
+        bank(minutes, to: task, in: modelContext, now: now)
+        if let project = task.project {
+            bank(minutes, to: project, in: modelContext, now: now)
+        } else if let area = task.area {
+            bank(minutes, to: area, in: modelContext, now: now)
+        }
+    }
+
+    static func bank(_ minutes: Int, to task: AppTask, in modelContext: ModelContext, now: Date = Date()) {
+        guard minutes > 0 else { return }
+        task.actualMinutes = raised(task.actualMinutes, by: task.focusSessions)
+        let previous = task.actualMinutes
+        task.actualMinutes = previous + minutes
+        let row = row(minutes: minutes, previousMinutes: previous, now: now)
+        modelContext.insert(row)
+        row.task = task
+        task.focusSessions = (task.focusSessions ?? []) + [row]
+    }
+
+    static func bank(_ minutes: Int, to area: Area, in modelContext: ModelContext, now: Date = Date()) {
+        guard minutes > 0 else { return }
+        area.loggedMinutes = raised(area.loggedMinutes, by: area.focusSessions)
+        let previous = area.loggedMinutes
+        area.loggedMinutes = previous + minutes
+        let row = row(minutes: minutes, previousMinutes: previous, now: now)
+        modelContext.insert(row)
+        row.area = area
+        area.focusSessions = (area.focusSessions ?? []) + [row]
+    }
+
+    static func bank(_ minutes: Int, to project: Project, in modelContext: ModelContext, now: Date = Date()) {
+        guard minutes > 0 else { return }
+        project.loggedMinutes = raised(project.loggedMinutes, by: project.focusSessions)
+        let previous = project.loggedMinutes
+        project.loggedMinutes = previous + minutes
+        let row = row(minutes: minutes, previousMinutes: previous, now: now)
+        modelContext.insert(row)
+        row.project = project
+        project.focusSessions = (project.focusSessions ?? []) + [row]
+    }
+
+    /// The counter a subject's rows say it should hold: the legacy total the ledger inherited, plus
+    /// every increment recorded since.
+    ///
+    /// The legacy total is `min(previousMinutes)` — see `FocusSessionLog`. Rows are summed, so two
+    /// devices' concurrent sessions both count; the baseline is a minimum, so two devices that both
+    /// started from the same legacy value count it once.
+    static func reconciledTotal(of rows: [FocusSessionLog]) -> Int? {
+        guard let baseline = rows.map(\.previousMinutes).min() else { return nil }
+        return rows.reduce(baseline) { $0 + max(0, $1.minutes) }
+    }
+
+    /// Raise every focus counter in a store to what its rows say it should hold. Answers whether
+    /// anything moved.
+    ///
+    /// `bank` already does this for the subject it touches, so a task you focus again heals itself.
+    /// This is the pass for the ones you do not — a goal reading `actualMinutes` on a task nobody
+    /// opens again stays wrong until something sweeps the store. Its intended home is
+    /// `PersistenceController.performStartupMaintenance`, beside `DataIntegrityRepairService`; that
+    /// one line is not landed yet (`docs/TODO.md` T-742), so today this is reachable and tested but
+    /// not scheduled.
+    ///
+    /// **Only ever raises**, which is what makes it safe to run at startup with no gate on sync
+    /// state — the property `DataIntegrityRepairService`'s doc comment argues every unattended pass
+    /// must have. A half-synced store holds a subset of the rows and therefore computes a total
+    /// that is too low; writing that back would destroy minutes the counter already had. `max`
+    /// makes a partial store a no-op instead, and the total climbs to the truth as the remaining
+    /// rows arrive. It is also the merge rule this repository already chose for this very field.
+    ///
+    /// **Idempotent by construction, and that is the whole reason the ledger needs no backfill
+    /// pass.** `max(counter, min(previousMinutes) + Σminutes)` is a pure function of the counter and
+    /// the rows, so running it twice lands on the same number: the second run recomputes the same
+    /// right-hand side and `max` leaves an already-equal counter alone. A row written *after* a
+    /// reconcile carries the reconciled counter as its `previousMinutes`, which is at or above the
+    /// existing minimum, so it cannot move the baseline either. There is no "run once" flag to
+    /// hang on a migration that does not exist, and none is needed.
+    @discardableResult
+    static func reconcile(in context: ModelContext) -> Bool {
+        guard let rows = try? context.fetch(FetchDescriptor<FocusSessionLog>()), !rows.isEmpty else {
+            return false
+        }
+
+        var tasks: [ObjectIdentifier: (subject: AppTask, rows: [FocusSessionLog])] = [:]
+        var areas: [ObjectIdentifier: (subject: Area, rows: [FocusSessionLog])] = [:]
+        var projects: [ObjectIdentifier: (subject: Project, rows: [FocusSessionLog])] = [:]
+
+        for row in rows {
+            if let task = row.task {
+                tasks[ObjectIdentifier(task), default: (task, [])].rows.append(row)
+            } else if let project = row.project {
+                projects[ObjectIdentifier(project), default: (project, [])].rows.append(row)
+            } else if let area = row.area {
+                areas[ObjectIdentifier(area), default: (area, [])].rows.append(row)
+            }
+        }
+
+        var changed = false
+        for entry in tasks.values {
+            guard let total = reconciledTotal(of: entry.rows), total > entry.subject.actualMinutes else { continue }
+            entry.subject.actualMinutes = total
+            changed = true
+        }
+        for entry in areas.values {
+            guard let total = reconciledTotal(of: entry.rows), total > entry.subject.loggedMinutes else { continue }
+            entry.subject.loggedMinutes = total
+            changed = true
+        }
+        for entry in projects.values {
+            guard let total = reconciledTotal(of: entry.rows), total > entry.subject.loggedMinutes else { continue }
+            entry.subject.loggedMinutes = total
+            changed = true
+        }
+        return changed
+    }
+
+    /// One subject's half of `reconcile(in:)`, applied by `bank` before it adds to a counter.
+    ///
+    /// **This is what makes the ledger self-healing without a launch hook.** Banking a session is
+    /// the moment the app is already holding the subject and already writing to it, so correcting
+    /// the counter there costs nothing and needs no store-wide pass. After it, the counter equals
+    /// the ledger's own total exactly: the raise lands on `baseline + Σ existing`, the increment
+    /// adds `minutes`, and the new row's `previousMinutes` is the raised value — at or above the
+    /// baseline, so it cannot move the minimum. `reconcile(in:)` is then a no-op on this subject.
+    ///
+    /// Same `max` as the store-wide pass, for the same reason: a store that has received only some
+    /// of CloudKit's rows computes a total that is too low, and lowering a counter would destroy
+    /// minutes it already has.
+    private static func raised(_ counter: Int, by rows: [FocusSessionLog]?) -> Int {
+        guard let total = reconciledTotal(of: rows ?? []) else { return counter }
+        return max(counter, total)
+    }
+
+    private static func row(minutes: Int, previousMinutes: Int, now: Date) -> FocusSessionLog {
+        FocusSessionLog(
+            minutes: minutes,
+            previousMinutes: previousMinutes,
+            loggedAt: now,
+            dayKey: DateFormatters.dateKey(from: now)
+        )
     }
 }

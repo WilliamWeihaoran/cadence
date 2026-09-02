@@ -179,16 +179,11 @@ enum CadenceFocusSupport {
         max(0, Int((Double(seconds) / 60.0).rounded()))
     }
 
-    static func logElapsedSeconds(_ seconds: Int, to task: AppTask) {
+    static func logElapsedSeconds(_ seconds: Int, to task: AppTask, in modelContext: ModelContext) {
         let minutes = minutes(fromElapsedSeconds: seconds)
         guard minutes > 0 else { return }
 
-        task.actualMinutes += minutes
-        if let project = task.project {
-            project.loggedMinutes += minutes
-        } else if let area = task.area {
-            area.loggedMinutes += minutes
-        }
+        CadenceFocusLedger.bank(minutes, forTaskAndItsList: task, in: modelContext)
     }
 
     /// Leave one task for another the way macOS's `FocusManager` does: bank the seconds the
@@ -250,13 +245,13 @@ enum CadenceFocusSupport {
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
         let banked = BankedMinutes(task)
-        logElapsedSeconds(elapsedSeconds, to: task)
+        logElapsedSeconds(elapsedSeconds, to: task, in: modelContext)
         do {
             try CadenceTaskMutationSupport.commitSettle(task, in: modelContext, commit: commit) {
                 CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
             }
         } catch {
-            banked.restore()
+            banked.restore(in: modelContext)
             throw error
         }
     }
@@ -270,6 +265,14 @@ enum CadenceFocusSupport {
     ///
     /// The container is captured as well as its count, because `restore()` must write back to the
     /// object the write reached — not to whatever `task.project` answers afterwards.
+    ///
+    /// **It undoes the ledger rows as well as the counters, and it has to.** Since T-621 the same
+    /// write also inserts a `FocusSessionLog` per counter. Putting the counter back and leaving the
+    /// row would be worse than not restoring at all: the row is a *pending insert* in the app's one
+    /// `ModelContext`, so the next unrelated `save()` takes it, and the next
+    /// `CadenceFocusLedger.reconcile(in:)` then raises the counter back to include a session the
+    /// user was told was not recorded. Rows are identified by what was present beforehand rather
+    /// than by asking `bank` what it wrote, so a future second row on the same write is undone too.
     private struct BankedMinutes {
         private let task: AppTask
         private let taskMinutes: Int
@@ -277,6 +280,7 @@ enum CadenceFocusSupport {
         private let projectMinutes: Int
         private let area: Area?
         private let areaMinutes: Int
+        private let existingRowIDs: Set<ObjectIdentifier>
 
         init(_ task: AppTask) {
             self.task = task
@@ -285,12 +289,27 @@ enum CadenceFocusSupport {
             projectMinutes = task.project?.loggedMinutes ?? 0
             area = task.area
             areaMinutes = task.area?.loggedMinutes ?? 0
+            existingRowIDs = Set(
+                Self.rows(task: task, project: task.project, area: task.area).map(ObjectIdentifier.init)
+            )
         }
 
-        func restore() {
+        func restore(in modelContext: ModelContext) {
             task.actualMinutes = taskMinutes
             project?.loggedMinutes = projectMinutes
             area?.loggedMinutes = areaMinutes
+
+            for row in Self.rows(task: task, project: project, area: area)
+            where !existingRowIDs.contains(ObjectIdentifier(row)) {
+                row.task = nil
+                row.project = nil
+                row.area = nil
+                modelContext.delete(row)
+            }
+        }
+
+        private static func rows(task: AppTask, project: Project?, area: Area?) -> [FocusSessionLog] {
+            (task.focusSessions ?? []) + (project?.focusSessions ?? []) + (area?.focusSessions ?? [])
         }
     }
 

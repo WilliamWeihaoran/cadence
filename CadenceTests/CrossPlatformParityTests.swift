@@ -192,25 +192,27 @@ struct CrossPlatformParityTests {
     /// Running the macOS timer never moved `project.loggedMinutes`, which an hours-mode goal
     /// reads — while macOS's own manual "log session" sheet did, and so did the bundle branch of
     /// the same timer. Three paths, two behaviors, one Mac.
-    @Test func focusTimerMinutesRollUpToTheContainingList() {
+    @Test func focusTimerMinutesRollUpToTheContainingList() throws {
+        let modelContext = ModelContext(try CadenceTestStore.container())
         let context = Context(name: "Work")
         let project = Project(name: "Website", context: context)
         let task = AppTask(title: "Write copy")
         task.project = project
 
-        CadenceFocusSupport.logElapsedSeconds(25 * 60, to: task)
+        CadenceFocusSupport.logElapsedSeconds(25 * 60, to: task, in: modelContext)
 
         #expect(task.actualMinutes == 25)
         #expect(project.loggedMinutes == 25)
     }
 
     /// Falls back to the area when there is no project, matching the manual log sheet.
-    @Test func focusTimerMinutesRollUpToTheAreaWhenThereIsNoProject() {
+    @Test func focusTimerMinutesRollUpToTheAreaWhenThereIsNoProject() throws {
+        let modelContext = ModelContext(try CadenceTestStore.container())
         let area = Area(name: "Life")
         let task = AppTask(title: "Errand")
         task.area = area
 
-        CadenceFocusSupport.logElapsedSeconds(90, to: task)
+        CadenceFocusSupport.logElapsedSeconds(90, to: task, in: modelContext)
 
         #expect(task.actualMinutes == 2)
         #expect(area.loggedMinutes == 2)

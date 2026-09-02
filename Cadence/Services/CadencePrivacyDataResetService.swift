@@ -85,6 +85,7 @@ enum PrivacyDataResetService {
         in modelContext: ModelContext,
         canceller: CadenceNotificationCanceller? = nil
     ) async throws {
+        try deleteAll(FocusSessionLog.self, in: modelContext)
         try deleteAll(HabitCompletion.self, in: modelContext)
         try deleteAll(GoalListLink.self, in: modelContext)
         try deleteAll(Subtask.self, in: modelContext)

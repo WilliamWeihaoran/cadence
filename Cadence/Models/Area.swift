@@ -51,6 +51,10 @@ import Foundation
     @Relationship(inverse: \Note.area) var notes: [Note]? = nil
     @Relationship(inverse: \SavedLink.area) var links: [SavedLink]? = nil
     @Relationship(inverse: \GoalListLink.area) var goalLinks: [GoalListLink]? = nil
+    /// Every increment this list's `loggedMinutes` has taken since the ledger landed.
+    /// `.nullify` for the reason `AppTask.focusSessions` gives. See `FocusSessionLog`.
+    @Relationship(deleteRule: .nullify, inverse: \FocusSessionLog.area)
+    var focusSessions: [FocusSessionLog]? = nil
 
     init(name: String, context: Context? = nil, colorHex: String = "#4a9eff", icon: String = "folder.fill") {
         self.name = name

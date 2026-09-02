@@ -120,7 +120,7 @@ struct CalendarBoardBundleCard: View {
             areas: areas,
             projects: projects,
             onFocus: {
-                focusManager.startFocus(bundle: bundle)
+                focusManager.startFocus(bundle: bundle, in: modelContext)
                 showPopover = false
             },
             onAddTask: { task in
