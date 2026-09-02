@@ -55,12 +55,16 @@ nonisolated enum CadenceCalendarSettingsCopy {
 
     /// The work-hours row's title, on Settings > Calendar at both widths.
     ///
-    /// **Only the title is shared.** The sentence under it differs on purpose-or-by-accident and
-    /// this refactor does not decide which (T-544): macOS says "Weekly calendar views gently
-    /// highlight …" and iOS says "Calendar day columns gently highlight …". Both surfaces read the
-    /// same `CalendarWorkHoursPreferences.highlightFrame`, so at most one of those sentences
-    /// describes where the band is actually drawn — that is a copy decision with a behavioural
-    /// question under it, not a de-duplication, and converging it here would bury the choice.
+    /// **Only the title is shared**, and the sentence under it still differs — deliberately, and
+    /// now for a stated reason rather than by accident. T-524 left the pair undecided; T-544 read
+    /// the code and decided macOS's half: it said "Weekly calendar views gently highlight …" while
+    /// the band is drawn per **day column** by `TimelineDayCanvas`, at exactly two call sites, one
+    /// of which is the **Timeline** panel and not a calendar view. macOS now says "Calendar and
+    /// Timeline day columns gently highlight …" and iOS says "Calendar day columns gently
+    /// highlight …", because mobile draws the band on the Calendar's day columns and nowhere else:
+    /// iPad's Timeline pane reads the same two preference keys but spends them on
+    /// `ReadyScheduleContext`'s slot suggestions, not on a band. The two sentences name their own
+    /// surfaces and cannot be converged without one of them becoming false.
     static let workdayBoundaryTitle = "Workday boundary"
 
     /// The accessible name of the calendar row's link menu — an icon-only control on both

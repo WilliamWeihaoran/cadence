@@ -467,10 +467,12 @@ struct CadenceSettingsSectionCopyTests {
     /// The work-hours row's **title** is one string; its subtitle deliberately is not.
     ///
     /// The pair was found by the same sweep as the rest and is converged only as far as the check
-    /// justified. macOS's sentence says "Weekly calendar views gently highlight …" and iOS's says
-    /// "Calendar day columns gently highlight …" — so this asserts the title converged *and* that
-    /// the two subtitles are still each spelled at their own call site, which is what stops a later
-    /// pass reading this test as "the row is fully shared" and collapsing the sentences too.
+    /// justified. macOS's sentence says "Calendar and Timeline day columns gently highlight …" and
+    /// iOS's says "Calendar day columns gently highlight …" — so this asserts the title converged
+    /// *and* that the two subtitles are still each spelled at their own call site, which is what
+    /// stops a later pass reading this test as "the row is fully shared" and collapsing the
+    /// sentences too. They name different surfaces because the surfaces differ (T-544): the phone
+    /// draws the band on the Calendar's day columns and nowhere else.
     @Test func bothWorkHoursRowsReadOneWorkdayBoundaryTitle() throws {
         for path in Self.workHoursSurfaces {
             let code = try Self.strippedSource(at: path)
@@ -488,12 +490,18 @@ struct CadenceSettingsSectionCopyTests {
             )
         }
 
-        // The unresolved half, pinned as *different* rather than as either spelling. If a later
-        // pass converges them, this fails and the decision gets made in the open.
+        // The half that stays *different*, pinned as different rather than as either spelling. If
+        // a later pass converges them, this fails and the decision gets made in the open. T-544
+        // decided the Mac's wording — see `theMacWorkHoursSentenceNamesEverySurfaceThatDrawsTheBand`
+        // for why it names two surfaces and the phone's names one.
         let mac = try Self.strippedSource(at: Self.workHoursSurfaces[0])
         let phone = try Self.strippedSource(at: Self.workHoursSurfaces[1])
-        #expect(mac.contains("Weekly calendar views gently highlight"))
+        #expect(mac.contains("Calendar and Timeline day columns gently highlight"))
         #expect(phone.contains("Calendar day columns gently highlight"))
+        #expect(
+            mac.contains("Weekly calendar views") == false,
+            "the Mac's work-hours sentence is back to naming a surface that does not draw the band"
+        )
     }
 
     // MARK: - The sweep is what stops a thirteenth spelling
@@ -898,6 +906,115 @@ struct CadenceSettingsSectionCopyTests {
             CadenceTagSettingsCopy.emptyCatalogSubtitle
         ] {
             #expect(subtitle.hasSuffix("."), "\"\(subtitle)\" is a sentence and needs its full stop")
+        }
+    }
+
+    // MARK: - T-544: the work-hours sentence names the surfaces that draw the band
+
+    /// The macOS files that switch the work-hours band on. Named, not counted in aggregate: the
+    /// sentence in Settings claims exactly this set, so the set is what has to be pinned.
+    private static let workHoursHighlightCallSites = [
+        "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift",
+        "Cadence/macOS/Views/SchedulePanelShellViews.swift",
+    ]
+
+    /// **The Mac's subtitle said "Weekly calendar views gently highlight …" and no part of it was
+    /// true.**
+    ///
+    /// The band is `TimelineWorkHoursHighlightLayer`, drawn inside `TimelineDayCanvas` — once, per
+    /// **day column** — and only where a caller passes `showWorkHoursHighlight: true`. Exactly two
+    /// callers do: `CalDayColumn`, the Calendar page's day column, and
+    /// `SchedulePanelTimelineViewport`, the panel the app titles **Timeline**, which is not a
+    /// calendar view at all. "Weekly" was wrong a second way: the Calendar page draws day columns
+    /// at Week *and* 2 Weeks, and its Month presentation draws neither a column nor a band.
+    ///
+    /// This is the sentence's evidence rather than its echo. Asserting only the new wording would
+    /// pin a claim about behaviour against nothing, and the old wording was wrong precisely because
+    /// the code moved out from under it — so the call-site **set** is asserted exactly, and a third
+    /// surface switching the band on fails here rather than making the sentence stale again.
+    @Test func theMacWorkHoursSentenceNamesEverySurfaceThatDrawsTheBand() throws {
+        let enablesTheBand = try CadenceScanInstrument(
+            "a macOS surface switches the work-hours band on",
+            fires: """
+            TimelineDayCanvas(
+                style: .calendar,
+                showWorkHoursHighlight: true,
+                showHalfHourMarks: false
+            )
+            """,
+            andNotOn: """
+            TimelineDayCanvas(
+                style: .calendar,
+                showWorkHoursHighlight: false,
+                showHalfHourMarks: false
+            )
+            """,
+            by: { CadenceSourceScan.codeOnly($0).contains("showWorkHoursHighlight: true") }
+        )
+
+        let hits = try enablesTheBand.sweep(
+            try CadenceSourceScan.swiftFiles(under: "Cadence/macOS"),
+            atLeast: 200,
+            including: "Cadence/macOS/Views/TimelineDayCanvas.swift",
+            read: CadenceSourceScan.sourceFile
+        )
+        #expect(
+            hits == Self.workHoursHighlightCallSites.sorted(),
+            "the work-hours band is drawn by \(hits), which is not the set the Settings sentence names"
+        )
+
+        // Exact per-file counts, not a total: an aggregate of two stays green when one call site
+        // reverts and the other gains a duplicate.
+        for path in Self.workHoursHighlightCallSites {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            #expect(
+                CadenceSourceScan.matchCount("showWorkHoursHighlight: true", in: code) == 1,
+                "\(path) no longer switches the band on exactly once"
+            )
+        }
+
+        // Per day column, and only there: the layer has one declaration and one call site, both in
+        // the day canvas's own files.
+        let canvas = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDayCanvas.swift"))
+        #expect(CadenceSourceScan.matchCount("TimelineWorkHoursHighlightLayer\\(", in: canvas) == 1)
+        let layers = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDayCanvasSupportLayers.swift")
+        )
+        #expect(CadenceSourceScan.matchCount("struct TimelineWorkHoursHighlightLayer", in: layers) == 1)
+
+        // The sentence itself, whole, at its one call site.
+        let mac = try Self.strippedSource(at: Self.workHoursSurfaces[0])
+        #expect(
+            mac.contains("Text(\"Calendar and Timeline day columns gently highlight \\(workHoursLabel).\")"),
+            "the Mac's work-hours subtitle no longer names both day-column surfaces"
+        )
+        #expect(CadenceSourceScan.matchCount("gently highlight", in: mac) == 1)
+    }
+
+    /// The band is the same shared rule on both platforms, and neither subtitle mentions the half
+    /// of it that hides the band two days a week.
+    ///
+    /// Recorded rather than fixed (T-696): `shouldShowHighlight(on:)` is the weekend rule, both
+    /// surfaces call it, and both sentences read as unconditional. This pins the behaviour so the
+    /// copy ticket has something to point at.
+    @Test func theWorkHoursBandIsSuppressedAtTheWeekendOnBothSurfaces() throws {
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 8
+        components.day = 29 // Saturday
+        let calendar = Calendar(identifier: .gregorian)
+        let saturday = try #require(calendar.date(from: components))
+        let monday = try #require(calendar.date(byAdding: .day, value: 2, to: saturday))
+
+        #expect(CalendarWorkHoursPreferences.shouldShowHighlight(on: saturday, calendar: calendar) == false)
+        #expect(CalendarWorkHoursPreferences.shouldShowHighlight(on: monday, calendar: calendar))
+
+        for path in ["Cadence/macOS/Views/TimelineDayCanvas.swift", "Cadence/iOS/iOSCalendarTimelineViews.swift"] {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            #expect(
+                CadenceSourceScan.matchCount("CalendarWorkHoursPreferences.shouldShowHighlight", in: code) == 1,
+                "\(path) no longer gates the band on the shared weekend rule exactly once"
+            )
         }
     }
 
