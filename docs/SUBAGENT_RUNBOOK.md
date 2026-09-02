@@ -143,6 +143,29 @@ per-agent boilerplate.
   `CadenceSaveCommitDisciplineTests`. Its two exemption lists carry the known remaining sites **by
   function name**, and a stale entry fails the suite — so if you fix one, delete its entry in the same
   change.
+- **A regex that reads literals out of a *declaration* is sound; the same regex over a *body* pairs
+  quotes that do not belong together.** Recorded 2026-09-02 (T-555). `"([^"\\\n]{12,})"` is the
+  literal test the shared-constant harvest has always used, and it is exact where it is anchored to
+  `static let x = `. Turned loose on a `static func`'s body to widen that harvest, it produced three
+  things that are not literals a call site could type: `"has scheduled items"`, a fragment *nested
+  inside* `"\(dayName(date)), \(hasItems ? "has scheduled items" : emptyPhrase)"`; the tail of
+  another interpolated literal; and `" : String(format: "`, a span of **Swift code** running from
+  the closing quote of one literal to the opening quote of the next. Only the third is obviously
+  wrong, which is the problem — the first two read as plausible copy and would have shipped as
+  offenders. **If you are reading string literals out of code rather than out of a declaration, lex
+  left to right and treat an interpolated literal as opaque, insides included.**
+  `cadencePlainStringLiterals(in:)` in `CadenceTests/CadenceSharedConstantReuseSweepTests.swift`
+  does it, and the naive regex is pinned as a killed mutation beside it.
+- **A trap inside a source-scan helper is a dead test host, not a test failure.** Recorded
+  2026-09-02 (T-555). A `Range` formed from two indices, a `chars[i + 1]`, a force-unwrap — any of
+  them in a helper that several tests call ends the process, and a crashed host emits **no**
+  `.swift:line:col: error:` lines and no `✘ Test` line, so the run reads as *nothing happened*.
+  Same family as the crashed-`swift-frontend` bullet above, one layer up. Two habits: prefer
+  `guard … else { continue }` over an assertion in anything that walks the tree, and give every new
+  reader one test that runs it over **every** Swift file in all three shipped targets rather than
+  only the roots it is used on — a file a sibling agent is mid-way through writing is inside the
+  wide set and not necessarily inside the narrow one, and that is exactly the corpus difference
+  that made one such crash unreproducible from the agent's own archive tree.
 - **Never** launch or build the Cadence app, kill a process named `Cadence`, use a simulator, touch
   the real app-group store, or set `CADENCE_MCP_ENABLE_WRITES`.
 - **Delete your DerivedData when you finish** (~1.7 GB) and release the lock.

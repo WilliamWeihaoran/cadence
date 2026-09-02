@@ -89,6 +89,88 @@ let cadenceSharedLiteralExemptions: [CadenceSharedLiteralExemption] = [
     ),
 ]
 
+/// A call site the widened harvest newly reaches, deferred rather than forgiven.
+///
+/// **T-555.** This is deliberately *not* `cadenceSharedLiteralExemptions`. Every entry there is a
+/// measured false positive — a hit the sweep is right to see and wrong to call a defect. Every
+/// entry here is a **true** positive that another ticket owns, written down so the widening could
+/// land on its own: three sibling agents were editing these surfaces the morning it did, and a
+/// detector that can only land with its fixes attached is a detector that never lands.
+///
+/// The list is exact in both directions, and neither direction is a floor:
+/// `noCallSiteRetypesASharedStringConstant` fails on an offender nobody listed, and
+/// `everyStaticFuncConstantOffenderIsLedgeredAndEveryLedgerEntryIsStillReal` fails on an entry that
+/// has stopped being one. So an entry cannot outlive its fix, and a new offender cannot hide behind
+/// an entry that was written for a different line.
+struct CadenceStaticFuncConstantOffender {
+    let literal: String
+    let path: String
+    /// The ticket that owns the *fix*. This file owns only the fact that it is a defect.
+    let ticket: String
+    let why: String
+
+    init(_ literal: String, path: String, ticket: String, why: String) {
+        self.literal = literal
+        self.path = path
+        self.ticket = ticket
+        self.why = why
+    }
+}
+
+/// Four call sites, three files, two tickets — the whole of what widening the harvest to
+/// `static func` newly reaches on this tree. Measured against `HEAD` rather than a dirty checkout:
+/// a sibling's untracked file was adding hits of its own while this was written, and counting them
+/// would have credited them to this widening.
+let cadenceStaticFuncConstantLedger: [CadenceStaticFuncConstantOffender] = [
+    CadenceStaticFuncConstantOffender(
+        "No goals yet",
+        path: "Cadence/macOS/Views/GoalPickerViews.swift",
+        ticket: "T-698",
+        why: """
+        Line 137 spells `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)`'s body inline — \
+        `searchQuery…isEmpty ? "No goals yet" : emptyText` is the same ternary over the same two \
+        strings. This is the exact shape [[T-548]] converged and [[T-555]] says the sweep could \
+        not see: the constant is spelled as a function, so the harvest walked past it.
+        """
+    ),
+    CadenceStaticFuncConstantOffender(
+        "No matching goals",
+        path: "Cadence/macOS/Views/GoalPickerViews.swift",
+        ticket: "T-698",
+        why: """
+        The narrowed half of the same ternary, twice, as the `emptyText` default on both pickers in \
+        the file (lines 13 and 89). [[T-550]] deleted this argument where callers passed it \
+        explicitly — `CreateGoalSheet` and `HabitsFormSupportViews` are clean on this tree — and \
+        left the two *defaults* behind, because nothing was looking at defaults.
+        """
+    ),
+    CadenceStaticFuncConstantOffender(
+        "No lists yet",
+        path: "Cadence/iOS/iOSRootSidebar.swift",
+        ticket: "T-699",
+        why: """
+        `emptyListsRow` types the words that `CadenceListsSummary.eyebrow(areaCount:projectCount:)` \
+        returns when both counts are zero. Not a call site that should read `eyebrow` — a sidebar \
+        row is not a summary line — which is the point: the words have no `static let` home at all, \
+        only a function's fallback branch, and that is why nothing flagged the second and third \
+        spellings of them.
+        """
+    ),
+    CadenceStaticFuncConstantOffender(
+        "No lists yet",
+        path: "Cadence/iOS/iOSGoalAttachListsSheet.swift",
+        ticket: "T-699",
+        why: """
+        The third spelling, and the one that shows the shape of the fix: it is written \
+        `isNarrowedToEmpty ? "No matching lists" : "No lists yet"`, which is \
+        `goalsTitle(isNarrowed:)` and `habitsTitle(isNarrowed:)` again with the noun changed. Its \
+        narrowed twin `"No matching lists"` clears the twelve-character floor and is still \
+        invisible, because it is declared nowhere at all — the sweep can only see the half that \
+        has a home. The ticket owns both halves.
+        """
+    ),
+]
+
 /// A placeholder label typed inline with **no** declaration anywhere, and the measured reason it
 /// stays that way.
 ///
@@ -208,6 +290,18 @@ struct CadenceSharedStringConstant: Equatable, Sendable {
     var owner: String { "`\(name)` in \(declaredIn)" }
 }
 
+/// One literal typed at one path — the unit the [[T-555]] ledger is exact about.
+struct CadenceLiteralSite: Hashable, Comparable, CustomStringConvertible {
+    let literal: String
+    let path: String
+
+    var description: String { "\"\(literal)\" in \(path)" }
+
+    static func < (lhs: Self, rhs: Self) -> Bool {
+        (lhs.literal, lhs.path) < (rhs.literal, rhs.path)
+    }
+}
+
 @MainActor
 struct CadenceSharedConstantReuseSweepTests {
 
@@ -226,29 +320,20 @@ struct CadenceSharedConstantReuseSweepTests {
         let mcpMembers = try cadenceMCPServerMemberFiles()
 
         for constant in constants {
-            let hits = try sharedLiteralInstrument(for: constant).sweep(
-                files,
-                // 300+ Swift files under `Cadence/`; the floor `CadenceRetiredCopyTests` uses for
-                // the same tree.
-                atLeast: 300,
-                // The file that held four of this sweep's first hits, so a walk that skipped the
-                // iOS tree cannot report the repo clean.
-                including: "Cadence/iOS/iOSFocusView.swift",
+            // The walk, the instrument and the T-499 target boundary all live in
+            // `cadenceSharedConstantOffenders`, so the ledger check below reads exactly what this
+            // reads. The ledger itself is subtracted **here and not there**: a rule that both
+            // defers a hit and decides what the hits are would define its own deferral as
+            // complete, and there would be nothing for T-555's ledger to be checked against.
+            let offenders = try cadenceSharedConstantOffenders(
+                for: constant,
+                in: files,
+                mcpMembers: mcpMembers,
                 read: read
-            )
-            // The target boundary, stated as the rule it always meant (T-499): a file cannot read
-            // a constant declared in a file its own target does not compile. So the subtraction
-            // applies only while the *declaration* is out of `CadenceMCPServer`'s reach — a
-            // constant in `Models/` is reachable from every target, and an MCP file re-typing one
-            // of those is an ordinary offender. This is what makes the boundary self-retiring:
-            // moving a declaration into `Models/` deletes its subtraction with no edit here.
-            let unreachableFromMCP = !mcpMembers.contains(constant.declaredIn)
-            let offenders = hits.filter { path in
-                path != constant.declaredIn
-                    && !(unreachableFromMCP && mcpMembers.contains(path))
-                    && !cadenceSharedLiteralExemptions.contains {
-                        $0.literal == constant.literal && $0.path == path
-                    }
+            ).filter { path in
+                !cadenceStaticFuncConstantLedger.contains {
+                    $0.literal == constant.literal && $0.path == path
+                }
             }
 
             #expect(
@@ -745,6 +830,222 @@ struct CadenceSharedConstantReuseSweepTests {
         #expect(instrument.fires(on: declaration))
     }
 
+
+    // MARK: - A constant spelled as a function
+
+    /// The widening sees something it could not see before, and still refuses a template.
+    ///
+    /// [[T-555]]. The instrument's two witnesses are the nearest possible miss and both are real
+    /// code: the positive is `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)`, the constant that
+    /// found this gap; the negative is `CadenceCalendarDayBadge.markedDayLabel(date:hasItems:)`,
+    /// whose accessibility label *nests* a nineteen-character literal inside an interpolation. A
+    /// detector built on `"([^"\\\n]{12,})"` instead of a lexer fires on that negative — which is
+    /// why the instrument is the fixture rather than a comment claiming it was checked.
+    @Test func theHarvestReadsAConstantSpelledAsAStaticFuncAndNotATemplate() throws {
+        let instrument = try CadenceScanInstrument(
+            "shared constant spelled as a static func",
+            fires: """
+            nonisolated enum Copy {
+                static func goalsTitle(isNarrowed: Bool) -> String {
+                    isNarrowed ? "No matching goals" : "No goals yet"
+                }
+            }
+            """,
+            andNotOn: """
+            nonisolated enum Copy {
+                static func markedDayLabel(date: Date, hasItems: Bool) -> String {
+                    "\\(dayName(date)), \\(hasItems ? "has scheduled items" : emptyPhrase)"
+                }
+            }
+            """,
+            by: { source in
+                cadenceStaticFunctionBodies(in: source).contains { function in
+                    cadencePlainStringLiterals(in: function.body).contains {
+                        $0.count >= 12 && !cadenceIsGlyphName($0)
+                    }
+                }
+            }
+        )
+        #expect(instrument.name == "shared constant spelled as a static func")
+
+        // The walk finds functions in a real file, not only in a fixture string.
+        let copy = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceEmptyStateCopy.swift")
+        )
+        let declared = Set(cadenceStaticFunctionBodies(in: copy).map(\.name))
+        for name in ["goalsTitle", "habitsTitle", "activeListsSubtitle"] {
+            #expect(declared.contains(name), "the static-func walk missed \(name)")
+        }
+
+        let constants = try cadenceSharedStringConstants()
+        let vendedByFunction = try cadenceSharedFunctionStringConstants(in: cadenceSharedConstantRoots())
+        #expect(vendedByFunction.isEmpty == false, "non-vacuity: the function harvest returned nothing")
+
+        // Named, not counted: the harvest population grows every time the app gains a sentence, so
+        // an exact total here would be a number that rots rather than a claim that holds. What
+        // must hold is that each of these reaches the sweep, and none of them can be reached by
+        // the `static let` half — every one is spelled as a function.
+        for (name, literal) in [
+            ("goalsTitle", "No matching goals"),
+            ("goalsTitle", "No goals yet"),
+            ("habitsTitle", "No matching habits"),
+            ("habitsTitle", "No habits yet"),
+            ("eyebrow", "No lists yet"),
+            ("dormantLinkSummary", "This area is not active, so Cadence has stopped mirroring it. "
+                + "The Apple calendar link is kept and resumes if the area becomes active again."),
+        ] {
+            #expect(
+                vendedByFunction.contains { $0.name == name && $0.literal == literal },
+                "the widened harvest no longer reads \"\(literal)\" out of \(name)(…)"
+            )
+        }
+
+        // [[T-644]] again, in the half of the harvest that did not exist when it was written: the
+        // parameter list is balanced *before* the body brace is looked for, so this repo's standard
+        // `commit:` default closure is a parameter and not a body. Taking the first `{` after the
+        // name would harvest the closure instead — and 33 declarations in `Shared/` carry one.
+        let defaulted = """
+        enum Persistence {
+            static func commitEdit(
+                commit: (ModelContext) throws -> Void = { try $0.save("a defaulted closure") }
+            ) -> String {
+                "the body's own constant"
+            }
+        }
+        """
+        let fromDefaulted = cadenceStaticFunctionBodies(in: defaulted)
+            .flatMap { cadencePlainStringLiterals(in: $0.body) }
+        #expect(fromDefaulted.contains("the body's own constant"))
+        #expect(fromDefaulted.contains("a defaulted closure") == false,
+                "the harvest read a defaulted closure in the signature as the function's body")
+
+        // A `static func` with no body at all takes the *next* declaration's braces unless the
+        // walk refuses it, and would then vend that declaration's constants under its own name.
+        let requirement = """
+        protocol Naming {
+            static func title() -> String
+        }
+        enum Elsewhere {
+            static func subtitle() -> String { "a constant of somebody else's" }
+        }
+        """
+        #expect(
+            cadenceStaticFunctionBodies(in: requirement).map(\.name) == ["subtitle"],
+            "a bodiless protocol requirement adopted the next declaration's body"
+        )
+
+        // And the other direction on the real tree: the three spans a regex over the same bodies
+        // harvests and a lexer does not. The first is a fragment nested in a template, the second
+        // the tail of one, the third a run of Swift *code* between two unrelated quotes.
+        let literals = Set(constants.map(\.literal))
+        for artefact in ["has scheduled items", ") receive this session's time.", " : String(format: "] {
+            #expect(
+                literals.contains(artefact) == false,
+                "\"\(artefact)\" is a template's insides, not a constant a call site could type"
+            )
+        }
+    }
+
+    /// **Both new readers, over a corpus wider than the one they are used on.**
+    ///
+    /// [[T-555]]. A crash report arrived from an integration run against a checkout this suite
+    /// could not reproduce: `EXC_BREAKPOINT` in `cadenceStaticFunctionBodies(in:)`, on the line
+    /// that forms the span between a parameter list and a body brace. The pair is *structurally*
+    /// ordered — the brace is searched for from the closing parenthesis — and re-checking
+    /// `CadenceSourceScan.matchedRange`'s contract in real Swift over 2288 declarations in 852
+    /// files plus twelve adversarial shapes never inverted it, so the reader is not the finding
+    /// and the walk now declines to form an unorderable span rather than trapping on one.
+    ///
+    /// This is the part that generalises. **A trap in a source-scan helper is not a test failure,
+    /// it is a dead host** — and a crashed host emits no `.swift:line:col: error:` lines, so the
+    /// run looks like nothing happened. Three tests in this file reach these two helpers, so the
+    /// widest corpus available is the cheapest insurance: every Swift file in all three shipped
+    /// targets, rather than the `Shared/` + `Models/` pair the harvest itself reads. A file a
+    /// sibling agent is mid-way through writing is inside that set; the harvest's own roots are
+    /// not necessarily.
+    @Test func bothNewReadersSurviveEveryFileInTheProduct() throws {
+        var filesRead = 0
+        var declarations = 0
+        var literals = 0
+        for root in cadencePlaceholderScanRoots {
+            for path in try CadenceSourceScan.swiftFiles(under: root) {
+                let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+                filesRead += 1
+                for function in cadenceStaticFunctionBodies(in: source) {
+                    declarations += 1
+                    literals += cadencePlainStringLiterals(in: function.body).count
+                }
+            }
+        }
+
+        // Named witnesses rather than a bare total: a walk that read nothing, or read only the
+        // widget target, satisfies "it did not crash" perfectly.
+        #expect(filesRead > 500, "non-vacuity: the readers were run over \(filesRead) files")
+        #expect(declarations > 500, "non-vacuity: the walk found \(declarations) static funcs")
+        #expect(literals > 100, "non-vacuity: the lexer read \(literals) literals")
+
+        let badge = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceCalendarDayBadge.swift")
+        )
+        let found = Set(cadenceStaticFunctionBodies(in: badge).map(\.name))
+        #expect(found.contains("markedDayLabel"), "the walk missed the file the negative fixture is drawn from")
+    }
+
+    /// **The ledger, exact in both directions.**
+    ///
+    /// [[T-555]] widened the harvest and deliberately fixed nothing: three sibling agents were
+    /// editing these surfaces, and [[T-627]] had already shown a detector widening lands more
+    /// safely on its own than bundled with its consequences. This is what makes that defensible —
+    /// the deferral is mechanical, not a paragraph.
+    ///
+    /// Set equality, not a count and not a floor. `noCallSiteRetypesASharedStringConstant`
+    /// subtracts the ledger, so **it** fails on an offender nobody wrote down; this fails on an
+    /// entry that has stopped being an offender, which is what stops a fixed line's entry from
+    /// quietly covering the next one typed in the same file.
+    @Test func everyStaticFuncConstantOffenderIsLedgeredAndEveryLedgerEntryIsStillReal() throws {
+        let constants = try cadenceSharedFunctionStringConstants(in: cadenceSharedConstantRoots())
+        #expect(constants.isEmpty == false, "non-vacuity: the function harvest returned nothing")
+
+        let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        let read = CadenceSourceScan.strippedSourceReader()
+        let mcpMembers = try cadenceMCPServerMemberFiles()
+
+        var found: Set<CadenceLiteralSite> = []
+        for constant in constants {
+            for path in try cadenceSharedConstantOffenders(
+                for: constant,
+                in: files,
+                mcpMembers: mcpMembers,
+                read: read
+            ) {
+                found.insert(CadenceLiteralSite(literal: constant.literal, path: path))
+            }
+        }
+
+        let ledgered = Set(
+            cadenceStaticFuncConstantLedger.map { CadenceLiteralSite(literal: $0.literal, path: $0.path) }
+        )
+        #expect(
+            found.subtracting(ledgered).isEmpty,
+            "a static-func constant is re-typed at \(found.subtracting(ledgered).sorted()) and nothing owns it"
+        )
+        #expect(
+            ledgered.subtracting(found).isEmpty,
+            """
+            \(ledgered.subtracting(found).sorted()) no longer re-types its constant — delete the \
+            ledger entry rather than leaving it to forgive the next one.
+            """
+        )
+
+        // A duplicated entry would satisfy set equality and still double-forgive.
+        #expect(cadenceStaticFuncConstantLedger.count == 4,
+                "the ledger holds \(cadenceStaticFuncConstantLedger.count) entries, not the four that were measured")
+        #expect(cadenceStaticFuncConstantLedger.allSatisfy { $0.ticket.hasPrefix("T-") },
+                "a ledger entry names no ticket, so nothing owns the fix")
+        #expect(cadenceStaticFuncConstantLedger.allSatisfy { $0.why.count > 40 },
+                "a ledger entry does not say why")
+    }
+
     // MARK: - Exemptions rot
 
     /// Each exemption claims a specific file still types a specific shared constant for a specific
@@ -849,8 +1150,20 @@ private func sharedLiteralInstrument(for constant: CadenceSharedStringConstant) 
     )
 }
 
-/// Every `static let`/`static var` in `Cadence/Shared/` **or `Cadence/Models/`** whose value is a
-/// plain string literal of at least 12 characters and is not a glyph name.
+/// Every `static let`/`static var` **or `static func`** in `Cadence/Shared/` or
+/// `Cadence/Models/` that carries a plain string literal of at least 12 characters that is not a
+/// glyph name.
+///
+/// **`static func` since [[T-555]].** A shared constant that takes a parameter — because it picks
+/// between two strings, like `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)` — has to be spelled
+/// as a function, and the harvest used to walk straight past it. So the one rule this whole file
+/// exists to hold ("every shared user-facing string has one home") did not apply to the constants
+/// most likely to be re-typed, since a caller that cannot say `Copy.goalsTitle` in one token is a
+/// caller already halfway to typing the words. Found while closing [[T-548]].
+///
+/// `cadencePlainStringLiterals(in:)` carries the constant-versus-template distinction and its
+/// reasoning; the short version is that it is not a new rule, it is this doc comment's last
+/// paragraph applied to a body instead of an initializer.
 ///
 /// `Models/` is in the harvest for the reason [[T-499]] moved two constants there: it is the tree
 /// every target compiles, so it is where a label the app *and* `CadenceMCPServer` both show has to
@@ -862,12 +1175,31 @@ private func sharedLiteralInstrument(for constant: CadenceSharedStringConstant) 
 /// not something a call site could re-type verbatim, so a hit on one would be noise by construction
 /// rather than by judgement.
 func cadenceSharedStringConstants() throws -> [CadenceSharedStringConstant] {
+    // Two halves, kept as two functions rather than one flag. [[T-555]]'s ledger is a claim about
+    // the offenders the **function** half newly reaches; folding a `spelling` discriminator into
+    // `CadenceSharedStringConstant` instead would have put it inside an `Equatable` key that other
+    // suites construct by hand to assert membership, where getting it wrong is a silently failing
+    // comparison rather than a compile failure.
+    try cadenceSharedStoredStringConstants(in: cadenceSharedConstantRoots())
+        + cadenceSharedFunctionStringConstants(in: cadenceSharedConstantRoots())
+    // A total order, not just an order on the literal: one function can vend several constants and
+    // one literal can be vended twice, so sorting on the literal alone leaves the result up to
+    // `sort`'s instability and makes a harvest that reads the same tree twice answer differently.
+        .sorted { ($0.literal, $0.declaredIn, $0.name) < ($1.literal, $1.declaredIn, $1.name) }
+}
+
+/// `Cadence/Shared/` and `Cadence/Models/`, the two trees a shared constant may be declared in.
+func cadenceSharedConstantRoots() throws -> [String] {
+    try CadenceSourceScan.swiftFiles(under: "Cadence/Shared")
+        + CadenceSourceScan.swiftFiles(under: "Cadence/Models")
+}
+
+/// The half of the harvest that reads an initializer: `static let x = "…"`.
+func cadenceSharedStoredStringConstants(in roots: [String]) throws -> [CadenceSharedStringConstant] {
     let pattern = try NSRegularExpression(
         pattern: #"static\s+(?:let|var)\s+(\w+)\s*(?::\s*String\s*)?=\s*"([^"\\]{12,})""#
     )
     var found: [CadenceSharedStringConstant] = []
-    let roots = try CadenceSourceScan.swiftFiles(under: "Cadence/Shared")
-        + CadenceSourceScan.swiftFiles(under: "Cadence/Models")
     for path in roots {
         let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
         let range = NSRange(source.startIndex..., in: source)
@@ -885,5 +1217,251 @@ func cadenceSharedStringConstants() throws -> [CadenceSharedStringConstant] {
             )
         }
     }
-    return found.sorted { $0.literal < $1.literal }
+    return found
+}
+
+/// The half of the harvest that reads a **body**: `static func x(…) -> String { … "…" … }`.
+///
+/// [[T-555]]. The distinction between a constant and a template is carried entirely by
+/// `cadencePlainStringLiterals(in:)`, and it is the same distinction the stored half draws with
+/// `[^"\\]` — read its doc comment before changing anything here.
+func cadenceSharedFunctionStringConstants(in roots: [String]) throws -> [CadenceSharedStringConstant] {
+    var found: [CadenceSharedStringConstant] = []
+    for path in roots {
+        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+        for function in cadenceStaticFunctionBodies(in: source) {
+            for literal in Set(cadencePlainStringLiterals(in: function.body)).sorted() {
+                guard literal.count >= 12, !cadenceIsGlyphName(literal) else { continue }
+                found.append(
+                    CadenceSharedStringConstant(name: function.name, literal: literal, declaredIn: path)
+                )
+            }
+        }
+    }
+    return found
+}
+
+/// The files that re-type `constant` and are not forgiven by the target boundary or by a measured
+/// exemption — the sweep's verdict **before** [[T-555]]'s ledger is subtracted.
+///
+/// Split out of the sweep so the ledger has something to be checked against. A rule that both
+/// defers a hit and decides what the hits are cannot be audited: the deferral would define itself
+/// as complete.
+func cadenceSharedConstantOffenders(
+    for constant: CadenceSharedStringConstant,
+    in files: [String],
+    mcpMembers: Set<String>,
+    read: (String) throws -> String
+) throws -> [String] {
+    let hits = try sharedLiteralInstrument(for: constant).sweep(
+        files,
+        // 300+ Swift files under `Cadence/`; the floor `CadenceRetiredCopyTests` uses for the same
+        // tree.
+        atLeast: 300,
+        // The file that held four of this sweep's first hits, so a walk that skipped the iOS tree
+        // cannot report the repo clean.
+        including: "Cadence/iOS/iOSFocusView.swift",
+        read: read
+    )
+    // The target boundary, stated as the rule it always meant (T-499): a file cannot read a
+    // constant declared in a file its own target does not compile. So the subtraction applies only
+    // while the *declaration* is out of `CadenceMCPServer`'s reach — a constant in `Models/` is
+    // reachable from every target, and an MCP file re-typing one of those is an ordinary offender.
+    // This is what makes the boundary self-retiring: moving a declaration into `Models/` deletes
+    // its subtraction with no edit here.
+    let unreachableFromMCP = !mcpMembers.contains(constant.declaredIn)
+    return hits.filter { path in
+        path != constant.declaredIn
+            && !(unreachableFromMCP && mcpMembers.contains(path))
+            && !cadenceSharedLiteralExemptions.contains {
+                $0.literal == constant.literal && $0.path == path
+            }
+    }
+}
+
+// MARK: - A constant spelled as a function
+
+/// Every **whole, uninterpolated** string literal in `source`, in the order they appear.
+///
+/// **T-555, and the whole of the constant/template distinction lives here.** A `static func`
+/// returning a string is a *constant* when it picks between finished strings — `goalsTitle(isNarrowed:)`
+/// — and a *template* when it assembles one — `markedDayLabel(date:hasItems:)`. Nothing about the
+/// signature separates those two, and nothing needs to: **the literal does.** A template's product
+/// is built at run time, so no call site can re-type it verbatim, so it is not the defect this
+/// sweep can act on. That is not a new rule invented for functions; it is the rule the `static let`
+/// half has always enforced by writing its initializer pattern as `"([^"\\]{12,})"`, where the
+/// `\\` exclusion rejects an interpolated value before anything else looks at it.
+///
+/// **Which is why this is a lexer and not a regex.** Applied to a function *body* rather than to an
+/// initializer, `"([^"\\\n]{12,})"` stops being anchored and starts pairing quotes that do not
+/// belong together. Measured on this tree, it harvests three things that are not literals a call
+/// site could type:
+///
+/// - `"has scheduled items"` out of `"\(dayName(date)), \(hasItems ? "has scheduled items" : emptyPhrase)"` —
+///   a fragment *nested inside* a template. The `static let` half cannot see one of these, because
+///   its pattern fails at the leading `\`, so harvesting it from a function would have widened what
+///   counts as a literal while claiming only to widen where they are looked for.
+/// - `") receive this session's time."` — the tail of an interpolated literal, read as though the
+///   interpolation's closing quote opened it.
+/// - `" : String(format: "` out of `DateFormatters.timeString` — the closing quote of one literal
+///   paired with the opening quote of the next, so the "constant" is a span of **code**. Harmless
+///   on this tree only because nothing else types it; a detector reading source as copy is the
+///   `codeOnly` trap wearing different clothes.
+///
+/// So: scan left to right, and when a literal turns out to hold an escape or an interpolation,
+/// discard it **and everything nested inside it**. Raw (`#"…"#`) and multi-line (`"""…"""`)
+/// literals are skipped whole for the same reason — their text is not what a call site would type.
+func cadencePlainStringLiterals(in source: String) -> [String] {
+    let chars = Array(source)
+    var literals: [String] = []
+    var index = 0
+    while index < chars.count {
+        if chars[index] == "#", let past = cadenceSkippingRawLiteral(chars, from: index) {
+            index = past
+            continue
+        }
+        guard chars[index] == "\"" else {
+            index += 1
+            continue
+        }
+        if index + 2 < chars.count, chars[index + 1] == "\"", chars[index + 2] == "\"" {
+            index = cadenceSkippingMultilineLiteral(chars, from: index + 3)
+            continue
+        }
+        let scanned = cadenceScanningLiteral(chars, from: index)
+        if let plain = scanned.plain { literals.append(plain) }
+        index = scanned.next
+    }
+    return literals
+}
+
+/// One `"…"`. `plain` is non-`nil` only when the literal holds neither an escape nor an
+/// interpolation — the same condition `[^"\\]` states in the stored-value half of the harvest.
+private func cadenceScanningLiteral(
+    _ chars: [Character],
+    from start: Int
+) -> (plain: String?, next: Int) {
+    var index = start + 1
+    var text = ""
+    var plain = true
+    while index < chars.count {
+        switch chars[index] {
+        case "\\":
+            plain = false
+            if index + 1 < chars.count, chars[index + 1] == "(" {
+                index = cadenceSkippingInterpolation(chars, from: index + 1)
+            } else {
+                index += 2
+            }
+        case "\"":
+            return (plain ? text : nil, index + 1)
+        case "\n":
+            // An unterminated literal is a mis-read, not a constant: give up on it rather than
+            // running to the end of the file and swallowing everything after it.
+            return (nil, index + 1)
+        default:
+            text.append(chars[index])
+            index += 1
+        }
+    }
+    return (nil, chars.count)
+}
+
+/// The body of a `\( … )`, skipped whole. **Including any literal inside it** — that nesting is
+/// what makes "has scheduled items" part of a template rather than a constant of its own.
+private func cadenceSkippingInterpolation(_ chars: [Character], from start: Int) -> Int {
+    var depth = 0
+    var index = start
+    while index < chars.count {
+        switch chars[index] {
+        case "\"":
+            index = cadenceScanningLiteral(chars, from: index).next
+        case "(":
+            depth += 1
+            index += 1
+        case ")":
+            depth -= 1
+            index += 1
+            if depth == 0 { return index }
+        default:
+            index += 1
+        }
+    }
+    return chars.count
+}
+
+/// `nil` when the `#` at `start` does not open a raw literal, so the caller keeps reading.
+private func cadenceSkippingRawLiteral(_ chars: [Character], from start: Int) -> Int? {
+    var hashes = 0
+    while start + hashes < chars.count, chars[start + hashes] == "#" { hashes += 1 }
+    guard start + hashes < chars.count, chars[start + hashes] == "\"" else { return nil }
+    var index = start + hashes + 1
+    while index < chars.count {
+        if chars[index] == "\"" {
+            var closing = 0
+            while index + 1 + closing < chars.count, chars[index + 1 + closing] == "#" { closing += 1 }
+            if closing >= hashes { return index + 1 + hashes }
+        }
+        index += 1
+    }
+    return chars.count
+}
+
+private func cadenceSkippingMultilineLiteral(_ chars: [Character], from start: Int) -> Int {
+    var index = start
+    while index + 2 < chars.count {
+        if chars[index] == "\"", chars[index + 1] == "\"", chars[index + 2] == "\"" {
+            return index + 3
+        }
+        index += 1
+    }
+    return chars.count
+}
+
+/// Every `static func` body in `source`, paired with the function's name.
+///
+/// Brace-matched rather than regex-matched, and the parameter list is balanced **first** — the
+/// [[T-644]] rule. A signature carrying `commit: (ModelContext) throws -> Void = { try $0.save() }`
+/// opens a brace of its own, and taking the first `{` after the name would read that default
+/// closure as the body. Balancing `(` … `)` before looking for `{` also gets generic parameter
+/// lists and `where` clauses for free.
+func cadenceStaticFunctionBodies(in source: String) -> [(name: String, body: String)] {
+    guard let pattern = try? NSRegularExpression(pattern: #"\bstatic\s+func\s+(\w+)"#) else { return [] }
+    var bodies: [(name: String, body: String)] = []
+    let range = NSRange(source.startIndex..., in: source)
+    for match in pattern.matches(in: source, range: range) {
+        guard let nameRange = Range(match.range(at: 1), in: source),
+              let parameters = CadenceSourceScan.matchedRange(
+                  after: nameRange.upperBound,
+                  in: source,
+                  open: "(",
+                  close: ")"
+              ) else { continue }
+        // A declaration with no body of its own — a protocol requirement — would otherwise adopt
+        // the *next* declaration's braces and be harvested as if it held that declaration's
+        // literals. What separates the two is the text between the parameter list and the brace:
+        // for a real body it is a return type, so a `}` or the word `func` in there means the
+        // brace found belongs to something else.
+        guard let body = CadenceSourceScan.matchedRange(
+            after: parameters.upperBound,
+            in: source,
+            open: "{",
+            close: "}"
+        ) else { continue }
+        // **Refused rather than asserted, and the ordering is not in doubt.** `matchedRange`
+        // searches for the brace *from* the closing parenthesis, so `body.lowerBound` is one past a
+        // brace at or after `parameters.upperBound` and the pair cannot invert — verified in real
+        // Swift over 2288 `static func` declarations in 852 files, plus twelve adversarial shapes
+        // (an unbalanced paren, brace or quote inside a default literal; a bodiless declaration; a
+        // grapheme cluster before the name), none of which inverted it. This still declines to form
+        // the span, because the cost of being wrong is asymmetric: a source-scan helper that traps
+        // takes the **whole test host** down, and a crashed host emits no `.swift:line:col: error:`
+        // lines at all, so the run reads as "nothing to see" rather than "this died". That failure
+        // mode is the one `docs/SUBAGENT_RUNBOOK.md` warns reads as a surviving mutation.
+        guard parameters.upperBound <= body.lowerBound else { continue }
+        let between = source[parameters.upperBound..<body.lowerBound]
+        guard !between.contains("func"), !between.contains("}") else { continue }
+        bodies.append((String(source[nameRange]), String(source[body])))
+    }
+    return bodies
 }
