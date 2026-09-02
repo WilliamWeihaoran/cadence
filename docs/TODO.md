@@ -632,11 +632,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-517] **~1.7 GB of shared DerivedData belongs to scratch trees that no longer exist.** 13 of the 14
-  `Cadence-*` entries under `~/Library/Developer/Xcode/DerivedData/` are orphans from agent trees that
-  have been deleted. `scripts/xcb.sh audit` lists them with dates and sizes. **Deliberately not deleted
-  by any script — one of the fourteen is the user's own Xcode entry**, and telling them apart is a
-  judgement no cleanup script should make unattended.
 
 
 
@@ -770,13 +765,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   pointing at the context the save did not land. [[T-559]] added
   `CadenceTaskMutationSupport.inheritedContextTargets(area:project:)` for exactly this and the macOS editors
   read it; iOS should read it instead of `area.tasks ?? []`. One line plus an iOS-simulator build.
-
-- [T-560] **The test target leaks a directory into the user's real app container on every run, and it is
-  live.** `~/Library/Containers/com.haoranwei.Cadence/Data/tmp/` holds **3,268** UUID directories, each with
-  an `inMemory_store_ckAssets`, 2.9 MB, oldest 2026-08-22. **Attributed causally rather than assumed**: six
-  test runs took it from 3,176 → 3,264, about 13–15 per full run, matching the 13 `isStoredInMemoryOnly: true`
-  sites. One directory per in-memory `ModelContainer`, never cleaned. Same shape as [[T-516]]'s stranded
-  plists. **The existing 3,268 are the user's to delete**; the fix is the cause.
 
 - [T-561] **Re-triage `docs/device-checks.md` now that simulator use is established.** The checklist was
   written when nobody could drive anything. Since then agents have driven iPhone simulators successfully —
@@ -1573,6 +1561,49 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   between finished strings stays inside it; one that interpolates a noun does not. Which of those you
   build decides whether the sweep still guards these six.
 
+- [T-704] **[[T-560]]'s leak was cleaned and its mechanism closed, but never reproduced — so it is not
+  known to be fixed.** Two instrumented runs on 2026-09-02 (21 tests, 19 of them building and saving
+  through an in-memory `ModelContainer` in the *unfixed* shape) created zero
+  `<app container>/tmp/<UUID>/inMemory_store_ckAssets` directories, and none has appeared since 14:18
+  that day. Yet 3,652 of them existed, in bursts whose sizes match the test counts of the suites being
+  run. Something gates whether CloudKit mirroring initialises on a given run — an iCloud account or
+  network state, a `NSPersistentCloudKitContainer` setup path taken only sometimes — and it is not
+  established. **The measurement is one line and costs nothing**, so the cheap answer is to watch it:
+  `ls -1 ~/Library/Containers/com.haoranwei.Cadence/Data/tmp | wc -l` before and after a test run. If
+  it climbs again with `CadenceTestStore` in place, the cause is somewhere other than
+  `cloudKitDatabase`, and `CadenceInMemoryStoreHygieneTests` is guarding the wrong thing. If it stays
+  at 5 through a week of batches, close this and let [[T-560]]'s fix stand.
+
+- [T-705] **Nothing prunes an orphaned shared-DerivedData entry, and the judgement [[T-517]] said no
+  script should make unattended is now mechanical.** T-517 declined to automate the cleanup because
+  "one of the fourteen is the user's own Xcode entry" and telling them apart needed a human. Two
+  discriminators now do it without one. **The cheap one:** an entry that has an `info.plist` carries
+  `WorkspacePath`, so it is an orphan exactly when that path does not exist — no hashing required.
+  **The one for entries with no `info.plist`** (all 13 of T-517's were in that state): Xcode's
+  directory suffix is MD5 of the absolute project path, split into two big-endian `UInt64`s, each
+  rendered as 14 base-26 letters most-significant digit last. Hash every `Cadence.xcodeproj` that
+  exists and an entry matching none of them is unattributable to any live tree. Both were used to clear
+  T-517 and both were positively controlled against the known-live entry first. A
+  `scripts/xcb.sh audit --prune` built on them would refuse to touch an entry it could attribute, which
+  is stricter than the human judgement it replaces. **Not done here because `scripts/xcb.sh` was being
+  edited by another agent at the time** — this is a one-file change to a file with a live sibling, not a
+  hard one.
+
+- [T-706] **`/private/tmp/cadence-uitest-auth` is a 1.4 GB DerivedData directory, not an authorization
+  store — and ~2.7 GB of other agent debris is still in `/private/tmp`.** The name has been read as
+  "the one-time macOS UI-test automation grant, re-granting needs the user's password", and three
+  briefs have carried that warning. **It is a `-derivedDataPath` output and nothing else**: `Build/`,
+  `Logs/`, `ModuleCache.noindex`, `SDKStatCaches.noindex`, `SourcePackages/`, `TestResults/`, and an
+  `info.plist` whose only two keys are `LastAccessedDate` (2026-08-31T04:52:39Z) and `WorkspacePath`
+  (the user's real repo). macOS automation and accessibility grants live in the TCC database, not in a
+  build directory, and UI-test runs since have used entirely different DerivedData paths. **Left in
+  place anyway**, on the asymmetry: the downside of being wrong is the user's password, the upside is
+  1.4 GB of temp space, and an agent was live in `CadenceUITests` at the time. Someone should confirm
+  and delete it. The rest of `/private/tmp` is ordinary session debris nobody named — `a2-*`, `b1c-*`,
+  `base_*.swift`, `bf`, `ff.log`, `TODO.backup.md`, `.old.swift`, `.void`, `dry1.sh` — plus live
+  sibling scratch trees (`cadence-g2`, `cadence-g3`, `cadence-g4-scan`, `cadence-integ10`) that must
+  **not** be swept while their agents are running.
+
 - [T-707] **The iOS build reaches CI only if a human ticks a box, and CI does not run.**
   From [[T-535]]. `.github/workflows/ci.yml` has an `ios-build` job filed under T-535's name, but it
   is gated on `github.event_name == 'workflow_dispatch' && inputs.run_ios`, and the file's own header
@@ -1603,6 +1634,68 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   inside fences, YAML only inside `run:` blocks) — the extraction is the work, not the walk.
 
 ## Done
+
+- [T-560] **The test target leaks a directory into the user's real app container on every run.**
+  **Closed 2026-09-02 in `b31d0b9`. Residue cleared and the mechanism closed — but the leak was not
+  reproduced on the day it was fixed, and that is stated plainly because this ticket's causal
+  attribution was its strongest part and it did not survive re-measurement.**
+  **Residue.** 3,652 directories deleted from `~/Library/Containers/com.haoranwei.Cadence/Data/tmp/`
+  (measured 3,268 when the ticket was filed, 3,656 when this started — it had kept growing). Every one
+  was confirmed in a single pass to hold exactly one child named `inMemory_store_ckAssets` and for that
+  child to be empty; nothing else was touched. The five non-UUID neighbours — `CadenceTestsHostStore`,
+  `CadenceUITestStores`, `TemporaryItems`, `com.haoranwei.Cadence.savedState`, `.LINKS` — are all live
+  and were left alone.
+  **Mechanism.** The thirteen suites each declared their own `makeContainer()`, and all thirteen spelled
+  it `ModelConfiguration(isStoredInMemoryOnly: true)` — leaving `cloudKitDatabase` at its default, so a
+  CloudKit mirroring delegate attached to a throwaway store. The test target was the only place in the
+  repository doing that: the two in-memory configurations in the shipped app
+  (`PersistenceController`'s recovery fallback and `CadenceModelContainerFactory.makeInMemoryContainer`)
+  already passed `cloudKitDatabase: .none`. They now call one `CadenceTestStore.container()`, and
+  `CadenceInMemoryStoreHygieneTests` holds the invariant **repository-wide**, so a fourteenth suite
+  cannot reintroduce the spelling — which is the failure this ticket's brief predicted, a Batch C agent
+  having already shipped one new suite with the neighbouring defect.
+  **What did not hold.** The ticket read 3,176 -> 3,264 over six runs as ~13-15 per run matching the 13
+  sites. Finer evidence argues for something stronger, not weaker: the directories arrive in bursts
+  whose sizes are exactly the test counts of the suites being run (3 = `MobileTaskSortStabilityTests`,
+  10 = `CadenceScheduleOrderingTests`, 4 = `CadenceModelContextRefreshTests`, that triple repeating
+  through 2026-09-01), i.e. one per **container**, not per run. But two instrumented runs on 2026-09-02
+  covering 21 tests — 19 of them building *and saving through* an in-memory container in the unfixed
+  shape, including `CadenceScheduleOrderingTests` itself — created **zero** directories, and nothing has
+  leaked since 14:18 that day. So the fix is correct on its own terms (a unit test has no business
+  attaching a mirroring delegate) and is the only mechanism that fits the residue, and it is **not**
+  demonstrated to be the fix. [[T-704]] carries the open question and the one-line way to re-measure it.
+
+- [T-517] **~1.7 GB of shared DerivedData belongs to scratch trees that no longer exist.**
+  **Closed 2026-09-02 in `b31d0b9`.** 13 of the 14 entries removed, 1.68 GB (3.5 GB -> 1.8 GB).
+  **The judgement this ticket said no script should make unattended turns out to be mechanical.**
+  Xcode's DerivedData suffix is a pure function of the absolute project path: MD5 of the path, split
+  into two big-endian `UInt64`s, each rendered as 14 base-26 letters **most-significant digit last**.
+  That was verified as a positive control *before* it was trusted — it reproduces
+  `Cadence-cfagpqwpaaoeixfvenakmzkidwtg` from `/Users/williamwei/Desktop/Projects/Cadence/Cadence.xcodeproj`,
+  which is the one live entry. Every `Cadence.xcodeproj` on the machine was then hashed (8 of them,
+  including four sibling agents' scratch trees) and **none matched any of the 13**, so each was
+  attributable to a path that no longer exists. Three independent checks agreed, and all three had to:
+  none of the 13 had an `info.plist` at all (so no `WorkspacePath` to strand), none had
+  `Build/Products` — each held only `Logs/` and 129 MB of `SourcePackages/`, so the T-86
+  wipe-under-a-running-app mechanism could not apply — and `lsof +D` reported zero open files under
+  every one.
+  That shape is also the ticket's other half: `Logs/` + `SourcePackages/` and no `Build/` is the
+  signature of an `xcodebuild` invocation carrying **no** `-derivedDataPath`, which resolves packages
+  into the shared root. The documented surface is already closed —
+  `CadenceBuildInvocationHygieneTests` requires a private path on every invocation in this
+  repository's markdown fences and shell scripts, and `scripts/xcb.sh` refuses the shared root and
+  reports a leak afterwards. What remains uncovered is an *ad hoc* command typed outside both, and
+  nothing prunes an entry once it appears: [[T-705]].
+  Also cleared from `/private/tmp`, each identified before deletion, ~32 MB: `final-Cadence.log`,
+  `final-CadenceMCPServer.log`, `final-CadenceWidgets.log` and four `orphan-build-*.log` (xcodebuild
+  logs from 2026-08-29 — each names its own private `-derivedDataPath` on its first line);
+  `head_CadenceTaskMutationSupport.swift` (a snapshot of an older revision of
+  `Cadence/Shared/CadenceTaskMutationSupport.swift`, which has 30 revisions in git, so nothing unique
+  was in it); two `Cadence_2026-08-30_*.sample.txt` (`sample` output from a debug build at
+  `/private/tmp/*/Cadence.app`, **not** `/Applications`); and `cadence-swift-module-cache` (30 MB,
+  zero open files).
+  **`/private/tmp/cadence-uitest-auth` was deliberately left in place, and it is not what its name
+  says it is** — see [[T-706]]. The rest of `/private/tmp` is in that ticket too.
 
 - [T-647] **CLOSED 2026-09-02 (`e9fbafa`).** Re-attributed, not deleted — the exemption is a real
   finding and only its explanation was wrong.
