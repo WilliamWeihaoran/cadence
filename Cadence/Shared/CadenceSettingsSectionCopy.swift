@@ -265,3 +265,49 @@ nonisolated enum CadenceListSettingsCopy {
         return parts.isEmpty ? noParentListSubtitle : parts.joined(separator: " • ")
     }
 }
+
+/// Settings → Contexts and Settings → Lists: the eyebrow over each lifecycle group, on both
+/// surfaces.
+///
+/// **T-546.** Six labels, twelve call sites, byte-identical across the two Settings trees —
+/// `SettingsListManagementSections.swift` on the Mac against `iOSSettingsView.swift` and
+/// `iOSSettingsTemplateAndListSections.swift` on the phone. T-524's pass converged everything
+/// around them and left these alone only because a sibling agent might have owned those files.
+///
+/// **Every title is `"<status> <plural noun>"`, and the status word is the one
+/// `CadenceListSearchLifecycle.statusLabel` already vends** — which is what leaves room for the
+/// sections that do not exist yet. `ProjectStatus` has five cases and Settings shows two of them
+/// (T-690): a `.paused` or `.cancelled` project reaches no group here at all, so it can be neither
+/// reopened nor deleted from this screen. Closing that ticket adds `pausedProjects` and
+/// `cancelledProjects` to this enum, and the rule above already decides what they say —
+/// `CadenceSettingsSectionCopyTests.everyLifecycleSectionTitleFollowsTheStatusThenNounRule` pins it
+/// against the same five-case vocabulary, so the seventh and eighth titles cannot be invented in a
+/// different voice.
+///
+/// They are six plain literals rather than one `sectionTitle(_:of:)` composer on purpose. An
+/// interpolated title is invisible to `cadenceSharedStringConstants`, which harvests
+/// `static let x = "…"` only — that is the recorded gap behind `CadenceEmptyStateCopy.goalsTitle`,
+/// a converged string a *seventh* call site could re-type with nothing to catch it. Six declared
+/// literals stay inside the sweep; a composer with no caller would be dead code that also left the
+/// sweep blind.
+///
+/// There is no `activeAreas`/`activeProjects` here because Settings → Lists is the inactive
+/// screen: active areas and projects live on the Lists page, and only contexts show their active
+/// group here.
+nonisolated enum CadenceListLifecycleSectionCopy {
+
+    /// Settings → Contexts. `Context` carries `isArchived` and nothing else, so it has two groups
+    /// and no completed one.
+    static let activeContexts = "Active Contexts"
+    static let archivedContexts = "Archived Contexts"
+
+    /// Settings → Lists, "Inactive Lists". `AreaStatus` has three cases and the active one is not
+    /// shown here, so an area has exactly these two groups.
+    static let completedAreas = "Completed Areas"
+    static let archivedAreas = "Archived Areas"
+
+    /// Settings → Lists. Two of the four inactive `ProjectStatus` cases; see T-690 for the other
+    /// two.
+    static let completedProjects = "Completed Projects"
+    static let archivedProjects = "Archived Projects"
+}

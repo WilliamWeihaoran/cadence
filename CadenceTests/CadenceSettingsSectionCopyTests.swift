@@ -601,6 +601,11 @@ struct CadenceSettingsSectionCopyTests {
                 declaredIn: settingsCopy
             )
         ]
+        // T-546's six. Declared as plain literals rather than composed from a `sectionTitle(_:of:)`
+        // helper precisely so this registration is possible: the harvest reads
+        // `static let x = "…"` and cannot see an interpolated title, which is the recorded gap
+        // behind `CadenceEmptyStateCopy.goalsTitle`.
+        expected += registrations(of: Self.lifecyclePairs, declaredIn: settingsCopy)
 
         for entry in expected {
             #expect(
@@ -1018,6 +1023,104 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
+    // MARK: - T-546: six lifecycle eyebrows, spelled once
+
+    /// The six lifecycle section titles, as the expression every call site must read and the
+    /// literal no surface may still type.
+    private static let lifecyclePairs: [(expression: String, literal: String)] = [
+        ("CadenceListLifecycleSectionCopy.activeContexts", "Active Contexts"),
+        ("CadenceListLifecycleSectionCopy.archivedContexts", "Archived Contexts"),
+        ("CadenceListLifecycleSectionCopy.completedAreas", "Completed Areas"),
+        ("CadenceListLifecycleSectionCopy.archivedAreas", "Archived Areas"),
+        ("CadenceListLifecycleSectionCopy.completedProjects", "Completed Projects"),
+        ("CadenceListLifecycleSectionCopy.archivedProjects", "Archived Projects"),
+    ]
+
+    /// Which file draws which group, and how many times. Settings → Contexts and Settings → Lists
+    /// are one pane on the Mac and two files on the phone, so the split is not symmetric.
+    private static let lifecycleSurfaces: [(path: String, expressions: [String])] = [
+        (
+            "Cadence/macOS/Views/SettingsListManagementSections.swift",
+            [
+                "CadenceListLifecycleSectionCopy.activeContexts",
+                "CadenceListLifecycleSectionCopy.archivedContexts",
+                "CadenceListLifecycleSectionCopy.completedAreas",
+                "CadenceListLifecycleSectionCopy.archivedAreas",
+                "CadenceListLifecycleSectionCopy.completedProjects",
+                "CadenceListLifecycleSectionCopy.archivedProjects",
+            ]
+        ),
+        (
+            "Cadence/iOS/iOSSettingsView.swift",
+            [
+                "CadenceListLifecycleSectionCopy.activeContexts",
+                "CadenceListLifecycleSectionCopy.archivedContexts",
+            ]
+        ),
+        (
+            "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
+            [
+                "CadenceListLifecycleSectionCopy.completedAreas",
+                "CadenceListLifecycleSectionCopy.archivedAreas",
+                "CadenceListLifecycleSectionCopy.completedProjects",
+                "CadenceListLifecycleSectionCopy.archivedProjects",
+            ]
+        ),
+    ]
+
+    /// **The twelve call sites read the six names.**
+    ///
+    /// A *seventh* surface typing one of the six out again is caught by machinery that already
+    /// exists — `CadenceSharedConstantReuseSweepTests.noCallSiteRetypesASharedStringConstant`
+    /// sweeps all of `Cadence/` for every harvested constant, and
+    /// `everyConvergedSettingsStringIsHarvestedByTheSharedConstantSweep` below is what proves the
+    /// harvest sees these six. This test is the other half: the call sites that exist today.
+    ///
+    /// Asserting the constants merely *exist* and hold the right words would stay green over a
+    /// tree where every call site had gone back to typing the literal, which is the state this
+    /// ticket found. So each file is checked for the exact expression an exact number of times —
+    /// once where it draws the group, **zero** where it does not — and for the literal being gone.
+    @Test func everyLifecycleSectionLabelIsReadRatherThanTypedAtAllTwelveCallSites() throws {
+        for surface in Self.lifecycleSurfaces {
+            let code = try Self.strippedSource(at: surface.path)
+            for pair in Self.lifecyclePairs {
+                let expected = surface.expressions.contains(pair.expression) ? 1 : 0
+                let pattern = NSRegularExpression.escapedPattern(for: pair.expression)
+                #expect(
+                    CadenceSourceScan.matchCount(pattern, in: code) == expected,
+                    "\(surface.path) reads \(pair.expression) \(CadenceSourceScan.matchCount(pattern, in: code)) times, not \(expected)"
+                )
+                #expect(
+                    code.contains("\"\(pair.literal)\"") == false,
+                    "\(surface.path) still types \"\(pair.literal)\" beside the constant that holds it"
+                )
+            }
+        }
+    }
+
+    /// The six titles, read off the compiled constants, and the rule that decides what a seventh
+    /// would say.
+    ///
+    /// **This is the room T-690 needs.** `ProjectStatus` has five cases; Settings shows two of
+    /// them, so a `.paused` or `.cancelled` project reaches no group on either platform and can be
+    /// neither reopened nor deleted from the only screen that lists inactive lists. Every title
+    /// here is `"<status> <plural noun>"` with the status word taken from
+    /// `CadenceListSearchLifecycle` — the type that already carries all five spellings — so
+    /// `pausedProjects` and `cancelledProjects` are two more constants in one voice rather than two
+    /// more copy decisions.
+    @Test func everyLifecycleSectionTitleFollowsTheStatusThenNounRule() {
+        #expect(CadenceListLifecycleSectionCopy.activeContexts == "\(CadenceListSearchLifecycle.active.statusLabel) Contexts")
+        #expect(CadenceListLifecycleSectionCopy.archivedContexts == "\(CadenceListSearchLifecycle.archived.statusLabel) Contexts")
+        #expect(CadenceListLifecycleSectionCopy.completedAreas == "\(CadenceListSearchLifecycle.completed.statusLabel) Areas")
+        #expect(CadenceListLifecycleSectionCopy.archivedAreas == "\(CadenceListSearchLifecycle.archived.statusLabel) Areas")
+        #expect(CadenceListLifecycleSectionCopy.completedProjects == "\(CadenceListSearchLifecycle.completed.statusLabel) Projects")
+        #expect(CadenceListLifecycleSectionCopy.archivedProjects == "\(CadenceListSearchLifecycle.archived.statusLabel) Projects")
+
+        // The two the rule already decides and Settings does not yet show (T-690).
+        #expect(CadenceListSearchLifecycle.paused.statusLabel == "Paused")
+        #expect(CadenceListSearchLifecycle.cancelled.statusLabel == "Cancelled")
+    }
+
     // MARK: - Non-vacuity
 
     /// The scans above reach real files, and the reader they use keeps literals.
@@ -1027,8 +1130,10 @@ struct CadenceSettingsSectionCopyTests {
     /// every `!contains` vacuously true. Pinning that the two readers genuinely differ is what
     /// stops the pairing collapsing into one.
     @Test func theSettingsCopyScanReadsLiteralsRatherThanBlankingThem() throws {
-        for path in Self.calendarSurfaces + Self.notificationSurfaces + Self.workHoursSurfaces
-            + Self.tagSurfaces + Self.templateSurfaces + Self.aiSurfaces {
+        var readable = Self.calendarSurfaces + Self.notificationSurfaces + Self.workHoursSurfaces
+        readable += Self.tagSurfaces + Self.templateSurfaces + Self.aiSurfaces
+        readable += Self.lifecycleSurfaces.map(\.path)
+        for path in readable {
             let raw = try CadenceSourceScan.sourceFile(path)
             #expect(raw.count > 1_000, "\(path) read as \(raw.count) characters; that is not the file")
             let stripped = CadenceSourceScan.strippingComments(raw)

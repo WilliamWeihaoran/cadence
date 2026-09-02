@@ -274,19 +274,19 @@ struct iOSListsLifecycleSettingsSection: View {
                 }
             } else {
                 if !completedAreas.isEmpty {
-                    CadenceSettingsSectionLabel(text: "Completed Areas")
+                    CadenceSettingsSectionLabel(text: CadenceListLifecycleSectionCopy.completedAreas)
                     lifecycleCard(areas: completedAreas)
                 }
                 if !archivedAreas.isEmpty {
-                    CadenceSettingsSectionLabel(text: "Archived Areas")
+                    CadenceSettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedAreas)
                     lifecycleCard(areas: archivedAreas)
                 }
                 if !completedProjects.isEmpty {
-                    CadenceSettingsSectionLabel(text: "Completed Projects")
+                    CadenceSettingsSectionLabel(text: CadenceListLifecycleSectionCopy.completedProjects)
                     lifecycleCard(projects: completedProjects)
                 }
                 if !archivedProjects.isEmpty {
-                    CadenceSettingsSectionLabel(text: "Archived Projects")
+                    CadenceSettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedProjects)
                     lifecycleCard(projects: archivedProjects)
                 }
             }

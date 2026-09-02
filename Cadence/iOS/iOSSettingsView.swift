@@ -298,7 +298,7 @@ struct iOSSettingsView: View {
     private var organizationSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center) {
-                CadenceSettingsSectionLabel(text: "Active Contexts")
+                CadenceSettingsSectionLabel(text: CadenceListLifecycleSectionCopy.activeContexts)
                 Spacer()
                 iOSActionButton(
                     title: "New Context",
@@ -380,7 +380,7 @@ struct iOSSettingsView: View {
             }
 
             if !archivedContexts.isEmpty {
-                CadenceSettingsSectionLabel(text: "Archived Contexts")
+                CadenceSettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedContexts)
                 iOSSettingsCard {
                     VStack(spacing: 0) {
                         ForEach(archivedContexts) { context in

@@ -552,7 +552,7 @@ struct SettingsContextsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionLabel(text: "Active Contexts")
+            SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.activeContexts)
             SettingsCard {
                 VStack(spacing: 0) {
                     if activeContexts.isEmpty {
@@ -599,7 +599,7 @@ struct SettingsContextsSection: View {
             }
 
             if !archivedContexts.isEmpty {
-                SettingsSectionLabel(text: "Archived Contexts")
+                SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedContexts)
                 SettingsCard {
                     VStack(spacing: 0) {
                         ForEach(Array(archivedContexts.enumerated()), id: \.element.id) { index, context in
@@ -647,19 +647,19 @@ struct SettingsListsSection: View {
                 }
             } else {
                 if !completedAreas.isEmpty {
-                    SettingsSectionLabel(text: "Completed Areas")
+                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.completedAreas)
                     lifecycleCard(areas: completedAreas)
                 }
                 if !archivedAreas.isEmpty {
-                    SettingsSectionLabel(text: "Archived Areas")
+                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedAreas)
                     lifecycleCard(areas: archivedAreas)
                 }
                 if !completedProjects.isEmpty {
-                    SettingsSectionLabel(text: "Completed Projects")
+                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.completedProjects)
                     lifecycleCard(projects: completedProjects)
                 }
                 if !archivedProjects.isEmpty {
-                    SettingsSectionLabel(text: "Archived Projects")
+                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedProjects)
                     lifecycleCard(projects: archivedProjects)
                 }
             }
