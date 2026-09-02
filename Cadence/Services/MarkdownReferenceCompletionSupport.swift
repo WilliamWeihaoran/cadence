@@ -45,8 +45,23 @@ nonisolated enum MarkdownReferenceCompletionSupport {
             query = token
         }
 
+        // The replacement range runs from the `[[` **through any `]]` the caret is sitting in front
+        // of**, not merely up to the caret. `/task` and `/link` insert the whole snippet
+        // (`[[task:]]`, `[[]]`) and park the caret inside it, so by the time this picker opens the
+        // closing brackets already exist; the suggestion it will insert is itself a complete
+        // `[[…]]`. Stopping at the caret left the snippet's own `]]` behind as literal text after
+        // the rendered reference (T-734, seen on iPhone 17 Pro). Exactly two characters, and only
+        // when they are on this line — one `]` is not a close.
+        let openLocation = lineRange.location + openRange.location
+        var length = safeCursor - openLocation
+        let lineEnd = NSMaxRange(lineRange)
+        if safeCursor + 2 <= min(lineEnd, nsText.length),
+           nsText.substring(with: NSRange(location: safeCursor, length: 2)) == "]]" {
+            length += 2
+        }
+
         return MarkdownReferenceCompletionContext(
-            range: NSRange(location: lineRange.location + openRange.location, length: safeCursor - lineRange.location - openRange.location),
+            range: NSRange(location: openLocation, length: length),
             kind: kind,
             query: query,
             cursorLocation: safeCursor

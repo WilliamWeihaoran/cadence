@@ -299,6 +299,54 @@ struct NoteReferenceSupportTests {
         #expect(context?.range == NSRange(location: 4, length: 11))
     }
 
+    /// A completion's replacement range must swallow the `]]` the caret is sitting in front of.
+    ///
+    /// `/task` inserts the whole snippet `[[task:]]` and parks the caret after the colon, so the
+    /// closing brackets already exist by the time the picker opens. The chosen suggestion is itself
+    /// a complete `[[task:<id>|Title]]`, so a range that stops at the caret leaves the snippet's own
+    /// `]]` stranded as literal text after the rendered reference — observed on iPhone 17 Pro,
+    /// 2026-09-02 (T-734). `/link`'s `[[]]` is the same shape.
+    @Test func referenceCompletionRangeSwallowsTheClosingBracketsTheCaretSitsBefore() {
+        let task = "See [[task:]]"
+        let taskContext = MarkdownReferenceCompletionSupport.context(
+            in: task,
+            selection: NSRange(location: 11, length: 0)
+        )
+
+        #expect(taskContext?.kind == .task)
+        #expect(taskContext?.query == "")
+        #expect(taskContext?.range == NSRange(location: 4, length: 9))
+
+        let link = "See [[]]"
+        let linkContext = MarkdownReferenceCompletionSupport.context(
+            in: link,
+            selection: NSRange(location: 6, length: 0)
+        )
+
+        #expect(linkContext?.kind == .note)
+        #expect(linkContext?.range == NSRange(location: 4, length: 4))
+    }
+
+    /// One `]` is not a close, and neither is a `]]` on the next line. Without this the fix above
+    /// could be written as "eat whatever follows" and still pass its own test.
+    @Test func referenceCompletionRangeStopsAtTheCaretWhenNoBracketsFollowIt() {
+        let single = "See [[task:] rest"
+        let singleContext = MarkdownReferenceCompletionSupport.context(
+            in: single,
+            selection: NSRange(location: 11, length: 0)
+        )
+
+        #expect(singleContext?.range == NSRange(location: 4, length: 7))
+
+        let wrapped = "See [[task:\n]]"
+        let wrappedContext = MarkdownReferenceCompletionSupport.context(
+            in: wrapped,
+            selection: NSRange(location: 11, length: 0)
+        )
+
+        #expect(wrappedContext?.range == NSRange(location: 4, length: 7))
+    }
+
     @Test func referenceCompletionContextIgnoresClosedAndMultilineTokens() {
         let closed = "See [[Project]]"
         let multiline = "See [[Project\nNext"
