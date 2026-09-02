@@ -1,7 +1,10 @@
 # Decisions waiting on you
 
-Six tickets are blocked on a product decision, not on work. Each has options, costs, what the
+Six tickets were blocked on a product decision, not on work. Each has options, costs, what the
 existing code already assumes, and a recommendation. Written 2026-08-30 against `5c5b124`.
+
+**Five are still open.** T-497 was answered on 2026-09-02; its section at the foot of this file
+records the answer rather than the question.
 
 Two are visual and **nobody has seen them on screen** — that is stated where it applies.
 
@@ -85,9 +88,22 @@ the T-282 rule (placement may differ across widths, capability may not), this is
 bug however defensible the reasoning. If it looks broken, take the full-window scrim — the argument
 above is a justification, not a preference, and should not survive contact with the screen.
 
-## T-497 Tier 3 — what does undo mean for a field the user still has focus in?
+## T-497 Tier 3 — what does undo mean for a field the user still has focus in? **ANSWERED**
 
-Two sites left: `iOSSearchSupportViews` (note editor Done) and
-`iOSTaskDetailSheet.finishEditingAndDismiss`. Both are "flush an in-place edit, then close". Tier 2's
-inline row editors were the easy half — they hold their drafts in `@State`, so restoring the model
-does not fight a caret. These two do. Answer it once and both fall out.
+**Answered 2026-09-02. Decision: don't close, don't undo — just report.**
+
+> The edit is **in-place on an object the store already holds**, so there is nothing to un-insert.
+> Keep the surface open, keep what the user typed, show the failure inline, let them retry. The rule
+> is broken here only because closing **claims** it worked — stop claiming it, and the undo question
+> disappears.
+
+So the question had no answer because it was the wrong question: an undo here would restore the
+model out from under a live caret, deleting what the user typed in order to tell them it was not
+saved. Landed in `ab9e513` across all four sites — `iOSSearchSupportViews`,
+`iOSTaskDetailSheet.finishEditingAndDismiss` and `iOSMarkdownReferenceSupport` through the new
+`CadenceInPlaceEditFlush`, which commits and answers and touches nothing else (and which
+`CadenceTaskDateEditing.setPlanningDates` now uses too, because removing the sheet's literal `try?`
+exposed a swallow one frame below it); and
+`KanbanCardMetaSupportViews.select`, which was never blocked and keeps the ordinary
+`commitEdit(in:undo:)` repair because its popover holds no draft. Pinned by
+`CadenceInPlaceEditFlushCommitTests`. See [[T-497]] in `docs/TODO.md` for the closure.

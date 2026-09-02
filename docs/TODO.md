@@ -43,6 +43,32 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-701] **`CadenceTaskFieldSnapshot` restores a task's fields but not its `title` or its `order`.**
+  Found while landing [[T-497]] and [[T-648]], from two directions in one day. The snapshot carries
+  status, completion, priority, estimate, section, both dates, the scheduled minute, all three
+  recurrence fields and the three container relationships — and neither `title` nor `order`. So
+  `CadenceTaskFieldEditCommit.commit(_:alsoRestoring:in:)`, the app's shared "edit a task field and
+  undo it if the store refuses" unit, silently restores **part** of any edit that touches those two.
+  It is latent today because no current caller writes them through it; both tickets above had to
+  write their undo out by hand for exactly this reason, and each recorded why in its own doc comment.
+  That is two hand-written near-copies of a sentence the shared unit is supposed to own, which is how
+  the third one gets written wrong. The fix is either adding the two fields to the snapshot — cheap,
+  but `order` restoration has to be checked against `nextContainerOrder`'s siblings — or writing the
+  omission into `CadenceTaskFieldSnapshot`'s own doc as a stated boundary with a test that fails when
+  a caller writes an unsnapshotted field. Prefer the second only if the first is measurably wrong.
+
+- [T-702] **Three iOS list pickers keep showing the list a refused move did not reach.**
+  Exposed by [[T-497]]: `CadenceTaskMutationSupport.moveToContainer` answers `Bool` now and restores
+  the task when the store refuses, but three of its four callers still discard the answer —
+  `iOSTaskDetailSheet.applyContainerSelection`, and `iOSTaskRowActionViews`' `move(area:project:)`
+  and `moveToContainer(area:project:)`. Each is driven by a `@State` selection token that the user
+  just changed, so on a refusal the task goes back to its old list while the breadcrumb or the menu
+  checkmark goes on naming the new one. **This is a report in the same family the rule already
+  names** — the token *is* the claim — and it is arguably more visible than what it replaced, which
+  left the move pending rather than undone. The fix is the shape `KanbanCardMetaSupportViews.select`
+  now uses: guard on the answer, restore the token, and name the refusal where the picker is. The
+  kanban site was fixed and these three were not because they are in files another change owned.
+
 - [T-698] **The Mac's goal pickers spell `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)`'s body
   inline, three times in one file.** `macOS/Views/GoalPickerViews.swift` declares
   `var emptyText: String = "No matching goals"` on both pickers (lines 13 and 89) and then draws
@@ -572,32 +598,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-497] *(**re-scoped 2026-08-31 by [[T-566]]: it is 4 sites, not 2.** The widened
-  save-commit detector follows a call one frame down, which the old pattern structurally could not —
-  it needed a literal `try?` at the call site. The 2 new sites are
-  `iOSMarkdownReferenceSupport.swift` `body` (a third instance of "flush an in-place edit, then close",
-  blocked on the same undecided question as the original two) and
-  `KanbanCardMetaSupportViews.swift` `select` (popover closes over a swallowed `moveToContainer`; not
-  blocked on anything, just out of scope then). Both carried as exemptions with reasons.)* **Tier 3 of the condemned `try? save()` sites — 2 left of the original 12.**
-  **Tier 1 and Tier 2 closed 2026-08-30** (7 sites, each exemption entry deleted with its fix, pinned by
-  `CadenceTagAndNoteCommitSurfaceTests` — 3 behavioural, 5 source-shape, 10 mutations all killed by
-  named tests). Two things that tiering did not predict: `openEventNote` **could not un-insert blindly**,
-  because `noteForEditing` returns an existing note as often as it creates one, so a naive
-  `commitInsert(of:)` would have deleted a note the user already had; and the notice it reports through
-  **did not exist at regular width** — `iOSCalendarEventEditSheet.regularFormLayout` carried
-  `readOnlyNotice` but not `actionErrorNotice`, so on iPad *every* failure that sheet reports was
-  invisible, including refused EventKit saves and deletes predating that work. Both fixed.
-
-  **Remaining: `iOSSearchSupportViews` (note editor Done) and `iOSTaskDetailSheet.finishEditingAndDismiss`.**
-  Both are "flush an in-place edit, then close", and both are **blocked on a decision**, not on work:
-  what does undo mean for a field the user is still looking at and still has focus in? Tier 2's inline
-  row editors were the easy half — they hold their drafts in `@State`, so restoring the model does not
-  fight a caret. These two do. Answer it once and both fall out. Written up in
-  `docs/DECISIONS_PENDING.md`.
-
-  The three genuine non-defects keep their exemptions: `TagSupport.seedDefaultTags`/`deduplicateTags`
-  (launch-time, idempotent, both already take a save flag) and `CadenceUITestSupport.seedDataIfNeeded`
-  (no user). See [[T-503]] for the hole this work found in the rule itself.
 
 
 
@@ -1082,22 +1082,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   The mode would have shipped with the `nil` assertion still green. The test now reads
   `project.pbxproj` too. Residue from that reading: [[T-665]].
 
-- [T-648] **A note's embedded task card repaints over a swallowed save, in four editors.** VERIFIED
-  while fixing [[T-629]] in the same file. `NotePanel.toggleEmbeddedSubtask` / `renameEmbeddedTask`,
-  `ListNotesSupportViews`' and `NoteEditorPane`'s copies of both, and
-  `iOSMarkdownEditingSurface.toggleEmbeddedSubtask` each mutate the task, run
-  `try? modelContext.save()`, and then hand back fresh `MarkdownTaskEmbedRenderInfo` — which is exactly
-  what repaints the rendered card inside the note. **This is [[T-366]] again**, the defect
-  `TaskEmbedFieldEditorPopover` was fixed for: the card shows values the store does not hold and nothing
-  else on screen disagrees. `CadenceTaskFieldEditCommit.commit` is the existing unit and the popover
-  already calls `onChanged()` only below its `catch`, so the fix is mechanical.
-  **The rule catches one of the four now.** [[T-636]](b) widened `successReport` to the Optional
-  half of "the answer is the report", so `iOSMarkdownEditingSurface.toggleEmbeddedSubtask` — which
-  answers `MarkdownTaskEmbedRenderInfo?` and returns `.task(task)` over the swallowed commit — is
-  flagged and **ledgered against this ticket** in `reportExemptions`. The three macOS copies answer
-  `Void` and hand the same render info **sideways** instead, through `refreshEmbeddedTask` one
-  frame down; the detector still cannot see that spelling, which is [[T-657]]. Fixing any of the
-  four means deleting the matching ledger line in the same change.
 
 - [T-649] **A partly-failed image insertion says nothing about the part that failed.** VERIFIED.
   `iOSMarkdownEditingSurface.insertPickedImages` drops any picked item whose
@@ -1573,6 +1557,105 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   is a house-wide copy decision, not the tail of a glyph fix.
 
 ## Done
+
+- [T-497] *(**re-scoped 2026-08-31 by [[T-566]]: it is 4 sites, not 2.** The widened
+  save-commit detector follows a call one frame down, which the old pattern structurally could not —
+  it needed a literal `try?` at the call site. The 2 new sites are
+  `iOSMarkdownReferenceSupport.swift` `body` (a third instance of "flush an in-place edit, then close",
+  blocked on the same undecided question as the original two) and
+  `KanbanCardMetaSupportViews.swift` `select` (popover closes over a swallowed `moveToContainer`; not
+  blocked on anything, just out of scope then). Both carried as exemptions with reasons.)* **Tier 3 of the condemned `try? save()` sites — 2 left of the original 12.**
+  **Tier 1 and Tier 2 closed 2026-08-30** (7 sites, each exemption entry deleted with its fix, pinned by
+  `CadenceTagAndNoteCommitSurfaceTests` — 3 behavioural, 5 source-shape, 10 mutations all killed by
+  named tests). Two things that tiering did not predict: `openEventNote` **could not un-insert blindly**,
+  because `noteForEditing` returns an existing note as often as it creates one, so a naive
+  `commitInsert(of:)` would have deleted a note the user already had; and the notice it reports through
+  **did not exist at regular width** — `iOSCalendarEventEditSheet.regularFormLayout` carried
+  `readOnlyNotice` but not `actionErrorNotice`, so on iPad *every* failure that sheet reports was
+  invisible, including refused EventKit saves and deletes predating that work. Both fixed.
+
+  **Remaining: `iOSSearchSupportViews` (note editor Done) and `iOSTaskDetailSheet.finishEditingAndDismiss`.**
+  Both are "flush an in-place edit, then close", and both are **blocked on a decision**, not on work:
+  what does undo mean for a field the user is still looking at and still has focus in? Tier 2's inline
+  row editors were the easy half — they hold their drafts in `@State`, so restoring the model does not
+  fight a caret. These two do. Answer it once and both fall out. Written up in
+  `docs/DECISIONS_PENDING.md`.
+
+  The three genuine non-defects keep their exemptions: `TagSupport.seedDefaultTags`/`deduplicateTags`
+  (launch-time, idempotent, both already take a save flag) and `CadenceUITestSupport.seedDataIfNeeded`
+  (no user). See [[T-503]] for the hole this work found in the rule itself.
+
+  **Closed 2026-09-02 in `ab9e513`. The decision was to stop asking the question.** All four sites
+  landed: the three "flush an in-place edit, then close" surfaces (`iOSSearchSupportViews`'s note
+  editor Done, `iOSTaskDetailSheet.finishEditingAndDismiss`, `iOSMarkdownReferenceSupport`'s Done)
+  plus `KanbanCardMetaSupportViews.select`, which was never blocked on anything.
+  **Undo was the wrong repair for the three, not a hard one.** The edit is in-place on an object the
+  store already holds, so there is nothing to un-insert — and restoring the model under a live caret
+  would delete what the user typed *in order to tell them it was not saved*. The rule was broken
+  here only because closing **claims** it worked. `CadenceInPlaceEditFlush.flush(in:commit:)` commits
+  and answers and deliberately touches nothing else; the surfaces stay open, keep the text, and name
+  the refusal inline, so a second Done can still land it. The kanban picker is the other shape and
+  keeps the ordinary repair: it holds no draft, so
+  `CadenceTaskMutationSupport.moveToContainer` commits through `commitEdit(in:undo:)` and answers
+  `Bool`. **Its undo is written out rather than taken from `CadenceTaskFieldSnapshot`**, which does
+  not carry `order` — `assignContainer` sends a genuine move to the end of its new list, so a
+  restore that reset the relationships and left the order would move the task inside the list it
+  never left. That snapshot gap is [[T-701]].
+  **Fixing the task sheet uncovered a fifth frame, and the rule's own detector is what found it.**
+  With the literal `try?` gone from `finishEditingAndDismiss`, half 2's one-frame-down index stopped
+  subtracting it and flagged it immediately: `applyDates()` → `CadenceTaskDateEditing.setPlanningDates`
+  → `CadenceTaskMutationSupport.setPlanningDates`, which ended `try? modelContext.save()`. So the
+  sheet could commit honestly and still be closing over a swallow one frame below. Both wrappers
+  flush and answer now, and the dismissal is one condition over both — an exemption would have been
+  accepted by the rot test and would have been a lie.
+  Pinned by `CadenceInPlaceEditFlushCommitTests` (10 tests: 6 behavioural, 4 source-shape).
+  Failing-first is real — the three source-shape tests were run against unmodified source and all
+  three failed; the behavioural six could not be, because their unit did not exist, so they are
+  covered by mutation instead. Nine mutations, each killed by a named test. The five exemption
+  entries were deleted in the same change, and a mutation that puts one back fails the rot test.
+  **Not observed on screen**: a debug build vends no AX window tree, so a screenshot would be zero
+  evidence.
+
+- [T-648] **A note's embedded task card repaints over a swallowed save, in four editors.** VERIFIED
+  while fixing [[T-629]] in the same file. `NotePanel.toggleEmbeddedSubtask` / `renameEmbeddedTask`,
+  `ListNotesSupportViews`' and `NoteEditorPane`'s copies of both, and
+  `iOSMarkdownEditingSurface.toggleEmbeddedSubtask` each mutate the task, run
+  `try? modelContext.save()`, and then hand back fresh `MarkdownTaskEmbedRenderInfo` — which is exactly
+  what repaints the rendered card inside the note. **This is [[T-366]] again**, the defect
+  `TaskEmbedFieldEditorPopover` was fixed for: the card shows values the store does not hold and nothing
+  else on screen disagrees. `CadenceTaskFieldEditCommit.commit` is the existing unit and the popover
+  already calls `onChanged()` only below its `catch`, so the fix is mechanical.
+  **The rule catches one of the four now.** [[T-636]](b) widened `successReport` to the Optional
+  half of "the answer is the report", so `iOSMarkdownEditingSurface.toggleEmbeddedSubtask` — which
+  answers `MarkdownTaskEmbedRenderInfo?` and returns `.task(task)` over the swallowed commit — is
+  flagged and **ledgered against this ticket** in `reportExemptions`. The three macOS copies answer
+  `Void` and hand the same render info **sideways** instead, through `refreshEmbeddedTask` one
+  frame down; the detector still cannot see that spelling, which is [[T-657]]. Fixing any of the
+  four means deleting the matching ledger line in the same change.
+
+  **Closed 2026-09-02 in `ab9e513`.** Seven declarations across the four editors, all through one new
+  unit: `CadenceNoteTaskEmbedEditing.toggleSubtask(_:in:commit:)` and `.rename(_:to:in:commit:)`,
+  each answering `false` with the task exactly as it was found. Every caller now repaints only below
+  the refusal and names it with `CadenceTaskFieldEditCommit.saveFailureNotice` in a
+  `CadenceInlineFailureNotice` under the editor — under it rather than over the card, because the
+  card is drawn by the text view and there is nothing in SwiftUI's tree to attach a notice to at the
+  point of the refusal.
+  **`CadenceTaskFieldEditCommit` is deliberately not the unit.** `CadenceTaskFieldSnapshot` carries
+  neither `title` nor a subtask's `isDone`, so a rename routed through it would have restored the
+  priority the `!!!` shortcut moved and kept the title that moved it — half of an edit nobody made.
+  Both undos are written out instead; the snapshot gap is filed as [[T-701]].
+  **On [[T-657]]: this does not make it cheaper, it makes it unwitnessed.** The three macOS pairs
+  were its only known true positives, and they are gone — so the two pieces T-657 needs (a base
+  spelling for "assign freshly built render info into something the view draws", and a report-one-
+  frame-down index) cost exactly what they cost before, but nothing in the repo would now demonstrate
+  the new half earns its window. What *did* get cheaper is the false-positive measurement T-657 asks
+  for, which can now be taken against a clean tree.
+  Pinned by `CadenceNoteTaskEmbedCommitTests` (8 tests: 5 behavioural, 3 source-shape), with the
+  seven declarations named one by one rather than counted — six of the seven are invisible to
+  `CadenceSaveCommitDisciplineTests`, so a count is the one thing that could not say which drifted.
+  Failing-first is real: both source-shape tests were run against unmodified source and failed, 28
+  issues between them. Five mutations, each killed by a named test. The iOS ledger line was deleted
+  in the same change. **Not observed on screen.**
 
 - [T-555] **CLOSED 2026-09-02 (`aca2a49`).** The harvest reads a `static func` now, and the
   constant-versus-template line it needed turned out to be a line the rule already drew. A
