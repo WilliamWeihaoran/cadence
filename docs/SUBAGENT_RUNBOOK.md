@@ -380,3 +380,33 @@ worth keeping as a fixture: it is the negative case the scan most needs pinned.
 
 **Scan over a `git archive HEAD` tree, not the working tree.** With three or four agents editing, the
 working tree contains half-written Swift, and that is what produced the crash above.
+
+## A mutation that only weakens an assertion cannot be killed in a tree that does not violate it
+
+Recorded 2026-09-02 (T-560). Loosening `#expect(occurrences == 3)` to `#expect(occurrences >= 1)`
+**survived**, and for a moment that read as a hole in the test. It is not. In a clean tree the count
+really is 3, so both spellings pass; the mutation changes nothing a passing tree can observe.
+
+The runbook already says never to assert a numeric floor over a shrinking population. This is the
+other half of that rule, the part about how you *prove* the exact count is doing work: a weakened
+assertion needs a second, cooperating change that the tight form would have caught and the loose one
+would not. Mutate in pairs.
+
+The pair that settled it:
+
+- **M5** — add a fourth, *fully conforming* declaration (it passes `cloudKitDatabase: .none`, so the
+  offender sweep correctly stays silent). `occurrences == 3` failed with `(occurrences → 4) == 3`.
+  **Killed**, and it is the only assertion in the file that could have killed it.
+- **M6** — the same fourth declaration *plus* the loosened `>= 1`. Both tests pass. **Survives by
+  design**, and that survival is the evidence: it shows the floor is blind to exactly the case the
+  exact count exists to catch.
+
+So report a lone weakening mutation as *inconclusive*, not as surviving, and go find the change that
+discriminates. If you cannot construct one, the assertion genuinely is not load-bearing and should be
+deleted or rewritten — which is also a finding, just a different one.
+
+Related, same ticket: **a leak you cannot reproduce is not a leak you have fixed.** Three instrumented
+runs created zero of the directories the ticket was about, while 34 more appeared from *other* agents'
+runs in the same evening. Measure with the cheapest possible instrument (`ls | wc -l` before and
+after), say plainly which runs you measured, and let the closing entry carry "not demonstrated" rather
+than rounding it up to "fixed". A closing entry that overstates is worth less than an open question.
