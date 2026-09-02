@@ -818,21 +818,23 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Application Support is still dated 2026-08-19, untouched by the run. The per-run
   `CADENCE_UI_TEST_STORE_ID` isolation held. Keep it that way.
 
-- [T-563] **`CadenceUITests` flakes on app activation, ~1 run in 5.** Split from [[T-562]], whose
-  sidebar premise was disproved. Measured 2026-08-31 across 5 runs. The flake is always the same
-  assertion, in two places: `wait(for: .runningForeground, timeout: 10)` at `CadenceUITests.swift:74`
-  and `CadenceUITestsLaunchTests.swift:30`. When it fires, the app has not reached the foreground and
-  nothing downstream of launch has run — so any failure it causes is misattributed to whatever the
-  test was about to assert. That misattribution already cost one ticket.
-  Do the cheap thing first and measure before touching the tests: **route UI runs through
-  `scripts/xcb.sh <id> test -only-testing:CadenceUITests`** so they take the test-host lock. The
-  originating failure happened under another agent's concurrent test hosts, so lock discipline alone
-  may remove most of it.
-  Only if it survives that: consider `app.activate()` before the foreground wait and a longer timeout.
-  **Both are test-behaviour changes, not app changes.** A ~20% flake cannot be shown fixed by a
-  handful of runs — budget ~20 runs before and after, or the "fix" is unfalsifiable.
-  Do not raise the timeout as a first move: a timeout bump that hides a real activation regression is
-  strictly worse than a flake that reports one.
+- [T-710] **The seeded sidebar rows are sometimes not there 5s after launch, and nobody has timed them.**
+  Found while measuring [[T-563]], and it is the *only* thing left in `CadenceUITests` that is
+  genuinely intermittent. 2026-09-02, 20 runs with the screen unlocked and the app confirmed in the
+  foreground: **4 failed at `CadenceUITests.swift:23`**, `sidebar.list.area.alpha-area` absent after
+  `CadenceUITestBounds.sidebarRow` (5s). The other 16 passed. `sidebar.destination.today` on the line
+  above passed every time, so the window was up and the accessibility tree was live — it is the
+  *seeded* rows specifically.
+  **Do not raise the bound to make this go away.** Nobody knows yet whether the rows are late or
+  never arrive, and those need opposite fixes: the failing runs stop at line 23 (`continueAfterFailure
+  = false`), so no run has ever asked whether the row shows up at 6s or at all. The measurement is
+  cheap and it is the whole ticket — re-run with that wait widened to 60s *and instrumented*, and
+  read the distribution. If they arrive late, the bound moves and the comment on `sidebarRow` gets
+  its number. If they never arrive, this is a seeding or `@Query` refresh bug and the bound is
+  irrelevant. `CadenceUITestSupport.seedDataIfNeeded` inserts under `onAppear` and commits with
+  `try? modelContext.save()`, which is one of the places to look if it turns out to be the latter.
+  Note the batch that would have measured this was consumed by the locked screen — the instrumented
+  tree is gone, so budget a rebuild. **The screen must be unlocked for the run to mean anything.**
 
 - [T-564] **DECIDE: collapse the now single-case `TasksPanelMode`, and the half-pair it left behind.**
   Split out of [[T-487]] deliberately — the agent did the deletion it was asked for and stopped at the
@@ -1605,6 +1607,37 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   inside fences, YAML only inside `run:` blocks) — the extraction is the work, not the walk.
 
 ## Done
+
+- [T-563] **`CadenceUITests` flakes on app activation, ~1 run in 5.**
+  **Closed 2026-09-02 in `4b447ff`. There is no flake and there never was — the rate was an artefact
+  of not knowing what the condition was.** `CadenceUITests` cannot pass while the Mac's screen is
+  locked. `loginwindow` owns the foreground, the launched app stays `Running Background`, and
+  XCUITest's activation gives up ~60s later with *"Failed to activate application … (current state:
+  Running Background)"*. That failure is raised **inside `app.launch()`** and reported on whichever
+  line called it, so `wait(for: .runningForeground, timeout: 10)` on the next line never runs at all.
+  **The ticket's own instruction not to reach for a timeout bump was right, and for a stronger reason
+  than it knew: raising that number could not have changed a single run.**
+  Measured 2026-09-02, 32 runs / 44 launches under the test-host lock, either side of one lock event
+  at 17:48:12. **Before it:** 20 runs, 40 launches, **zero** activation failures — the app was already
+  `.runningForeground` the instant `launch()` returned 40 times out of 40, worst 3.12s, median 0.91s,
+  p95 1.26s, and not one intermediate `.runningBackground` observation. **After it:** every run, both
+  tests, ~61s each, **100%**, always the same message. So the historical "~1 in 5" is the duty cycle of
+  the user's screen lock, not a property of the code — which is exactly why it never reproduced on
+  demand and why [[T-562]] spent a ticket exonerating a sidebar that was never involved.
+  Landed: `CadenceUITestEnvironment.requireAnUnlockedScreen()` skips the suite with the reason named,
+  from `setUpWithError` in both classes so no test can forget; `scripts/xcb.sh` refuses a
+  `CadenceUITests` run while locked **before** taking the test-host lock, and its zero-test diagnostic
+  now recognises a screen that locked *mid-run* instead of blaming the `-only-testing:` filter;
+  `CadenceUITestBounds` names every wait in the target and marks each measured or not — **no value
+  changed**, only who can defend it. `CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1` exists so the guard and
+  the skip can be exercised; it makes the tests skip, not pass.
+  Two things this did **not** settle. The residual intermittent failure is
+  `sidebar.list.area.alpha-area` missing after 5s, 4 runs in 20 with the screen unlocked — filed as
+  [[T-710]], deliberately without touching its bound. And the lock event was a single natural one on
+  one machine, not an induced A/B: the 40-launch clean half and the 100% dirty half are each large,
+  but the assignment to halves was time, so a second cause that switched on at 17:48 is not excluded
+  by this data alone. The `Failed to activate` message and `loginwindow` holding the front are direct
+  observations; the causal link between them is textbook macOS behaviour, not something measured here.
 
 - [T-535] **Nothing in the release gate ever compiles the iOS surface.**
   **Closed 2026-09-02 in `56244bc`.** The premise held and the framing was slightly off: this was never
