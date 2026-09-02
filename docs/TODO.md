@@ -43,6 +43,57 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-741] **A legacy list note whose body still reads `# Untitled` is re-titled `Untitled` on its
+  next content commit, and cleared again on the next launch.** Found while closing [[T-733]] and
+  deliberately left. `MarkdownNoteTitleSync` writes the first line of the body to `title` for `.list`
+  and `.permanent` notes, so a row created before T-733 — whose body genuinely says `# Untitled`,
+  because that is what the old seed wrote — gets the word back the first time its body is committed.
+  `DataIntegrityRepairService.repairStoredDefaultNoteTitles` then clears it on the following launch.
+  **Nothing is damaged and nothing loops without a user in it**: the H1 rule is working as designed
+  (the body really does say `Untitled`), the pass is idempotent, and each cycle needs a fresh content
+  commit. What it costs is one extra store write per launch for those rows, and a title that flickers
+  back to the stored word between an edit and a relaunch.
+  Three ways out, and the choice is a judgement about the user's own text: (a) leave it — the body is
+  the user's document and the title is only following it; (b) have the load-time pass also rewrite a
+  body whose *entire* first line is `# Untitled` to `# `, which edits `content` and is a much bigger
+  claim than editing `title`; (c) teach `MarkdownNoteTitleSync` to treat an H1 equal to the retired
+  default as "say nothing", which is a special case in the one place the repo has been careful to
+  keep general. Not obvious; wants a decision, not an edit.
+
+- [T-740] **`Document.title` still defaults to the stored word `"Untitled"`** —
+  `Cadence/Models/Document.swift:7` and `:16`, the same shape [[T-733]] removed from `Note`.
+  Not user-visible today and that is why it was left: `Document` is a **legacy migration source
+  only** (`Cadence/Models/AGENTS.md`, "Notes: One Live Model, Five Legacy Ones"), `Area.documents`
+  and `Project.documents` survive as relationship declarations for cascade deletes, and no UI builds
+  on it. So there is no field for the word to sit in front of.
+  It is worth a decision rather than a silent leave for two reasons. It is now the **only** stored
+  `"Untitled"` default in the app, so the shape T-733 removed is one file from coming back by
+  imitation; and `CadenceSharedConstantReuseSweepTests.everyPlaceholderLabelInTheAppIsDeclaredOrRecorded`
+  names `Document.swift` as one of its two witnesses, so anyone reading that test finds a live
+  example of the pattern being pointed at approvingly. Changing it is **not** free: removing a stored
+  property's default has no migration behind it, and the rows are exactly the pre-merge ones the
+  migration reads. Either change it with the same load-time pass T-733 used, or write down here why
+  a legacy source keeps it.
+
+- [T-739] **`#expect(x == 0.5 * 1.6)` fails where `#expect(x == retired * 1.6)` passes, for the same
+  numbers.** Measured 2026-09-03 while writing [[T-496]]'s suite, in `CadenceTests` on macOS:
+  `#expect(adopted == 0.5 * 1.6)` recorded *"Expectation failed: (adopted → 0.8) == (0.5 * 1.6 →
+  0.8)"* — both sides printing `0.8` — while `#expect(adopted == 0.4 * 2)` and `#expect(adopted ==
+  0.8)` in the same test body passed. Binding the retired value to a `let` first
+  (`let retiredWeekday: CGFloat = 0.5; #expect(adopted == retiredWeekday * 1.6)`) passes, and that is
+  the spelling the pre-decision suite had been green on for weeks.
+  **A standalone `swiftc -Onone` binary disagrees with the test target**: reproducing the same
+  declarations (`static let kerningRatio: CGFloat = 0.08`, a `Size` enum, `ratio * size`) and printing
+  `bitPattern` gives **one identical bit pattern** for `ratio * size`, `0.5 * 1.6`, `0.4 * 2` and
+  `0.8`. So the difference is something about how the `#expect` macro evaluates a
+  literal-times-literal operand, not about `Double`.
+  Not diagnosed, and deliberately not guessed at in the test's doc comment. It matters beyond
+  typography: every suite here that checks arithmetic with an inline `a * b` of two float literals is
+  resting on this, and the failure mode is a red run that looks like a real regression in whatever
+  the numbers are about. Cheapest next step is a two-test fixture in `CadenceTests` that pins both
+  spellings and their `bitPattern`s, which turns this from a story into a measurement.
+
+
 - [T-716] **Nine comments point a present-tense reader at a symbol that is not there.**
   The live half of [[T-565]]'s ledger, split out because the detector landed as a guard rather than a
   sweep. Each is listed in `CadenceCommentSymbolClaimTests.staleClaims` with what it names and what it
@@ -294,14 +345,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-452] *(narrowed 2026-08-30: tier confirmed self-consistent — both tiers 0.08em, and 0.08 x 10 reproduces the standard tier's 0.8 exactly, so the 19 correct sites did not move. Not wrong by the design system's own rules; no value changed. Separately, this ticket's claim that the derivation was pinned was **false** — `theCompactKerningIsDerivedRatherThanASecondLiteral` was cited at `SectionEyebrowLabel.swift:80` and had never existed. It exists now and kills a flattening mutation the whole pre-existing T-284 suite passes. Remaining ask: one screenshot pass over the six tightened 9pt labels and the two that gained tracking.)*
-  *(**CAPTURED 2026-09-02, and the ticket's own word is backwards.** All eight rendered at 1x and 3x, before against after, with each pre-[[T-284]] value recovered from the conversion commit `96b5583`. **None of the six was tightened — every one was loosened**: 0.45, 0.54, 0.54, 0.60, 0.60 and 0.70 all went to 0.72, and the two with none gained 0.72. A reviewer told to look for tighter labels would be looking for the wrong thing. **At native size the six are indistinguishable from before** — `AIActionsSupportViews` is a literal 0pt change — so the judgement T-284 recorded is not observable on them. **The two that gained tracking are the visible win**: `AREAS` and `PROJECTS` were set solid and cramped, and now read as labels. Those two were defects and are fixed. **No defect found** anywhere in the eight; nothing crowds, clips or overflows. Captured **offscreen**, not in-app: `scripts/run-macos-app.sh` refuses while the user's own Cadence is running, and seven of the eight are macOS-only — see [[T-730]]. Captures in `/private/tmp/cadence-i1-shots/`.)* **T-284's 9pt tier is pinned by value and by source, and has still never been looked at.**
-  The ticket's remaining ask was "one screenshot pass over those 8 sites", and the subagent runbook
-  forbids launching or building the app for inspection — so the *judgement* is now recorded
-  (letterspacing is optical, so the compact tier takes the same 0.08em the 19 correct 10pt sites
-  take; the plurality of 0.6/0.54 was two independent guesses, not a decision) and the derivation is
-  pinned against being re-flattened into two literals, but nobody has seen the six tightened labels
-  or the two that gained tracking rendered. One pass by whoever can run the app closes it.
 
 
 
@@ -657,14 +700,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-496] *(narrowed 2026-08-30: role confirmed — all three are 10pt semibold uppercased, asserted at all four draw sites, and `CadencePageHeaderMetrics.eyebrowSize` is **not** a fourth tracking. **Conversions computed**: 0.08em leaves the eyebrow alone but **doubles** the board's; 0.05em cuts the eyebrow to 0.625x and lifts the board 1.25x; 0.04em halves the eyebrow. **No candidate moves fewer than two of the three roles, and the one the design system already derives has the largest single jump** — which confirms the earlier refusal. **Ticket correction**: the citation graph is 4 of 6 directed edges, not mutual — the calendar file cites both siblings, the eyebrow and board cite each other and neither cites the calendar, so the calendar's 0.5 is the only one chosen with both siblings in view and it still disagrees with both. Status quo frozen by `CadenceUppercaseLabelTrackingTests` (6 tests) so the disagreement cannot widen while the decision is pending. **Reviewer checklist**: a kanban and a section-board column header on both platforms, the collapsed calendar-board rail (its label is rotated -90 degrees, the one place tracking moves a layout slot rather than a line width), a macOS week day column, the iOS timed grid day header, and one 9pt compact eyebrow popover heading.)*
-  *(**CAPTURED 2026-09-02 — the checklist is done except the two live-app halves, and the ticket's strongest structural argument did not survive measurement.** (1) **The collapsed rail is not a constraint.** `UNSCHEDULED` at 10pt semibold measures **83 / 84 / 88pt** at 0.04 / 0.05 / 0.08em against a 96pt `collapsedRailLabelSlotHeight`; `OVERDUE` is 53 / 53 / 55. Every candidate fits with at least 8pt spare, and the label is centred so the growth is ~4pt each end. SwiftUI's `ImageRenderer` intrinsic size and `NSAttributedString.size()` agree exactly, so each number is measured twice. **Whatever settles this, it should not be settled on the rail.** (2) **The whole disagreement is 1-6pt of line width**, and **0.40 vs 0.50 is imperceptible** on every string drawn: `MON` 26/27/28, `WED` 26/26/27, `IN PROGRESS` 74/75/79, `LAUNCH CHECKLIST` 112/113/118. 0.80 is visibly airier and reads more like an eyebrow. No truncation at any candidate in a 232pt column. (3) **A new cost nobody had priced: choosing the board's 0.04em drops the 9pt compact tier to 0.36, which renders visibly set-solid** — `ICLOUD`/`GOOGLE` nearly touching, which is the exact defect [[T-284]] closed. That is an argument against 0.04em, and it is observable rather than arithmetic. (4) **"Both platforms" is answered by construction, not by pixels**: `CadenceBoardColumnHeader` is one shared component and both call sites pass no tracking of their own, so a cross-platform difference in this label is not expressible. Same for the iOS timed-grid day header, which reads the identical `CadenceCalendarWeekdayHeaderMetrics.labelKerning` the macOS week column reads. **Swept for a fourth tracking: there is none.** Captures in `/private/tmp/cadence-i1-shots/`. **No winner picked — the call is the user's.**)* **One uppercase label size, three trackings.** `SectionEyebrowLabel.Size.standard` is 10/0.8
-  (0.08em, derived), `CadenceBoardColumnHeaderMetrics` is 10/0.4 (literal),
-  `CadenceCalendarWeekdayHeaderMetrics` is 10/0.5 (literal). All three are uppercased semibold at 10pt,
-  and **each file's doc cites the other two as the authority for its size while disagreeing on
-  tracking** — the [[T-284]] defect one file over. Deliberately not picked: choosing 0.08em doubles the
-  tracking on every kanban column header, which is the un-inspected change [[T-452]] is open for. Needs
-  the same screenshot pass, then a ratio.
 
 
 
@@ -1741,17 +1776,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   are wired together as the source says). Recorded in `docs/SUBAGENT_RUNBOOK.md` today; what is open is
   whether to build the first one properly.
 
-- [T-733] **A new iPad note's title field starts with the literal word "Untitled", and typing appends
-  to it.** OBSERVED 2026-09-02 on a simulator: typing `Target` into a new note's title produced
-  **`UntitledTarget`**. `Note.title` defaults to `"Untitled"` (`Cadence/Models/Note.swift:15` and
-  `:46`, and `NoteMigrationService.createPermanentNote(title:)`), so it is **stored text, not a
-  placeholder** — the field is pre-filled and the caret lands after it.
-  `Note.displayTitle` already falls back per kind (`"Notepad"` for `.permanent`), so the stored default
-  is redundant as well as in the way.
-  Adjacent to [[T-609]]'s `"Untitled"` sweep but a **different site**: that swept inline
-  `isEmpty ? … : …` ternaries at the draw sites; this is a stored model default. Changing it is a
-  data-shape question — existing notes literally hold the string — so it needs a decision about
-  migration, not just an edit.
 
 - [T-731] **The `isRegularWidth == true` branch of the iOS editor sheets is dead on the iPad anyone
   has measured, and the two checks that would settle it outright are out of tooling reach.**
@@ -1884,6 +1908,108 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Not measured.** No CloudKit traffic was observed; this is read off the two write paths.
 
 ## Done
+
+- [T-733] **CLOSED 2026-09-03 (`517982e`) — the stored default is gone and the rows that hold it are
+  cleared at load.** `Note.title` defaulted to the literal `"Untitled"`, which made the word stored
+  text rather than a placeholder: `createPermanentNote` interpolated it into the seeded body, the
+  editor put the caret after the heading, and typing `Target` produced `UntitledTarget`. The default
+  is empty now in all three places that carried it — the stored property, the initializer parameter,
+  and `NoteMigrationService.createPermanentNote` — and `Note.displayTitle`'s existing per-kind
+  fallback does the naming (`"Notepad"` for `.permanent`, the date key for `.daily`, `"Untitled"` for
+  `.list`). Those five fallback strings are untouched: [[T-609]]'s standing decision is that each
+  draw site keeps its own copy, and this was the stored model default, a different thing.
+  **`CadenceListNoteFiling.seededContent` lost its `"Untitled"` substitution in the same change, and
+  that is not a widening.** The branch was unreachable while the model default was the same word.
+  Dropping the default is exactly what would have made it fire, and `MarkdownNoteTitleSync` reads the
+  first line of the body — so a seeded `# Untitled` would have re-titled every new list note
+  `Untitled` on its first commit and the load-time pass would have cleared it again on the next
+  launch, forever. `"# \n\n"` is still an H1, so it is still the rename control from the first
+  keystroke; it is just empty, and an empty H1 is the one case `MarkdownNoteTitleSync` deliberately
+  says nothing about.
+  **A data edit at load, not a schema change**, because a property default is applied by the
+  initializer and never reaches a row already on disk. There is no `SchemaMigrationPlan` in this
+  project and this needs none — no column is added, removed or retyped.
+  `DataIntegrityRepairService.repairStoredDefaultNoteTitles` sits beside the out-of-range-habit-
+  reminder pass and adds one counter, `defaultNoteTitlesCleared`.
+  **Idempotent by construction rather than by a marker, which is what makes "no migration hook"
+  fine.** The predicate is "this title is exactly the retired default" and the edit makes it the
+  empty string, which is not that literal — so a second run matches nothing, the counter stays 0,
+  `changed` stays false and no save is taken. There is no "already migrated" flag to get out of step
+  with the store, so a second launch, a second device, and a row that arrives from CloudKit *after*
+  the pass ran all reach the same fixed point; every device writes the same empty string, so it
+  cannot ping-pong. Asserted as *no second write* rather than "the title is still empty" — the run
+  that cleared it twice would satisfy that too — and a third pass is asserted as well, because a
+  fixed point has to be a fixed point rather than an alternation.
+  **Safe under partial sync** for [[T-328]]'s boundary: the predicate reads one scalar on the row in
+  front of it, so no record arriving later can turn a false positive into a true one; a half-synced
+  store simply sees fewer `Note` rows.
+  **The accepted cost, stated because the user was told it and accepted it: this also clears a title
+  someone typed as "Untitled" on purpose.** The store cannot tell that note from one the old default
+  named — same bytes, no provenance on the field — so no predicate separates them.
+  `theMigrationAlsoClearsATitleAUserTypedOnPurpose` pins it so nobody narrows it later believing it
+  was an oversight. What such a user loses is small and visible: a `.list` note reads `Untitled`
+  either way, a notepad note reads `Notepad`, and retyping the title restores it.
+  **The literal is frozen in the pass and is deliberately *not* `CadenceTitleNormalization
+  .defaultCompactTitle`.** That constant is the app's display placeholder and is free to be renamed;
+  this is a historical value, the exact bytes a retired initializer wrote, and a migration that
+  stopped matching them because a display string was reworded would silently stop migrating.
+  **Did any note legitimately hold the title? Not measurable from here, and not claimed.** Nothing
+  in the repository's fixtures or the shipped code writes `"Untitled"` to `Note.title` except the
+  retired default, so every row this pass can reach in a *test* store is a default. The user's real
+  store was not read — the runbook forbids touching `~/Library/Containers/com.haoranwei.Cadence/` —
+  so "no note legitimately held it" is an inference about the code, not an observation of data.
+  Nine tests in `CadenceStoredNoteTitleDefaultTests`; failing-first was established by reversion
+  mutations rather than by a pre-fix run, and all nine mutations were **KILLED** with the killing
+  tests named: the property default (M1), the initializer default (M2), the factory default (M3),
+  the seeded heading (M4), the pass not called (M5), the pass matching rows it already cleared
+  (M6, the idempotence mutation — killed by `runningTheMigrationTwiceIsAnEmptySecondPass`), the
+  predicate trimming (M7), the counter not reaching `changed` (M8), and clearing to a space instead
+  of empty (M9).
+
+- [T-496] **CLOSED 2026-09-03 (`ef8cb53`) — 0.08em everywhere, and the two literals are gone rather
+  than retyped.** The user took the decision. `CadenceBoardColumnHeaderMetrics.labelKerning` and
+  `CadenceCalendarWeekdayHeaderMetrics.labelKerning` each read
+  `labelSize * SectionEyebrowLabel.kerningRatio` now, so the ratio is what is shared and the size
+  stays each file's to state. The board column header's tracking doubled (0.4 → 0.8) and the weekday
+  label's gained 60% (0.5 → 0.8); the ~50 `SectionEyebrowLabel` sites and the 9pt compact tier did
+  not move at all.
+  **Retyping both as `0.8` would have been the same defect one value later** — three independently
+  editable constants that happen to agree, with `kerningRatio` read by one file again — which is why
+  no file may state the number.
+  **What the rewritten `CadenceUppercaseLabelTrackingTests` asserts, and why it is a derivation
+  rather than three agreeing literals.** The value assertions (`== 0.8` three times) are explicitly
+  *not* the claim; they pin what a reviewer looked at. The claim is three identities that re-derive
+  each tracking from the size in front of it and the one ratio, plus
+  `everyUppercaseTrackingReadsTheOneRatioRatherThanRestatingIt`, which reads both declarations as
+  source and requires each to *name* `SectionEyebrowLabel.kerningRatio`. **Mutation M12 is the
+  evidence**: flattening the board tracking to a hand-typed `0.8` that agrees with both siblings
+  passes every value assertion in the suite and was **KILLED by that source test alone**. M13 is the
+  same flattening on the weekday header. M10 and M11 revert the two literals and are killed by the
+  value assertions as well, which is the failing-first half.
+  The literal-ban needle is anchored to the *declaration* (`letlabelKerning:CGFloat=0.`) rather than
+  to the digits, because `CadenceBoardColumnHeader.swift` legitimately carries
+  `accentRuleOpacities = [0.85, 0.45, 0.16]` and a bare `!contains("0.8")` reads the whole file —
+  the runbook's "a regex turned loose on a body" rule, one file over.
+  The 4-of-6 citation graph is still asserted, including the two edges that do not exist.
+  Change the ratio and all three move together; that is a decision, and the suite passes through it.
+
+- [T-452] **CLOSED 2026-09-03 (`ef8cb53`) — closed with [[T-496]], and the ticket's own word was
+  backwards.** The capture was done on 2026-09-02 and its numbers are restated here rather than left
+  in the retired open entry: all eight labels rendered at 1x and 3x, before against after, each
+  pre-[[T-284]] value recovered from the conversion commit `96b5583`. **None of the six was tightened — every one was loosened.**
+  0.45, 0.54, 0.54, 0.60, 0.60 and 0.70 all went to 0.72, and the two that carried no tracking at all
+  gained 0.72. A reviewer told to look for tighter labels would have been looking for the wrong
+  thing, and that correction is the thing worth carrying forward from this ticket.
+  At native size the six are indistinguishable from before — `AIActionsSupportViews` is a literal 0pt
+  change — so the judgement T-284 recorded is not observable on them. **The two that gained tracking
+  are the visible win**: `AREAS` and `PROJECTS` were set solid and cramped and now read as labels.
+  Those two were defects and are fixed. No defect was found anywhere in the eight; nothing crowds,
+  clips or overflows. Captured offscreen, not in-app — `scripts/run-macos-app.sh` refuses while the
+  user's own Cadence is running (see [[T-730]]).
+  T-496 landing makes the remaining ask moot in the direction that matters: the compact tier and the
+  two 10pt roles now derive from one ratio, so there is no second number left for a screenshot pass
+  to arbitrate.
+
 
 - [T-726] **CLOSED 2026-09-03 (`eb54eae`) — the sheet's `onAppear` no longer writes to the store.**
   `applyContainerSelection` asks `CadenceTaskMutationSupport.isAlreadyInContainer` one frame above
