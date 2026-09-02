@@ -628,25 +628,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-543] **Settings > Calendar's access card says two things and draws two glyphs.** macOS shows an
-  **amber warning triangle even in the not-yet-asked state** with "Allow Cadence to create and sync
-  calendar events."; iOS shows a neutral blue `calendar.badge.plus` with "Allow Cadence to show events and
-  connect Apple calendars to areas or projects." **iOS is right on the glyph** — "nobody has been asked
-  yet" is not an error state. The subtitle is a genuine copy decision (both sentences are true of both
-  platforms), which is why [[T-524]] converged the identical literals around it and left this pair alone.
-  Referenced from `CadenceSettingsSectionCopy.accessRequiredTitle`.
 
-- [T-545] **macOS's empty-calendar row is a one-liner where iOS is two.** macOS: `"No Apple calendars
-  found."` (trailing period, no subtitle). iOS: `"No Apple calendars found"` plus a subtitle saying what
-  will happen. **iOS is right** — it tells the user what to do — but macOS cannot converge without a
-  two-line row, and its three sibling empty rows all share the one-line house style. A small design
-  decision, not a defect.
 
-- [T-547] **`"Apple Calendar"` is one literal serving at least two concepts across 7 files.** Sometimes the
-  integration section's label, sometimes a fallback for `calendar.source?.title` / `event.calendar?.title`.
-  **Declaring it makes 7 offenders at once**, so this is a whole-app naming decision rather than a
-  de-duplication. Same shape for `"Allow Access"` (12 sites, and also `RemindersAccessAction.requestAccess.title`,
-  so converging couples the calendar permission button to the reminders one) and `"Open Settings"` (13).
 
 
 
@@ -1523,7 +1506,99 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   *shorter* subtitle: a user narrowing the window to move where suggestions land has nothing on the
   settings row that says the control does that. Found while making the macOS sentence true in [[T-544]].
 
+- [T-692] **`calendar.source?.title` answers two different things on the same platform.** Settings →
+  Calendar falls back to `CadenceAppleCalendarNaming.unnamedAccountTitle` ("Apple Calendar") when a
+  calendar's account has no name; `Cadence/macOS/CadenceCalendarPicker.swift:31` reads the *same*
+  `cal.source?.title` for the *same* absence and falls back to `"Other"`, which is also the label it
+  groups those calendars under. So the Mac tells a user "Apple Calendar" on one screen and "Other" on
+  another about one fact. [[T-547]] split the concepts and hoisted each; it deliberately did **not**
+  decide this, because "Other" is a grouping bucket as well as a fallback and collapsing the two is a
+  copy decision. Under the sweep's 12-character floor, so nothing will find it again by machine.
+
+- [T-693] **macOS prints a blank calendar name where iOS prints a fallback.**
+  `Cadence/macOS/Views/CalendarEventPresentationSupport.swift:73` and `:198` both set
+  `calendarTitle = event.calendar?.title ?? ""`, and that string is *displayed*. iOS reads the same
+  property at `iOSBoardCards.swift:77` and `iOSSearchView.swift:640` and falls back to
+  `CadenceAppleCalendarNaming.unnamedCalendarTitle`. Same nil, same slot, two answers — and the Mac's is
+  an empty line. Distinguish from the three `?? ""` sites that are **search haystacks** and correct
+  (`CadenceCalendarEventSearchSupport.swift:29`, `iOSSearchView.swift:616`,
+  `iOSCalendarEventEditSheet.swift:101`): those feed a matcher, not a label. Found while hoisting
+  [[T-547]]; not fixed there because it is a behaviour change on a surface that ticket did not touch.
+
+- [T-694] **The calendar access card's *title* still reads as a fault in the state that is not one.**
+  [[T-543]] fixed the glyph and the sentence: before anybody is asked, both surfaces now draw a neutral
+  `calendar.badge.plus` in `Theme.blue` over "Allow Cadence to show events and connect Apple calendars to
+  areas or projects." The title above it still says **"Calendar access required"**, which is the last part
+  of the card phrased as a demand rather than an offer — and the same string also heads the *denied* card,
+  where it is right. Not folded into T-543: `CadenceCalendarSettingsCopy.accessRequiredTitle` is shared by
+  both surfaces and pinned by value in two tests, and the notification pane's
+  `CadenceNotificationSettingsCopy.accessRequiredTitle` is the same shape one screen over — so rewording it
+  is a house-wide copy decision, not the tail of a glyph fix.
+
 ## Done
+
+- [T-543] **Settings > Calendar's access card says two things and draws two glyphs.** macOS drew an amber
+  `exclamationmark.triangle.fill` in **both** states — including not-yet-asked, which is the state a fresh
+  install is in — beside a button offering access, so the card contradicted itself.
+  **Closed 2026-09-02 in `4a2c00e`.** The Mac now draws the phone's ternary
+  (`calendarManager.isDenied ? "exclamationmark.triangle.fill" : "calendar.badge.plus"`, tinted
+  `Theme.amber : Theme.blue`), and the not-yet-asked sentence converged on the phone's into
+  `CadenceCalendarSettingsCopy.accessRequiredDetail` — the phone's because it names what this card gates
+  (showing events, connecting a calendar to an area or project) rather than the writing path a reader on
+  this screen is not using. The **denied** sentence stays at each call site on purpose: it names where the
+  reader has to go, and that is a different place on each platform. The hand-rolled `HStack` is now
+  `CadenceSettingsNoticeRow`, the row Notifications and Reminders already draw, which is what took this
+  file's private near-copies to zero. Pinned by `theCalendarAccessCardDrawsOneGlyphPerStateOnBothSurfaces`
+  — **exact** glyph counts per file, not `contains`, because presence is what was already true and a
+  second unconditional triangle beside the fix would satisfy a looser check. Mutations M1 (glyph
+  unconditional) and M2 (tint unconditional) each died on that test; M3 (macOS re-types its old sentence)
+  died on `bothCalendarSettingsSurfacesReadEveryConvergedCalendarString`; M4 (the shared sentence quietly
+  shortened) died on `theCompiledSettingsCopyStillSaysWhatBothSurfacesUsedToSpell` **and** on
+  `everyConvergedSettingsStringIsHarvestedByTheSharedConstantSweep`, which is a test this ticket did not
+  write. **Residue filed as [[T-694]]**: the title above it still says "Calendar access required".
+  **Not observed on screen** — a debug build vends no AX window tree, so this is a source and value claim.
+
+- [T-545] **macOS's empty-calendar row is a one-liner where iOS is two.**
+  **Closed 2026-09-02 in `4a2c00e`, and the ticket's premise was stale.** It said macOS "cannot converge
+  without a two-line row, and its three sibling empty rows all share the one-line house style" — but
+  [[T-600]](b) had already moved four of them onto the two-line `CadenceSettingsNoticeRow` with shared
+  copy. The calendars card was simply *missed*, because it is the one empty state that is not "you have
+  made none yet": access has been granted and EventKit answered with nothing. So there was no design
+  decision left to make. Both surfaces read `CadenceSettingsEmptyStateCopy.appleCalendarsTitle` /
+  `appleCalendarsSubtitle`, macOS draws the same row as its four siblings, and the stray full stop went
+  with it — the title/subtitle punctuation loops in
+  `theCompiledSettingsCopyStillSaysWhatBothSurfacesUsedToSpell` now cover this pair, which is what killed
+  mutation M7. Added as the fifth entry of `bothSurfacesOfEveryEmptySettingsCardReadOneTitleAndOneSubtitle`
+  (M5 and M6 died there), and `theFourEmptySettingsCardsAreDrawnOnTheSharedNoticeRow` is renamed
+  `theEmptySettingsCardsAreEachDrawnOnTheSharedNoticeRow` and expects **exactly 4** notice rows in
+  `SettingsListManagementSections.swift`, up from 2 — with the two shapes they replaced named
+  individually, because an aggregate that totals four cannot tell you the four are where you left them.
+
+- [T-547] **`"Apple Calendar"` is one literal serving at least two concepts across 7 files.**
+  **Closed 2026-09-02 in `4a2c00e`. Three concepts, not two — and the split came before the hoist.**
+  A single shared constant for two meanings is the defect, not the fix: it would have made a reword of the
+  phone's sheet heading silently reword what the Mac prints when EventKit hands back an unnamed account.
+  `Cadence/Shared/CadenceAppleCalendarNaming.swift` declares three constants, byte-identical today and
+  free to diverge tomorrow:
+  **`integrationSectionTitle`** — the label over the controls that talk to EventKit:
+  `iOSCalendarQuickCreateSheet.swift:341`, `iOSCalendarEventEditSheet.swift:390`,
+  `iOSCalendarInspectorView.swift:88`, `ListEditorSupportViews.swift:424`.
+  **`unnamedCalendarTitle`** — the fallback for `event.calendar?.title`, printed where a calendar's own
+  name goes: `iOSBoardCards.swift:77`, `iOSSearchView.swift:640`.
+  **`unnamedAccountTitle`** — the fallback for `calendar.source?.title`, printed where an account name
+  goes: `iOSCalendarSettingsSection.swift:653`, `SettingsListManagementSections.swift:519`.
+  Eight sites, seven files. Guarded by `CadenceAppleCalendarNamingTests`: exact per-site counts **by
+  concept** (a total of eight would stay green while a site drifted from one concept to the other), plus a
+  `CadenceScanInstrument` sweep proving the declaration is the only file under `Cadence/` that types the
+  literal. The two mutations that matter are the **concept swaps** — M9 pointed a board card at
+  `unnamedAccountTitle` and M11 pointed the settings row at `integrationSectionTitle`; both compile, both
+  died on `everySiteReadsTheConstantForTheConceptItMeans`, which is the evidence that the *split* is
+  guarded rather than only the de-duplication. M8 and M10 (either kind re-typing the literal) each died on
+  three tests, one of them the standing `noCallSiteRetypesASharedStringConstant` sweep, which the three
+  constants now feed. **The ticket's sibling cases are untouched and still open**: `"Allow Access"` (12
+  sites) and `"Open Settings"` (13). **Two divergences found while splitting are filed rather than fixed**:
+  [[T-692]] (`source?.title` falls back to "Other" in `CadenceCalendarPicker`) and [[T-693]] (macOS
+  displays `event.calendar?.title ?? ""`, an empty line, where iOS shows the fallback).
 
 - [T-544] **CLOSED 2026-09-02, `8bb52ea`.** The Mac said "Weekly calendar views gently highlight …" and
   no part of it was true. The band is `TimelineWorkHoursHighlightLayer`, drawn inside `TimelineDayCanvas`
