@@ -153,11 +153,11 @@ Before treating a red run as a code regression, check:
 - A few zero-second failures and one host PID: inspect the `.xcresult`; the test runner may have
   exited early.
 - UI-test failures in an ordinary test run: the run was not scoped to `CadenceTests`.
-- **`CadenceUITests` is flaky — roughly 1 run in 4 fails at `app.wait(for: .runningForeground, timeout: 10)`**
-  (`CadenceUITests.swift:74` in `launchApp`, and `CadenceUITestsLaunchTests.swift:30`). The app never
-  reaches the foreground, so nothing downstream runs and the failure gets misattributed to whatever the
-  test was about to assert — that cost a whole ticket on 2026-08-31. **A red UI run is not by itself
-  evidence of a regression. Re-run before believing it**, and re-run under the lock.
+- **`CadenceUITests` was never flaky — it cannot pass while the Mac's screen is locked (T-563).**
+  `loginwindow` holds the foreground, so `app.launch()` fails ~60s in with *"Failed to activate
+  application … (current state: Running Background)"*, on whichever line called it. Measured either
+  side of one lock event: 40 launches before, zero failures; 100% after. `xcb.sh` refuses such a run
+  and the tests skip themselves, so a red UI run **is** evidence again. Still re-run under the lock.
 - Compile failures that name your file are real until proven otherwise.
 - **Count test hosts with `pgrep -f '^/Applications/.*/xcodebuild test'`.** A loose
   `pgrep -f xcodebuild` matches any script whose own command text contains the word — including the

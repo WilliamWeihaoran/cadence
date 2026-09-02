@@ -81,10 +81,14 @@ A UI-test run launches a real `Cadence.app`, so it must hold the test-host lock.
 `scripts/xcb.sh <id> test -only-testing:CadenceUITests` — **never** a bare `xcodebuild`, which takes
 no lock and will contend with any other run in flight.
 
-`CadenceUITests` is currently **flaky**: about 1 run in 4 fails at
-`app.wait(for: .runningForeground, timeout: 10)` (`CadenceUITests.swift:74`,
-`CadenceUITestsLaunchTests.swift:30`). A red UI-test run is therefore not by itself evidence of a code
-regression — re-run before believing it.
+`CadenceUITests` is **not** flaky, which is what T-563 turned out to be. It cannot pass while the
+Mac's screen is locked: `loginwindow` owns the foreground, the launched app stays `Running
+Background`, and `app.launch()` fails about a minute later with *"Failed to activate application …
+(current state: Running Background)"* — attributed to whichever line called it, which is how the
+"about 1 run in 4" reading arose. Measured 2026-09-02 either side of a single lock event: 20 runs /
+40 launches before it with zero activation failures, 100% failure after. `scripts/xcb.sh` now
+refuses a UI run while the screen is locked and the tests skip themselves, so a red UI-test run
+**is** evidence of a regression again.
 
 The expected warning baseline is zero; any new warning is a regression.
 

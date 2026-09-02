@@ -6,6 +6,7 @@ final class CadenceUITests: XCTestCase {
     private var storeID: String!
 
     override func setUpWithError() throws {
+        try CadenceUITestEnvironment.requireAnUnlockedScreen()
         continueAfterFailure = false
         storeID = "ui-\(name)-\(UUID().uuidString)"
     }
@@ -19,8 +20,8 @@ final class CadenceUITests: XCTestCase {
     func testLaunchesToTodayWithSeededSidebarLists() throws {
         launchApp(resetStore: true, resetDefaults: true)
 
-        XCTAssertTrue(app.buttons["sidebar.destination.today"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["sidebar.list.area.alpha-area"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["sidebar.destination.today"].waitForExistence(timeout: CadenceUITestBounds.firstPaint))
+        XCTAssertTrue(app.buttons["sidebar.list.area.alpha-area"].waitForExistence(timeout: CadenceUITestBounds.sidebarRow))
         XCTAssertTrue(app.buttons["sidebar.list.project.beta-project"].exists)
         XCTAssertTrue(app.buttons["sidebar.list.area.gamma-area"].exists)
     }
@@ -30,10 +31,10 @@ final class CadenceUITests: XCTestCase {
         launchApp(resetStore: true, resetDefaults: true)
 
         let alphaArea = app.buttons["sidebar.list.area.alpha-area"]
-        XCTAssertTrue(alphaArea.waitForExistence(timeout: 5))
+        XCTAssertTrue(alphaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow))
         alphaArea.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).rightClick()
 
-        XCTAssertTrue(app.staticTexts["Edit Area"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Edit Area"].waitForExistence(timeout: CadenceUITestBounds.sidebarRow))
     }
 
     func testSidebarListReorderPersistsAcrossRelaunch() throws {
@@ -42,8 +43,8 @@ final class CadenceUITests: XCTestCase {
 
         let alphaArea = app.buttons["sidebar.list.area.alpha-area"]
         let gammaArea = app.buttons["sidebar.list.area.gamma-area"]
-        XCTAssertTrue(alphaArea.waitForExistence(timeout: 5))
-        XCTAssertTrue(gammaArea.waitForExistence(timeout: 5))
+        XCTAssertTrue(alphaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow))
+        XCTAssertTrue(gammaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow))
         XCTAssertLessThan(alphaArea.frame.minY, gammaArea.frame.minY)
 
         drag(gammaArea, to: alphaArea)
@@ -54,8 +55,8 @@ final class CadenceUITests: XCTestCase {
         relaunchApp(resetStore: false, resetDefaults: false)
         let relaunchedAlphaArea = app.buttons["sidebar.list.area.alpha-area"]
         let relaunchedGammaArea = app.buttons["sidebar.list.area.gamma-area"]
-        XCTAssertTrue(relaunchedAlphaArea.waitForExistence(timeout: 5))
-        XCTAssertTrue(relaunchedGammaArea.waitForExistence(timeout: 5))
+        XCTAssertTrue(relaunchedAlphaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow))
+        XCTAssertTrue(relaunchedGammaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow))
         XCTAssertLessThan(relaunchedGammaArea.frame.minY, relaunchedAlphaArea.frame.minY)
     }
 
@@ -71,12 +72,15 @@ final class CadenceUITests: XCTestCase {
             app.launchEnvironment["CADENCE_RESET_USER_DEFAULTS"] = "1"
         }
         app.launch()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
+        XCTAssertTrue(
+            app.wait(for: .runningForeground, timeout: CadenceUITestBounds.foreground),
+            "app did not reach the foreground; state is \(app.state.rawValue)"
+        )
     }
 
     private func relaunchApp(resetStore: Bool, resetDefaults: Bool) {
         app.terminate()
-        XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: CadenceUITestBounds.settle))
         launchApp(resetStore: resetStore, resetDefaults: resetDefaults)
     }
 
@@ -94,7 +98,7 @@ final class CadenceUITests: XCTestCase {
 
     private func waitUntil(
         _ description: String,
-        timeout: TimeInterval = 5,
+        timeout: TimeInterval = CadenceUITestBounds.settle,
         predicate: @escaping () -> Bool
     ) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)

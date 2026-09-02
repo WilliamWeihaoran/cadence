@@ -14,6 +14,7 @@ final class CadenceUITestsLaunchTests: XCTestCase {
     }
 
     override func setUpWithError() throws {
+        try CadenceUITestEnvironment.requireAnUnlockedScreen()
         continueAfterFailure = false
     }
 
@@ -27,8 +28,11 @@ final class CadenceUITestsLaunchTests: XCTestCase {
         app.launchEnvironment["CADENCE_RESET_USER_DEFAULTS"] = "1"
         app.launch()
 
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
-        XCTAssertTrue(app.buttons["sidebar.destination.today"].waitForExistence(timeout: 8))
+        XCTAssertTrue(
+            app.wait(for: .runningForeground, timeout: CadenceUITestBounds.foreground),
+            "app did not reach the foreground; state is \(app.state.rawValue)"
+        )
+        XCTAssertTrue(app.buttons["sidebar.destination.today"].waitForExistence(timeout: CadenceUITestBounds.firstPaint))
 
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Launch Screen"

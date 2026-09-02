@@ -93,7 +93,13 @@ empty_run_diagnostic() {
   # arguments -- so the character class stops at a quote as well as at a space, or the identifier
   # is reported with a stray `"` glued to it and reads like part of the suite name.
   local requested=(${(f)"$(grep -oE -- '-only-testing:[^ "'"'"']*' "$log" 2>/dev/null | sort -u)"})
-  if (( ${#requested} )); then
+  # Asked first, because it is the one cause that makes the suite-name advice below actively wrong.
+  # The preflight guard catches a screen already locked; this catches one that locked mid-run, which
+  # is not hypothetical -- a batch queued behind the test-host lock waits out whole minutes.
+  if grep -q "The Mac's screen is locked" "$log" 2>/dev/null; then
+    say "   every test skipped itself: the screen locked, so no launched app can reach the"
+    say "   foreground (T-563). Nothing is wrong with the filter or the code. Unlock and re-run."
+  elif (( ${#requested} )); then
     say "   the run was filtered to:"
     for f in $requested; do say "     $f"; done
     say "   \`-only-testing:\` takes a SUITE name, not a file name. Ask the source which suite"
@@ -174,6 +180,40 @@ if (( $(pgrep -x Xcode 2>/dev/null | wc -l) > 0 )); then
   say "           builds; an open project is a standing claimant on Cadence.xcodeproj."
 fi
 before_entries="$(shared_cadence_entries)"
+
+# --- the locked-screen guard (T-563) -----------------------------------------
+# A UI test cannot activate an app while the Mac's screen is locked: `loginwindow` owns the
+# foreground, the app XCUITest launches stays `Running Background`, and `app.launch()` gives up
+# about a minute later with "Failed to activate application ... (current state: Running
+# Background)". That failure lands on whichever line called launch(), so nothing downstream runs
+# and the run reads as a code regression -- which is the whole of the "flaky about 1 run in 5" this
+# target was documented as having. Measured 2026-09-02 either side of one lock event at 17:48:12:
+# 20 runs / 40 launches before it with zero activation failures, and 100% failure after it.
+#
+# The tests skip themselves in this state (CadenceUITestEnvironment), so the run is not a false red.
+# It is refused here as well because a skipped-out run then trips the zero-test guard below, and
+# that guard's advice -- "-only-testing: takes a SUITE name" -- would be confidently wrong here.
+# Refused BEFORE the lock: a run that cannot pass must not hold the host while it fails.
+# No pipe, deliberately. `ioreg ... | grep -q` returns **141** under `set -o pipefail`: grep exits
+# the moment it matches, ioreg takes SIGPIPE, and pipefail reports the pipeline as that signal --
+# so the probe answers "not locked" precisely when it *did* find the key. Measured while writing
+# this guard, which is the same shape as the assert-toolchain.sh incident in the runbook: the
+# probe's own plumbing eating the finding.
+screen_is_locked() {
+  [[ "$(ioreg -n Root -d1 -k IOConsoleUsers 2>/dev/null)" == *'"CGSSessionScreenIsLocked"=Yes'* ]]
+}
+# CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 exists so this guard, and the skip it pairs with, can be
+# *tested* -- a guard nobody can exercise is the hollow-instrument shape this repo keeps catching.
+# It is not a way to get a UI run out of a locked Mac: with it set the tests skip instead, which is
+# the behaviour worth confirming. There is no spelling of it that makes an app reach the foreground.
+if screen_is_locked && [[ "${args[*]}" == *CadenceUITests* ]] \
+   && [[ "${CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN:-}" != "1" ]]; then
+  say ""
+  say "!! REFUSING: the screen is locked, and no UI test in CadenceUITests can pass while it is."
+  say "   loginwindow holds the foreground, so the launched app never leaves Running Background"
+  say "   and app.launch() fails after ~60s per test. Unlock the screen and re-run (T-563)."
+  exit 5
+fi
 
 # --- the test-host lock ------------------------------------------------------
 # Only `test` needs it: it is the app-group container that two hosts corrupt (T-236), not the
