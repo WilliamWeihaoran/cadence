@@ -43,6 +43,71 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-716] **Nine comments point a present-tense reader at a symbol that is not there.**
+  The live half of [[T-565]]'s ledger, split out because the detector landed as a guard rather than a
+  sweep. Each is listed in `CadenceCommentSymbolClaimTests.staleClaims` with what it names and what it
+  should have named; fixing one means deleting its ledger entry in the same change, or the suite goes
+  red on a stale entry.
+  - `CadenceDataExportPresentation.swift` cites `PrivacyDataResetOutcome.statusMessage`; the member is
+    `accountAndDataStatusMessage`.
+  - `CadenceNoteFolderSupport.swift` presents `ListNotesView.normalizedFolderPath` as the live source
+    of the folder-path convention. It is declared in `ListNotesListSupportViews.swift`, on a
+    fileprivate row, and no `ListNotesView` has it.
+  - `CadenceTaskDropSupport.swift` appeals to `CadenceTaskComposerSupport.showsSectionChip` — and a
+    second comment 280 lines below appeals to "the rule `showsSectionChip`". **No declaration of that
+    name exists anywhere in the tree**, so both sentences invoke a rule the reader cannot find. This
+    is the sharpest of the nine: two readers deferred to a rule that is only prose.
+  - `iOSTaskInspectorMetrics.swift` and `CommitmentSharedViews.swift` both point at
+    `CadencePageHeaderMetrics.iconSize` as a bare "see also". The identity tile was dropped from page
+    headers on both platforms and the glyph ramp went with it; `iOSCalendarMetricsTests` records that
+    `tileSize` went the same way.
+  - `AINoteActionReviewTests.swift` cites `DataIntegrityRepairServiceTests.duplicateDailyNotesAreMerged`
+    as pinning behaviour. No test of that name exists.
+  - `CadenceCancelledTaskReachabilityTests.swift` cites
+    `CadenceTodayRolloverSurfaceTests.theMacDerivedStateStillDerivesExactlyWhatItUsedTo`. The test is
+    real; it was renamed with an `InTodayRolloverSurface` suffix when test names became unique across
+    suites, and the citation did not follow.
+  - `TimelineMetricsTests.swift` says `CalDayColumn.onDropTaskAtMinute` "forwards straight to"
+    `SchedulingActions.dropTask`. That closure lives on `TimelineDayCanvas`,
+    `TimelineDropInteractionSupport` and `SchedulePanelShellViews`; `CalDayColumn` has no such member,
+    so the sentence describes a route the reader cannot trace.
+  - `MilestoneMomentumWidget.swift` says three widgets use "the same three stops", naming
+    `TodayTasksWidgetView.statusPresentation`. Nothing of that name is declared, so the agreement the
+    comment asserts is unverifiable from the comment.
+  **Do them as one change**, not one per file: nine one-line corrections against nine ledger deletions
+  is a single reviewable diff, and split up it is nine chances to leave the ledger half-stale.
+
+- [T-717] **[[T-565]]'s file-qualified exclusion hides a real confusion, and the cost is measured.**
+  This repo writes `<FileBaseName>.<symbol>` when the symbol lives on a fileprivate type inside
+  `<FileBaseName>.swift`, so the detector excludes a claim whose member is declared anywhere in a file
+  of that name. That is right for the convention and wrong for two types that share a file. **Nine
+  spans are excluded by this rule today**, and at least three are genuinely misattributed rather than
+  file-qualified: `DateFormatters.timeString` (declared on `TimeFormatters`, a second enum in
+  `DateFormatters.swift`), `CadenceCalendarDayBadge.markedDayLabel(date:hasItems:)` (declared on
+  `CadenceCalendarDayAccessibility`, the second enum in that file — and it is [[T-555]]'s own fixture
+  comment), and `MarkdownEditorView.createAssets` (declared on `MarkdownEditor`, three types above
+  `MarkdownEditorView` in the same file).
+  The fix is not to delete the exclusion — `NotesView.NotesDateJumpButton` and three
+  `SettingsTagsSection.saveEdits` really are the convention. It is to narrow it: exclude only when the
+  file declares **exactly one** nominal type, so a single-type file keeps the convention and a file
+  holding two types has to say which. Measure the new population before landing it; if it is small
+  the entries join the ledger, and if it is large the narrowing is the wrong shape.
+
+- [T-718] **The unqualified half of [[T-565]] is measured and guarded by nothing.**
+  A backticked span shaped like a call — `` `foo(_:)` ``, `` `bar()` `` — with no type in front of it
+  is invisible to the qualified rule, and that is the spelling [[T-647]]'s defect actually used:
+  `insertSubtask` and `deleteSubtask`, named in a comment about a file that has neither, both
+  declared elsewhere in the tree. **Measured: 24 distinct call-shaped spans whose base name is
+  declared nowhere at all** — `regularInspectorWidth(for:)`, `kanbanColumnHeaderPadding()`,
+  `readSelection(from:)`, `taskDropHandler(scopeTasks:dropKey:)`, `splits(width:sides:)` and twenty
+  more. Roughly half are AppKit/UIKit/SwiftUI symbols a comment is entitled to mention
+  (`reloadInputViews()`, `validateMenuItem(_:)`, `unregisterForRemoteNotifications()`), which is why
+  this did not land with the qualified rule: the exclusion it needs is a framework allowlist, and an
+  allowlist of SDK names is a thing that rots.
+  T-647's *own* spelling — a name absent from the file the sentence is about but present elsewhere —
+  is a harder third rule and needs "the scope the sentence implies", which no arithmetic here can
+  read. Do the repo-wide-absence half first and say plainly that it is the weaker half.
+
 - [T-725] **`moveToContainer` is still `@discardableResult`, and that attribute is what let
   [[T-702]] happen.** Every product caller guards on the answer now, so the attribute serves only
   five test call sites (`TaskContainerAssignmentTests` ×4, `CadenceTaskContextInheritanceTests` ×1).
@@ -863,21 +928,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Note the batch that would have measured this was consumed by the locked screen — the instrumented
   tree is gone, so budget a rebuild. **The screen must be unlocked for the run to mean anything.**
 
-- [T-565] **A shared guard against the T-333 / T-337 / T-352 class: comments asserting machinery the
-  code no longer has.** Three tickets this week were the same defect — prose naming a mechanism that
-  does not exist, which is worse than a missing mechanism because it stops the next reader checking.
-  Proposed by the T-352 agent, which was asked to report rather than build it.
-  The instrument already exists: `CadenceScanInstrument`, plus the `strippingComments`-vs-raw pairing
-  that ticket's third test uses to prove a sentence lives in a comment. A sweep would pin a small
-  registry of **retired mechanism phrases** (`SceneStorage`, `todayDateSections`,
-  `SidebarStaticDestination`, ...) as absent from comments in files where they are also absent from
-  live code — i.e. flag prose asserting machinery no live line in the same file references.
-  **Keep the registry hand-curated.** A fully automatic version would fire on legitimate tombstones,
-  which this repo uses deliberately and well — 22 of them survive [[T-487]] on purpose. The value is
-  in catching the *claim*, not the *memorial*.
-  Use `strippingComments`, never `codeOnly` — `codeOnly` blanks string literals too, which is what
-  made an earlier copy scan permanently and silently green.
-
 - [T-584] *(**premise CORRECTED 2026-08-31 — this ticket, written by the coordinator, overstated the
   defect in two ways.** (1) **It is not an unnoticed bug; it is a recorded decision.**
   `CadenceTodayLayoutSupportTests.swift:142` `everyInspectorWidthTheTargetIPadsProduceFallsBackToOneNotesColumn`
@@ -1690,6 +1740,53 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   list: the simulator surface has no double-tap action at all.
 
 ## Done
+
+- [T-565] **A shared guard against the T-333 / T-337 / T-352 class: comments asserting machinery the
+  code no longer has.** Three tickets this week were the same defect — prose naming a mechanism that
+  does not exist, which is worse than a missing mechanism because it stops the next reader checking.
+  Proposed by the T-352 agent, which was asked to report rather than build it.
+  The instrument already exists: `CadenceScanInstrument`, plus the `strippingComments`-vs-raw pairing
+  that ticket's third test uses to prove a sentence lives in a comment. A sweep would pin a small
+  registry of **retired mechanism phrases** (`SceneStorage`, `todayDateSections`,
+  `SidebarStaticDestination`, ...) as absent from comments in files where they are also absent from
+  live code — i.e. flag prose asserting machinery no live line in the same file references.
+  **Keep the registry hand-curated.** A fully automatic version would fire on legitimate tombstones,
+  which this repo uses deliberately and well — 22 of them survive [[T-487]] on purpose. The value is
+  in catching the *claim*, not the *memorial*.
+  Use `strippingComments`, never `codeOnly` — `codeOnly` blanks string literals too, which is what
+  made an earlier copy scan permanently and silently green.
+  **CLOSED 2026-09-02 (`9bbc267`).** Built as a *name-resolution* rule rather than a phrase registry,
+  after measuring both. `CadenceCommentSymbolClaimTests` sweeps every Swift file in all five targets
+  and flags a backticked `<Type>.<member>` in a **comment** whose type is nominal-declared here and
+  whose member is declared neither on any type of that name nor in a file named after it. Population,
+  measured: 23,256 backticked spans in comments, 2,123 of them qualified by a repo-declared root, **39
+  that resolve to nothing**. Before this there were **zero** — no test in the repo read prose for
+  symbol existence at all.
+  **The registry idea was tried and dropped.** A hand-curated list of retired phrases only ever
+  catches phrases someone thought to add; the arithmetic version catches the *shape*, and the
+  tombstone problem this ticket warned about turned out to be solvable by ledgering rather than by
+  curation. 30 of the 39 are memorials or counterfactuals and are marked as such; **9 are live stale
+  claims** and belong to [[T-716]]. The split cannot be derived — no arithmetic tells a memorial from
+  a claim — so it is recorded per entry, in both directions, and a new offender or a repaired one
+  turns the suite red.
+  **Four exclusions, each pinned by the case it exists to let through**: an SDK-rooted claim
+  (`ModelContext.save()`) cannot be checked at all; a `commit*` glob names a family; `Theme.swift`
+  parses as `<Type>.<member>` and is a path; and `<FileBaseName>.<symbol>` is this repo's spelling
+  for a fileprivate type — that last one also swallows a real confusion, filed as [[T-717]].
+  **What it cannot see, stated rather than found later.** Prose with no symbol in it — [[T-563]]'s
+  entire ticket was a wrong premise carried in English for days, and nothing here would have fired on
+  it. Unqualified names (24 distinct, measured, [[T-718]]). And claims about *behaviour* rather than
+  existence: [[T-555]]'s `static let`-only sentence and [[T-625]]'s two-device merge both name symbols
+  that still resolve.
+  A third reader was needed and is now shared-shaped: `codeOnly` blanks comments **and** literals and
+  `strippingComments` blanks only comments, so neither hands back the prose. `partition` splits source
+  three ways in one traversal, its code half pinned equal to `CadenceSourceScan.codeOnly` on the four
+  inputs that separate a correct lexer from a plausible one, and every non-blank character of forty
+  real files asserted to belong to exactly one of the three halves.
+  Seven mutations, six killed — including one that caught a real detector bug before it landed: a
+  member pattern without a backtick reads `static var` + a backtick-escaped keyword as undeclared and
+  accuses two correct comments. The survivor is the weakened ledger comparison, reported as
+  *inconclusive* and settled by its pair, per the runbook's rule.
 
 - [T-686] **CLOSED 2026-09-02 (`ff7bb14`).** Fixed as written — one line, no copy changed, the
   fallback still "Untitled" and now trimmed before it is tested. **The ticket's prediction held and
