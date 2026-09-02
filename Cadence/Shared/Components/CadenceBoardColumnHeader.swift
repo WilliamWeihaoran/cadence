@@ -24,7 +24,24 @@ nonisolated struct CadenceBoardColumnHeaderMetrics: Sendable {
     /// by surface, and a board column is the one place that was still disagreeing.
     static let labelSize: CGFloat = 10
 
-    static let labelKerning: CGFloat = 0.4
+    /// The tracking on that label. **Derived, not typed (T-496).**
+    ///
+    /// This was a literal `0.4` — 0.04em against the eyebrow's derived 0.08em and the weekday
+    /// header's literal 0.05em, three letterspacings for one 10pt uppercase semibold role, each
+    /// file citing a sibling as the authority for its *size* while disagreeing about this. The
+    /// user settled it at 0.08em everywhere, so the number a board column header is kerned by
+    /// doubled; what it buys is that there is no longer a number here to disagree with.
+    ///
+    /// **Reading `SectionEyebrowLabel.kerningRatio` is the point, and a `0.8` here would not be.**
+    /// Three files each spelling `0.8` is the same defect one value later: three independently
+    /// editable constants, and the ratio the design system derives from read by one of them.
+    /// `CadenceUppercaseLabelTrackingTests.everyUppercaseTrackingReadsTheOneRatioRatherThanRestatingIt`
+    /// holds this declaration to naming the ratio rather than agreeing with it.
+    ///
+    /// Multiplied by *this* struct's own `labelSize` rather than by the eyebrow's, so the ratio is
+    /// what is shared and the size stays this file's to state — which is what makes the 9pt compact
+    /// tier able to take the same ratio without taking the same tracking.
+    static let labelKerning: CGFloat = labelSize * SectionEyebrowLabel.kerningRatio
 
     /// The task/item count at the trailing edge.
     ///

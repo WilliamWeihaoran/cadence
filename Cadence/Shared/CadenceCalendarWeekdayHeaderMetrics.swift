@@ -38,16 +38,30 @@ nonisolated struct CadenceCalendarWeekdayHeaderMetrics: Sendable {
 
     /// Kerning for the **uppercased** spelling — `MON` on the timed day columns.
     ///
-    /// **macOS's 0.5 wins**, because iOS's difference was not a decision: every uppercased short
-    /// label in Cadence is kerned (`CadenceBoardColumnHeaderMetrics.labelKerning`,
-    /// `SectionEyebrowLabel`), a 3-letter uppercase run is the case kerning exists for, and 0.5 on
-    /// three glyphs costs 1.5pt in a column that is at least 104pt wide at both widths — so nothing
-    /// in the iOS layout was buying anything by omitting it. The iOS side was a *missing modifier*,
-    /// not a `0` anybody typed; `iOSCalendarTimelineMetrics` never named kerning at all.
+    /// **macOS's 0.5 won the fork and then lost the ratio (T-496).** iOS's difference was never a
+    /// decision — every uppercased short label in Cadence is kerned, a 3-letter uppercase run is
+    /// the case kerning exists for, and the iOS side was a *missing modifier* rather than a `0`
+    /// anybody typed; `iOSCalendarTimelineMetrics` never named kerning at all. So 0.5 was the right
+    /// answer to "kerned or not". It was still a **third** letterspacing for one 10pt uppercase
+    /// semibold role, beside `CadenceBoardColumnHeaderMetrics`' literal 0.4 and
+    /// `SectionEyebrowLabel`'s derived 0.08em, in the one of the three files that had both siblings
+    /// in view and disagreed with both anyway.
+    ///
+    /// The user settled it at 0.08em everywhere, which takes this label from 0.5 to 0.8 — measured
+    /// at 1–6pt of line width across the strings actually drawn (`MON` 26 → 28pt, `WED` 26 → 27),
+    /// with no truncation at any candidate in the narrowest column this label heads. The collapsed
+    /// calendar-board rail, which is the one place letterspacing moves a layout *slot* rather than
+    /// a line width, was measured too and is not a constraint: `UNSCHEDULED` is 88pt at 0.08em
+    /// against a 96pt slot.
+    ///
+    /// **Derived, not typed.** A `0.8` here would be the same defect one value later — three files
+    /// each holding an independently editable constant, with the ratio the design system derives
+    /// from read by one of them. Multiplied by *this* struct's own `labelSize`, so the ratio is
+    /// what is shared and the size stays this file's to state.
     ///
     /// The month grids do **not** take this: they spell their weekdays title-case (`Sun`, from
     /// `CadenceScheduleSupport.weekdaySymbols`), and kerning belongs to the uppercased run.
-    static let labelKerning: CGFloat = 0.5
+    static let labelKerning: CGFloat = labelSize * SectionEyebrowLabel.kerningRatio
 
     /// The band that row of weekdays fills, over a month grid.
     ///
