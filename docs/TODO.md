@@ -662,10 +662,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-535] **Nothing in the release gate ever compiles the iOS surface.** `apple-release-readiness.md` is
-  the stated readiness source of truth, mentions iOS **zero** times, and both its verification commands
-  are `-destination 'platform=macOS'`. The iOS minimum (26.2) is stated in exactly one prose line
-  (`app-review-notes.md:8`) and pinned by no test. Worth fixing whichever way [[T-510]] is decided.
 
 
 
@@ -1083,14 +1079,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `project.pbxproj` too. Residue from that reading: [[T-665]].
 
 
-- [T-649] **A partly-failed image insertion says nothing about the part that failed.** VERIFIED.
-  `iOSMarkdownEditingSurface.insertPickedImages` drops any picked item whose
-  `try? await item.loadTransferable(type: Data.self)` returns nil and any whose `createAsset` returns
-  nil, then writes references for the survivors; macOS's `MarkdownEditorView.createAssets` does the same
-  through two `compactMap`s. Pick eight photos, get six, and neither editor says which two are missing
-  or why. [[T-629]] gave both doors a notice for a refused **commit**; this is the other half — a
-  refusal that happens before the commit and still has no sentence. Both notices already exist
-  (`imageFailureNotice`), so this is a count and a message, not new plumbing.
 
 - [T-642] **The iOS settle-failure alert may be invisible from the two surfaces that are sheets.**
   From [[T-636]](a). `CadenceTaskStatusEditing.toggleCompletion` records a refused settle on
@@ -1587,7 +1575,82 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   between finished strings stays inside it; one that interpolates a noun does not. Which of those you
   build decides whether the sweep still guards these six.
 
+- [T-707] **The iOS build reaches CI only if a human ticks a box, and CI does not run.**
+  From [[T-535]]. `.github/workflows/ci.yml` has an `ios-build` job filed under T-535's name, but it
+  is gated on `github.event_name == 'workflow_dispatch' && inputs.run_ios`, and the file's own header
+  says "PROPOSAL. Nothing runs until Actions is enabled on this repository." So the only iOS gate that
+  actually executes today is the third verification command in `docs/apple-release-readiness.md`, run
+  by whoever is doing a release. The workflow already states the blocker for doing better — a per-job
+  `paths:` filter does not exist, so running it automatically on pushes that touch `Cadence/iOS/`
+  needs a cheap ubuntu `changes` job emitting an output the `if:` reads, or a third-party
+  paths-filter action and the supply-chain surface that brings. **Decide it rather than leaving it in
+  a comment**, and note the cost the file records: ~6-10 billed runner-minutes per iOS run.
+
+- [T-708] **The inline image-failure notice has no way to go away.**
+  From [[T-649]], and it predates it: [[T-629]] introduced `imageFailureNotice` on both editors and
+  neither platform gives it a dismissal, an auto-clear, or a timeout. It is cleared only by the *next*
+  image insertion through the same door — `MarkdownEditorView.createAssets`,
+  `iOSMarkdownEditingSurface.insertPickedImages` / `createPastedImageAssets` — so a user who pastes
+  one bad picture and then goes back to typing keeps a red sentence under the toolbar for the rest of
+  the session. `CadenceInlineFailureNotice` is a bare `Text`; whatever is decided should be decided
+  for that component rather than twice at its call sites, and it has other callers to check first.
+
+- [T-709] **`CadenceBuildInvocationHygieneTests` sweeps `.md` and `.sh`, and CI is `.yml`.**
+  From [[T-535]]. `scannedPaths()` appends a file only when it `hasSuffix(".md")` or `hasSuffix(".sh")`,
+  so `.github/workflows/*.yml` is outside the walk entirely — and those files contain `xcodebuild`
+  invocations. **There is no live offender**: every invocation in `ci.yml` goes through
+  `scripts/xcb.sh`, which supplies a private `-derivedDataPath` itself. The gap is that nothing would
+  notice a future workflow step calling `xcodebuild` directly. The `xcodebuild` in a YAML `run:` block
+  is shell, so `shellText(at:)` would need a third branch (a script is shell throughout, markdown only
+  inside fences, YAML only inside `run:` blocks) — the extraction is the work, not the walk.
+
 ## Done
+
+- [T-535] **Nothing in the release gate ever compiles the iOS surface.**
+  **Closed 2026-09-02 in `56244bc`.** The premise held and the framing was slightly off: this was never
+  "the gate forgot to ship iOS". iOS is deliberately built and not distributed — Mac App Store and
+  Developer ID are the channels, one `INFOPLIST_FILE` serves both platforms, and
+  `app-store-submission-packet.md` is macOS-only on purpose. The defect is narrower and worse. **The
+  gate could not tell you the iOS tree still compiles**: `CadenceTests` builds for macOS, so it never
+  compiles `Cadence/iOS/` at all, and a break in roughly half this repository survived every check the
+  release process runs.
+  `docs/apple-release-readiness.md` gains a third verification command
+  (`-destination 'generic/platform=iOS Simulator' … build` — no simulator, no booted device) and a
+  Release Position bullet saying iOS is built, not distributed, so the command is not read as a fourth
+  channel. **Pinned rather than written down, in the suite the gate itself runs**: the gate's third
+  command is `-only-testing:CadenceTests/AppStoreReviewReadinessTests`, so
+  `theReleaseVerificationCommandsCompileTheIOSSurfaceAsWellAsMacOS` executes *because* someone ran the
+  gate, and it also asserts the command still names this suite. `CadenceBuildInvocation` gained a
+  `destination` reader — the token list cannot hold `generic/platform=iOS Simulator`, which tokenises
+  into two — and it skips malformed input rather than trapping.
+  **The lock question, answered rather than assumed:** the two `build` actions need nothing; the `test`
+  action must take `scripts/test-host-lock.sh` when anything else may be running a macOS test, because
+  the private DerivedData path isolates the build and not the app-group container. Bare `xcodebuild`
+  with a private path stays — `AGENTS.md` permits it, and the new line is swept by
+  `CadenceBuildInvocationHygieneTests` like the others.
+  What no test can pin is that a human ran the commands. Residue: [[T-707]] (the CI iOS job is
+  manual-only and CI does not run), [[T-709]] (the invocation sweep cannot see `.yml`).
+
+- [T-649] **A partly-failed image insertion says nothing about the part that failed.**
+  **Closed 2026-09-02 in `1ca8174`.** [[T-629]]'s notice covered a refused *commit*, which is
+  all-or-nothing because `commitInsert` un-inserts the whole batch. Everything lost *before* the commit
+  was silent: `try? await item.loadTransferable(type: Data.self)` for a photo the picker cannot vend,
+  and the `compactMap`s over `MarkdownImageAssetService.createAsset` for anything
+  `normalizedImageData` cannot decode. All three doors now count what they were handed and report what
+  they lost, through the **same** `imageFailureNotice` — one door, one place to look. The two sentences
+  cannot contradict each other, because a batch that lost items before the commit still commits its
+  survivors and a batch whose commit was refused has no survivors; both door scans now assert the file
+  declares exactly one such `@State`, so a second notice cannot be added beside the first.
+  `CadenceMarkdownImageInsertionNotice.notice(attempted:accepted:)` is shared and unconditional, which
+  is what lets the arithmetic be tested rather than scanned — the iOS doors are behind `#if os(iOS)`
+  and this macOS test target never compiles them. Returning `nil` when nothing was lost is
+  load-bearing, not tidiness: assigning the result is how a clean insertion *clears* a notice an
+  earlier failure left on screen.
+  Two things the ticket did not anticipate. The empty exits — `guard !assets.isEmpty else { return [] }`
+  — were the same defect with the count at its maximum, and were silent too; they carry the refusal
+  sentence now. And `allowsImageInsertion` is deliberately left alone: a door closed by configuration
+  did not lose the user's pictures and has nothing to say. Residue: [[T-708]] (the notice has no
+  dismissal and no auto-clear, on either platform, and that predates this ticket).
 
 - [T-497] *(**re-scoped 2026-08-31 by [[T-566]]: it is 4 sites, not 2.** The widened
   save-commit detector follows a call one frame down, which the old pattern structurally could not —
