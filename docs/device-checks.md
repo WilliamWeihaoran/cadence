@@ -1,25 +1,36 @@
 # Checks that need a real device
 
-Everything here has been pushed as far off-device as it goes; what is left is what a simulator or a
-test genuinely cannot settle. Each item says what to do, what should happen, what it means if it
-doesn't, and — new — **what is already settled**, so nobody re-checks something a test now holds.
+Everything here has been pushed as far off-device as it goes; what is left is what a test **and a
+simulator** genuinely cannot settle. Each item says what to do, what should happen, what it means if
+it doesn't, and **what is already settled**, so nobody re-checks something a test now holds.
 
-Ordered by cost. Items 1–4 are a phone; item 5 is any iPad-width run. The whole list is about five
-minutes.
+Three items, eight steps, all on a phone. Under three minutes.
+
+**Re-triaged 2026-09-02 ([T-561]).** It was five items and fifteen steps, written in August when
+nobody could drive anything. Agents drive iPhone and iPad simulators now, so most of it is somebody
+else's job — [Moved off this list](#moved-off-this-list) at the bottom says what went where and what
+took it. Do not add an item back here without naming the simulator action that cannot perform it.
 
 ---
 
 ## 1. Can you paste an image into a note? ([T-280])
 
-**Why it can't be checked here:** `Cadence/iOS/` is inside `#if os(iOS)` and the test target builds
-for macOS, so the one link nobody can evaluate is whether UIKit consults
-`iOSMarkdownTextView.canPerformAction` when it builds the edit menu. That is the entire fix.
+**Why neither a test nor a simulator can settle it:** `Cadence/iOS/` is inside `#if os(iOS)` and the
+test target builds for macOS, so the one link nobody can evaluate is whether UIKit consults
+`iOSMarkdownTextView.canPerformAction` when it builds the edit menu. That is the entire fix. A
+simulator can long-press and screenshot the menu, but nothing in the simulator surface puts an
+**image** on the device pasteboard, and an empty clipboard cannot enable Paste — so that run would
+prove nothing either way.
 
-**Already settled off-device:** the rest of the chain, in `MarkdownImagePasteTests`. The override
-dispatches to a handler, `makeUIView` assigns that handler unconditionally, and the coordinator it
-reaches composes its insertion out of the same shared calls the macOS paste uses — which is why
+**Already settled off-device:** the rest of the chain, in `MarkdownImagePasteTests` — the override
+dispatches to a handler, `makeUIView` assigns it unconditionally, and the coordinator composes its
+insertion out of the same shared calls the macOS paste uses, which is why
 `theMobilePasteWritesTheSameTextTheMeasuredMacOSPasteDoes` can measure macOS against a real
-clipboard and speak for the phone. So if Paste fires at all, the picture lands.
+clipboard and speak for the phone. So if Paste fires at all, the picture lands. **Which hosts may
+offer it at all** is settled too, in `MarkdownImagePasteAffordanceTests`:
+`theMobilePasteGateConsultsTheHostsImagePolicy` pins that the gate reads
+`allowsMarkdownImageInsertion` *before* the pasteboard, and
+`theMobileRepresentableThreadsTheHostsImagePolicyIntoTheTextView` the wire from host to view.
 
 **On the phone:**
 1. Take a screenshot (Side + Volume Up) so the clipboard holds an image and nothing else, or copy a
@@ -32,20 +43,29 @@ clipboard and speak for the phone. So if Paste fires at all, the picture lands.
 - **If Paste is absent or greyed:** the override is not being consulted and `canPerformAction` is
   the wrong seam on iOS — the answer is a `UIEditMenuInteraction` item or `buildMenu(with:)`, not a
   wider gate. Tell me and I'll move it.
-- **If Paste is enabled and nothing happens:** the handler did not mint an asset. That is expected
-  in the note *template* editor and the calendar event sheets, which refuse image insertion on
-  purpose (T-421/T-422) — but in the Notes tab it is a defect.
+- **If Paste is enabled and nothing happens:** the handler did not mint an asset. That is a defect
+  wherever you see it. **This bullet used to say the inert-Paste case was expected in the note
+  template editor and the calendar event sheets; that is no longer true.** T-504 (`dc5da1e`) landed
+  four hours after this checklist was last written, and a refusing host now advertises no bitmap
+  type at all — so in those editors **Paste should be absent**, not enabled-and-inert
+  (`MarkdownImagePasteAffordanceTests.aRefusingHostDoesNotOfferPasteForAScreenshot`, with
+  `aRefusingHostStillOffersPasteForText` for the text pasting that must keep working, and
+  `CadenceMarkdownImageInsertionScopeTests.theNoteTemplateEditorRefusesImageInsertion` /
+  `theCalendarEventEditorRefusesImageInsertion` for the refusals themselves).
 
 ---
 
 ## 2. Can you dismiss the keyboard in the Notes tab? ([T-55])
 
-**Why it can't be checked here:** the simulator suppresses the software keyboard while a Mac
-keyboard is attached, and that toggle lives in Simulator.app.
+**Why neither a test nor a simulator can settle it:** the simulator suppresses the software keyboard
+while a Mac keyboard is attached, and that toggle lives in Simulator.app — which agents here are not
+to touch. No keyboard, no keyboard-dismiss gesture.
 
-**Why it's in doubt:** the note editor's "Done" bar was removed (`64218d1`). That bar's only job was
-to drop focus. What's left is `keyboardDismissMode = .interactive` — dragging the note text downward
-should carry the keyboard away, the way Apple Notes behaves. It has never been seen to work here.
+**Why it's in doubt:** the note editor's "Done" bar was removed (`64218d1`); its only job was to
+drop focus. What's left is `keyboardDismissMode = .interactive`
+(`Cadence/iOS/iOSMarkdownEditor.swift:170`) — dragging the note text downward should carry the
+keyboard away, the way Apple Notes behaves. It has never been seen to work here, and no test asserts
+it, deliberately: the property being set is not the question, UIKit honouring it is.
 
 **On the phone:**
 1. Notes tab → Daily. Tap into the note body so the keyboard comes up.
@@ -61,10 +81,11 @@ sheets) still has its own Done/Cancel above the keyboard.
 
 ---
 
-## 3. Does double-tap work in the note editor? ([T-55])
+## 3. Does a double tap work in the note editor? ([T-55])
 
-**Why it can't be checked here:** the simulator tooling has no double-tap action, and two scripted
-taps land outside iOS's ~350ms window — they register as two single taps.
+**Why neither a test nor a simulator can settle it:** the simulator surface has no double-tap
+action. `tap` is one touch, `touch_path` is one continuous drag, and two scripted `tap`s are two
+tool round-trips — far outside iOS's ~350 ms window, so they land as two single taps.
 
 **Why it's in doubt:** a gesture recogniser used to swallow every double tap. It is now gated in
 `gestureRecognizerShouldBegin` so it never begins on ordinary prose (`64218d1`), which should make
@@ -78,76 +99,53 @@ test can see is whether UIKit then hands the released touch to the text view.
 **On the phone, in any note:**
 1. Double-tap a plain word. → **Expected:** the word is selected.
 2. Double-tap inside a rendered **code fence**. → **Expected:** it reveals its markdown source.
-3. Single-tap plain text. → **Expected:** the caret lands there.
-4. Tap a `[[wiki link]]` or a task-embed card. → **Expected:** it opens.
 
-Any of 1–4 failing is worth reporting; 1 and 2 are the untested pair.
+Both are worth reporting; they are the untested pair, and they are all that is left of this item —
+the single-tap steps that used to sit under it went to the simulator.
 
-**A table is deliberately not on that list any more** (T-221). A double tap on a grid used to put
-the caret in it and un-render it; a **single** tap now opens the cell under your finger, and the
-source is a menu command. If double-tapping a table reveals source, that is a regression, not a
-pass.
+**A table is deliberately not on that list** (T-221). A double tap on a grid used to put the caret
+in it and un-render it; a **single** tap now opens the cell under your finger, and the source is a
+menu command. If double-tapping a table reveals source, that is a regression, not a pass.
 
 ---
 
-## 4. Drag-to-create ([T-89])
+## Moved off this list
 
-**This item shrank, twice.** It used to say every drag-to-create claim in the repo was inference,
-because no simulator gesture API lifts a `UIDragInteraction`. That was already wrong when it was
-written — [D-89] drove a real drag on the simulator, and the recipe is in `AGENTS.md` — and it is
-now moot as well: since T-171 neither `+` uses the system drag at all. Both run one custom
-`DragGesture` through `CadenceCapturePressResolver`, hit-testing against frames the targets publish
-to `iOSNewTaskDropFrameRegistry` — all of which is ordinary code, and all of which is now tested.
+Each left because something can settle it that could not in August. None is "probably fine" — each
+is a queued simulator job, listed so the trail does not go cold.
 
-**Already settled off-device**, in `CadenceCapturePaletteTests`, `CadenceTaskDropSupportTests` and
-`CadenceTaskGroupDropSupportTests`: that a press which moves is a drag and a press which holds is a
-palette; that the palette cannot bloom on top of a drag; that the smallest containing frame wins the
-hit test and a point over nothing hits nothing; that a drop on a row takes the row's placement over
-the button's own seed while a drop on nothing keeps it; and what caption a group header — including
-an empty one — hands the ghost.
+- **Drag-to-create ([T-89], was item 4, five steps) — a simulator drives the gesture.** `control`'s
+  `touch_path` drags a single finger along an arbitrary path *including long-press-then-drag* —
+  every gesture the item asked for — and `attach` opens a live panel a person can watch the mid-drag
+  ghost in; the composer that opens after the lift is a screenshot. Since T-171 neither `+` uses a
+  system drag: both run one custom `DragGesture` through `CadenceCapturePressResolver`, hit-testing
+  frames the targets publish to `iOSNewTaskDropFrameRegistry`. Transitions and seeds are pinned in
+  `CadenceCapturePaletteTests`
+  (`aPressThatMovesBeforeTheHoldIsADragImmediately`, `theHoldCannotOpenThePaletteOnTopOfADrag`,
+  `theSmallestContainingFrameWinsAHitTest`, `aPointOverNothingHitsNothing`,
+  `aDropOnARowSeedsThatRowsPlacement`, `aDropOnNothingSeedsWhatATapSeeds`),
+  `CadenceTaskDropSupportTests` and `CadenceTaskGroupDropSupportTests`
+  (`anEmptyColumnSeedsWhatTheFilledOneNextToItSeeds`,
+  `theGhostOnASectionHeaderNamesTheListAndTheColumn`). What is left is only whether the frames the
+  registry publishes land where the eye sees the rows — a look, not a phone. **The old item's
+  pointer to a drag recipe "in `AGENTS.md`" was stale: there is no such recipe there.**
 
-**What is left is the part no pure function can answer:** whether a real finger's event stream
-actually drives those transitions, and whether the frames the registry publishes land where the eye
-sees the rows.
+- **Both note sheets at iPad width ([T-447], was item 5) — a simulator settles it.** The item always
+  conceded this is a width question, not a device one, and six stock iPad simulators already exist
+  here, so nobody has to create one. The off-device half is done:
+  `CadenceMisfiledSurfaceTests.nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader`
+  pins that nothing in `Cadence/` writes the environment key, and the event sheet's commit notice is
+  covered by `CadenceEventKitPlatformParityTests` for outcome and
+  `theEventSheetKeepsItsCommitNoticeInsideTheHeader` for position. The tell is unchanged and binary:
+  on the event-note sheet and the linked-note sheet, the 320pt rail's `Theme.surface` either runs the
+  full height of the sheet or stops just under the title. Do not judge 24pt against 22pt by eye.
 
-**On the phone:**
-1. Press the `+` in the tab bar and move immediately — do not hold. Drag onto a task row.
-   → **Expected:** the composer opens pre-filled with that row's list, section and dates.
-2. Press and *hold* the `+` without moving. → **Expected:** the capture palette blooms; sliding
-   between its segments selects, and it does **not** turn into a drag under your finger.
-3. Drag onto an **empty** group's header. → **Expected:** seeded from the group. This is the case
-   the feature was built for, and the one where a published frame is most likely to be wrong.
-4. While dragging, a dashed "New task" ghost should open **between** rows and name what it will
-   inherit — not highlight an existing task.
-5. Tap the `+` normally afterwards. → **Expected:** opens the composer instantly, unseeded.
+- **Single-tap caret, and tapping a `[[wiki link]]` or a task-embed card (was steps 3.3 and 3.4) — a
+  simulator taps.** One `tap` and one screenshot each. Which target a location resolves to is
+  already pinned by `MarkdownReferenceDisplaySupportTests`
+  (`referenceRangesPointAtVisibleDisplayText`, `inlineSegmentsPreserveReferenceTargets`).
 
-If a drag leaves the tab bar unresponsive, relaunch, and tell me — that was a known simulator side
-effect of an abandoned drag and it is worth knowing whether hardware does it too.
-
----
-
-## 5. Do the note sheets still get regular width on an iPad? ([T-447])
-
-**Why it can't be checked here:** it is not a device question so much as a *width* question — an
-iPad-sized run of any kind settles it, simulator included. It is here because no scan can see it.
-
-**Why it's in doubt:** `iOSNoteEditorSheetHeader` now reads `@Environment(\.horizontalSizeClass)`
-itself rather than taking the flag from the sheet that hosts it (T-281). Nothing in `Cadence/`
-writes that environment key — `nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader`
-pins that — so the only thing left is whether SwiftUI re-derives it inside
-`NavigationStack` → `HStack` → `.frame(width: 320)`. In theory a fixed frame does not change a scene
-trait. In practice nobody has looked.
-
-**On an iPad, both note sheets** — the event-note sheet (Calendar → an event → its note) and the
-linked-note sheet (open a `[[wiki link]]` from inside a note):
-
-- **Expected:** a 320pt rail on the left whose `Theme.surface` background runs the **full height of
-  the sheet**, with a 24pt bold title and 20pt padding all round.
-- **If the trait did not propagate:** the rail's background stops just under the title instead of
-  filling the column, the title drops to 22pt and the padding to 18/14. The height is the
-  unmistakable tell; do not try to judge 24pt against 22pt by eye.
-
-Also worth one glance while you are there: on the event-note sheet, a note that saves while its
-Apple Calendar mirror does not should show its failure line **under the title, inside that header
-block**. The outcome is covered by `CadenceEventKitPlatformParityTests` and the position by
-`theEventSheetKeepsItsCommitNoticeInsideTheHeader`; only the pixel is unseen.
+- **"The UI target is unreliable" is no longer a reason to route anything here.** `CadenceUITests`
+  was never flaky ([T-563]) — it cannot pass while the Mac's screen is locked, and unlocked it
+  reached the foreground in 20 of 20 runs, p50 0.91 s. The one live intermittency is [T-710], a
+  seeded sidebar row missing at 5 s in 4 of 20 runs — a macOS test-timing question, not a phone one.
