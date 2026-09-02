@@ -1714,6 +1714,19 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   task; (5) a plain tap afterwards opens the composer instantly, unseeded. If an abandoned drag
   leaves the tab bar unresponsive, say so -- that was a known simulator side effect and it is worth
   knowing whether it still happens. Belongs with the queued simulator batch alongside [[T-447]].
+  **CLOSED 2026-09-03.** Driven on iPhone 17 Pro / iOS 26.5; **all five predicates pass.** The
+  frames `iOSNewTaskDropFrameRegistry` publishes land where the eye sees the rows: a drop on a task
+  row seeded the composer with that row's list, section **and** date; a drop on an **empty** column
+  header — the case most likely to publish a wrong frame — seeded list and section correctly. Press
+  and hold still blooms the arc, sliding onto a segment highlights it without converting to a drag,
+  and lifting in the dead zone does nothing. The mid-drag ghost opens **between** rows and names
+  what it inherits, never highlighting the existing task. A plain tap and a drop on nothing both
+  open unseeded. **The abandoned-drag tab-bar freeze did not reproduce** in five drags.
+  **The one thing [[T-561]]'s triage did not know:** a `touch_path` is **atomic** — down, move and
+  lift in one call — so nothing mid-gesture can be screenshotted from the tool, which only ever
+  sees the end state. The ghost and the bloomed palette were captured with a background
+  `xcrun simctl io <udid> screenshot` loop running across the gesture. **That recipe is now in
+  `docs/device-checks.md`**; without it the next agent reports "the ghost could not be seen".
 
 - [T-723] **Two note-editor taps have never been observed, and together they are one simulator
   session.** Were steps 3.3 and 3.4 of `docs/device-checks.md`; they left the phone list in
@@ -1723,6 +1736,12 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`referenceRangesPointAtVisibleDisplayText`, `inlineSegmentsPreserveReferenceTargets`), so the
   residue is one tap and one screenshot each. The *double*-tap pair deliberately stayed on the device
   list: the simulator surface has no double-tap action at all.
+  **CLOSED 2026-09-03.** Both taps observed on iPhone 17 Pro / iOS 26.5.
+  **Caret: measured, not eyeballed** — tapped mid-line, then typed `@@@`, and the characters landed
+  at the tap rather than at the end of the text. **Wiki link:** one tap on a rendered `[[Notepad]]`
+  opened the linked-note sheet with its backlink present. **Task embed:** one tap opened Edit Task
+  from both spellings — the standalone card and the same reference drawn inline.
+  Found [[T-734]] on the way, which is the reason this was worth driving rather than reasoning.
 
 - [T-728] **The collapsed rail's slot has no asserted relationship to the label it holds.**
   `collapsedRailLabelSlotHeight = 96` is a constant; the rotated `UNSCHEDULED` run measures **88pt at
@@ -1784,6 +1803,19 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **This is the same shape as [[T-280]]'s premise, which was also false and also load-bearing**: an
   item stayed on the hardware list for weeks because of an untested claim about the tooling rather than
   about the app. Re-triage before anyone carries it to a device.
+
+- [T-735] **`scripts/simulator-claim.sh` isolates the store but not `UserDefaults`, and the leak reads
+  as a product bug.** Cost twenty minutes on 2026-09-03: the compact Calendar tab opened on **August
+  2026 with Aug 17 selected** on a cold launch against an **empty private store**. That looks exactly
+  like a date bug. It is not — `iOSCalendarView.restorePersistedCalendarDates()` restores
+  `CadenceCalendarDateMemory`, which is `defaults.string(forKey:)`, so it is **another agent's leftover
+  UI state on the shared device**. Working as designed per [[T-369]]/[[T-405]].
+  The claim script's whole argument is that a per-agent store id means two agents on one device cannot
+  merge data — true for the SwiftData store, **false for every `@AppStorage` value and every remembered
+  position**, which live in one device-wide defaults domain.
+  Fix shape: either document it in the script's header beside the store-id reasoning, or pass a
+  per-agent `-CadenceSuiteName` argument domain so defaults are isolated too. The second is better,
+  because the first only helps an agent who reads the header *before* being misled.
 
 ## Done
 
