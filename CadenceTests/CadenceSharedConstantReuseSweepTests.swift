@@ -718,9 +718,17 @@ struct CadenceSharedConstantReuseSweepTests {
         // `TaskTitleSupport.displayTitle` and the population fell to 9, so the floor went red on a
         // change that made the tree *better* — which is what a bare count over a deliberately
         // shrinking population always eventually does. Named witnesses hold the same claim without
-        // that failure mode: both of these type the compact label as a **stored default** on a
-        // model, not as a hand-spelled display fallback, so no de-duplication sweep can take them.
-        // A harvest that stopped matching loses both at once.
+        // that failure mode: both of these type the compact label in `Models/`, the one tree all
+        // three targets compile, and both sit under the harvest's twelve-character floor, so no
+        // de-duplication sweep can take them. A harvest that stopped matching loses both at once.
+        //
+        // **Amended by T-733**, because the reason these two were named has half changed. Both used
+        // to be **stored defaults** — `Note.title` and `Document.title` each defaulted to the word.
+        // `Note`'s is gone: a stored default is text the user has to delete before typing, and it
+        // produced `UntitledTarget` on a simulator. What is left in `Note.swift` is `displayTitle`'s
+        // per-kind fallback for `.list`, a draw-site string that stays ([[T-609]]). `Document` is a
+        // legacy migration source with no UI, so its default was left alone. The witness holds
+        // either way; the sentence explaining it did not.
         let compactSites = sites[CadenceTitleNormalization.defaultCompactTitle] ?? []
         #expect(compactSites.contains("Cadence/Models/Note.swift"))
         #expect(compactSites.contains("Cadence/Models/Document.swift"))

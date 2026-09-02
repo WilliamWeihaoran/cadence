@@ -240,7 +240,9 @@ struct CadenceNoteFolderSurfaceTests {
         #expect(filed.area?.id == area.id)
         #expect(filed.project == nil)
         #expect(filed.order == 3)
-        #expect(filed.content == "# Untitled\n\n")
+        // An empty H1 since T-733 — still the rename control, with nothing in it for the first
+        // keystroke to land after.
+        #expect(filed.content == "# \n\n")
         #expect(try context.fetch(FetchDescriptor<Note>()).count == 1)
     }
 
@@ -278,11 +280,16 @@ struct CadenceNoteFolderSurfaceTests {
         #expect(moved.folderPath == CadenceNoteFolderPath.root)
     }
 
+    /// **The blank case seeds an empty heading since T-733**, not the word. It used to substitute
+    /// `"Untitled"`, which was unreachable while `Note.title` defaulted to that same word — and
+    /// dropping the default is what would have made it fire, renaming every new list note back to
+    /// `Untitled` through `MarkdownNoteTitleSync` on its first commit.
+    /// `CadenceStoredNoteTitleDefaultTests` holds that loop closed end to end.
     @Test func aNewNoteOpensOntoItsOwnTitleAsAHeading() {
         #expect(CadenceListNoteFiling.seededContent(for: "Kickoff") == "# Kickoff\n\n")
         #expect(CadenceListNoteFiling.seededContent(for: "  Kickoff  ") == "# Kickoff\n\n")
-        #expect(CadenceListNoteFiling.seededContent(for: "   ") == "# Untitled\n\n")
-        #expect(CadenceListNoteFiling.seededContent(for: "") == "# Untitled\n\n")
+        #expect(CadenceListNoteFiling.seededContent(for: "   ") == "# \n\n")
+        #expect(CadenceListNoteFiling.seededContent(for: "") == "# \n\n")
     }
 
     // MARK: - What the repair pass does to a folder

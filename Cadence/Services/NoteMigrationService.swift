@@ -478,8 +478,16 @@ nonisolated enum NoteMigrationService {
     ///
     /// Seeded with its title as a `# Heading` so the body's H1 is the rename control from the
     /// first keystroke, the same way list notes work.
+    ///
+    /// **The default is empty, not `"Untitled"` (T-733).** It used to be the word, and the word was
+    /// interpolated straight into the seeded heading — so the button produced a note whose body
+    /// read `# Untitled` with the caret after it, and the next keystroke extended the placeholder
+    /// instead of replacing it. An empty title seeds `"# \n\n"`: still an H1, still the rename
+    /// control, with nothing in it. `MarkdownNoteTitleSync` reads an empty H1 as "leave the stored
+    /// title alone", so the note stays nameless until the user names it and `Note.displayTitle`
+    /// calls it `Notepad` in the meantime.
     @discardableResult
-    static func createPermanentNote(in context: ModelContext, title: String = "Untitled") throws -> Note {
+    static func createPermanentNote(in context: ModelContext, title: String = "") throws -> Note {
         let note = Note(kind: .permanent, title: title, content: "# \(title)\n\n")
         context.insert(note)
         try context.save()

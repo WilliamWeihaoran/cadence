@@ -12,7 +12,24 @@ nonisolated enum NoteKind: String, CaseIterable {
 @Model final class Note {
     var id: UUID = UUID()
     var kindRaw: String = NoteKind.list.rawValue
-    var title: String = "Untitled"
+
+    /// **Empty by default, and that is a decision (T-733).**
+    ///
+    /// This defaulted to the literal `"Untitled"`, which made the word *stored text* rather than a
+    /// placeholder: a new notepad note was seeded `"# Untitled\n\n"` from it, the editor put the
+    /// caret after the heading, and typing `Target` produced `UntitledTarget` — observed on a
+    /// simulator on 2026-09-02.
+    ///
+    /// Nothing needed the stored default to begin with. `displayTitle` below already falls back per
+    /// kind — `"Notepad"` for `.permanent`, the date key for `.daily`, `"Untitled"` for `.list` —
+    /// so the default was redundant as well as in the way, and it shadowed every one of those
+    /// fallbacks by never being blank.
+    ///
+    /// Rows already holding the literal are cleared by
+    /// `DataIntegrityRepairService.repairStoredDefaultNoteTitles`, at load rather than by a schema
+    /// migration: this project has no `SchemaMigrationPlan`, and a property *default* is not
+    /// persisted anyway — it applies to rows this build creates, never to rows already on disk.
+    var title: String = ""
     var content: String = ""
     var order: Int = 0
     var createdAt: Date = Date()
@@ -43,7 +60,7 @@ nonisolated enum NoteKind: String, CaseIterable {
     init(
         id: UUID = UUID(),
         kind: NoteKind,
-        title: String = "Untitled",
+        title: String = "",
         content: String = "",
         order: Int = 0,
         createdAt: Date = Date(),

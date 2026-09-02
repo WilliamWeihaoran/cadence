@@ -229,9 +229,19 @@ enum CadenceListNoteFiling {
 
     /// A new note opens onto its own title as an H1, which is what the markdown editor keeps in
     /// step with `note.title`.
+    ///
+    /// **A nameless note gets an empty heading, not the word (T-733).** This used to substitute
+    /// `"Untitled"` for a blank title, which was harmless only while `Note.title` defaulted to that
+    /// same word: every new list note was born titled, so the branch never fired. With the stored
+    /// default gone the branch became the thing that put it back — `MarkdownNoteTitleSync` reads
+    /// the first line of the body and writes it to `title`, so a body seeded `# Untitled` renames
+    /// the note to `Untitled` on its first commit and the repair pass clears it again on the next
+    /// launch. `"# \n\n"` is still an H1, so it is still the rename control from the first
+    /// keystroke; it is just empty, and an empty H1 is the one case `MarkdownNoteTitleSync`
+    /// deliberately says nothing about.
     static func seededContent(for title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "# \(trimmed.isEmpty ? "Untitled" : trimmed)\n\n"
+        return "# \(trimmed)\n\n"
     }
 }
 

@@ -15,6 +15,7 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     var duplicateHabitCompletionsRemoved: Int = 0
     var duplicateRecurrenceOccurrencesRemoved: Int = 0
     var habitRemindersCleared: Int = 0
+    var defaultNoteTitlesCleared: Int = 0
     var movedAreas: Int = 0
     var movedProjects: Int = 0
     var movedTasks: Int = 0
@@ -33,6 +34,7 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
             duplicateHabitCompletionsRemoved > 0 ||
             duplicateRecurrenceOccurrencesRemoved > 0 ||
             habitRemindersCleared > 0 ||
+            defaultNoteTitlesCleared > 0 ||
             movedAreas > 0 ||
             movedProjects > 0 ||
             movedTasks > 0 ||
@@ -94,6 +96,7 @@ nonisolated extension DataIntegrityRepairReport {
         duplicateHabitCompletionsRemoved = try container.decodeIfPresent(Int.self, forKey: .duplicateHabitCompletionsRemoved) ?? 0
         duplicateRecurrenceOccurrencesRemoved = try container.decodeIfPresent(Int.self, forKey: .duplicateRecurrenceOccurrencesRemoved) ?? 0
         habitRemindersCleared = try container.decodeIfPresent(Int.self, forKey: .habitRemindersCleared) ?? 0
+        defaultNoteTitlesCleared = try container.decodeIfPresent(Int.self, forKey: .defaultNoteTitlesCleared) ?? 0
         movedAreas = try container.decodeIfPresent(Int.self, forKey: .movedAreas) ?? 0
         movedProjects = try container.decodeIfPresent(Int.self, forKey: .movedProjects) ?? 0
         movedTasks = try container.decodeIfPresent(Int.self, forKey: .movedTasks) ?? 0
@@ -293,7 +296,65 @@ nonisolated enum DataIntegrityRepairService {
             report: &report
         )
         repairOutOfRangeHabitReminders(in: store, report: &report)
+        repairStoredDefaultNoteTitles(in: store, state: state, report: &report)
     }
+
+    /// T-733: `Note.title` defaulted to the literal `"Untitled"` until this build, so the word is
+    /// **stored text** on every note any earlier build created. That is what made a new note's
+    /// title field pre-filled and the caret land after it — typing `Target` produced
+    /// `UntitledTarget`. Dropping the default fixes the notes this build makes and does nothing at
+    /// all for the ones already on disk, because a property default is not persisted: it is applied
+    /// by the initializer, and rows in the store were initialized by the old one.
+    ///
+    /// **A data edit at load, not a schema change.** There is no `SchemaMigrationPlan` in this
+    /// project and this needs none — no column is added, removed or retyped, and nothing here would
+    /// be legal in a migration plan anyway. It is the same kind of pass as
+    /// `repairOutOfRangeHabitReminders` above and it is placed beside it deliberately.
+    ///
+    /// **Idempotent, and by construction rather than by a flag.** The predicate is "this row's
+    /// title is exactly the retired default"; the edit makes it the empty string, which is not that
+    /// literal. So a second run over the same store matches nothing, `defaultNoteTitlesCleared`
+    /// stays 0, `changed` stays false for this pass, and no save is taken. There is no
+    /// "already migrated" marker to get out of step with the store — running it twice, or on a
+    /// device that has already run it, or on a row that arrives from CloudKit *after* it ran, all
+    /// reach the same fixed point. Every device writes the same empty string, so it cannot ping-pong
+    /// the way a pass that invented a value would.
+    ///
+    /// **Safe under partial sync**, which is the boundary this whole service is held to ([[T-328]]).
+    /// The predicate reads **one scalar on the row in front of it**. No record arriving later can
+    /// make a title stop being `"Untitled"`, so a half-synced store cannot produce a false positive
+    /// — it simply sees fewer `Note` rows and clears fewer of them. It edits a field rather than
+    /// deleting a row, and the field it edits has a per-kind fallback behind it.
+    ///
+    /// **The cost, stated rather than hidden: this also clears a title someone deliberately typed
+    /// as "Untitled".** The store cannot tell that note from one the old default named, because
+    /// they are byte-for-byte the same value — there is no provenance on the field. The user was
+    /// told and accepted it. What such a user loses is small and visible: a `.list` note reads
+    /// `Untitled` either way (`Note.displayTitle`'s own fallback for that kind is the same word),
+    /// a notepad note reads `Notepad`, and retyping the title restores it.
+    ///
+    /// **The literal is frozen here on purpose and is not `CadenceTitleNormalization
+    /// .defaultCompactTitle`.** That constant is the app's *display* placeholder and is free to be
+    /// renamed; this is a historical value — the exact bytes a retired default wrote — and a
+    /// migration that stopped matching them because a display string was reworded would silently
+    /// stop migrating. The two being equal today is a coincidence worth not depending on.
+    private static func repairStoredDefaultNoteTitles(
+        in store: RepairStore,
+        state: RepairState,
+        report: inout DataIntegrityRepairReport
+    ) {
+        for note in store.notes {
+            guard !state.deletedNotes.contains(ObjectIdentifier(note)) else { continue }
+            guard note.title == retiredStoredNoteTitleDefault else { continue }
+            note.title = ""
+            report.defaultNoteTitlesCleared += 1
+        }
+    }
+
+    /// The exact string `Note.title` defaulted to before T-733. Matched untrimmed and
+    /// case-sensitively: `" Untitled "` and `"untitled"` are things a person typed, and this pass
+    /// is only entitled to the value the old initializer wrote.
+    private static let retiredStoredNoteTitleDefault = "Untitled"
 
     /// T-428: a `Habit.reminderMinuteOfDay` already on disk outside `0...1439` is invisible **and**
     /// inert, and until this pass nothing moved it. `HabitNotificationPlanner.reminder(for:now:)`
