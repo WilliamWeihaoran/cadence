@@ -1815,17 +1815,19 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   simulator carries no launch arguments**, so it is back on the device-wide domain. Both are written
   down in `CadenceDefaults`'s doc comment; this ticket is the decision about whether to close them.
 
-- [T-746] **`AGENTS.md` and `CLAUDE.md` disagree about whether `CadenceUITests` is flaky, and both
-  are always-read.** `AGENTS.md` says *"`CadenceUITests` **was never flaky** — it cannot pass while
-  the Mac's screen is locked (T-563) … so a red UI run **is** evidence again"*, measured over 40
-  launches either side of one lock event. `CLAUDE.md` says *"`CadenceUITests` is currently
-  **flaky**: about 1 run in 4 fails at `app.wait(for: .runningForeground, timeout: 10)` … a red
-  UI-test run is therefore not by itself evidence of a code regression — re-run before believing
-  it."* Those are opposite instructions about the same target, in the two files an agent reads
-  before doing anything: one says re-run before believing a red run, the other says believe it.
-  T-563 reads like the later finding, but **which one is stale is exactly what this ticket is for**;
-  do not guess from the dates in the prose. Note the constraint: `AGENTS.md` is **at** its 200-line
-  cap, so whichever way it resolves, a line out for a line in.
+- [T-746] **CLOSED 2026-09-03 as not-a-defect — the contradiction was already gone when it was
+  filed.** The claim was that `AGENTS.md` and `CLAUDE.md`, both always-read, give opposite
+  instructions about `CadenceUITests`: one saying it was never flaky, the other saying it flakes
+  about 1 run in 4 and a red run is not evidence.
+  Checked rather than taken: **`4b447ff` ([[T-563]]) rewrote both files in the same commit**, and
+  it landed *before* the agent that filed this started. `AGENTS.md:156` and `CLAUDE.md:84` now say
+  the same thing. The only surviving "about 1 run in 4" is inside `CLAUDE.md`'s explanation of
+  **how that misreading arose** — the activation failure is attributed to whichever line called
+  `app.launch()`, so it read as an intermittent timeout — and both files end on *a red UI-test run
+  **is** evidence of a regression again*.
+  Worth keeping the entry rather than deleting it: a sentence that recounts a superseded belief
+  reads like the belief when skimmed, which is the [[T-565]] class one level up. If it is misread
+  a second time, that is the argument for moving the history out of the always-read file.
 
 - [T-747] **`scripts/xcb.sh` writes every run under one id to the same log path, so a batch deletes
   its own evidence.** The log is `${TMPDIR}cadence-xcb-<id>.log`, overwritten per invocation. A
