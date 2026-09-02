@@ -120,20 +120,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `everyProductCallerOfMoveToContainerGuardsOnTheAnswer`, which is a source scan; decide whether the
   attribute earns its keep beside that scan or whether the scan is the better half of the pair.
 
-- [T-726] **Opening the iOS task inspector commits a move the user did not make — and after
-  [[T-702]] it can now say so.** `iOSTaskDetailSheet.loadContainerSelection()` runs in `onAppear` and
-  writes `containerSelection`, which fires `onChange` and calls `applyContainerSelection()`, which
-  calls `moveToContainer` and commits. `assignContainer` guards the *order* against a re-assert
-  (`isAlreadyInContainer` — the whole subject of `TaskContainerAssignmentTests`), so nothing moves;
-  the `save()` still happens. That was invisible while the answer was discarded. It is not any more:
-  a refusal on that opening commit now paints "Couldn't save this change." onto a sheet the user has
-  only just opened, for an edit they did not make. **Found while landing T-702 and deliberately not
-  folded into it** — the fix is a behaviour change to the open path (an `isAlreadyInContainer` early
-  return in `applyContainerSelection`, or seeding the token without going through `onChange`), and
-  `applyContainerSelection` also normalises the section name, so "does the open path still need to
-  reach a commit?" wants deciding rather than assuming. Small, and it makes the sheet's `onAppear`
-  stop writing to the store.
-
 - [T-727] **`iOSContainerChoicePopover` dismisses itself, so no caller can answer a refusal inside
   it.** `choiceRow` sets `selection = tag` **and** `isPresented = false` in one button action, which
   is why [[T-702]]'s row picker had to reach for an alert while the Mac's kanban picker — the same
@@ -1767,17 +1753,43 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   data-shape question — existing notes literally hold the string — so it needs a decision about
   migration, not just an edit.
 
-- [T-731] **The `isRegularWidth == true` branch of the iOS editor sheets may be unreachable on iPad.**
+- [T-731] **The `isRegularWidth == true` branch of the iOS editor sheets is dead on the iPad anyone
+  has measured, and the two checks that would settle it outright are out of tooling reach.**
   OBSERVED 2026-09-02: at 834pt, `iOSLinkedNoteEditorSheet`, `iOSEventNoteEditorSheet` and
   `iOSCalendarEventEditSheet` all rendered **compact**; the sheet measures ~577 x 639pt, and a plain
-  `.sheet` is a form sheet on iPad, which UIKit hands a compact horizontal size class. All four
-  presentations of these editors are plain `.sheet`.
-  If that holds, the 320pt rail, the 24pt title and `iOSEditorSheetMetrics.gutter(isRegularWidth: true)`
-  are **dead on iPad**, and the pixel half of [[T-492]] / [[T-283]] is moot.
-  **Not yet confirmed** — landscape was untestable (the simulator surface has no rotate action and the
-  host Simulator app is off-limits) and a 13-inch iPad was out of scope under the one-device rule.
-  Settle those two; if confirmed, either drop the regular branches or give these sheets a wider
-  presentation (`.presentationSizing(.page)`, or full-screen on iPad) so the rail can exist at all.
+  `.sheet` is a form sheet on iPad, which UIKit hands a compact horizontal size class. Re-checked
+  2026-09-03: **all four presentations are still plain `.sheet`** — `iOSSearchView` ×2,
+  `iOSNotesView`, `iOSCalendarMonthAgendaViews`, `iOSCalendarInspectorView`,
+  `iOSCalendarEventEditSheet` and `iOSMarkdownReferenceSupport` — with **no `.presentationSizing`
+  and no `.presentationDetents` anywhere under `Cadence/iOS/`**. So the 320pt rail, the 24pt title
+  and `iOSEditorSheetMetrics.gutter(isRegularWidth: true)` are unreachable there, and the pixel half
+  of [[T-492]] / [[T-283]] is moot.
+  **Landscape and a 13-inch iPad are still NOT observed, and this is why rather than a shrug**
+  (2026-09-03): `xcrun simctl` has no rotate — `simctl ui` offers only appearance, increase_contrast
+  and content_size, and `simctl status_bar` only time/network/battery — the simulator control
+  surface has no rotate action either (`button` is HOME/LOCK/SIRI/SIDE_BUTTON/APPLE_PAY), and the
+  host Simulator app, which does have Device → Rotate, is off limits. Every 13-inch iPad in the
+  fleet is **shut down**, `simulator-claim.sh boot` starts iPhones only by design, and the
+  one-device rule stands. The one route left is a UI test on an iOS Simulator destination setting
+  `XCUIDevice.shared.orientation`: `CadenceUITests` does list `iphonesimulator` in
+  `SUPPORTED_PLATFORMS`, so it is possible, and it was judged too much scaffolding for a decision
+  ticket. **Whoever settles this should take that route.**
+  **One measurement settles both at once**: the sheet's width against the host's. If a 577pt sheet
+  stays 577pt in a 1194pt landscape host, the presentation is a fixed size and no iPad reaches
+  768pt; if it scales, the branch is alive on the big iPads only — which is the *worst* outcome,
+  because the layout would then turn on a device threshold nobody wrote down.
+  **RECOMMENDATION, reasoned rather than observed, and deliberately not acted on**, because changing
+  how a sheet presents is a visible design change: **give these three editors the wider presentation
+  rather than deleting the regular branches.** Three reasons. (1) The app already set this
+  precedent — `iOSNotesView` and `iOSListNotesView` present their own note editor as a
+  `.fullScreenCover`, so "a note editor on iOS is not a form sheet" is a decision this codebase has
+  taken once already. (2) `iOSCalendarEventEditSheet.regularFormLayout` needs
+  `primaryColumnMinWidth 340 + groupSpacing 16 + secondaryColumnMinWidth 360` = **716pt of content**
+  before gutters, which no form sheet on any iPad will hand it; `.presentationSizing(.page)` is the
+  smaller change and probably still would not clear it in portrait, which is precisely the
+  device-dependent outcome above. (3) Deleting the branches throws away [[T-281]] / [[T-283]] /
+  [[T-492]] and buys nothing a wider presentation does not also buy.
+  So: full-screen on iPad for these three, then re-measure — **not** `.page`, and **not** a deletion.
 
 - [T-732] **`docs/device-checks.md`'s keyboard-dismiss item rests on a premise that is false on this
   fleet.** It says the simulator suppresses the software keyboard while a Mac keyboard is attached.
@@ -1788,18 +1800,44 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   item stayed on the hardware list for weeks because of an untested claim about the tooling rather than
   about the app. Re-triage before anyone carries it to a device.
 
-- [T-735] **`scripts/simulator-claim.sh` isolates the store but not `UserDefaults`, and the leak reads
-  as a product bug.** Cost twenty minutes on 2026-09-03: the compact Calendar tab opened on **August
-  2026 with Aug 17 selected** on a cold launch against an **empty private store**. That looks exactly
-  like a date bug. It is not — `iOSCalendarView.restorePersistedCalendarDates()` restores
-  `CadenceCalendarDateMemory`, which is `defaults.string(forKey:)`, so it is **another agent's leftover
-  UI state on the shared device**. Working as designed per [[T-369]]/[[T-405]].
-  The claim script's whole argument is that a per-agent store id means two agents on one device cannot
-  merge data — true for the SwiftData store, **false for every `@AppStorage` value and every remembered
-  position**, which live in one device-wide defaults domain.
-  Fix shape: either document it in the script's header beside the store-id reasoning, or pass a
-  per-agent `-CadenceSuiteName` argument domain so defaults are isolated too. The second is better,
-  because the first only helps an agent who reads the header *before* being misled.
+- [T-745] **`CadenceDefaults` covers `@AppStorage` and the calendar memory, and nothing else.**
+  [[T-735]] routed every `@AppStorage` through `defaultAppStorage` on the scene and pointed
+  `CadenceCalendarDateMemory` at the same store, which is what the incident ran through. It does not
+  reach the direct `UserDefaults.standard` calls in the service layer:
+  `NotificationManager.reconcile`'s `notificationsEnabled` read, `DataIntegrityRepairService`'s
+  `dataIntegrityRepair.lastReport.v1`, `MarkdownNoteSupport`'s `NoteTemplateLibrary.storageKey`,
+  `PursuitToGoalMigration`'s completion flag, `PersistenceController`'s pending/failed-restore
+  records, and `CadenceUITestSupport.resetUserDefaults`. Most already take a `defaults:` parameter
+  defaulted to `.standard`, so the change is mechanical — but `PersistenceController.swift` is a hot
+  file and `NotificationManager` cannot exist in the command-line target, so it wants doing
+  deliberately rather than as a sweep.
+  Second gap, same family, cheaper to state than to fix: **an app started by tapping its icon on the
+  simulator carries no launch arguments**, so it is back on the device-wide domain. Both are written
+  down in `CadenceDefaults`'s doc comment; this ticket is the decision about whether to close them.
+
+- [T-746] **`AGENTS.md` and `CLAUDE.md` disagree about whether `CadenceUITests` is flaky, and both
+  are always-read.** `AGENTS.md` says *"`CadenceUITests` **was never flaky** — it cannot pass while
+  the Mac's screen is locked (T-563) … so a red UI run **is** evidence again"*, measured over 40
+  launches either side of one lock event. `CLAUDE.md` says *"`CadenceUITests` is currently
+  **flaky**: about 1 run in 4 fails at `app.wait(for: .runningForeground, timeout: 10)` … a red
+  UI-test run is therefore not by itself evidence of a code regression — re-run before believing
+  it."* Those are opposite instructions about the same target, in the two files an agent reads
+  before doing anything: one says re-run before believing a red run, the other says believe it.
+  T-563 reads like the later finding, but **which one is stale is exactly what this ticket is for**;
+  do not guess from the dates in the prose. Note the constraint: `AGENTS.md` is **at** its 200-line
+  cap, so whichever way it resolves, a line out for a line in.
+
+- [T-747] **`scripts/xcb.sh` writes every run under one id to the same log path, so a batch deletes
+  its own evidence.** The log is `${TMPDIR}cadence-xcb-<id>.log`, overwritten per invocation. A
+  runner that makes three `xcb.sh j4 test …` calls in sequence — which is the shape the runbook asks
+  for, one script, one lock, several runs — ends holding only the last one's log. The postflight
+  counters go to stdout and survive, but they are aggregates: measured 2026-09-03, a run reported
+  `warnings: 23` and by the time the count was queried the log naming those 23 was gone, so the
+  number could not be attributed to a file — and "a warning count from a run that did not recompile
+  the file is vacuous" is already a rule in `AGENTS.md`, which this makes unverifiable after the
+  fact. The counters are the summary; the log is the evidence, and it is the evidence that gets
+  deleted. Cheapest fix is a per-invocation suffix with the documented path kept as a symlink to the
+  newest.
 
 - [T-736] **A column being renamed draws as empty until the rename commits.** Filed while landing
   [[T-713]], and it is the visible cost of the decision that ticket took rather than a defect in it.
@@ -1844,6 +1882,48 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Not measured.** No CloudKit traffic was observed; this is read off the two write paths.
 
 ## Done
+
+- [T-726] **CLOSED 2026-09-03 (`eb54eae`) — the sheet's `onAppear` no longer writes to the store.**
+  `applyContainerSelection` asks `CadenceTaskMutationSupport.isAlreadyInContainer` one frame above
+  the commit — the same question `assignContainer` already asks internally, asked where it can stop
+  the commit being reached at all. Not a suppressed notice: the notice was right, the move under it
+  was not.
+  **The open path loses no write**, which is the half of this ticket that wanted deciding rather
+  than assuming: `loadContainerSelection()` has already run `normalizeSectionForCurrentContainer()`
+  before the `onChange` fires, and Done flushes through `CadenceInPlaceEditFlush`. The early return
+  sits **below** the `isRestoringContainerSelection` guard, so [[T-702]]'s restore still consumes
+  its flag.
+  Failing-first was red for the right reason — the guard absent, and the ordering assertion — then
+  three mutations, each killed by name. **M1** reverts the guard. **M2** keeps the guard but moves
+  it below the commit, where it is present and useless; the scan's ordering assertion kills that
+  too, which is why the assertion is worth its line. **M3** pushes the guard down into
+  `moveToContainer` itself, killing the new behavioural test
+  `reassertingTheCurrentContainerStillReachesTheCommit` — and M3 is the argument for *where* the
+  guard went: a re-assert really does reach the commit, so the caller is the frame that has to
+  decline.
+  Residue: [[T-745]]. [[T-725]] and [[T-727]] were not touched and are still open.
+
+- [T-735] **CLOSED 2026-09-03 (`53453b3`) — mechanical rather than documentary, and demonstrated on
+  a device.** `simulator-claim.sh launch` passes `-CadenceSuiteName <id>`; `CadenceDefaults` reads
+  that argument domain into a per-agent suite; the scene applies it with `defaultAppStorage`, so all
+  126 `@AppStorage` sites follow; and `CadenceCalendarDateMemory` — plain storage, so the scene
+  redirect does not reach it — defaults to the same store. With no such argument
+  `CadenceDefaults.store` **is** `UserDefaults.standard`, so nothing here reaches a user's device.
+  **Observed 2026-09-03 on the claimed iPhone 17 Pro**, whose shared domain still held the incident
+  itself: `ios.calendar.selectedDateKey = "2026-08-17"`, `anchorDateKey = "2026-07-26"`,
+  `viewMode = "Month"`, `presentation = "Timeline"`, `ios.compact.selectedTab = "notes"`. Same
+  private store, one launch apart, differing only by the argument: **without** it the app opened on
+  Notes; **with** it, on Tasks/Today, and the Calendar tab opened on **Sep 3 in Week view**.
+  Afterwards `com.haoranwei.Cadence.agent.j4.plist` held only my own tab, and
+  `com.haoranwei.Cadence.plist` still held all five of the other agent's keys, unchanged. The
+  reinstall did not clear them, which is the claim script's own point about the app-group store, one
+  domain over.
+  Five mutations, all killed by name: both wirings, the launch argument, the id sanitiser, and one
+  suite shared by every agent — isolated from the device-wide domain and *not* from each other,
+  which is the half that actually cost the twenty minutes.
+  Not covered, and said so in the doc comment rather than left to be discovered: an icon-tap launch
+  carries no arguments, and the service layer's direct `UserDefaults.standard` reads are still
+  shared. Both are [[T-745]].
 
 - [T-713] **CLOSED 2026-09-03 (`fba681a`). The cards move once, at the commit point, and neither
   ruled-out repair was taken.** `applySectionEdits` ran on every keystroke and ended with
