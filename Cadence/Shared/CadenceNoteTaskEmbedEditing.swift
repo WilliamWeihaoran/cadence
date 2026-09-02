@@ -1,0 +1,77 @@
+import Foundation
+import SwiftData
+
+/// The two edits a task card embedded in a note offers inline: ticking one of its subtasks, and
+/// renaming the task by typing over its title.
+///
+/// **Why this is one unit (T-648).** Four editors host those cards — `NotePanel`,
+/// `ListNotesSupportViews`, `NoteEditorPane` and `iOSMarkdownEditingSurface` — and all four wrote
+/// the same three lines: mutate the task, `try? modelContext.save()`, then hand back a fresh
+/// `MarkdownTaskEmbedRenderInfo`. That last step is what repaints the card inside the note, so a
+/// refused commit left the card showing a tick or a title the store does not hold, with nothing
+/// else on screen to disagree. It is [[T-366]] — the defect `TaskEmbedFieldEditorPopover` was fixed
+/// for — in four more places, and the report was in a spelling the rule's vocabulary did not have:
+/// three of the four hand the render info *sideways* through `refreshEmbeddedTask` rather than
+/// returning it ([[T-657]]).
+///
+/// Both functions answer `false` with the task exactly as it was found, so a caller that repaints
+/// on `false` is the bug again.
+///
+/// **`CadenceTaskFieldEditCommit` is deliberately not the unit here.** Its snapshot
+/// (`CadenceTaskFieldSnapshot`) covers neither `title` nor a subtask's `isDone` — it would restore
+/// the priority a rename moved and leave the title that rename changed, which is a worse state than
+/// either outcome the user could have expected.
+enum CadenceNoteTaskEmbedEditing {
+
+    /// Ticks or unticks one subtask of an embedded card.
+    ///
+    /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
+    ///   because a `save()` that throws cannot be provoked out of an in-memory container, and an
+    ///   undo path no test can reach is an undo path no test can prove.
+    static func toggleSubtask(
+        _ subtask: Subtask,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let restored = subtask.isDone
+        subtask.isDone.toggle()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+                subtask.isDone = restored
+            }
+        } catch {
+            return false
+        }
+        return true
+    }
+
+    /// Renames an embedded card's task, applying the `!`-style priority shortcut the inline title
+    /// field accepts. Both fields are restored together when the commit is refused: the shortcut
+    /// moves the priority as a side effect of the title, so undoing one without the other would
+    /// leave the card holding half of an edit nobody made.
+    ///
+    /// - Parameter commit: See `toggleSubtask(_:in:commit:)`.
+    static func rename(
+        _ task: AppTask,
+        to title: String,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let restoredTitle = task.title
+        let restoredPriority = task.priority
+
+        var priority = task.priority
+        task.title = TaskTitleSupport.titleApplyingPriorityShortcut(title, priority: &priority)
+        task.priority = priority
+
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+                task.title = restoredTitle
+                task.priority = restoredPriority
+            }
+        } catch {
+            return false
+        }
+        return true
+    }
+}

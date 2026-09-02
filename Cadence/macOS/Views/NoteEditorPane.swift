@@ -43,6 +43,9 @@ struct NoteEditorPane: View {
     @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
     /// Set when the store refused a tag created from the chips. See `createTag(_:)`.
     @State private var tagFailureNotice: String?
+    /// Set when an edit made on a task card embedded in this note was refused. See
+    /// `toggleEmbeddedSubtask` (T-648).
+    @State private var embeddedTaskFailureNotice: String?
 
     private var titleBinding: Binding<String> {
         Binding(
@@ -287,6 +290,15 @@ struct NoteEditorPane: View {
                         .foregroundStyle(Theme.dim)
                         .padding()
                 }
+            }
+
+            // Under the editor rather than over the card: the card is drawn by the text view, so
+            // there is nothing in SwiftUI's tree to attach a notice to at the point of the refusal.
+            if let embeddedTaskFailureNotice {
+                CadenceInlineFailureNotice(text: embeddedTaskFailureNotice)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .zIndex(5)
             }
 
             NoteUnlinkedMentionsFooter(mentions: derivedState.unlinkedMentions, onLink: linkMention)
@@ -540,20 +552,27 @@ struct NoteEditorPane: View {
         }
     }
 
+    /// **T-648.** See `NotePanel.toggleEmbeddedSubtask`: `refreshEmbeddedTask` repaints the card in
+    /// the note, so running it over a swallowed save is a success report.
     private func toggleEmbeddedSubtask(taskID: UUID, subtaskID: UUID) {
         guard let task = embeddedTask(id: taskID),
               let subtask = (task.subtasks ?? []).first(where: { $0.id == subtaskID }) else { return }
-        subtask.isDone.toggle()
-        try? modelContext.save()
+        guard CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext) else {
+            embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return
+        }
+        embeddedTaskFailureNotice = nil
         refreshEmbeddedTask(task)
     }
 
+    /// See `toggleEmbeddedSubtask` — the same claim, about the card's title rather than its ticks.
     private func renameEmbeddedTask(id: UUID, title: String) {
         guard let task = embeddedTask(id: id) else { return }
-        var priority = task.priority
-        task.title = TaskTitleSupport.titleApplyingPriorityShortcut(title, priority: &priority)
-        task.priority = priority
-        try? modelContext.save()
+        guard CadenceNoteTaskEmbedEditing.rename(task, to: title, in: modelContext) else {
+            embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return
+        }
+        embeddedTaskFailureNotice = nil
         refreshEmbeddedTask(task)
     }
 

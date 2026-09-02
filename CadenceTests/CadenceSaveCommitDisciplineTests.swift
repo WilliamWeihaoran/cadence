@@ -1180,22 +1180,28 @@ enum CadenceSaveCommitRule {
         // non-defects above.
     ]
 
-    /// The two live instances of half 2, both of them "flush an in-place edit, then close".
+    /// The exemption list for half 2.
     ///
-    /// They are held rather than fixed because each needs an answer to a question the rule does not
-    /// settle: what an *undo* means for an editor whose field is bound live to the model and is
-    /// still on screen. Restoring it under the user's cursor is not obviously better than leaving
-    /// it. See the T-322 follow-up ticket.
+    /// **It no longer holds a "flush an in-place edit, then close" site, and that is the ticket's
+    /// result.** Those were held rather than fixed for a week because each seemed to need an answer
+    /// to a question the rule does not settle: what an *undo* means for an editor whose field is
+    /// bound live to the model and still on screen. The answer was that they need no undo at all —
+    /// see the note at the head of the list itself.
     ///
-    /// The three inline tag editors that used to sit below them — `SettingsTagsSection.saveEdits`
+    /// The three inline tag editors that used to sit beside them — `SettingsTagsSection.saveEdits`
     /// and `TagPickerPopoverViews.saveEdits`/`archive` — are fixed (T-497) and pinned by
     /// `CadenceTagAndNoteCommitSurfaceTests`. They were the easier half of the same sentence: an
     /// inline row editor collapsing is a dismissal, but its fields are drafts held in `@State`
     /// rather than bindings onto the model, so restoring the model does not fight the caret.
     static let reportExemptions: [String: [String]] = [
-        // "Flush an in-place edit, then close." Both are live instances of half 2.
-        "Cadence/iOS/iOSSearchSupportViews.swift": ["body"],
-        "Cadence/iOS/iOSTaskDetailSheet.swift": ["finishEditingAndDismiss"],
+        // [[T-497]] tier 3 emptied the two "flush an in-place edit, then close" entries that used
+        // to open this list — `iOSSearchSupportViews.body` and
+        // `iOSTaskDetailSheet.finishEditingAndDismiss` — along with
+        // `iOSMarkdownReferenceSupport.body` in `indirectReportExemptions`. The question that
+        // blocked them was answered by *not* answering it: an in-place edit on an object the store
+        // already holds has nothing to un-insert, and an undo under a live caret would delete what
+        // the user typed in order to report that it was not saved. The surfaces stay open now and
+        // name the refusal (`CadenceInPlaceEditFlush`), so there is no undo to define.
 
         // MARK: Found by T-627's widened vocabulary and block window
         //
@@ -1209,13 +1215,14 @@ enum CadenceSaveCommitRule {
 
         // MARK: Found by T-636(b)'s Optional half of the same sentence
         //
-        // [[T-648]]: ticking a subtask on a task card embedded in a note. The subtask flips, the
-        // commit is swallowed, and the answer is `MarkdownTaskEmbedRenderInfo.task(task)` — the
-        // render info the editor repaints the card from. The card then shows a tick the store may
-        // not hold. **Its three macOS siblings are not in here**, because they answer `Void` and
-        // hand the same render info sideways instead, through `refreshEmbeddedTask` one frame
-        // down; the detector cannot see that spelling yet (T-657).
-        "Cadence/iOS/iOSMarkdownEditingSurface.swift": ["toggleEmbeddedSubtask"],
+        // [[T-648]] left this list the same way: `iOSMarkdownEditingSurface.toggleEmbeddedSubtask`
+        // answered `MarkdownTaskEmbedRenderInfo.task(task)` — the render info the editor repaints
+        // the card from — over a swallowed commit. It answers `nil` and names the refusal now, and
+        // so do its three macOS siblings, which were never in here because they hand the same
+        // render info *sideways* through `refreshEmbeddedTask` rather than returning it. That
+        // spelling is still invisible to the detector ([[T-657]]); the population it would have
+        // caught here is now zero, which is what makes T-657 a smaller ticket rather than a
+        // closed one.
         // [[T-631]], its second half. `createInlineTag` was already in `existenceExemptions` —
         // `TagSupport.resolveTags` inserts the `Tag` row one frame down — and the Optional spelling
         // shows the other end of it: the swallowed commit is followed by `return .tag(tag)`, the
@@ -1827,18 +1834,17 @@ enum CadenceSaveCommitRule {
         return names.uniqued()
     }
 
-    /// The two sites this half finds that no other half can see. Both are live; neither is T-566,
-    /// which is fixed. They re-scope [[T-497]]'s "2 sites left" to four.
+    /// The exemption list for the half that follows a swallowed commit one frame down.
+    ///
+    /// The two sites it found that no other half could see were [[T-497]]'s last two, and both are
+    /// fixed; what remains below came from T-627's widened vocabulary.
     static let indirectReportExemptions: [String: [String]] = [
-        // "Flush an in-place edit, then close" — the third instance of the family already held in
-        // `reportExemptions`, and blocked on the same undecided question: what an undo means for a
-        // field the user is still looking at and still has focus in. `persistNote()` swallows its
-        // commit and `body` dismisses after it.
-        "Cadence/iOS/iOSMarkdownReferenceSupport.swift": ["body"],
-        // A popover picking a task's list: `moveToContainer` swallows, `select` closes the popover
-        // with `isPresented = false`. Not blocked on anything — the popover holds no draft, so the
-        // fix is the ordinary `commitEdit(in:undo:)` one — just out of T-566's scope.
-        "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": ["select"],
+        // [[T-497]] tier 3 emptied both entries that used to open this list.
+        // `iOSMarkdownReferenceSupport.body` was the third "flush an in-place edit, then close" —
+        // see `reportExemptions` for the decision that unblocked the family.
+        // `KanbanCardMetaSupportViews.select` was never blocked on anything: the popover holds no
+        // draft, so `CadenceTaskMutationSupport.moveToContainer` commits through
+        // `commitEdit(in:undo:)` and answers, and the picker stays open over the refusal.
 
         // MARK: Found by T-627's widened vocabulary and block window
         //

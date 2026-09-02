@@ -27,6 +27,8 @@ struct iOSTaskDetailSheet: View {
     /// same second alert `iOSTaskRow` carries — see `deleteTask()`.
     @State private var deleteFailed = false
     @State private var isNotesFocused = false
+    /// Set when Done could not flush the sheet's edits. See `finishEditingAndDismiss()`.
+    @State private var saveFailureNotice: String?
     @State private var pendingRecurrenceChange: PendingRecurrenceChange?
     /// Set when a recurrence edit did not reach the store. See `apply(_:scope:)`.
     @State private var recurrenceUpdateFailure: String?
@@ -183,6 +185,7 @@ struct iOSTaskDetailSheet: View {
     /// actions that change its state.
     private var taskForm: some View {
         VStack(alignment: .leading, spacing: iOSTaskInspectorMetrics.sectionSpacing) {
+            saveFailureNoticeRow
             headerBlock
             propertiesSection
             scheduleSection
@@ -190,6 +193,15 @@ struct iOSTaskDetailSheet: View {
             notesSection
             statusActionsSection
             focusSection
+        }
+    }
+
+    /// At the top of the card, because Done is in the navigation bar directly above it — the
+    /// refusal reads where the user just tapped rather than at the far end of a scroll.
+    @ViewBuilder
+    private var saveFailureNoticeRow: some View {
+        if let saveFailureNotice {
+            CadenceInlineFailureNotice(text: saveFailureNotice)
         }
     }
 
@@ -377,10 +389,21 @@ struct iOSTaskDetailSheet: View {
         )
     }
 
+    /// **T-497.** This ended `try? modelContext.save(); dismiss()`, and the dismissal is what told
+    /// the user the sheet's last edit had landed. Every field on this sheet is an in-place write to
+    /// a task the store already holds, so there is nothing to un-insert and nothing worth undoing
+    /// under a caret the user still has in the notes field: the sheet stays open, keeps what they
+    /// typed, and names the refusal. See `CadenceInPlaceEditFlush` for the decision.
     private func finishEditingAndDismiss() {
         isNotesFocused = false
-        applyDates()
-        try? modelContext.save()
+        // `applyDates()` answers now rather than swallowing (T-497), so both halves of "the sheet's
+        // last edit landed" are one condition: the dates it writes, and whatever else the eleven
+        // field observers left pending.
+        guard applyDates(), CadenceInPlaceEditFlush.flush(in: modelContext) else {
+            saveFailureNotice = CadenceInPlaceEditFlush.failureNotice
+            return
+        }
+        saveFailureNotice = nil
         dismiss()
     }
 
@@ -424,7 +447,12 @@ struct iOSTaskDetailSheet: View {
 
     /// Already reconciled before T-362 — this is the shape the rest of the app was missing. It
     /// now says so through the shared wrapper rather than pairing the two calls by hand.
-    private func applyDates() {
+    ///
+    /// **Answers since T-497.** `false` means the store refused the two date fields. The eleven
+    /// field observers above discard it — an `onChange` has nothing to report and nothing to close —
+    /// and `finishEditingAndDismiss` does not, because closing is a claim.
+    @discardableResult
+    private func applyDates() -> Bool {
         CadenceTaskDateEditing.setPlanningDates(
             scheduledDate: hasScheduledDate ? DateFormatters.dateKey(from: scheduledDate) : nil,
             dueDate: hasDueDate ? DateFormatters.dateKey(from: dueDate) : nil,

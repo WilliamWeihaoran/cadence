@@ -48,6 +48,8 @@ struct iOSLinkedNoteEditorSheet: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @State private var isEditorFocused = false
+    /// Set when Done could not flush the note. See `flushBeforeDismissing()`.
+    @State private var saveFailureNotice: String?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
 
@@ -71,7 +73,7 @@ struct iOSLinkedNoteEditorSheet: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Done") {
-                            persistNote()
+                            guard flushBeforeDismissing() else { return }
                             isEditorFocused = false
                             dismiss()
                         }
@@ -120,16 +122,27 @@ struct iOSLinkedNoteEditorSheet: View {
         iOSNoteEditorSheetHeader(eyebrow: subtitle, title: note.displayTitle)
     }
 
+    /// The notice sits here rather than in `editorLayout`, because the layout is drawn twice — the
+    /// header is beside the editor at regular width and above it at compact — and a notice attached
+    /// to either branch would be missing from the other.
     private var editorSurface: some View {
-        iOSMarkdownEditingSurface(
-            text: $note.content,
-            isFocused: $isEditorFocused,
-            placeholder: "Start writing...",
-            referenceNotes: referenceNotes,
-            referenceTasks: referenceTasks,
-            editingNote: note,
-            onOpenReference: openMarkdownReference
-        )
+        VStack(spacing: 0) {
+            if let saveFailureNotice {
+                CadenceInlineFailureNotice(text: saveFailureNotice)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+            }
+
+            iOSMarkdownEditingSurface(
+                text: $note.content,
+                isFocused: $isEditorFocused,
+                placeholder: "Start writing...",
+                referenceNotes: referenceNotes,
+                referenceTasks: referenceTasks,
+                editingNote: note,
+                onOpenReference: openMarkdownReference
+            )
+        }
     }
 
     private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
@@ -144,6 +157,21 @@ struct iOSLinkedNoteEditorSheet: View {
     private func persistNote() {
         note.updatedAt = Date()
         try? modelContext.save()
+    }
+
+    /// **T-497.** `body` used to call `persistNote()` and dismiss unconditionally, so a refused
+    /// write closed the sheet on a note the store had not taken — the swallow one frame down and
+    /// the claim one frame up. The caret is still in this editor, so nothing is restored: the sheet
+    /// stays open, the text stays where it is, and the sentence says so. See
+    /// `CadenceInPlaceEditFlush`.
+    private func flushBeforeDismissing() -> Bool {
+        note.updatedAt = Date()
+        guard CadenceInPlaceEditFlush.flush(in: modelContext) else {
+            saveFailureNotice = CadenceInPlaceEditFlush.failureNotice
+            return false
+        }
+        saveFailureNotice = nil
+        return true
     }
 }
 

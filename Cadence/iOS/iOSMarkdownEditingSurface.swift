@@ -63,6 +63,10 @@ struct iOSMarkdownEditingSurface: View {
     /// because this editor has no sheet to close and no other way to say that the picture the user
     /// just pasted or picked is not in the store.
     @State private var imageFailureNotice: String?
+    /// Set when an edit made on a task card embedded in this note was refused (T-648). Its own
+    /// slot rather than `imageFailureNotice`'s: the two name different acts, and a picked image
+    /// that failed must not be relabelled by a subtask that failed after it.
+    @State private var embeddedTaskFailureNotice: String?
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
     @State private var selectedEmbeddedTask: AppTask?
     /// Held rather than computed in `body`. Backlinks run a regex over *every* other note's content,
@@ -161,6 +165,12 @@ struct iOSMarkdownEditingSurface: View {
 
             if let imageFailureNotice {
                 CadenceInlineFailureNotice(text: imageFailureNotice)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+            }
+
+            if let embeddedTaskFailureNotice {
+                CadenceInlineFailureNotice(text: embeddedTaskFailureNotice)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 6)
             }
@@ -423,13 +433,19 @@ struct iOSMarkdownEditingSurface: View {
         return MarkdownTaskEmbedRenderInfo.task(task)
     }
 
+    /// **T-648.** The answer *is* the report here: the editor repaints the card from the render
+    /// info this returns, so handing one back over a swallowed save showed a tick the store may not
+    /// hold. `nil` leaves the card exactly as it was drawn, which is also where the subtask is.
     private func toggleEmbeddedSubtask(taskID: UUID, subtaskID: UUID) -> MarkdownTaskEmbedRenderInfo? {
         guard let task = embeddedTask(id: taskID),
               let subtask = (task.subtasks ?? []).first(where: { $0.id == subtaskID }) else {
             return nil
         }
-        subtask.isDone.toggle()
-        try? modelContext.save()
+        guard CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext) else {
+            embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return nil
+        }
+        embeddedTaskFailureNotice = nil
         return MarkdownTaskEmbedRenderInfo.task(task)
     }
 

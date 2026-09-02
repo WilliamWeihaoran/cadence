@@ -185,20 +185,28 @@ enum CadenceTaskDateEditing {
 
     // MARK: - Both at once
 
+    /// The one wrapper that answers, because the one surface that calls it closes afterwards
+    /// (T-497). `false` means the store refused; the fields still hold what the user picked and the
+    /// context still holds them pending, so the caller must not report success. The reconcile runs
+    /// either way — it reads the store, and the store is where it was.
+    @discardableResult
     static func setPlanningDates(
         scheduledDate: String?,
         dueDate: String?,
         for task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.setPlanningDates(
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.setPlanningDates(
             scheduledDate: scheduledDate,
             dueDate: dueDate,
             for: task,
-            modelContext: context
+            modelContext: context,
+            commit: commit
         )
         reconcile(context, reconciler)
+        return landed
     }
 
     // MARK: - The one reconcile

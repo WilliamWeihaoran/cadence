@@ -332,12 +332,20 @@ struct iOSNoteDetailSheet: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var isEditorFocused = false
+    /// Set when Done could not flush the note. See `flushBeforeDismissing()`.
+    @State private var saveFailureNotice: String?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                if let saveFailureNotice {
+                    CadenceInlineFailureNotice(text: saveFailureNotice)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                }
+
                 iOSMarkdownEditingSurface(
                     text: Binding(
                         get: { note.content },
@@ -357,9 +365,8 @@ struct iOSNoteDetailSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") {
+                        guard flushBeforeDismissing() else { return }
                         isEditorFocused = false
-                        note.updatedAt = Date()
-                        try? modelContext.save()
                         dismiss()
                     }
                 }
@@ -385,6 +392,20 @@ struct iOSNoteDetailSheet: View {
     /// Notes tab did both.
     private func updateContent(_ content: String) {
         CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
+    }
+
+    /// **T-497.** Done used to end `try? modelContext.save(); dismiss()`, and the dismissal is what
+    /// claimed the note was written. The user is still in the field here, so there is nothing to
+    /// undo and nothing to un-insert — the sheet simply stays open over the sentence, with what
+    /// they typed still in it. See `CadenceInPlaceEditFlush` for the decision this follows.
+    private func flushBeforeDismissing() -> Bool {
+        note.updatedAt = Date()
+        guard CadenceInPlaceEditFlush.flush(in: modelContext) else {
+            saveFailureNotice = CadenceInPlaceEditFlush.failureNotice
+            return false
+        }
+        saveFailureNotice = nil
+        return true
     }
 
     private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {

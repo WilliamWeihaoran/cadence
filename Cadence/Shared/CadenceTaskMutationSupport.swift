@@ -246,19 +246,27 @@ enum CadenceTaskMutationSupport {
         try? modelContext.save()
     }
 
+    /// **T-497.** This ended `try? modelContext.save()`, and the one surface that reaches it —
+    /// `iOSTaskDetailSheet.applyDates` — is called from a Done button that then dismisses. So the
+    /// sheet's own commit was honest while the frame under it still swallowed, which is the chain
+    /// half 2 follows. It flushes and answers instead: the fields are the user's own in-place edit,
+    /// so nothing is restored (see `CadenceInPlaceEditFlush`), and the caller decides what a `false`
+    /// means for its screen.
+    @discardableResult
     static func setPlanningDates(
         scheduledDate: String?,
         dueDate: String?,
         for task: AppTask,
-        modelContext: ModelContext
-    ) {
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         let scheduleKey = scheduledDate ?? ""
         task.scheduledDate = scheduleKey
         if scheduleKey.isEmpty {
             task.scheduledStartMin = -1
         }
         task.dueDate = dueDate ?? ""
-        try? modelContext.save()
+        return CadenceInPlaceEditFlush.flush(in: modelContext, commit: commit)
     }
 
     static func moveToSection(_ sectionName: String, task: AppTask, modelContext: ModelContext) {
@@ -415,14 +423,36 @@ enum CadenceTaskMutationSupport {
         }
     }
 
+    /// Moves a task into a list and commits it, answering whether the store took the move.
+    ///
+    /// **`false` means the task is back in the list it started in** — container, inherited context,
+    /// section and order — so a caller that closes a picker or repaints a card on `false` is
+    /// reporting a move that did not happen (T-497).
+    ///
+    /// The undo is written out here rather than taken from `CadenceTaskFieldSnapshot`, which does
+    /// not carry `order`: `assignContainer` sends a genuine move to the end of its new list, and a
+    /// restore that put the relationships back but left the task at that tail would move it inside
+    /// the list it never left.
+    ///
+    /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
+    ///   because a `save()` that throws cannot be provoked out of an in-memory container, and an
+    ///   undo path no test can reach is an undo path no test can prove.
+    @discardableResult
     static func moveToContainer(
         _ task: AppTask,
         area: Area?,
         project: Project?,
         sectionName: String = TaskSectionDefaults.defaultName,
         allTasks: [AppTask],
-        modelContext: ModelContext
-    ) {
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let restoredArea = task.area
+        let restoredProject = task.project
+        let restoredContext = task.context
+        let restoredSectionName = task.sectionName
+        let restoredOrder = task.order
+
         assignContainer(
             task,
             area: area,
@@ -430,7 +460,19 @@ enum CadenceTaskMutationSupport {
             sectionName: sectionName,
             allTasks: allTasks
         )
-        try? modelContext.save()
+
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+                task.area = restoredArea
+                task.project = restoredProject
+                task.context = restoredContext
+                task.sectionName = restoredSectionName
+                task.order = restoredOrder
+            }
+        } catch {
+            return false
+        }
+        return true
     }
 
     static func duplicate(_ task: AppTask, allTasks: [AppTask], modelContext: ModelContext) throws -> AppTask {
