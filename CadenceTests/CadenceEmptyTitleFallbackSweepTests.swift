@@ -127,26 +127,26 @@ struct CadenceEmptyTitleFallbackSweepTests {
         #expect(paths.contains("CadenceWidgets/TodayTasksWidget.swift"))
         #expect(paths.contains("CadenceMCPServer/CadenceMCPToolRouter.swift"))
 
+        // **The reader, pinned here and not only in `theSweepReadsCodeAndNotTheProseAboutIt`.**
+        // Until T-686 this asserted an *exact* expected set, and that shape made the reader
+        // self-proving: blinding it emptied the hits and the equality went red for free. The last
+        // site is fixed, so the assertion is `isEmpty` now — which a blinded reader satisfies
+        // without reading anything, exactly the trap
+        // `noSurfaceTestsATrimmedTitleAndThenReturnsTheUntrimmedOne` records below. So the reader
+        // is asserted separately, before the result is believed.
+        let read = CadenceSourceScan.strippedSourceReader()
+        #expect(try read("Cadence/Models/ModelEnums.swift").contains("\"Untitled Task\""),
+                "the sweep's reader blanks string literals, so its needle can never match")
+
         let hits = try instrument.sweep(
             paths,
             atLeast: 300,
             including: "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift",
-            read: CadenceSourceScan.strippedSourceReader()
+            read: read
         )
 
-        #expect(hits == Self.sitesLeftForAnotherOwner,
-                "the swept set moved: \(hits)")
+        #expect(hits.isEmpty, "these surfaces hand-spell an empty-title fallback: \(hits)")
     }
-
-    /// The one file the T-609 sweep did not reach, and why it is a list rather than a comment.
-    ///
-    /// `MacTaskRow` was being edited by another agent for the whole of this change, so rewriting
-    /// its title line would have been two agents on the same lines. Filed as its own ticket instead.
-    /// Pinning it as an *exact* expected set rather than subtracting it from the hits is what makes
-    /// it rot: fixing that site turns this test red, which is the prompt to delete the entry, and a
-    /// **second** site appearing turns it red too. A `hits.isEmpty` with this path filtered out
-    /// would have done neither.
-    static let sitesLeftForAnotherOwner = ["Cadence/macOS/Views/TasksPanelComponents.swift"]
 
     /// The *near-miss* spelling, swept separately because it is a different regex and a different
     /// symptom: the trim happens, and then the untrimmed original is returned anyway.

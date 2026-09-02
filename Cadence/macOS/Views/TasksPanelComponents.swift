@@ -52,7 +52,7 @@ struct MacTaskRow: View {
                     .padding(.trailing, metrics.contentSpacing)
             }
 
-            Text(task.title.isEmpty ? "Untitled" : task.title)
+            Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                 .font(.system(size: metrics.titleFontSize))
                 .foregroundStyle(task.isDone || task.isCancelled ? Theme.dim : Theme.text)
                 .strikethrough(task.isDone || task.isCancelled, color: Theme.dim)
