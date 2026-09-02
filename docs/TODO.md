@@ -43,6 +43,46 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-713] **The kanban column rename strands the column's cards after the first character.**
+  Found while landing [[T-645]] and deliberately left out of it: [[T-645]] is about where the rename
+  *commits*, and this is about what it *writes*. Pre-existing, unchanged by that ticket.
+  `ListSectionKanbanColumn.applySectionEdits` runs on every keystroke and ends with
+  `if trimmed != base.name { moveTasks(from: base.name, to: trimmed) }`, where `base` is `editorBase`
+  — the column **as the popover opened**, deliberately, so a colour change cannot write a stale name
+  back over a rename from another device ([[T-358]]). But `editorBase` is never advanced, so only the
+  *first* keystroke finds any cards: typing `Doing` → `Doingxy` moves the cards to `Doingx` and then
+  looks for cards still called `Doing`, finds none, and leaves them there — while the column config,
+  matched by `uuid` through `CadenceSectionConfigMerge.applyingChangedFields`, does reach `Doingxy`.
+  `AppTask.resolvedSectionName` only falls back to Default when the name is **empty**, so the cards
+  end up filed under a column name that exists nowhere.
+  The one-line repair — advance `editorBase` after a successful move — is exactly the snapshot
+  [[T-358]] chose to freeze, so this needs a decision and a test rather than the line. Reproduce with
+  two keystrokes; a single-character rename hides it completely.
+
+- [T-714] **A refused column rename still has one path with nowhere to appear.**
+  Residue from [[T-645]], same family as [[T-646]]. The rename now commits at `onSubmit`, at the name
+  field losing focus, and from every other control in the popover — all while the popover is up. The
+  path left is: type a name, then dismiss the popover without touching anything else. The edit is not
+  lost (one `ModelContext`, so the next commit anywhere takes it), but a refusal at that moment has no
+  surface, which is the shape [[T-646]] was about.
+  Two candidate answers, both real work: make the dismissal itself a commit that can refuse to close,
+  or route the flush's notice to the column header the way [[T-646]] routes the commit ones — that
+  second one is nearly free now, but `CadenceInPlaceEditFlush.failureNotice` ("They're still here")
+  reads oddly on a column rather than beside the field it is about.
+  **Also unverified by observation:** the focus-loss trigger is a `@FocusState` `onChange`, and
+  whether clicking a colour swatch in a macOS popover actually moves focus off the `TextField` was
+  reasoned, not seen. `onSubmit` covers Return regardless, and every other control commits, so the
+  worst case is that this path is wider than described.
+
+- [T-715] **`TasksPanelDropCoordinator.handleTaskDrop`'s `dropKey: String? = nil` default is now
+  unreachable.** Found while landing [[T-564]](b), and the same shape as the half-pair that ticket
+  deleted: both call sites — `TasksPanel.todayGroupSections` and `TasksListView`'s section rows — pass
+  `dropKey:` explicitly, so the default is a branch no caller takes. The `nil` arm is not inert: it
+  skips `assignTask` entirely and reorders only, and its deliberate asymmetry with `handleSectionDrop`
+  ("ignored deliberately… the reorder below runs either way") is carefully documented and exercised by
+  nothing. Either delete the default and let a future caller state its intent, or give the `nil` arm a
+  test. Small, and worth doing before someone reaches for it.
+
 - [T-701] **`CadenceTaskFieldSnapshot` restores a task's fields but not its `title` or its `order`.**
   Found while landing [[T-497]] and [[T-648]], from two directions in one day. The snapshot carries
   status, completion, priority, estimate, section, both dates, the scheduled minute, all three
@@ -144,35 +184,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Not a duplicate of the [[T-609]] sweep**: that one hunts the inline
   `x.isEmpty ? "Untitled" : x` ternary, and this site has no fallback at all — there is no ternary
   for a sweep of that shape to see.
-
-- [T-645] **The kanban column editor's other three writes reach no commit at all, and one of them
-  closes the popover.** Found while fixing [[T-632]], deliberately left out of that change.
-  `KanbanSectionColumnView.columnEditor`'s `onDelete` runs `moveTasks(...)`, `removeSection()` and
-  then `showEditor = false` with **no commit anywhere**; `saveSectionChanges` and `onClearDate` write
-  the container's `sectionConfigsRaw` blob and also commit nothing. None of the three is visible to
-  the `try? save()` rule: a `TaskSectionConfig` is a struct inside a JSON blob rather than a `@Model`,
-  so half 3's `modelContext.delete(` never fires, and there is no `try?` for half 2 to key on. They
-  ride the next autosave today. `saveSectionChanges` runs on **every keystroke** of the rename field,
-  so this is not simply "add a commit" — the rename needs a commit point that is not per-character,
-  which is why it was not folded into T-632.
-
-- [T-646] **A refused column completion has nowhere to appear, because the write happens 2.5 seconds
-  after the popover closes.** Found while fixing [[T-632]]. `SectionCompletionAnimationManager`
-  writes a *reopen* synchronously — that half is fixed, and `toggleCompletionFromEditor` now holds
-  the popover open on it — but a *completion* is deferred behind a 2.5s countdown on a detached
-  `Task`, and `beginCompletion`'s `save(current)` discards the answer. So a completion whose commit
-  the store refuses is undone correctly (the column visibly stays active) and reported to nobody:
-  `saveSection` sets `saveFailureNotice` into a popover that is already gone. The countdown is the
-  only reason this is not a false success today. Wants either a column-level notice outside the
-  popover, or a rule that the countdown holds the editor open.
-
-- [T-647] **`NoteEditorPane.body`'s commit-reach exemption is attributed to the wrong ticket.**
-  `CadenceSaveCommitRule.commitReachExemptions` says its `body` entry is "[[T-634]]'s subtask one".
-  T-634 is fixed and did not touch that file: `NoteEditorPane` contains no `insertSubtask` and no
-  `deleteSubtask` at all, and its only subtask code (`toggleEmbeddedSubtask`) is a field edit. The
-  entry is still a real finding — `body` is reported — but the surviving cause is almost certainly
-  the T-631 tag family the same comment names, and the comment now sends the next reader looking for
-  a defect that is not there. Re-attribute it, or say what `body` actually reaches.
 
 - [T-447] *(narrowed 2026-08-30: both landings reviewed. T-281 is a faithful but visually inert extraction — the two headers were already byte-identical before it. T-283's renames are correct and complete. Defects found and filed separately as [[T-492]] and [[T-493]]. Predicate two is effectively answered off-device already: the commit outcome is covered in `CadenceEventKitPlatformParityTests` and its position by `theEventSheetKeepsItsCommitNoticeInsideTheHeader` — only the pixel is left. Predicate one is narrowed by `nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader`: **nothing in `Cadence/` writes that environment key**, so only SwiftUI's own re-derivation inside NavigationStack -> HStack -> .frame remains device-only. That residue belongs with T-55 / T-280.)* **Nothing rendered the two iOS surfaces [[T-281]] and [[T-283]] changed.** Both landed on
   source-scan evidence plus four green scheme builds (`Cadence` macOS, `CadenceWidgets`,
@@ -835,21 +846,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `try? modelContext.save()`, which is one of the places to look if it turns out to be the latter.
   Note the batch that would have measured this was consumed by the locked screen — the instrumented
   tree is gone, so budget a rebuild. **The screen must be unlocked for the run to mean anything.**
-
-- [T-564] **DECIDE: collapse the now single-case `TasksPanelMode`, and the half-pair it left behind.**
-  Split out of [[T-487]] deliberately — the agent did the deletion it was asked for and stopped at the
-  two changes that are design calls rather than cleanup.
-  **(a)** `TasksPanelMode` has one case left. `switch mode` is still written out in `taskSections`,
-  `doneTasks` and `isEmptyState` so that a future second mode must be *answered* rather than silently
-  fall through. Collapsing the enum removes a type; keeping it keeps that forcing function. If Today
-  and All Tasks may ever diverge again, keep it.
-  **(b)** `TasksPanelDropCoordinator.taskDropHandler` is now unreferenced (its call site was
-  `liveFlatSection`), but it is one half of a symmetric currying pair whose sibling `sectionDropHandler`
-  is still live. Deleting half a pair is a shape change, not a dead-code removal.
-  Note the interaction with the macOS Today scan: `TasksPanelSupport.assignTask` has a live drop bug
-  (compound `list:<uuid>|date:today` keys never split on `|`), so **do not restructure the drop
-  coordinator until that is fixed or explicitly deferred** — a refactor landing first would make the
-  bug harder to see.
 
 - [T-565] **A shared guard against the T-333 / T-337 / T-352 class: comments asserting machinery the
   code no longer has.** Three tickets this week were the same defect — prose naming a mechanism that
@@ -1607,6 +1603,93 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   inside fences, YAML only inside `run:` blocks) — the extraction is the work, not the walk.
 
 ## Done
+
+- [T-647] **CLOSED 2026-09-02 (`e9fbafa`).** Re-attributed, not deleted — the exemption is a real
+  finding and only its explanation was wrong.
+  Premise verified: `NoteEditorPane.swift` contains no `insertSubtask` and no `deleteSubtask` at all,
+  and its only subtask symbol, `toggleEmbeddedSubtask`, is a field edit. **What `body` actually
+  reaches is one qualified call, in `.onAppear`:**
+  `TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)`, which resolves the note's frontmatter
+  tags and mints any `Tag` row that does not exist yet, down through `TagSupport.resolveTags` into
+  `resolution` — every frame of which was handed its context, so the pending insert travels up to
+  `body`, which reached for the ambient one and commits nothing. So the entry belongs with the other
+  two `NoteEditorPane` entries beside it: it is the [[T-631]] tag family, not [[T-634]]'s subtask one.
+  **It is an identification rather than a guess, and that is asserted.** `body` makes **exactly one**
+  qualified call in total, and no declaration in the file takes a `: ModelContext` parameter — so the
+  rule's unqualified candidate set is empty and its qualified one has a single member. Pinned by
+  `CadenceInlineTagCommitSurfaceTests.theNoteEditorPanesBodyExemptionIsTheTagSyncNotASubtask`, which
+  also *runs* the chain rather than reading it: a note whose frontmatter names an unknown tag gets one
+  minted, pending, with the store never asked to take it. The strongest evidence is a mutation —
+  deleting that one call makes `body` stop being an offender, which is what "this is the cause" means.
+
+- [T-646] **CLOSED 2026-09-02 (`e9fbafa`).** The column header draws the notice while the editor is
+  closed, so a refusal reaches the surface the user is actually looking at.
+  `columnFailureNotice` is `showEditor ? nil : saveFailureNotice` — **one flag read through two
+  surfaces, not a second flag.** A second `@State` would need its own clearing rules and could
+  disagree with the popover's about whether the last write landed; reading the existing one through
+  `showEditor` is also what keeps a single refusal from being reported twice at once. While the
+  popover is up it is the popover's; the moment it closes the column takes it over.
+  **It fixes more than the deferred completion the ticket named.** Two of the three routes into
+  `toggleSectionCompletion` — the header glyph and Cmd+Return over the hovered column — never open a
+  popover at all, so their refusals had nowhere to appear either. All three report now.
+  The notice is `CadenceInlineFailureNotice` in `headerDetail`, directly under the line that said
+  "Completing…", rather than a 9pt near-copy matching the countdown: this is a failure and should not
+  be quieter than the thing it answers. Pinned by
+  `CadenceKanbanColumnLifecycleSurfaceTests.aRefusedColumnCompletionIsReportedOnTheColumnOnceThePopoverIsGone`,
+  including the ordering — a notice drawn above the countdown it answers is a killed mutation.
+  The ticket's other option, "the countdown holds the editor open", was refused: a 2.5-second modal
+  the user cannot dismiss is a worse answer than a line on the column.
+
+- [T-645] **CLOSED 2026-09-02 (`e9fbafa`).** All three writes commit, and the popover closes on the
+  commit rather than on the tap.
+  **The design question was the rename, and the answer is a commit *point* plus a different failure
+  contract.** `saveSectionChanges` is split: `applySectionEdits()` is the per-keystroke write, so the
+  board's header still tracks the field, and `commitSectionEdits()` is the commit — raised from the
+  name field's `onSubmit`, from the field losing focus, and from the colour and due-date controls,
+  all of which land while the popover is still on screen to carry a notice. It commits through
+  `CadenceInPlaceEditFlush`, **not** `commitEdit(in:undo:)`: the caret is in the field, and restoring
+  the model would delete what the user typed in order to tell them it had not saved — the decision
+  [[T-497]] tier 3 recorded. The other two are discrete presses with nothing under a caret, so both
+  take `commitEdit` with a real undo: `clearSectionDueDate()` puts `editorHasDueDate` back with the
+  blob, and `deleteSection()` answers `false` so its caller keeps the popover open.
+  **The delete's snapshot is a second one on purpose.** `editSnapshot(settling:)` hands over
+  `TaskContainerLifecycleService.remainingActiveTasks` — the column's *open* half — and a delete moves
+  its **whole** stack into Default. `editSnapshotMovingTasks(outOf:)` snapshots
+  `KanbanSectionStateSupport.tasksMoving`, the same walk `moveTasks` performs rather than a second one
+  that agrees today; the finished card is the assertion that separates them.
+  Pinned by `CadenceKanbanColumnLifecycleSurfaceTests.theColumnEditorsOtherThreeWritesReachACommit`,
+  `.theColumnRenameCommitsAtTheEndOfTheEditRatherThanPerKeystroke` and
+  `.aRefusedColumnDeleteRestoresTheColumnAndEveryCardItWasMoving`, plus two new entries in
+  `CadenceEditorSaveCommitSurfaceTests.saveSurfaces`.
+  **Residue, filed rather than folded in:** [[T-713]] — the per-keystroke apply strands the column's
+  cards after the first character — and [[T-714]], the one dismissal path a refusal still cannot
+  reach.
+
+- [T-564] **CLOSED 2026-09-02 (`e9fbafa`). The decision was to collapse, and both halves landed.**
+  Held since [[T-487]] because both halves are design calls, and held again until [[T-608]] had
+  finished rewriting the same three functions.
+  **(a) `TasksPanelMode` is gone.** The case for keeping it was that a written-out `switch mode` in
+  `TasksPanelDerivedState.init`, `isEmptyState` and `TasksPanel.taskSections` forces a future second
+  mode to be *answered*. The case against wins: a one-case enum is an abstraction with no cases to
+  distinguish, and whoever reintroduces a Today / All Tasks split will design it against the surfaces
+  that exist then — `TasksPageView` is the All Tasks page now and has never built one of these panels
+  — rather than filling in a `case` left open years earlier. `isEmptyState(for:)` is a property,
+  `taskSections(derived:)` — a forwarder whose whole body was the `switch` — is deleted, and
+  `TasksPanel.init` no longer takes a `mode:` nobody passed.
+  **(b) `TasksPanelDropCoordinator.taskDropHandler` is deleted**, and `sectionDropHandler`'s doc now
+  records that its sibling went and why. The pair was symmetric in shape and not in use: the
+  `Optional` return is the point of the surviving half — a group with no `dropKey` gets `nil`, so its
+  header has no drop target rather than one that refuses everything — while both row drops spell
+  `coordinator.handleTaskDrop(...)` inline, because a row hands over its own section's `scopeTasks`
+  at the point of the drop and has no `Optional` to express.
+  **Neither half turned out load-bearing**, and the ticket's own caveat about [[T-591]] is spent:
+  `TasksPanelSupport.dropAssignments(forDropKey:)` splits on `CadenceTaskDropSupport.separator`, so
+  the compound-key bug is genuinely fixed and the restructure could not hide it.
+  Pinned by `CadenceTodayUnificationTests.theTasksPanelNoLongerCarriesAModeWithOneCase` and
+  `.theDropCoordinatorKeepsOnlyTheHalfItsCallersUse`. The second is the shape a deletion needs:
+  absence is asserted beside two **exact** presences read by the same scan over the same files —
+  `sectionDropHandler(` three times, `.handleTaskDrop(` twice — so a scan that read nothing cannot
+  pass, and the row-level decision is shown to still be shared rather than merely gone.
 
 - [T-563] **`CadenceUITests` flakes on app activation, ~1 run in 5.**
   **Closed 2026-09-02 in `4b447ff`. There is no flake and there never was — the rate was an artefact
