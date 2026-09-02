@@ -646,8 +646,11 @@ struct SettingsSevenPaneVocabularyTests {
             at: [
                 "Cadence/macOS/Views/SettingsAboutSection.swift": 2,
                 // 5 before T-449; the two calendar-row hairlines that were a two-line
-                // `Divider().background(Theme.borderSubtle)` are the other two.
-                "Cadence/macOS/Views/SettingsListManagementSections.swift": 7,
+                // `Divider().background(Theme.borderSubtle)` are the other two. The eighth is
+                // T-557's dormant-links card, which separates the inactive lists still holding a
+                // calendar link — it reached for the shared component unprompted, which is the
+                // outcome this count exists to keep true rather than a number to chase.
+                "Cadence/macOS/Views/SettingsListManagementSections.swift": 8,
                 // 1 before T-575; the second is the footer hairline in the Mac's typed-phrase
                 // reset confirmation, which is in this file and therefore in this sweep.
                 "Cadence/macOS/Views/SettingsDataSafetySection.swift": 2,
