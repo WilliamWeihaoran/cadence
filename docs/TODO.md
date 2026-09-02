@@ -1036,21 +1036,86 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   hairline and a Retina hairline are genuinely different physical things, so do not assume they should
   match before checking.
 
-- [T-623] **Hard list deletion walks only the local replica.** VERIFIED 2026-09-01 from CXT-018 —
-  mechanism confirmed, **but Codex mis-severed it and the fix it proposes is the most expensive of the
-  seven.**
-  `CadenceListDeleteHelpers.swift:39-74`, `:98-115`, `:118-138` build the whole cascade from local
-  arrays with no gate on import state. **The outcome is the inverse of data loss:** rows the user
-  confirmed deleting *survive*. Tasks land in Inbox (visible, fixable); `GoalListLink` and
-  `HabitCompletion` survivors are less visible. Confirmation counts under-report, which the repo
-  already cares about (T-433's "may not over-promise" rule).
-  **Codex's short-term fix is not implementable as written.** It says "refuse hard delete until import
-  is complete" — but a full-tree search for `NSPersistentCloudKitContainer.Event`,
-  `eventChangedNotification`, `hasCompletedInitialImport` or any equivalent returns **zero hits**. The
-  app has no way to know whether its first import finished.
-  **The durable fix is a synced soft-delete tombstone plus raw ancestor identity on children — a
-  stored-property change across most of the model graph, with no `SchemaMigrationPlan`. Reconsider the
-  size before ticketing it as proposed.**
+- [T-623] **Hard list deletion walks only the local replica.** VERIFIED 2026-09-01 from CXT-018.
+  **RE-SIZED AND RE-SEVERED 2026-09-03**, after both blocking claims were checked against source
+  rather than inherited. The mechanism is real and unchanged. **The severity is lower than filed,
+  the proposed short-term fix is unimplementable *and* mis-aimed, and the durable fix is far larger
+  than the "under 2 days" it was sized at.** Parked deliberately — recommendation at the end.
+  **Mechanism, re-confirmed.** `CadenceListDeleteHelpers.swift:39-105`, `:107-130`, `:132-159` —
+  the ranges this ticket carried (`:39-74`, `:98-115`, `:118-138`) are pre-[[T-620]] and no longer
+  point at the cascades. Each one builds its whole tree from local to-many arrays
+  (`context.areas ?? []`, `area.tasks ?? []`) with no gate on sync state, so a child row that has
+  not imported is not in the array, is not deleted, and arrives later with its owner gone.
+  **The import gate does not exist, and would be the wrong fix if it did.** Re-measured over
+  `git archive HEAD`: `NSPersistentCloudKitContainer`, `eventChangedNotification`,
+  `hasCompletedInitialImport`, `initialImport`, `didFinishImport` — **zero hits** across `.swift`,
+  `.md` and `.plist`, outside this ledger quoting itself. The only CloudKit-facing code in the app
+  is `CadenceCloudAccountProbe` (`CKContainer.accountStatus`, pinned to one file by
+  `onlyOneFileInTheAppTalksToCloudKitDirectly`) and `CadenceSyncHealth`; neither knows anything
+  about records. **And the deeper objection**: the race is not only "the first import has not
+  finished". It is equally "a peer wrote a child after my last sync" — B adds a task to an area
+  while A deletes it. At the moment A deletes, A's import *is* complete, so no import-completion
+  signal can close that case. A gate would buy a delete-blocking modal and still leave the common
+  one open.
+  **The durable fix, measured rather than described.** 13 of the 21 `@Model` types in
+  `CadenceSchema` are children a list cascade reaches — `Area`, `Project`, `Pursuit`, `Goal`,
+  `Habit`, `HabitCompletion`, `GoalListLink`, `AppTask`, `Note`, `Document`, `SavedLink`,
+  `Subtask`, `FocusSessionLog` — carrying **29 to-one owner edges** between them. A tombstone
+  reaper has to match on those edges, so that is 29 new raw-id stored properties plus one new
+  `@Model` for the tombstone.
+  - *The schema mechanics are the cheap part.* A new optional/defaulted attribute and a new entity
+    are both lightweight; no `SchemaMigrationPlan` is needed, and none would be legal for this
+    anyway — the same argument `repairStoredDefaultNoteTitles` already writes down.
+  - *The write side is the expensive part.* **215** owner assignments in app source (`context` 62,
+    `area` 61, `project` 54, `goal` 16, `bundle` 12, `parentTask` 8, `task` 5, `parentGoal` 4,
+    `habit` 3, `pursuit` 2) and **425** more in `CadenceTests` each have to keep a raw mirror in
+    step, or be funnelled through setters that do not exist yet.
+  - *A literal soft-delete flag is worse again.* **243** `@Query` and **70** `FetchDescriptor`
+    sites would each have to filter it. Tombstone-plus-reaper avoids that, and is the only version
+    worth costing.
+  - *And it repairs nothing already in flight.* The rows at risk are precisely the ones whose
+    relationship is nil locally, so there is nothing to backfill a raw id **from**. The reaper only
+    ever matches rows written by a build that has the property, on a device that has it — so it
+    starts working after every device in the container has upgraded. That is a multi-release
+    rollout, not a change with a day count.
+  - *Precedent, and an armed one.* [[T-390]] declined a stored-property change to **two** models on
+    exactly the no-`SchemaMigrationPlan` ground, and
+    `CadenceEventKitPlatformParityTests.aListsCalendarLinkStoresTheIdentifierAndNoCompanionMetadata`
+    goes red if anyone reverses it. This is that same change at 13 models and 29 properties.
+  **There is no cheap third option, because the honest one is already done.** "Report what the
+  cascade could not reach" needs the same signal the gate needs and does not have it — the cascade
+  cannot enumerate what is not in the replica. So the residue was traced row-type by row-type
+  instead, and **five of the six survivor kinds are already inert at every read site**:
+  - `GoalListLink` — every consumer already drops a target-less row:
+    `GoalLinkPresentation.links(of:)`, `GoalContributionSummary.swift:114`,
+    `CadenceReadService.swift:1144`. `link.tasks` returns `[]`, so the percentage is unmoved too.
+  - `HabitCompletion` — no production `FetchDescriptor<HabitCompletion>` exists outside
+    `DataIntegrityRepairService`, and its one pass already does
+    `guard let habit = completion.habit … else { continue }`. Every other read is through
+    `habit.completions`.
+  - `SavedLink` — `LinksView.swift:17-23` and `iOSListSupportViews.swift:590` filter by owner id.
+  - `Note` — the list-note surfaces filter by `note.area?.id == area.id`
+    (`CadenceNotePlanningSupport.swift:172-175`).
+  - `FocusSessionLog` — `.nullify` on all three owners *by decision*, and
+    `CadenceFocusLedger.reconcile` skips a subject-less row outright. Already carried by [[T-744]].
+  - `AppTask`, `Area`, `Project` — the visible kinds, and the recoverable ones. An owner-less task
+    is in Inbox (`area == nil && project == nil`); a context-less area is in the unfiled group. The
+    user can see them and delete them.
+  So the real residue is a storage leak plus some rows in Inbox: the same *leak, not loss* bias
+  [[T-620]] chose on this very file, reached from the other side.
+  **The T-433 framing in the original filing is wrong.** T-433's rule is that a count may not
+  *over-promise* — may not report less loss than actually occurs. Here the count and the cascade
+  read the same local arrays, so they agree exactly and the count is never lower than what is
+  taken. What is over-promised is *completeness*, by `cascadeSentence` and by `isEmpty`'s "nothing
+  else is filed here" — and the one uncertainty sentence the app owns cannot say it, because
+  `unknownImpactNotice` is worded *"may remove **more** than the counts below show"*. That is the
+  opposite direction. [[T-752]].
+  **Recommendation: park it. Do not gate the delete, and do not ticket the rewrite as proposed.**
+  The gate is unimplementable and aimed at the rarer half of the race; the durable fix is a
+  13-model / 29-property / 215-call-site change that repairs no existing data and only begins
+  working a release after every device has it. The cost being carried meanwhile is recoverable rows
+  in Inbox after a delete that raced a peer. Re-open when the model graph is being changed for some
+  other reason and this can ride along. Residue: [[T-751]], [[T-752]].
 
 - [T-624] **A device-local EventKit calendar identifier is stored in CloudKit.** VERIFIED 2026-09-01
   from CXT-020 — mechanism confirmed; **the ping-pong premise is the one unmeasured link in the set.**
@@ -1937,6 +2002,40 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   write to reach the persisted blob every time. Candidate: keep the header on the field's own value
   and let the blob take the name at the commit point, which is where the cards go since [[T-713]].
   **Not measured.** No CloudKit traffic was observed; this is read off the two write paths.
+
+- [T-751] **The thing that keeps [[T-623]] cheap is an accident, and nothing pins it.** [[T-623]] is
+  parked because a child row that outlives a list cascade is inert at every read site — but each of
+  those filters was written for an unrelated reason and none of them names partial deletion.
+  `GoalLinkPresentation.links(of:)` filters `area != nil || project != nil` to avoid a cosmetic
+  "Missing List" row; `GoalContributionSummary.swift:114` filters the same way to keep
+  `linkedListCount` honest; `CadenceReadService.swift:1144` mirrors it for the MCP DTO;
+  `DataIntegrityRepairService.repairDuplicateHabitCompletions` skips a habit-less completion only
+  because it groups by `habit.id`; `LinksView` and `iOSListSupportViews` filter saved links by owner
+  id because that is how a per-list panel is built at all.
+  Remove any one of them for a good local reason and [[T-623]] silently becomes a visible-corruption
+  bug — a "Missing List" contributor inside a goal's percentage, a phantom saved link — with no test
+  going red and a parked ticket saying it does not matter.
+  The ask is one suite that asserts the inertness *as the invariant it now is*: an owner-less
+  `GoalListLink`, `HabitCompletion` and `SavedLink` in a store, and every surface that could show
+  one showing nothing. Same shape as `CadenceInMemoryStoreHygieneTests` — the property is already
+  true, and the test is what stops it quietly stopping.
+
+- [T-752] **The app's one "these counts may be wrong" sentence hard-codes which way it is wrong.**
+  `CadenceNoteDeletionSummary.unknownImpactNotice` is *"Couldn't check everything this delete
+  touches. It may remove **more** than the counts below show."* Both delete confirmations read it,
+  and `bothDeleteConfirmationsShareOneUnknownImpactSentenceAndOneRow` pins that there is exactly one
+  of it and one row for it — deliberately, so a second wording cannot appear.
+  That is right for the case it was written for (a failed fetch, which only ever moves the loss
+  upward), and it leaves the app with nothing to say in the opposite case. [[T-623]] is exactly the
+  opposite case: the delete removes *less* than the user was led to expect, and `isEmpty`'s "nothing
+  else is filed here" is the strongest claim on that screen and the one most able to be wrong.
+  Nobody should discover this by writing a second sentence and finding a test in the way. Either the
+  notice becomes directionless ("Couldn't check everything this delete touches"), which costs the
+  one thing its own doc comment argues for — *"There is no wording of 'something went wrong' that
+  stops a user reading '0 embedded images' as 'no images'"* — or the type grows a direction and the
+  one-sentence rule becomes a one-sentence-per-direction rule.
+  **Not actionable on its own**, and filed as a constraint rather than a defect: whoever picks up
+  [[T-623]] or any successor hits this before they write a line of UI.
 
 ## Done
 
