@@ -4,58 +4,21 @@ Everything here has been pushed as far off-device as it goes; what is left is wh
 simulator** genuinely cannot settle. Each item says what to do, what should happen, what it means if
 it doesn't, and **what is already settled**, so nobody re-checks something a test now holds.
 
-Three items, eight steps, all on a phone. Under three minutes.
+Two items, four steps, all on a phone. Under two minutes.
 
 **Re-triaged 2026-09-02 ([T-561]).** It was five items and fifteen steps, written in August when
 nobody could drive anything. Agents drive iPhone and iPad simulators now, so most of it is somebody
 else's job — [Moved off this list](#moved-off-this-list) at the bottom says what went where and what
 took it. Do not add an item back here without naming the simulator action that cannot perform it.
 
----
-
-## 1. Can you paste an image into a note? ([T-280])
-
-**Why neither a test nor a simulator can settle it:** `Cadence/iOS/` is inside `#if os(iOS)` and the
-test target builds for macOS, so the one link nobody can evaluate is whether UIKit consults
-`iOSMarkdownTextView.canPerformAction` when it builds the edit menu. That is the entire fix. A
-simulator can long-press and screenshot the menu, but nothing in the simulator surface puts an
-**image** on the device pasteboard, and an empty clipboard cannot enable Paste — so that run would
-prove nothing either way.
-
-**Already settled off-device:** the rest of the chain, in `MarkdownImagePasteTests` — the override
-dispatches to a handler, `makeUIView` assigns it unconditionally, and the coordinator composes its
-insertion out of the same shared calls the macOS paste uses, which is why
-`theMobilePasteWritesTheSameTextTheMeasuredMacOSPasteDoes` can measure macOS against a real
-clipboard and speak for the phone. So if Paste fires at all, the picture lands. **Which hosts may
-offer it at all** is settled too, in `MarkdownImagePasteAffordanceTests`:
-`theMobilePasteGateConsultsTheHostsImagePolicy` pins that the gate reads
-`allowsMarkdownImageInsertion` *before* the pasteboard, and
-`theMobileRepresentableThreadsTheHostsImagePolicyIntoTheTextView` the wire from host to view.
-
-**On the phone:**
-1. Take a screenshot (Side + Volume Up) so the clipboard holds an image and nothing else, or copy a
-   picture out of Safari.
-2. Notes tab → Daily. Tap into the note body, then long-press to raise the edit menu.
-3. → **Expected:** **Paste** is there and enabled.
-4. Tap it. → **Expected:** the image appears on its own line, drawn as a picture rather than as
-   `![](cadence-image://…)` text.
-
-- **If Paste is absent or greyed:** the override is not being consulted and `canPerformAction` is
-  the wrong seam on iOS — the answer is a `UIEditMenuInteraction` item or `buildMenu(with:)`, not a
-  wider gate. Tell me and I'll move it.
-- **If Paste is enabled and nothing happens:** the handler did not mint an asset. That is a defect
-  wherever you see it. **This bullet used to say the inert-Paste case was expected in the note
-  template editor and the calendar event sheets; that is no longer true.** T-504 (`dc5da1e`) landed
-  four hours after this checklist was last written, and a refusing host now advertises no bitmap
-  type at all — so in those editors **Paste should be absent**, not enabled-and-inert
-  (`MarkdownImagePasteAffordanceTests.aRefusingHostDoesNotOfferPasteForAScreenshot`, with
-  `aRefusingHostStillOffersPasteForText` for the text pasting that must keep working, and
-  `CadenceMarkdownImageInsertionScopeTests.theNoteTemplateEditorRefusesImageInsertion` /
-  `theCalendarEventEditorRefusesImageInsertion` for the refusals themselves).
+**The image-paste item came off later the same day ([T-280]).** Its whole premise — "nothing in the
+simulator surface puts an **image** on the device pasteboard" — is false, and it was measured false
+rather than argued away: `simctl addmedia` + Photos' own **Copy** does it. The item is settled, on a
+simulator, and the recipe is in [Moved off this list](#moved-off-this-list).
 
 ---
 
-## 2. Can you dismiss the keyboard in the Notes tab? ([T-55])
+## 1. Can you dismiss the keyboard in the Notes tab? ([T-55])
 
 **Why neither a test nor a simulator can settle it:** the simulator suppresses the software keyboard
 while a Mac keyboard is attached, and that toggle lives in Simulator.app — which agents here are not
@@ -81,7 +44,7 @@ sheets) still has its own Done/Cancel above the keyboard.
 
 ---
 
-## 3. Does a double tap work in the note editor? ([T-55])
+## 2. Does a double tap work in the note editor? ([T-55])
 
 **Why neither a test nor a simulator can settle it:** the simulator surface has no double-tap
 action. `tap` is one touch, `touch_path` is one continuous drag, and two scripted `tap`s are two
@@ -114,6 +77,22 @@ menu command. If double-tapping a table reveals source, that is a regression, no
 Each left because something can settle it that could not in August. None is "probably fine" — each
 is a queued simulator job, listed so the trail does not go cold.
 
+- **Pasting an image into a note ([T-280], was item 1, four steps) — a simulator settles it, and
+  did, on 2026-09-02.** The blocking claim was that no simulator action puts an image on the device
+  pasteboard. Two things are now measured. **`xcrun simctl pbcopy <udid> < file.png` does not** — it
+  lands the bytes as *text*, and pasting them into a note inserted `âPNG IHDRxx…` as prose, which is
+  exactly the false negative that claim would have produced. **`xcrun simctl addmedia <udid>
+  file.png`, then Photos → long-press → Copy, does**: `UIPasteboard.general.hasImages` is true and
+  nothing else is on it. With that clipboard, in a Pad note on iPad Pro 11-inch: **Paste appeared in
+  the edit menu and inserted the picture on its own line, drawn as an image, not as
+  `![](cadence-image://…)` text.** So UIKit *does* consult `iOSMarkdownTextView.canPerformAction`
+  for `paste:` when it builds the menu, and `paste(_:)` is dispatched — the two links `#if os(iOS)`
+  kept out of `CadenceTests`. The **discriminator**, same clipboard, same gesture, one tap apart: in
+  the quick-create composer's *event* mode — a refusing host — the menu offered **AutoFill only, no
+  Paste**, which is `MarkdownImagePasteAffordanceTests.aRefusingHostDoesNotOfferPasteForAScreenshot`
+  and [T-504] seen on screen. Nothing but `allowsMarkdownImageInsertion` differs between those two
+  text views, so Paste's presence in one and absence in the other cannot come from `super`.
+
 - **Drag-to-create ([T-89], was item 4, five steps) — a simulator drives the gesture.** `control`'s
   `touch_path` drags a single finger along an arbitrary path *including long-press-then-drag* —
   every gesture the item asked for — and `attach` opens a live panel a person can watch the mid-drag
@@ -139,6 +118,17 @@ is a queued simulator job, listed so the trail does not go cold.
   `theEventSheetKeepsItsCommitNoticeInsideTheHeader` for position. The tell is unchanged and binary:
   on the event-note sheet and the linked-note sheet, the 320pt rail's `Theme.surface` either runs the
   full height of the sheet or stops just under the title. Do not judge 24pt against 22pt by eye.
+  **Run 2026-09-02, iPad Pro 11-inch, portrait (834pt): there is no rail to judge.** Both sheets, and
+  `iOSCalendarEventEditSheet` with them, drew their **compact** branch — header stacked above the
+  editor, divider under it. They are presented with a plain `.sheet`, which on iPad is a form sheet
+  measured at ~577 x 639pt, and UIKit hands a sheet that narrow a **compact** horizontal size class.
+  So sheet and header agreed, which is the T-447 predicate not failing — but it agreed on *compact*,
+  and the regular branch was never entered. Whether it is reachable at all on iPad is [T-731]; the
+  simulator surface has no rotate action, so landscape is untested. Predicate two **did** land, and
+  is width-independent: on a note attached to a read-only *US Holidays* event, typing put *"This note
+  is saved, but Apple Calendar didn't take the change."* in `Theme.red` **under the title, inside the
+  header block**, above the divider — `iOSNoteEditorSheetHeader`'s `accessory` slot, exactly where
+  `theEventSheetKeepsItsCommitNoticeInsideTheHeader` says it belongs.
 
 - **Single-tap caret, and tapping a `[[wiki link]]` or a task-embed card (was steps 3.3 and 3.4) — a
   simulator taps.** One `tap` and one screenshot each. Which target a location resolves to is

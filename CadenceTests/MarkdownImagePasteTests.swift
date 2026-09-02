@@ -333,8 +333,13 @@ struct MarkdownImagePasteTests {
     /// pasteboard, the override dispatches to a handler, `makeUIView` assigns that handler
     /// unconditionally, and the coordinator it lands in composes what the tests above evaluated.
     ///
-    /// What is left device-only after this is one value — whether UIKit consults the override when
-    /// it builds the menu — and that is on `docs/device-checks.md`.
+    /// The one link this cannot read — whether UIKit consults the override when it builds the menu —
+    /// was **settled on a simulator on 2026-09-02** ([T-280]) and is no longer on
+    /// `docs/device-checks.md`. With a real PNG on the pasteboard (`simctl addmedia`, then Photos →
+    /// Copy; `simctl pbcopy` lands a PNG as *text* and proves nothing), Paste appeared in a note's
+    /// edit menu and inserted the picture — while in the same session, same clipboard, the refusing
+    /// event-mode composer offered no Paste at all. Nothing but `allowsMarkdownImageInsertion`
+    /// separates those two text views, so the menu is reading this override.
     @Test func theMobilePasteChainIsWiredEndToEnd() throws {
         let view = try strippedSource("Cadence/iOS/iOSMarkdownTextView.swift")
         let editor = try strippedSource("Cadence/iOS/iOSMarkdownEditor.swift")
