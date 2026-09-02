@@ -43,6 +43,43 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-725] **`moveToContainer` is still `@discardableResult`, and that attribute is what let
+  [[T-702]] happen.** Every product caller guards on the answer now, so the attribute serves only
+  five test call sites (`TaskContainerAssignmentTests` ×4, `CadenceTaskContextInheritanceTests` ×1).
+  On a function whose `false` means "the task is back where it started", an attribute that lets a
+  caller ignore that silently is pointed the wrong way — its own doc comment already warns that a
+  caller acting on `false` is reporting a move that did not happen. **Not an automatic yes**, which
+  is why it is a ticket rather than part of T-702: removing it needs `_ =` at those five sites, and
+  `_ =` still compiles, so this converts a silent discard into a visible one rather than into a
+  compiler guarantee. The set is currently held by
+  `everyProductCallerOfMoveToContainerGuardsOnTheAnswer`, which is a source scan; decide whether the
+  attribute earns its keep beside that scan or whether the scan is the better half of the pair.
+
+- [T-726] **Opening the iOS task inspector commits a move the user did not make — and after
+  [[T-702]] it can now say so.** `iOSTaskDetailSheet.loadContainerSelection()` runs in `onAppear` and
+  writes `containerSelection`, which fires `onChange` and calls `applyContainerSelection()`, which
+  calls `moveToContainer` and commits. `assignContainer` guards the *order* against a re-assert
+  (`isAlreadyInContainer` — the whole subject of `TaskContainerAssignmentTests`), so nothing moves;
+  the `save()` still happens. That was invisible while the answer was discarded. It is not any more:
+  a refusal on that opening commit now paints "Couldn't save this change." onto a sheet the user has
+  only just opened, for an edit they did not make. **Found while landing T-702 and deliberately not
+  folded into it** — the fix is a behaviour change to the open path (an `isAlreadyInContainer` early
+  return in `applyContainerSelection`, or seeding the token without going through `onChange`), and
+  `applyContainerSelection` also normalises the section name, so "does the open path still need to
+  reach a commit?" wants deciding rather than assuming. Small, and it makes the sheet's `onAppear`
+  stop writing to the store.
+
+- [T-727] **`iOSContainerChoicePopover` dismisses itself, so no caller can answer a refusal inside
+  it.** `choiceRow` sets `selection = tag` **and** `isPresented = false` in one button action, which
+  is why [[T-702]]'s row picker had to reach for an alert while the Mac's kanban picker — the same
+  interaction, one platform over — answers inline in a popover that stays open. Four callers:
+  `iOSTaskRowActionViews` (the one that moves a stored task) and three composer/quick-create sheets
+  (`iOSCreateTaskSheetSupportViews`, `iOSTaskDetailComponents`, `iOSCalendarQuickCreateSheet`), which
+  only set a draft and for which self-dismissal is exactly right. Handing the dismissal to the caller
+  would let the row picker report where the user is looking and delete one of the two shapes T-702
+  had to keep. **Deliberately not done inside T-702**: it changes a shared component under three
+  callers that have no refusal to report, which is a wider blast radius than the ticket bought.
+
 - [T-719] **Nothing runs `scripts/mutate.sh selftest`.** `scripts/xcb.sh`'s guards are pinned by
   `CadenceBuildInvocationHygieneTests` — a source scan that fails if the zero-test refusal is deleted —
   and the mutation runner's five refusals ([[T-530]]) are pinned only by its own `selftest`, which no
@@ -99,14 +136,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   reasoned, not seen. `onSubmit` covers Return regardless, and every other control commits, so the
   worst case is that this path is wider than described.
 
-- [T-715] **`TasksPanelDropCoordinator.handleTaskDrop`'s `dropKey: String? = nil` default is now
-  unreachable.** Found while landing [[T-564]](b), and the same shape as the half-pair that ticket
-  deleted: both call sites — `TasksPanel.todayGroupSections` and `TasksListView`'s section rows — pass
-  `dropKey:` explicitly, so the default is a branch no caller takes. The `nil` arm is not inert: it
-  skips `assignTask` entirely and reorders only, and its deliberate asymmetry with `handleSectionDrop`
-  ("ignored deliberately… the reorder below runs either way") is carefully documented and exercised by
-  nothing. Either delete the default and let a future caller state its intent, or give the `nil` arm a
-  test. Small, and worth doing before someone reaches for it.
 
 - [T-701] **`CadenceTaskFieldSnapshot` restores a task's fields but not its `title` or its `order`.**
   Found while landing [[T-497]] and [[T-648]], from two directions in one day. The snapshot carries
@@ -122,17 +151,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   omission into `CadenceTaskFieldSnapshot`'s own doc as a stated boundary with a test that fails when
   a caller writes an unsnapshotted field. Prefer the second only if the first is measurably wrong.
 
-- [T-702] **Three iOS list pickers keep showing the list a refused move did not reach.**
-  Exposed by [[T-497]]: `CadenceTaskMutationSupport.moveToContainer` answers `Bool` now and restores
-  the task when the store refuses, but three of its four callers still discard the answer —
-  `iOSTaskDetailSheet.applyContainerSelection`, and `iOSTaskRowActionViews`' `move(area:project:)`
-  and `moveToContainer(area:project:)`. Each is driven by a `@State` selection token that the user
-  just changed, so on a refusal the task goes back to its old list while the breadcrumb or the menu
-  checkmark goes on naming the new one. **This is a report in the same family the rule already
-  names** — the token *is* the claim — and it is arguably more visible than what it replaced, which
-  left the move pending rather than undone. The fix is the shape `KanbanCardMetaSupportViews.select`
-  now uses: guard on the answer, restore the token, and name the refusal where the picker is. The
-  kanban site was fixed and these three were not because they are in files another change owned.
 
 - [T-698] **The Mac's goal pickers spell `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)`'s body
   inline, three times in one file.** `macOS/Views/GoalPickerViews.swift` declares
@@ -1440,14 +1458,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Written up in `docs/SUBAGENT_RUNBOOK.md`; what remains open here is making it mechanical rather than
   a rule agents are told.
 
-- [T-686] **The 29th empty-title site, left for its owner.** `TasksPanelComponents.swift:55`
-  (`MacTaskRow`) spells `task.title.isEmpty ? "Untitled" : task.title`, so the primary macOS task row
-  draws a blank line for a title of spaces — the one surface in [[T-609]]'s sweep that was **not**
-  fixed, because another agent held that file for the whole batch. One line:
-  `TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)`.
-  `CadenceEmptyTitleFallbackSweepTests.sitesLeftForAnotherOwner` names it as an exact expected set,
-  so **fixing it turns that test red** — delete the entry in the same change. Mutation M6 confirmed
-  that is what happens.
 
 - [T-687] **[[T-609]]'s scan has two measured blind spots, and one of them is bigger than T-609 was.**
   Both were found *by* the T-609 work — the first by a surviving mutation, which is the argument for
@@ -1680,6 +1690,66 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   list: the simulator surface has no double-tap action at all.
 
 ## Done
+
+- [T-686] **CLOSED 2026-09-02 (`ff7bb14`).** Fixed as written — one line, no copy changed, the
+  fallback still "Untitled" and now trimmed before it is tested. **The ticket's prediction held and
+  was measured rather than assumed:** HEAD's unmodified test file, run against the fixed source,
+  fails with `(hits → []) == (sitesLeftForAnotherOwner → ["Cadence/macOS/Views/TasksPanelComponents
+  .swift"])`, so deleting the entry really is part of the fix rather than a tidy-up after it.
+  **What the entry's deletion cost, and what replaced it.** `hits == [one path]` was self-proving:
+  blinding the reader emptied the hits and the equality went red for free. `hits.isEmpty` is not —
+  a blinded reader satisfies it without reading anything, which is exactly what mutation M8 did to
+  the neighbouring trimmed-test sweep during [[T-609]] and survived. So the reader is asserted
+  before the result is believed, the way that neighbour already does it, and mutation M2 (swap
+  `strippedSourceReader()` for a `codeOnly` one) now kills this test on that assertion. M1 (the
+  ternary returns) kills it on the sweep. With this closed, the inline spelling is **0 sites**
+  across all three targets and the sweep asserts an empty set rather than a remainder.
+
+- [T-702] **CLOSED 2026-09-02 (`9a1dc68`).** All three guard, and the four callers of
+  `moveToContainer` now say one sentence — `CadenceTaskFieldEditCommit.saveFailureNotice`, the one
+  the kanban picker already showed.
+  **Premise correction, and it changed the fix.** The ticket says each of the three is driven by a
+  `@State` token the user just changed. That is true of `iOSTaskDetailSheet.applyContainerSelection`
+  and **not** of the two in `iOSTaskRowActionViews`: the row's menu checkmarks read `task.area` /
+  `task.project` directly and its popover's selection binding is a computed `currentToken`, so both
+  self-correct on the restore. What those two were actually reporting is the *dismissal* — a `Menu`
+  closes itself, and `iOSContainerChoicePopover.choiceRow` sets `isPresented = false` in the same
+  statement that picks the list. So the picker shut over a move that did not happen, which is the
+  same claim by a different mechanism and is **not** fixable the way the kanban site is: that
+  dismissal belongs to a shared component with three other callers, not to these two.
+  **So two shapes.** The sheet stays open and reports inline, into the notice slot it already draws
+  (one notice per surface, [[T-646]]'s decision, rather than a second flag the two could disagree
+  through). The row raises `iOSTaskMoveFailureAlert` — an alert for the reason
+  `iOSTaskDeleteFailureAlert` records one action over, and **one** modifier for both affordances,
+  because the chip and the context menu are two ways to make one move. The only new copy is the
+  title, `CadenceTaskMutationSupport.moveFailureAlertTitle`.
+  **The restore re-enters and is guarded.** Putting `containerSelection` back fires `onChange`
+  again; unguarded, the second pass re-commits the refused move and clears the notice the first set.
+  The flag is raised only when the token will actually change, so it cannot outlive its own
+  `onChange` and swallow the user's next pick — mutation M9 deletes that condition and is killed.
+  **Pinned as a set:** `everyProductCallerOfMoveToContainerGuardsOnTheAnswer` walks `Cadence/` and
+  names the four surfaces exactly rather than asserting a floor. Against unmodified source it named
+  the discarding sites precisely — `iOSTaskRowActionViews.swift (2 of 2)`,
+  `iOSTaskDetailSheet.swift (1 of 1)`. Residue: [[T-725]], [[T-726]], [[T-727]].
+
+- [T-715] **CLOSED 2026-09-02 (`ad51f30`). Both, and they are about different things.**
+  **The default goes**, for the ticket's own reason and [[T-564]](b)'s: both call sites pass
+  `dropKey:`, and a defaulted argument nothing supplies is the half most likely to be wrong the day
+  somebody reaches for it. Deleting it costs the existing callers nothing and makes the next one say
+  `dropKey: nil` out loud, which is a claim about its group rather than an argument it forgot.
+  **The `nil` arm stays, and "exercised by nothing" was true only of the tests** — that is the
+  premise correction. `CadenceTaskDropSupport.dropKey(forGroup:)` answers `nil` for
+  `.todayDate(.overdue)`, `.todayDate(.pastDo)` and `.completion`, so every row drop inside Today's
+  Overdue, Past-do and Completed groups already takes that arm in the shipping app. It is live
+  behaviour, and the asymmetry with `handleSectionDrop` is what makes those drops an ordinary
+  reorder instead of [[T-591]]'s silent accept.
+  So it is characterised: `arowDropIntoAGroupWithNoKeyReordersAndAssignsNothing` asserts a keyless
+  drop reorders and assigns nothing, **paired** with the same coordinator taking a key, because
+  "assigned nothing" is worthless from a coordinator that calls nothing; and
+  `thegroupsThatOfferNoDropKeyAreTheOnesARowDropOnlyReorders` pins the three groups that reach it.
+  That test **passes against unmodified source, correctly** — it describes behaviour this change
+  does not alter — so its teeth are mutations M4 (the arm invents a key) and M5 (the arm stops
+  reordering), each of which kills it. M3 (the default returns) kills the source pin.
 
 - [T-530] **A stale mutation needle reads as a surviving mutant.** Found by the T-516 agent, on itself.
   Its `assert old in s` went stale when it renamed a function; Python raised, the zsh runner had **no
