@@ -27,6 +27,16 @@
 #     so the shared app-group store above is never opened at all. Defence in
 #     depth: if the claim is ever wrong, the two agents still do not merge data.
 #     `SIMCTL_CHILD_CADENCE_LOCAL_STORE_ONLY=1` comes with it -- no CloudKit.
+#   * A per-agent USER DEFAULTS SUITE, passed as the launch argument
+#     `-CadenceSuiteName <id>` (T-735). The store id above isolates SwiftData and
+#     NOTHING ELSE: every @AppStorage value and every remembered scroll position
+#     lives in one device-wide defaults domain that survives reinstall. That cost
+#     twenty minutes on 2026-09-03, when the compact Calendar tab opened on August
+#     2026 with Aug 17 selected against an EMPTY private store -- which reads as a
+#     date bug and was another agent's leftover position. `CadenceDefaults` reads
+#     the argument (NSArgumentDomain, per-launch, nothing persisted) and the scene
+#     redirects `@AppStorage` to that suite. NOT covered: an app started by tapping
+#     its icon carries no launch arguments and is back on the shared domain.
 #
 # WHAT THIS SCRIPT WILL NEVER DO, each because it was done and cost something:
 #   * It has no `create` command. Cloning a device per agent is how the pool went
@@ -289,10 +299,11 @@ case "$CMD" in
     # the only copy of the app on it is ours, but nothing here should terminate
     # anything by default -- see the header.
     extra=$( (( RELAUNCH )) && print -- " --terminate-running-process" || print -- "" )
-    say "== launch on $u with a private store =="
-    say "  store: <app data container>/tmp/CadenceUITestStores/$ID/default.store"
+    say "== launch on $u with a private store and a private defaults suite =="
+    say "  store:    <app data container>/tmp/CadenceUITestStores/$ID/default.store"
+    say "  defaults: com.haoranwei.Cadence.agent.$ID   (-CadenceSuiteName, T-735)"
     say "  the shared app-group store (Library/Application Support/Cadence) is not opened"
-    run_or_report "SIMCTL_CHILD_CADENCE_LOCAL_STORE_ONLY=1 SIMCTL_CHILD_CADENCE_UI_TEST_STORE_ID=${(q)ID} ${SIMCTL} launch$extra $u $BUNDLE_ID"
+    run_or_report "SIMCTL_CHILD_CADENCE_LOCAL_STORE_ONLY=1 SIMCTL_CHILD_CADENCE_UI_TEST_STORE_ID=${(q)ID} ${SIMCTL} launch$extra $u $BUNDLE_ID -CadenceSuiteName ${(q)ID}"
     ;;
 
   renew)

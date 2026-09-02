@@ -74,6 +74,11 @@ struct CadenceApp: App {
 #endif
         }
         .modelContainer(sharedModelContainer)
+        // **T-735.** Every `@AppStorage` in the app resolves against this rather than against
+        // `UserDefaults.standard` directly. With no `-CadenceSuiteName` launch argument the two are
+        // the same object, so this is inert in the product; under `scripts/simulator-claim.sh` it
+        // is what stops one agent's remembered position from reading as another's date bug.
+        .defaultAppStorage(CadenceDefaults.store)
 #if os(macOS)
         .windowStyle(.hiddenTitleBar)
 #endif

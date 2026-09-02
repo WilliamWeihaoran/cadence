@@ -38,7 +38,10 @@ struct CadenceCalendarDateMemory {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    /// Defaults to `CadenceDefaults.store`, not to `.standard`: this type is *the* remembered
+    /// position T-735 was chased as a date bug, and it is plain storage rather than `@AppStorage`,
+    /// so the scene-level `defaultAppStorage` redirect does not reach it.
+    init(defaults: UserDefaults = CadenceDefaults.store) {
         self.defaults = defaults
     }
 
