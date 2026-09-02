@@ -766,14 +766,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `CadenceTaskMutationSupport.inheritedContextTargets(area:project:)` for exactly this and the macOS editors
   read it; iOS should read it instead of `area.tasks ?? []`. One line plus an iOS-simulator build.
 
-- [T-561] **Re-triage `docs/device-checks.md` now that simulator use is established.** The checklist was
-  written when nobody could drive anything. Since then agents have driven iPhone simulators successfully —
-  [[T-514]]'s before/after and [[T-538]]'s create half both came from one. Several of its 15 steps may now be
-  coverable without hardware. **Two genuinely are not**: pasting an image needs a real clipboard, and the
-  keyboard-dismiss gesture cannot be exercised because *"the simulator suppresses the software keyboard while
-  a Mac keyboard is attached"*. Establish which of the rest a simulator can cover and shorten the list.
-
-
 - [T-562] *(RESOLVED 2026-08-31 — **this ticket's premise was wrong, and the wrong half was mine.**
   Not a regression, not a never-worked, and not a sidebar defect at all. `testLaunchesToTodayWithSeededSidebarLists`
   **passes about 4 runs in 5**: 5 runs measured (working tree @5ae916a pass 7.4s; isolated `git archive HEAD`
@@ -1640,7 +1632,44 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   is shell, so `shellText(at:)` would need a third branch (a script is shell throughout, markdown only
   inside fences, YAML only inside `run:` blocks) — the extraction is the work, not the walk.
 
+- [T-722] **Drag-to-create has never been observed, and the simulator can now do the gesture.**
+  Was item 4 of `docs/device-checks.md`; it left that list in [[T-561]] because `control`'s
+  `touch_path` drags a single finger along an arbitrary path *including long-press-then-drag*, which
+  is every gesture the item asked for, and `attach` opens a live panel to watch the mid-drag ghost
+  in. Since [[T-171]] neither `+` uses a system drag: both run one custom `DragGesture` through
+  `CadenceCapturePressResolver`, hit-testing frames the targets publish to
+  `iOSNewTaskDropFrameRegistry`. **Everything computable is already pinned** in
+  `CadenceCapturePaletteTests`, `CadenceTaskDropSupportTests` and `CadenceTaskGroupDropSupportTests`
+  -- but `iOSNewTaskDropFrameRegistry` itself is referenced by **no test**, and whether the frames it
+  publishes land where the eye sees the rows is the whole remaining question. Five things to see:
+  (1) press the `+` in the tab bar and move immediately, drop on a task row -- the composer opens
+  pre-filled with that row's list, section and dates; (2) press and *hold* without moving -- the
+  palette blooms, sliding between segments selects, and it does **not** turn into a drag; (3) drop on
+  an **empty** group's header -- seeded from the group, which is the case the feature was built for
+  and the one where a published frame is most likely to be wrong; (4) mid-drag a dashed "New task"
+  ghost opens **between** rows and names what it will inherit, rather than highlighting an existing
+  task; (5) a plain tap afterwards opens the composer instantly, unseeded. If an abandoned drag
+  leaves the tab bar unresponsive, say so -- that was a known simulator side effect and it is worth
+  knowing whether it still happens. Belongs with the queued simulator batch alongside [[T-447]].
+
+- [T-723] **Two note-editor taps have never been observed, and together they are one simulator
+  session.** Were steps 3.3 and 3.4 of `docs/device-checks.md`; they left the phone list in
+  [[T-561]] because both are single taps, which `control`'s `tap` performs. Single-tap plain text --
+  the caret lands there. Tap a `[[wiki link]]` or a task-embed card -- it opens. Which target a
+  location resolves to is already pinned by `MarkdownReferenceDisplaySupportTests`
+  (`referenceRangesPointAtVisibleDisplayText`, `inlineSegmentsPreserveReferenceTargets`), so the
+  residue is one tap and one screenshot each. The *double*-tap pair deliberately stayed on the device
+  list: the simulator surface has no double-tap action at all.
+
 ## Done
+
+- [T-561] **Re-triage `docs/device-checks.md` now that simulator use is established.** The checklist was
+  written when nobody could drive anything. Since then agents have driven iPhone simulators successfully —
+  [[T-514]]'s before/after and [[T-538]]'s create half both came from one. Several of its 15 steps may now be
+  coverable without hardware. **Two genuinely are not**: pasting an image needs a real clipboard, and the
+  keyboard-dismiss gesture cannot be exercised because *"the simulator suppresses the software keyboard while
+  a Mac keyboard is attached"*. Establish which of the rest a simulator can cover and shorten the list.
+  **Closed 2026-09-02 in `151afb2`. 5 items / 15 steps -> 3 items / 8 steps, and one survivor was materially stale.** Removals, each with what took it. **Drag-to-create (item 4, five steps)**: `control`'s `touch_path` drags a single finger along an arbitrary path *including long-press-then-drag* -- every gesture the item asked for -- and `attach` opens a live panel to watch the mid-drag ghost in; everything computable was already pinned in `CadenceCapturePaletteTests` (`aPressThatMovesBeforeTheHoldIsADragImmediately`, `theHoldCannotOpenThePaletteOnTopOfADrag`, `theSmallestContainingFrameWinsAHitTest`, `aPointOverNothingHitsNothing`, `aDropOnARowSeedsThatRowsPlacement`, `aDropOnNothingSeedsWhatATapSeeds`), `CadenceTaskDropSupportTests` and `CadenceTaskGroupDropSupportTests`. Refiled as [[T-722]]. **Both note sheets at iPad width (item 5)**: the item always conceded this is a width question rather than a device one, and **six stock iPad simulators already exist here**, so nothing has to be created -- that residue is [[T-447]]'s, which is open and should be routed to the simulator batch rather than to a phone. **The single-tap caret and wiki-link steps (3.3, 3.4)**: one `tap` each, refiled as [[T-723]]. **Survivors, and why nothing else reaches them**: no simulator action puts an *image* on the device pasteboard, and an empty clipboard cannot enable Paste (item 1, [[T-280]]); the simulator suppresses the software keyboard while a Mac keyboard is attached and the toggle lives in Simulator.app (item 2); and there is **no double-tap action** -- `tap` is one touch, `touch_path` one continuous drag, and two scripted taps are two tool round-trips, far outside iOS's ~350ms window (item 3). **Two staleness findings fixed in passing.** Item 1's failure bullet said an enabled-but-inert **Paste** was *expected* in the note-template editor and the calendar event sheets; [[T-504]] (`dc5da1e`) landed **four hours after** this checklist was last written and a refusing host now advertises no bitmap type at all, so Paste should be **absent** there -- following the old bullet would have reported a defect as expected behaviour (`MarkdownImagePasteAffordanceTests.aRefusingHostDoesNotOfferPasteForAScreenshot`, `CadenceMarkdownImageInsertionScopeTests.theNoteTemplateEditorRefusesImageInsertion`). And item 4's pointer to a drag recipe *"in `AGENTS.md`"* was **stale -- there is no such recipe there, and there has not been**; it went with the item. Separately, [[T-563]] removed a whole routing argument: "the UI target is unreliable" is no longer a reason to send anything to hardware, and the one live intermittency is [[T-710]], a macOS test-timing question.**
 
 - [T-560] **The test target leaks a directory into the user's real app container on every run.**
   **Closed 2026-09-02 in `b31d0b9`. Residue cleared and the mechanism closed — but the leak was not
