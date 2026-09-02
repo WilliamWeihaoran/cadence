@@ -74,7 +74,7 @@ struct iOSCalendarBoardEventItem: Identifiable {
         let eventIdentifier = CadenceEventNoteSupport.rawIdentifier(for: event)
         self.event = event
         title = iOSCalendarEventSupport.title(for: event)
-        calendarTitle = event.calendar?.title ?? "Apple Calendar"
+        calendarTitle = event.calendar?.title ?? CadenceAppleCalendarNaming.unnamedCalendarTitle
         isAllDay = event.isAllDay
         isRecurring = CadenceEventNoteSupport.isRecurringSeriesMember(event)
         color = iOSCalendarEventSupport.color(for: event.calendar)

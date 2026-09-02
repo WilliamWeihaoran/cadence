@@ -421,7 +421,7 @@ struct ListEditorCalendarRow: View {
 
     var body: some View {
         TaskInspectorFieldButtonRow(
-            label: "Apple Calendar",
+            label: CadenceAppleCalendarNaming.integrationSectionTitle,
             reservesIconSlot: false,
             valueText: linkState.valueText,
             isSet: linkState.isSet

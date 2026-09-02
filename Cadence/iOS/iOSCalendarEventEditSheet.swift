@@ -387,7 +387,7 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     private var calendarSection: some View {
-        iOSEditorSection(title: "Apple Calendar", style: .ruled) {
+        iOSEditorSection(title: CadenceAppleCalendarNaming.integrationSectionTitle, style: .ruled) {
             if !isEditable {
                 // The event's real calendar, stated plainly. A picker here could only offer
                 // calendars this event cannot move to.

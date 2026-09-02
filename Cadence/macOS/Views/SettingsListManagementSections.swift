@@ -161,16 +161,18 @@ struct SettingsCalendarSection: View {
         SettingsCard {
             VStack(spacing: 0) {
                 if calendars.isEmpty {
-                    HStack(spacing: 12) {
-                        Image(systemName: "calendar")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-                        Text("No Apple calendars found.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.dim)
-                        Spacer()
+                    // **T-545.** The shared notice row rather than a private one-liner, and the
+                    // fifth of the four cards T-600(b) converged. It is the odd one: access has
+                    // been granted and EventKit answered with nothing, so "you have made none yet"
+                    // is not what happened and the second line — what *would* appear here — is the
+                    // only useful thing to say.
+                    CadenceSettingsNoticeRow(
+                        systemImage: "calendar",
+                        title: CadenceSettingsEmptyStateCopy.appleCalendarsTitle,
+                        detail: CadenceSettingsEmptyStateCopy.appleCalendarsSubtitle
+                    ) {
+                        EmptyView()
                     }
-                    .padding(.vertical, 10)
                 } else {
                     ForEach(Array(calendars.enumerated()), id: \.element.calendarIdentifier) { index, calendar in
                         SettingsCalendarRow(
@@ -192,24 +194,28 @@ struct SettingsCalendarSection: View {
         }
     }
 
+    /// **T-543.** One glyph and one sentence per state, on the row Notifications and Reminders
+    /// already draw.
+    ///
+    /// This card used to draw an amber warning triangle **unconditionally** — including before
+    /// anybody had been asked, which is the state a fresh install is in — beside a button offering
+    /// access. Nobody has done anything wrong there, so the triangle contradicted the offer next to
+    /// it. The denied arm keeps it, because that one *is* a fault the reader has to go and fix.
+    ///
+    /// The not-yet-asked sentence is shared with the phone now; the denied one is not, and must not
+    /// be: it names where the reader has to go, and that is a different place on each platform.
     private var calendarAccessCard: some View {
         SettingsCard {
-            HStack(spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.amber)
-                    .font(.system(size: 14))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(calendarManager.isDenied ? CadenceCalendarSettingsCopy.accessDeniedTitle : CadenceCalendarSettingsCopy.accessRequiredTitle)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text(calendarManager.isDenied
-                         ? "Allow Cadence from System Settings, Privacy & Security, Calendars."
-                         : "Allow Cadence to create and sync calendar events.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
+            CadenceSettingsNoticeRow(
+                systemImage: calendarManager.isDenied ? "exclamationmark.triangle.fill" : "calendar.badge.plus",
+                tint: calendarManager.isDenied ? Theme.amber : Theme.blue,
+                title: calendarManager.isDenied
+                    ? CadenceCalendarSettingsCopy.accessDeniedTitle
+                    : CadenceCalendarSettingsCopy.accessRequiredTitle,
+                detail: calendarManager.isDenied
+                    ? "Allow Cadence from System Settings, Privacy & Security, Calendars."
+                    : CadenceCalendarSettingsCopy.accessRequiredDetail
+            ) {
                 if calendarManager.isDenied {
                     SettingsActionButton(tone: .filled(Theme.dim), action: openCalendarPrivacySettings) {
                         Text("Open Calendar Settings")
@@ -516,7 +522,7 @@ private struct SettingsCalendarRow: View {
     }
 
     private var sourceTitle: String {
-        calendar.source?.title ?? "Apple Calendar"
+        calendar.source?.title ?? CadenceAppleCalendarNaming.unnamedAccountTitle
     }
 
     private var connectedNames: [String] {

@@ -165,8 +165,8 @@ struct iOSCalendarSettingsSection: View {
                 if calendars.isEmpty {
                     iOSSettingsEmptyInlineRow(
                         systemImage: "calendar",
-                        title: "No Apple calendars found",
-                        subtitle: "Calendars available to this device will appear here."
+                        title: CadenceSettingsEmptyStateCopy.appleCalendarsTitle,
+                        subtitle: CadenceSettingsEmptyStateCopy.appleCalendarsSubtitle
                     )
                 } else {
                     ForEach(Array(calendars.enumerated()), id: \.element.calendarIdentifier) { index, calendar in
@@ -206,7 +206,7 @@ struct iOSCalendarSettingsSection: View {
 
                     Text(calendarManager.isDenied
                          ? "Allow Cadence from the iOS Settings app to show Apple Calendar events."
-                         : "Allow Cadence to show events and connect Apple calendars to areas or projects.")
+                         : CadenceCalendarSettingsCopy.accessRequiredDetail)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.subdued)
                         .fixedSize(horizontal: false, vertical: true)
@@ -650,7 +650,7 @@ private struct iOSCalendarSettingsRow: View {
     }
 
     private var sourceTitle: String {
-        calendar.source?.title ?? "Apple Calendar"
+        calendar.source?.title ?? CadenceAppleCalendarNaming.unnamedAccountTitle
     }
 
     private var connectedNames: [String] {

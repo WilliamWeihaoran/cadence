@@ -637,7 +637,7 @@ struct iOSSearchView: View {
             id: CadenceSearchIdentity.event(CadenceEventNoteSupport.identifier(for: event)),
             destination: .event(event),
             title: iOSCalendarEventSupport.title(for: event),
-            subtitle: event.calendar?.title ?? "Apple Calendar",
+            subtitle: event.calendar?.title ?? CadenceAppleCalendarNaming.unnamedCalendarTitle,
             detail: eventDetail(event),
             icon: event.isAllDay ? "calendar.badge.clock" : "calendar",
             color: iOSCalendarEventSupport.color(for: event.calendar),

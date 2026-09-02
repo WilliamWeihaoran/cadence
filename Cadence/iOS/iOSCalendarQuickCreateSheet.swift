@@ -338,7 +338,7 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var calendarSection: some View {
-        iOSEditorSection(title: "Apple Calendar", style: .ruled) {
+        iOSEditorSection(title: CadenceAppleCalendarNaming.integrationSectionTitle, style: .ruled) {
             if !calendarManager.isAuthorized {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Calendar access is needed to create events.")

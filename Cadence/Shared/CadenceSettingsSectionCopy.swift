@@ -26,14 +26,25 @@ nonisolated enum CadenceCalendarSettingsCopy {
     static let accessDeniedTitle = "Calendar access denied"
 
     /// Settings → Calendar, before anyone has been asked.
-    ///
-    /// **The two surfaces disagree under this title and the disagreement is not resolved here**
-    /// (see T-543): macOS says "Allow Cadence to create and sync calendar events." while iOS says
-    /// "Allow Cadence to show events and connect Apple calendars to areas or projects." Both are
-    /// true of both platforms, so one of them is the right sentence for both — but picking it is a
-    /// copy decision, not a de-duplication, and converging the two subtitles by fiat would hide the
-    /// choice inside a refactor.
     static let accessRequiredTitle = "Calendar access required"
+
+    /// The sentence under `accessRequiredTitle` — **the same one on both surfaces since T-543.**
+    ///
+    /// T-524 found the two panes disagreeing here and deliberately did not converge them: macOS
+    /// said "Allow Cadence to create and sync calendar events.", iOS said the sentence below, both
+    /// were true of both platforms, and picking one is a copy decision rather than a
+    /// de-duplication. T-543 made the pick, and this is the reasoning rather than the outcome
+    /// alone: this card gates *reading* the calendar list and connecting a calendar to an area or
+    /// project, which is what the screen around it is for. Writing events is real but happens in
+    /// the quick-create and event sheets, so naming it here described a different screen.
+    ///
+    /// It is an **offer**, not a fault report, and that is the other half of T-543: the Mac drew an
+    /// amber warning triangle beside this sentence in the state where nobody has been asked yet.
+    /// Both surfaces now draw a neutral `calendar.badge.plus` there and keep the triangle for
+    /// `accessDeniedTitle`, whose sentence still lives at each call site because it names where the
+    /// reader has to go and that is a different place on each platform.
+    static let accessRequiredDetail =
+        "Allow Cadence to show events and connect Apple calendars to areas or projects."
 
     /// The connect menu on a calendar row with no active area or project to offer.
     static let noConnectableListsLabel = "No active areas or projects"
@@ -211,6 +222,17 @@ nonisolated enum CadenceSettingsEmptyStateCopy {
     /// reads as a state the reader could fix by creating something.
     static let templatesTitle = "No templates available"
     static let templatesSubtitle = "Template definitions could not be loaded."
+
+    /// Settings → Calendar, authorized, with EventKit vending no calendars at all.
+    ///
+    /// **T-545, and the fifth of T-600(b)'s four.** It was missed because it is not "you have made
+    /// none yet": access has been granted and the answer came back empty, so the only useful thing
+    /// to say is what would appear here if it were not. macOS said "No Apple calendars found." in a
+    /// private glyph-plus-`Text` row — one line, and carrying the full stop a title does not take —
+    /// while the phone already said both lines. The repo rule that page headers do not describe the
+    /// page is not in play: an empty state may keep its subtitle, and this is the reason why.
+    static let appleCalendarsTitle = "No Apple calendars found"
+    static let appleCalendarsSubtitle = "Calendars available to this device will appear here."
 }
 
 /// Settings → Lists, on both surfaces: the "Inactive Lists" rows, which are the only place a

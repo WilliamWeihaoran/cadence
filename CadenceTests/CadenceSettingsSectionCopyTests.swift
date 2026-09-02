@@ -36,6 +36,16 @@ struct CadenceSettingsSectionCopyTests {
         ("CadenceCalendarSettingsCopy.unconnectedSummary", "Not connected to any area or project"),
         ("CadenceCalendarSettingsCopy.connectMenuLabel", "Connect to areas and projects"),
         ("CadenceCalendarSettingsCopy.appleCalendarsSectionTitle", "Apple Calendars"),
+        // **T-543.** The one sentence the access card says before anybody has been asked.
+        // T-524 left this pair diverged on purpose — both sentences were true of both
+        // platforms, so picking one was a copy decision rather than a de-duplication — and
+        // T-543 made the decision: the phone's, because it names what this card actually
+        // gates (showing events, and connecting a calendar to an area or project) rather
+        // than the writing path a reader on this screen is not using.
+        (
+            "CadenceCalendarSettingsCopy.accessRequiredDetail",
+            "Allow Cadence to show events and connect Apple calendars to areas or projects."
+        ),
     ]
 
     /// **T-599.** Four more sentences that were spelled in both trees and had already drifted —
@@ -251,6 +261,42 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
+    /// **T-543: the access card draws one glyph per state, and the states are not both errors.**
+    ///
+    /// macOS drew an **amber warning triangle unconditionally** — including in the state where
+    /// nobody has been asked yet, which is the default a fresh install is in and not a problem the
+    /// reader has caused. Beside it sat a button offering access. So the card said two things at
+    /// once, and the one it said loudest was wrong.
+    ///
+    /// Asserted as the ternary rather than as presence, because presence is what was already true:
+    /// the warning glyph is still in both files, and the whole finding is *which arm* it is on.
+    /// The exact counts are the other half — a second, unconditional triangle elsewhere in the card
+    /// would satisfy a `contains` check and re-create the defect beside the fix.
+    @Test func theCalendarAccessCardDrawsOneGlyphPerStateOnBothSurfaces() throws {
+        for path in Self.calendarSurfaces {
+            let code = try Self.strippedSource(at: path)
+
+            #expect(
+                CadenceSourceScan.matchCount("\"exclamationmark.triangle.fill\"", in: code) == 1,
+                "\(path) spells the warning glyph more than once, so one of them is unconditional"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("\"calendar.badge.plus\"", in: code) == 1,
+                "\(path) does not offer exactly one neutral not-yet-asked glyph"
+            )
+            #expect(
+                code.contains(
+                    "calendarManager.isDenied ? \"exclamationmark.triangle.fill\" : \"calendar.badge.plus\""
+                ),
+                "\(path) draws a warning triangle in a state nobody has been asked about yet"
+            )
+            #expect(
+                code.contains("calendarManager.isDenied ? Theme.amber : Theme.blue"),
+                "\(path) tints the not-yet-asked glyph as a warning"
+            )
+        }
+    }
+
     // MARK: - T-600: one empty-row component, and four cards that say two lines on both surfaces
 
     /// **The duplicate empty row is gone from the tree, not merely unused.**
@@ -344,6 +390,22 @@ struct CadenceSettingsSectionCopyTests {
                 ["CadenceSettingsEmptyStateCopy.templatesTitle", "CadenceSettingsEmptyStateCopy.templatesSubtitle"],
                 ["No templates available", "No templates available."]
             ),
+            // **T-545, the fifth.** Missed by T-600(b) because it is not a "you have made none
+            // yet" card: EventKit has granted access and vended nothing. macOS said
+            // "No Apple calendars found." — one line, with the full stop a title does not take —
+            // where the phone already said what would fill the card. The macOS literal carries
+            // that stray full stop, which is why it is listed as its own forbidden spelling.
+            (
+                [
+                    "Cadence/macOS/Views/SettingsListManagementSections.swift",
+                    "Cadence/iOS/iOSCalendarSettingsSection.swift",
+                ],
+                [
+                    "CadenceSettingsEmptyStateCopy.appleCalendarsTitle",
+                    "CadenceSettingsEmptyStateCopy.appleCalendarsSubtitle",
+                ],
+                ["No Apple calendars found", "No Apple calendars found."]
+            ),
         ]
 
         for entry in pairs {
@@ -372,12 +434,15 @@ struct CadenceSettingsSectionCopyTests {
     ///
     /// Counts rather than presence, for the reason `theSevenPanesReadTheSharedFieldVocabulary`
     /// gives: a presence check stays green when one of several call sites reverts.
-    @Test func theFourEmptySettingsCardsAreDrawnOnTheSharedNoticeRow() throws {
+    @Test func theEmptySettingsCardsAreEachDrawnOnTheSharedNoticeRow() throws {
         for (path, expected) in [
             // The access verdict and the empty Reminder Lists card.
             ("Cadence/macOS/Views/SettingsRemindersSection.swift", 2),
-            // Contexts and Inactive Lists; the calendar sections in this file draw neither.
-            ("Cadence/macOS/Views/SettingsListManagementSections.swift", 2),
+            // Contexts and Inactive Lists — plus, since T-543 and T-545, the calendar access
+            // verdict and the empty Apple-calendars card, which were the last two hand-built rows
+            // in this file. Four, exactly: an aggregate that still totals four cannot tell you the
+            // four are where you left them, so the shapes they replaced are named below.
+            ("Cadence/macOS/Views/SettingsListManagementSections.swift", 4),
             ("Cadence/macOS/Views/SettingsTemplatesSection.swift", 1),
         ] {
             let code = try Self.strippedSource(at: path)
@@ -393,6 +458,10 @@ struct CadenceSettingsSectionCopyTests {
         let lists = try Self.strippedSource(at: "Cadence/macOS/Views/SettingsListManagementSections.swift")
         #expect(lists.contains("Image(systemName: \"archivebox\")") == false)
         #expect(lists.contains("Image(systemName: \"square.stack.3d.up\")") == false)
+        // T-545's, and T-543's: the empty calendars card drew a bare glyph-plus-`Text` HStack and
+        // the access card drew a private near-copy of the notice row, both in this same file.
+        #expect(lists.contains("Image(systemName: \"calendar\")") == false)
+        #expect(lists.contains("Image(systemName: \"exclamationmark.triangle.fill\")") == false)
     }
 
     /// The work-hours row's **title** is one string; its subtitle deliberately is not.
@@ -737,6 +806,13 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceCalendarSettingsCopy.connectMenuLabel == "Connect to areas and projects")
         #expect(CadenceCalendarSettingsCopy.workdayBoundaryTitle == "Workday boundary")
         #expect(CadenceCalendarSettingsCopy.appleCalendarsSectionTitle == "Apple Calendars")
+        // T-543. The sentence that won, and the reason to assert it by value: every scan
+        // above stays green if this string is quietly rewritten back to the Mac's old
+        // "Allow Cadence to create and sync calendar events."
+        #expect(
+            CadenceCalendarSettingsCopy.accessRequiredDetail
+                == "Allow Cadence to show events and connect Apple calendars to areas or projects."
+        )
 
         // T-599. Each of these is the spelling that *won*, not the one that happened to be first
         // alphabetically: the phone said "Create one or add the default set.", stopped the privacy
@@ -795,12 +871,20 @@ struct CadenceSettingsSectionCopyTests {
         )
         #expect(CadenceSettingsEmptyStateCopy.templatesTitle == "No templates available")
         #expect(CadenceSettingsEmptyStateCopy.templatesSubtitle == "Template definitions could not be loaded.")
+        // T-545. The fifth pair, and the one whose macOS spelling carried the stray full
+        // stop the shape loops below exist to catch.
+        #expect(CadenceSettingsEmptyStateCopy.appleCalendarsTitle == "No Apple calendars found")
+        #expect(
+            CadenceSettingsEmptyStateCopy.appleCalendarsSubtitle
+                == "Calendars available to this device will appear here."
+        )
 
         for title in [
             CadenceSettingsEmptyStateCopy.remindersTitle,
             CadenceSettingsEmptyStateCopy.contextsTitle,
             CadenceSettingsEmptyStateCopy.inactiveListsTitle,
             CadenceSettingsEmptyStateCopy.templatesTitle,
+            CadenceSettingsEmptyStateCopy.appleCalendarsTitle,
             CadenceTagSettingsCopy.emptyCatalogTitle
         ] {
             #expect(title.hasSuffix(".") == false, "\"\(title)\" is a title, not a sentence")
@@ -810,6 +894,7 @@ struct CadenceSettingsSectionCopyTests {
             CadenceSettingsEmptyStateCopy.contextsSubtitle,
             CadenceSettingsEmptyStateCopy.inactiveListsSubtitle,
             CadenceSettingsEmptyStateCopy.templatesSubtitle,
+            CadenceSettingsEmptyStateCopy.appleCalendarsSubtitle,
             CadenceTagSettingsCopy.emptyCatalogSubtitle
         ] {
             #expect(subtitle.hasSuffix("."), "\"\(subtitle)\" is a sentence and needs its full stop")
