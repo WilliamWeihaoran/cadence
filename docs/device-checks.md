@@ -108,6 +108,21 @@ is a queued simulator job, listed so the trail does not go cold.
   `theGhostOnASectionHeaderNamesTheListAndTheColumn`). What is left is only whether the frames the
   registry publishes land where the eye sees the rows — a look, not a phone. **The old item's
   pointer to a drag recipe "in `AGENTS.md`" was stale: there is no such recipe there.**
+  **Run 2026-09-03, iPhone 17 Pro, iOS 26.5 ([T-722]) — all five things seen; the triage was right.**
+  The frames land where the eye sees the rows. Press-and-move onto a task row → composer pre-filled
+  with that row's list, section **and** its date (Fieldwork / Default / Do Sep 15). Press and hold
+  still → the arc blooms (Task, Event, Note), sliding onto a segment highlights it, and the touch
+  does **not** convert to a drag; lifting on Task opened the plain composer, lifting in the dead
+  zone did nothing. A drop on an **empty** column's header seeded Fieldwork / **Backlog**. Mid-drag
+  the dashed ghost opened **between** rows and named its inheritance — "Fieldwork · Do Sep 15" over
+  the row, "Fieldwork › Backlog" over the empty header — and never highlighted the existing task. A
+  drop on nothing, and a plain tap, both opened the composer unseeded (Inbox). **The abandoned-drag
+  tab-bar freeze did not reproduce** in any of five drags. **How to drive it:** `touch_path` from
+  the tab-bar `+` at ~(201, 823) in the 402x874 point space — clear of the 4pt edge-gesture band —
+  moving >12pt (`dragSlop`) within 350ms (`holdDelay`) to be a drag, or holding still to bloom.
+  **A `touch_path` cannot be paused, so the mid-drag ghost is not screenshottable from the tool.**
+  Capture it with a background `xcrun simctl io <udid> screenshot` loop running across the gesture
+  and pick the frames out afterwards; that is the only way anyone will see the ghost or the palette.
 
 - **Both note sheets at iPad width ([T-447], was item 5) — a simulator settles it.** The item always
   conceded this is a width question, not a device one, and six stock iPad simulators already exist
@@ -134,6 +149,15 @@ is a queued simulator job, listed so the trail does not go cold.
   simulator taps.** One `tap` and one screenshot each. Which target a location resolves to is
   already pinned by `MarkdownReferenceDisplaySupportTests`
   (`referenceRangesPointAtVisibleDisplayText`, `inlineSegmentsPreserveReferenceTargets`).
+  **Run 2026-09-03, iPhone 17 Pro, iOS 26.5 ([T-723]) — both taps do what they should.** The caret
+  claim is measured rather than eyeballed: tapping mid-line and then typing `@@@` put the characters
+  at the tap, not at the end ("More prose @@@here for the caret test."). A tap on a rendered
+  `[[Notepad]]` opened the linked-note sheet, backlink to the daily note and all; a tap on a
+  standalone task embed opened its **Edit Task** inspector, and so did a tap on the same reference
+  drawn inline. **The session found one defect on the way, [T-734]:** `/task` then choosing a
+  suggestion wrote `Beta]]` — the picker replaced only as far as the caret while the slash command
+  had already inserted the closing brackets — and the stray `]]` also stopped the line being
+  standalone, so it drew as an inline link instead of a card. Fixed in `f50fb4b`.
 
 - **"The UI target is unreliable" is no longer a reason to route anything here.** `CadenceUITests`
   was never flaky ([T-563]) — it cannot pass while the Mac's screen is locked, and unlocked it
