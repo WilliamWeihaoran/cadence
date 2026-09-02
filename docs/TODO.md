@@ -1036,22 +1036,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   hairline and a Retina hairline are genuinely different physical things, so do not assume they should
   match before checking.
 
-- [T-621] **Focus minutes are read-modify-write counters, so two devices lose sessions.** VERIFIED
-  2026-09-01 from CXT-021 — confirmed.
-  Three increment sites, all `x += minutes` on CloudKit-synced scalars:
-  `CadenceFocusPlanningSupport.swift:186-190`, `FocusSessionSupport.swift:42-46`,
-  `CadenceFocusBundleSupport.swift:252-256`, writing `AppTask.actualMinutes`, `Area.loggedMinutes`,
-  `Project.loggedMinutes`. `CadenceSchema.swift` lists 22 models and contains **no session or ledger
-  type** — read in full, not grepped.
-  **Two pieces of corroboration the audit missed, both strengthening it:** `DataIntegrityRepairService`
-  already reconciles duplicate lists with `max(target, source)` for this field — **the repo's own merge
-  rule is max, not sum**, the same lossy shape one level up. And `GoalContributionSummary.swift:192`
-  folds `actualMinutes` into goal progress, so a lost increment becomes **wrong goal progress**, not
-  just a wrong stat.
-  Migration note: a new `@Model` is additive (no `SchemaMigrationPlan` needed for a new entity) but must
-  be added to `CadenceSchema`, `PrivacyDataResetService`, the export DTOs and the MCP surface per
-  `Cadence/Models/AGENTS.md`. **The real cost is backfilling without double-counting.**
-
 - [T-623] **Hard list deletion walks only the local replica.** VERIFIED 2026-09-01 from CXT-018 —
   mechanism confirmed, **but Codex mis-severed it and the fix it proposes is the most expensive of the
   seven.**
@@ -1215,9 +1199,17 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   container's `loggedMinutes` with `+=` for every ticked member, then runs
   `try? modelContext.save()` and `resetTimer()`. Same defect and same fix as (c): the accumulators
   make *"the next fetch corrects it"* false, and the reset destroys the only copy of the seconds.
-  **No half of the rule can see it**, which is the interesting part: nothing is inserted or deleted,
-  and `resetTimer()` is not in half 2's success vocabulary. macOS's bundle timer commits through the
-  same helper and belongs in the same pass.
+  **No half of the rule could see it**, which was the interesting part: nothing was inserted or
+  deleted, and `resetTimer()` is not in half 2's success vocabulary. macOS's bundle timer commits
+  through the same helper and belongs in the same pass.
+  **[[T-621]] changed that half of the sentence (2026-09-03).** Banking a session inserts a
+  `FocusSessionLog` row now, so half 1 finds both sites unaided: `CadenceFocusSupport.endSession`
+  and `iOSFocusView.logBundleSession` are held in `existenceExemptions` naming this ticket, and
+  `FocusView.bundleTimerControls` joined `timerControls` in `commitReachExemptions`. Fixing this
+  means deleting those three names in the same change. The ledger also **downgrades the
+  consequence**: a refused save leaves the row pending rather than destroying the minutes, and
+  `CadenceFocusLedger.reconcile(in:)` puts the counter back once it lands. Still a defect — the
+  reset still throws away the seconds the user is watching — but no longer an unrecoverable one.
 
 - [T-655] **Two more canvases create a block and commit nothing.** The rest of [[T-636]](e), which
   fixed `SchedulePanel` and left these because the closure is copied into three files.
@@ -1824,6 +1816,44 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   item stayed on the hardware list for weeks because of an untested claim about the tooling rather than
   about the app. Re-triage before anyone carries it to a device.
 
+- [T-742] **The focus ledger's store-wide reconcile is written and tested, and nothing calls it.**
+  Residue of [[T-621]], which landed `CadenceFocusLedger.reconcile(in:)` but not its launch hook —
+  `PersistenceController.swift` belonged to another agent in that batch. `bank` heals the subject it
+  writes to, so a task you focus again is already correct; a task nobody opens again keeps whatever
+  the merge left it, and an hours-mode `Goal` reading it stays wrong.
+  The change is one line in `performStartupMaintenance`, beside `DataIntegrityRepairService`, plus
+  its term in `changedStore`:
+  `let reconciledFocusMinutes = CadenceFocusLedger.reconcile(in: context)`.
+  Safe there by the same argument that file already applies to the repair: the pass only ever
+  raises and is a pure function of the rows, so the launch that races the first CloudKit import is a
+  no-op rather than a loss. Worth a test that the startup path calls it, in the shape of
+  `DataIntegrityRepairServiceTests.theAppStartupRepairSuppliesTheForkedOccurrenceRemover`.
+
+- [T-743] **Merging two duplicate lists strands the surviving list's focus ledger.**
+  `DataIntegrityRepairService.mergeArea` / `mergeProject` reconcile `loggedMinutes` with
+  `max(target, source)` and re-point the duplicate's tasks, notes, documents, links and goal links —
+  but `Area.focusSessions` / `Project.focusSessions` are new with [[T-621]] and are not in that list.
+  So the duplicate's `FocusSessionLog` rows keep pointing at a row that is about to be deleted, and
+  the survivor's counter can no longer be explained by its own rows.
+  **The consequence is bounded by the only-ever-raise rule**: `reconcile` cannot lower the survivor,
+  so nothing is destroyed — the ledger is merely blind to the merged half, and future sessions
+  rebuild from the surviving counter. Still worth re-pointing, and it is a two-line addition beside
+  the re-points already there. Same shape as [[T-621]]'s own note that a new to-many on an existing
+  model has to be walked by everything that walks the old ones.
+
+- [T-744] **Nothing collects a `FocusSessionLog` whose subject was deleted.**
+  [[T-621]] gave the three focus counters `.nullify` delete rules on purpose: deleting a task has
+  never decremented its list's `loggedMinutes`, and a cascade would have started doing exactly that
+  the next time `reconcile(in:)` ran. The cost is that deleting a task or a list leaves its rows
+  behind with every subject reference `nil`.
+  They are inert — `reconcile` skips a row with no subject, and `CadencePrivacyDataResetService`
+  deletes them with everything else — so this is storage and CloudKit records, not wrong numbers.
+  It is also **exactly the orphan sweep [[T-328]] argues `DataIntegrityRepairService` must not
+  grow**: "this row has no subject" is indistinguishable from "its subject has not synced yet", and
+  the emptier the store the more it would delete. So the honest options are a sweep gated on
+  something that knows sync finished, or a user-initiated pass — not four more lines in the startup
+  repair. Filed so the boundary is written down rather than rediscovered.
+
 - [T-745] **`CadenceDefaults` covers `@AppStorage` and the calendar memory, and nothing else.**
   [[T-735]] routed every `@AppStorage` through `defaultAppStorage` on the scene and pointed
   `CadenceCalendarDateMemory` at the same store, which is what the incident ran through. It does not
@@ -1908,6 +1938,56 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Not measured.** No CloudKit traffic was observed; this is read off the two write paths.
 
 ## Done
+
+- [T-621] **CLOSED 2026-09-03 (`db1e9c6`) — focus minutes are a ledger of sessions now, and the
+  counters are repaired from it rather than replaced by it.** The three `+=` sites wrote CloudKit-
+  synced scalars, so two devices that each banked a session kept one: each read the same starting
+  value, each wrote its own sum, and the record that arrived second won. `GoalContributionSummary`
+  folds `actualMinutes` into an hours-mode goal, so the loss showed up as wrong goal progress.
+  **`FocusSessionLog` is one row per increment**, carrying `minutes` and `previousMinutes` — the
+  counter's value immediately before that increment, on the device that wrote it. Rows merge;
+  counters do not.
+  **The counters stay, deliberately.** Around twenty surfaces read them (duration labels, timeline
+  blocks, task embeds, the inspector, the export archive, the MCP task detail, goal progress) and
+  they are what moves before any sync. Making the ledger the only reader would have meant rewriting
+  every one of them in the same change, and one missed would show a user their logged time
+  vanishing — worse than the defect.
+  **There is no backfill, and that is the answer to the hard part.** The legacy total the ledger
+  inherited is `min(previousMinutes)` across a subject's rows: the first row ever written recorded
+  the counter as it stood before the ledger existed, and each device's own `previousMinutes` only
+  climbs from there, so the minimum is that number no matter how many devices wrote in what order.
+  The correction is therefore `max(counter, min(previousMinutes) + Σminutes)` — **a pure function of
+  the counter and the rows**, so running it twice lands on the same number. That matters because
+  this project has no `SchemaMigrationPlan` and so no run-once hook to hang a backfill on: the pass
+  is meant to run on every launch on every device, for ever. It **only ever raises**, so a store
+  that has received a fraction of CloudKit's rows is a no-op rather than a loss — the conservatism
+  `DataIntegrityRepairService`'s doc comment demands of an unattended startup pass, and the `max`
+  merge rule this repository had already chosen for this very field.
+  **Two application points.** `CadenceFocusLedger.bank` raises the subject it is about to write to,
+  so a task you focus again heals itself with no sweep and no fetch; `reconcile(in:)` is the
+  store-wide pass for the ones you never open again. **The launch hook is not landed** — its one
+  line belongs in `PersistenceController.performStartupMaintenance`, which was another agent's file
+  this batch. [[T-742]].
+  **Banking inserts now, so it takes a `ModelContext`.** The first spelling reached
+  `task.modelContext` and `CadenceSaveCommitDisciplineTests` half 3 caught it: on the macOS timer's
+  path nothing committed at all. The context is threaded through `CadenceFocusSupport`,
+  `FocusManager.startFocus`/`commitElapsed`/`endSession` and their call sites, which is the rule's
+  own statement that the caller owns the unit of work.
+  **Surfaces reached, all four `Cadence/Models/AGENTS.md` requires:** `CadenceSchema`,
+  `PrivacyDataResetService`, the export archive (`CadenceArchiveFocusSessionLog` plus its table and
+  both surface suites' probes), the MCP read surface (`CadenceTaskDetail.focusSessionCount` and the
+  plugin smoke test's key set), and the markdown-source classification.
+  **A side effect worth recording: the ledger made [[T-654]] visible to the rule.** That ticket's
+  most interesting claim was that *no half of the rule could see it* — nothing was inserted or
+  deleted. Banking is an insert now, so half 1 finds `CadenceFocusSupport.endSession` and
+  `iOSFocusView.logBundleSession` on its own; both are held in `existenceExemptions` naming T-654,
+  and `FocusView.bundleTimerControls` joined `timerControls` in `commitReachExemptions`. The ledger
+  also downgrades the consequence: a refused save leaves the row *pending* rather than losing the
+  minutes, and the next reconcile puts the counter back.
+  Pinned by `CadenceFocusSessionLedgerTests` (15 tests). **Mutation-tested**, eight mutations, eight
+  killed by name — the baseline as a `max`, no baseline at all, a reconcile allowed to lower, `bank`
+  without the raise, `previousMinutes` recorded after the increment, the list counter left without a
+  row, a row inserted but never linked, and a refused completion leaving its row behind.
 
 - [T-733] **CLOSED 2026-09-03 (`517982e`) — the stored default is gone and the rows that hold it are
   cleared at load.** `Note.title` defaulted to the literal `"Untitled"`, which made the word stored
