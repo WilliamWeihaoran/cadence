@@ -330,6 +330,24 @@ struct CadenceBuildInvocation {
         tokens.contains { $0 == "-derivedDataPath" }
     }
 
+    /// The value of this invocation's `-destination`, unquoted, or `nil` when it names none.
+    ///
+    /// Read off the command text rather than out of `tokens`, because a destination may contain a
+    /// space: `'generic/platform=iOS Simulator'` tokenises into two, and the second half is not a
+    /// destination. Skips rather than asserts on every malformed shape — a scan helper that traps
+    /// takes the test host with it (`docs/SUBAGENT_RUNBOOK.md`).
+    var destination: String? {
+        guard let flag = command.range(of: "-destination ") else { return nil }
+        let rest = command[flag.upperBound...].drop(while: { $0 == " " })
+        guard let opening = rest.first else { return nil }
+        guard opening == "'" || opening == "\"" else {
+            return String(rest.prefix(while: { !$0.isWhitespace }))
+        }
+        let body = rest.dropFirst()
+        guard let end = body.firstIndex(of: opening) else { return nil }
+        return String(body[..<end])
+    }
+
     var namesSharedDerivedDataRoot: Bool {
         guard let index = tokens.firstIndex(of: "-derivedDataPath"), index + 1 < tokens.count else { return false }
         return tokens[index + 1].contains("Library/Developer/Xcode/DerivedData")

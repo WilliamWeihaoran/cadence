@@ -107,6 +107,91 @@ struct AppStoreReviewReadinessTests {
         #expect(docsIndex.contains("direct-distribution-runbook.md"))
     }
 
+    /// **T-535: nothing in the release gate ever compiled the iOS surface.**
+    ///
+    /// `docs/apple-release-readiness.md` is the stated readiness source of truth, and until this
+    /// ticket it mentioned iOS zero times and both of its verification commands were
+    /// `-destination 'platform=macOS'`. That is not "the gate forgot to ship iOS" — iOS is
+    /// deliberately built and not distributed — it is that **the gate could not tell you the iOS
+    /// tree still compiles.** `CadenceTests` builds for macOS, so it never compiles `Cadence/iOS/`
+    /// at all; a break in that tree survives every check the release process runs, and that tree is
+    /// roughly half of this repository.
+    ///
+    /// **Pinned here rather than written down, and here specifically.** A doc instruction nobody
+    /// rereads is the whole class of defect T-86 exists about, which is why
+    /// `CadenceBuildInvocationHygieneTests` mechanises the `-derivedDataPath` rule instead of
+    /// restating it. The same argument applies with one extra turn: this suite is the one the
+    /// gate's own third command runs (`-only-testing:CadenceTests/AppStoreReviewReadinessTests`),
+    /// so the check lives where running the gate is what executes it. The assertion below pins that
+    /// too — a change that drops this suite from the gate's command also fails this test.
+    ///
+    /// What it cannot pin is that a human ran the commands. Nothing in a test can; the honest claim
+    /// is that the gate carries the iOS build and cannot quietly lose it.
+    @Test func theReleaseVerificationCommandsCompileTheIOSSurfaceAsWellAsMacOS() throws {
+        let readiness = try textFile(at: "docs/apple-release-readiness.md")
+        let invocations = CadenceBuildInvocation.parse(
+            try CadenceBuildInvocationHygieneTests.shellText(at: "docs/apple-release-readiness.md")
+        )
+
+        // Exact, and each one named — a floor here would let the iOS command be deleted while some
+        // other fence gained one. The order is the document's: build macOS, build iOS, test macOS.
+        #expect(
+            invocations.map { $0.destination ?? "<none>" } == [
+                "platform=macOS",
+                "generic/platform=iOS Simulator",
+                "platform=macOS",
+            ],
+            "the gate's invocations are \(invocations.map { $0.destination ?? "<none>" })"
+        )
+
+        let iosBuild = try #require(
+            invocations.first { $0.destination == "generic/platform=iOS Simulator" },
+            "the release gate compiles no iOS surface"
+        )
+        #expect(iosBuild.isBuildAction, "the iOS invocation names no build action")
+        #expect(iosBuild.namesDerivedDataPath)
+        #expect(!iosBuild.namesSharedDerivedDataRoot)
+        #expect(iosBuild.command.contains("-scheme Cadence"))
+
+        // The self-reference: the gate runs this suite, so this suite may require the gate to carry
+        // the iOS build. Drop the suite from the command and the argument stops holding.
+        let scopedTest = try #require(
+            invocations.first { $0.command.contains("-only-testing:") },
+            "the gate runs no scoped test"
+        )
+        #expect(
+            scopedTest.command.contains("-only-testing:CadenceTests/AppStoreReviewReadinessTests"),
+            "the gate no longer runs the suite that pins it"
+        )
+
+        // And the prose, so the command cannot be read as a fourth distribution channel by whoever
+        // finds it next.
+        #expect(readiness.contains("iOS/iPadOS: built, not distributed."))
+        #expect(readiness.contains("the macOS test target never compiles `Cadence/iOS/`"))
+        // The lock question, answered rather than assumed: the `test` action is the only one of the
+        // three that launches a host against the app-group container.
+        #expect(readiness.contains("the `test` action must take `scripts/test-host-lock.sh`"))
+    }
+
+    /// The reader the test above leans on, pinned on literals rather than on the document — a
+    /// `destination` that answered `nil` for every quoted value would make that test's expected
+    /// array unreachable in a way its failure message would not explain.
+    @Test func theDestinationReaderHandlesQuotedAndUnquotedAndSpacedValues() {
+        let quoted = CadenceBuildInvocation(command: "xcodebuild -destination 'platform=macOS' build")
+        let spaced = CadenceBuildInvocation(command: "xcodebuild -destination 'generic/platform=iOS Simulator' build")
+        let bare = CadenceBuildInvocation(command: "xcodebuild -destination platform=macOS build")
+        let none = CadenceBuildInvocation(command: "xcodebuild -scheme Cadence build")
+        let unterminated = CadenceBuildInvocation(command: "xcodebuild -destination 'platform=macOS build")
+
+        #expect(quoted.destination == "platform=macOS")
+        #expect(spaced.destination == "generic/platform=iOS Simulator")
+        #expect(bare.destination == "platform=macOS")
+        #expect(none.destination == nil)
+        // Malformed input is skipped, not asserted on: a trap in a scan helper kills the test host
+        // rather than failing a test.
+        #expect(unterminated.destination == nil)
+    }
+
     @Test func appReviewNotesDocumentCurrentSubmissionPosture() throws {
         let reviewNotes = try textFile(at: "docs/app-review-notes.md")
 

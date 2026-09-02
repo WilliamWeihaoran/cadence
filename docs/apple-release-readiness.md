@@ -8,6 +8,7 @@ This checklist maps Cadence's current macOS app behavior to Apple's App Review, 
 
 - Primary channel: Mac App Store.
 - Secondary channel: direct Developer ID distribution with notarization.
+- iOS/iPadOS: built, not distributed. `Cadence/iOS/` is a large real surface rather than a stub and the project builds `iphoneos iphonesimulator macosx`, but no iOS build is submitted to any channel today, and the App Store Connect fields in `docs/app-store-submission-packet.md` are macOS-only on purpose. The iOS build is in the verification commands below regardless, because the macOS test target never compiles `Cadence/iOS/`: without it, a break in half of this repository survives every check the release process runs. Revisit the whole document, not just this bullet, the day iOS becomes a channel.
 - Minimum macOS version: 26.1. This is intentional for the current release and limits App Store availability to Macs that can run macOS 26.1 or later.
 - Public category: Productivity.
 - Current monetization: none. Cadence has no in-app purchases, subscriptions, ads, paid unlocks, or external purchase links.
@@ -89,12 +90,22 @@ Run these checks before an App Store upload:
 ```sh
 git diff --check
 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' -derivedDataPath /tmp/cadence-release-$$ build
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project Cadence.xcodeproj -scheme Cadence -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/cadence-release-ios-$$ build
 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' -derivedDataPath /tmp/cadence-release-$$ -only-testing:CadenceTests/AppStoreReviewReadinessTests
 ```
 
+The third command is the one that ships nothing. It compiles `Cadence/iOS/` and it is here because
+nothing else in this checklist does: the macOS build and the macOS test target both skip that tree
+entirely, so an iOS-only compile break is invisible to a release that runs only the other two. It
+needs no simulator — `generic/platform=iOS Simulator` builds for the simulator SDK without booting
+a device — and `AppStoreReviewReadinessTests` fails if this document stops carrying it.
+
 The `-derivedDataPath` is required, not decorative: the default path is the one Xcode and any
-running debug build share, and a build into it deletes `Build/Products/` under them. If anything
-else may be running a macOS test at the same time, take `scripts/test-host-lock.sh` first — the
-private path isolates the build, not the app-group container the test host writes to.
+running debug build share, and a build into it deletes `Build/Products/` under them. The two
+`build` actions need nothing further; **the `test` action must take `scripts/test-host-lock.sh`**
+whenever anything else on the machine may be running a macOS test, because the private path
+isolates the build and not the app-group container a test host writes to. Bare `xcodebuild` with a
+private path is deliberate here rather than `scripts/xcb.sh`: this is the invocation someone copies
+into a release checklist, and it is pinned by `CadenceBuildInvocationHygieneTests`.
 
 For direct distribution, also follow `docs/direct-distribution-runbook.md`.
