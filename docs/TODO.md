@@ -636,24 +636,11 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   platforms), which is why [[T-524]] converged the identical literals around it and left this pair alone.
   Referenced from `CadenceSettingsSectionCopy.accessRequiredTitle`.
 
-- [T-544] **The macOS work-hours subtitle names the wrong surface, twice.** It says "**Weekly calendar
-  views** gently highlight…" but the highlight is applied per **day-column**, and its two call sites are
-  `CalendarPageMonthSupportViews` **and `SchedulePanelShellViews`** — and the Schedule panel is not a
-  calendar view at all. iOS says "Calendar day columns", which is closer but not fully right either.
-  [[T-524]] pins the two subtitles as *still different* so a later pass cannot collapse them silently.
-  Referenced from `CadenceSettingsSectionCopy.workdayBoundaryTitle`.
-
 - [T-545] **macOS's empty-calendar row is a one-liner where iOS is two.** macOS: `"No Apple calendars
   found."` (trailing period, no subtitle). iOS: `"No Apple calendars found"` plus a subtitle saying what
   will happen. **iOS is right** — it tells the user what to do — but macOS cannot converge without a
   two-line row, and its three sibling empty rows all share the one-line house style. A small design
   decision, not a defect.
-
-- [T-546] **Six lifecycle section labels duplicated between the Settings trees.** `"Active Contexts"`,
-  `"Archived Contexts"`, `"Completed Areas"`, `"Archived Areas"`, `"Completed Projects"`,
-  `"Archived Projects"` — all byte-identical between `SettingsListManagementSections.swift` and
-  `iOSSettingsView.swift` / `iOSSettingsTemplateAndListSections.swift`. All clean conversions;
-  [[T-524]]'s agent left them **only** because a sibling agent might have owned those files.
 
 - [T-547] **`"Apple Calendar"` is one literal serving at least two concepts across 7 files.** Sometimes the
   integration section's label, sometimes a fallback for `calendar.source?.title` / `event.calendar?.title`.
@@ -1505,7 +1492,72 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   The argument applies here unchanged, and this one is **stored**, not drawn.
   Both are copy decisions. Neither is a de-duplication.
 
+- [T-695] **The area lifecycle row's `"No context"` fallback is the project row's un-converged twin.**
+  `SettingsListManagementSections.lifecycleCard` and `iOSSettingsTemplateAndListSections.lifecycleCard`
+  each write `subtitle: area.context?.name ?? "No context"` inline, byte-identical, a dozen lines above
+  the *project* branch that reads the shared `CadenceListSettingsCopy.parentSubtitle(contextName:areaName:)`
+  — [[T-577]] converged the project half of that row and left the area half at both call sites. The sweep
+  cannot see it either: `"No context"` is **10 characters**, under `cadenceSharedStringConstants`'
+  twelve-character floor, so however many surfaces spell it the reuse sweep catches none of them —
+  `CadenceReadService` (4 sites), `iOSFeatureComponents.swift:452` and both settings cards spell it today.
+  Same shape as `CadenceTitleNormalization.defaultCompactTitle`, which the placeholder ledger unions in
+  by hand for exactly this reason. Found while hoisting [[T-546]]'s six section labels out of those two
+  functions.
+
+- [T-696] **Both work-hours subtitles describe a band that is not drawn two days a week.**
+  `CalendarWorkHoursPreferences.shouldShowHighlight(on:)` is `!calendar.isDateInWeekend(date)`, and both
+  `TimelineDayCanvas` and `iOSCalendarTimelineViews.workHoursBand` gate on it — so a Saturday or Sunday
+  column carries no amber band at all. macOS now says "Calendar and Timeline day columns gently highlight
+  9:00 AM – 5:00 PM." and iOS "Calendar day columns gently highlight …"; both read as unconditional.
+  Left out of [[T-544]] deliberately: [[T-524]]'s `bothWorkHoursRowsReadOneWorkdayBoundaryTitle` pins the
+  shared tail `gently highlight \(workHoursLabel).` on **both** surfaces, so adding "on weekdays" changes
+  two sentences and that pin — a second copy decision rather than the correction T-544 was. The behaviour
+  is pinned meanwhile by `CadenceSettingsSectionCopyTests.theWorkHoursBandIsSuppressedAtTheWeekendOnBothSurfaces`.
+
+- [T-697] **"Workday boundary" decides more than the band, and Settings mentions only the band.** The two
+  `calendar.workHours.*.v1` keys also feed `CadenceScheduleSupport.readyScheduleSlots` — the "Ready to
+  Schedule" chips on iPad's Timeline pane (`iOSTodaySchedulePanel.readyScheduleContext`) propose start
+  times inside the work window and leave it only when the window is full — and
+  `CadenceScheduleSupport.initialTimelineHour`, the hour a non-today calendar column opens at
+  (`iOSCalendarTimelineViews.swift:470`). Both are iOS-only today, and iOS is the surface with the
+  *shorter* subtitle: a user narrowing the window to move where suggestions land has nothing on the
+  settings row that says the control does that. Found while making the macOS sentence true in [[T-544]].
+
 ## Done
+
+- [T-544] **CLOSED 2026-09-02, `8bb52ea`.** The Mac said "Weekly calendar views gently highlight …" and
+  no part of it was true. The band is `TimelineWorkHoursHighlightLayer`, drawn inside `TimelineDayCanvas`
+  once per **day column**, and only where a caller passes `showWorkHoursHighlight: true` — exactly two do:
+  `CalDayColumn`, the Calendar page's day column, and `SchedulePanelTimelineViewport`, the panel the app
+  titles **Timeline** since [[T-602]] and not a calendar view at all. "Weekly" was wrong a second way: the
+  Calendar page draws day columns at Week *and* 2 Weeks, and its Month presentation draws neither a column
+  nor a band. It now reads "Calendar and Timeline day columns gently highlight …". [[T-524]]'s pin that the
+  two subtitles stay *different* is kept and now has a reason: mobile draws the band on the Calendar's day
+  columns and nowhere else — iPad's Timeline pane reads the same two preference keys but spends them on
+  `ReadyScheduleContext`'s slot suggestions ([[T-697]]). The new test is the sentence's **evidence, not its
+  echo**: it sweeps `Cadence/macOS` through `CadenceScanInstrument` and asserts the call-site set *exactly*
+  plus one occurrence per file, so a third surface switching the band on fails there instead of making the
+  sentence stale again. Failing-first against unmodified source: 3 tests red, 27 issues. Two mutations
+  (subtitle reverted; the Schedule panel's `showWorkHoursHighlight` flipped to `false`) each killed named
+  tests; a third, deleting the weekend gate, killed the behaviour pin. Residue filed as [[T-696]] and
+  [[T-697]].
+
+- [T-546] **CLOSED 2026-09-02, `f6c3073`.** Six labels, twelve call sites, now
+  `CadenceListLifecycleSectionCopy`. They are six plain `static let` literals rather than one
+  `sectionTitle(_:of:)` composer **on purpose**: an interpolated title is invisible to
+  `cadenceSharedStringConstants`, which harvests `static let x = "…"` only, so a composed title would leave
+  a *seventh* surface free to re-type the literal with nothing to catch it — the recorded gap behind
+  `CadenceEmptyStateCopy.goalsTitle`. The six are registered with the harvest, so
+  `noCallSiteRetypesASharedStringConstant` guards them from here. **Room for [[T-690]] is in the rule, not
+  in an unused function**: every title is `"<status> <plural noun>"` with the status word taken from
+  `CadenceListSearchLifecycle`, which already carries all five spellings, and a test pins each of the six
+  against it — so `pausedProjects`/`cancelledProjects` are two more constants whose wording is already
+  decided rather than two more copy decisions. Failing-first is real *and* is about the call sites: the pin
+  asserts each file reads each name an **exact** number of times (once where it draws that group, zero
+  where it does not), so it stayed red against unmodified source **with the enum already declared** —
+  a value-only assertion would have been green there. Four mutations (a macOS call site re-typed, an iOS
+  call site re-typed, a constant's value changed, two call sites swapped) each killed named tests. Residue
+  filed as [[T-695]].
 
 - [T-558] **`TildeContainerPickerSupport.flatContainers` drops every context-less list — the fifth instance
   of this shape.** `macOS/Views/TildeContainerPicker.swift` was `for context in contexts { areas.filter
