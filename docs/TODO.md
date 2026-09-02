@@ -312,7 +312,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-452] *(narrowed 2026-08-30: tier confirmed self-consistent — both tiers 0.08em, and 0.08 x 10 reproduces the standard tier's 0.8 exactly, so the 19 correct sites did not move. Not wrong by the design system's own rules; no value changed. Separately, this ticket's claim that the derivation was pinned was **false** — `theCompactKerningIsDerivedRatherThanASecondLiteral` was cited at `SectionEyebrowLabel.swift:80` and had never existed. It exists now and kills a flattening mutation the whole pre-existing T-284 suite passes. Remaining ask: one screenshot pass over the six tightened 9pt labels and the two that gained tracking.)* **T-284's 9pt tier is pinned by value and by source, and has still never been looked at.**
+- [T-452] *(narrowed 2026-08-30: tier confirmed self-consistent — both tiers 0.08em, and 0.08 x 10 reproduces the standard tier's 0.8 exactly, so the 19 correct sites did not move. Not wrong by the design system's own rules; no value changed. Separately, this ticket's claim that the derivation was pinned was **false** — `theCompactKerningIsDerivedRatherThanASecondLiteral` was cited at `SectionEyebrowLabel.swift:80` and had never existed. It exists now and kills a flattening mutation the whole pre-existing T-284 suite passes. Remaining ask: one screenshot pass over the six tightened 9pt labels and the two that gained tracking.)*
+  *(**CAPTURED 2026-09-02, and the ticket's own word is backwards.** All eight rendered at 1x and 3x, before against after, with each pre-[[T-284]] value recovered from the conversion commit `96b5583`. **None of the six was tightened — every one was loosened**: 0.45, 0.54, 0.54, 0.60, 0.60 and 0.70 all went to 0.72, and the two with none gained 0.72. A reviewer told to look for tighter labels would be looking for the wrong thing. **At native size the six are indistinguishable from before** — `AIActionsSupportViews` is a literal 0pt change — so the judgement T-284 recorded is not observable on them. **The two that gained tracking are the visible win**: `AREAS` and `PROJECTS` were set solid and cramped, and now read as labels. Those two were defects and are fixed. **No defect found** anywhere in the eight; nothing crowds, clips or overflows. Captured **offscreen**, not in-app: `scripts/run-macos-app.sh` refuses while the user's own Cadence is running, and seven of the eight are macOS-only — see [[T-730]]. Captures in `/private/tmp/cadence-i1-shots/`.)* **T-284's 9pt tier is pinned by value and by source, and has still never been looked at.**
   The ticket's remaining ask was "one screenshot pass over those 8 sites", and the subagent runbook
   forbids launching or building the app for inspection — so the *judgement* is now recorded
   (letterspacing is optical, so the compact tier takes the same 0.08em the 19 correct 10pt sites
@@ -703,7 +704,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-496] *(narrowed 2026-08-30: role confirmed — all three are 10pt semibold uppercased, asserted at all four draw sites, and `CadencePageHeaderMetrics.eyebrowSize` is **not** a fourth tracking. **Conversions computed**: 0.08em leaves the eyebrow alone but **doubles** the board's; 0.05em cuts the eyebrow to 0.625x and lifts the board 1.25x; 0.04em halves the eyebrow. **No candidate moves fewer than two of the three roles, and the one the design system already derives has the largest single jump** — which confirms the earlier refusal. **Ticket correction**: the citation graph is 4 of 6 directed edges, not mutual — the calendar file cites both siblings, the eyebrow and board cite each other and neither cites the calendar, so the calendar's 0.5 is the only one chosen with both siblings in view and it still disagrees with both. Status quo frozen by `CadenceUppercaseLabelTrackingTests` (6 tests) so the disagreement cannot widen while the decision is pending. **Reviewer checklist**: a kanban and a section-board column header on both platforms, the collapsed calendar-board rail (its label is rotated -90 degrees, the one place tracking moves a layout slot rather than a line width), a macOS week day column, the iOS timed grid day header, and one 9pt compact eyebrow popover heading.)* **One uppercase label size, three trackings.** `SectionEyebrowLabel.Size.standard` is 10/0.8
+- [T-496] *(narrowed 2026-08-30: role confirmed — all three are 10pt semibold uppercased, asserted at all four draw sites, and `CadencePageHeaderMetrics.eyebrowSize` is **not** a fourth tracking. **Conversions computed**: 0.08em leaves the eyebrow alone but **doubles** the board's; 0.05em cuts the eyebrow to 0.625x and lifts the board 1.25x; 0.04em halves the eyebrow. **No candidate moves fewer than two of the three roles, and the one the design system already derives has the largest single jump** — which confirms the earlier refusal. **Ticket correction**: the citation graph is 4 of 6 directed edges, not mutual — the calendar file cites both siblings, the eyebrow and board cite each other and neither cites the calendar, so the calendar's 0.5 is the only one chosen with both siblings in view and it still disagrees with both. Status quo frozen by `CadenceUppercaseLabelTrackingTests` (6 tests) so the disagreement cannot widen while the decision is pending. **Reviewer checklist**: a kanban and a section-board column header on both platforms, the collapsed calendar-board rail (its label is rotated -90 degrees, the one place tracking moves a layout slot rather than a line width), a macOS week day column, the iOS timed grid day header, and one 9pt compact eyebrow popover heading.)*
+  *(**CAPTURED 2026-09-02 — the checklist is done except the two live-app halves, and the ticket's strongest structural argument did not survive measurement.** (1) **The collapsed rail is not a constraint.** `UNSCHEDULED` at 10pt semibold measures **83 / 84 / 88pt** at 0.04 / 0.05 / 0.08em against a 96pt `collapsedRailLabelSlotHeight`; `OVERDUE` is 53 / 53 / 55. Every candidate fits with at least 8pt spare, and the label is centred so the growth is ~4pt each end. SwiftUI's `ImageRenderer` intrinsic size and `NSAttributedString.size()` agree exactly, so each number is measured twice. **Whatever settles this, it should not be settled on the rail.** (2) **The whole disagreement is 1-6pt of line width**, and **0.40 vs 0.50 is imperceptible** on every string drawn: `MON` 26/27/28, `WED` 26/26/27, `IN PROGRESS` 74/75/79, `LAUNCH CHECKLIST` 112/113/118. 0.80 is visibly airier and reads more like an eyebrow. No truncation at any candidate in a 232pt column. (3) **A new cost nobody had priced: choosing the board's 0.04em drops the 9pt compact tier to 0.36, which renders visibly set-solid** — `ICLOUD`/`GOOGLE` nearly touching, which is the exact defect [[T-284]] closed. That is an argument against 0.04em, and it is observable rather than arithmetic. (4) **"Both platforms" is answered by construction, not by pixels**: `CadenceBoardColumnHeader` is one shared component and both call sites pass no tracking of their own, so a cross-platform difference in this label is not expressible. Same for the iOS timed-grid day header, which reads the identical `CadenceCalendarWeekdayHeaderMetrics.labelKerning` the macOS week column reads. **Swept for a fourth tracking: there is none.** Captures in `/private/tmp/cadence-i1-shots/`. **No winner picked — the call is the user's.**)* **One uppercase label size, three trackings.** `SectionEyebrowLabel.Size.standard` is 10/0.8
   (0.08em, derived), `CadenceBoardColumnHeaderMetrics` is 10/0.4 (literal),
   `CadenceCalendarWeekdayHeaderMetrics` is 10/0.5 (literal). All three are uppercased semibold at 10pt,
   and **each file's doc cites the other two as the authority for its size while disagreeing on
@@ -1738,6 +1740,34 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`referenceRangesPointAtVisibleDisplayText`, `inlineSegmentsPreserveReferenceTargets`), so the
   residue is one tap and one screenshot each. The *double*-tap pair deliberately stayed on the device
   list: the simulator surface has no double-tap action at all.
+
+- [T-728] **The collapsed rail's slot has no asserted relationship to the label it holds.**
+  `collapsedRailLabelSlotHeight = 96` is a constant; the rotated `UNSCHEDULED` run measures **88pt at
+  the loosest [[T-496]] candidate** (83 at the tightest). Measured 2026-09-02.
+  **The reason this needs a test rather than a comment: rotation is a render transform, so an overhang
+  cannot fail layout.** A longer rail name, a heavier weight or a tracking change would push the run
+  past the slot and nothing would go red — it would simply draw over its neighbour. A macOS test can
+  measure the advance (`NSAttributedString.size()` and `ImageRenderer` agreed exactly today) and assert
+  it against the constant with real headroom.
+
+- [T-729] **The collapsed rail's slot width is derived from the wrong figure.** It is
+  `.frame(width: CadenceBoardColumnHeaderMetrics.labelSize)` — the **point size, 10** — while the
+  rotated line is **13pt tall**, so the glyph run overhangs the frame about 1.5pt each side. Harmless
+  at today's 60pt rail and not a visible defect; wrong as a derivation, because a font's line height is
+  not its point size and the two only coincide by accident. Found while measuring [[T-496]].
+
+- [T-730] **macOS visual verification is unavailable whenever the user's own Cadence is running, which
+  is most of the time.** Measured 2026-09-02: `scripts/run-macos-app.sh start` refused with exit 3 —
+  *"REFUSING: the user's own Cadence is running. Do not add a second writer."* — against an app that had
+  been up since 31 August. **The refusal is correct**; the alternative is a second writer on the user's
+  real store, which has hung an instance for fifteen hours. But it means every "screenshot the Mac app"
+  ticket is unrunnable in the common case, and an agent discovers this only after a full build.
+  Two fallbacks exist and neither is sanctioned in writing yet: **`XCUIScreenshot` under the test-host
+  lock** (the UI target runs since [[T-563]], launches its own copy against a private store, and is the
+  only route that captures real app chrome), and an **offscreen `ImageRenderer` harness** transcribing
+  the draw site's modifier chain (exact for type, tracking and advance; cannot tell you the components
+  are wired together as the source says). Recorded in `docs/SUBAGENT_RUNBOOK.md` today; what is open is
+  whether to build the first one properly.
 
 ## Done
 

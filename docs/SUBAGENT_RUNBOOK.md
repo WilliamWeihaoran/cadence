@@ -111,14 +111,24 @@ below.
   and any *sweep* goes through `CadenceScanInstrument` — its initializer runs the detector against a
   positive and a negative fixture, so a blinded detector cannot reach a sweep at all, and its
   `atLeast:`/`including:` arguments make the walk's non-vacuity a compile requirement.
-- **Never hand back a rewritten `docs/TODO.md` or `docs/TODO_DONE.md`.** Report your ticket changes
-  as a **delta** in your final message -- which ids you closed, with the closure text, and which you
-  filed -- and leave both files at the revision you started from. These two files append quietly
-  instead of conflicting loudly: two agents each rsync a copy, each edits its own, and whichever
-  lands second silently reverts the first. That has cost real time three separate times (once
-  duplicating the whole file, 34 ids over). It is also why your new-ticket ids are **suggestions**:
-  the coordinator allocates the real ones, because ids you pick in isolation collide with ids
-  another agent picked in parallel.
+- **Never hand back a *rewritten* `docs/TODO.md` or `docs/TODO_DONE.md`** — never rsync a copy, edit
+  it, and hand the whole file back. These two files append quietly instead of conflicting loudly: two
+  agents each take a copy, each edits its own, and whichever lands second silently reverts the first.
+  That cost real time three separate times (once duplicating the whole file, 34 ids over).
+  **Amended 2026-09-02.** That rule was written before the index-reconstruction technique existed, and
+  as stated it now conflicts with what nine batches of briefs have asked for. The reconciled form:
+  - **You may edit `docs/TODO.md` directly**, provided you (a) hold a **reserved id range** the
+    coordinator gave you, and (b) commit it by reconstructing `git show HEAD:docs/TODO.md` plus only
+    your own hunks via `git hash-object -w` / `git update-index --cacheinfo`, then commit **the index**.
+    Re-read the file immediately before editing, change only your own entries, and **never reformat it**
+    — one agent's whole-file blank-line tidy clobbered two siblings' entries.
+  - **Refresh your worktree copy to HEAD after committing**, or it reads as a revert of your own entries.
+  - **If you have no reserved range, or cannot use the reconstruction, fall back to the delta**: report
+    which ids you closed with the closure text and which you filed, and leave both files untouched.
+    An agent that did exactly this was right to, and this amendment exists because it noticed the
+    conflict rather than guessing.
+  - Ids outside your reserved range are still **suggestions** — the coordinator allocates, because ids
+    picked in isolation collide with ids another agent picked in parallel.
 - **Do not wait on a backgrounded `xcodebuild` by polling and idling.** The harness reaps an agent that
   has no live children it can see, and a detached `nohup` runner is not one — three agents were reaped
   mid-batch this way, each costing a resume. Batch every run you need (failing-first, green, all
@@ -474,3 +484,22 @@ tool cap will cut a batch mid-mutation — and kill it by the pid in `<scratch>/
 
 Plan format, `--no-build` dry runs and every option are documented in the header of
 `scripts/mutate.sh`.
+
+## `run-macos-app.sh` refuses while the user's own Cadence is running, and that is the common case
+
+Measured 2026-09-02: the guard fired (exit 3, *"REFUSING: the user's own Cadence is running. Do not add
+a second writer."*) against an app that had been up since 31 August. The refusal is correct — the
+alternative is a second writer on the user's real store, which has hung an instance for fifteen hours —
+but it means **every "screenshot the Mac app" ticket is unrunnable whenever the user is using their
+app**, which is most of the time.
+
+Two fallbacks, in order of fidelity:
+
+1. **`XCUIScreenshot` under the test-host lock.** The UI target does run (T-563), it launches its own
+   copy against a private store, and it is the only route that captures real app chrome.
+2. **An offscreen `ImageRenderer` harness** that transcribes the modifier chain verbatim from the draw
+   site. This is the real glyph run and answers questions about type, tracking and advance exactly. It
+   is **not** the app: it cannot tell you the components are wired together as the source says. Say
+   which of your claims are observed and which are reasoned when you use it.
+
+Do not bypass the guard. Do not launch the shipping configuration.
