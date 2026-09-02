@@ -3,6 +3,12 @@
 Coordinator briefs point here instead of restating this. Read it once; it replaces ~600 words of
 per-agent boilerplate.
 
+**Do not hand-roll a mutation runner.** `./scripts/mutate.sh <id> <plan>` is the runner, it works
+in an isolated `git archive HEAD` tree by default, and it will not print SURVIVED over a mutation it
+cannot show was applied, compiled and tested. Five ways a hand-rolled one has lied, and what the
+runner does about each, are in "A mutation runner that cannot report a survivor it did not earn"
+below.
+
 - **Work in an isolated copy.** `mkdir -p /private/tmp/cadence-<tag> && git archive HEAD | tar -x -C
   /private/tmp/cadence-<tag>` — work there, never edit the user's repo, never commit. The coordinator
   diffs your tree against **current HEAD** and lands it. **This is `git archive`, not `rsync`, and the
@@ -410,3 +416,61 @@ runs created zero of the directories the ticket was about, while 34 more appeare
 runs in the same evening. Measure with the cheapest possible instrument (`ls | wc -l` before and
 after), say plainly which runs you measured, and let the closing entry carry "not demonstrated" rather
 than rounding it up to "fixed". A closing entry that overstates is worth less than an open question.
+
+## A mutation runner that cannot report a survivor it did not earn
+
+Recorded 2026-09-02 (T-530). Five times in one session a hand-written runner reported a SURVIVOR it
+had not earned, and every time the shape was the same: a step failed quietly upstream, and a green
+run over *nothing* read as a green run over a mutation. Being *told* the rule failed each time, so
+it is `./scripts/mutate.sh` now. `./scripts/mutate.sh selftest` induces all five and asserts the
+refusal; it takes under a second and needs no build.
+
+1. **A stale needle.** The `old` text no longer occurs — a rename, a reflow — the edit never lands,
+   and the suite passes over an unmodified tree. Refused as `NEEDLE-ABSENT`.
+2. **A self-check that passes when it should fail.** The post-write check was `old in text`, i.e.
+   *"the needle is gone"*. When the replacement **contains its own anchor** — `return x` becoming
+   `return x + 1` — the needle is still there after a perfectly successful apply, so the runner
+   declared failure, **skipped the restore, and ran the next mutation on a doubly-mutated tree**.
+   A substring test cannot answer *"did this file change"*. Only bytes can: the runner compares the
+   file with its `cp` backup, and re-reads it before the next mutation, refusing a non-pristine file
+   as `NOT-PRISTINE` rather than mutating on top of a stranded edit.
+3. **An ambiguous needle**, one that also occurs in a comment or a second case arm. Refused as
+   `NEEDLE-AMBIGUOUS`, with every occurrence's line number named — `count:` says a wider match is
+   meant. (Real example from the trial: `return "Daily"` occurs three times in `ModelEnums.swift`.)
+4. **A mutation that never compiled, or a run that crashed the host.** A non-compiling mutation was
+   never tested, so it is not a survivor: `DID-NOT-COMPILE`. And a crash prints **no**
+   `.swift:line:col: error:` line at all, so the strict error count reads zero over a failed build —
+   caught by `TOOLCHAIN-CRASH` and by requiring a non-zero count of per-test result lines
+   (`NO-TESTS-RAN`), which also catches a misspelled suite and a filter that matched nothing.
+5. **A survival that argues nothing.** Loosening `#expect(count == 3)` to `>= 1` survives in any tree
+   where the count really is 3. That is `INCONCLUSIVE`, not a hole. It is settled by mutating in
+   **pairs**: one mutation introduces the violation the tight form exists to catch and must be
+   `KILLED`, its partner introduces the same violation *plus* the loosening and survives — and that
+   survival is the evidence. The runner infers "this is a weakening" from any hunk under
+   `CadenceTests/` and refuses to print SURVIVED over an unpaired one, so the rule applies whether or
+   not you remembered it. `pair: <id>`; `weakens: no` opts out.
+
+`KILLED` additionally requires at least one **failing test line**, and names the failing tests — "the
+run went red" is not the claim "my test caught it". A red run with no failing test is
+`RED-WITHOUT-A-FAILING-TEST`.
+
+**Isolation is the default, not the discipline.** With no `--tree`, the runner builds its own
+`git archive HEAD | tar -x` copy and mutates that, so a stranded mutation dies with the scratch
+directory instead of sitting in the user's checkout. Mutating the working tree needs `--in-place`
+and says so loudly. Pass `--tree <dir>` to mutate a tree you prepared yourself (your archive copy
+with your uncommitted tests in it); baselines are taken from the tree as the run found it, not from
+`git show HEAD:`, so your own work is part of what is being tested.
+
+It takes the test-host lock **once** for the whole batch and uses `xcb.sh <id> raw test` per
+mutation, which is the arrangement that stopped ten separate `xcb.sh test` calls starving for 21
+minutes. It runs the **unmutated** suite first and refuses the whole batch if that is not green over
+a non-zero test count — nothing downstream of a red baseline is evidence about anything. It calls
+the **tree's own** `scripts/xcb.sh`, because xcb derives `-project` from its own location and the
+repository copy would build the repository, mutating one tree and testing another.
+
+Still yours to get right: **run it in the background** (`nohup ... &`) — the 10-minute foreground
+tool cap will cut a batch mid-mutation — and kill it by the pid in `<scratch>/runner.pid`, never with
+`-9`, which skips the restore.
+
+Plan format, `--no-build` dry runs and every option are documented in the header of
+`scripts/mutate.sh`.
