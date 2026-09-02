@@ -293,7 +293,19 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `x.isEmpty ? "Untitled" : x` ternary, and this site has no fallback at all — there is no ternary
   for a sweep of that shape to see.
 
-- [T-447] *(narrowed 2026-08-30: both landings reviewed. T-281 is a faithful but visually inert extraction — the two headers were already byte-identical before it. T-283's renames are correct and complete. Defects found and filed separately as [[T-492]] and [[T-493]]. Predicate two is effectively answered off-device already: the commit outcome is covered in `CadenceEventKitPlatformParityTests` and its position by `theEventSheetKeepsItsCommitNoticeInsideTheHeader` — only the pixel is left. Predicate one is narrowed by `nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader`: **nothing in `Cadence/` writes that environment key**, so only SwiftUI's own re-derivation inside NavigationStack -> HStack -> .frame remains device-only. That residue belongs with T-55 / T-280.)* **Nothing rendered the two iOS surfaces [[T-281]] and [[T-283]] changed.** Both landed on
+- [T-447] *(narrowed 2026-08-30: both landings reviewed. T-281 is a faithful but visually inert extraction — the two headers were already byte-identical before it. T-283's renames are correct and complete. Defects found and filed separately as [[T-492]] and [[T-493]]. Predicate two is effectively answered off-device already: the commit outcome is covered in `CadenceEventKitPlatformParityTests` and its position by `theEventSheetKeepsItsCommitNoticeInsideTheHeader` — only the pixel is left. Predicate one is narrowed by `nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader`: **nothing in `Cadence/` writes that environment key**, so only SwiftUI's own re-derivation inside NavigationStack -> HStack -> .frame remains device-only. That residue belongs with T-55 / T-280.)*
+  *(**PREDICATE TWO SETTLED 2026-09-02, observed; PREDICATE ONE CANNOT BE POSED AS WRITTEN.**
+  Two: on a note attached to a read-only subscribed event, typing produced *"This note is saved,
+  but Apple Calendar didn't take the change."* in red, **under the title, inside the header block,
+  above the divider** — `iOSNoteEditorSheetHeader`'s `accessory` slot, exactly where
+  `theEventSheetKeepsItsCommitNoticeInsideTheHeader` puts it. A read-only subscribed calendar is
+  the cheapest reproduction of a failed EventKit mirror and is worth knowing.
+  One: **there was no rail to judge.** At 834pt, `iOSLinkedNoteEditorSheet`,
+  `iOSEventNoteEditorSheet` **and** `iOSCalendarEventEditSheet` all drew their **compact** branch.
+  The sheet measures ~577 x 639pt — a plain `.sheet` is a form sheet on iPad, and UIKit gives one
+  that narrow a compact horizontal size class. So sheet and header **agreed**, which is what this
+  predicate was checking — but they agreed on *compact*, and the 24pt-title / 20-20-padding /
+  full-height-rail branch was never entered. See [[T-731]].)* **Nothing rendered the two iOS surfaces [[T-281]] and [[T-283]] changed.** Both landed on
   source-scan evidence plus four green scheme builds (`Cadence` macOS, `CadenceWidgets`,
   `CadenceMCPServer`, `Cadence` for `generic/platform=iOS Simulator`) — which is all
   `CadenceTests` can offer, since `Cadence/iOS/` is inside `#if os(iOS)` and the test target builds
@@ -645,35 +657,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Do **not** ship this behind a confirmation and call it verified. The bar is a test that imports an
   archive into a container and asserts the graph came back — every foreign key resolved, counts
   equal, and a second import of the same file changing nothing.
-- [T-280] *(narrowed 2026-08-30: the iOS paste is **not** a second implementation — it composes the same two shared calls, and its extra hop adds no padding, so the text it writes is computable on macOS and equals a path measured against a real clipboard. Four tests, four mutations, all killed. **What is left is one value**: whether UIKit consults `canPerformAction` for `paste:` when it builds the edit menu. That is item 1 of `docs/device-checks.md`. Do not close until someone taps it.)* **The iOS half of T-279 is fixed by construction and unverified on a device.**
-  `iOSMarkdownTextView.canPerformAction` now returns `true` for `paste:` when
-  `UIPasteboard.general.hasImages`, mirroring the macOS `readablePasteboardTypes` widening. The
-  macOS half was measured before *and* after against a real clipboard holding a real PNG; the iOS
-  half has only an iOS **build**. `Cadence/iOS/` is inside `#if os(iOS)` and invisible to the
-  macOS-built `CadenceTests`, so there is no unit-test route to it. The predicate to check on a
-  simulator is one value: with an image on the pasteboard and the caret in a note, **Paste** appears
-  in the edit menu and inserts the picture. Do not close this by reading the diff — a correct
-  `paste(_:)` override that was never dispatched is exactly how the macOS bug survived.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 - [T-481] **DECIDE: one top-level suite per test file?** Raised and deliberately *not* landed while
   closing [[T-465]]. It would provably stop the sibling-suite risk surface from growing and has zero
@@ -1769,7 +1752,61 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   are wired together as the source says). Recorded in `docs/SUBAGENT_RUNBOOK.md` today; what is open is
   whether to build the first one properly.
 
+- [T-733] **A new iPad note's title field starts with the literal word "Untitled", and typing appends
+  to it.** OBSERVED 2026-09-02 on a simulator: typing `Target` into a new note's title produced
+  **`UntitledTarget`**. `Note.title` defaults to `"Untitled"` (`Cadence/Models/Note.swift:15` and
+  `:46`, and `NoteMigrationService.createPermanentNote(title:)`), so it is **stored text, not a
+  placeholder** — the field is pre-filled and the caret lands after it.
+  `Note.displayTitle` already falls back per kind (`"Notepad"` for `.permanent`), so the stored default
+  is redundant as well as in the way.
+  Adjacent to [[T-609]]'s `"Untitled"` sweep but a **different site**: that swept inline
+  `isEmpty ? … : …` ternaries at the draw sites; this is a stored model default. Changing it is a
+  data-shape question — existing notes literally hold the string — so it needs a decision about
+  migration, not just an edit.
+
+- [T-731] **The `isRegularWidth == true` branch of the iOS editor sheets may be unreachable on iPad.**
+  OBSERVED 2026-09-02: at 834pt, `iOSLinkedNoteEditorSheet`, `iOSEventNoteEditorSheet` and
+  `iOSCalendarEventEditSheet` all rendered **compact**; the sheet measures ~577 x 639pt, and a plain
+  `.sheet` is a form sheet on iPad, which UIKit hands a compact horizontal size class. All four
+  presentations of these editors are plain `.sheet`.
+  If that holds, the 320pt rail, the 24pt title and `iOSEditorSheetMetrics.gutter(isRegularWidth: true)`
+  are **dead on iPad**, and the pixel half of [[T-492]] / [[T-283]] is moot.
+  **Not yet confirmed** — landscape was untestable (the simulator surface has no rotate action and the
+  host Simulator app is off-limits) and a 13-inch iPad was out of scope under the one-device rule.
+  Settle those two; if confirmed, either drop the regular branches or give these sheets a wider
+  presentation (`.presentationSizing(.page)`, or full-screen on iPad) so the rail can exist at all.
+
+- [T-732] **`docs/device-checks.md`'s keyboard-dismiss item rests on a premise that is false on this
+  fleet.** It says the simulator suppresses the software keyboard while a Mac keyboard is attached.
+  OBSERVED 2026-09-02: the full software QWERTY came up unprompted in Cadence's new-task composer on
+  the claimed iPad. If the keyboard is available, the `keyboardDismissMode = .interactive` check is a
+  downward `touch_path` on the note text — a simulator job, not a phone one.
+  **This is the same shape as [[T-280]]'s premise, which was also false and also load-bearing**: an
+  item stayed on the hardware list for weeks because of an untested claim about the tooling rather than
+  about the app. Re-triage before anyone carries it to a device.
+
 ## Done
+
+- [T-280] **CLOSED 2026-09-02 (`0b3f2d2`) — settled affirmatively on a simulator, and the item's
+  own blocking premise was wrong.** `docs/device-checks.md` said no simulator action can put an
+  image on the device pasteboard. **It can**: `simctl addmedia`, then Photos → long-press → Copy,
+  puts a real PNG on `UIPasteboard.general` and nothing else. `simctl pbcopy` does **not** — it
+  lands a PNG as *text*, and Paste then inserts `\x89PNG IHDR…` as prose, which is exactly the
+  false negative the old claim would have produced. Both kept in the doc as a trap.
+  **The predicate, observed:** with a real PNG on the clipboard and the caret in an iPad note, the
+  edit menu read `Paste | Select | Select All | AutoFill`, and Paste **inserted the picture drawn
+  as an image**, not as `![](cadence-image://…)` text. So UIKit does consult
+  `iOSMarkdownTextView.canPerformAction` for `paste:` when building the menu, and `paste(_:)` is
+  dispatched.
+  **The discriminator is what makes that proof rather than coincidence**, because "Paste appeared"
+  alone is consistent with `super` offering it. Same clipboard, same gesture, one tap apart: the
+  quick-create composer in **Event** mode — a refusing host — offered **AutoFill only, no Paste**.
+  Nothing but `allowsMarkdownImageInsertion` differs between those two text views, so `super`
+  cannot explain Paste in one and not the other. That is [[T-504]]'s
+  `aRefusingHostDoesNotOfferPasteForAScreenshot` on screen.
+  The ticket's own instruction was right: *"do not close this by reading the diff — a correct
+  `paste(_:)` override that was never dispatched is exactly how the macOS bug survived."* It was
+  tapped.
 
 - [T-565] **A shared guard against the T-333 / T-337 / T-352 class: comments asserting machinery the
   code no longer has.** Three tickets this week were the same defect — prose naming a mechanism that
