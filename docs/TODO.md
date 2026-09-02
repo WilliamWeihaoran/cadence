@@ -170,22 +170,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Nothing is broken; the risk is an agent quoting the number as "N tests ran" in a report, or asserting an
   exact test count against it. Either rename it in `xcb.sh` too, or make it count distinct test names.
 
-- [T-713] **The kanban column rename strands the column's cards after the first character.**
-  Found while landing [[T-645]] and deliberately left out of it: [[T-645]] is about where the rename
-  *commits*, and this is about what it *writes*. Pre-existing, unchanged by that ticket.
-  `ListSectionKanbanColumn.applySectionEdits` runs on every keystroke and ends with
-  `if trimmed != base.name { moveTasks(from: base.name, to: trimmed) }`, where `base` is `editorBase`
-  — the column **as the popover opened**, deliberately, so a colour change cannot write a stale name
-  back over a rename from another device ([[T-358]]). But `editorBase` is never advanced, so only the
-  *first* keystroke finds any cards: typing `Doing` → `Doingxy` moves the cards to `Doingx` and then
-  looks for cards still called `Doing`, finds none, and leaves them there — while the column config,
-  matched by `uuid` through `CadenceSectionConfigMerge.applyingChangedFields`, does reach `Doingxy`.
-  `AppTask.resolvedSectionName` only falls back to Default when the name is **empty**, so the cards
-  end up filed under a column name that exists nowhere.
-  The one-line repair — advance `editorBase` after a successful move — is exactly the snapshot
-  [[T-358]] chose to freeze, so this needs a decision and a test rather than the line. Reproduce with
-  two keystrokes; a single-character rename hides it completely.
-
 - [T-714] **A refused column rename still has one path with nowhere to appear.**
   Residue from [[T-645]], same family as [[T-646]]. The rename now commits at `onSubmit`, at the name
   field losing focus, and from every other control in the popover — all while the popover is up. The
@@ -1817,7 +1801,89 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   per-agent `-CadenceSuiteName` argument domain so defaults are isolated too. The second is better,
   because the first only helps an agent who reads the header *before* being misled.
 
+- [T-736] **A column being renamed draws as empty until the rename commits.** Filed while landing
+  [[T-713]], and it is the visible cost of the decision that ticket took rather than a defect in it.
+  `KanbanListSectionSupportViews.sortedTasksForSection` groups the board by
+  `resolvedSectionName.caseInsensitiveCompare(section.name)`, and [[T-645]] writes the *config's*
+  name on every keystroke while [[T-713]] moves the *cards* only at the commit point — so from the
+  first character until Return or focus leaving the field, the column the user is typing into has no
+  cards in it. They come back on the commit.
+  This is strictly better than what it replaced: before [[T-713]] the column also emptied, from the
+  second keystroke, and **never** refilled, because the cards were stranded on a name no column had.
+  Transient is not free, though, and the fix is not "move sooner" — that is the bug. Candidates: group
+  the board by the column's `uuid`-stable identity for the duration of an open editor, or have the
+  editor publish the name the cards are still under so the column can draw them.
+  **Not observed.** Reasoned from the two call sites; nobody has watched a rename being typed.
+
+- [T-737] **The editor's Archive and Mark-Completed settle on the *config's* name, so pressed
+  mid-rename they settle nothing.** Same family as [[T-713]] and **not** introduced by it — the
+  config's name has advanced per keystroke since [[T-645]].
+  `TaskContainerLifecycleService.tasks(in:area:project:)` filters on
+  `resolvedSectionName.caseInsensitiveCompare(section.name)`, and `toggleSectionArchive` /
+  `saveSection` both hand it `section` — the live config. Type two characters into the name field and
+  press Archive without committing: the flag flips and `cancelRemainingActiveTasks` walks a name no
+  card carries, so the column archives with its stack untouched. `editSnapshot(settling:)` takes the
+  same walk, so the undo for a refused commit snapshots zero cards as well.
+  Whether it is reachable in practice turns on the open question in [[T-714]] — whether pressing a
+  button in a macOS popover moves focus off the `TextField` and fires `onNameCommitted` first. That
+  is still unverified by observation, so this is real until someone looks.
+  [[T-713]] gave the column a `filedCardName` for exactly this question; the fix is probably to hand
+  the lifecycle walk a config wearing that name. Not folded in because it is the completion and
+  archive paths, which four suites pin.
+
+- [T-738] **Every keystroke of a column rename rewrites the container's whole section blob.** Noticed
+  while reading for [[T-713]]. `applySectionEdits` runs per character and calls
+  `applySectionConfigEdits`, which assigns `sectionConfigs = merged(...)` **unconditionally** — unlike
+  `mutateSectionConfigs`, which guards on `merged != current`. The guard would not help here anyway,
+  since each keystroke genuinely is a change.
+  So renaming a column to a ten-character name rewrites `sectionConfigsRaw` ten times and dirties the
+  `Area`/`Project` ten times, and each is a CloudKit record push. [[T-645]] chose the per-keystroke
+  *write* deliberately, so the board's header tracks the field; nothing about that choice required the
+  write to reach the persisted blob every time. Candidate: keep the header on the field's own value
+  and let the blob take the name at the commit point, which is where the cards go since [[T-713]].
+  **Not measured.** No CloudKit traffic was observed; this is read off the two write paths.
+
 ## Done
+
+- [T-713] **CLOSED 2026-09-03 (`fba681a`). The cards move once, at the commit point, and neither
+  ruled-out repair was taken.** `applySectionEdits` ran on every keystroke and ended with
+  `moveTasks(from: base.name, to: trimmed)` against a `base` frozen by [[T-358]] and never advanced,
+  so only the *first* keystroke found any cards: `Doing` → `Doingxy` moved them to `Doingx`, then
+  looked for cards still called `Doing` and found none. The config, matched by `uuid`, reached
+  `Doingxy`, and `resolvedSectionName` falls back to Default only for an **empty** name — so the
+  cards were filed under a column name that existed nowhere.
+  **The decision was the commit point [[T-645]] created**, and it holds: `applySectionEdits` writes
+  the blob and moves nothing, `commitSectionEdits` applies, moves and then flushes, so the rename and
+  the cards it re-points reach the store as one commit and a refusal leaves them agreeing rather than
+  stranded apart. An intermediate name never touches a card.
+  **`editorBase` is still assigned in exactly one place** — pinned as a count, because advancing it is
+  the one-line repair this ticket named and refused. Nothing about `AppTask` changed either.
+  **The move is `KanbanSectionStateSupport.moveCardsToStoredName`, and every part of its shape is a
+  guard.** Its source is `filedCardName`, where the cards actually are, because Return-type-more-pick-
+  a-colour is one session with two commit points and by the second the cards have left the name the
+  popover opened with; that is a second piece of `@State`, `editorFiledCardName`, which advances while
+  `editorBase` stays frozen for the merge. Its destination is read back **out of the container** by
+  `uuid` and must equal the name the caller typed, so a rename the apply declined — empty, or
+  colliding — moves nothing. Deliberately not `CadenceSectionConfigMerge.sectionNameMoves`, which
+  diffs whole arrays for what a *save* implied and would send this list's cards to Default behind a
+  colour press if another device had removed the column.
+  **`deleteSection` walks `filedCardName` too**, which is not tidying: a column typed into and then
+  deleted without committing had a config saying `Doingxy` over cards saying `Doing`, so the delete
+  found nothing to move and stranded the whole stack. Reachable from keystroke two before this change;
+  deferring the move would have made it reachable from keystroke one.
+  Pinned by `CadenceKanbanColumnLifecycleSurfaceTests.theRenameCommitFilesEveryCardUnderTheNameTheStoreTook`,
+  `.aRenameTheStoreRefusedLeavesEveryCardWhereItWas`,
+  `.aColourPressStillCannotWriteAStaleNameOverARenameFromAnotherDevice`,
+  `.theRenameMovesItsCardsOnceAtTheCommitPointRatherThanPerKeystroke` and
+  `.theOldPerKeystrokeRenameStrandsTheColumnsCardsUnderANameNoColumnHas`, the last of which drives the
+  *old* policy out of shipped API, asserts the strand, and passes on both sides of the fix by design.
+  **Nine mutations, all killed**, including the defect restored two ways, the ruled-out `editorBase`
+  advance, and — the one that makes [[T-358]]'s guarantee a measurement rather than a claim —
+  un-freezing the field-level diff in `CadenceSectionConfigMerge.applyingChangedFields`, killed by
+  the colour-press test.
+  **Residue:** [[T-736]] the column draws empty while the rename is being typed, [[T-737]] the archive
+  and completion controls still settle on the config's name, [[T-738]] the blob is rewritten per
+  character.
 
 - [T-280] **CLOSED 2026-09-02 (`0b3f2d2`) — settled affirmatively on a simulator, and the item's
   own blocking premise was wrong.** `docs/device-checks.md` said no simulator action can put an
