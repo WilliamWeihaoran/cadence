@@ -1440,9 +1440,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   agent in the checkout**, and a bare `git commit` takes whatever is staged, including a sibling's
   hunk. The `git hash-object` / `git update-index` reconstruction the Batch A and B agents used for a
   shared *file* happens to dodge this as well, but nothing anywhere says so.
-  Fix shape: require an explicit pathspec (`git commit -- <paths>`), or a `git status --porcelain`
-  check immediately before committing that the index holds nothing but the agent's own paths. Belongs
-  in `docs/SUBAGENT_RUNBOOK.md` beside the shared-file guidance.
+  **AMENDED 2026-09-02 — the first fix shape filed here was wrong, and an agent caught it.** This
+  entry originally said to require an explicit pathspec (`git commit -- <paths>`), and every Batch E
+  and F brief repeated that. It is right only for a file the agent owns alone. For a **shared** file
+  it is actively harmful: `git commit -- <paths>` commits *worktree* content, so it takes the
+  sibling's in-flight hunks with yours, and it silently defeats the `git hash-object` reconstruction
+  the earlier batches used — because that reconstruction lives in the **index**, which the pathspec
+  form ignores. The agent that found this committed the index instead, after verifying the only
+  remaining delta was its sibling's six label conversions.
+  Two more faces of the same hazard, both measured in Batch F: **after committing over a stale shared
+  index, `git status` reports your own landed work as a staged revert**, because the index still holds
+  the previous HEAD's blobs for your paths; and **marker-based hunk filtering breaks when two agents
+  edit within three lines**, since `-U3` merges them into one hunk. A private `GIT_INDEX_FILE` avoids
+  the shared index entirely and is the cleanest answer.
+  Written up in `docs/SUBAGENT_RUNBOOK.md`; what remains open here is making it mechanical rather than
+  a rule agents are told.
 
 - [T-686] **The 29th empty-title site, left for its owner.** `TasksPanelComponents.swift:55`
   (`MacTaskRow`) spells `task.title.isEmpty ? "Untitled" : task.title`, so the primary macOS task row
@@ -1555,6 +1567,25 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   both surfaces and pinned by value in two tests, and the notification pane's
   `CadenceNotificationSettingsCopy.accessRequiredTitle` is the same shape one screen over — so rewording it
   is a house-wide copy decision, not the tail of a glyph fix.
+
+- [T-703] **The six lifecycle section titles should become a composer now that [[T-555]] has landed —
+  and the reason they are six literals is a constraint that no longer exists.** [[T-546]] hoisted
+  `"Active Contexts"`, `"Archived Contexts"`, `"Completed Areas"`, `"Archived Areas"`,
+  `"Completed Projects"` and `"Archived Projects"` to `CadenceListLifecycleSectionCopy` and
+  deliberately **did not** build a `sectionTitle(_:of:)` composer. Its reason, recorded in `f6c3073`:
+  `cadenceSharedStringConstants` harvested `static let` only, so an interpolated title would be
+  invisible to the reuse sweep and a seventh site could re-type the literal with nothing to catch it.
+  **`aca2a49` closed exactly that gap** — the harvest now reads a `static func` that picks between
+  finished strings, flags zero formatters, and is pinned by a positive and a negative fixture. So the
+  objection is spent, and the composer is now the better shape twice over: the titles already follow
+  one rule (`"<status> <plural noun>"`, with the status word taken from `CadenceListSearchLifecycle`,
+  pinned by `everyLifecycleSectionTitleFollowsTheStatusThenNounRule`), and **it is how [[T-690]]'s
+  `.paused` and `.cancelled` projects get section titles at all** — today they reach no lifecycle
+  section on either platform and can only be found through search.
+  Note the interaction before starting: a template whose product is *assembled* is deliberately outside
+  the harvest, because no call site can re-type an interpolated value verbatim. A composer that picks
+  between finished strings stays inside it; one that interpolates a noun does not. Which of those you
+  build decides whether the sweep still guards these six.
 
 ## Done
 

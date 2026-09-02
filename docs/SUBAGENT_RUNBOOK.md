@@ -334,3 +334,49 @@ Accumulate into a typed `var` rather than chaining. Same result, and each line i
 Related: this is why a growing "register every shared constant here" list should be built by
 accumulation from the start. The literal form works right up until someone adds the term that breaks
 it, and the failure lands on whoever added it rather than on whoever chose the shape.
+
+## Committing out of a shared checkout: the pathspec is not the mitigation
+
+`git add <specific paths>` and never `git add -A` is necessary and **not sufficient**. The index is
+one object shared by every agent in the checkout (T-679).
+
+- **File is yours alone:** `git commit -- <paths>` is fine.
+- **File also holds a sibling's hunks:** `git commit -- <paths>` is **wrong**. It commits *worktree*
+  content for those paths, so it takes the sibling's in-flight edits with yours — and it silently
+  defeats a `git hash-object` reconstruction, because the reconstruction lives in the index and the
+  pathspec form ignores the index. Rebuild the file as `git show HEAD:<path>` plus only your edits,
+  install it with `git hash-object -w` + `git update-index --cacheinfo`, verify with
+  `git diff --cached --name-only`, then commit **the index** with a bare `git commit`. Check
+  `git status --porcelain` first so the index holds nothing but your paths.
+- **After committing over a stale shared index, `git status` shows your own landed work as a staged
+  revert** — the index still holds the previous HEAD's blobs for your paths. `git reset -- <your
+  paths>` repairs it; verify the index content matches the old HEAD first, so no sibling's staged
+  work is discarded.
+- **Marker-based hunk filtering breaks when two agents edit within three lines.** `-U3` merges the
+  edits into one hunk, so "take only my hunks" quietly takes the sibling's too. Reconstruct from the
+  tree you actually tested instead, and consider a private `GIT_INDEX_FILE` so you never touch the
+  shared index at all.
+
+## Two ways a clean build reports someone else's mess as yours
+
+- **`patch` without `-s` leaves `.orig` files, and `Cadence/` is a `PBXFileSystemSynchronizedRootGroup`.**
+  New files are compiled automatically — including a stray `Foo.swift.orig`, which the build treats as
+  a resource. `CpResource` then fails the whole `build-for-testing` with
+  `error: The file "…swift.orig" couldn't be opened`, *after* every Swift file compiled with 0 errors
+  and 0 warnings. It reads exactly like a code failure and is not one.
+- **Copying working-tree files into an isolated `git archive` tree imports siblings' half-finished
+  edits.** The point of the isolated tree is that it is HEAD; take only your own files into it, or
+  re-apply your diff. One agent lost eight mutation runs to a sibling's mid-edit reference.
+
+## A trap in a source-scan helper is a dead test host, not a test failure
+
+A `guard`/force-unwrap/`Range` precondition inside a scan helper does not fail a test — it raises
+`EXC_BREAKPOINT` and takes the whole test host with it. A crashed host emits **no** `error:` lines, so
+the strict error count reads 0 and the run looks like a green over zero tests. Measured 2026-09-02:
+`source[parameters.upperBound..<body.lowerBound]` formed an inverted `Range` and killed the host.
+
+Scan helpers must **skip** malformed input, never assert on it. And the input that provoked it is
+worth keeping as a fixture: it is the negative case the scan most needs pinned.
+
+**Scan over a `git archive HEAD` tree, not the working tree.** With three or four agents editing, the
+working tree contains half-written Swift, and that is what produced the crash above.
