@@ -603,4 +603,99 @@ struct CadenceTaskGroupDropSupportTests {
             "the page is deciding a drop for itself again — that is the T-607 copy"
         )
     }
+
+    // MARK: - T-715: the row drop's keyless arm
+
+    /// **T-715.** `handleTaskDrop`'s `dropKey` no longer defaults to `nil` — both call sites spell
+    /// it — but the `nil` **arm** stays, and this is the test it never had.
+    ///
+    /// A keyless row drop must **reorder and assign nothing**. That is the deliberate asymmetry
+    /// with `handleSectionDrop`, which answers `false` on a key that resolved to nothing (T-591):
+    /// a *header* that swallows a row and leaves it put is a silent accept, while a *row* drop has
+    /// already moved the row, so there is nothing silent about it.
+    @Test func arowDropIntoAGroupWithNoKeyReordersAndAssignsNothing() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let dropped = AppTask(title: "Draft")
+        let target = AppTask(title: "Ship")
+        context.insert(dropped)
+        context.insert(target)
+
+        var assigned: [String] = []
+        var reordered: [(UUID, UUID)] = []
+        let coordinator = TasksPanelDropCoordinator(
+            allTasks: [dropped, target],
+            taskIDFromPayload: { TasksPanelSupport.taskID(from: $0) },
+            assignTask: { _, key in
+                assigned.append(key)
+                return true
+            },
+            reorderTask: { moved, before, _ in reordered.append((moved, before)) }
+        )
+        let payload = TasksPanelSupport.taskDragPayload(for: dropped)
+
+        #expect(coordinator.handleTaskDrop(
+            payload: payload,
+            targetTask: target,
+            scopeTasks: [dropped, target],
+            dropKey: nil
+        ))
+        #expect(assigned.isEmpty, "a keyless row drop reassigned the task: \(assigned)")
+        #expect(reordered.count == 1, "a keyless row drop did not reorder")
+        #expect(reordered.first?.0 == dropped.id)
+        #expect(reordered.first?.1 == target.id)
+
+        // Paired, because "assigned nothing" is worthless from a coordinator that calls nothing:
+        // the same coordinator, one key, and the assignment happens **and** the reorder still runs.
+        #expect(coordinator.handleTaskDrop(
+            payload: payload,
+            targetTask: target,
+            scopeTasks: [dropped, target],
+            dropKey: "date:today"
+        ))
+        #expect(assigned == ["date:today"])
+        #expect(reordered.count == 2, "the reorder must run either way")
+    }
+
+    /// The other half: the `nil` arm is reached by **real groups**, not only by a test that passes
+    /// `nil`. These three are exactly the groups whose headers offer no drop key, so every row
+    /// drop inside Today's Overdue, Past-do and Completed group takes the arm above.
+    @Test func thegroupsThatOfferNoDropKeyAreTheOnesARowDropOnlyReorders() {
+        let keyless: [CadenceTaskGroupDropIdentity] = [.todayDate(.overdue), .todayDate(.pastDo), .completion]
+        for identity in keyless {
+            #expect(CadenceTaskDropSupport.dropKey(forGroup: identity) == nil, "\(identity) offers a key now")
+        }
+
+        // Non-vacuity: the same call does answer for the groups that name a placement, so "nil"
+        // above is about these three rather than about a function that resolves nothing.
+        #expect(CadenceTaskDropSupport.dropKey(forGroup: .todayDate(.dueToday)) == "due:today")
+        #expect(CadenceTaskDropSupport.dropKey(forGroup: .list(key: "inbox", name: "Inbox")) == "list:inbox")
+    }
+
+    /// **The default is gone.** A deleted *declaration* is invisible to a value test, so it is
+    /// pinned as source — the shape `CadenceTodayUnificationTests
+    /// .theDropCoordinatorKeepsOnlyTheHalfItsCallersUse` already uses for T-564(b)'s deletion —
+    /// together with the two call sites that make it dead.
+    @Test func therowDropDeclaresNoDefaultDropKeyAndBothCallersSupplyOne() throws {
+        let coordinator = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelDropCoordinator.swift")
+        )
+        #expect(coordinator.contains("func handleTaskDrop("), "non-vacuity: wrong file read")
+        #expect(
+            CadenceSourceScan.matchCount(#"dropKey: String\? = nil"#, in: coordinator) == 0,
+            "handleTaskDrop's dropKey default is back, and no caller takes it"
+        )
+
+        for (path, argument) in [
+            ("Cadence/macOS/Views/TasksPanel.swift", "dropKey: dropKey"),
+            ("Cadence/macOS/Views/TasksListView.swift", "dropKey: section.dropKey")
+        ] {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(
+                CadenceSourceScan.matchCount(#"handleTaskDrop\("#, in: source) == 1,
+                "\(path) no longer makes exactly one row drop"
+            )
+            #expect(source.contains(argument), "\(path) no longer passes its own drop key")
+        }
+    }
 }

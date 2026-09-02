@@ -38,11 +38,25 @@ struct TasksPanelDropCoordinator {
         return assignTask(droppedTask, dropKey)
     }
 
+    /// **`dropKey` has no default (T-715).** It carried `= nil`, and both call sites — Today's
+    /// `TasksPanel.todayGroupSections` and All Tasks' / Inbox's `TasksListView` — pass it, so the
+    /// default was a branch no caller took: the same shape T-564(b) deleted from this type one
+    /// ticket earlier, and the half most likely to be wrong the day somebody reaches for it.
+    /// Without it a future caller has to say `dropKey: nil` out loud, which is a claim about the
+    /// group it is dropping into rather than an argument it forgot.
+    ///
+    /// **The `nil` *arm* stays, and is not untravelled code.** `CadenceTaskDropSupport
+    /// .dropKey(forGroup:)` answers `nil` for `.todayDate(.overdue)`, `.todayDate(.pastDo)` and
+    /// `.completion`, so every row drop inside Today's Overdue, Past-do and Completed groups
+    /// arrives here with no key. What it must do there is reorder and nothing else — those three
+    /// groups are defined by a day already gone or by being finished, and there is no assignment
+    /// that would make a task a member of them.
+    /// `arowDropIntoAGroupWithNoKeyReordersAndAssignsNothing` is the test the ticket asked for.
     func handleTaskDrop(
         payload: String,
         targetTask: AppTask,
         scopeTasks: [AppTask],
-        dropKey: String? = nil
+        dropKey: String?
     ) -> Bool {
         guard let (droppedID, droppedTask) = droppedTask(from: payload),
               droppedID != targetTask.id else { return false }
