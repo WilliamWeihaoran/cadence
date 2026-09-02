@@ -510,6 +510,23 @@ struct iOSTaskDetailSheet: View {
             return
         }
 
+        // **T-726.** `onAppear` seeds this token from the task's own container, and `onChange`
+        // cannot tell that seed from a pick — so opening the sheet on any task filed in a list ran
+        // the move. `assignContainer` guards the *order* against a re-assert, so nothing moved, but
+        // the commit still happened; since T-702 a refusal on it names itself, which put
+        // "Couldn't save this change." on a sheet the user had only just opened for an edit they
+        // never made. The same question `assignContainer` asks internally, asked one frame up so
+        // the commit is not reached at all.
+        //
+        // The open path loses no write by returning here: `loadContainerSelection()` has already
+        // run `normalizeSectionForCurrentContainer()`, and Done flushes through
+        // `CadenceInPlaceEditFlush`.
+        guard !CadenceTaskMutationSupport.isAlreadyInContainer(
+            task,
+            area: selectedArea,
+            project: selectedProject
+        ) else { return }
+
         guard CadenceTaskMutationSupport.moveToContainer(
             task,
             area: selectedArea,

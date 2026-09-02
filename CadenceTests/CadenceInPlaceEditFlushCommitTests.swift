@@ -441,6 +441,45 @@ struct CadenceInPlaceEditFlushCommitTests {
         )
     }
 
+    /// **T-726, source shape.** Opening the sheet is not an edit, and it must not commit one.
+    ///
+    /// `onAppear` seeds `containerSelection` from the task's own container, and `onChange` cannot
+    /// tell that seed from a pick — so merely opening the inspector of any task filed in a list
+    /// ran `moveToContainer` and committed. `assignContainer` guards the *order* against a
+    /// re-assert, so nothing moved; the commit still happened, and after T-702 a refusal on it
+    /// paints "Couldn't save this change." onto a sheet the user has only just opened, for an edit
+    /// they did not make.
+    ///
+    /// The guard is the shared predicate `assignContainer` already reads, not a second seeding
+    /// flag beside `isRestoringContainerSelection` — one stateless question the two cannot
+    /// disagree through. **Order is the assertion**: below the `moveToContainer` call it would
+    /// stop nothing, so the scan pins that it sits above.
+    @Test func theiOSTaskInspectorDoesNotCommitAMoveWhenItsPickerIsMerelySeeded() throws {
+        let path = "Cadence/iOS/iOSTaskDetailSheet.swift"
+        let view = try CadenceCommitSurfaceScan.scanned(path)
+        let body = try CadenceCommitSurfaceScan.declarationBody(named: "applyContainerSelection", in: view)
+
+        let guardText = "guard !CadenceTaskMutationSupport.isAlreadyInContainer("
+        #expect(
+            body.contains(guardText),
+            "\(path).applyContainerSelection commits a move for a pick that moves nothing"
+        )
+        #expect(
+            refusalPrecedes(
+                marker: guardText,
+                report: "guard CadenceTaskMutationSupport.moveToContainer(",
+                in: body
+            ),
+            "\(path).applyContainerSelection asks whether the task moved after committing the move"
+        )
+        // The seed is still the only thing that reaches here on open, so the sheet must not have
+        // grown a second flag to recognise it by.
+        #expect(
+            !view.contains("isSeedingContainerSelection"),
+            "\(path) recognises the seed by a flag as well as by the container it names"
+        )
+    }
+
     /// **Source shape.** The row's two move affordances both close themselves on the tap — a
     /// `Menu`, and `iOSContainerChoicePopover.choiceRow`, which sets `isPresented = false` in the
     /// same statement that picks the list. So neither can answer the way the kanban popover does,

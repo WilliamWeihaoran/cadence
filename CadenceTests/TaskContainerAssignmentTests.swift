@@ -165,4 +165,54 @@ struct TaskContainerAssignmentTests {
         #expect(CadenceTaskMutationSupport.isAlreadyInContainer(task, area: nil, project: project) == false)
         #expect(CadenceTaskMutationSupport.isAlreadyInContainer(task, area: nil, project: nil) == false)
     }
+
+    /// **T-726, behavioural — the fact the caller-side guard rests on.**
+    ///
+    /// `assignContainer` refuses to *re-order* a re-assert, which is why re-opening a sheet stopped
+    /// bumping the task. It does not refuse to **commit** one: `moveToContainer` runs its commit
+    /// either way, and answers `false` when the store refuses. So a caller that re-asserts the
+    /// current container on open — the iOS inspector's seeded `onChange` — is a site that can
+    /// report a failure for an edit the user never made. Nothing in this file could observe that
+    /// while the answer was discarded, and after T-702 it is on screen.
+    @Test func reassertingTheCurrentContainerStillReachesTheCommit() throws {
+        let modelContext = try makeContext()
+        let area = Area(name: "Documents")
+        let task = AppTask(title: "Already here")
+        task.area = area
+        task.order = 3
+        modelContext.insert(area)
+        modelContext.insert(task)
+        area.tasks = [task]
+        try modelContext.save()
+
+        var commits = 0
+        let accepted = CadenceTaskMutationSupport.moveToContainer(
+            task,
+            area: area,
+            project: nil,
+            sectionName: task.resolvedSectionName,
+            allTasks: [task],
+            modelContext: modelContext,
+            commit: { _ in commits += 1 }
+        )
+
+        #expect(accepted)
+        #expect(commits == 1, "a re-assert that moves nothing still committed \(commits) times")
+
+        let refused = CadenceTaskMutationSupport.moveToContainer(
+            task,
+            area: area,
+            project: nil,
+            sectionName: task.resolvedSectionName,
+            allTasks: [task],
+            modelContext: modelContext,
+            commit: { _ in throw CommitRefused() }
+        )
+
+        #expect(refused == false, "a refused re-assert answers true, so no caller could report it")
+        #expect(task.area?.id == area.id)
+        #expect(task.order == 3)
+    }
 }
+
+private struct CommitRefused: Error {}
