@@ -580,10 +580,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
     }
 
     private static func makeEmptyContext() throws -> ModelContext {
-        let container = try ModelContainer(
-            for: CadenceSchema.schema,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        let container = try CadenceTestStore.container()
         return ModelContext(container)
     }
 

@@ -533,10 +533,7 @@ struct CadenceDataExportSurfaceTests {
     // MARK: - Fixtures
 
     private func makeContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: CadenceSchema.schema,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        try CadenceTestStore.container()
     }
 
     /// One live row per schema entity, keyed by the entity name `CadenceSchema` reports.

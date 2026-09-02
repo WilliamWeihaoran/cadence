@@ -24,10 +24,7 @@ struct CadenceScheduleOrderingTests {
     private let otherDayKey = "2026-05-12"
 
     private func makeContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: CadenceSchema.schema,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        try CadenceTestStore.container()
     }
 
     // MARK: - Fixtures

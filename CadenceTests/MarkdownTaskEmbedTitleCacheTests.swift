@@ -20,10 +20,7 @@ struct MarkdownTaskEmbedTitleCacheTests {
     }
 
     private func makeContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: CadenceSchema.schema,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        try CadenceTestStore.container()
     }
 
     // MARK: - Resolution

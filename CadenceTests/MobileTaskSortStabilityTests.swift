@@ -13,10 +13,7 @@ import Testing
 @MainActor
 struct MobileTaskSortStabilityTests {
     private func makeContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: CadenceSchema.schema,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        try CadenceTestStore.container()
     }
 
     /// Every task shares `order == 0`, which is what two containers' worth of tasks look like.

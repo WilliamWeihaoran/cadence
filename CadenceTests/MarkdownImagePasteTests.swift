@@ -98,10 +98,7 @@ struct MarkdownImagePasteTests {
 
     private func makeContext() throws -> ModelContext {
         ModelContext(
-            try ModelContainer(
-                for: CadenceSchema.schema,
-                configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-            )
+            try CadenceTestStore.container()
         )
     }
 

@@ -15,10 +15,7 @@ import Testing
 struct CadenceModelContextRefreshTests {
 
     private func makeContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: CadenceSchema.schema,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        try CadenceTestStore.container()
     }
 
     /// The whole point: an unsaved insert survives the swap.

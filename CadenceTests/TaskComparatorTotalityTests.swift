@@ -16,10 +16,7 @@ import Testing
 @MainActor
 struct TaskComparatorTotalityTests {
     private func makeContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: CadenceSchema.schema,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        try CadenceTestStore.container()
     }
 
     /// Eight tasks that tie on every key the old comparators looked at: same `isDone`, same

@@ -116,10 +116,7 @@ struct FocusPickerPlayControlTests {
 @MainActor
 struct FocusSessionSwitchCommitTests {
     private func makeContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: CadenceSchema.schema,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        try CadenceTestStore.container()
     }
 
     private var epoch: Date { Date(timeIntervalSince1970: 1_000_000) }
@@ -439,10 +436,7 @@ struct FocusHandoffTests {
     // MARK: - Leaving
 
     private func makeContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: CadenceSchema.schema,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        try CadenceTestStore.container()
     }
 
     /// Walking away from the Focus screen banks what the session earned. Before T-266 the screen's
