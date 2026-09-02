@@ -40,6 +40,17 @@ struct ListSectionKanbanColumn: View {
     /// the live `section`, so a rename that arrived from another device while the popover was open
     /// does not read as "the user changed the name back".
     @State private var editorBase: TaskSectionConfig?
+    /// The name the column's **cards** are filed under, which is not the name its *config* carries
+    /// while the rename field is being typed into (T-713). `applySectionEdits` writes the config on
+    /// every keystroke and moves nothing; `moveCardsToStoredColumnName()` settles the cards at the
+    /// commit point and advances this.
+    ///
+    /// **This is not `editorBase` and must never become it.** `editorBase` is frozen at the moment
+    /// the popover opened so the merge writes only the fields the user actually changed — advancing
+    /// it would let a colour press write a stale name back over a rename that arrived from another
+    /// device, which is the case T-358 froze it for. This one advances, and only when cards really
+    /// moved.
+    @State private var editorFiledCardName: String?
     @State private var showHeaderDueDatePicker = false
     @State private var headerDueDate = Date()
     @State private var headerDueDateViewMonth = Date()
@@ -336,6 +347,7 @@ struct ListSectionKanbanColumn: View {
         // reads the same flag to decide whether it may close, so a stale one would hold the popover shut.
         saveFailureNotice = nil
         editorBase = section
+        editorFiledCardName = section.name
         editorName = section.name
         editorColorHex = section.colorHex
         editorDueDate = DateFormatters.date(from: section.dueDate) ?? Date()
@@ -424,6 +436,13 @@ struct ListSectionKanbanColumn: View {
     ///
     /// **This applies and does not commit, and that is the split T-645 is about.** It runs on every
     /// keystroke of the rename field. `commitSectionEdits()` is the commit point.
+    ///
+    /// **And it moves no cards, which is the split T-713 is about.** It used to end by calling
+    /// `moveTasks(from: base.name, to: trimmed)`, against a `base` that is deliberately frozen — so
+    /// only the *first* keystroke found anything: typing `Doing` → `Doingxy` moved the cards to
+    /// `Doingx`, then looked for cards still called `Doing`, found none, and left them there, filed
+    /// under a name no column had. The cards move once, at the commit point, in
+    /// `moveCardsToStoredColumnName()`. An intermediate name never touches a card.
     private func applySectionEdits() {
         let base = editorBase ?? section
         let trimmed = base.isDefault ? base.name : editorName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -445,10 +464,30 @@ struct ListSectionKanbanColumn: View {
             base: current.map { $0.uuid == base.uuid ? base : $0 },
             edited: current.map { $0.uuid == base.uuid ? edited : $0 }
         )
+    }
 
-        if trimmed.caseInsensitiveCompare(base.name) != .orderedSame {
-            moveTasks(from: base.name, to: trimmed)
-        }
+    /// Where the column's cards are filed right now: the editor's own record while the popover is
+    /// open, and the column's name otherwise.
+    private var filedCardName: String {
+        showEditor ? (editorFiledCardName ?? section.name) : section.name
+    }
+
+    /// **The rename's card move, taken once at the commit point (T-713).**
+    ///
+    /// See `KanbanSectionStateSupport.moveCardsToStoredName` for why the source is where the cards
+    /// actually are rather than `editorBase.name`, and why the destination is read back out of the
+    /// container rather than taken from the field.
+    private func moveCardsToStoredColumnName() {
+        guard let base = editorBase else { return }
+        guard let filed = KanbanSectionStateSupport.moveCardsToStoredName(
+            universeTasks: universeTasks,
+            area: area,
+            project: project,
+            columnUUID: base.uuid,
+            typedName: editorName.trimmingCharacters(in: .whitespacesAndNewlines),
+            filedName: filedCardName
+        ) else { return }
+        editorFiledCardName = filed
     }
 
     /// The rename's **commit point** (T-645): `applySectionEdits()` and then one commit, at the end
@@ -467,8 +506,13 @@ struct ListSectionKanbanColumn: View {
     /// next colour, date, archive, completion or delete. The point of committing here is not to
     /// keep the rename from being lost; it is to have somewhere to *report a refusal* while the
     /// popover that would show it is still on screen.
+    ///
+    /// **It is also where the column's cards move (T-713)**, after the apply and before the flush,
+    /// so the rename and the cards it re-points reach the store as one commit and a refusal leaves
+    /// them agreeing with each other rather than stranded apart.
     private func commitSectionEdits() -> Bool {
         applySectionEdits()
+        moveCardsToStoredColumnName()
         guard CadenceInPlaceEditFlush.flush(in: modelContext) else {
             saveFailureNotice = CadenceInPlaceEditFlush.failureNotice
             return false
@@ -517,9 +561,16 @@ struct ListSectionKanbanColumn: View {
     /// of every card the move re-points, which is why the snapshot is taken over
     /// `KanbanSectionStateSupport.tasksMoving` — the same walk `moveTasks` performs, rather than a
     /// second one that agrees today.
+    ///
+    /// **It walks `filedCardName`, not `section.name` (T-713).** The rename writes the config on
+    /// every keystroke and moves the cards only at the commit point, so a user who types and then
+    /// presses Delete without committing has a column whose config already says `Doingxy` and whose
+    /// cards still say `Doing`. Deleting on the config's name would find nothing to move and strand
+    /// the whole stack under a column that no longer exists — the same damage the rename used to do,
+    /// one control along.
     private func deleteSection() -> Bool {
-        let undo = editSnapshotMovingTasks(outOf: section.name)
-        moveTasks(from: section.name, to: TaskSectionDefaults.defaultName)
+        let undo = editSnapshotMovingTasks(outOf: filedCardName)
+        moveTasks(from: filedCardName, to: TaskSectionDefaults.defaultName)
         removeSection()
         do {
             try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: { undo?.restore() })

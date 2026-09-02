@@ -50,6 +50,50 @@ enum KanbanSectionStateSupport {
         }
     }
 
+    /// **The rename's card move, taken once and only towards a name the store actually holds
+    /// (`docs/TODO.md` T-713).**
+    ///
+    /// The macOS column editor writes the container's blob on every keystroke, so between the
+    /// first character and the end of the edit the column's *config* and its *cards* disagree on
+    /// purpose. This is the move that settles them, and every part of its shape is a guard against
+    /// the way the per-keystroke version got it wrong:
+    ///
+    /// - **`filedName` is where the cards actually are**, not the name the editor opened with. The
+    ///   defect was moving `from` a frozen snapshot: typing `Doing` → `Doingxy` moved the cards to
+    ///   `Doingx` and then looked for cards still called `Doing`, found none, and left them under a
+    ///   name no column had. The same thing happens to a *second* commit in one editing session —
+    ///   Return, type more, pick a colour — if the source is not advanced with the cards.
+    /// - **The destination is read back out of the container**, matched by `uuid`, so it is a name
+    ///   the store was actually asked to hold. An intermediate keystroke never reaches a card.
+    /// - **It must equal the name the caller typed.** A rename the editor refused — empty, or
+    ///   colliding with another column — leaves the stored name alone, and the cards must not move
+    ///   for a name that was never stored.
+    ///
+    /// Deliberately *not* `CadenceSectionConfigMerge.sectionNameMoves`, which answers a different
+    /// question: that one diffs two whole arrays to find every rename and removal a save implied,
+    /// which is what the iOS list editor needs on close. Here there is one column, the caller knows
+    /// which name it asked for, and a column another device removed mid-keystroke must not send
+    /// this list's cards to Default behind a colour press.
+    ///
+    /// - Returns: the name the cards are now filed under, or `nil` when nothing moved.
+    @discardableResult
+    static func moveCardsToStoredName(
+        universeTasks: [AppTask],
+        area: Area?,
+        project: Project?,
+        columnUUID: UUID,
+        typedName: String,
+        filedName: String
+    ) -> String? {
+        guard let container = CadenceSectionConfigMerge.container(area: area, project: project),
+              let stored = container.sectionConfigs.first(where: { $0.uuid == columnUUID }),
+              stored.name.caseInsensitiveCompare(typedName) == .orderedSame,
+              stored.name.caseInsensitiveCompare(filedName) != .orderedSame
+        else { return nil }
+        moveTasks(universeTasks: universeTasks, area: area, project: project, from: filedName, to: stored.name)
+        return stored.name
+    }
+
     static func removeSection(sectionID: UUID, area: Area?, project: Project?) {
         CadenceSectionConfigMerge.container(area: area, project: project)?
             .removeSectionConfig(uuid: sectionID)

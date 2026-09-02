@@ -189,6 +189,37 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         try? context.save()
     }
 
+    /// **Exactly what `ListSectionKanbanColumn.applySectionEdits` writes**, and nothing else: the
+    /// container's blob, merged against the frozen `editorBase`, with every one of that function's
+    /// four declines spelled the same way. It is a transcription because the original is a private
+    /// member of a SwiftUI `View`; the source assertions in
+    /// `theRenameMovesItsCardsOnceAtTheCommitPointRatherThanPerKeystroke` are what keep the two
+    /// from drifting, and the one line this transcription deliberately does **not** have is the
+    /// per-keystroke `moveTasks` that T-713 removed. The due-date branch is the one field left as
+    /// the base's: no test here edits a date, and `clearSectionDueDate` owns that write anyway.
+    private func applyColumnEditsTheWayThePopoverDoes(
+        base: TaskSectionConfig,
+        typedName: String,
+        colorHex: String? = nil,
+        area: Area
+    ) {
+        let trimmed = base.isDefault ? base.name : typedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let current = area.sectionConfigs
+        guard current.contains(where: { $0.uuid == base.uuid }) else { return }
+        if trimmed.caseInsensitiveCompare(base.name) != .orderedSame,
+           current.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            return
+        }
+        var edited = base
+        edited.name = trimmed
+        edited.colorHex = colorHex ?? base.colorHex
+        area.applySectionConfigEdits(
+            base: current.map { $0.uuid == base.uuid ? base : $0 },
+            edited: current.map { $0.uuid == base.uuid ? edited : $0 }
+        )
+    }
+
     // MARK: - The three routes, gated
 
     /// The header glyph and the editor popover's item are the two visible routes, and both live in
@@ -289,8 +320,14 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
 
         // The delete snapshots the cards it is about to re-point, and it is **not** the settling
         // set: deleting a column moves its whole stack, finished cards included.
+        // **`filedCardName` and not `section.name` since T-713.** The rename writes the config per
+        // keystroke and moves the cards at the commit point, so a column typed into and then
+        // deleted without committing has a config name its cards do not carry. Both the snapshot
+        // and the move must ask where the cards are, and they must ask the same question.
         let delete = try #require(CadenceSourceScan.functionBody(named: "deleteSection", in: column))
-        #expect(delete.contains("editSnapshotMovingTasks(outOf: section.name)"))
+        #expect(delete.contains("editSnapshotMovingTasks(outOf: filedCardName)"))
+        #expect(delete.contains("moveTasks(from: filedCardName, to: TaskSectionDefaults.defaultName)"))
+        #expect(matches(#"section\.name"#, in: delete) == 0, "the delete walks the config's name instead of the cards'")
         #expect(!delete.contains("editSnapshot(settling:"), "the delete snapshots only the open half of the column")
 
         // The two snapshots differ in exactly one thing — which tasks they hand over — so both are
@@ -376,6 +413,315 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         #expect(CadenceInPlaceEditFlush.failureNotice != CadencePendingChangePersistence.editFailureNotice)
         #expect(CadenceInPlaceEditFlush.failureNotice.contains("still here"))
         #expect(CadencePendingChangePersistence.editFailureNotice.contains("Nothing was changed"))
+    }
+
+    // MARK: - T-713: the rename moves its cards once, at the commit point
+
+    /// **The defect, reproduced with two keystrokes and nothing but shipped API.**
+    ///
+    /// This is the composition `applySectionEdits` used to perform per character: merge the
+    /// container's blob against the frozen `editorBase`, then
+    /// `moveTasks(from: base.name, to: trimmed)`. Because `base` is the column *as the popover
+    /// opened* and is never advanced, only the first keystroke finds any cards. The second looks
+    /// for cards still called `Doing`, finds none, and leaves them where the first put them —
+    /// while the config, matched by `uuid`, goes all the way to `Doingxy`.
+    ///
+    /// `AppTask.resolvedSectionName` falls back to Default only for an **empty** name, so the
+    /// cards are not rescued: they are filed under `Doingx`, and no column in the list is called
+    /// that. The board draws them nowhere.
+    ///
+    /// **This test passes before and after the fix and is meant to** — it drives the old policy
+    /// directly rather than through the column, so what it pins is that the strand is real and what
+    /// its shape is. The fix is pinned by the two tests below and by the source assertions in
+    /// `theRenameMovesItsCardsOnceAtTheCommitPointRatherThanPerKeystroke`.
+    @Test func theOldPerKeystrokeRenameStrandsTheColumnsCardsUnderANameNoColumnHas() throws {
+        let context = ModelContext(try container())
+        let area = Area(name: "Board")
+        context.insert(area)
+        area.sectionConfigs = [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing")
+        ]
+        let card = AppTask(title: "in the column")
+        card.sectionName = "Doing"
+        card.area = area
+        context.insert(card)
+        area.tasks = [card]
+        try context.save()
+
+        let base = try #require(area.sectionConfigs.first { $0.name == "Doing" })
+
+        for typed in ["Doingx", "Doingxy"] {
+            applyColumnEditsTheWayThePopoverDoes(base: base, typedName: typed, area: area)
+            // The half this ticket removes: the move, taken per keystroke, out of the frozen base.
+            KanbanSectionStateSupport.moveTasks(
+                universeTasks: [card], area: area, project: nil, from: base.name, to: typed
+            )
+        }
+
+        // The config reached the name the user typed, because the merge matches on `uuid`.
+        #expect(area.sectionConfigs.map(\.name).contains("Doingxy"))
+        // The card did not, and it is not in Default either.
+        #expect(card.sectionName == "Doingx")
+        #expect(card.resolvedSectionName == "Doingx")
+        #expect(
+            area.sectionConfigs.contains { $0.name.caseInsensitiveCompare("Doingx") == .orderedSame } == false,
+            "the strand is only a strand if no column has the name"
+        )
+    }
+
+    /// **The fix: one move, at the commit point, to the name the store actually took (T-713).**
+    ///
+    /// The same two keystrokes as above, with the move where the user decision put it. Nothing
+    /// touches a card until the commit, and then the cards land on `Doingxy` — the name the
+    /// container holds, read back out of it rather than taken from the field.
+    ///
+    /// **The second commit is the half a frozen source would still get wrong.** Return, type more,
+    /// pick a colour is one editing session with two commit points in it, and by the second one the
+    /// cards are no longer under the name the popover opened with. So the source advances with the
+    /// cards — which is `editorFiledCardName`, and deliberately not `editorBase`: that snapshot
+    /// stays frozen for the merge, and the test below is the case it is frozen for.
+    @Test func theRenameCommitFilesEveryCardUnderTheNameTheStoreTook() throws {
+        let context = ModelContext(try container())
+        let area = Area(name: "Board")
+        context.insert(area)
+        area.sectionConfigs = [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing")
+        ]
+        let open = AppTask(title: "still open")
+        let finished = AppTask(title: "already done")
+        finished.status = .done
+        let elsewhere = AppTask(title: "in Default")
+        for task in [open, finished] { task.sectionName = "Doing" }
+        elsewhere.sectionName = TaskSectionDefaults.defaultName
+        for task in [open, finished, elsewhere] {
+            task.area = area
+            context.insert(task)
+        }
+        area.tasks = [open, finished, elsewhere]
+        try context.save()
+
+        let universe = [open, finished, elsewhere]
+        let base = try #require(area.sectionConfigs.first { $0.name == "Doing" })
+        var filed = base.name
+
+        // Two keystrokes, neither of which may touch a card.
+        for typed in ["Doingx", "Doingxy"] {
+            applyColumnEditsTheWayThePopoverDoes(base: base, typedName: typed, area: area)
+            #expect(open.sectionName == "Doing", "an intermediate name reached a card")
+            #expect(finished.sectionName == "Doing", "an intermediate name reached a card")
+        }
+
+        let moved = KanbanSectionStateSupport.moveCardsToStoredName(
+            universeTasks: universe, area: area, project: nil,
+            columnUUID: base.uuid, typedName: "Doingxy", filedName: filed
+        )
+        #expect(moved == "Doingxy")
+        filed = try #require(moved)
+
+        // The whole stack, finished card included, and nothing outside the column.
+        #expect(open.sectionName == "Doingxy")
+        #expect(finished.sectionName == "Doingxy")
+        #expect(elsewhere.sectionName == TaskSectionDefaults.defaultName)
+        // And every card names a column the list actually has.
+        let names = Set(area.sectionConfigs.map { $0.name.lowercased() })
+        for task in universe {
+            #expect(names.contains(task.resolvedSectionName.lowercased()))
+        }
+
+        // **A second commit in the same session.** The cards are under `Doingxy` now, not under the
+        // name the popover opened with, so a source frozen at `editorBase` strands them again here.
+        applyColumnEditsTheWayThePopoverDoes(base: base, typedName: "Shipping", area: area)
+        let movedAgain = KanbanSectionStateSupport.moveCardsToStoredName(
+            universeTasks: universe, area: area, project: nil,
+            columnUUID: base.uuid, typedName: "Shipping", filedName: filed
+        )
+        #expect(movedAgain == "Shipping")
+        #expect(open.sectionName == "Shipping")
+        #expect(finished.sectionName == "Shipping")
+        #expect(elsewhere.sectionName == TaskSectionDefaults.defaultName)
+    }
+
+    /// **A rename the store never took moves no card (T-713).**
+    ///
+    /// The commit point runs `applySectionEdits()` and then the move, and the apply can decline:
+    /// an empty name, or one another column already has. The destination is therefore read back out
+    /// of the container and required to be the name the caller typed — so a refused rename leaves
+    /// the stored name alone, the two disagree, and nothing moves.
+    ///
+    /// The `Shipping` control at the end is what makes the two `nil`s above about the refusal
+    /// rather than about the mover never moving anything in this fixture.
+    @Test func aRenameTheStoreRefusedLeavesEveryCardWhereItWas() throws {
+        let context = ModelContext(try container())
+        let area = Area(name: "Board")
+        context.insert(area)
+        area.sectionConfigs = [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing"),
+            TaskSectionConfig(name: "Done")
+        ]
+        let card = AppTask(title: "in the column")
+        card.sectionName = "Doing"
+        card.area = area
+        context.insert(card)
+        area.tasks = [card]
+        try context.save()
+
+        let base = try #require(area.sectionConfigs.first { $0.name == "Doing" })
+
+        // A name another column already has. The apply declines, so the store still says `Doing`.
+        applyColumnEditsTheWayThePopoverDoes(base: base, typedName: "Done", area: area)
+        #expect(area.sectionConfigs.first { $0.uuid == base.uuid }?.name == "Doing")
+        #expect(
+            KanbanSectionStateSupport.moveCardsToStoredName(
+                universeTasks: [card], area: area, project: nil,
+                columnUUID: base.uuid, typedName: "Done", filedName: "Doing"
+            ) == nil
+        )
+        #expect(card.sectionName == "Doing", "the cards moved for a name that was never stored")
+
+        // An empty name, refused the same way.
+        applyColumnEditsTheWayThePopoverDoes(base: base, typedName: "   ", area: area)
+        #expect(area.sectionConfigs.first { $0.uuid == base.uuid }?.name == "Doing")
+        #expect(
+            KanbanSectionStateSupport.moveCardsToStoredName(
+                universeTasks: [card], area: area, project: nil,
+                columnUUID: base.uuid, typedName: "", filedName: "Doing"
+            ) == nil
+        )
+        #expect(card.sectionName == "Doing")
+
+        // Control: a name nothing else holds is taken, and then the card does move.
+        applyColumnEditsTheWayThePopoverDoes(base: base, typedName: "Shipping", area: area)
+        #expect(
+            KanbanSectionStateSupport.moveCardsToStoredName(
+                universeTasks: [card], area: area, project: nil,
+                columnUUID: base.uuid, typedName: "Shipping", filedName: "Doing"
+            ) == "Shipping"
+        )
+        #expect(card.sectionName == "Shipping")
+    }
+
+    /// **T-358's own case, still holding after T-713 moved the cards to the commit point.**
+    ///
+    /// The reason `editorBase` is frozen: the popover snapshots name, colour and due date when it
+    /// opens and writes all three, so a colour press must not write the *old* name back over a
+    /// rename that landed from another device while the popover was up. The merge applies only the
+    /// fields that differ from `base`, and the name does not differ, so the remote name survives.
+    ///
+    /// **The half this ticket adds is the second assertion**: the commit point's card move must not
+    /// undo that either. A colour press has typed no rename, the typed name is not what the store
+    /// holds, and the mover declines — so no card is re-pointed behind a colour press, and none is
+    /// re-pointed at a name the local user never asked for.
+    ///
+    /// If this test ever goes red, the fix traded T-713 for the bug the snapshot exists to prevent.
+    @Test func aColourPressStillCannotWriteAStaleNameOverARenameFromAnotherDevice() throws {
+        let context = ModelContext(try container())
+        let area = Area(name: "Board")
+        context.insert(area)
+        area.sectionConfigs = [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing", colorHex: TaskSectionDefaults.defaultColorHex)
+        ]
+        let card = AppTask(title: "in the column")
+        card.sectionName = "Doing"
+        card.area = area
+        context.insert(card)
+        area.tasks = [card]
+        try context.save()
+
+        // The popover opens and freezes the column it opened on.
+        let base = try #require(area.sectionConfigs.first { $0.name == "Doing" })
+
+        // Another device renames the same column while the popover is up.
+        area.updateSectionConfig(uuid: base.uuid) { config in config.name = "Shipping" }
+        #expect(area.sectionConfigs.first { $0.uuid == base.uuid }?.name == "Shipping")
+
+        // The user presses a colour swatch and has typed nothing into the name field.
+        applyColumnEditsTheWayThePopoverDoes(
+            base: base, typedName: base.name, colorHex: Theme.greenHex, area: area
+        )
+
+        let stored = try #require(area.sectionConfigs.first { $0.uuid == base.uuid })
+        #expect(stored.name == "Shipping", "the colour press wrote the stale name back over the remote rename")
+        #expect(stored.colorHex == Theme.greenHex, "the colour the user actually pressed was dropped")
+
+        // And the commit point moves no card for it.
+        #expect(
+            KanbanSectionStateSupport.moveCardsToStoredName(
+                universeTasks: [card], area: area, project: nil,
+                columnUUID: base.uuid, typedName: base.name, filedName: "Doing"
+            ) == nil
+        )
+        #expect(card.sectionName == "Doing", "a colour press re-pointed a card")
+
+        // Control: the same write with the name *edited* does reach the store, so the assertion
+        // above is about the freeze rather than about the merge never writing a name at all.
+        applyColumnEditsTheWayThePopoverDoes(
+            base: base, typedName: "Doingxy", colorHex: Theme.greenHex, area: area
+        )
+        #expect(area.sectionConfigs.first { $0.uuid == base.uuid }?.name == "Doingxy")
+    }
+
+    /// **Where the move lives, and where the snapshot does not (T-713).**
+    ///
+    /// The behavioural tests above drive `KanbanSectionStateSupport.moveCardsToStoredName`
+    /// directly; this is what ties that function to the column, since `applySectionEdits` and
+    /// `commitSectionEdits` are private members of a SwiftUI `View`.
+    ///
+    /// Three things are asserted, and the third is the user decision rather than an implementation
+    /// detail: `editorBase` is assigned in exactly one place, `openSectionEditor()`. Advancing it
+    /// after a move is the one-line repair this ticket names and refuses — it is the snapshot T-358
+    /// froze, and the test above is the case it was frozen for.
+    @Test func theRenameMovesItsCardsOnceAtTheCommitPointRatherThanPerKeystroke() throws {
+        let column = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
+        #expect(column.contains("struct ListSectionKanbanColumn: View"), "non-vacuity: wrong file read")
+
+        // The per-keystroke write moves nothing at all.
+        let apply = try #require(CadenceSourceScan.functionBody(named: "applySectionEdits", in: column))
+        #expect(apply.contains("container.applySectionConfigEdits("), "the apply no longer writes the blob")
+        #expect(matches(#"moveTasks\("#, in: apply) == 0,
+                "applySectionEdits moves cards again, so an intermediate name reaches them")
+
+        // `applyColumnEditsTheWayThePopoverDoes` above transcribes this function's four declines.
+        // Asserting each one here is what stops the transcription and the original drifting apart.
+        for decline in [
+            "let trimmed = base.isDefault ? base.name : editorName.trimmingCharacters(in: .whitespacesAndNewlines)",
+            "guard !trimmed.isEmpty else { return }",
+            "guard current.contains(where: { $0.uuid == base.uuid }) else { return }",
+            "current.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame })"
+        ] {
+            #expect(apply.contains(decline), "applySectionEdits no longer spells: \(decline)")
+        }
+
+        // The commit point does, after the apply and before the flush.
+        let commit = try #require(CadenceSourceScan.functionBody(named: "commitSectionEdits", in: column))
+        #expect(commit.contains("moveCardsToStoredColumnName()"))
+        let applied = try #require(commit.range(of: "applySectionEdits()"))
+        let move = try #require(commit.range(of: "moveCardsToStoredColumnName()"))
+        let flush = try #require(commit.range(of: "CadenceInPlaceEditFlush.flush(in: modelContext)"))
+        #expect(applied.upperBound < move.lowerBound, "the cards move before the name is applied")
+        #expect(move.upperBound < flush.lowerBound, "the cards move after the commit that would report a refusal")
+
+        // The mover asks the shared decision rather than re-deriving one here, and it hands it the
+        // name the cards are under — not the frozen snapshot.
+        let mover = try #require(CadenceSourceScan.functionBody(named: "moveCardsToStoredColumnName", in: column))
+        #expect(mover.contains("KanbanSectionStateSupport.moveCardsToStoredName("))
+        #expect(mover.contains("filedName: filedCardName"))
+        #expect(mover.contains("editorFiledCardName = filed"))
+        #expect(matches(#"editorBase\.name|base\.name"#, in: mover) == 0,
+                "the move takes its source from the frozen snapshot again")
+
+        // **The decision: `editorBase` is never advanced.** One assignment, in `openSectionEditor`.
+        #expect(matches(#"editorBase = "#, in: column) == 1, "editorBase is assigned somewhere other than the open")
+        let open = try #require(CadenceSourceScan.functionBody(named: "openSectionEditor", in: column))
+        #expect(open.contains("editorBase = section"))
+        #expect(open.contains("editorFiledCardName = section.name"))
+
+        // And the cards' name is its own piece of state, read through one accessor.
+        #expect(column.contains("@State private var editorFiledCardName: String?"))
+        #expect(matches(#"editorFiledCardName = "#, in: column) == 2, "the cards' filed name is written somewhere else too")
     }
 
     /// **A refused column delete puts the column back and every card it was moving with it.**
