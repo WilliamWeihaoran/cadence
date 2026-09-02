@@ -43,6 +43,51 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-698] **The Mac's goal pickers spell `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)`'s body
+  inline, three times in one file.** `macOS/Views/GoalPickerViews.swift` declares
+  `var emptyText: String = "No matching goals"` on both pickers (lines 13 and 89) and then draws
+  `Text(searchQuery…isEmpty ? "No goals yet" : emptyText)` (line 137) — which is
+  `isNarrowed ? "No matching goals" : "No goals yet"`, the shared function's body, re-typed. Found
+  by [[T-555]]'s widened harvest, which is the first thing in the repo able to see it: the constant
+  is spelled as a `static func`, so the sweep walked past it until now. [[T-550]] deleted this
+  argument at the call sites that passed it explicitly (`CreateGoalSheet` and
+  `HabitsFormSupportViews` are clean), and left the two *defaults* behind, because nothing was
+  looking at defaults. The fix is to take `isNarrowed` and call the function, which also makes
+  [[T-689]]'s third case land in one place rather than three. **It will turn T-550's own guard
+  red, correctly**: `CadenceEmptyTitleFallbackSweepTests` asserts the picker still declares
+  `var emptyText: String = "No matching goals"`, which is the line this ticket deletes — retire
+  that half of the assertion in the same change rather than working around it. Ledgered in
+  `cadenceStaticFuncConstantLedger`, so the sweep fails the moment the entry stops describing the
+  file.
+
+- [T-699] **"No lists yet" has three spellings and no home.** `CadenceListsSummary.eyebrow(…)`
+  returns it as the fallback branch of a summary line, `iOSRootSidebar.emptyListsRow` types it as a
+  bare `Text`, and `iOSGoalAttachListsSheet` types it as
+  `isNarrowedToEmpty ? "No matching lists" : "No lists yet"`. The third one names the shape of the
+  fix: that is `goalsTitle(isNarrowed:)` and `habitsTitle(isNarrowed:)` with the noun changed, so
+  the answer is a `CadenceEmptyStateCopy.listsTitle(isNarrowed:)` beside them, read by the sheet and
+  by the sidebar, with `eyebrow`'s fallback reading it too. Note the sidebar is **not** a call site
+  for `eyebrow` — a row is not a summary line — which is the point: the words never had a constant
+  of their own, only a function's fallback branch, and that is precisely why nothing flagged the
+  second and third copies. `"No matching lists"` is declared nowhere at all and so is invisible to
+  the sweep in either direction; the ticket owns both halves. Found by [[T-555]]; both live sites
+  are ledgered in `cadenceStaticFuncConstantLedger`.
+
+- [T-700] **The shared-constant harvest's remaining blind spot is a *computed* `static var`, and it
+  is hiding a live duplication.** [[T-555]] taught the harvest to read `static func` bodies; it
+  still reads `static let`/`static var` only through the initializer pattern `= "…"`, so a constant
+  written `static var version: String { … "CFBundleShortVersionString" … }` is invisible for the
+  same reason a function was. Measured over `Shared/` + `Models/`: two such constants, both in
+  `Cadence/Shared/AppStoreReviewReadiness.swift` (`version` and `build`), and **both Info.plist keys
+  are re-typed** in `Cadence/Services/CadenceDataExportService.swift:71-72`. `CadenceAppBuildIdentity`'s
+  own doc comment names this exact hazard — a second hand-written copy is how two surfaces come to
+  disagree about which key holds the build number — and the second copy already exists. A wrong key
+  here is a silent `?? "0"`, not a crash, so it is the kind of duplication that drifts unnoticed. The fix is
+  small — `cadenceStaticFunctionBodies(in:)` already brace-matches, and a computed property is the
+  same read with a different signature in front of it (`CadenceSourceScan.matchedBody`'s doc comment
+  says so out loud) — but it belongs with its own before/after measurement rather than bolted onto
+  T-555's.
+
 - [T-689] **The Goals screen says "No goals yet" when every goal is completed.** Both surfaces draw
   `CadenceEmptyStateCopy.goalsTitle(isNarrowed: false)` whenever the active count is zero, so a user
   with five finished goals and none in flight reads "No goals yet". [[T-541]] made the detail pane
@@ -682,14 +727,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   picker-surface file set are derived from the tree now. Mutation A is the evidence: pre-filtering at a
   macOS call site kills **only** the new sweep while all four pinning tests stay green. **Recorded as a
   closed investigation so the abstraction is not proposed again without new evidence.**
-
-- [T-555] **`cadenceSharedStringConstants` harvests `static let` only, so a `static func` constant is
-  unguarded app-wide.** Found while closing [[T-548]], whose `goalsTitle(isNarrowed:)` and
-  `habitsTitle(isNarrowed:)` are exactly that shape — the empty-state family is covered by a new guard,
-  but the general case is open. Measured over `Shared/` + `Models/`: a `static func` harvest would surface
-  `"No goals yet"` in `GoalPickerViews.swift` and `"No matching goals"` in `CreateGoalSheet.swift`,
-  `GoalPickerViews.swift` and `HabitsFormSupportViews.swift` — **the last two are already [[T-550]]'s
-  redundant `emptyText:` arguments, so sequence the two tickets together.**
 
 - [T-683] **`CreateGoalSheet`'s linked-list picker is the sixth instance of the context fold, and its
   catch-all asks the wrong question.** `macOS/Sheets/CreateGoalSheet.swift` buckets lists with
@@ -1536,6 +1573,71 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   is a house-wide copy decision, not the tail of a glyph fix.
 
 ## Done
+
+- [T-555] **CLOSED 2026-09-02 (`aca2a49`).** The harvest reads a `static func` now, and the
+  constant-versus-template line it needed turned out to be a line the rule already drew. A
+  `static func` vending a string is a **constant** when it picks between finished strings
+  (`goalsTitle(isNarrowed:)`) and a **template** when it assembles one
+  (`markedDayLabel(date:hasItems:)`) — and nothing in the signature separates those two, because
+  nothing needs to: *the literal does*. A template's product is built at run time, so no call site
+  can re-type it verbatim, so it is not the defect this sweep can act on. That is exactly what the
+  stored half has always meant by writing its pattern as `"([^"\\]{12,})"`, where the `\\`
+  exclusion rejects an interpolated value before anything else looks at it. Widening is therefore
+  the existing rule applied to a second declaration form, not a second rule — and it flags **zero**
+  formatters: `countedDayLabel`, `timelineDayLabel`, `relativeDate`, `durationLabel`,
+  `placementCaption`, `dropKey` and the rest all drop out on their own.
+  **It has to be a lexer, and that is the finding.** Turned loose on a *body* instead of an
+  initializer the same regex stops being anchored and pairs quotes that do not belong together.
+  Measured: it harvests `"has scheduled items"` — a fragment *nested inside*
+  `markedDayLabel`'s `"\(dayName(date)), \(hasItems ? "has scheduled items" : emptyPhrase)"`;
+  `") receive this session's time."`, the tail of another interpolated literal; and
+  `" : String(format: "` out of `DateFormatters.timeString`, which is a span of **Swift code**
+  running from one literal's closing quote to the next one's opening quote. Only the third looks
+  wrong at a glance, which is the argument for the lexer rather than against it — the first two
+  read as plausible copy and would have shipped as offenders. `cadencePlainStringLiterals(in:)`
+  scans left to right and treats an interpolated literal as opaque, insides included; all three
+  artefacts are pinned absent **by name**, and the naive regex is a killed mutation (M2).
+  **Measured against `HEAD`, twice, not against the checkout** — a sibling's untracked
+  `CadenceAppleCalendarNaming.swift` was adding hits of its own while this was written, and
+  counting them would have credited them here. Harvest **133 → 175** constants (42 new, from 19
+  declarations, all in `Shared/`). Flagged offenders **0 → 4**, in three files: `GoalPickerViews`
+  spells `goalsTitle(isNarrowed:)`'s body inline, and `"No lists yet"` has two more spellings on
+  the phone. **Ledgered rather than swept** — [[T-627]]'s model, and three sibling agents were
+  editing these surfaces. `cadenceStaticFuncConstantLedger` is exact in both directions and
+  neither direction is a floor: the sweep fails on an offender nobody listed, and
+  `everyStaticFuncConstantOffenderIsLedgeredAndEveryLedgerEntryIsStillReal` fails on an entry that
+  has stopped being one, so an entry cannot outlive its fix. Fixes are [[T-698]] and [[T-699]];
+  [[T-700]] is the blind spot this did **not** close.
+  **Eight mutations, eight kills, each by a named test.** Blinding the interpolation skip (M1) and
+  the naive regex (M2) both trip the instrument's `overreaching` guard; deleting the
+  bodiless-declaration guard (M3) is caught by a protocol-requirement fixture; deleting a ledger
+  entry (M4) and re-pointing one at a file that does not type it (M5) fail opposite directions of
+  the ledger; disabling the widening outright (M6) is the red-without-it proof; and taking the
+  first `{` after the function *name* instead of after the parameter list (M7) is [[T-644]]'s
+  original defect re-tested in the half of the harvest that did not exist when it was found —
+  33 declarations in `Shared/` carry a `commit:` default closure that would become the "body".
+  M8 narrows the wide-corpus reader test to one folder and is caught by its own non-vacuity
+  witnesses, so the corpus claim is not a sentence.
+  **A crash report came back from an integration run this suite could not reproduce**, and the
+  answer to it is the eighth test. `EXC_BREAKPOINT` in `cadenceStaticFunctionBodies(in:)`, on the
+  line forming the span between a parameter list and a body brace — which implies
+  `parameters.upperBound > body.lowerBound`. **`CadenceSourceScan.matchedRange`'s contract is not
+  the finding**: it searches for the brace *from* the closing parenthesis, so the pair is ordered
+  structurally, and re-running the real Swift over 2288 `static func` declarations in 852 files
+  plus twelve adversarial shapes (an unbalanced paren, brace or quote inside a default literal, a
+  bodiless declaration, a grapheme cluster before the name) never inverted it once. The corpus that
+  crashed is gone — a sibling's in-flight file, most likely, since three were staging into the
+  checkout while this ran. So the fix is not a workaround for a known input: the walk **refuses**
+  to form an unorderable span instead of asserting it, and `bothNewReadersSurviveEveryFileInTheProduct`
+  runs both new readers over every Swift file in all three shipped targets rather than the two
+  roots the harvest uses. That is the generalisable part — **a trap in a source-scan helper is a
+  dead test host, not a test failure**, and a crashed host emits no `error:` lines and no `✘ Test`
+  line, so it reads as "nothing happened". Both halves are in `docs/SUBAGENT_RUNBOOK.md` now.
+  **The one thing left imprecise on purpose:** the fixture comment in
+  `CadenceSettingsSectionCopyTests.everyConvergedSettingsStringIsHarvestedByTheSharedConstantSweep`
+  still says the harvest "reads `static let x = "…"`" and names `goalsTitle` as the gap. That half
+  is stale now; the other half (an interpolated title is still invisible) is not. Left alone
+  because a sibling agent held that file in the same batch.
 
 - [T-543] **Settings > Calendar's access card says two things and draws two glyphs.** macOS drew an amber
   `exclamationmark.triangle.fill` in **both** states — including not-yet-asked, which is the state a fresh
