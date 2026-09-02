@@ -543,6 +543,20 @@ enum CadenceTaskMutationSupport {
     /// re-drawn open by the time this title appears.
     static let settleFailureAlertTitle = "Couldn't Update Task"
 
+    /// The alert title for a refused **move between lists** on iOS (T-702).
+    ///
+    /// It carries `CadenceTaskFieldEditCommit.saveFailureNotice` — the sentence the Mac's kanban
+    /// picker already shows for this exact refusal — so all four callers of `moveToContainer` say
+    /// one thing. What differs between them is only whether a surface is left to say it on: the
+    /// kanban popover and `iOSTaskDetailSheet` stay open and take it inline, while an iOS row
+    /// offers the move from a `Menu` and from `iOSContainerChoicePopover`, both of which dismiss
+    /// themselves on the tap. That is the argument `deleteFailureAlertTitle` records, one action
+    /// over.
+    ///
+    /// "Move" rather than "Update": `settleFailureAlertTitle` is already the *settle* family's
+    /// title, and a refused move and a refused tick are different events.
+    static let moveFailureAlertTitle = "Couldn't Move Task"
+
     /// Shown when a block the user asked for could not be committed (T-471).
     ///
     /// "Block" rather than "task": a `TaskBundle` is a *block* everywhere the user meets one — the

@@ -33,6 +33,10 @@ struct iOSTaskRow: View {
     /// a `String?` because there is exactly one sentence for this and it lives on the mutation
     /// helper — the row reads it, it does not word it.
     @State private var deleteFailed = false
+    /// One flag for both of this row's move affordances — the list chip's popover and the context
+    /// menu — because both dismiss themselves on the tap and neither can report a refusal itself
+    /// (T-702). See `iOSTaskMoveFailureAlertModifier`.
+    @State private var moveFailed = false
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
 
     private var isRegularWidth: Bool {
@@ -79,6 +83,7 @@ struct iOSTaskRow: View {
                     task: task,
                     openDetail: openDetail,
                     showDeleteConfirmation: $showDeleteConfirmation,
+                    moveFailed: $moveFailed,
                     pendingRecurrenceRule: $pendingRecurrenceRule
                 )
             }
@@ -132,6 +137,10 @@ struct iOSTaskRow: View {
             // two copies that a test asserts are equal. The promise it makes: the rollback put the
             // task back, so nothing was removed.
             .iOSTaskDeleteFailureAlert(isPresented: $deleteFailed)
+            // The move's equivalent, and the same argument: the list chip's popover and the
+            // context menu both close themselves on the tap, so a refused move had nowhere to be
+            // reported and the row simply stayed where it was (T-702).
+            .iOSTaskMoveFailureAlert(isPresented: $moveFailed)
             .onAppear(perform: handlePendingDeepLink)
             .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
                 handlePendingDeepLink()
@@ -313,7 +322,7 @@ struct iOSTaskRow: View {
     @ViewBuilder
     private var taskBadgeContent: some View {
         if showsListContextChip {
-            iOSTaskRowContainerChip(task: task)
+            iOSTaskRowContainerChip(task: task, moveFailed: $moveFailed)
         }
 
         // **Read-only, and deliberately not a chip.** The four-option status picker this used to

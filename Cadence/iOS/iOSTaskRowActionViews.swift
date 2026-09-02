@@ -89,6 +89,10 @@ enum iOSTaskRowSwipeActions {
 /// The list chip. Neutral, because which list a task is in is ordinary information.
 struct iOSTaskRowContainerChip: View {
     let task: AppTask
+    /// The row's flag, not this chip's own: `iOSContainerChoicePopover` dismisses itself on the
+    /// tap, so a refused move has to be reported from the row that outlives it (T-702). The row
+    /// raises one alert for both of its move affordances — this chip and the context menu.
+    @Binding var moveFailed: Bool
     @State private var showPicker = false
 
     var body: some View {
@@ -103,7 +107,7 @@ struct iOSTaskRowContainerChip: View {
             showPicker = true
         }
         .popover(isPresented: $showPicker) {
-            iOSTaskRowContainerPickerContent(task: task, isPresented: $showPicker)
+            iOSTaskRowContainerPickerContent(task: task, isPresented: $showPicker, moveFailed: $moveFailed)
         }
     }
 }
@@ -111,6 +115,7 @@ struct iOSTaskRowContainerChip: View {
 private struct iOSTaskRowContainerPickerContent: View {
     let task: AppTask
     @Binding var isPresented: Bool
+    @Binding var moveFailed: Bool
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
@@ -151,15 +156,26 @@ private struct iOSTaskRowContainerPickerContent: View {
         }
     }
 
+    /// **T-702.** This discarded what `moveToContainer` answered, and the answer had stopped being
+    /// decoration: a refused move puts the task back in the list it started in, while
+    /// `iOSContainerChoicePopover.choiceRow` has *already* set `isPresented = false` on the tap.
+    /// So the picker shut over a move that did not happen, which is the same silence the kanban
+    /// picker had before T-497 fixed it — and this popover cannot answer it the way that one does,
+    /// because the dismissal is the shared component's rather than this caller's. The row raises
+    /// the alert instead; see `iOSTaskMoveFailureAlert`.
     private func move(area: Area?, project: Project?) {
-        CadenceTaskMutationSupport.moveToContainer(
+        guard CadenceTaskMutationSupport.moveToContainer(
             task,
             area: area,
             project: project,
             sectionName: task.resolvedSectionName,
             allTasks: allTasks,
             modelContext: modelContext
-        )
+        ) else {
+            moveFailed = true
+            return
+        }
+        moveFailed = false
     }
 }
 
@@ -506,6 +522,9 @@ struct iOSTaskRowContextMenu: View {
     /// presentation state, so there is no flag here to bind to.
     let openDetail: () -> Void
     @Binding var showDeleteConfirmation: Bool
+    /// See `iOSTaskRowContainerChip.moveFailed`. A `Menu` closes itself on the tap exactly as the
+    /// popover does, so this refusal has no surface of its own either (T-702).
+    @Binding var moveFailed: Bool
     @Binding var pendingRecurrenceRule: TaskRecurrenceRule?
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
@@ -754,15 +773,22 @@ struct iOSTaskRowContextMenu: View {
         )
     }
 
+    /// **T-702.** The other half of the same discard. The menu's checkmarks read the task rather
+    /// than a token, so they self-correct on the restore — what was missing is that the menu had
+    /// already closed, leaving a tap on "Move to List" that did nothing and said nothing.
     private func moveToContainer(area: Area?, project: Project?) {
-        CadenceTaskMutationSupport.moveToContainer(
+        guard CadenceTaskMutationSupport.moveToContainer(
             task,
             area: area,
             project: project,
             sectionName: task.resolvedSectionName,
             allTasks: allTasks,
             modelContext: modelContext
-        )
+        ) else {
+            moveFailed = true
+            return
+        }
+        moveFailed = false
     }
 }
 
@@ -899,10 +925,40 @@ struct iOSTaskDeleteFailureAlertModifier: ViewModifier {
     }
 }
 
+/// A refused **move between lists**, on the two row affordances that have nowhere to put it
+/// (T-702).
+///
+/// An alert for the reason `iOSTaskDeleteFailureAlertModifier` gives, and it is the same reason
+/// twice over: `iOSContainerChoicePopover.choiceRow` sets `isPresented = false` in the same tap
+/// that picks the list, and a `Menu` closes itself. Neither leaves a surface to report into, so
+/// the two surfaces that *do* stay open — the Mac's kanban popover and `iOSTaskDetailSheet` —
+/// keep reporting this refusal inline, and only these two raise it as an alert.
+///
+/// One modifier on the row rather than one per affordance: the chip and the context menu are two
+/// ways to make one move, and two flags could contradict each other about whether the last one
+/// landed.
+struct iOSTaskMoveFailureAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .alert(CadenceTaskMutationSupport.moveFailureAlertTitle, isPresented: $isPresented) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(CadenceTaskFieldEditCommit.saveFailureNotice)
+            }
+    }
+}
+
 extension View {
     /// See `iOSTaskDeleteFailureAlertModifier`.
     func iOSTaskDeleteFailureAlert(isPresented: Binding<Bool>) -> some View {
         modifier(iOSTaskDeleteFailureAlertModifier(isPresented: isPresented))
+    }
+
+    /// See `iOSTaskMoveFailureAlertModifier`.
+    func iOSTaskMoveFailureAlert(isPresented: Binding<Bool>) -> some View {
+        modifier(iOSTaskMoveFailureAlertModifier(isPresented: isPresented))
     }
 
     func iOSTaskRowRecurrenceScopeDialog(

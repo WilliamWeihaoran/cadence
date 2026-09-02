@@ -399,6 +399,143 @@ struct CadenceInPlaceEditFlushCommitTests {
         }
     }
 
+    // MARK: - T-702: the three callers that discarded the answer
+
+    /// **Source shape.** The iOS task inspector's list picker is driven by a `@State` token the
+    /// user has just changed, so discarding the move's answer left the picker — and the breadcrumb
+    /// reading off it — naming a list the task is not in. It guards, names the refusal in the slot
+    /// this sheet already draws, and puts the token back.
+    @Test func theiOSTaskInspectorPutsItsListPickerBackOverARefusedMove() throws {
+        let path = "Cadence/iOS/iOSTaskDetailSheet.swift"
+        let view = try CadenceCommitSurfaceScan.scanned(path)
+        let body = try CadenceCommitSurfaceScan.declarationBody(named: "applyContainerSelection", in: view)
+
+        #expect(
+            body.contains("guard CadenceTaskMutationSupport.moveToContainer("),
+            "\(path).applyContainerSelection does not guard on the move"
+        )
+        #expect(
+            body.contains("saveFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice"),
+            "\(path).applyContainerSelection does not name the refusal"
+        )
+        #expect(
+            body.contains("restoreContainerSelection()"),
+            "\(path).applyContainerSelection leaves the token on the list the move never reached"
+        )
+        #expect(
+            refusalPrecedes(
+                marker: "saveFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice",
+                report: "saveFailureNotice = nil",
+                in: body
+            ),
+            "\(path).applyContainerSelection clears the notice below the branch that sets it"
+        )
+
+        // The restore re-enters through `onChange`, so the guard that stops the second pass
+        // re-committing the refused move is part of the fix rather than an implementation detail.
+        #expect(view.contains("guard !isRestoringContainerSelection else {"))
+        let restore = try CadenceCommitSurfaceScan.declarationBody(named: "restoreContainerSelection", in: view)
+        #expect(
+            restore.contains("guard restored != containerSelection else { return }"),
+            "the restore writes unconditionally, so its flag can outlive the onChange it was raised for"
+        )
+    }
+
+    /// **Source shape.** The row's two move affordances both close themselves on the tap — a
+    /// `Menu`, and `iOSContainerChoicePopover.choiceRow`, which sets `isPresented = false` in the
+    /// same statement that picks the list. So neither can answer the way the kanban popover does,
+    /// and both report through the row's one alert.
+    @Test func theiOSRowsTwoMoveAffordancesReportARefusalTheyCannotStayOpenFor() throws {
+        let actions = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskRowActionViews.swift")
+
+        for name in ["move", "moveToContainer"] {
+            let body = try CadenceCommitSurfaceScan.declarationBody(named: name, in: actions)
+            #expect(
+                body.contains("guard CadenceTaskMutationSupport.moveToContainer("),
+                "\(name) does not guard on the move"
+            )
+            #expect(body.contains("moveFailed = true"), "\(name) does not name the refusal")
+            #expect(
+                refusalPrecedes(marker: "moveFailed = true", report: "moveFailed = false", in: body),
+                "\(name) clears the flag below the branch that sets it"
+            )
+        }
+
+        // One alert for both, reading the shared title and the shared sentence.
+        #expect(actions.contains("struct iOSTaskMoveFailureAlertModifier: ViewModifier {"))
+        #expect(
+            actions.contains(".alert(CadenceTaskMutationSupport.moveFailureAlertTitle, isPresented: $isPresented)"),
+            "the move alert types its own title"
+        )
+        #expect(
+            actions.contains("Text(CadenceTaskFieldEditCommit.saveFailureNotice)"),
+            "the move alert types its own sentence instead of the one the other three callers show"
+        )
+
+        // And the row raises it. A flag set into a surface nobody draws is the same silence one
+        // layer further in, which is what `everyInPlaceEditFlushNoticeIsDrawnOnTheSurfaceThatStaysOpen`
+        // exists for on the sheets.
+        let row = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskViews.swift")
+        #expect(row.contains("@State private var moveFailed = false"))
+        #expect(row.contains(".iOSTaskMoveFailureAlert(isPresented: $moveFailed)"),
+                "the row sets a flag it never raises an alert from")
+        #expect(row.contains("iOSTaskRowContainerChip(task: task, moveFailed: $moveFailed)"))
+        #expect(row.contains("moveFailed: $moveFailed,"), "the context menu is not handed the row's flag")
+    }
+
+    /// **The set, not three names.** `moveToContainer` answers `Bool` because `false` means the
+    /// task is back where it started; a caller that ignores it is reporting a move that did not
+    /// happen. Every call in the product guards, and the four are named — an exact set rather than
+    /// a floor, because the population this walks is one the repo keeps shrinking.
+    @Test func everyProductCallerOfMoveToContainerGuardsOnTheAnswer() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        var callers: [String] = []
+        var discarding: [String] = []
+        var filesRead = 0
+
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
+            filesRead += 1
+            let source = try read(path)
+            let calls = CadenceSourceScan.matchCount(#"CadenceTaskMutationSupport\.moveToContainer\("#, in: source)
+            guard calls > 0 else { continue }
+            callers.append(path)
+            let guarded = CadenceSourceScan.matchCount(
+                #"guard CadenceTaskMutationSupport\.moveToContainer\("#,
+                in: source
+            )
+            if guarded != calls { discarding.append("\(path) (\(calls - guarded) of \(calls))") }
+        }
+
+        #expect(filesRead >= 300, "the caller harvest read \(filesRead) files")
+        #expect(
+            callers.sorted() == [
+                "Cadence/iOS/iOSTaskDetailSheet.swift",
+                "Cadence/iOS/iOSTaskRowActionViews.swift",
+                "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift"
+            ],
+            "the set of surfaces that move a task between lists moved: \(callers.sorted())"
+        )
+        #expect(discarding.isEmpty, "these callers discard what the move answered: \(discarding)")
+
+        // Non-vacuity for the harvest: the declaration itself is unqualified, so a reader that
+        // returned empty text for every file would produce the same empty `discarding`.
+        #expect(
+            try read("Cadence/Shared/CadenceTaskMutationSupport.swift").contains("static func moveToContainer("),
+            "the harvest's reader is not handing back source"
+        )
+    }
+
+    /// The alert's title, in the shape the family already keeps: title-case, no full stop, and its
+    /// own event rather than the settle title reused.
+    @Test func themoveFailureAlertTitleNamesTheMoveAndNotTheTick() {
+        #expect(CadenceTaskMutationSupport.moveFailureAlertTitle == "Couldn't Move Task")
+        #expect(!CadenceTaskMutationSupport.moveFailureAlertTitle.hasSuffix("."))
+        #expect(CadenceTaskMutationSupport.moveFailureAlertTitle != CadenceTaskMutationSupport.settleFailureAlertTitle)
+        #expect(CadenceTaskMutationSupport.moveFailureAlertTitle != CadenceTaskMutationSupport.deleteFailureAlertTitle)
+        // The sentence under it is the one the other three callers show, not a fourth spelling.
+        #expect(CadenceTaskFieldEditCommit.saveFailureNotice == "Couldn't save this change.")
+    }
+
     /// Whether every occurrence of `report` sits below the first occurrence of `marker`.
     ///
     /// The refusal branch here is a `guard … else`, not a `catch`, so

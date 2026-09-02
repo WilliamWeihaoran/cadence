@@ -22,6 +22,9 @@ struct iOSTaskDetailSheet: View {
     @State private var hasScheduledDate = false
     @State private var hasDueDate = false
     @State private var containerSelection = "inbox"
+    /// Set while `applyContainerSelection` puts the token back after a refused move, so the
+    /// `onChange` that restore fires does not re-commit the move the store just refused (T-702).
+    @State private var isRestoringContainerSelection = false
     @State private var showDeleteConfirmation = false
     /// Set when the delete's commit was refused and rolled back. Same flag, same sentence and the
     /// same second alert `iOSTaskRow` carries — see `deleteTask()`.
@@ -417,14 +420,20 @@ struct iOSTaskDetailSheet: View {
     }
 
     private func loadContainerSelection() {
-        if let area = task.area {
-            containerSelection = "area:\(area.id.uuidString)"
-        } else if let project = task.project {
-            containerSelection = "project:\(project.id.uuidString)"
-        } else {
-            containerSelection = "inbox"
-        }
+        containerSelection = containerToken
         normalizeSectionForCurrentContainer()
+    }
+
+    /// The token for the list the task is **actually** in. Read twice: once to seed the picker on
+    /// open, and once to put it back when a move is refused.
+    private var containerToken: String {
+        if let area = task.area {
+            return "area:\(area.id.uuidString)"
+        }
+        if let project = task.project {
+            return "project:\(project.id.uuidString)"
+        }
+        return "inbox"
     }
 
     private func loadDates() {
@@ -484,15 +493,48 @@ struct iOSTaskDetailSheet: View {
         }
     }
 
+    /// **T-702.** This discarded what `moveToContainer` answered, and `containerSelection` is a
+    /// token the user has just changed: on a refusal the task went back to the list it started in
+    /// while the picker — and the breadcrumb reading off it — went on naming the one it never
+    /// reached. That is a report in the family the `try? save()` rule already names, because here
+    /// the token *is* the claim, and it is more visible than the pending move it replaced.
+    ///
+    /// The sheet stays open, so it answers inline rather than with the row's alert, and it uses
+    /// the slot every other refusal on this sheet uses — one notice per surface, as T-646 decided,
+    /// rather than a second flag the two could disagree through.
     private func applyContainerSelection() {
-        CadenceTaskMutationSupport.moveToContainer(
+        // The restore below re-enters here through `onChange`. Without this the second pass would
+        // re-commit the refused move and clear the notice the first pass just set.
+        guard !isRestoringContainerSelection else {
+            isRestoringContainerSelection = false
+            return
+        }
+
+        guard CadenceTaskMutationSupport.moveToContainer(
             task,
             area: selectedArea,
             project: selectedProject,
             sectionName: task.resolvedSectionName,
             allTasks: allTasks,
             modelContext: modelContext
-        )
+        ) else {
+            saveFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            restoreContainerSelection()
+            return
+        }
+        saveFailureNotice = nil
+    }
+
+    /// Puts the picker back on the list the refused move left the task in.
+    ///
+    /// Written only when it actually differs: an unconditional write would leave
+    /// `isRestoringContainerSelection` set with no `onChange` coming to consume it, and the flag
+    /// would then swallow the user's next pick instead of the restore it was raised for.
+    private func restoreContainerSelection() {
+        let restored = containerToken
+        guard restored != containerSelection else { return }
+        isRestoringContainerSelection = true
+        containerSelection = restored
     }
 
     private func normalizeSectionForCurrentContainer() {
