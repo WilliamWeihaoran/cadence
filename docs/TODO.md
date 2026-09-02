@@ -43,6 +43,31 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-719] **Nothing runs `scripts/mutate.sh selftest`.** `scripts/xcb.sh`'s guards are pinned by
+  `CadenceBuildInvocationHygieneTests` — a source scan that fails if the zero-test refusal is deleted —
+  and the mutation runner's five refusals ([[T-530]]) are pinned only by its own `selftest`, which no
+  test target invokes and no hook runs. That is the hollow-instrument shape one layer up: a guard whose
+  own guard is that somebody remembers to type it. Pin it the way `xcb.sh` is pinned, or add a test that
+  shells out to `./scripts/mutate.sh selftest` and fails on a non-zero exit (it takes under a second and
+  builds nothing, so cost is not the objection).
+
+- [T-720] **`TaskRecurrenceRule.shortLabel` is a copy of `label` with one arm changed.**
+  `Cadence/Models/ModelEnums.swift` — `label` returns Never/Daily/Weekly/Monthly/Yearly and `shortLabel`
+  returns None/Daily/Weekly/Monthly/Yearly. Four of the five arms are byte-identical, so four strings are
+  spelled twice in one file and only `.none` actually differs; there is nothing "short" about the second
+  spelling. Found while choosing mutation needles for [[T-530]] — `return "Daily"` occurs three times in
+  that file, twice of them here. Decide whether `shortLabel` earns its existence at all; if it does, it
+  should derive from `label` and override the one arm rather than re-type the other four.
+
+- [T-721] **"tests executed" counts result *lines*, not tests, and a failing test prints two.**
+  `scripts/xcb.sh`'s `tests_seen()` counts per-test result lines, which is exactly right for the zero-test
+  guard it exists for ([[T-552]]) and is **not** a test count: swift-testing prints both
+  `✘ Test x() recorded an issue` and `✘ Test x() failed after …`, so a two-test suite reports 2 when green,
+  3 with one failure and 4 with two — measured across the [[T-530]] trial's runs of
+  `HabitFrequencyLabelTests`. `scripts/mutate.sh` now prints it as *"test result lines"* for that reason.
+  Nothing is broken; the risk is an agent quoting the number as "N tests ran" in a report, or asserting an
+  exact test count against it. Either rename it in `xcb.sh` too, or make it count distinct test names.
+
 - [T-713] **The kanban column rename strands the column's cards after the first character.**
   Found while landing [[T-645]] and deliberately left out of it: [[T-645]] is about where the rename
   *commits*, and this is about what it *writes*. Pre-existing, unchanged by that ticket.
@@ -647,13 +672,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-
-- [T-530] **A stale mutation needle reads as a surviving mutant.** Found by the T-516 agent, on itself.
-  Its `assert old in s` went stale when it renamed a function; Python raised, the zsh runner had **no
-  `set -e`**, so the mutation silently never applied and the run reported `EXIT=0` — which reads exactly
-  as *"the mutant survived"*. Same family as the compiler-crash blind spot: **it fails quiet.** Every
-  mutation step must verify it applied (`grep -q` for the new text, loud if absent) before its result is
-  evidence. Two of this session's runners already do it; the runbook rule should be general.
 
 - [T-531] **macOS UI tests need a one-time system authorisation that no agent can grant.** Measured
   2026-08-30 in integration run r31: `CadenceUITests` fails at launch with *"The test runner failed to
@@ -1662,6 +1680,35 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   list: the simulator surface has no double-tap action at all.
 
 ## Done
+
+- [T-530] **A stale mutation needle reads as a surviving mutant.** Found by the T-516 agent, on itself.
+  Its `assert old in s` went stale when it renamed a function; Python raised, the zsh runner had **no
+  `set -e`**, so the mutation silently never applied and the run reported `EXIT=0` — which reads exactly
+  as *"the mutant survived"*. **Closed 2026-09-02 in `180ac76`.** The rule was re-proved four more times
+  after it was written, each a different quiet failure, so it is `scripts/mutate.sh` now rather than a
+  paragraph agents are told. **Five modes, each induced deliberately, both in `mutate.sh selftest` (46
+  checks, no build) and end-to-end against `HabitFrequencyLabelTests` / `Cadence/Models/ModelEnums.swift`
+  in an isolated tree.** (1) *Stale needle* → `NEEDLE-ABSENT`. (2) *A self-check that passes when it
+  should fail*: the check was `old in text`, so a replacement **containing its own anchor** —
+  `return "Daily"` → `return "Daily" + "!"` — read as a failed apply, the restore was skipped, and the
+  next mutation ran on a doubly-mutated tree. The runner compares **bytes with the `cp` backup**, and
+  re-reads each file against its baseline *before* mutating (`NOT-PRISTINE`), so a stranded edit voids
+  the next verdict instead of surviving it. In the trial that mutation is correctly `KILLED` by
+  `theFullLabelIsUnchanged`. (3) *An ambiguous needle* → `NEEDLE-AMBIGUOUS`, with every occurrence's
+  line number named; `return "Daily"` really does occur three times in `ModelEnums.swift` (308, 318,
+  459). (4) *A mutation that never compiled* → `DID-NOT-COMPILE`, and the two failures that print **no**
+  `.swift:line:col: error:` line at all → `TOOLCHAIN-CRASH` and `NO-TESTS-RAN`. (5) *A survival that
+  argues nothing* ([[T-560]]'s pairing rule, mechanised): a mutation with any hunk under `CadenceTests/`
+  is inferred to be a weakening, and an unpaired one reports **`INCONCLUSIVE`**, never SURVIVED. Paired
+  with the violation the tight form catches, the same weakening reports `SURVIVED` **and names the
+  control that was killed**. `KILLED` additionally requires a failing test line and names the tests.
+  **Isolation is now the default rather than the discipline**: with no `--tree` the runner builds its own
+  `git archive HEAD | tar -x` copy, so a `kill -9` strands the mutation in a scratch directory instead of
+  the user's checkout; `--in-place` is required to mutate the repository and says so loudly. It also
+  takes the test-host lock **once** per batch (`xcb.sh raw test` per mutation), refuses the batch if the
+  **unmutated** suite is not green over a non-zero test count, and calls the **tree's own** `xcb.sh` —
+  the repository copy derives `-project` from its location and would test a different tree than it
+  mutated. Runbook section: *"A mutation runner that cannot report a survivor it did not earn"*.
 
 - [T-561] **Re-triage `docs/device-checks.md` now that simulator use is established.** The checklist was
   written when nobody could drive anything. Since then agents have driven iPhone simulators successfully —
