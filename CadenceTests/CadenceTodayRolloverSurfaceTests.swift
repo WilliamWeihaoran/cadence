@@ -374,7 +374,6 @@ struct CadenceTodayRolloverSurfaceTests {
             allTasks: tasks,
             areas: [],
             projects: [],
-            mode: .todayOverview,
             todayKey: today
         )
 

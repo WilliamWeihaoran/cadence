@@ -8,16 +8,23 @@ struct TasksPanelDropCoordinator {
     let assignTask: (AppTask, String) -> Bool
     let reorderTask: (UUID, UUID, [AppTask]) -> Void
 
+    /// Curried because the `Optional` is the point: a group with no `dropKey` gets `nil`, and
+    /// `TasksPanelIntentSectionView` / `TasksListSectionView` take `((String) -> Bool)?` so the
+    /// header simply has no drop target rather than one that refuses everything.
+    ///
+    /// **The task-level half of this pair is gone (T-564(b)).** `taskDropHandler(scopeTasks:dropKey:)`
+    /// curried `handleTaskDrop` the same way and lost its last call site when `liveFlatSection`
+    /// went; both remaining row drops — Today's in `TasksPanel.todayGroupSections` and All Tasks' /
+    /// Inbox's in `TasksListView` — spell `coordinator.handleTaskDrop(payload:targetTask:scopeTasks:dropKey:)`
+    /// inline, because a row hands over its own section's `scopeTasks` at the point of the drop and
+    /// has no `Optional` to express. So the pair was symmetric in shape and not in use: one half was
+    /// carrying an argument order and a defaulted `dropKey` that nothing supplied and no test
+    /// exercised, which is the half most likely to be wrong the day somebody reaches for it.
+    /// Pinned absent by `CadenceTodayUnificationTests.theDropCoordinatorKeepsOnlyTheHalfItsCallersUse`.
     func sectionDropHandler(for dropKey: String?) -> ((String) -> Bool)? {
         guard let dropKey else { return nil }
         return { payload in
             handleSectionDrop(payload: payload, dropKey: dropKey)
-        }
-    }
-
-    func taskDropHandler(scopeTasks: [AppTask], dropKey: String? = nil) -> (String, AppTask) -> Bool {
-        { payload, targetTask in
-            handleTaskDrop(payload: payload, targetTask: targetTask, scopeTasks: scopeTasks, dropKey: dropKey)
         }
     }
 

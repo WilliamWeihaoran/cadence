@@ -257,7 +257,6 @@ struct CadenceCancelledTaskReachabilityTests {
             allTasks: [subject],
             areas: [],
             projects: [],
-            mode: .todayOverview,
             todayKey: todayKey
         )
         #expect(state.doneTasks.map(\.title) == ["abandoned"])
@@ -451,7 +450,6 @@ struct CadenceCancelledTaskReachabilityTests {
             allTasks: tasks,
             areas: [],
             projects: [],
-            mode: .todayOverview,
             todayKey: todayKey
         )
         .doneTasks
@@ -608,9 +606,12 @@ struct CadenceCancelledTaskReachabilityTests {
     /// included, because the section renders this array directly. Same shape as
     /// `CadenceTodayRolloverSurfaceTests.theMacDerivedStateStillDerivesExactlyWhatItUsedTo`.
     ///
-    /// It ran over both modes until T-487. `.byDoDate` is gone, so the loop is over the one mode
-    /// that exists; `legacyDoneTasks` keeps its `mode` parameter and its `guard`, because that
-    /// guard is precisely the line being checked against.
+    /// It ran over both modes until T-487, and over a one-case `TasksPanelMode` until T-564(a)
+    /// collapsed the enum. `legacyDoneTasks` used to keep a `mode` parameter and a
+    /// `guard mode == .todayOverview else { return true }`, because that guard was the line being
+    /// checked against; with one mode left that clause was never taken, and the arm behind it was
+    /// the `.byDoDate` logbook, which has not existed since T-487. What remains is the whole of the
+    /// expression Today ever ran.
     @Test func theMacDoneTasksStillDeriveExactlyWhatTheyUsedTo() throws {
         let tasks = [
             task("settled today", status: .done, completedAt: try instant(todayKey)),
@@ -627,11 +628,10 @@ struct CadenceCancelledTaskReachabilityTests {
             guard let nextDay = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
             return dayStart..<calendar.startOfDay(for: nextDay)
         }()
-        func legacyDoneTasks(mode: TasksPanelMode) -> [AppTask] {
+        func legacyDoneTasks() -> [AppTask] {
             tasks
                 .filter { subject in
                     guard subject.isDone || subject.isCancelled else { return false }
-                    guard mode == .todayOverview else { return true }
                     guard let completedAt = subject.completedAt else { return false }
                     guard let todayRange else {
                         return DateFormatters.dateKey(from: completedAt) == todayKey
@@ -641,18 +641,15 @@ struct CadenceCancelledTaskReachabilityTests {
                 .taskCompletionSorted()
         }
 
-        for mode in [TasksPanelMode.todayOverview] {
-            let derived = TasksPanelDerivedState(
-                allTasks: tasks,
-                areas: [],
-                projects: [],
-                mode: mode,
-                todayKey: todayKey
-            )
-            let legacy = legacyDoneTasks(mode: mode)
-            #expect(!legacy.isEmpty, "fixture no longer exercises \(mode)")
-            #expect(derived.doneTasks.map(\.id) == legacy.map(\.id))
-        }
+        let derived = TasksPanelDerivedState(
+            allTasks: tasks,
+            areas: [],
+            projects: [],
+            todayKey: todayKey
+        )
+        let legacy = legacyDoneTasks()
+        #expect(!legacy.isEmpty, "the fixture no longer exercises the derivation")
+        #expect(derived.doneTasks.map(\.id) == legacy.map(\.id))
     }
 
     // MARK: - T-212: winding a container down settles its work, and advances no series
@@ -725,7 +722,6 @@ struct CadenceCancelledTaskReachabilityTests {
             allTasks: [subject],
             areas: [area],
             projects: [],
-            mode: .todayOverview,
             todayKey: DateFormatters.todayKey()
         )
         #expect(state.doneTasks.map(\.title) == ["in the archived column"])

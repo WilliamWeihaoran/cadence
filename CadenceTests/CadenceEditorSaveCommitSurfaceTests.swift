@@ -570,6 +570,21 @@ struct CadenceEditorSaveCommitSurfaceTests {
                 successSpellings: ["subtaskFailureNotice = nil"]
             ),
 
+            // T-645: the column editor's other two discrete writes, which reached no commit at
+            // all until this ticket. Both answer `true` for the same reason `saveSection` does —
+            // `deleteSection`'s caller closes the popover on that answer, and nothing may close
+            // over a delete the store refused.
+            SaveSurface(
+                path: "Cadence/macOS/Views/KanbanSectionColumnView.swift",
+                function: "deleteSection",
+                successSpellings: ["return true"]
+            ),
+            SaveSurface(
+                path: "Cadence/macOS/Views/KanbanSectionColumnView.swift",
+                function: "clearSectionDueDate",
+                successSpellings: ["return true"]
+            ),
+
             // T-632: the kanban column editor. `showEditor = false` is the report — the popover
             // closing is the only thing that says the archive landed — and `saveSection` answers
             // `true` for the same reason, because the completion toggle closes on that answer.

@@ -68,7 +68,6 @@ struct TodayScopeParityTests {
             allTasks: tasks,
             areas: [],
             projects: [],
-            mode: .todayOverview,
             todayKey: todayKey
         )
 

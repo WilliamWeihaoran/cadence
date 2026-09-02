@@ -696,6 +696,94 @@ struct CadenceTodayUnificationTests {
         #expect(mobile.contains("eyebrowDetail"))
         #expect(mobile.contains("iOSPageHeaderCountBadge"))
     }
+
+    // MARK: - T-564: the one-case mode, and the half-pair it left behind
+
+    /// **`TasksPanelMode` is collapsed, and the three `switch`es over it are gone (T-564(a)).**
+    ///
+    /// T-487 deleted `.byDoDate` as unreachable and stopped short of the enum, on the argument that
+    /// a written-out `switch mode` in `TasksPanelDerivedState.init`, `isEmptyState` and
+    /// `TasksPanel.taskSections` would force a future second mode to be *answered* rather than to
+    /// fall through. The counter-argument is the one that landed: a one-case enum is an abstraction
+    /// with no cases to distinguish, carried by three files and every reader of them, and whoever
+    /// reintroduces a Today / All Tasks split will design it against `TasksPageView` — the All Tasks
+    /// page, which has never built one of these panels — rather than filling in a `case` left open
+    /// for them here.
+    ///
+    /// **`expectNoLiveMention` is not enough on its own**, which is why the two shapes below are
+    /// asserted as well. The name could vanish while a `switch` over some other one-case value took
+    /// its place, and a panel that still threaded a `mode:` argument through its initializer would
+    /// read as collapsed by name alone. So: the derived state takes four arguments, the empty-state
+    /// answer is a property rather than a function of a mode, and the forwarder is gone.
+    @Test func theTasksPanelNoLongerCarriesAModeWithOneCase() throws {
+        try expectNoLiveMention(of: "TasksPanelMode")
+
+        // Self-check on the same scan, in the same file set: a helper that read nothing would pass
+        // the assertion above for free. `TasksPanelDerivedState` is the type the argument was
+        // threaded into and it is still very much here.
+        #expect(try liveTextOccurrences(of: "TasksPanelDerivedState") > 0, "self-check: the scan reads code")
+
+        let derived = try declarationBody(of: "TasksPanelDerivedState", in: "Cadence/macOS/Views/TasksPanelDerivedState.swift")
+        #expect(derived.contains("var body: some View") == false, "non-vacuity guard read the wrong declaration")
+        #expect(derived.contains("init("), "non-vacuity: empty declaration slice")
+        #expect(occurrences(of: "var isEmptyState: Bool", in: derived) == 1)
+        #expect(occurrences(of: "switch mode", in: derived) == 0)
+        #expect(
+            occurrences(of: "doneTasks = CadenceTaskQuerySupport.completedTodayTasks(from: allTasks, todayKey: todayKey)", in: derived) == 1,
+            "the day's Completed derivation moved out from under the deleted switch"
+        )
+
+        let panel = try declarationBody(of: "TasksPanel", in: "Cadence/macOS/Views/TasksPanel.swift")
+        #expect(panel.contains("var body: some View"), "non-vacuity: empty declaration slice")
+        #expect(occurrences(of: "switch mode", in: panel) == 0)
+        #expect(occurrences(of: "func taskSections(", in: panel) == 0, "the one-case forwarder is still here")
+        #expect(occurrences(of: "todayOverviewSections(derived: derived)", in: panel) == 1)
+        #expect(occurrences(of: "derived.isEmptyState", in: panel) == 1)
+        #expect(occurrences(of: "isEmptyState(for:", in: panel) == 0)
+    }
+
+    /// **The drop coordinator keeps the curried half its callers use, and only that one
+    /// (T-564(b)).**
+    ///
+    /// `taskDropHandler(scopeTasks:dropKey:)` curried `handleTaskDrop` exactly as
+    /// `sectionDropHandler(for:)` curries `handleSectionDrop`, and lost its last call site when
+    /// `liveFlatSection` went. Deleting half of a symmetric pair is a shape change rather than a
+    /// dead-code removal, which is why it was held for a decision — and the decision was that an
+    /// unused half no test exercises is the half most likely to be wrong the day somebody reaches
+    /// for it.
+    ///
+    /// **The failing-first form of a deletion is a non-vacuity proof**, so the absence below is
+    /// asserted beside two exact presences read by the same scan over the same files: the surviving
+    /// sibling at its declaration and both its call sites, and the row-level *decision* still shared
+    /// at both row drops. The second is what says this removed a currying convenience and not a
+    /// behaviour — Today and All Tasks both still route a dropped row through the coordinator.
+    @Test func theDropCoordinatorKeepsOnlyTheHalfItsCallersUse() throws {
+        #expect(try liveTextOccurrences(of: "taskDropHandler(") == 0)
+
+        // The sibling: one declaration plus `TasksPanel.todayGroupSections` and
+        // `TasksListView`'s section row. Exact, because "at least one" is satisfied by a file that
+        // reverted a call site to a local copy — and because this is the assertion that proves the
+        // scan above was reading anything at all.
+        #expect(try liveTextOccurrences(of: "sectionDropHandler(") == 3)
+        // The row-level decision, still the coordinator's at both row drops. `.handleTaskDrop(` and
+        // not `handleTaskDrop(`: the two kanban columns declare and call a private function of the
+        // same name over `[String]` items, which is not this one.
+        #expect(try liveTextOccurrences(of: ".handleTaskDrop(") == 2)
+
+        let coordinator = try declarationBody(of: "TasksPanelDropCoordinator", in: "Cadence/macOS/Views/TasksPanelDropCoordinator.swift")
+        #expect(coordinator.contains("func handleSectionDrop("), "non-vacuity: empty declaration slice")
+        #expect(occurrences(of: "func taskDropHandler(", in: coordinator) == 0)
+        #expect(occurrences(of: "func sectionDropHandler(", in: coordinator) == 1)
+        #expect(occurrences(of: "func handleTaskDrop(", in: coordinator) == 1)
+
+        // And the removal is recorded where the surviving half is read, not only here. Asserted
+        // against the *raw* file, because `strippingComments` blanks the sentence being looked for.
+        let raw = try sourceFile("Cadence/macOS/Views/TasksPanelDropCoordinator.swift")
+        #expect(
+            raw.contains("The task-level half of this pair is gone (T-564(b))"),
+            "sectionDropHandler no longer says its sibling was removed, or why"
+        )
+    }
 }
 
 /// **T-305: what Today's groups actually are, pinned by value.**
@@ -933,13 +1021,18 @@ struct CadenceTodayListGroupingTests {
             of: "CadenceTaskQuerySupport.todayRank",
             at: ["Cadence/macOS/Views/TasksPanel.swift": 1]
         )
-        #expect(try liveTextOccurrences(of: "mode == .todayOverview && !enableControls") == 0)
+        // **The gate that made the rank unreachable, and it is now spelled with one clause.** It
+        // read `mode == .todayOverview && !enableControls`; T-487 deleted `.byDoDate` and T-564(a)
+        // deleted the enum, so the mode half of that condition cannot be written any more and
+        // asserting its absence is a claim nothing can break. What survives — and what would make
+        // the rank unreachable again exactly as before — is the `!enableControls` half on its own,
+        // because `TodayView` is the only caller and it passes `enableControls: true`.
+        #expect(try liveTextOccurrences(of: "!enableControls") == 0)
         // The self-check the absence above needs — a scan that reads nothing passes every `== 0`.
-        // It used to be `mode == .todayOverview`, which no longer appears in live source: T-487
-        // deleted `.byDoDate`, so nothing tests the mode with `==` any more. `case .todayOverview`
-        // is the same fact spelled the way the surviving `switch`es spell it.
-        #expect(try liveTextOccurrences(of: "case .todayOverview") > 0)
-        #expect(try liveTextOccurrences(of: "mode == .todayOverview") == 0)
+        // The flag itself is very much live; it is only the *negated* reading of it that must not
+        // come back. (This used to be `case .todayOverview`, and T-564(a) took the last `switch`
+        // that spelled it, which is how this test found out.)
+        #expect(try liveTextOccurrences(of: "enableControls") > 0)
     }
 
     // MARK: - The rollover banner

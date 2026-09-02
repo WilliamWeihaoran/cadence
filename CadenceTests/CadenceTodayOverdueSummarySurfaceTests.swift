@@ -353,7 +353,6 @@ struct CadenceTodayOverdueSummarySurfaceTests {
             allTasks: tasks + [settled],
             areas: areas,
             projects: projects,
-            mode: .todayOverview,
             todayKey: today
         )
 
@@ -654,21 +653,19 @@ struct CadenceTodayOverdueSummarySurfaceTests {
             allTasks: [],
             areas: [],
             projects: [launch],
-            mode: .todayOverview,
             todayKey: today
         )
         #expect(!listCardOnly.overdueListSummaries.isEmpty)
-        #expect(!listCardOnly.isEmptyState(for: .todayOverview))
+        #expect(!listCardOnly.isEmptyState)
 
         let sectionCardOnly = TasksPanelDerivedState(
             allTasks: [],
             areas: [area],
             projects: [],
-            mode: .todayOverview,
             todayKey: today
         )
         #expect(!sectionCardOnly.overdueSectionSummaries.isEmpty)
-        #expect(!sectionCardOnly.isEmptyState(for: .todayOverview))
+        #expect(!sectionCardOnly.isEmptyState)
 
         // And a day with neither cards nor tasks is still empty, so the guard cannot be satisfied
         // by never reporting empty at all.
@@ -676,10 +673,9 @@ struct CadenceTodayOverdueSummarySurfaceTests {
             allTasks: [],
             areas: [],
             projects: [],
-            mode: .todayOverview,
             todayKey: today
         )
-        #expect(nothing.isEmptyState(for: .todayOverview))
+        #expect(nothing.isEmptyState)
     }
 
     // MARK: - Fixtures

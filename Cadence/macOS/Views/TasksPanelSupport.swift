@@ -2,17 +2,19 @@
 import SwiftUI
 import SwiftData
 
-/// One case, and deliberately still an enum.
-///
-/// `.byDoDate` — this panel's All Tasks shape — was **unreachable**: `TodayView` builds the only
-/// `TasksPanel` in the repository and takes the `.todayOverview` default, so nothing but a test
-/// ever constructed the other one. It is gone (T-487), along with its grouping control, its four
-/// section builders, its frozen list/flat snapshots and an empty state that still spelled two
-/// strings the app retired, because nobody could see it to notice. Collapsing the enum itself is
-/// a further design change and has not been made here.
-enum TasksPanelMode {
-    case todayOverview
-}
+// `TasksPanelMode` was declared here and is gone (T-564(a)). `.byDoDate` — this panel's All Tasks
+// shape — had already gone in T-487, being unreachable: `TodayView` builds the only `TasksPanel` in
+// the repository and took the `.todayOverview` default, so nothing but a test ever constructed the
+// other one. That left a one-case enum, kept for one stated reason: `switch mode`, written out in
+// `TasksPanelDerivedState.init`, `isEmptyState` and `TasksPanel.taskSections`, forced a future
+// second mode to be *answered* rather than to fall through silently.
+//
+// **The decision, made deliberately and late.** A one-case enum is a dead abstraction three files
+// and every reader have to carry, and the forcing function it buys only pays out for a mode that
+// arrives in exactly this shape. Whoever reintroduces the Today / All Tasks distinction will design
+// it against the surfaces that exist then — `TasksPageView` is the All Tasks page now, and it has
+// never built one of these panels — rather than filling in a `case` this file left open for them.
+// So the enum is collapsed and the three `switch`es are gone with it.
 
 // `TaskSortField` and `TaskSortDirection` live in `Cadence/Models/TaskOrdering.swift`, next to
 // the comparator that reads them, so `CadenceWidgets` and `CadenceMCPServer` can reach both.

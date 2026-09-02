@@ -16,6 +16,28 @@ enum KanbanSectionStateSupport {
             .updateSectionConfig(uuid: sectionID, mutate: mutate)
     }
 
+    /// The cards `moveTasks(universeTasks:area:project:from:to:)` will re-point.
+    ///
+    /// Split out rather than left inline because a refused rename or column delete has to put those
+    /// cards' `sectionName` back, and the snapshot must be taken over **the same walk the write
+    /// performs** — not a second one that happens to agree today. It is every card in the column,
+    /// finished ones included, which is what makes it the wrong set for `editSnapshot(settling:)`
+    /// and the right one here: deleting a column moves its whole stack into Default, while a
+    /// lifecycle settle only reaches the open half.
+    static func tasksMoving(
+        universeTasks: [AppTask],
+        area: Area?,
+        project: Project?,
+        from oldName: String
+    ) -> [AppTask] {
+        universeTasks.filter { task in
+            guard task.resolvedSectionName.caseInsensitiveCompare(oldName) == .orderedSame else { return false }
+            if area != nil, task.area?.id != area?.id { return false }
+            if project != nil, task.project?.id != project?.id { return false }
+            return true
+        }
+    }
+
     static func moveTasks(
         universeTasks: [AppTask],
         area: Area?,
@@ -23,9 +45,7 @@ enum KanbanSectionStateSupport {
         from oldName: String,
         to newName: String
     ) {
-        for task in universeTasks where task.resolvedSectionName.caseInsensitiveCompare(oldName) == .orderedSame {
-            if area != nil, task.area?.id != area?.id { continue }
-            if project != nil, task.project?.id != project?.id { continue }
+        for task in tasksMoving(universeTasks: universeTasks, area: area, project: project, from: oldName) {
             task.sectionName = newName
         }
     }

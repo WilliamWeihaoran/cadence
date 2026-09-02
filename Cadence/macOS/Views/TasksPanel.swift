@@ -12,7 +12,6 @@ struct TasksPanel: View {
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    let mode: TasksPanelMode
     let showsHeader: Bool
     let sortMode: CadenceTaskSortMode
     let enableControls: Bool
@@ -28,13 +27,11 @@ struct TasksPanel: View {
     @State private var dragOverTaskID: UUID? = nil
 
     init(
-        mode: TasksPanelMode = .todayOverview,
         showsHeader: Bool = true,
         sortMode: CadenceTaskSortMode = .macOSTodayDefault,
         enableControls: Bool = false,
         useStandardHeaderHeight: Bool = false
     ) {
-        self.mode = mode
         self.showsHeader = showsHeader
         self.sortMode = sortMode
         self.enableControls = enableControls
@@ -104,7 +101,6 @@ struct TasksPanel: View {
             allTasks: allTasks,
             areas: areas,
             projects: projects,
-            mode: mode,
             todayKey: todayKey
         )
     }
@@ -178,7 +174,7 @@ struct TasksPanel: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
-                    taskSections(derived: derived)
+                    todayOverviewSections(derived: derived)
                     completedSection(derived: derived)
                     emptyStateSection(derived: derived)
                 }
@@ -202,16 +198,9 @@ struct TasksPanel: View {
         }
     }
 
-    @ViewBuilder
-    private func taskSections(derived: TasksPanelDerivedState) -> some View {
-        // One case, and the `switch` stays: `TasksPanelMode` is still an enum, so a mode added
-        // later has to be answered here rather than silently falling through (T-487).
-        switch mode {
-        case .todayOverview:
-            todayOverviewSections(derived: derived)
-        }
-    }
-
+    /// The panel's sections, called straight from `panelShell`. A `taskSections(derived:)`
+    /// forwarder used to sit above this holding `switch mode { case .todayOverview: }`, and it went
+    /// with `TasksPanelMode` itself (T-564(a)).
     @ViewBuilder
     private func todayOverviewSections(derived: TasksPanelDerivedState) -> some View {
         let showsRollover = shouldShowRolloverNotice(derived)
@@ -330,7 +319,7 @@ struct TasksPanel: View {
 
     @ViewBuilder
     private func emptyStateSection(derived: TasksPanelDerivedState) -> some View {
-        if derived.isEmptyState(for: mode) {
+        if derived.isEmptyState {
             // Today's copy is `CadenceTodayPresentationSupport`'s, which is what iOS's
             // `iOSCompactTodayEmptyState` draws. macOS said "Nothing for today" over
             // "Due-today and do-today tasks will appear here" — a restatement of the page's scope

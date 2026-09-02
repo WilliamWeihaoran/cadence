@@ -250,6 +250,261 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         #expect(code.components(separatedBy: "TaskContainerLifecycleService.cancelRemainingActiveTasks(").count - 1 == 2)
     }
 
+    // MARK: - T-645: the editor's other three writes, and where the rename commits
+
+    /// **The three writes that reached no commit at all, and the one that closed the popover over
+    /// nothing (T-645).**
+    ///
+    /// None of them was visible to the `try? save()` rule, and the reason is the same for all
+    /// three: a `TaskSectionConfig` is a struct inside the container's `sectionConfigsRaw` JSON
+    /// rather than a `@Model`, so `modelContext.delete(` never fires and halves 1 and 3 have
+    /// nothing to see — and there was no `try?` anywhere for half 2 to key on, only
+    /// `showEditor = false` reporting a delete the store had never been asked to take.
+    ///
+    /// **`commitEdit` for the discrete two and `CadenceInPlaceEditFlush` for the rename, and the
+    /// split is asserted rather than assumed.** Clearing a date and deleting a column can be put
+    /// back and reported as "Nothing was changed". A rename cannot: the field is still on screen
+    /// with the caret in it, and restoring the model would delete what the user typed in order to
+    /// tell them it had not saved. That is the decision `CadenceInPlaceEditFlush` records, and the
+    /// two sentences it separates are pinned as different below — one flag holding both would make
+    /// the choice untestable.
+    @Test func theColumnEditorsOtherThreeWritesReachACommit() throws {
+        let column = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
+        #expect(column.contains("struct ListSectionKanbanColumn: View"), "non-vacuity: wrong file read")
+        #expect(matches(#"try\?"#, in: column) == 0, "the column swallows a commit again")
+
+        // The two discrete writes: an undo, a commit through the shared helper, and a notice.
+        for name in ["clearSectionDueDate", "deleteSection"] {
+            let body = try #require(CadenceSourceScan.functionBody(named: name, in: column), "\(name)() is not declared")
+            #expect(
+                body.contains("CadencePendingChangePersistence.commitEdit(in: modelContext, undo: { undo?.restore() })"),
+                "\(name)() commits without an undo, or does not commit"
+            )
+            #expect(
+                body.contains("saveFailureNotice = CadencePendingChangePersistence.editFailureNotice"),
+                "\(name)() does not name a refused commit"
+            )
+            #expect(matches(#"modelContext\.rollback\(\)"#, in: body) == 0, "\(name) rolls the app's context back")
+        }
+
+        // The delete snapshots the cards it is about to re-point, and it is **not** the settling
+        // set: deleting a column moves its whole stack, finished cards included.
+        let delete = try #require(CadenceSourceScan.functionBody(named: "deleteSection", in: column))
+        #expect(delete.contains("editSnapshotMovingTasks(outOf: section.name)"))
+        #expect(!delete.contains("editSnapshot(settling:"), "the delete snapshots only the open half of the column")
+
+        // The two snapshots differ in exactly one thing — which tasks they hand over — so both are
+        // read. They are two names rather than an overload deliberately: `functionBody(named:)` and
+        // `bodies(of:expected:)` anchor on `func <name>(`, so a second `editSnapshot(` would have
+        // changed what three existing tests in `CadenceEditorSaveCommitSurfaceTests` were reading.
+        let settlingSnapshot = try #require(CadenceSourceScan.functionBody(named: "editSnapshot", in: column))
+        #expect(settlingSnapshot.contains("TaskContainerLifecycleService.remainingActiveTasks("))
+        let movingSnapshot = try #require(CadenceSourceScan.functionBody(named: "editSnapshotMovingTasks", in: column))
+        #expect(
+            movingSnapshot.contains("KanbanSectionStateSupport.tasksMoving("),
+            "the delete's snapshot walks the column itself instead of the walk moveTasks performs"
+        )
+        #expect(!movingSnapshot.contains("remainingActiveTasks("), "the two snapshots have collapsed into one set")
+
+        // Clearing the date puts the popover's own flag back too — a popover showing "no date" over
+        // a column that still has one is the report inverted.
+        let clear = try #require(CadenceSourceScan.functionBody(named: "clearSectionDueDate", in: column))
+        #expect(clear.contains("let hadDueDate = editorHasDueDate"))
+        #expect(clear.contains("editorHasDueDate = hadDueDate"))
+
+        // And the popover closes on the commit rather than on the tap.
+        let editor = try #require(bodyOfComputed("columnEditor", in: column))
+        #expect(editor.contains("guard deleteSection() else { return }"))
+        #expect(editor.contains("onClearDate: { _ = clearSectionDueDate() }"))
+        let guardRange = try #require(editor.range(of: "guard deleteSection() else { return }"))
+        let close = try #require(editor.range(of: "showEditor = false"))
+        #expect(close.lowerBound > guardRange.upperBound, "the popover closes above the refused delete")
+        #expect(
+            matches(#"showEditor = false"#, in: editor) == 1,
+            "the editor closes in more than one place, so the guard above does not cover them all"
+        )
+    }
+
+    /// **The rename's commit *point*, which is the part that could not simply be "add a commit"
+    /// (T-645).**
+    ///
+    /// `onNameChanged` fires on every character of the rename field. A commit there would ask the
+    /// store for a transaction per keystroke and hand the user a refusal notice mid-word, so the
+    /// write and the commit are separate calls: `applySectionEdits` per character,
+    /// `commitSectionEdits` when the edit ends — Return, focus leaving the field, or any of the
+    /// discrete controls, all of which land while the popover is still on screen to carry a notice.
+    ///
+    /// Asserted at both ends, because either alone is satisfiable by the defect: the view must fire
+    /// two different callbacks from two different events, and the column must wire the per-keystroke
+    /// one to a function that does **not** commit.
+    @Test func theColumnRenameCommitsAtTheEndOfTheEditRatherThanPerKeystroke() throws {
+        let column = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
+        let popover = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift"))
+        #expect(popover.contains("struct KanbanSectionEditorPopover"), "non-vacuity: wrong file read")
+
+        // The per-keystroke write commits nothing at all — that is the whole of what it is for.
+        let apply = try #require(CadenceSourceScan.functionBody(named: "applySectionEdits", in: column))
+        #expect(apply.contains("container.applySectionConfigEdits("), "the apply no longer writes the blob")
+        #expect(matches(#"\.save\(\)|CadencePendingChangePersistence\.commit|CadenceInPlaceEditFlush"#, in: apply) == 0,
+                "applySectionEdits commits, so the rename is back to one transaction per character")
+
+        // The commit point, and the sentence that keeps the user's text.
+        let commit = try #require(CadenceSourceScan.functionBody(named: "commitSectionEdits", in: column))
+        #expect(commit.contains("applySectionEdits()"))
+        #expect(commit.contains("guard CadenceInPlaceEditFlush.flush(in: modelContext) else {"))
+        #expect(commit.contains("saveFailureNotice = CadenceInPlaceEditFlush.failureNotice"))
+        #expect(matches(#"modelContext\.rollback\(\)|undo"#, in: commit) == 0,
+                "the rename restores something, which deletes what the user is still typing")
+
+        // The wiring: per-keystroke apply, commit at the end, and the three discrete controls
+        // committing on the spot.
+        #expect(column.contains("onNameChanged: applySectionEdits"))
+        #expect(column.contains("onNameCommitted: { _ = commitSectionEdits() }"))
+        #expect(column.contains("onColorSelected: { _ = commitSectionEdits() }"))
+        #expect(column.contains("onDueDateChanged: { _ = commitSectionEdits() }"))
+
+        // And the popover raises the two callbacks from two different events. A view that fired
+        // `onNameCommitted` from `onChange(of: editorName)` would satisfy every assertion above
+        // while committing per character after all.
+        #expect(matches(#"\.onChange\(of: editorName\) \{ _, _ in onNameChanged\(\) \}"#, in: popover) == 1)
+        #expect(matches(#"\.onSubmit \{ onNameCommitted\(\) \}"#, in: popover) == 1)
+        #expect(matches(#"\.onChange\(of: isNameFieldFocused\)"#, in: popover) == 1)
+        #expect(matches(#"onNameCommitted\(\)"#, in: popover) == 2, "the rename's commit point moved or grew a third trigger")
+
+        // The two failure sentences are genuinely different questions, which is what makes the
+        // choice above a choice. "Nothing was changed" is only true because an undo ran.
+        #expect(CadenceInPlaceEditFlush.failureNotice != CadencePendingChangePersistence.editFailureNotice)
+        #expect(CadenceInPlaceEditFlush.failureNotice.contains("still here"))
+        #expect(CadencePendingChangePersistence.editFailureNotice.contains("Nothing was changed"))
+    }
+
+    /// **A refused column delete puts the column back and every card it was moving with it.**
+    ///
+    /// The behavioural half, composed the way `deleteSection` composes it —
+    /// `KanbanSectionStateSupport.tasksMoving` for the snapshot, then `moveTasks` and
+    /// `removeSection` — under a commit that throws.
+    ///
+    /// **The finished card is the assertion that matters.** `editSnapshot(settling:)`, which every
+    /// other write on this popover uses, hands over
+    /// `TaskContainerLifecycleService.remainingActiveTasks` — the *open* half of the column. A
+    /// delete moves the whole stack, so a snapshot of the open half restores the to-do card and
+    /// leaves the done one filed under a column the store no longer has. That failure is invisible
+    /// to a fixture with only open cards in it.
+    @Test func aRefusedColumnDeleteRestoresTheColumnAndEveryCardItWasMoving() throws {
+        let context = ModelContext(try container())
+        let area = Area(name: "Board")
+        context.insert(area)
+        area.sectionConfigs = [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing")
+        ]
+
+        let open = AppTask(title: "still open")
+        let finished = AppTask(title: "already done")
+        finished.status = .done
+        let elsewhere = AppTask(title: "in Default")
+        for task in [open, finished] { task.sectionName = "Doing" }
+        elsewhere.sectionName = TaskSectionDefaults.defaultName
+        for task in [open, finished, elsewhere] {
+            task.area = area
+            context.insert(task)
+        }
+        area.tasks = [open, finished, elsewhere]
+        try context.save()
+
+        let column = try #require(area.sectionConfigs.first { $0.name == "Doing" })
+        let moving = KanbanSectionStateSupport.tasksMoving(
+            universeTasks: [open, finished, elsewhere],
+            area: area,
+            project: nil,
+            from: column.name
+        )
+        // Non-vacuity, and the point of the ticket in one line: the walk the delete performs
+        // reaches the finished card too, and stops at the column boundary.
+        #expect(moving.map(\.title).sorted() == ["already done", "still open"])
+
+        let undo = CadenceListEditSnapshot(area, tasks: moving)
+        KanbanSectionStateSupport.moveTasks(
+            universeTasks: [open, finished, elsewhere],
+            area: area,
+            project: nil,
+            from: column.name,
+            to: TaskSectionDefaults.defaultName
+        )
+        KanbanSectionStateSupport.removeSection(sectionID: column.id, area: area, project: nil)
+        #expect(area.sectionConfigs.contains { $0.name == "Doing" } == false)
+        #expect(open.sectionName == TaskSectionDefaults.defaultName)
+        #expect(finished.sectionName == TaskSectionDefaults.defaultName)
+
+        #expect(throws: ColumnCommitRefused.self) {
+            try CadencePendingChangePersistence.commitEdit(
+                in: context,
+                commit: { _ in throw ColumnCommitRefused() },
+                undo: undo.restore
+            )
+        }
+
+        #expect(area.sectionConfigs.contains { $0.name == "Doing" })
+        #expect(open.sectionName == "Doing")
+        #expect(finished.sectionName == "Doing", "the finished card was left in a column that no longer exists")
+        #expect(elsewhere.sectionName == TaskSectionDefaults.defaultName)
+    }
+
+    // MARK: - T-646: a refused column completion reaches the user
+
+    /// **The countdown outlives the popover, so the notice cannot live only in the popover
+    /// (T-646).**
+    ///
+    /// `SectionCompletionAnimationManager` writes a *reopen* synchronously and defers a
+    /// *completion* behind a 2.5-second sweep on a detached `Task`. `toggleCompletionFromEditor`
+    /// closes the popover as soon as the synchronous half comes back clean — so when the deferred
+    /// write is refused, `saveSection` sets `saveFailureNotice` into a surface that has been gone
+    /// for two and a half seconds. The undo is correct and the column visibly stays active; the
+    /// report reaches nobody. And two of the three routes into `toggleSectionCompletion` — the
+    /// header glyph and Cmd+Return over the hovered column — never open a popover at all, so their
+    /// refusals had nowhere to appear either.
+    ///
+    /// The fix is one flag read through two surfaces rather than a second flag: `columnFailureNotice`
+    /// is `saveFailureNotice` while the editor is closed and `nil` while it is open, so a refusal is
+    /// reported exactly once and by whichever surface the user can actually see.
+    @Test func aRefusedColumnCompletionIsReportedOnTheColumnOnceThePopoverIsGone() throws {
+        let column = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
+        let support = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift"))
+
+        // The deferral that makes this necessary, as a value rather than as prose.
+        #expect(SectionCompletionAnimationManager.animationDuration == 2.5)
+        let toggle = try #require(CadenceSourceScan.functionBody(named: "toggleCompletionFromEditor", in: column))
+        #expect(toggle.contains("showEditor = false"), "the editor no longer closes ahead of the sweep")
+
+        // One flag, read through `showEditor`. A literal `nil` or a second stored notice would both
+        // pass a `contains("columnFailureNotice")`, so the expression itself is pinned.
+        #expect(
+            matches(#"private var columnFailureNotice: String\? \{\s*showEditor \? nil : saveFailureNotice\s*\}"#, in: column) == 1,
+            "the column's notice is no longer the popover's notice read through showEditor"
+        )
+        #expect(matches(#"failureNotice: columnFailureNotice"#, in: column) == 1)
+        #expect(
+            matches(#"saveFailureNotice = CadencePendingChangePersistence\.editFailureNotice"#, in: column) == 4,
+            """
+            the column's refusals are set somewhere other than the four commits that can be \
+            refused: saveSection, toggleSectionArchive, clearSectionDueDate and deleteSection
+            """
+        )
+
+        // And the header draws it, under the line the countdown wrote. Same component the popover
+        // uses — this is a failure, and it must not be quieter than the "Completing…" it replaces.
+        let detail = try #require(bodyOfComputed("headerDetail", in: support))
+        #expect(detail.contains("Completing"), "non-vacuity: wrong slice read")
+        #expect(detail.contains("CadenceInlineFailureNotice(text: failureNotice)"))
+        let countdown = try #require(detail.range(of: "isPendingCompletion"))
+        let notice = try #require(detail.range(of: "CadenceInlineFailureNotice(text: failureNotice)"))
+        #expect(notice.lowerBound > countdown.upperBound, "the refusal draws above the countdown it answers")
+
+        // Both notices in this file are the shared component, and there are exactly two: the
+        // popover's and the column's.
+        #expect(matches(#"CadenceInlineFailureNotice\("#, in: support) == 2)
+    }
+
     // MARK: - The scans are real
 
     /// Every count and every regex above passes against an empty string, so this asserts the
@@ -290,6 +545,32 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
 }
 
 // MARK: - Source-reading helpers
+
+/// A commit the store refuses, for the undo paths a real in-memory container cannot provoke.
+private struct ColumnCommitRefused: Error {}
+
+/// The body of a computed property, for the two slices above that are `var x: some View` rather
+/// than `func x()`. `CadenceSourceScan.functionBody(named:)` anchors on `func <name>(` and finds
+/// nothing here, which would read as an absent declaration rather than as the wrong question.
+private func bodyOfComputed(_ name: String, in source: String) -> String? {
+    guard let signature = source.range(of: "var \(name): some View") else { return nil }
+    var depth = 0
+    var start: String.Index?
+    var index = signature.upperBound
+    while index < source.endIndex {
+        let character = source[index]
+        if character == "{" {
+            if depth == 0 { start = source.index(after: index) }
+            depth += 1
+        } else if character == "}" {
+            depth -= 1
+            if depth == 0, let start { return String(source[start..<index]) }
+            if depth < 0 { return nil }
+        }
+        index = source.index(after: index)
+    }
+    return nil
+}
 
 /// Number of non-overlapping matches of `pattern` in `text`.
 private func matches(_ pattern: String, in text: String) -> Int {

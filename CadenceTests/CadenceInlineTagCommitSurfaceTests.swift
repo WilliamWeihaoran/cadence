@@ -360,6 +360,108 @@ struct CadenceInlineTagCommitSurfaceTests {
         )
     }
 
+    // MARK: - T-647: what `NoteEditorPane.body`'s exemption is actually for
+
+    /// **The comment named the wrong cause, and the cause is this ticket's own family.**
+    ///
+    /// `CadenceSaveCommitRule.commitReachExemptions` carried `NoteEditorPane.body` as
+    /// "[[T-634]]'s subtask one". T-634 is the task-detail subtask field, on
+    /// `SchedulePanelComponents` and `iOSTaskDetailSheet`, and it never touched this file — so the
+    /// entry was a real finding wearing a false explanation, which is the [[T-565]] class and
+    /// strictly worse than no explanation: it stops the next reader checking.
+    ///
+    /// This pins the correction rather than the comment alone, in three parts.
+    ///
+    /// **One: the machinery the old comment named is not there.** No `insertSubtask`, no
+    /// `deleteSubtask`, anywhere in the file. The one subtask symbol it does have is
+    /// `toggleEmbeddedSubtask`, and a field edit is not an existence change.
+    ///
+    /// **Two: there is exactly one call in `body` that half 3 can be following, and it is the tag
+    /// sync.** The rule reads a qualified call through `ExistenceIndex`, and an unqualified one only
+    /// against same-file declarations that were *handed* a `ModelContext`. `body` makes one
+    /// qualified call in total, and the file declares nothing taking a `: ModelContext` parameter —
+    /// so the unqualified half has an empty candidate set and the qualified half has one member.
+    /// That is what makes this an identification rather than a guess.
+    ///
+    /// **Three: the chain under that call really does insert and really does not commit** — which
+    /// is asserted against `TagSupport` itself rather than against prose, because
+    /// `syncNoteTagsFromMarkdown` is a static function this target compiles and can simply be run.
+    /// A tag that is not in the store yet is minted, and it is minted *pending*: nothing between
+    /// `body` and the row commits, which is the whole of the finding.
+    @Test func theNoteEditorPanesBodyExemptionIsTheTagSyncNotASubtask() throws {
+        let pane = try CadenceSourceScan.strippingComments(
+            CadenceSourceScan.sourceFile("Cadence/macOS/Views/NoteEditorPane.swift")
+        )
+        #expect(pane.contains("struct NoteEditorPane: View"), "non-vacuity: wrong file read")
+
+        // One: the machinery T-634 is about, absent.
+        for absent in ["insertSubtask", "deleteSubtask"] {
+            #expect(
+                CadenceSourceScan.matchCount(absent, in: pane) == 0,
+                "NoteEditorPane has a \(absent) after all — the old attribution may have been right"
+            )
+        }
+        // And the subtask symbol it *does* have, so "no subtask code" is not what is being claimed.
+        #expect(CadenceSourceScan.matchCount("toggleEmbeddedSubtask", in: pane) > 0)
+
+        // Two: the candidate sets. No frame in this file disclaims ownership, so nothing
+        // unqualified can be the cause...
+        #expect(
+            CadenceSourceScan.matchCount(#":\s*ModelContext\b"#, in: pane) == 0,
+            "a declaration in NoteEditorPane now takes a ModelContext, so body has a second candidate"
+        )
+        // ...and `body` makes exactly one qualified call, which is the tag sync. Read off the
+        // declaration slice rather than the file, so a second `TagSupport.` call elsewhere in the
+        // pane — `createTag` has one — cannot stand in for it.
+        let body = try CadenceCommitSurfaceScan.declarationBody(
+            named: "body",
+            in: CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/NoteEditorPane.swift")
+        )
+        #expect(body.contains("MarkdownEditor("), "non-vacuity: empty body slice")
+        #expect(
+            CadenceSourceScan.matchCount(#"[A-Z][A-Za-z0-9_]*\.[a-z][A-Za-z0-9_]*\("#, in: body) == 1,
+            "body's qualified calls are no longer just the tag sync — re-derive what the exemption is for"
+        )
+        #expect(body.contains("TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)"))
+        // No commit anywhere in it, which is the exemption's actual claim.
+        #expect(CadenceSourceScan.matchCount(#"\.save\(\)"#, in: body) == 0)
+        #expect(CadenceSourceScan.matchCount(#"CadencePendingChangePersistence\.commit"#, in: body) == 0)
+
+        // Three: the chain that call reaches, run rather than read.
+        let modelContext = ModelContext(try container())
+        let note = Note(kind: .permanent, title: "Kickoff", content: "---\ntags: [roadmap]\n---\n\nBody")
+        modelContext.insert(note)
+        // `Cadence.Tag`, because bare `Tag` is ambiguous against SwiftUI's.
+        #expect(try modelContext.fetch(FetchDescriptor<Cadence.Tag>()).isEmpty, "fixture starts with no tags")
+
+        #expect(TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext))
+        #expect(note.tags?.map(\.name) == ["roadmap"])
+        // Minted, and minted **pending**: the row is in the context and the store has not been
+        // asked to take it. That is what `body` leaves behind on every appearance of a note whose
+        // frontmatter names a tag nobody has created yet.
+        #expect(modelContext.insertedModelsArray.contains { $0 is Cadence.Tag })
+        #expect(try ModelContext(modelContext.container).fetch(FetchDescriptor<Cadence.Tag>()).isEmpty)
+    }
+
+    /// And the exemption table says so. Read against the **raw** source, because the sentence being
+    /// checked lives in a comment and `strippingComments` blanks it.
+    @Test func theCommitReachExemptionTableNamesTheTagSyncRatherThanASubtask() throws {
+        let raw = try CadenceSourceScan.sourceFile("CadenceTests/CadenceSaveCommitDisciplineTests.swift")
+        #expect(raw.contains("static let commitReachExemptions"), "non-vacuity: wrong file read")
+
+        let entry = try #require(
+            raw.range(of: #"NoteEditorPane`? keeps three of its four(.|\n)*?NoteEditorPane\.swift"#, options: .regularExpression),
+            "the NoteEditorPane note in commitReachExemptions no longer reads as expected"
+        )
+        let note = String(raw[entry])
+        #expect(note.contains("TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)"))
+        #expect(note.contains("T-647"))
+        #expect(
+            !note.contains("`body` is [[T-634]]'s subtask one"),
+            "the exemption still attributes body to T-634's subtask defect"
+        )
+    }
+
     // MARK: - Helpers
 
     /// Whether **every** occurrence of `report` in `body` sits after `marker` — the question

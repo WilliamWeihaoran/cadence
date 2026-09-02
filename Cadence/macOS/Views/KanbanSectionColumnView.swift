@@ -197,6 +197,7 @@ struct ListSectionKanbanColumn: View {
             hideColumnDueDateIfEmpty: hideColumnDueDateIfEmpty,
             isPendingCompletion: isPendingCompletion,
             completionProgress: completionProgress,
+            failureNotice: columnFailureNotice,
             showHeaderDueDatePicker: $showHeaderDueDatePicker,
             showEditor: $showEditor,
             onToggleCompletion: toggleSectionCompletion,
@@ -385,15 +386,18 @@ struct ListSectionKanbanColumn: View {
             editorDueDate: $editorDueDate,
             editorHasDueDate: $editorHasDueDate,
             failureNotice: saveFailureNotice,
-            onNameChanged: saveSectionChanges,
-            onColorSelected: saveSectionChanges,
-            onDueDateChanged: saveSectionChanges,
-            onClearDate: {
-                editorHasDueDate = false
-                updateSection { config in
-                    config.dueDate = ""
-                }
-            },
+            // **Apply on every keystroke; commit at the end of the edit (T-645).** The rename
+            // writes the container's blob per character so the board's header tracks the field,
+            // and a commit per character would ask the store for a transaction per character and
+            // give the user a refusal notice mid-word. So `applySectionEdits` is the write and
+            // `commitSectionEdits` is the point — the name field submitting or losing focus, a
+            // colour chosen, a date picked. See `commitSectionEdits()` for why the rename's
+            // refusal keeps the text rather than restoring it.
+            onNameChanged: applySectionEdits,
+            onNameCommitted: { _ = commitSectionEdits() },
+            onColorSelected: { _ = commitSectionEdits() },
+            onDueDateChanged: { _ = commitSectionEdits() },
+            onClearDate: { _ = clearSectionDueDate() },
             onToggleCompletion: toggleCompletionFromEditor,
             onToggleArchive: toggleSectionArchive,
             onDelete: {
@@ -401,8 +405,7 @@ struct ListSectionKanbanColumn: View {
                     title: "Delete Column?",
                     message: "This will delete the column \"\(section.name)\" and move its tasks into Default."
                 ) {
-                    moveTasks(from: section.name, to: TaskSectionDefaults.defaultName)
-                    removeSection()
+                    guard deleteSection() else { return }
                     showEditor = false
                 }
             }
@@ -418,7 +421,10 @@ struct ListSectionKanbanColumn: View {
     /// change here would otherwise write the *old* name back over a rename that landed from another
     /// device in the meantime. `editorBase` is the column as the popover opened, and the merge
     /// applies only the fields that differ from it (`docs/TODO.md` T-358).
-    private func saveSectionChanges() {
+    ///
+    /// **This applies and does not commit, and that is the split T-645 is about.** It runs on every
+    /// keystroke of the rename field. `commitSectionEdits()` is the commit point.
+    private func applySectionEdits() {
         let base = editorBase ?? section
         let trimmed = base.isDefault ? base.name : editorName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -443,6 +449,86 @@ struct ListSectionKanbanColumn: View {
         if trimmed.caseInsensitiveCompare(base.name) != .orderedSame {
             moveTasks(from: base.name, to: trimmed)
         }
+    }
+
+    /// The rename's **commit point** (T-645): `applySectionEdits()` and then one commit, at the end
+    /// of an edit rather than in the middle of one.
+    ///
+    /// **`CadenceInPlaceEditFlush` rather than `commitEdit(in:undo:)`, and the difference is the
+    /// caret.** The other three writes on this popover are discrete — a colour, a date, a delete —
+    /// and each can be put back and reported as "Nothing was changed". A rename cannot: the field
+    /// is still on screen holding what the user typed, and an undo here would delete their text in
+    /// order to tell them it had not been saved. So nothing is restored, the popover stays open
+    /// with the text in it, and the notice says the changes are still there. That is the decision
+    /// `CadenceInPlaceEditFlush` records, arrived at for the iOS note and task editors.
+    ///
+    /// **What "commit point" means, and what it does not.** Every other control in this popover
+    /// commits, and a commit takes the whole context — so a pending rename is carried by the very
+    /// next colour, date, archive, completion or delete. The point of committing here is not to
+    /// keep the rename from being lost; it is to have somewhere to *report a refusal* while the
+    /// popover that would show it is still on screen.
+    private func commitSectionEdits() -> Bool {
+        applySectionEdits()
+        guard CadenceInPlaceEditFlush.flush(in: modelContext) else {
+            saveFailureNotice = CadenceInPlaceEditFlush.failureNotice
+            return false
+        }
+        saveFailureNotice = nil
+        return true
+    }
+
+    /// The editor's "Clear date", committed (T-645). It wrote the container's blob and committed
+    /// nothing, so the cleared date rode whatever unrelated save came next.
+    ///
+    /// Shaped like `toggleSectionArchive` rather than like `commitSectionEdits`: this is a discrete
+    /// press with nothing under a caret, so a refusal genuinely can put everything back and say so.
+    /// `editorHasDueDate` is restored with the blob — it is what draws the picker's Clear affordance,
+    /// and a popover showing "no date" over a column that still has one is the report inverted.
+    private func clearSectionDueDate() -> Bool {
+        let hadDueDate = editorHasDueDate
+        let undo = editSnapshot(settling: section)
+        editorHasDueDate = false
+        updateSection { config in
+            config.dueDate = ""
+        }
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: { undo?.restore() })
+        } catch {
+            editorHasDueDate = hadDueDate
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return false
+        }
+        saveFailureNotice = nil
+        return true
+    }
+
+    /// The editor's "Delete Column", committed, and the popover closes only once the store has
+    /// taken it (T-645).
+    ///
+    /// **Invisible to the `try? save()` rule, in all three of its halves.** A `TaskSectionConfig` is
+    /// a struct inside the container's `sectionConfigsRaw` JSON, not a `@Model`, so no
+    /// `modelContext.delete(` ever fires and half 1 and half 3 have nothing to see; and there was no
+    /// `try?` for half 2 to key on, only `showEditor = false` reporting a delete that had not been
+    /// committed at all.
+    ///
+    /// **`commitEdit` and not `commitDelete`, for the same reason.** Nothing is marked deleted in
+    /// the context, so there is no row for `rollback()` to un-hide — and a rollback would discard
+    /// the app's other pending work besides. The undo is the container's blob plus the `sectionName`
+    /// of every card the move re-points, which is why the snapshot is taken over
+    /// `KanbanSectionStateSupport.tasksMoving` — the same walk `moveTasks` performs, rather than a
+    /// second one that agrees today.
+    private func deleteSection() -> Bool {
+        let undo = editSnapshotMovingTasks(outOf: section.name)
+        moveTasks(from: section.name, to: TaskSectionDefaults.defaultName)
+        removeSection()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: { undo?.restore() })
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return false
+        }
+        saveFailureNotice = nil
+        return true
     }
 
     private func moveTasks(from oldName: String, to newName: String) {
@@ -478,6 +564,31 @@ struct ListSectionKanbanColumn: View {
             getCurrent: currentSection,
             save: { _ = saveSection($0) }
         )
+    }
+
+    /// **Where a refused column write is reported when the popover is not there to report it
+    /// (T-646).**
+    ///
+    /// `saveSection` has set `saveFailureNotice` since T-632, and the editor popover draws it — but
+    /// two of the three routes into `toggleSectionCompletion` never open a popover at all (the
+    /// header glyph and Cmd+Return over the hovered column), and the third *closes* it before the
+    /// write happens. `SectionCompletionAnimationManager` writes a **reopen** synchronously and
+    /// defers a **completion** behind a 2.5-second countdown on a detached `Task`, so a completion
+    /// the store refuses is undone correctly — the column visibly stays active — and announced into
+    /// a popover that went away two and a half seconds earlier. A notice drawn on a surface that is
+    /// gone is not a report.
+    ///
+    /// So the column header draws the same notice while the editor is closed. **One flag and one
+    /// write site, not two**: a second `@State` would need its own clearing rules and could
+    /// disagree with the popover's about whether the last write landed. Reading it through
+    /// `showEditor` is what keeps one refusal from being reported twice at once — while the popover
+    /// is up it is the popover's, and the moment it closes the column takes it over.
+    ///
+    /// It clears the way the popover's does: `openSectionEditor()` clears it because a notice
+    /// belongs to the attempt that produced it, and every successful column write clears it on the
+    /// way out. Until then it stays up, which is correct — the column really did not save.
+    private var columnFailureNotice: String? {
+        showEditor ? nil : saveFailureNotice
     }
 
     private func currentSection() -> TaskSectionConfig? {
@@ -535,6 +646,32 @@ struct ListSectionKanbanColumn: View {
         let settling = TaskContainerLifecycleService.remainingActiveTasks(in: column, area: area, project: project)
         if let area { return CadenceListEditSnapshot(area, tasks: settling) }
         if let project { return CadenceListEditSnapshot(project, tasks: settling) }
+        return nil
+    }
+
+    /// The sibling of `editSnapshot(settling:)` for a write that **re-points** a column's cards
+    /// instead of settling them (T-645). Two names rather than an overload: the repo's source scans
+    /// anchor on `func <name>(`, so a second `editSnapshot(` silently changes what several existing
+    /// tests read.
+    ///
+    /// The two differ only in which tasks they hand over, and the difference is the whole point:
+    /// `settling` is `TaskContainerLifecycleService.remainingActiveTasks`, the open half a lifecycle
+    /// choice reaches, while deleting a column moves its **whole** stack into Default. Snapshotting
+    /// the open half of a delete would restore the cards that were still to do and leave the
+    /// finished ones filed under a column that no longer exists.
+    ///
+    /// `nil` for a column belonging to neither an area nor a project, for the same reason as its
+    /// sibling: the board does not draw one, and a write with no container to snapshot has no
+    /// container to have changed.
+    private func editSnapshotMovingTasks(outOf columnName: String) -> CadenceListEditSnapshot? {
+        let moving = KanbanSectionStateSupport.tasksMoving(
+            universeTasks: universeTasks,
+            area: area,
+            project: project,
+            from: columnName
+        )
+        if let area { return CadenceListEditSnapshot(area, tasks: moving) }
+        if let project { return CadenceListEditSnapshot(project, tasks: moving) }
         return nil
     }
 

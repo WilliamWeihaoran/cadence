@@ -270,6 +270,9 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     let hideColumnDueDateIfEmpty: Bool
     let isPendingCompletion: Bool
     let completionProgress: Double
+    /// The red line a refused column write leaves on the **column** rather than in the editor
+    /// popover (T-646). `nil` while the popover is up, because it is showing the same sentence.
+    let failureNotice: String?
     @Binding var showHeaderDueDatePicker: Bool
     @Binding var showEditor: Bool
     let onToggleCompletion: () -> Void
@@ -318,6 +321,15 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
             Text(section.isCompleted ? "Completed" : "Completing…")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(Theme.green)
+                .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
+        }
+
+        // **T-646.** Directly under the line that said "Completing…" — the completion the
+        // user watched count down is the one that was refused, so the answer belongs where the
+        // question was asked. It is the popover's shared component rather than a 9pt near-copy:
+        // this is a failure, and it should not be quieter than the countdown it replaces.
+        if let failureNotice {
+            CadenceInlineFailureNotice(text: failureNotice)
                 .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
         }
     }
@@ -437,12 +449,17 @@ struct KanbanSectionEditorPopover: View {
     /// buttons can set it, and the popover staying open is half the message.
     let failureNotice: String?
     let onNameChanged: () -> Void
+    /// The rename's **commit point** (T-645). `onNameChanged` runs per keystroke and only writes;
+    /// this runs when the name field is done being edited — Return, or focus moving to another
+    /// control in the popover — and is where the write is asked for.
+    let onNameCommitted: () -> Void
     let onColorSelected: () -> Void
     let onDueDateChanged: () -> Void
     let onClearDate: () -> Void
     let onToggleCompletion: () -> Void
     let onToggleArchive: () -> Void
     let onDelete: () -> Void
+    @FocusState private var isNameFieldFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -463,7 +480,17 @@ struct KanbanSectionEditorPopover: View {
                     .padding(10)
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .focused($isNameFieldFocused)
                     .onChange(of: editorName) { _, _ in onNameChanged() }
+                    .onSubmit { onNameCommitted() }
+                    // Two spellings of "the rename is finished", because they are different
+                    // gestures: Return above, and moving to the colour swatches or the date picker
+                    // here. Both land while the popover is still up, which is the whole reason the
+                    // commit point is here rather than on dismissal.
+                    .onChange(of: isNameFieldFocused) { wasFocused, isFocused in
+                        guard wasFocused, !isFocused else { return }
+                        onNameCommitted()
+                    }
             }
 
             VStack(alignment: .leading, spacing: 8) {

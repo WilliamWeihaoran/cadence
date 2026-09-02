@@ -14,7 +14,6 @@ struct TasksPanelDerivedState {
         allTasks: [AppTask],
         areas: [Area],
         projects: [Project],
-        mode: TasksPanelMode,
         todayKey: String
     ) {
         overdue = allTasks.filter { !$0.isDone && !$0.isCancelled && !$0.dueDate.isEmpty && $0.dueDate < todayKey }
@@ -59,10 +58,8 @@ struct TasksPanelDerivedState {
         // function rather than being given up. The other arm was the `.byDoDate` logbook —
         // everything ever settled, no date test at all — and went with the mode (T-487);
         // `CadenceTaskQuerySupport.completedTasks` is still read by the surfaces that want it.
-        switch mode {
-        case .todayOverview:
-            doneTasks = CadenceTaskQuerySupport.completedTodayTasks(from: allTasks, todayKey: todayKey)
-        }
+        // The `switch mode` that used to wrap this line went with the enum itself (T-564(a)).
+        doneTasks = CadenceTaskQuerySupport.completedTodayTasks(from: allTasks, todayKey: todayKey)
     }
 
     var todayEligibleTasks: [AppTask] {
@@ -88,17 +85,17 @@ struct TasksPanelDerivedState {
     /// `overdoTasks` and this already counts them.
     ///
     /// iOS guards the same way and says the same thing — `iOSTodayTaskSections.isEmpty`.
-    func isEmptyState(for mode: TasksPanelMode) -> Bool {
-        switch mode {
-        case .todayOverview:
-            return overdue.isEmpty &&
-            overdoTasks.isEmpty &&
-            dueTodayTasks.isEmpty &&
-            doTodayTasks.isEmpty &&
-            doneTasks.isEmpty &&
-            overdueListSummaries.isEmpty &&
-            overdueSectionSummaries.isEmpty
-        }
+    ///
+    /// A property rather than `isEmptyState(for:)`: the `TasksPanelMode` it switched over had one
+    /// case and is gone (T-564(a)).
+    var isEmptyState: Bool {
+        overdue.isEmpty &&
+        overdoTasks.isEmpty &&
+        dueTodayTasks.isEmpty &&
+        doTodayTasks.isEmpty &&
+        doneTasks.isEmpty &&
+        overdueListSummaries.isEmpty &&
+        overdueSectionSummaries.isEmpty
     }
 
     private func uniqueTasks(from tasks: [AppTask]) -> [AppTask] {

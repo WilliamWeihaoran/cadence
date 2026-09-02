@@ -1311,11 +1311,27 @@ enum CadenceSaveCommitRule {
         // and answers `nil` rather than an unsaved `Tag` for the picker to draw a chip from.
         // Pinned by `CadenceInlineTagCommitSurfaceTests`.
         //
-        // `NoteEditorPane` keeps two of its four: `noteTagsBinding` and
-        // `persistEditorContentIfNeeded` write through `TagSupport.setTags` /
+        // `NoteEditorPane` keeps three of its four, and all three are the same tag family.
+        // `noteTagsBinding` and `persistEditorContentIfNeeded` write through `TagSupport.setTags` /
         // `syncNoteTagsFromMarkdown` on the debounced autosave path, where what an undo means under
-        // the user's caret is the question `commitEdit`'s doc leaves open. `body` is [[T-634]]'s
-        // subtask one.
+        // the user's caret is the question `commitEdit`'s doc leaves open.
+        //
+        // **`body` is the third, and it used to be attributed to the wrong ticket ([[T-647]]).** It
+        // read "[[T-634]]'s subtask one", and T-634 never touched this file: `NoteEditorPane`
+        // declares no `insertSubtask` and no `deleteSubtask` at all, and its only subtask code —
+        // `toggleEmbeddedSubtask` — is a field edit. The entry is a real finding either way, but the
+        // attribution sent the next reader hunting machinery the file does not have, which is the
+        // [[T-565]] class and worse than saying nothing.
+        //
+        // What `body` actually reaches is **one** qualified call, in `.onAppear`:
+        // `TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)`. That resolves the note's
+        // markdown tags and mints any `Tag` row that does not exist yet, down through
+        // `TagSupport.resolveTags` into `resolution` — every frame of which was handed its context,
+        // so the pending insert travels all the way up to `body`, which reached for the ambient one
+        // and commits nothing. And nothing else in the file can be the cause: no declaration in
+        // `NoteEditorPane.swift` takes a `: ModelContext` parameter, so there is no same-file frame
+        // for `changesExistenceOneFrameDown` to resolve unqualified. Pinned by
+        // `CadenceInlineTagCommitSurfaceTests.theNoteEditorPanesBodyExemptionIsTheTagSyncNotASubtask`.
         "Cadence/macOS/Views/NoteEditorPane.swift": [
             "body", "noteTagsBinding", "persistEditorContentIfNeeded",
         ],
