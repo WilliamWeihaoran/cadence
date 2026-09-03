@@ -70,7 +70,7 @@ struct CalendarEventItem: Identifiable {
         self.isFirstSegment = abs(segmentStart.timeIntervalSince(eventStart)) < 1
         self.isLastSegment = abs(segmentEnd.timeIntervalSince(eventEnd)) < 1
         self.calendarColor = Color(cgColor: event.calendar?.cgColor ?? Theme.nsDim.cgColor)
-        self.calendarTitle = event.calendar?.title ?? ""
+        self.calendarTitle = event.calendar?.title ?? CadenceAppleCalendarNaming.unnamedCalendarTitle
         self.seriesIdentifier = CalendarEventIdentity.lookupIdentifier(from: self.id)
         self.occurrenceDateKey = DateFormatters.dateKey(from: event.startDate ?? event.occurrenceDate ?? dayStart)
         self.occurrenceStartMin = CalendarEventIdentity.startMinute(for: event.startDate ?? event.occurrenceDate ?? segmentStart, calendar: calendar)
@@ -195,7 +195,7 @@ struct CalendarBoardEventDisplayItem: Identifiable {
         durationMinutes = 24 * 60
         isAllDay = true
         calendarColor = Color(cgColor: event.calendar?.cgColor ?? Theme.nsDim.cgColor)
-        calendarTitle = event.calendar?.title ?? ""
+        calendarTitle = event.calendar?.title ?? CadenceAppleCalendarNaming.unnamedCalendarTitle
         seriesIdentifier = CalendarEventIdentity.lookupIdentifier(from: id)
         let sourceDate = event.startDate ?? event.occurrenceDate ?? date
         occurrenceDateKey = DateFormatters.dateKey(from: sourceDate)

@@ -19,6 +19,12 @@ final class NotificationManager: NSObject {
 
     var isAuthorized: Bool = false
 
+    /// **T-694.** True once the user has explicitly declined — the access card's title reads as a
+    /// demand only where that is warranted, mirroring `CalendarManager.isDenied`. `.notDetermined`
+    /// (never asked) reads `false` here, same as `.authorized`; only the not-authorized *and*
+    /// already-asked state is a fault the reader has to go and fix.
+    var isDenied: Bool = false
+
     // `lazy` is deliberate: a plain stored-property initializer runs before `super.init()`,
     // which would touch `UNUserNotificationCenter.current()` unconditionally on every
     // construction — bypassing the `isTestEnvironment`/Preview guard below entirely, since
@@ -40,6 +46,7 @@ final class NotificationManager: NSObject {
         guard !Self.isTestEnvironment else { return }
         let settings = await center.notificationSettings()
         isAuthorized = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
+        isDenied = settings.authorizationStatus == .denied
     }
 
     /// The ONLY place in the app that should call `UNUserNotificationCenter.requestAuthorization`.

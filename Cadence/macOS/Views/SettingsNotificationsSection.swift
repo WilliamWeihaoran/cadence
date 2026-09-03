@@ -49,7 +49,9 @@ struct SettingsNotificationsSection: View {
         CadenceSettingsNoticeRow(
             systemImage: "exclamationmark.triangle.fill",
             tint: Theme.amber,
-            title: CadenceNotificationSettingsCopy.accessRequiredTitle,
+            title: notificationManager.isDenied
+                ? CadenceNotificationSettingsCopy.accessRequiredTitle
+                : CadenceNotificationSettingsCopy.connectOfferTitle,
             detail: CadenceNotificationSettingsCopy.accessRequiredDetail
         ) {
             SettingsActionButton(tone: .filled(Theme.blue), action: requestAuthorization) {

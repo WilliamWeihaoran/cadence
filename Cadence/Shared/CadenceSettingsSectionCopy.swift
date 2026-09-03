@@ -171,7 +171,15 @@ nonisolated enum CadenceNotificationSettingsCopy {
     /// here goes through a push server, and the reader has just been asked for a system permission.
     static let remindersToggleDetail = "A task's scheduled start and due date, and a habit's reminder time, notify you locally."
 
+    /// Settings → Notifications, with permission explicitly denied. Kept as a demand — T-694's
+    /// urgency call — because that state genuinely is a fault the reader has to go and fix.
     static let accessRequiredTitle = "Notification access required"
+
+    /// Settings → Notifications, before anyone has been asked. **T-694.** `accessRequiredTitle`
+    /// used to head this state too, phrased as a demand nobody had earned yet — the same defect
+    /// [[T-543]] fixed for the calendar card's glyph and sentence, still open for this title.
+    static let connectOfferTitle = "Connect Notifications"
+
     static let accessRequiredDetail = "Allow Cadence to notify you about scheduled tasks, due dates, and habit reminders."
 
     /// The button under `accessRequiredDetail`. Names the thing it turns on rather than the

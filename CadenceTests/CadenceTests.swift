@@ -610,6 +610,32 @@ struct CadenceTests {
         #expect(boardItem.sortKey.startMinute == 0)
     }
 
+    /// **T-693.** macOS printed a blank calendar name where iOS (`iOSBoardCards.swift:77`,
+    /// `iOSSearchView.swift:640`) prints `CadenceAppleCalendarNaming.unnamedCalendarTitle`. An
+    /// `EKEvent` never assigned to a calendar has `event.calendar == nil` without touching
+    /// EventKit authorization at all — constructing an unsaved event needs no TCC prompt.
+    @Test func aTimedEventWithNoCalendarDrawsTheSharedFallbackNotABlankTitle() throws {
+        let store = EKEventStore()
+        let event = EKEvent(eventStore: store)
+        event.title = "Unfiled"
+        event.startDate = Date()
+        event.endDate = Date().addingTimeInterval(30 * 60)
+        event.isAllDay = false
+
+        let item = CalendarEventItem(event: event)
+        #expect(item.calendarTitle == CadenceAppleCalendarNaming.unnamedCalendarTitle)
+    }
+
+    @Test func anAllDayEventWithNoCalendarDrawsTheSharedFallbackNotABlankTitle() {
+        let store = EKEventStore()
+        let event = EKEvent(eventStore: store)
+        event.title = "Unfiled"
+        event.isAllDay = true
+
+        let item = CalendarBoardEventDisplayItem(allDay: event, date: Date())
+        #expect(item.calendarTitle == CadenceAppleCalendarNaming.unnamedCalendarTitle)
+    }
+
     @Test func linkedCalendarMeetingNotesAreSortedAndScoped() throws {
         let older = Note(kind: .meeting, title: "Older", calendarEventID: "a", calendarID: "calendar-1", eventDateKey: "2026-04-28", eventStartMin: 900)
         let newer = Note(kind: .meeting, title: "Newer", calendarEventID: "b", calendarID: "calendar-1", eventDateKey: "2026-04-29", eventStartMin: 600)

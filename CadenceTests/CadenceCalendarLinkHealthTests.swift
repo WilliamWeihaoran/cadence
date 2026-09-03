@@ -47,6 +47,31 @@ struct CadenceCalendarLinkHealthTests {
         #expect(links.first?.calendarID == "cal-gone")
     }
 
+    /// **T-691.** An unnamed active list's broken-link row draws a placeholder, not a blank line —
+    /// the same class of defect T-577 fixed for Settings → Lists and T-557's `dormantLinks` already
+    /// avoids by reading `CadenceTitleNormalization.display(_:fallback:)`. `missingLinks` passed
+    /// `area.name`/`project.name` straight through with no fallback at all. The evidence gate
+    /// (T-624) must be satisfied to reach the row: `cal-gone` has to be both previously observed
+    /// and no longer live.
+    @Test func anUnnamedActiveListsBrokenLinkRowStillHasSomethingToPutOnIt() {
+        let unnamedArea = area("   ", linkedTo: "cal-gone")
+        let unnamedProject = project("", linkedTo: "cal-also-gone")
+
+        let links = CadenceCalendarLinkHealth.missingLinks(
+            areas: [unnamedArea],
+            projects: [unnamedProject],
+            liveCalendarIDs: [],
+            observedCalendarIDs: ["cal-gone", "cal-also-gone"],
+            isCalendarAccessAuthorized: true
+        )
+
+        #expect(links.count == 2)
+        #expect(links.map(\.name) == [
+            CadenceTitleNormalization.defaultAreaName,
+            CadenceTitleNormalization.defaultProjectName,
+        ])
+    }
+
     @Test func aLinkWhoseCalendarIsStillLiveIsNotReported() {
         let links = CadenceCalendarLinkHealth.missingLinks(
             areas: [area("Home", linkedTo: "cal-work")],
@@ -366,9 +391,9 @@ struct CadenceCalendarLinkHealthTests {
         #expect(links.map(\.name) == ["Home", "Launch", "Rewrite", "Scrapped"])
     }
 
-    /// An unnamed list draws a row with a placeholder, not a blank line (the T-577 class). The
-    /// broken-link row still passes the raw name; this one does not, and the difference is
-    /// deliberate rather than an oversight.
+    /// An unnamed list draws a row with a placeholder, not a blank line (the T-577 class). Before
+    /// T-691 the broken-link row still passed the raw name with no fallback at all; both rows now
+    /// read `CadenceTitleNormalization.display(_:fallback:)`.
     @Test func anUnnamedInactiveListStillHasSomethingToPutOnItsDormantRow() {
         let unnamed = area("   ", linkedTo: "cal-home", status: .archived)
         let unnamedProject = project("", linkedTo: "cal-work", status: .archived)

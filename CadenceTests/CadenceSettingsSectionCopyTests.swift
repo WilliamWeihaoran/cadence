@@ -98,6 +98,9 @@ struct CadenceSettingsSectionCopyTests {
             "A task's scheduled start and due date, and a habit's reminder time, notify you locally."
         ),
         ("CadenceNotificationSettingsCopy.accessRequiredTitle", "Notification access required"),
+        // **T-694.** The offer title before anyone has been asked; the demand phrasing above is
+        // reserved for the denied arm now.
+        ("CadenceNotificationSettingsCopy.connectOfferTitle", "Connect Notifications"),
         (
             "CadenceNotificationSettingsCopy.accessRequiredDetail",
             "Allow Cadence to notify you about scheduled tasks, due dates, and habit reminders."
@@ -179,6 +182,34 @@ struct CadenceSettingsSectionCopyTests {
                 "\(path) no longer names its switch after its own row title"
             )
             #expect(code.contains(".labelsHidden()"), "\(path) would now draw the name twice")
+        }
+    }
+
+    /// **T-694: the notifications card draws one title per state, on both surfaces.**
+    ///
+    /// Mirrors `theCalendarAccessCardDrawsOneGlyphPerStateOnBothSurfaces`, one screen over and for
+    /// a title rather than a glyph: `accessRequiredTitle` used to head the not-yet-asked state too,
+    /// phrased as a demand nobody had earned yet. Asserted as the ternary rather than as presence,
+    /// because presence is what was already true before the fix; the finding is *which arm* each
+    /// constant is on. `NotificationManager.isDenied` is new (T-694), mirroring
+    /// `CalendarManager.isDenied` — `.notDetermined` and `.authorized` both read `false`, so only
+    /// an explicit refusal earns the demand phrasing.
+    @Test func theNotificationsAccessCardDrawsOneTitlePerStateOnBothSurfaces() throws {
+        for path in Self.notificationSurfaces {
+            let code = try Self.strippedSource(at: path)
+
+            #expect(
+                CadenceSourceScan.matchCount("CadenceNotificationSettingsCopy.accessRequiredTitle", in: code) == 1,
+                "\(path) reads the denied-state title a number of times other than once"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("CadenceNotificationSettingsCopy.connectOfferTitle", in: code) == 1,
+                "\(path) does not offer exactly one not-yet-asked title"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("notificationManager.isDenied", in: code) == 1,
+                "\(path) does not branch its title on notificationManager.isDenied exactly once"
+            )
         }
     }
 
@@ -855,6 +886,7 @@ struct CadenceSettingsSectionCopyTests {
                 == "A task's scheduled start and due date, and a habit's reminder time, notify you locally."
         )
         #expect(CadenceNotificationSettingsCopy.accessRequiredTitle == "Notification access required")
+        #expect(CadenceNotificationSettingsCopy.connectOfferTitle == "Connect Notifications")
         #expect(
             CadenceNotificationSettingsCopy.accessRequiredDetail
                 == "Allow Cadence to notify you about scheduled tasks, due dates, and habit reminders."

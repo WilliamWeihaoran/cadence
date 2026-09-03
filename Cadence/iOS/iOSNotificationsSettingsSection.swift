@@ -70,7 +70,11 @@ struct iOSNotificationsSettingsSection: View {
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(CadenceNotificationSettingsCopy.accessRequiredTitle)
+                    Text(
+                        notificationManager.isDenied
+                            ? CadenceNotificationSettingsCopy.accessRequiredTitle
+                            : CadenceNotificationSettingsCopy.connectOfferTitle
+                    )
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
 

@@ -135,7 +135,10 @@ nonisolated enum CadenceCalendarLinkHealth {
             missingLink(
                 id: area.id,
                 kind: .area,
-                name: area.name,
+                name: CadenceTitleNormalization.display(
+                    area.name,
+                    fallback: CadenceTitleNormalization.defaultAreaName
+                ),
                 icon: area.icon,
                 colorHex: area.colorHex,
                 linkedCalendarID: area.linkedCalendarID,
@@ -147,7 +150,10 @@ nonisolated enum CadenceCalendarLinkHealth {
             missingLink(
                 id: project.id,
                 kind: .project,
-                name: project.name,
+                name: CadenceTitleNormalization.display(
+                    project.name,
+                    fallback: CadenceTitleNormalization.defaultProjectName
+                ),
                 icon: project.icon,
                 colorHex: project.colorHex,
                 linkedCalendarID: project.linkedCalendarID,
