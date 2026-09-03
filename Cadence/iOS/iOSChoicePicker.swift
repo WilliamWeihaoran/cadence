@@ -32,11 +32,47 @@ typealias iOSChoiceValueButton = CadenceChoiceValueButton
 /// `CadencePickerSupport.selectable(_:selectedID:)` applied to each array: it hides what you could
 /// newly pick and never the one already assigned. Passing a filtered array in would put the defect
 /// back, which is why the parameters are named for what they must be.
+/// **It has the same two forms `CadenceChoicePopoverList` has, and for the same reason
+/// ([[T-727]], [[T-656]]).** Three of its four callers set a draft token on a sheet and are right
+/// to close on the tap; the fourth moves a stored task between lists and can be refused, so it
+/// takes the committing form and the popover stays open with the refusal under the rows. Read
+/// that type's note for the whole argument; this control is the same rule with a grouped list.
 struct iOSContainerChoicePopover: View {
     let areas: [Area]
     let projects: [Project]
     @Binding var selection: String
     @Binding var isPresented: Bool
+    /// Drawn under the rows when the last pick was refused. Always `nil` on a draft picker.
+    var failureNotice: String?
+    /// See `CadenceChoicePopoverList`'s `select`.
+    private let select: ((String) -> Bool)?
+
+    /// The draft form. The row writes through `selection` and the popover closes.
+    init(areas: [Area], projects: [Project], selection: Binding<String>, isPresented: Binding<Bool>) {
+        self.areas = areas
+        self.projects = projects
+        self._selection = selection
+        self._isPresented = isPresented
+        self.failureNotice = nil
+        self.select = nil
+    }
+
+    /// The committing form. `selection` draws the checkmark; `select` is the only write.
+    init(
+        areas: [Area],
+        projects: [Project],
+        selection: String,
+        isPresented: Binding<Bool>,
+        failureNotice: String? = nil,
+        select: @escaping (String) -> Bool
+    ) {
+        self.areas = areas
+        self.projects = projects
+        self._selection = .constant(selection)
+        self._isPresented = isPresented
+        self.failureNotice = failureNotice
+        self.select = select
+    }
 
     private var containerSelection: TaskContainerSelection {
         CadenceTaskComposerSupport.selection(fromToken: selection)
@@ -84,8 +120,25 @@ struct iOSContainerChoicePopover: View {
                         )
                     }
                 }
+
+                if let failureNotice {
+                    CadenceInlineFailureNotice(text: failureNotice)
+                        .padding(.horizontal, 2)
+                }
             }
             .padding(10)
+        }
+    }
+
+    /// The one place a row tap is answered, so the two forms cannot drift apart.
+    private func pick(_ tag: String) {
+        guard let select else {
+            selection = tag
+            isPresented = false
+            return
+        }
+        if select(tag) {
+            isPresented = false
         }
     }
 
@@ -96,8 +149,7 @@ struct iOSContainerChoicePopover: View {
 
     private func choiceRow(title: String, tag: String, systemImage: String, color: Color) -> some View {
         Button {
-            selection = tag
-            isPresented = false
+            pick(tag)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: systemImage)

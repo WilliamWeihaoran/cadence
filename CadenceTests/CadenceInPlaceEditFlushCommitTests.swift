@@ -482,11 +482,16 @@ struct CadenceInPlaceEditFlushCommitTests {
         )
     }
 
-    /// **Source shape.** The row's two move affordances both close themselves on the tap — a
-    /// `Menu`, and `iOSContainerChoicePopover.choiceRow`, which sets `isPresented = false` in the
-    /// same statement that picks the list. So neither can answer the way the kanban popover does,
-    /// and both report through the row's one alert.
-    @Test func theiOSRowsTwoMoveAffordancesReportARefusalTheyCannotStayOpenFor() throws {
+    /// **Source shape, and [[T-727]] split the two affordances apart.**
+    ///
+    /// Both still guard on `moveToContainer`'s answer; where they say so is no longer the same
+    /// place. A `Menu` closes itself on the tap and cannot be told not to, so the context menu
+    /// still reports through the row's one alert. The chip's picker can: `iOSContainerChoicePopover`
+    /// has a committing form whose close waits on the caller's answer, so the picker is still open
+    /// over a refusal and the sentence goes under its own rows — where the Mac's kanban picker has
+    /// put it since T-497, and where T-702 said it could not go because the dismissal belonged to
+    /// the shared component. It does not any more.
+    @Test func theiOSRowsTwoMoveAffordancesEachReportArefusalOnWhicheverSurfaceOutlivesIt() throws {
         let actions = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskRowActionViews.swift")
 
         for name in ["move", "moveToContainer"] {
@@ -495,14 +500,32 @@ struct CadenceInPlaceEditFlushCommitTests {
                 body.contains("guard CadenceTaskMutationSupport.moveToContainer("),
                 "\(name) does not guard on the move"
             )
-            #expect(body.contains("moveFailed = true"), "\(name) does not name the refusal")
-            #expect(
-                refusalPrecedes(marker: "moveFailed = true", report: "moveFailed = false", in: body),
-                "\(name) clears the flag below the branch that sets it"
-            )
         }
 
-        // One alert for both, reading the shared title and the shared sentence.
+        // The chip: the popover stays open, says so under its rows, and the answer is the close.
+        let chip = try CadenceCommitSurfaceScan.declarationBody(named: "move", in: actions)
+        #expect(
+            chip.contains("moveFailure = CadenceTaskFieldEditCommit.saveFailureNotice"),
+            "the chip's picker does not name the refusal"
+        )
+        #expect(
+            refusalPrecedes(marker: "moveFailure = CadenceTaskFieldEditCommit.saveFailureNotice",
+                            report: "moveFailure = nil",
+                            in: chip),
+            "the chip clears the notice above the branch that sets it"
+        )
+        #expect(chip.contains("return false"), "a refused move still lets the picker close")
+        #expect(actions.contains("failureNotice: moveFailure,"), "the notice is set into a surface nobody draws")
+        #expect(actions.contains("select: apply"), "the picker is not handed the answering form")
+
+        // The menu: nowhere to stay open, so the row's alert, exactly as T-702 left it.
+        let menu = try CadenceCommitSurfaceScan.declarationBody(named: "moveToContainer", in: actions)
+        #expect(menu.contains("moveFailed = true"), "the menu does not name the refusal")
+        #expect(
+            refusalPrecedes(marker: "moveFailed = true", report: "moveFailed = false", in: menu),
+            "the menu clears the flag below the branch that sets it"
+        )
+
         #expect(actions.contains("struct iOSTaskMoveFailureAlertModifier: ViewModifier {"))
         #expect(
             actions.contains(".alert(CadenceTaskMutationSupport.moveFailureAlertTitle, isPresented: $isPresented)"),
@@ -513,14 +536,17 @@ struct CadenceInPlaceEditFlushCommitTests {
             "the move alert types its own sentence instead of the one the other three callers show"
         )
 
-        // And the row raises it. A flag set into a surface nobody draws is the same silence one
-        // layer further in, which is what `everyInPlaceEditFlushNoticeIsDrawnOnTheSurfaceThatStaysOpen`
-        // exists for on the sheets.
+        // And the row raises it — for the menu only now. A flag set into a surface nobody draws is
+        // the same silence one layer further in, which is what
+        // `everyInPlaceEditFlushNoticeIsDrawnOnTheSurfaceThatStaysOpen` exists for on the sheets.
         let row = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskViews.swift")
         #expect(row.contains("@State private var moveFailed = false"))
         #expect(row.contains(".iOSTaskMoveFailureAlert(isPresented: $moveFailed)"),
                 "the row sets a flag it never raises an alert from")
-        #expect(row.contains("iOSTaskRowContainerChip(task: task, moveFailed: $moveFailed)"))
+        #expect(
+            row.contains("iOSTaskRowContainerChip(task: task)"),
+            "the chip still takes a flag it no longer sets"
+        )
         #expect(row.contains("moveFailed: $moveFailed,"), "the context menu is not handed the row's flag")
     }
 

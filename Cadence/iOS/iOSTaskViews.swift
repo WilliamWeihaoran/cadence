@@ -322,7 +322,7 @@ struct iOSTaskRow: View {
     @ViewBuilder
     private var taskBadgeContent: some View {
         if showsListContextChip {
-            iOSTaskRowContainerChip(task: task, moveFailed: $moveFailed)
+            iOSTaskRowContainerChip(task: task)
         }
 
         // **Read-only, and deliberately not a chip.** The four-option status picker this used to

@@ -111,11 +111,66 @@ private struct CadencePopoverCompactAdaptation: ViewModifier {
 
 /// Popover content: a checkmarked, tap-to-select list. Present via `.popover` from a trigger
 /// (typically `CadenceChoiceValueButton`).
+///
+/// **Two forms, and the difference is who may close it ([[T-656]], [[T-727]]).**
+///
+/// The ordinary form takes a `Binding` and closes on the tap. That is what picking *means* for the
+/// thirty-odd pickers here whose selection is a draft field on a sheet: the write cannot be
+/// refused, so closing claims nothing and waiting for an answer would be worse than the defect.
+///
+/// The other form is `init(rows:selection:isPresented:width:failureNotice:select:)`, for a picker
+/// whose write reaches the store. There the close **is** the success report — the popover is the
+/// only thing on screen that changes — so it happens only when `select` answers `true`, and the
+/// popover stays open over a refusal with `failureNotice` under the rows. Four of this app's
+/// pickers are that shape; `CadenceChoicePickerDismissalTests` names them.
+///
+/// The committing form takes the current value rather than a `Binding`, deliberately: a writable
+/// binding beside a `select` closure is two write paths, and the defect this fixes was a mutation
+/// hidden in a binding's *setter* where nothing could see it.
 struct CadenceChoicePopoverList<T: Hashable>: View {
     let rows: [CadenceChoiceRow<T>]
     @Binding var selection: T
     @Binding var isPresented: Bool
     var width: CGFloat = 230
+    /// Drawn under the rows when the last pick was refused. Always `nil` on a draft picker, which
+    /// has nothing that can be refused.
+    var failureNotice: String?
+    /// `nil` on a draft picker: the row writes `selection` and closes. Non-`nil` on a committing
+    /// one: the row hands the value to this instead, and closes only if it answers `true`.
+    private let select: ((T) -> Bool)?
+
+    /// The draft form. The row writes through `selection` and the popover closes.
+    init(
+        rows: [CadenceChoiceRow<T>],
+        selection: Binding<T>,
+        isPresented: Binding<Bool>,
+        width: CGFloat = 230
+    ) {
+        self.rows = rows
+        self._selection = selection
+        self._isPresented = isPresented
+        self.width = width
+        self.failureNotice = nil
+        self.select = nil
+    }
+
+    /// The committing form. `selection` is read-only here — it is what draws the checkmark — and
+    /// `select` is the only write. The popover closes when `select` answers `true`.
+    init(
+        rows: [CadenceChoiceRow<T>],
+        selection: T,
+        isPresented: Binding<Bool>,
+        width: CGFloat = 230,
+        failureNotice: String? = nil,
+        select: @escaping (T) -> Bool
+    ) {
+        self.rows = rows
+        self._selection = .constant(selection)
+        self._isPresented = isPresented
+        self.width = width
+        self.failureNotice = failureNotice
+        self.select = select
+    }
 
     /// Pointer hover, by row id. Always `nil` where there is no pointer.
     @State private var hoveredRowID: AnyHashable?
@@ -125,8 +180,7 @@ struct CadenceChoicePopoverList<T: Hashable>: View {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(rows) { row in
                     Button {
-                        selection = row.value
-                        isPresented = false
+                        pick(row.value)
                     } label: {
                         HStack(spacing: 8) {
                             if let systemImage = row.systemImage {
@@ -175,8 +229,25 @@ struct CadenceChoicePopoverList<T: Hashable>: View {
                         }
                     }
                 }
+                if let failureNotice {
+                    CadenceInlineFailureNotice(text: failureNotice)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 2)
+                }
             }
             .padding(6)
+        }
+    }
+
+    /// The one place a row tap is answered, so the two forms cannot drift apart.
+    private func pick(_ value: T) {
+        guard let select else {
+            selection = value
+            isPresented = false
+            return
+        }
+        if select(value) {
+            isPresented = false
         }
     }
 
