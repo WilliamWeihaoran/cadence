@@ -5564,8 +5564,9 @@ before filing**: this list has had the same ticket re-reported more than once.
   `-only-testing:CadenceTests/ListDetailPageTests` and
   `-only-testing:CadenceTests/MarkdownTableMobileEditingTests` — the plain type name, the very
   identifier the ticket said selected nothing — running and passing every one of their tests (9/9
-  and 27/27, `✔ Suite "..." passed`). `RootModalKeyDispositionTests` (6 cases, all `@Test("...")`)
-  was not separately captured live in this batch, but the mechanism is structurally identical.
+  and 27/27, `✔ Suite "..." passed`). Confirmed live afterward for all three together, by type name,
+  in one run: `✔ Test run with 42 tests in 3 suites passed after 2.313 seconds` — 9 + 27 + 6, exactly
+  `RootModalKeyDispositionTests` included.
   **The actual bug:** swift-testing's console reporter prints `✔ Test "<display name>" passed` for a
   `@Test("...")` case instead of `✔ Test funcName() passed`, and `xcb.sh`'s `TEST_RESULT_PATTERN`
   (`scripts/mutate.sh`'s parallel `TEST_RESULT` too) matched only the bareword form — so a suite that
@@ -5583,9 +5584,10 @@ before filing**: this list has had the same ticket re-reported more than once.
   beside the aggregate zero-test check: for every requested `-only-testing:CadenceTests/<Suite>`, it
   resolves the suite's runtime label (one `--labels` call, not one per suite) and confirms a
   `Suite ... started` line for that label actually appears, catching a suite that contributed
-  nothing inside a larger passing run regardless of cause. Proved against a synthetic four-suite log
-  mixing the three real suites (two by their quoted display name) with a nonexistent fifth: the real
-  three are recognised, the fake one is flagged and the run exits 6.
+  nothing inside a larger passing run regardless of cause. Proved twice: against a synthetic
+  four-suite log first, and then live — the real run above, requesting the three real suites plus a
+  fourth, nonexistent `ThisSuiteDoesNotExistT667`, correctly passed the three (42 test result lines,
+  0 compile errors, 0 real warnings) and flagged only the fake one, exiting 6.
   `scripts/mutate.sh`'s `TEST_RESULT` is widened the same way (46/46 selftest checks still pass
   unchanged); its `FAILED_SWIFT_TESTING` capture and the `SUITE-ABSENT`/`TEST-ABSENT` name-matching
   are **not** fixed here — both need the same function-name → display-name resolution and sit inside
