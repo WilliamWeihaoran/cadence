@@ -14,6 +14,11 @@ This is the repo-tracked source for App Store Connect submission fields and revi
 - Minimum OS: macOS 26.1
 - Version: `1.0`
 - Build: current project build number
+- Copyright: `© 2026 Haoran Wei` — confirm the exact legal name and year in App Store Connect; the
+  repo has no authoritative legal-entity record, this is inferred from the bundle ID
+  (`com.haoranwei.Cadence`) and the repo's git author.
+- Keywords (Apple limit: 100 characters, comma-separated): `tasks,to-do,planner,calendar,notes,habits,goals,productivity,iCloud sync,widgets,reminders,markdown` (99 characters).
+- Description (Apple limit: 4000 characters): see "App Description" below (currently ~1,900 characters). Paste it as-is or edit for tone; do not add claims not covered by "Metadata must avoid claims that are not true for the build" further down.
 - Encryption: uses only exempt or standard platform encryption; `ITSAppUsesNonExemptEncryption` is false.
 - Support URL: `https://williamweihaoran.github.io/cadence/support.html`
 - Privacy Policy URL: `https://williamweihaoran.github.io/cadence/privacy.html`
@@ -22,6 +27,48 @@ This is the repo-tracked source for App Store Connect submission fields and revi
 - Purchases: none
 - Ads/tracking: none
 - User-facing push notifications: none
+
+Not required by Apple for this submission, and intentionally left blank: Marketing URL and
+Promotional Text. Their absence is not a blocker.
+
+## App Description
+
+Paste into App Store Connect's Description field (4000-character limit).
+
+```
+Cadence is a native macOS productivity app for planning your day, your week, and your longer-term goals in one place.
+
+Tasks
+Create tasks with due dates, tags, and projects. Organize work into projects and areas, and see what matters today on a dedicated Today view.
+
+Calendar
+Cadence shows your Apple Calendar events alongside your tasks, so you can plan around what is already on your schedule. With your permission, Cadence can also create, update, and delete calendar events; calendar access is optional and requested only when you use a calendar feature.
+
+Reminders
+Cadence can show your open Apple Reminders in its Inbox so nothing gets lost between apps. Reminders access is requested separately from Calendar access, and Cadence never creates, edits, or deletes a reminder — it can only mark one complete when you check it off.
+
+Notes
+Write notes with Markdown support, including headings, lists, checklists, tables, and links back to your tasks and events. Daily, weekly, and permanent notes give you a place for journaling, planning, and reference material.
+
+Habits and Goals
+Track recurring habits with check-ins, and set longer-term goals you can connect your tasks and progress to.
+
+iCloud Sync
+Your tasks, notes, habits, goals, and settings sync through your own private iCloud account across your Macs. Cadence does not run its own servers and does not see your data.
+
+Widgets
+Add Cadence widgets to see today's tasks, upcoming calendar events, habit check-ins, and goal milestones at a glance.
+
+Optional AI Assistance
+If you add your own OpenAI API key in Settings, Cadence can run optional AI actions on note content you select. AI is off by default and only runs when you choose to use it.
+
+Privacy
+Cadence has no ads, no third-party tracking, and no in-app purchases. Sign in with Apple is optional, and you can delete your account and all of your Cadence data at any time from Settings.
+```
+
+This deliberately says nothing about iOS/iPadOS: per `docs/apple-release-readiness.md`, the iOS
+build is not distributed on any channel, and this packet's fields are macOS-only on purpose — "sync
+across your Macs" is the honest claim, not "sync across your devices."
 
 ## Review Notes
 

@@ -91,6 +91,8 @@ Run these checks before an App Store upload:
 git diff --check
 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' -derivedDataPath /tmp/cadence-release-$$ build
 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project Cadence.xcodeproj -scheme Cadence -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/cadence-release-ios-$$ build
+./scripts/test-host-lock.sh acquire 5400 || exit 1
+trap './scripts/test-host-lock.sh release' EXIT INT TERM
 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' -derivedDataPath /tmp/cadence-release-$$ -only-testing:CadenceTests/AppStoreReviewReadinessTests
 ```
 
