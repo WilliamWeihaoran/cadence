@@ -1,12 +1,13 @@
 import Foundation
 import SwiftData
 
-/// **Creating a tag from an inline picker, committed** (T-631).
+/// **`TagSupport`'s app-only commit surface** — creating a tag from an inline picker (T-631),
+/// syncing a note's markdown tags (T-651), and seeding the defaults (T-653).
 ///
 /// Separate from `TagSupport.swift` for one reason, and it is a target boundary rather than a
 /// taste: that file compiles into `CadenceWidgets` too, and `CadencePendingChangePersistence` does
-/// not. A widget draws tags and never makes one, so the commit belongs on the app side of the line
-/// and this is where the line is.
+/// not. A widget draws tags and never makes or seeds one, so the commit belongs on the app side of
+/// the line and this is where the line is.
 extension TagSupport {
 
     /// `resolveTags`, **plus the commit for the rows it had to mint** (T-631).
@@ -77,5 +78,77 @@ extension TagSupport {
         } catch {
             return nil
         }
+    }
+
+    /// `syncNoteTagsFromMarkdown`, **plus the commit for the rows it had to mint** (T-651).
+    ///
+    /// The same shape as `committedTag`, one call site over: `CadenceCoreNoteSupport.update` calls
+    /// this one frame down, and `resolveTags` mints a `Tag` for a name typed into the note's
+    /// frontmatter that no existing row matches. That insert used to ride along inside `update`'s
+    /// own swallowed `save()`, so an editor that fails to save the note body — a full disk, a
+    /// refused CloudKit write — still left the new tag pending for whatever unrelated screen saves
+    /// next, the same T-631 symptom this file exists to close.
+    ///
+    /// **Only the rows this call minted are committed**, exactly as `resolveTagsCommittingInsertions`
+    /// documents; a refused commit un-inserts those and nothing else, and the note's own tag
+    /// assignment is left untouched so `update`'s later save still has the field edit to write.
+    /// A failure here reads as "did not sync" rather than surfacing on its own — `update` has one
+    /// swallowed save for the note body already, and giving the tag sync a second, independent
+    /// failure path would ask every one of its nine callers to draw a distinction none of them has
+    /// a control to show.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    @discardableResult
+    static func syncNoteTagsFromMarkdownCommittingInsertions(
+        _ note: Note,
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let tagNames = MarkdownMetadataParser.metadata(in: note.content).tags
+        guard let resolution = resolution(named: tagNames, in: context) else { return false }
+        guard tagSlugs(note.tags ?? []) != tagSlugs(resolution.tags) else { return false }
+        if !resolution.inserted.isEmpty {
+            do {
+                try CadencePendingChangePersistence.commitInsert(
+                    of: resolution.inserted,
+                    in: context,
+                    commit: commit
+                )
+            } catch {
+                return false
+            }
+        }
+        note.tags = resolution.tags
+        note.updatedAt = Date()
+        return true
+    }
+
+    /// `seedDefaultTags`, **committed** (T-653).
+    ///
+    /// `seedDefaultTags(in:saveChanges:)` is handed its `ModelContext`, and its default
+    /// `saveChanges: true` was a `try? context.save()` behind a flag — written for a launch-time
+    /// caller [[T-528]] removed. What is left calling it with that default are four "Add Defaults"
+    /// buttons, each pressed by a person watching the screen for the empty state to fill in, so a
+    /// refused commit here is not a launch quietly repeating the seed; it is a control the user
+    /// just pressed, reporting done over a store that said no.
+    ///
+    /// **A cascade, not an insert-only commit.** `seedDefaultTags` runs `deduplicateTags` first,
+    /// which both deletes a duplicate into its canonical and can reorder an existing tag in place —
+    /// so "the rows this call minted" is the wrong unit of work here, unlike
+    /// `resolveTagsCommittingInsertions`. `commitDelete(in:commit:)` is the shelf answer for a
+    /// commit that may hold inserts, deletes and edits together: on a refusal it rolls the whole
+    /// context back, which is what a half-seeded, half-merged tag table left over from a refused
+    /// commit would otherwise look like.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    @discardableResult
+    static func seedDefaultTagsCommitting(
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> Bool {
+        let changed = seedDefaultTags(in: context, saveChanges: false)
+        guard changed else { return false }
+        try CadencePendingChangePersistence.commitDelete(in: context, commit: commit)
+        return changed
     }
 }

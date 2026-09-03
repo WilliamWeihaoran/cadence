@@ -1123,13 +1123,23 @@ enum CadenceSaveCommitRule {
     /// why they are allowed to, and `everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule`
     /// makes the list fail when it goes stale.
     static let existenceExemptions: [String: [String]] = [
-        // Launch-time maintenance with no user watching and nothing to report to. Both are
-        // idempotent and re-run every launch, so a refused commit costs one launch's worth of
-        // seeding and repairs itself; and `saveChanges:`/`save:` already let a caller that *does*
-        // have a unit of work take the commit over. Filed as the follow-up's lowest tier.
-        // `syncAllNoteTagsFromMarkdown` joined them with T-627: it is the same shape one frame
-        // down — `syncNoteTagsFromMarkdown` inserts the `Tag` rows — and it carries the same
-        // `saveChanges:` opt-out for a caller that owns the unit of work.
+        // **`seedDefaultTags` and `deduplicateTags` are not launch-time maintenance, and saying so
+        // was measurably false by the time T-653 checked (T-528 had already removed every
+        // automatic caller).** Both are handed their `ModelContext` and both still swallow a
+        // `context.save()` behind their own `saveChanges:`/`save:` default — but the only production
+        // callers left are the four "Add Defaults" buttons (`SettingsTagsSection`,
+        // `iOSSettingsTagsSection`, `TagPickerSupportViews`, `iOSTaskDetailComponents`), a person
+        // pressed one, and there is very much something to report. T-653 gave those buttons
+        // `TagSupport.seedDefaultTagsCommitting(in:commit:)` — `Cadence/Shared/CadenceInlineTagCreation.swift`
+        // — which calls `seedDefaultTags(in:saveChanges: false)` and commits the whole cascade
+        // itself, rolling it back on a refusal. The two raw declarations stay exempt because they
+        // are still handed a context whose caller owns the unit of work, same as half 3 reads any
+        // such declaration; nothing production-side reaches their own default any more, only tests.
+        // `syncAllNoteTagsFromMarkdown` is the one entry the original rationale still fits: it is
+        // launch-time maintenance with no user watching, joined with T-627 for the same shape one
+        // frame down — `syncNoteTagsFromMarkdown` inserts the `Tag` rows — and it carries the same
+        // `saveChanges:` opt-out for `CadenceMCPStorePreparation.prepare`, the one caller that owns
+        // the unit of work and has nobody to report to either.
         "Cadence/Services/TagSupport.swift": ["seedDefaultTags", "deduplicateTags", "syncAllNoteTagsFromMarkdown"],
         // UI-test scaffolding. It runs only under `CadenceUITestSupport`'s launch argument, and
         // there is no user to tell.
@@ -1178,20 +1188,20 @@ enum CadenceSaveCommitRule {
         // T-629 emptied the two image doors out of this list: macOS's `createAssets` and iOS's
         // `createPastedImageAssets`/`insertPickedImages` commit through `commitInsert` now and
         // write no reference over a refused commit, pinned by
-        // `CadenceMarkdownImageCommitSurfaceTests`. `createInlineTag` stays because it is a
-        // different ticket's shape — [[T-631]]'s: `TagSupport.resolveTags` inserts the `Tag` row
-        // one frame down.
-        "Cadence/macOS/Editor/MarkdownEditorView.swift": ["createInlineTag"],
-        // [[T-631]]'s family: `TagSupport.resolveTags`/`setTags` insert the `Tag` row, the caller
-        // swallows the commit, and a phantom tag turns up in Settings › Tags on the next
-        // unrelated save.
-        "Cadence/Shared/CadenceNotePlanningSupport.swift": ["update"],
-        "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": ["body"],
-        // T-497 emptied the rest of this list: `CadenceNoteFolderSupport.createNote`,
+        // `CadenceMarkdownImageCommitSurfaceTests`.
+        //
+        // [[T-651]] emptied the rest of [[T-631]]'s family, closed since this list was written.
+        // `MarkdownEditorView.createInlineTag` and `KanbanTagPickerPopover.body` (in
+        // `KanbanCardMetaSupportViews.swift`) both called `TagSupport.resolveTags` from an ambient
+        // `ModelContext` and committed nothing; both now go through
+        // `TagSupport.committedTag(named:in:commit:)`, which commits the row it minted, if any,
+        // before either surface can see it. `CadenceCoreNoteSupport.update` was the third —
+        // `TagSupport.syncNoteTagsFromMarkdown` is now `syncNoteTagsFromMarkdownCommittingInsertions`
+        // in `Cadence/Shared/CadenceInlineTagCreation.swift`, the same shape one call further in.
+        // T-497 emptied the rest of this list before that: `CadenceNoteFolderSupport.createNote`,
         // `SettingsTagsSection.createTag`, `iOSSettingsTagsSection.createTag` and
         // `iOSCalendarEventEditSheet.openEventNote` all commit through `commitInsert` now, and are
-        // pinned by `CadenceTagAndNoteCommitSurfaceTests`. What is left is the two genuine
-        // non-defects above.
+        // pinned by `CadenceTagAndNoteCommitSurfaceTests`.
     ]
 
     /// The exemption list for half 2.
@@ -1237,12 +1247,12 @@ enum CadenceSaveCommitRule {
         // spelling is still invisible to the detector ([[T-657]]); the population it would have
         // caught here is now zero, which is what makes T-657 a smaller ticket rather than a
         // closed one.
-        // [[T-631]], its second half. `createInlineTag` was already in `existenceExemptions` —
-        // `TagSupport.resolveTags` inserts the `Tag` row one frame down — and the Optional spelling
-        // shows the other end of it: the swallowed commit is followed by `return .tag(tag)`, the
-        // suggestion the editor then writes into the note. The phantom tag is not only in
-        // Settings › Tags, it is in the note's text.
-        "Cadence/macOS/Editor/MarkdownEditorView.swift": ["createInlineTag"],
+        // [[T-651]] emptied [[T-631]]'s second half. `createInlineTag` called
+        // `TagSupport.resolveTags` and answered `return .tag(tag)` over the swallowed commit that
+        // would have minted it — the phantom tag was not only in Settings › Tags, it was in the
+        // note's text, because the suggestion returned here is what the editor writes back in.
+        // It now guards on `TagSupport.committedTag(named:in:commit:)`, so a refused insert never
+        // reaches the `return .tag(tag)` that would have written it into the note.
         // `Cadence/iOS/iOSListSupportViews.swift: ["addLink"]` was the third entry — [[T-507]],
         // held here rather than fixed to keep two agents out of one file. It is fixed now:
         // `addLink` catches the insert and leaves the form open with an `actionError`, the way

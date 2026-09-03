@@ -270,12 +270,19 @@ struct MarkdownEditor: View {
     }
 
     private func createInlineTag(_ name: String) -> MarkdownTagSuggestion? {
-        guard let tag = TagSupport.resolveTags(named: [name], in: modelContext)?.first else { return nil }
-        if tag.isArchived {
-            tag.isArchived = false
-        }
+        guard let tag = TagSupport.committedTag(named: name, in: modelContext) else { return nil }
+        let wasArchived = tag.isArchived
+        let previousUpdatedAt = tag.updatedAt
+        tag.isArchived = false
         tag.updatedAt = Date()
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: {
+                tag.isArchived = wasArchived
+                tag.updatedAt = previousUpdatedAt
+            })
+        } catch {
+            return nil
+        }
         return .tag(tag)
     }
 }

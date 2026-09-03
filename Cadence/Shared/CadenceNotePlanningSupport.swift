@@ -160,7 +160,7 @@ enum CadenceCoreNoteSupport {
         note.updatedAt = Date()
         MarkdownNoteTitleSync.apply(to: note, content: content)
         if syncTags {
-            TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)
+            TagSupport.syncNoteTagsFromMarkdownCommittingInsertions(note, in: modelContext)
         }
         try? modelContext.save()
     }

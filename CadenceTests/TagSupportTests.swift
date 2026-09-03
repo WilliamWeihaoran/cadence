@@ -470,4 +470,58 @@ struct TagSupportTests {
             #expect(survivor.updatedAt == newer)
         }
     }
+
+    // MARK: - T-653: `seedDefaultTagsCommitting`
+
+    private struct SeedCommitRefused: Error {}
+
+    /// **Behavioural.** The success path: `seedDefaultTagsCommitting` both seeds and commits in one
+    /// call, so a second context — never the one that did the seeding — can already read every
+    /// default tag.
+    @Test func seedDefaultTagsCommittingSeedsAndCommitsInOneShot() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let changed = try TagSupport.seedDefaultTagsCommitting(in: context)
+
+        #expect(changed)
+        #expect(
+            try ModelContext(container).fetch(FetchDescriptor<Cadence.Tag>()).count == TagSupport.defaultTags.count,
+            "the seed committed nothing a second context, and so the picker, could read"
+        )
+    }
+
+    /// **Behavioural, and the reason this is `commitDelete` and not `commitInsert`.**
+    /// `seedDefaultTags` runs `deduplicateTags` first, so one call can both insert new default tags
+    /// and delete a duplicate merged into its canonical — a mixed cascade, not an insert-only unit
+    /// of work. A refused commit must roll back both halves together, or the store is left holding
+    /// a table that is half seeded and half merged, which nothing downstream asked for.
+    @Test func arefusedSeedCommitRollsBackBothTheInsertAndTheMerge() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let stamp = Date(timeIntervalSince1970: 1_700_000_000)
+        let canonical = duplicateTag("AAAAAAAA", name: "Bug", colorHex: "#ff6b6b", order: 0, stamp: stamp)
+        let duplicate = duplicateTag("BBBBBBBB", name: "bug", colorHex: "#4ecb71", order: 1, stamp: stamp)
+        context.insert(canonical)
+        context.insert(duplicate)
+        try context.save()
+
+        #expect(throws: SeedCommitRefused.self) {
+            try TagSupport.seedDefaultTagsCommitting(in: context, commit: { _ in throw SeedCommitRefused() })
+        }
+
+        // The claim this pins is "rolled back", not merely "never reached the store" — those read
+        // identically from a second context, because an uncommitted insert or delete is invisible
+        // across contexts whether or not it was rolled back. So the same context saves again,
+        // exactly like the next unrelated screen's autosave would: without `commitDelete`'s
+        // rollback, the half-merged, half-seeded cascade is still pending here and this save takes
+        // it — which is the whole failure mode a mixed cascade's own commit must prevent.
+        try context.save()
+
+        let survivors = try ModelContext(container).fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(
+            Set(survivors.map(\.id)) == Set([canonical.id, duplicate.id]),
+            "the next unrelated save committed a seed the store had already refused: \(survivors.map(\.name))"
+        )
+    }
 }

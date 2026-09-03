@@ -435,7 +435,7 @@ struct iOSTaskTagPickerPopover: View {
                 VStack(alignment: .leading, spacing: 2) {
                     if availableTags.isEmpty {
                         Button {
-                            TagSupport.seedDefaultTags(in: modelContext)
+                            addDefaultTags()
                         } label: {
                             Text("Add Default Tags")
                                 .font(.system(size: 14, weight: .medium))
@@ -555,6 +555,18 @@ struct iOSTaskTagPickerPopover: View {
         }
         newTagName = ""
         onCommit()
+    }
+
+    /// T-653, the existence half of the `try? save()` rule. The macOS twin is
+    /// `SettingsTagsSection.restoreDefaults`: `seedDefaultTagsCommitting` rolls the whole seed back
+    /// on a refusal rather than leaving a half-merged, half-seeded table.
+    private func addDefaultTags() {
+        do {
+            try TagSupport.seedDefaultTagsCommitting(in: modelContext)
+            tagFailureNotice = nil
+        } catch {
+            tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
+        }
     }
 }
 

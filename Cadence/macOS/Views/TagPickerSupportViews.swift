@@ -245,44 +245,66 @@ nonisolated enum TagPickerPlaceholder: Equatable {
 /// The one rendering of `TagPickerPlaceholder`, in the row language both macOS tag pickers already
 /// use for their create and restore rows.
 ///
-/// This view owns the seed call. It is a `Button` action and nothing else — see
+/// This view owns the seed call. It runs from a `Button` action and nothing else — see
 /// `CadenceFirstLaunchEmptyStoreTests.noUnpromptedCodePathSeedsTheDefaultTags`, which exists
 /// because "the tag list is empty" is also what a second device renders while CloudKit is still
 /// arriving. Do not move this call to `.onAppear`.
 struct TagPickerPlaceholderRow: View {
     let placeholder: TagPickerPlaceholder
     @Environment(\.modelContext) private var modelContext
+    /// T-653: set when the store refused the seed. See `seedDefaults()`.
+    @State private var seedFailureNotice: String?
 
     var body: some View {
         switch placeholder {
         case .none:
             EmptyView()
         case .offerDefaultTags:
-            Button {
-                TagSupport.seedDefaultTags(in: modelContext)
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "tag.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.blue)
-                    Text("Add Default Tags")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.text)
-                    Spacer()
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    seedDefaults()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "tag.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.blue)
+                        Text("Add Default Tags")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.text)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .contentShape(Rectangle())
+                .buttonStyle(.cadencePlain)
+                .cadenceHoverHighlight(cornerRadius: 6)
+                .accessibilityLabel("Add Default Tags")
+                .help("Add Cadence's starter tags")
+
+                if let seedFailureNotice {
+                    CadenceInlineFailureNotice(text: seedFailureNotice)
+                        .padding(.horizontal, 10)
+                }
             }
-            .buttonStyle(.cadencePlain)
-            .cadenceHoverHighlight(cornerRadius: 6)
-            .accessibilityLabel("Add Default Tags")
-            .help("Add Cadence's starter tags")
         case .noMatches:
             Text("No matching tags")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
                 .padding(10)
+        }
+    }
+
+    /// T-653, the existence half of the `try? save()` rule: this used to reach `seedDefaultTags`'
+    /// own `try? context.save()` behind its `saveChanges: true` default.
+    /// `seedDefaultTagsCommitting` rolls the whole seed back on a refusal rather than leaving a
+    /// half-merged, half-seeded table.
+    private func seedDefaults() {
+        do {
+            try TagSupport.seedDefaultTagsCommitting(in: modelContext)
+            seedFailureNotice = nil
+        } catch {
+            seedFailureNotice = CadencePendingChangePersistence.editFailureNotice
         }
     }
 }

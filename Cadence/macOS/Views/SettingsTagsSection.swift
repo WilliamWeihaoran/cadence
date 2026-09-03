@@ -11,6 +11,8 @@ struct SettingsTagsSection: View {
     @State private var newTagColorHex = TagSupport.colorOptions[2]
     /// T-497: the creator's one failure, said under the fields that still hold the draft.
     @State private var createFailureNotice: String?
+    /// T-653: "Add Defaults"' own failure, said in the same place.
+    @State private var seedFailureNotice: String?
 
     private var activeTags: [Tag] {
         TagSupport.uniqueBySlug(tags.filter { !$0.isArchived })
@@ -94,6 +96,9 @@ struct SettingsTagsSection: View {
 
                     if let createFailureNotice {
                         CadenceInlineFailureNotice(text: createFailureNotice)
+                    }
+                    if let seedFailureNotice {
+                        CadenceInlineFailureNotice(text: seedFailureNotice)
                     }
                 }
             }
@@ -204,8 +209,16 @@ struct SettingsTagsSection: View {
         try? modelContext.save()
     }
 
+    /// T-653, the existence half of the `try? save()` rule: this used to reach `seedDefaultTags`'
+    /// own `try? context.save()` behind its `saveChanges: true` default. `seedDefaultTagsCommitting`
+    /// rolls the whole seed back on a refusal rather than leaving a half-merged, half-seeded table.
     private func restoreDefaults() {
-        TagSupport.seedDefaultTags(in: modelContext)
+        do {
+            try TagSupport.seedDefaultTagsCommitting(in: modelContext)
+            seedFailureNotice = nil
+        } catch {
+            seedFailureNotice = CadencePendingChangePersistence.editFailureNotice
+        }
     }
 }
 

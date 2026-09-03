@@ -258,14 +258,14 @@ struct CadenceFirstLaunchEmptyStoreTests {
             var body: some View {
                 tagCatalog(activeTags)
                     .onAppear {
-                        TagSupport.seedDefaultTags(in: modelContext)
+                        try? TagSupport.seedDefaultTagsCommitting(in: modelContext)
                     }
             }
             """,
             andNotOn: """
             var body: some View {
                 Button("Add Defaults") {
-                    TagSupport.seedDefaultTags(in: modelContext)
+                    try? TagSupport.seedDefaultTagsCommitting(in: modelContext)
                 }
             }
             """
@@ -566,13 +566,22 @@ struct CadenceFirstLaunchEmptyStoreTests {
     /// needle, because it reads like coverage.
     private static let unpromptedHooks = [".onAppear", ".task {"]
 
-    /// Where `TagSupport.seedDefaultTags(` is called in `source`. Spelled fully qualified because
-    /// that is how every real call site spells it, and a bare `seedDefaultTags(` would also match
-    /// the declaration in `TagSupport` itself.
+    /// Where `TagSupport.seedDefaultTagsCommitting(` is called in `source`. Spelled fully qualified
+    /// because that is how every real call site spells it, and a bare `seedDefaultTagsCommitting(`
+    /// would also match the declaration in `TagSupport` itself.
+    ///
+    /// **T-653: this used to key on `TagSupport.seedDefaultTags(`.** Every UI caller now goes
+    /// through `seedDefaultTagsCommitting(in:commit:)` instead — the raw `seedDefaultTags` is
+    /// called with `saveChanges: false` only from there and from tests, so a needle on the old name
+    /// would have read every button as having stopped seeding rather than as having started
+    /// committing.
     private static func seedCallOffsets(in source: String) -> [String.Index] {
         var offsets: [String.Index] = []
         var cursor = source.startIndex
-        while let found = source.range(of: "TagSupport.seedDefaultTags(", range: cursor..<source.endIndex) {
+        while let found = source.range(
+            of: "TagSupport.seedDefaultTagsCommitting(",
+            range: cursor..<source.endIndex
+        ) {
             offsets.append(found.lowerBound)
             cursor = found.upperBound
         }

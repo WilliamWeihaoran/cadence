@@ -12,6 +12,9 @@ struct iOSTagsSettingsSection: View {
     /// T-497: the creator's one failure, said under the fields that still hold the draft — macOS's
     /// `SettingsTagsSection.createTag` is the same function and carries the same notice.
     @State private var createFailureNotice: String?
+    /// T-653: "Add Defaults"' own failure, said in the same place — macOS's
+    /// `SettingsTagsSection.restoreDefaults` is the same function.
+    @State private var seedFailureNotice: String?
 
     private var activeTags: [Tag] {
         TagSupport.sorted(tags.filter { !$0.isArchived })
@@ -87,6 +90,9 @@ struct iOSTagsSettingsSection: View {
                     if let createFailureNotice {
                         CadenceInlineFailureNotice(text: createFailureNotice)
                     }
+                    if let seedFailureNotice {
+                        CadenceInlineFailureNotice(text: seedFailureNotice)
+                    }
 
                     HStack(spacing: 10) {
                         Spacer(minLength: 0)
@@ -97,7 +103,7 @@ struct iOSTagsSettingsSection: View {
                             role: .secondary,
                             size: .compact
                         ) {
-                            TagSupport.seedDefaultTags(in: modelContext)
+                            restoreDefaults()
                         }
 
                         iOSActionButton(
@@ -166,6 +172,18 @@ struct iOSTagsSettingsSection: View {
         newName = ""
         newDescription = ""
         newColorHex = TagSupport.colorOptions[2]
+    }
+
+    /// T-653, the existence half of the `try? save()` rule. The macOS twin is
+    /// `SettingsTagsSection.restoreDefaults`: `seedDefaultTagsCommitting` rolls the whole seed back
+    /// on a refusal rather than leaving a half-merged, half-seeded table.
+    private func restoreDefaults() {
+        do {
+            try TagSupport.seedDefaultTagsCommitting(in: modelContext)
+            seedFailureNotice = nil
+        } catch {
+            seedFailureNotice = CadencePendingChangePersistence.editFailureNotice
+        }
     }
 
     private func archive(_ tag: Tag) {
