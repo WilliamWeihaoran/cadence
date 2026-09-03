@@ -230,56 +230,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   spellings and their `bitPattern`s, which turns this from a story into a measurement.
 
 
-- [T-716] **Nine comments point a present-tense reader at a symbol that is not there.**
-  The live half of [[T-565]]'s ledger, split out because the detector landed as a guard rather than a
-  sweep. Each is listed in `CadenceCommentSymbolClaimTests.staleClaims` with what it names and what it
-  should have named; fixing one means deleting its ledger entry in the same change, or the suite goes
-  red on a stale entry.
-  - `CadenceDataExportPresentation.swift` cites `PrivacyDataResetOutcome.statusMessage`; the member is
-    `accountAndDataStatusMessage`.
-  - `CadenceNoteFolderSupport.swift` presents `ListNotesView.normalizedFolderPath` as the live source
-    of the folder-path convention. It is declared in `ListNotesListSupportViews.swift`, on a
-    fileprivate row, and no `ListNotesView` has it.
-  - `CadenceTaskDropSupport.swift` appeals to `CadenceTaskComposerSupport.showsSectionChip` — and a
-    second comment 280 lines below appeals to "the rule `showsSectionChip`". **No declaration of that
-    name exists anywhere in the tree**, so both sentences invoke a rule the reader cannot find. This
-    is the sharpest of the nine: two readers deferred to a rule that is only prose.
-  - `iOSTaskInspectorMetrics.swift` and `CommitmentSharedViews.swift` both point at
-    `CadencePageHeaderMetrics.iconSize` as a bare "see also". The identity tile was dropped from page
-    headers on both platforms and the glyph ramp went with it; `iOSCalendarMetricsTests` records that
-    `tileSize` went the same way.
-  - `AINoteActionReviewTests.swift` cites `DataIntegrityRepairServiceTests.duplicateDailyNotesAreMerged`
-    as pinning behaviour. No test of that name exists.
-  - `CadenceCancelledTaskReachabilityTests.swift` cites
-    `CadenceTodayRolloverSurfaceTests.theMacDerivedStateStillDerivesExactlyWhatItUsedTo`. The test is
-    real; it was renamed with an `InTodayRolloverSurface` suffix when test names became unique across
-    suites, and the citation did not follow.
-  - `TimelineMetricsTests.swift` says `CalDayColumn.onDropTaskAtMinute` "forwards straight to"
-    `SchedulingActions.dropTask`. That closure lives on `TimelineDayCanvas`,
-    `TimelineDropInteractionSupport` and `SchedulePanelShellViews`; `CalDayColumn` has no such member,
-    so the sentence describes a route the reader cannot trace.
-  - `MilestoneMomentumWidget.swift` says three widgets use "the same three stops", naming
-    `TodayTasksWidgetView.statusPresentation`. Nothing of that name is declared, so the agreement the
-    comment asserts is unverifiable from the comment.
-  **Do them as one change**, not one per file: nine one-line corrections against nine ledger deletions
-  is a single reviewable diff, and split up it is nine chances to leave the ledger half-stale.
-
-- [T-717] **[[T-565]]'s file-qualified exclusion hides a real confusion, and the cost is measured.**
-  This repo writes `<FileBaseName>.<symbol>` when the symbol lives on a fileprivate type inside
-  `<FileBaseName>.swift`, so the detector excludes a claim whose member is declared anywhere in a file
-  of that name. That is right for the convention and wrong for two types that share a file. **Nine
-  spans are excluded by this rule today**, and at least three are genuinely misattributed rather than
-  file-qualified: `DateFormatters.timeString` (declared on `TimeFormatters`, a second enum in
-  `DateFormatters.swift`), `CadenceCalendarDayBadge.markedDayLabel(date:hasItems:)` (declared on
-  `CadenceCalendarDayAccessibility`, the second enum in that file — and it is [[T-555]]'s own fixture
-  comment), and `MarkdownEditorView.createAssets` (declared on `MarkdownEditor`, three types above
-  `MarkdownEditorView` in the same file).
-  The fix is not to delete the exclusion — `NotesView.NotesDateJumpButton` and three
-  `SettingsTagsSection.saveEdits` really are the convention. It is to narrow it: exclude only when the
-  file declares **exactly one** nominal type, so a single-type file keeps the convention and a file
-  holding two types has to say which. Measure the new population before landing it; if it is small
-  the entries join the ledger, and if it is large the narrowing is the wrong shape.
-
 - [T-718] **The unqualified half of [[T-565]] is measured and guarded by nothing.**
   A backticked span shaped like a call — `` `foo(_:)` ``, `` `bar()` `` — with no type in front of it
   is invisible to the qualified rule, and that is the spelling [[T-647]]'s defect actually used:
@@ -294,6 +244,19 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   T-647's *own* spelling — a name absent from the file the sentence is about but present elsewhere —
   is a harder third rule and needs "the scope the sentence implies", which no arithmetic here can
   read. Do the repo-wide-absence half first and say plainly that it is the weaker half.
+  **DECLINED for this batch, 2026-09-04 — the repo-wide-absence half was attempted and the allowlist
+  problem is worse than the ticket's own estimate.** Two independent replications of "declared
+  anywhere in the tree, as any of func/var/let/case/typealias/struct/class/enum/actor" over the same
+  five source roots landed on **54** distinct offending base names, not 24 — a first pass keying only
+  on `func` declarations (ignoring closure-typed `var`/`let` properties invoked as calls, e.g.
+  `onSave()`, `onDone()`) found **139**. The count moved by more than 5x between two reasonable
+  readings of "declared", before an SDK allowlist even enters it — `rollback` alone (a real
+  `ModelContext` method, called at 24 sites) would need its own exclusion on top of the AppKit/UIKit
+  list T-718 already named. That is a second allowlist, of stdlib/framework member names this repo
+  calls constantly, layered on the first. Landing a guard on numbers this unstable would be asserting
+  a floor over arithmetic that has not settled, which is exactly what this repo's own rule against a
+  numeric floor over a shrinking population is about. Left open rather than closed: the underlying
+  gap is real and the measurement above is evidence for the next attempt, not a dead end.
 
 - [T-765] **Two callers still write out an undo `CadenceTaskFieldSnapshot` can now do for them.**
   [[T-701]] put `title` and `order` in the snapshot, which was the entire reason
@@ -1533,17 +1496,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `Theme.rowSeparator` would be exactly the unreviewed visual change T-617 and T-618 both refused.
   Decide the weight, then name the survivors on `Theme` beside `rowSeparator` and `rule`.
 
-- [T-678] **`CadenceIOSControlAccessibilityTests` still carries an iOS-only name while holding an
-  app-wide rule.** [[T-637]] widened its icon-only-button sweep from the 105 files under
-  `Cadence/iOS/` to all 565 under `Cadence/`, and **28 of the 31 sites it now names are macOS**. The
-  agent deliberately did not rename it: moving ~150 lines of brace-walking between two suites while
-  two siblings held files in the same tree was the larger risk, and it left the discrepancy stated in
-  the file header and in T-637's closure rather than silent.
-  Cheap now that the tree is quiet. Note the rename must not break the suite's `including:` witness,
-  which is `Cadence/macOS/Views/TasksPanelSupportViews.swift` — the widening is enforced by the walk,
-  not by the name.
-
-
 - [T-688] **Two fallback strings that disagree with the family, and neither is decidable from the
   literal.** Found while sweeping [[T-609]] and deliberately left, because T-609's rule was "route
   through the trim, change no copy":
@@ -2154,7 +2106,73 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   sweep reported.
 
 
+- [T-798] **The five App Store screenshot candidates still do not exist, and the only thing missing
+  is an unlocked screen.** Everything else landed: `docs/screenshots/seed-screenshot-data.py` drives
+  a built `CadenceMCPServer` against a throwaway `CADENCE_MCP_STORE_URL` and seeds 27 presentable
+  tasks (timed across today, spread over the next four weeks, two already completed, eight tags) plus
+  a markdown daily note, a weekly note and a permanent note — measured 2026-09-04, `list_tasks`
+  answers `totalCount=25` open with the two done excluded. `docs/screenshots/flatten-for-app-store.py`
+  turns a window capture into an alpha-free RGB PNG at one of Apple's four accepted macOS sizes, and
+  `docs/screenshots/README.md` carries the procedure. What could not be done is the capture itself:
+  the Mac's screen was locked for the whole session (`CGSSessionScreenIsLocked=Yes`), and a locked
+  screen defeats **both** capture routes, not just the documented one. Measured: the app launched by
+  `scripts/run-macos-app.sh` reaches its run loop and creates a real 1046x649 `CGWindow` named
+  "Cadence", but `CGWindowListCopyWindowInfo` with `.optionOnScreenOnly` cannot see it, AX reports
+  `count of windows = 0`, `set frontmost to true` silently does nothing, `screencapture -o -l<id>`
+  answers `could not create image from window`, and ScreenCaptureKit — which *does* find the window
+  in `SCShareableContent` — fails `SCScreenshotManager.captureImage` with
+  `SCStreamErrorDomain Code=-3811`. That is the same T-563 condition `scripts/xcb.sh` refuses UI runs
+  under, so the fix is "run this while the Mac is unlocked", not code. Remaining work is one command
+  per angle plus the Kanban angle's manual list creation, which the README spells out.
+
+- [T-799] **Nothing in `CadenceMCPServer`'s write surface can create a context, an area or a
+  project, which is why the Kanban screenshot angle cannot be seeded and has to be clicked.**
+  `CadenceMCPToolDefinitions.swift` exposes `create_task`, `update_task`, `schedule_task`,
+  `complete_task`, `reopen_task`, `cancel_task`, `bulk_cancel_tasks` and `append_core_note` and
+  nothing else that writes; `create_task` takes a `containerId` but has no way to mint one, and its
+  `sectionName` is rejected unless the section already exists on the target list. Kanban columns are
+  `TaskSectionConfig` values stored on `Area`/`Project` (`Cadence/Models/AppTask.swift`), so a board
+  cannot exist without a container a tool can create. Filed as a note on the MCP surface's shape
+  rather than a request: adding container writes is a real decision (they cascade into task
+  ownership and section normalisation), and the screenshot work only needs it once.
+
 ## Done
+
+- [T-813] **CLOSED 2026-09-04 — the last-resort bootstrap `fatalError` is a terminal recovery
+  screen, sha `0371b19`.** `PersistenceController.container` is now optional; the final catch in
+  `makeRecoveryContainer` — CloudKit failed, on-disk recovery failed, in-memory failed — records a
+  `CadenceStartupTerminalFailure` and returns `nil` instead of trapping. `CadenceTerminalRecoveryView`
+  explains the failure in plain language and offers an export, trying the primary store's own file
+  read-only with CloudKit off before the recovery directories. It never takes
+  `@Environment(\.modelContext)` or `@Query` — no context is injected into that branch at all — so
+  the surface that exists because every store failed cannot itself touch a store. An outside census
+  (R22) found no other user- or sync-reachable crash site in the app: 19 `try!` all source-literal
+  regexes, 16 force unwraps guarded or literal-backed, 89 computed array subscripts all range-derived
+  or guarded. This was the only one left.
+- [T-817] **CLOSED 2026-09-04 — a guard that mutation testing proved could not fail, removed rather
+  than pinned, sha `0371b19`.** The first mutation run reported M1 SURVIVED: a `fileExists` check in
+  `openFirstAvailableReadOnlyStore` had no observable effect, because `allowsSave: false` against a
+  missing store already refuses to create one — [[T-311]]'s measured asymmetry, pinned by
+  `CadenceSharedStoreWriteGateTests`. The redundant guard and its unused `fileManager` parameter were
+  deleted instead of writing a test that could only pretend to distinguish them. Re-run: 4/4 killed.
+- [T-803] **CLOSED 2026-09-04 — the App Store packet had no description, keywords or copyright,
+  sha `fad8d50`.** Apple requires all three for the version and the field list at
+  `docs/app-store-submission-packet.md:7-24` carried none. Description is ~1,900 of the 4,000
+  characters, every claim traced to a file that implements it; keywords are 99 of 100. It says
+  "sync across your Macs", not "your devices", because `docs/apple-release-readiness.md:11` records
+  that the iOS build is distributed on no channel and claiming iOS sync would be a metadata lie.
+- [T-804] **CLOSED 2026-09-04 — the copyright line is drafted and flagged as inferred, sha
+  `fad8d50`.** `© 2026 Haoran Wei` is derived from the bundle id and the git author, not from any
+  legal record the repository holds. **This is the one metadata field the repo cannot settle**; the
+  user confirms or corrects the legal name and year in App Store Connect.
+- [T-806] **CLOSED 2026-09-04 — the release checklist's test command took no host lock, sha
+  `fad8d50`.** `docs/apple-release-readiness.md:94` ran a bare `xcodebuild test` while its own
+  `:103-109` — pinned verbatim by `AppStoreReviewReadinessTests` — requires the lock. Fixed with the
+  documented `acquire`/`trap release` idiom. **Deliberately not switched to `scripts/xcb.sh`:** the
+  bare invocation is intentional there, it is the positive control for
+  `CadenceBuildInvocationHygieneTests`, and wrapping `xcb.sh test` in an outer `acquire` deadlocks
+  against its own lease. The coordinator's brief said "require xcb.sh" and was wrong; p2 read the
+  literal text and did not follow it. Second time this block has caught a coordinator paraphrase.
 
 - [T-808] **CLOSED 2026-09-04 — the 216 unpinned product-tree sweeps are pinned by one generated
   manifest, sha `7761d2b0`.** An outside audit (R19 in `docs/CODEX_REQUESTS.md`) measured 216
@@ -2187,6 +2205,77 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   - **What it does not do:** it never asks what a swept rule *asserts*. The suites remain the
     behavioural authority; over-inclusion (a detector self-check that shares a file with a sweep)
     costs nothing but a pinned name, while under-inclusion is the failure it exists to prevent.
+
+- [T-678] **CLOSED 2026-09-04 — the icon-only accessibility suite is named for what it sweeps, sha
+  `9fc8e9bf`.** [[T-637]] widened `CadenceIOSControlAccessibilityTests`'s walk from `Cadence/iOS/` to
+  all of `Cadence/` and left the file's iOS-only name stated as a known mismatch rather than risk a
+  rename mid-batch. Renamed to `CadenceIconOnlyButtonAccessibilityTests`, struct and file, once the
+  tree holding the ledger quieted down. The suite's `including:` witness is unchanged —
+  `Cadence/macOS/Views/TasksPanelSupportViews.swift` — since the widening was always enforced by the
+  walk, not by the name. Counts were taken from HEAD at commit time rather than from when the ticket
+  was picked up, per the batch's own caution that the ledger would move underneath it.
+
+- [T-716] **CLOSED 2026-09-04 — nine stale comment claims corrected, a tenth found live, sha
+  `4bd86f7e` (nine) and `c8fbddf0` (tenth).** The live half of [[T-565]]'s ledger. Each comment now
+  names the symbol it actually meant, and `CadenceCommentSymbolClaimTests.staleClaims` is empty:
+  - `CadenceDataExportPresentation.swift`: `PrivacyDataResetOutcome.statusMessage` →
+    `.accountAndDataStatusMessage`.
+  - `CadenceNoteFolderSupport.swift`: `ListNotesView.normalizedFolderPath` →
+    `NoteFolderSheet.normalizedFolderPath`, the type that actually declares it (a `private var` on
+    `NoteFolderSheet` in `ListNotesListSupportViews.swift`).
+  - `CadenceTaskDropSupport.swift`, both `showsSectionChip` references: **neither comment invented a
+    rule — both misnamed a real one.** The inbox-guard comment now names
+    `CadenceTaskComposerSupport.showsSectionRow`, whose own guard clause (`container != .inbox`) is
+    exactly the sentence it sits beside; the default-section comment now names
+    `CadenceTaskInspectorSupport.showsSectionSegment`, the half of the rule about a lone `Default`
+    section not being worth a chevron.
+  - `iOSTaskInspectorMetrics.swift` and `CommitmentSharedViews.swift`: both "see also"
+    `CadencePageHeaderMetrics.iconSize` references now point at `.tileGlyphRatio`, the ratio
+    `iconSize`'s default was computed from before the identity tile — and `iconSize` itself — was
+    dropped from page headers.
+  - `AINoteActionReviewTests.swift`: `DataIntegrityRepairServiceTests.duplicateDailyNotesAreMerged` →
+    `.duplicateCanonicalNotesAreMergedWithoutDroppingContentOrTags`, the real test pinning that a
+    merged note keeps both its area and its project.
+  - `CadenceCancelledTaskReachabilityTests.swift`: the cited `CadenceTodayRolloverSurfaceTests` test
+    now carries the `InTodayRolloverSurface` suffix it gained when test names became unique across
+    suites.
+  - `TimelineMetricsTests.swift`: `CalDayColumn` has no `onDropTaskAtMinute` — it is
+    `TimelineDayCanvas`'s; the comment now says `CalDayColumn` wires `TimelineDayCanvas
+    .onDropTaskAtMinute` to `SchedulingActions.dropTask`.
+  - `MilestoneMomentumWidget.swift`: `TodayTasksWidgetView.statusPresentation` → the real declaration,
+    `CadenceTodayWidgetTask.widgetStatus(for:)`, a private extension method in
+    `TodayTasksWidgetView.swift`.
+  **A tenth landed after the ledger was written and before this closed**:
+  `CadenceRowSubjectAccessibilityTests.swift` named `` `ContainerPickerBadge.accessibilityValue(label)` ``
+  as if it were a declared member; it is a call site inside `ContainerPickerBadge`'s own body. Spelled
+  as two separate backticked spans now — `` `ContainerPickerBadge` `` and `` `.accessibilityValue(label)` ``
+  — neither of which parses as a `Type.member` claim.
+
+- [T-717] **CLOSED 2026-09-04 — the file-qualified exclusion narrowed to single-public-type files,
+  sha `4bd86f7e` (fix + narrowing), `ff98a3f7` (fixture bug found by mutation testing).** The
+  exclusion used to suppress any claim whose member is declared anywhere in a file named after the
+  claimed type — right for a `private` helper sharing a file (`NotesView.swift`,
+  `SettingsTagsSection.swift`, both eight and six nominal types respectively, all but the eponymous
+  one `private`) and wrong for two types that are *both* public (`DateFormatters.swift`,
+  `CadenceCalendarDayBadge.swift`, two apiece, neither `private`). Narrowed to: exclude only when the
+  file declares exactly one **top-level, non-private** nominal type
+  (`SymbolIndex.publicNominalTypesByFileBaseName`, gated by `isPrivatelyDeclared` and
+  `isTopLevelDeclaration` — the latter needed because `NotesView` nests a non-`private` `NotesPage`
+  enum, which would otherwise have falsely counted as a second public type and broken the
+  `NotesView.NotesDateJumpButton` exclusion the ticket said must survive).
+  Measuring the newly-uncovered population surfaced **five** genuine misattributions, all corrected
+  rather than ledgered since each was a one-line fix: `AppTask.swift`'s
+  `GoalContributionSummary.summary(for:)` → the real owner, `GoalContributionResolver` (a third type
+  in `GoalContributionSummary.swift`, found only because the narrowing stopped excluding it);
+  `MarkdownEditorView.createAssets` / `.createInlineTag` (two test files) → `MarkdownEditor`, which
+  declares both; `CadenceCalendarDayBadge.markedDayLabel(date:hasItems:)` →
+  `CadenceCalendarDayAccessibility`; `DateFormatters.timeString` → `TimeFormatters`.
+  **A mutation caught a hole in the new test's own fixture**: `scripts/mutate.sh` on the narrowing
+  guard itself first reported SURVIVED — `theFileQualifiedExclusionStopsAtASecondPublicTypeButNotAtAPrivateOne`
+  built its `SymbolIndex` from a file path that did not match the claimed type's name, so the
+  file-qualified branch in `offendingSpans` never ran and every assertion passed regardless of the
+  mutation. Fixed by naming the fixture path after the claimed type, matching the real convention;
+  the same mutation is now KILLED. `sha ff98a3f7`.
 
 - [T-674] **CLOSED 2026-09-04 — ten icon-only controls now say something, and four helpers can no
   longer ship one that does not, sha `a79dd92c`.** From [[T-637]]. `TimelineZoomControl`'s inline
