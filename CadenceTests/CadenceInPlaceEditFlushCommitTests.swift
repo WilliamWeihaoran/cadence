@@ -139,9 +139,11 @@ struct CadenceInPlaceEditFlushCommitTests {
     }
 
     /// **Behavioural, and the defect.** A refused move answers `false` **and puts the task back in
-    /// the list it started in** — including its `order`, which `CadenceTaskFieldSnapshot` does not
-    /// carry. `assignContainer` sends a genuine move to the end of its new list, so a restore that
-    /// reset the relationships and left the order would move the task inside the list it never left.
+    /// the list it started in** — including its `order`, which `CadenceTaskFieldSnapshot` did not
+    /// carry when this undo was written out by hand. `assignContainer` sends a genuine move to the
+    /// end of its new list, so a restore that reset the relationships and left the order would move
+    /// the task inside the list it never left. [[T-701]] put `order` in the snapshot; folding this
+    /// undo back onto the shared unit is [[T-765]].
     @Test func arefusedListMoveLeavesTheTaskInTheListItStartedIn() throws {
         let modelContainer = try container()
         let modelContext = ModelContext(modelContainer)
@@ -562,6 +564,64 @@ struct CadenceInPlaceEditFlushCommitTests {
             try read("Cadence/Shared/CadenceTaskMutationSupport.swift").contains("static func moveToContainer("),
             "the harvest's reader is not handing back source"
         )
+    }
+
+    /// **T-725: why `moveToContainer` keeps `@discardableResult`, and what makes that keep expire.**
+    ///
+    /// On a function whose `false` means "the task is back where it started", an attribute that
+    /// lets a caller drop the answer points the wrong way. Removing it was still refused, because
+    /// `_ =` compiles: it converts a silent discard into a visible one, not into a compiler
+    /// guarantee, and the guarantee already exists one test up —
+    /// `everyProductCallerOfMoveToContainerGuardsOnTheAnswer` requires a literal `guard` at every
+    /// product call site, which is strictly stronger than "the result is spelled out". Five `_ =`
+    /// in tests buy nothing that scan does not already hold.
+    ///
+    /// What the attribute did lack is an expiry. It is kept for exactly five call sites, none of
+    /// them product code, and this names them: when the last one goes, this test goes red and the
+    /// attribute has no remaining beneficiary to justify it.
+    ///
+    /// A call is *consumed* when the text before it ends in `(`, `!`, `=`, `guard` or `return` —
+    /// which covers `#expect(`, `#expect(\n  !`, `let landed =` and a real `guard`. Anything else
+    /// is a bare statement whose answer goes nowhere.
+    @Test func themoveAnswerIsDiscardedAtFiveTestCallSitesAndNowhereElse() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        var discarding: [String] = []
+        var consumed = 0
+        var filesRead = 0
+
+        for path in try CadenceSourceScan.swiftFiles(under: "CadenceTests") {
+            filesRead += 1
+            let source = try read(path)
+            for call in CadenceSourceScan.captures(
+                #"(CadenceTaskMutationSupport)\.moveToContainer\("#,
+                in: source
+            ) {
+                var tail = String(source[source.startIndex..<call.range.lowerBound].suffix(200))
+                while let last = tail.last, last.isWhitespace { tail.removeLast() }
+                let isConsumed = tail.hasSuffix("(") || tail.hasSuffix("!") || tail.hasSuffix("=")
+                    || tail.hasSuffix("guard") || tail.hasSuffix("return")
+                if isConsumed { consumed += 1 } else { discarding.append(path) }
+            }
+        }
+
+        // A floor, and the permitted kind: the test target only ever gains files, so this cannot
+        // sag the way a floor over a shrinking population does. It guards the one thing the two
+        // exact assertions below cannot — an enumeration narrowed to the three files that happen
+        // to hold a call.
+        #expect(filesRead >= 200, "the discard harvest read \(filesRead) files")
+        #expect(
+            discarding.sorted() == [
+                "CadenceTests/CadenceTaskContextInheritanceTests.swift",
+                "CadenceTests/TaskContainerAssignmentTests.swift",
+                "CadenceTests/TaskContainerAssignmentTests.swift",
+                "CadenceTests/TaskContainerAssignmentTests.swift",
+                "CadenceTests/TaskContainerAssignmentTests.swift"
+            ],
+            "the sites `@discardableResult` is kept for moved: \(discarding.sorted())"
+        )
+        // Non-vacuity: a classifier that called everything discarded, or a reader handing back
+        // empty text, would both produce a `consumed` of zero.
+        #expect(consumed == 8, "the harvest classified \(consumed) calls as consuming the answer")
     }
 
     /// The alert's title, in the shape the family already keeps: title-case, no full stop, and its

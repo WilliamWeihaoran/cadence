@@ -159,18 +159,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   is a harder third rule and needs "the scope the sentence implies", which no arithmetic here can
   read. Do the repo-wide-absence half first and say plainly that it is the weaker half.
 
-- [T-725] **`moveToContainer` is still `@discardableResult`, and that attribute is what let
-  [[T-702]] happen.** Every product caller guards on the answer now, so the attribute serves only
-  five test call sites (`TaskContainerAssignmentTests` ×4, `CadenceTaskContextInheritanceTests` ×1).
-  On a function whose `false` means "the task is back where it started", an attribute that lets a
-  caller ignore that silently is pointed the wrong way — its own doc comment already warns that a
-  caller acting on `false` is reporting a move that did not happen. **Not an automatic yes**, which
-  is why it is a ticket rather than part of T-702: removing it needs `_ =` at those five sites, and
-  `_ =` still compiles, so this converts a silent discard into a visible one rather than into a
-  compiler guarantee. The set is currently held by
-  `everyProductCallerOfMoveToContainerGuardsOnTheAnswer`, which is a source scan; decide whether the
-  attribute earns its keep beside that scan or whether the scan is the better half of the pair.
-
 - [T-727] **`iOSContainerChoicePopover` dismisses itself, so no caller can answer a refusal inside
   it.** `choiceRow` sets `selection = tag` **and** `isPresented = false` in one button action, which
   is why [[T-702]]'s row picker had to reach for an alert while the Mac's kanban picker — the same
@@ -181,6 +169,26 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   would let the row picker report where the user is looking and delete one of the two shapes T-702
   had to keep. **Deliberately not done inside T-702**: it changes a shared component under three
   callers that have no refusal to report, which is a wider blast radius than the ticket bought.
+  **Blocked on one design, not on two (2026-09-03).** Deliberately left open rather than half-built:
+  [[T-656]] is the identical defect in `CadenceChoicePopoverList`, whose `Button` action also sets
+  `selection` then `isPresented = false`, and `iOSChoicePicker.swift` already typealiases the iOS
+  names onto that shared type. Two components, one answer — whoever takes them takes both, and picks
+  the spelling once (a `dismissesOnSelect: Bool = true` on each, or a selection setter that returns
+  whether it landed). Building either alone leaves the app with two ways to say the same thing, which
+  is the shape both tickets exist to remove.
+
+- [T-765] **Two callers still write out an undo `CadenceTaskFieldSnapshot` can now do for them.**
+  [[T-701]] put `title` and `order` in the snapshot, which was the entire reason
+  `CadenceNoteTaskEmbedEditing.rename` and `CadenceTaskMutationSupport.moveToContainer` each restore
+  their fields by hand — the doc comment on each said so, and both now say it in the past tense. The
+  near-copies are what T-701 was about, so the ticket is not finished while they stand; it was split
+  because folding them in is a behaviour change and a file move, not a field addition.
+  `rename` needs `CadenceNoteTaskEmbedEditing` marked `@MainActor` (the shared unit is, and four
+  SwiftUI callers would inherit it) and gains a wind-down reconcile on its failure path that it does
+  not do today. `moveToContainer` lives in a file another agent owned during the T-701 batch, and its
+  undo also restores nothing outside the sixteen, so it is a straight substitution — do that one
+  first. `toggleSubtask` stays hand-written either way: `Subtask.isDone` is not a field of `AppTask`
+  and the snapshot is not about it.
 
 - [T-719] **Nothing runs `scripts/mutate.sh selftest`.** `scripts/xcb.sh`'s guards are pinned by
   `CadenceBuildInvocationHygieneTests` — a source scan that fails if the zero-test refusal is deleted —
@@ -221,21 +229,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   whether clicking a colour swatch in a macOS popover actually moves focus off the `TextField` was
   reasoned, not seen. `onSubmit` covers Return regardless, and every other control commits, so the
   worst case is that this path is wider than described.
-
-
-- [T-701] **`CadenceTaskFieldSnapshot` restores a task's fields but not its `title` or its `order`.**
-  Found while landing [[T-497]] and [[T-648]], from two directions in one day. The snapshot carries
-  status, completion, priority, estimate, section, both dates, the scheduled minute, all three
-  recurrence fields and the three container relationships — and neither `title` nor `order`. So
-  `CadenceTaskFieldEditCommit.commit(_:alsoRestoring:in:)`, the app's shared "edit a task field and
-  undo it if the store refuses" unit, silently restores **part** of any edit that touches those two.
-  It is latent today because no current caller writes them through it; both tickets above had to
-  write their undo out by hand for exactly this reason, and each recorded why in its own doc comment.
-  That is two hand-written near-copies of a sentence the shared unit is supposed to own, which is how
-  the third one gets written wrong. The fix is either adding the two fields to the snapshot — cheap,
-  but `order` restoration has to be checked against `nextContainerOrder`'s siblings — or writing the
-  omission into `CadenceTaskFieldSnapshot`'s own doc as a stated boundary with a test that fails when
-  a caller writes an unsnapshotted field. Prefer the second only if the first is measurably wrong.
 
 
 - [T-698] **The Mac's goal pickers spell `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)`'s body
@@ -2069,6 +2062,49 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 ## Done
+
+- [T-701] **CLOSED 2026-09-03 - `title` and `order` are in the snapshot, and the set is now pinned
+  from three directions.** Adding the two fields was not measurably wrong, so the ticket's preferred
+  fix is the one that landed. The `order` worry did not survive being checked:
+  `CadenceTaskMutationSupport.nextContainerOrder` *reads* the destination's siblings and *writes*
+  only the moved task, so putting that one value back is the whole undo - which is exactly what
+  `moveToContainer`'s hand-written restore already did, one field at a time.
+  **Failing-first, red for the right reason.** A caller that writes `title`, `priority` and `order`
+  through `CadenceTaskFieldEditCommit.commit` over a refused save: `(task.title -> "Ship the beta")
+  == "Ship the fix"` and `(task.order -> 41) == 3` both failed while `priority` came back, which is
+  the "restores part of any edit" sentence as an assertion.
+  **The stated boundary came too, because the omission was silent rather than wrong.** `init` and
+  `restore(to:)` were two lists nothing held level, so the new
+  `thefieldSnapshotCapturesAndRestoresTheSameSixteenFields`
+  harvests both and requires each to be the same sixteen, named individually rather
+  than counted - a count would let one field drop out while another arrived. The type's doc now says
+  which fields are deliberately outside (`notes`, `actualMinutes`, `calendarEventID`, `createdAt`,
+  the `recurrenceEnd*`/`recurrenceSource*` group, `goal`, `bundle`, and the to-manys) and why.
+  Mutations, isolated tree, all four `KILLED` by name: dropping `task.title = title` and dropping
+  `task.order = order` each fell to both behavioural tests *and* the scan; adding a seventeenth
+  `task.calendarEventID = ""` to `restore(to:)` fell to **the scan alone**, which is the evidence the
+  symmetry check earns its place - no behavioural test observes that field.
+  4121 tests, 0 failures, 0 warnings over a run that recompiled `CadenceTaskFieldEditCommit.swift`.
+  Residue: [[T-765]] - the two hand-written near-copies can now be folded onto the shared unit, which
+  is what T-701 was ultimately about.
+
+- [T-725] **CLOSED 2026-09-03 - `@discardableResult` stays, and now has an expiry date instead of an
+  argument.** Decided against removal. `_ =` compiles, so removing the attribute converts a silent
+  discard into a visible one and stops there, while
+  `everyProductCallerOfMoveToContainerGuardsOnTheAnswer` already requires a literal `guard` at every
+  product call site - strictly stronger than "the answer is spelled out", and enforced where the
+  defect lives. Five `_ =` in tests buy nothing that scan does not hold.
+  What the attribute *did* lack was any statement of who it is for.
+  `themoveAnswerIsDiscardedAtFiveTestCallSitesAndNowhereElse` harvests every
+  `CadenceTaskMutationSupport.moveToContainer(` under `CadenceTests/`, classifies each by the text in
+  front of it (`(`, `!`, `=`, `guard`, `return` = consumed; anything else = discarded), and requires
+  exactly the five discarders the ticket named - `TaskContainerAssignmentTests` x4 and
+  `CadenceTaskContextInheritanceTests` x1 - plus exactly 8 consuming calls as the non-vacuity half.
+  So the attribute is kept for a named, shrinking set: when the last of the five goes, the test goes
+  red and the attribute has no beneficiary left to justify it. Mutation: `_ =` at the
+  `CadenceTaskContextInheritanceTests` site, `KILLED` by that test.
+  `CadenceTaskMutationSupport.swift` itself was untouched - it belonged to another agent for the
+  batch, and the decision needed no edit to it.
 
 - [T-650] **CLOSED 2026-09-03 (`743ddcf`) - the lock is a FIFO now, and the ordering was shown
   rather than claimed.** A waiter files a ticket in `${LOCK}.queue` named by a microsecond arrival

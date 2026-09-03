@@ -324,6 +324,157 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(stored.scheduledDate == "2026-06-01")
     }
 
+    /// **T-701, and the defect.** `title` and `order` are fields a caller writes through this
+    /// unit, and `CadenceTaskFieldSnapshot` carried neither — so a refused edit that touched them
+    /// restored everything *else* and left those two holding the change the store refused. Half an
+    /// undo is worse than no undo: the card keeps a name at a priority the rename moved, and the
+    /// row sits at the tail of a list it never left.
+    ///
+    /// Both directions are in one test on purpose. They are the two writes the two hand-written
+    /// near-copies existed for — `CadenceNoteTaskEmbedEditing.rename` for the title and
+    /// `CadenceTaskMutationSupport.moveToContainer` for the order — and a fix that covered one
+    /// would leave the other exactly as latent as it was.
+    @Test func arefusedFieldEditRestoresTheTitleAndTheOrderTheEditMoved() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let task = embeddedTask(in: modelContext)
+        task.title = "Ship the fix"
+        task.order = 3
+        try modelContext.save()
+
+        let landed = CadenceTaskFieldEditCommit.commit(
+            task,
+            in: modelContext,
+            reconciler: .inert,
+            commit: { _ in throw CommitRefused() }
+        ) {
+            task.title = "Ship the beta"
+            task.priority = .high
+            task.order = 41
+        }
+
+        #expect(!landed)
+        #expect(task.title == "Ship the fix", "the refused edit left its new title on the task")
+        #expect(task.order == 3, "the refused edit left the task at the order it was moved to")
+        #expect(task.priority == .none, "the fixture proves nothing: the snapshot restored nothing")
+
+        let stored = try #require(try ModelContext(modelContainer).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.title == "Ship the fix")
+        #expect(stored.order == 3)
+    }
+
+    /// **The stated boundary, both halves of it (T-701).**
+    ///
+    /// `CadenceTaskFieldSnapshot` restores a named set of fields and no others, and the way that
+    /// set silently shrank a caller's undo to half an edit was that `init` and `restore(to:)` are
+    /// two lists nothing held level with each other. So this pins the set from three directions:
+    /// every field survives a refused edit that moved it (behavioural), `init` captures exactly
+    /// those sixteen, and `restore(to:)` writes back exactly those sixteen. A field added to one
+    /// list and not the other fails here rather than in whichever screen next reaches for it.
+    ///
+    /// The sixteen are named individually rather than counted. Counting would let one field drop
+    /// out while another arrived, which is the change this exists to catch.
+    private static let snapshottedTaskFields = [
+        "area", "completedAt", "context", "dueDate", "estimatedMinutes", "order", "priorityRaw",
+        "project", "recurrenceRaw", "recurrenceSeriesIDRaw", "recurrenceSpawnedTaskIDRaw",
+        "scheduledDate", "scheduledStartMin", "sectionName", "statusRaw", "title"
+    ]
+
+    @Test func thefieldSnapshotCapturesAndRestoresTheSameSixteenFields() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceTaskFieldEditCommit.swift")
+
+        let initStart = try #require(source.range(of: "init(_ task: AppTask)"))
+        let initBody = try #require(
+            CadenceSourceScan.matchedBody(after: initStart.upperBound, in: source, open: "{", close: "}")
+        )
+        // `taskID = task.id` is the identity the snapshot is filed under, not a field it restores,
+        // so it is the one pair excluded — by name, so a second exclusion cannot arrive unnoticed.
+        let captured = CadenceSourceScan.captures(#"(\w+) = task\.\w+"#, in: initBody)
+            .map(\.text)
+            .filter { $0 != "taskID" }
+        #expect(captured.sorted() == Self.snapshottedTaskFields, "the snapshot captures \(captured.sorted())")
+
+        let restoreBody = try #require(CadenceSourceScan.functionBody(named: "restore", in: source))
+        let restored = CadenceSourceScan.captures(#"task\.(\w+) = "#, in: restoreBody).map(\.text)
+        #expect(restored.sorted() == Self.snapshottedTaskFields, "the snapshot restores \(restored.sorted())")
+    }
+
+    /// The behavioural half: one refused edit that moves all sixteen, and all sixteen come back.
+    @Test func arefusedEditRestoresEverySnapshottedFieldAtOnce() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let area = Area(name: "Work")
+        let project = Project(name: "Beta")
+        let homeContext = Context(name: "Home")
+        let officeContext = Context(name: "Office")
+        for model in [area] { modelContext.insert(model) }
+        for model in [project] { modelContext.insert(model) }
+        for model in [homeContext, officeContext] { modelContext.insert(model) }
+
+        let completedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let seriesID = UUID()
+        let successorID = UUID()
+        let task = AppTask(title: "Ship the fix")
+        task.order = 3
+        task.statusRaw = TaskStatus.done.rawValue
+        task.completedAt = completedAt
+        task.priorityRaw = TaskPriority.low.rawValue
+        task.estimatedMinutes = 30
+        task.sectionName = "Backlog"
+        task.scheduledDate = "2026-06-01"
+        task.scheduledStartMin = 480
+        task.dueDate = "2026-06-02"
+        task.recurrenceRaw = TaskRecurrenceRule.daily.rawValue
+        task.recurrenceSeriesIDRaw = seriesID.uuidString
+        task.recurrenceSpawnedTaskIDRaw = successorID.uuidString
+        task.area = area
+        task.context = homeContext
+        modelContext.insert(task)
+        try modelContext.save()
+
+        let landed = CadenceTaskFieldEditCommit.commit(
+            task,
+            in: modelContext,
+            reconciler: .inert,
+            commit: { _ in throw CommitRefused() }
+        ) {
+            task.title = "Ship the beta"
+            task.order = 41
+            task.statusRaw = TaskStatus.cancelled.rawValue
+            task.completedAt = nil
+            task.priorityRaw = TaskPriority.high.rawValue
+            task.estimatedMinutes = 90
+            task.sectionName = "Doing"
+            task.scheduledDate = "2026-07-04"
+            task.scheduledStartMin = 540
+            task.dueDate = "2026-07-05"
+            task.recurrenceRaw = TaskRecurrenceRule.weekly.rawValue
+            task.recurrenceSeriesIDRaw = ""
+            task.recurrenceSpawnedTaskIDRaw = ""
+            task.area = nil
+            task.project = project
+            task.context = officeContext
+        }
+
+        #expect(!landed)
+        #expect(task.title == "Ship the fix")
+        #expect(task.order == 3)
+        #expect(task.statusRaw == TaskStatus.done.rawValue)
+        #expect(task.completedAt == completedAt)
+        #expect(task.priorityRaw == TaskPriority.low.rawValue)
+        #expect(task.estimatedMinutes == 30)
+        #expect(task.sectionName == "Backlog")
+        #expect(task.scheduledDate == "2026-06-01")
+        #expect(task.scheduledStartMin == 480)
+        #expect(task.dueDate == "2026-06-02")
+        #expect(task.recurrenceRaw == TaskRecurrenceRule.daily.rawValue)
+        #expect(task.recurrenceSeriesIDRaw == seriesID.uuidString)
+        #expect(task.recurrenceSpawnedTaskIDRaw == successorID.uuidString)
+        #expect(task.area?.id == area.id)
+        #expect(task.project == nil)
+        #expect(task.context?.id == homeContext.id)
+    }
+
     /// The undo is a snapshot, not `rollback()`, and this is what says so: the popover opens over a
     /// note editor sharing this context, and a refused priority edit must not take the note text
     /// with it.

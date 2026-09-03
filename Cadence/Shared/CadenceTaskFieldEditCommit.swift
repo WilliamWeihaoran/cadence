@@ -13,9 +13,31 @@ import SwiftData
 /// The three relationships are the to-one sides only, which is the same reach the write had:
 /// `TaskContainerResolver.applyContainer` assigns `task.area` / `project` / `context` and lets
 /// SwiftData maintain the inverse arrays, so assigning them back is symmetric with it.
+///
+/// **`title` and `order` are here because leaving them out restored half of an edit (T-701).**
+/// They are the two scalars a caller writes through this unit without writing anything else that
+/// would give the omission away: an inline rename moves `title` and — through the `!` shortcut —
+/// `priorityRaw`, and a move between lists moves the relationships and `order`. Restoring one and
+/// not the other is a state neither outcome the user could have expected, and it was silent. It
+/// cost two callers a hand-written near-copy of this undo before it cost anybody a bug.
+/// `order` needs no sibling repair: `CadenceTaskMutationSupport.nextContainerOrder` reads the
+/// destination's siblings but writes only the moved task, so putting that one value back is the
+/// whole undo.
+///
+/// **The stated boundary.** `restore(to:)` assigns the sixteen properties below and nothing else.
+/// A task's `notes`, `actualMinutes`, `calendarEventID`, `createdAt`, the `recurrenceEnd*` and
+/// `recurrenceSource*`/`recurrenceOccurrenceIndex` fields, `goal`, `bundle`/`bundleOrder`, and the
+/// to-many `subtasks` / `tags` / `focusSessions` are **not** carried — the to-manys because a
+/// snapshot of a relationship array cannot restore an insert, and the rest because no caller of
+/// `CadenceTaskFieldEditCommit.commit` writes them. A caller that starts to must add the field
+/// here in the same change, and `thefieldSnapshotCapturesAndRestoresTheSameSixteenFields` in
+/// `CadenceEditorSaveCommitSurfaceTests` pins the covered set exactly, so an addition on one side
+/// of the pair cannot be forgotten on the other.
 struct CadenceTaskFieldSnapshot {
     let taskID: UUID
 
+    private let title: String
+    private let order: Int
     private let statusRaw: String
     private let completedAt: Date?
     private let priorityRaw: String
@@ -33,6 +55,8 @@ struct CadenceTaskFieldSnapshot {
 
     init(_ task: AppTask) {
         taskID = task.id
+        title = task.title
+        order = task.order
         statusRaw = task.statusRaw
         completedAt = task.completedAt
         priorityRaw = task.priorityRaw
@@ -58,6 +82,8 @@ struct CadenceTaskFieldSnapshot {
     }
 
     func restore(to task: AppTask) {
+        task.title = title
+        task.order = order
         task.statusRaw = statusRaw
         task.completedAt = completedAt
         task.priorityRaw = priorityRaw

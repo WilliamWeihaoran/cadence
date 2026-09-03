@@ -112,11 +112,12 @@ struct CadenceNoteTaskEmbedCommitTests {
         #expect(stored.map(\.priority) == [.high])
     }
 
-    /// **Behavioural, and the reason `CadenceTaskFieldEditCommit` is not the unit here.** The
-    /// shortcut moves the priority as a side effect of the title, so a refused rename has to put
-    /// **both** back. `CadenceTaskFieldSnapshot` carries `priorityRaw` and not `title`: restoring
-    /// through it would undo the priority and keep the title, leaving the card holding half of an
-    /// edit nobody made.
+    /// **Behavioural.** The shortcut moves the priority as a side effect of the title, so a
+    /// refused rename has to put **both** back. `CadenceTaskFieldSnapshot` used to carry
+    /// `priorityRaw` and not `title`, so restoring through it would have undone the priority and
+    /// kept the title, leaving the card holding half of an edit nobody made — which is why this
+    /// undo was written out by hand. [[T-701]] put `title` in the snapshot; this assertion is
+    /// unchanged by that, because it is about the outcome and not about which unit produces it.
     @Test func arefusedEmbeddedRenameRestoresTheTitleAndThePriorityTogether() throws {
         let modelContainer = try container()
         let modelContext = ModelContext(modelContainer)

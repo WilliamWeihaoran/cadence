@@ -17,10 +17,12 @@ import SwiftData
 /// Both functions answer `false` with the task exactly as it was found, so a caller that repaints
 /// on `false` is the bug again.
 ///
-/// **`CadenceTaskFieldEditCommit` is deliberately not the unit here.** Its snapshot
-/// (`CadenceTaskFieldSnapshot`) covers neither `title` nor a subtask's `isDone` — it would restore
-/// the priority a rename moved and leave the title that rename changed, which is a worse state than
-/// either outcome the user could have expected.
+/// **`CadenceTaskFieldEditCommit` is not the unit here, and the reason has shrunk to one field.**
+/// Its snapshot (`CadenceTaskFieldSnapshot`) used to carry neither `title` nor a subtask's
+/// `isDone`, so restoring a refused rename through it would have put the priority back and left the
+/// title — a worse state than either outcome the user could have expected. `title` is snapshotted
+/// as of [[T-701]]; `isDone` lives on `Subtask`, which that snapshot is not about at all, so
+/// `toggleSubtask` still owns its own undo. Moving `rename` onto the shared unit is [[T-765]].
 enum CadenceNoteTaskEmbedEditing {
 
     /// Ticks or unticks one subtask of an embedded card.
