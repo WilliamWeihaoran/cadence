@@ -142,6 +142,60 @@ struct CadenceSourceScanReaderTests {
         #expect(CadenceSourceScan.functionBody(named: "torn", in: "func torn(a: Int {\n    x\n") == nil)
     }
 
+    /// **T-668.** The same defect one layer out, in the reader `cadenceFunctionBody` used to spell
+    /// for itself: an *arbitrary* declaration prefix, which is why the second copy existed at all.
+    /// A prefix that stops inside the parameter list must still skip a defaulted closure, and the
+    /// throwing wrapper the 83 call sites use must read the same span the shared reader does.
+    @Test func theDeclarationBodyReaderSkipsADefaultedClosureInAnOpenParameterList() throws {
+        let source = """
+        static func rollOver(
+            _ tasks: [AppTask],
+            todayKey: String,
+            modelContext: ModelContext,
+            commit: (ModelContext) throws -> Void = { try $0.save() }
+        ) throws -> String {
+            try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)
+            return todayKey
+        }
+        """
+        let body = try #require(CadenceSourceScan.declarationBody("static func rollOver(", in: source))
+        #expect(body.contains("commitDelete(in: modelContext, commit: commit)"),
+                "read \(body) instead of the body")
+        #expect(body.contains("try $0.save()") == false,
+                "the reader is still handing back the default closure (T-644, T-668)")
+        #expect(try cadenceFunctionBody("static func rollOver(", in: source) == body,
+                "the throwing wrapper and the shared reader disagree about the span")
+
+        // The prefix that stops *before* the parameter list opens, which the copied reader also
+        // could not see past: `handleCommandKeyEvent` is called that way at a real site.
+        let named = try #require(CadenceSourceScan.declarationBody("static func rollOver", in: source))
+        #expect(named == body, "a prefix stopping at the name reads a different span")
+    }
+
+    /// The other direction, so T-668's fix is not "returns something bigger". A prefix with no
+    /// parentheses, and one whose parentheses are already closed, must read exactly what they read
+    /// before — the second is `.onChange(of:)`, where the brace that follows *is* the span wanted.
+    @Test func theDeclarationBodyReaderLeavesAClosedOrParenlessPrefixWhereItWas() throws {
+        let view = "struct MacTaskRow: View {\n    var body: some View { Text(\"row\") }\n}"
+        #expect(CadenceSourceScan.declarationBody("var body: some View", in: view) == " Text(\"row\") ")
+
+        let onChange = ".onChange(of: scenePhase) { _, phase in\n    reconcile()\n}"
+        #expect(
+            CadenceSourceScan.declarationBody(".onChange(of: scenePhase)", in: onChange)?
+                .contains("reconcile()") == true
+        )
+
+        #expect(CadenceSourceScan.declarationBody("func absent(", in: view) == nil)
+        #expect(CadenceSourceScan.declarationBody("func torn(", in: "func torn(a: Int {\n    x\n") == nil)
+
+        // `functionBody(named:)` is this read with one prefix, so the two cannot drift apart.
+        let function = "func plain(a: Int, b: (Int) -> Int) -> Int {\n    a + b(a)\n}"
+        #expect(
+            CadenceSourceScan.functionBody(named: "plain", in: function)
+                == CadenceSourceScan.declarationBody("func plain(", in: function)
+        )
+    }
+
     /// `matchedRange` is `matchedBody`'s span, and the pairing has to stay honest: `upperBound` is
     /// the index **of** the closing character, which is what lets `functionBody` resume from it.
     @Test func theMatchedRangeAndMatchedBodyReadersAgreeOnTheSameSpan() throws {

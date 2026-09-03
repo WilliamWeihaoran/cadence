@@ -481,17 +481,25 @@ struct CadenceTodayRolloverSurfaceTests {
 
     /// The commit itself: through `CadencePendingChangePersistence`, not a swallowed `save()`.
     @Test func theRollCommitsThroughThePendingChangeUnit() throws {
-        // The whole file rather than one body: `cadenceFunctionBody` stops at the first `{` after
-        // the declaration, which is now the `commit:` default argument. That is the **T-644**
-        // defect in a second, copied reader — `CadenceSourceScan.functionBody(named:)` balances the
-        // parameter list now, `cadenceFunctionBody` still does not ([[T-668]]). Reading the file is
-        // the stronger claim anyway — nothing here may swallow a commit, not just this one function.
+        // **Scoped back to the body by [[T-668]].** This read the whole file, because
+        // `cadenceFunctionBody` was a copy of the pre-T-644 reader and stopped at the `commit:`
+        // default closure — so `rollOver(` came back as `try $0.save()`. The reader balances the
+        // parameter list now, and the narrow claim is the stronger one: the commit is *this*
+        // function's, not merely spelled somewhere in the file.
         let source = try strippingComments(sourceFile("Cadence/Shared/CadenceTodayRolloverSupport.swift"))
+        let body = try cadenceFunctionBody("static func rollOver(", in: source)
         #expect(
-            !source.contains("try? modelContext.save()"),
+            !body.contains("try? modelContext.save()"),
             "rollOver still swallows its commit"
         )
-        #expect(source.contains("try CadencePendingChangePersistence.commitDelete("))
+        #expect(body.contains("try CadencePendingChangePersistence.commitDelete("))
+        // The default closure is *outside* the body, which is the whole of what T-668 fixed here.
+        #expect(
+            !body.contains("try $0.save()"),
+            "the reader is back to handing this test the commit: default instead of the body"
+        )
+        // The file half that is genuinely a file-wide claim: nothing else here swallows a commit.
+        #expect(!source.contains("try? modelContext.save()"))
         #expect(
             source.contains("commit: (ModelContext) throws -> Void"),
             "rollOver does not take the injectable commit the refusal tests need"

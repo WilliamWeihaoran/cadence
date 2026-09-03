@@ -834,7 +834,7 @@ struct iOSNoteReferencePanel: View {
             let title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
 
             iOSMarkdownSuggestionPill(
-                title: title.isEmpty ? MarkdownTaskEmbedRenderInfo.untitledTaskTitle : title,
+                title: CadenceTitleNormalization.display(title, fallback: MarkdownTaskEmbedRenderInfo.untitledTaskTitle),
                 subtitle: due ?? NoteReferencePanelSupport.taskFallbackSubtitle(task),
                 subtitleTint: due != nil && isOverdue ? Theme.red : Theme.dim,
                 action: { openTask(task) }

@@ -74,7 +74,7 @@ struct iOSTaskPropertiesSection: View {
                         + availableGoals.map { goal in
                             iOSChoiceRow(
                                 value: Optional(goal.id),
-                                title: goal.title.isEmpty ? CadenceTitleNormalization.defaultMilestoneTitle : goal.title,
+                                title: CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultMilestoneTitle),
                                 systemImage: goal.icon,
                                 // A goal's colour is the user's own, and it is what tells two
                                 // milestones apart in a list of them.

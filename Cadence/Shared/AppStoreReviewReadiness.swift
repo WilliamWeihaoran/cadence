@@ -14,7 +14,12 @@ enum AppStoreReviewReadiness {
 /// bundle lookup rather than a design decision. It was three computed properties on
 /// `iOSSettingsView` while macOS had no About screen at all; a second hand-written copy on the
 /// desktop is how the two would come to disagree about which key holds the build number.
-enum CadenceAppBuildIdentity {
+///
+/// `nonisolated` because the archive header reads it too ([[T-700]]) and
+/// `CadenceDataExportService` is a `nonisolated enum`: a bundle lookup is not main-actor work, and
+/// leaving it isolated would have forced the export to keep its own copy of the two keys — which is
+/// the duplication this type's doc comment above is about.
+nonisolated enum CadenceAppBuildIdentity {
     static var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     }

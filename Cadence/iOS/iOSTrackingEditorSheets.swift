@@ -160,7 +160,7 @@ struct iOSGoalEditorSheet: View {
                         iOSChoicePopoverList(
                             rows: [iOSChoiceRow<UUID?>(value: nil, title: "None \u{2014} top-level goal", color: Theme.dim)]
                                 + parentChoices.map { goal in
-                                    iOSChoiceRow(value: Optional(goal.id), title: goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title, systemImage: goal.icon, color: Color(hex: goal.colorHex))
+                                    iOSChoiceRow(value: Optional(goal.id), title: CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultGoalTitle), systemImage: goal.icon, color: Color(hex: goal.colorHex))
                                 },
                             selection: $parentGoalID,
                             isPresented: $showParentGoalPicker
@@ -521,9 +521,9 @@ struct iOSHabitEditorSheet: View {
     }
 
     private func goalMenuTitle(for goal: Goal) -> String {
-        let name = goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title
+        let name = CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultGoalTitle)
         guard let parent = goal.parentGoal else { return name }
-        let parentName = parent.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : parent.title
+        let parentName = CadenceTitleNormalization.display(parent.title, fallback: CadenceTitleNormalization.defaultGoalTitle)
         return "\(parentName) › \(name)"
     }
 

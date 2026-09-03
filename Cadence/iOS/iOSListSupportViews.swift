@@ -693,7 +693,7 @@ struct iOSListLinksPanel: View {
         // pasted `HTTPS://example.com` was stored as `https://HTTPS://example.com` (T-509).
         guard let url = CadenceSavedLinkURL.normalized(newURL) else { return }
 
-        let link = SavedLink(title: title.isEmpty ? url : title, url: url)
+        let link = SavedLink(title: CadenceTitleNormalization.display(title, fallback: url), url: url)
         link.area = area
         link.project = project
         link.order = (links.map(\.order).max() ?? -1) + 1
@@ -794,7 +794,7 @@ private struct iOSLinkRow: View {
             iOSListIconBadge(icon: "link", colorHex: Theme.blueHex)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(link.title.isEmpty ? link.url : link.title)
+                Text(CadenceTitleNormalization.display(link.title, fallback: link.url))
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)

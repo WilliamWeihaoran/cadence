@@ -59,16 +59,62 @@ enum CadenceSourceScan {
     /// already skips nested pairs, so a defaulted closure, a tuple, or a nested function type in
     /// the signature all fall inside the parameter list rather than opening the body.
     static func functionBody(named name: String, in source: String) -> String? {
-        guard let signature = source.range(of: "func \(name)(") else { return nil }
-        // The `(` that opens the parameter list is the last character the needle matched, so the
-        // parameter scan starts *on* it rather than after it.
-        guard let parameters = matchedRange(
-            after: source.index(before: signature.upperBound),
-            in: source,
-            open: "(",
-            close: ")"
-        ) else { return nil }
-        return matchedBody(after: parameters.upperBound, in: source, open: "{", close: "}")
+        declarationBody("func \(name)(", in: source)
+    }
+
+    /// The text between the braces of the body that follows an **arbitrary declaration prefix** —
+    /// `var body: some View`, `struct MacTaskRow: View`, `static func normalizedSelection(`, even
+    /// `.onChange(of: scenePhase)`. `nil` when the prefix is absent or a pair never balances.
+    ///
+    /// **T-668.** `functionBody(named:)` above is this read with `"func \(name)("` as its prefix,
+    /// and it is written that way rather than beside it. A second, hand-written brace matcher lived
+    /// in `FocusPickerPlayControlTests` with 83 call sites across 19 files; it took the first `{`
+    /// after the prefix, so T-644's parameter balancing reached none of them, and one of those call
+    /// sites had already widened to a whole-file scan because the copy stopped at a `commit:`
+    /// default closure.
+    ///
+    /// Two parameter lists can stand between the prefix and the body, and both are balanced before
+    /// a `{` is looked for: the one the prefix itself left **open** (`"static func rollOver("`) and
+    /// the one that **begins** right after a prefix that stopped at the name
+    /// (`"static func handleCommandKeyEvent"`). A prefix whose parentheses are already closed
+    /// resumes at its own end, which is what keeps `".onChange(of: scenePhase)"` reading the
+    /// closure that follows it rather than something inside it.
+    static func declarationBody(_ declaration: String, in source: String) -> String? {
+        guard let declared = source.range(of: declaration) else { return nil }
+
+        // The prefix's own parentheses, so an argument list it cut through is finished rather than
+        // read as a body. `unclosed.first` is the outermost one, which is the parameter list.
+        var unclosed: [String.Index] = []
+        var index = declared.lowerBound
+        while index < declared.upperBound {
+            if source[index] == "(" {
+                unclosed.append(index)
+            } else if source[index] == ")", !unclosed.isEmpty {
+                unclosed.removeLast()
+            }
+            index = source.index(after: index)
+        }
+
+        var resume = declared.upperBound
+        if let opened = unclosed.first {
+            guard let parameters = matchedRange(after: opened, in: source, open: "(", close: ")") else {
+                return nil
+            }
+            resume = source.index(after: parameters.upperBound)
+        }
+
+        var next = resume
+        while next < source.endIndex, source[next].isWhitespace {
+            next = source.index(after: next)
+        }
+        if next < source.endIndex, source[next] == "(" {
+            guard let parameters = matchedRange(after: next, in: source, open: "(", close: ")") else {
+                return nil
+            }
+            resume = source.index(after: parameters.upperBound)
+        }
+
+        return matchedBody(after: resume, in: source, open: "{", close: "}")
     }
 
     /// The text between the first `open` at or after `start` and the `close` that balances it.
@@ -487,4 +533,35 @@ enum CadenceCommitSurfaceScan {
         #expect(stripped.count == raw.count, "\(path): the stripper changed the length")
         return stripped
     }
+}
+
+/// One declaration's body, or a throw: `CadenceSourceScan.declarationBody` plus the two guards a
+/// scoped scan wants. A miss is an error rather than a `nil`, and a body under 40 characters is
+/// refused, because a `""` body passes every zero-count assertion written against it — the vacuity
+/// trap `Cadence/Shared/AGENTS.md` names.
+///
+/// Scoping a count to one body is the point: a whole-file needle count is blind to a call moving
+/// *between* two functions in the file, which is the hole a mutation of `accept(_:)` walked through
+/// and the shape `docs/TODO.md` T-161 is about.
+///
+/// **T-668, and there must not be a second one.** This used to be declared in
+/// `FocusPickerPlayControlTests` and matched braces itself, which is how it still had the
+/// pre-T-644 defect after that fix landed. It is a wrapper now, so the repository has one brace
+/// matcher and its 83 call sites read the span the shared reader says they do. Anything that wants
+/// to scope a scan to one declaration calls this or `declarationBody` rather than writing its own.
+func cadenceFunctionBody(_ declaration: String, in code: String) throws -> String {
+    guard code.range(of: declaration) != nil else {
+        throw SourceBodyScanError.notFound(declaration)
+    }
+    guard let body = CadenceSourceScan.declarationBody(declaration, in: code) else {
+        throw SourceBodyScanError.unbalanced(declaration)
+    }
+    guard body.count > 40 else { throw SourceBodyScanError.tooShort(declaration) }
+    return body
+}
+
+enum SourceBodyScanError: Error {
+    case notFound(String)
+    case tooShort(String)
+    case unbalanced(String)
 }

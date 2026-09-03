@@ -167,7 +167,7 @@ private struct iOSInboxReminderRow: View {
             completionButton
 
             VStack(alignment: .leading, spacing: metrics.summarySpacing) {
-                Text(reminder.title.isEmpty ? CadenceTitleNormalization.defaultReminderTitle : reminder.title)
+                Text(CadenceTitleNormalization.display(reminder.title, fallback: CadenceTitleNormalization.defaultReminderTitle))
                     .font(.system(size: metrics.titleFontSize, weight: .medium))
                     .foregroundStyle(rowState.isCompleting ? Theme.dim : Theme.text)
                     .strikethrough(rowState.isCompleting, color: Theme.dim)

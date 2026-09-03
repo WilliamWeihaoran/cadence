@@ -99,7 +99,7 @@ struct LinksView: View {
         // the copy on iOS both read `hasPrefix` case-sensitively and turned `HTTPS://example.com`
         // into `https://HTTPS://example.com` (T-509).
         guard let urlStr = CadenceSavedLinkURL.normalized(newURL) else { return }
-        let link = SavedLink(title: title.isEmpty ? urlStr : title, url: urlStr)
+        let link = SavedLink(title: CadenceTitleNormalization.display(title, fallback: urlStr), url: urlStr)
         link.area = area
         link.project = project
         link.order = CadenceOrderAllocation.nextOrder(after: links, order: \.order)

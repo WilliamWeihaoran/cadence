@@ -235,7 +235,7 @@ struct iOSSearchView: View {
                     // `page-goals`.
                     id: CadenceSearchIdentity.goal(goal.id),
                     destination: .feature(.goals),
-                    title: goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title,
+                    title: CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultGoalTitle),
                     subtitle: goal.parentGoal?.title ?? goal.context?.name ?? goal.kind.label,
                     detail: summary.percentLabel,
                     icon: goal.icon,
@@ -249,7 +249,7 @@ struct iOSSearchView: View {
                 result: iOSSearchResult(
                     id: CadenceSearchIdentity.habit(habit.id),
                     destination: .feature(.habits),
-                    title: habit.title.isEmpty ? CadenceTitleNormalization.defaultHabitTitle : habit.title,
+                    title: CadenceTitleNormalization.display(habit.title, fallback: CadenceTitleNormalization.defaultHabitTitle),
                     subtitle: habit.goal?.title ?? habit.context?.name ?? habit.frequencySummary,
                     detail: habit.isDueToday ? "Due today" : habit.frequencySummary,
                     icon: "flame.fill",

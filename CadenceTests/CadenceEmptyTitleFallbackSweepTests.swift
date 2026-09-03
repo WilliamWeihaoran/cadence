@@ -148,6 +148,84 @@ struct CadenceEmptyTitleFallbackSweepTests {
         #expect(hits.isEmpty, "these surfaces hand-spell an empty-title fallback: \(hits)")
     }
 
+    /// **T-687.** The same untrimmed ternary with a **constant** between the `?` and the `:`.
+    ///
+    /// T-609's needle required a string *literal* there, because that was the shape T-569 measured.
+    /// Allowing a constant found **27 more sites** — mostly ones [[T-505]]/[[T-513]] had already
+    /// de-literalised, so they read the right placeholder and *still* drew a blank line for a title
+    /// of spaces. A surviving mutation is what found this: M2 rewrote the widget row's fallback as
+    /// the constant rather than the literal, the behavioural test killed it and T-609's sweep did
+    /// not, which is the argument for mutating a scan you are only reading through.
+    ///
+    /// **The copy is untouched, as T-609 decided.** Every one of the 25 sites this closed keeps the
+    /// exact fallback expression it already had; what changed is the trim, and nothing else.
+    ///
+    /// The two survivors are the exemption below, and they are the reason this was not a blind
+    /// sweep: they fall back to **another real value**, not to a placeholder.
+    @Test func noSurfaceHandSpellsAnEmptyTitleFallbackAgainstAConstant() throws {
+        let instrument = try Self.constantTitleFallbackInstrument()
+        var paths: [String] = []
+        for root in ["Cadence", "CadenceWidgets", "CadenceMCPServer"] {
+            paths += try CadenceSourceScan.swiftFiles(under: root)
+        }
+        #expect(paths.contains("CadenceWidgets/TodayTasksWidget.swift"))
+        #expect(paths.contains("CadenceMCPServer/CadenceMCPToolRouter.swift"))
+
+        // The reader, before the result is believed: `codeOnly` blanks string literals and the
+        // needle would never match, which is a permanently green sweep over nothing.
+        let read = CadenceSourceScan.strippedSourceReader()
+        #expect(try read("Cadence/Models/ModelEnums.swift").contains("\"Untitled Task\""),
+                "the sweep's reader blanks string literals, so its needle can never match")
+
+        let hits = try instrument.sweep(
+            paths,
+            atLeast: 300,
+            including: "Cadence/iOS/iOSFeatureDetailViews.swift",
+            read: read
+        )
+
+        #expect(
+            hits == Self.constantFallbackExemptions,
+            "these surfaces hand-spell an empty-title fallback against a constant: \(hits)"
+        )
+    }
+
+    /// The exemption, exact and named line by line rather than counted.
+    ///
+    /// `MarkdownNoteSupport.resolved(_:with:)` merges a note-template **override** into its
+    /// template: `override.title.isEmpty ? template.title : override.title` falls back to the
+    /// template's own value, not to a placeholder, and the two are stored strings rather than a
+    /// drawn label. Trimming there would silently rewrite what a user saved, which is a decision
+    /// about override semantics rather than the mechanical substitution the other 25 were — so it
+    /// is written down here and owned by [[T-785]] instead of swept.
+    ///
+    /// Stated as the exact pair, so a third ternary appearing in that file is a failure rather than
+    /// something the file-level exemption quietly absorbs.
+    @Test func theOverrideMergeExemptionIsStillExactlyTheTwoLinesItWasMeasuredAs() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/MarkdownNoteSupport.swift")
+        )
+        #expect(source.contains("static func resolved(_ template: NoteTemplate, with override: NoteTemplateOverride)"),
+                "non-vacuity: the exempted function is gone, so the exemption may be stale")
+        #expect(
+            CadenceSourceScan.matchCount(
+                "override.title.isEmpty \\? template.title : override.title",
+                in: source
+            ) == 1
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                "override.subtitle.isEmpty \\? template.subtitle : override.subtitle",
+                in: source
+            ) == 1
+        )
+        let pattern = "[A-Za-z0-9_.]*[Tt]itle\\.isEmpty \\? [A-Za-z_][A-Za-z0-9_.]* : "
+        #expect(
+            CadenceSourceScan.matchCount(pattern, in: source) == 2,
+            "MarkdownNoteSupport has grown a third constant-fallback ternary, which the file-level exemption would hide"
+        )
+    }
+
     /// The *near-miss* spelling, swept separately because it is a different regex and a different
     /// symptom: the trim happens, and then the untrimmed original is returned anyway.
     @Test func noSurfaceTestsATrimmedTitleAndThenReturnsTheUntrimmedOne() throws {
@@ -294,6 +372,31 @@ struct CadenceEmptyTitleFallbackSweepTests {
             }
         )
     }
+
+    /// The 27 sites' shape: `X.isEmpty ? SomeConstant : X`, where `X` is a title. The same
+    /// back-reference as T-609's instrument, and the same reason for it — the guarded expression
+    /// and the else-branch must be the same text, so a *choice* between two values is not a hit.
+    ///
+    /// The negative witness is the T-609 spelling with a literal, which the other instrument owns:
+    /// a detector matching both would report T-609's sweep as this one's and make either result
+    /// unattributable.
+    static func constantTitleFallbackInstrument() throws -> CadenceScanInstrument {
+        let pattern = try NSRegularExpression(
+            pattern: "([A-Za-z0-9_.]*[Tt]itle)\\.isEmpty \\? ([A-Za-z_][A-Za-z0-9_.]*) : \\1(?![A-Za-z0-9_])"
+        )
+        return try CadenceScanInstrument(
+            "constant empty-title fallback",
+            fires: "Text(goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title)",
+            andNotOn: "Text(task.title.isEmpty ? \"Untitled\" : task.title)",
+            by: { source in
+                pattern.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)) != nil
+            }
+        )
+    }
+
+    /// The only files allowed to hold the shape above, and why is in
+    /// `theOverrideMergeExemptionIsStillExactlyTheTwoLinesItWasMeasuredAs`.
+    static let constantFallbackExemptions = ["Cadence/Services/MarkdownNoteSupport.swift"]
 
     /// `X.trimmingCharacters(…).isEmpty ? "…" : X` — the trim happens and is then thrown away.
     /// The negative witness is the *correct* hand-spelling, which trims into a local and tests

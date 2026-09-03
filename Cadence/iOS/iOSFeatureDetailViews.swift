@@ -50,7 +50,7 @@ struct iOSGoalDetail: View {
     private var heroSubtitle: String {
         if !goal.desc.isEmpty { return goal.desc }
         if let parent = goal.parentGoal {
-            return parent.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : parent.title
+            return CadenceTitleNormalization.display(parent.title, fallback: CadenceTitleNormalization.defaultGoalTitle)
         }
         return goal.context?.name ?? goal.kind.detail
     }
@@ -84,7 +84,7 @@ struct iOSGoalDetail: View {
                                 // section is titled "Milestones" and iterates `milestones`, and the
                                 // three other rows that show a nested goal — the task sheet's
                                 // milestone row and its two pickers — already call it a milestone.
-                                label: milestone.title.isEmpty ? CadenceTitleNormalization.defaultMilestoneTitle : milestone.title,
+                                label: CadenceTitleNormalization.display(milestone.title, fallback: CadenceTitleNormalization.defaultMilestoneTitle),
                                 systemImage: milestone.icon,
                                 color: Color(hex: milestone.colorHex)
                             ) {
@@ -98,7 +98,7 @@ struct iOSGoalDetail: View {
                     iOSEditorSection(title: "Habits") {
                         rows(habits) { habit in
                             iOSEditorFieldRow(
-                                label: habit.title.isEmpty ? CadenceTitleNormalization.defaultHabitTitle : habit.title,
+                                label: CadenceTitleNormalization.display(habit.title, fallback: CadenceTitleNormalization.defaultHabitTitle),
                                 systemImage: habit.icon,
                                 color: Color(hex: habit.colorHex)
                             ) {
@@ -257,7 +257,7 @@ struct iOSGoalDetail: View {
                 iOSIconTile(systemImage: goal.icon, color: tint, size: 48, iconSize: 22)
 
                 VStack(alignment: .leading, spacing: 7) {
-                    Text(goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title)
+                    Text(CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultGoalTitle))
                         .font(.system(size: 26, weight: .bold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(2)
@@ -471,7 +471,7 @@ struct iOSHabitSummaryRow: View {
             HabitIconTile(habit: habit, size: 34, iconSize: 15)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(habit.title.isEmpty ? CadenceTitleNormalization.defaultHabitTitle : habit.title)
+                Text(CadenceTitleNormalization.display(habit.title, fallback: CadenceTitleNormalization.defaultHabitTitle))
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
@@ -607,7 +607,7 @@ struct iOSHabitDetail: View {
                 HabitIconTile(habit: habit, size: 52, iconSize: 22)
 
                 VStack(alignment: .leading, spacing: 7) {
-                    Text(habit.title.isEmpty ? CadenceTitleNormalization.defaultHabitTitle : habit.title)
+                    Text(CadenceTitleNormalization.display(habit.title, fallback: CadenceTitleNormalization.defaultHabitTitle))
                         .font(.system(size: isCompact ? 22 : 25, weight: .bold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(2)
@@ -696,7 +696,7 @@ struct iOSHabitDetail: View {
                 iOSIconTile(systemImage: goal.icon, color: Color(hex: goal.colorHex), size: 38, iconSize: 16)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title)
+                    Text(CadenceTitleNormalization.display(goal.title, fallback: CadenceTitleNormalization.defaultGoalTitle))
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)

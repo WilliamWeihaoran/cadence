@@ -806,9 +806,18 @@ struct CadenceSharedConstantReuseSweepTests {
         #expect(detail.contains("struct iOSGoalDetail"), "non-vacuity: file unread")
         #expect(detail.contains("iOSEditorSection(title: \"Milestones\")"),
                 "non-vacuity: the Milestones section moved, so this scan pins nothing")
+        // [[T-687]] routed this row through the trimming helper, so the needle is the call rather
+        // than the ternary that used to be here. The claim is unchanged and is about *which label*:
+        // a milestone row must not reach for the goal label that is in scope beside it.
         #expect(
-            detail.contains("milestone.title.isEmpty ? CadenceTitleNormalization.defaultMilestoneTitle"),
+            detail.contains(
+                "CadenceTitleNormalization.display(milestone.title, fallback: CadenceTitleNormalization.defaultMilestoneTitle)"
+            ),
             "the Milestones section labels an untitled milestone with something other than the milestone label"
+        )
+        #expect(
+            detail.contains("milestone.title.isEmpty ?") == false,
+            "the milestone row is back to the untrimmed ternary a title of spaces walks through (T-687)"
         )
         // The goal label is still used in the same file, for the rows that really are about a
         // goal — so this is a fix, not a blanket substitution.
@@ -1055,6 +1064,106 @@ struct CadenceSharedConstantReuseSweepTests {
                 "a ledger entry does not say why")
     }
 
+    // MARK: - T-700: a constant spelled as a computed property
+
+    /// **T-700.** The reader, pinned on fixtures rather than on the tree, because the tree is the
+    /// thing it is supposed to be able to change. A computed `static var` carrying a literal is
+    /// harvested; a **stored** one is not — its initializer is the other half's job, and taking it
+    /// here would harvest it twice and read the *next* declaration's braces as its body.
+    @Test func theComputedVarHarvestReadsAPropertyBodyAndNotAStoredInitializer() {
+        let source = """
+        enum Fixture {
+            static var version: String {
+                Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+            }
+
+            static var all: [Fixture] = [one, two]
+
+            static let storedLabel = "Untitled Fixture Label"
+
+            static func vended() -> String { "A vended sentence here" }
+        }
+        """
+        let harvested = cadenceStaticComputedVarBodies(in: source)
+        #expect(harvested.map(\.name) == ["version"],
+                "the computed-var reader harvested \(harvested.map(\.name))")
+        #expect(
+            cadencePlainStringLiterals(in: harvested[0].body).contains("CFBundleShortVersionString"),
+            "the reader read something other than the property's body"
+        )
+        // The stored declaration is *not* adopted.
+        #expect(harvested.contains { $0.name == "all" } == false)
+    }
+
+    /// **The `=` refusal on its own**, because in the fixture above it is not the guard doing the
+    /// work: `static func vended()` sits between `all` and the next brace, so the `func` refusal
+    /// catches it first and a mutation deleting `!between.contains("=")` **survived**. This is the
+    /// source where `=` is the only discriminator — a stored `static var` followed by an `init`,
+    /// with no `func`, no `var` and no `}` in between — so the harvest would adopt the
+    /// initializer's braces and report a literal nobody declared as a constant.
+    @Test func theComputedVarHarvestRefusesAStoredDeclarationOnTheInitializerAlone() {
+        let source = """
+        enum Fixture {
+            static var all: [String] = ["one", "two"]
+
+            init() {
+                report("A stored declaration is not a constant")
+            }
+        }
+        """
+        // Everything except `=` says this is a body: no `}`, no `func` and no `var` stands between
+        // `all` and the brace the harvest would otherwise take.
+        let between = " : [String] = [\"one\", \"two\"]\n\n    init() {"
+        #expect(between.contains("}") == false)
+        #expect(between.contains("func") == false)
+        #expect(between.contains("var") == false)
+
+        let harvested = cadenceStaticComputedVarBodies(in: source)
+        #expect(
+            harvested.isEmpty,
+            "a stored `static var` adopted the next declaration's braces: \(harvested.map(\.name))"
+        )
+    }
+
+    /// The widening, stated as the population it moved rather than as a paragraph. Two constants,
+    /// both in one file, and the `Info.plist` keys they name are the whole of what T-700 was about.
+    @Test func theComputedVarHalfHarvestsTheBuildIdentityKeysAndNothingElse() throws {
+        let harvested = try cadenceSharedComputedVarStringConstants(in: cadenceSharedConstantRoots())
+        #expect(
+            harvested.map { "\($0.name)=\($0.literal)" }.sorted()
+                == ["build=CFBundleVersion", "version=CFBundleShortVersionString"],
+            "the computed-var half harvested \(harvested.map { "\($0.name)=\($0.literal)" }.sorted())"
+        )
+        #expect(harvested.allSatisfy { $0.declaredIn == "Cadence/Shared/AppStoreReviewReadiness.swift" })
+
+        // And the whole harvest is the three halves, so the widening cannot be wired up and then
+        // left unread by the sweep.
+        let all = try cadenceSharedStringConstants()
+        #expect(all.contains { $0.literal == "CFBundleShortVersionString" },
+                "the computed-var half is not reaching the sweep")
+    }
+
+    /// The reader over **every** Swift file in all three shipped targets, not just the two roots it
+    /// is used on. `cadenceStaticFunctionBodies` carries the same test for the same reason: a trap
+    /// in a scan helper is a dead test host, and the file that provokes it is as likely to be one a
+    /// sibling is mid-way through writing as one of the harvest's own roots.
+    @Test func theComputedVarReaderSurvivesEverySwiftFileInTheRepository() throws {
+        var filesRead = 0
+        var propertiesRead = 0
+        for root in ["Cadence", "CadenceWidgets", "CadenceMCPServer", "CadenceTests"] {
+            for path in try CadenceSourceScan.swiftFiles(under: root) {
+                filesRead += 1
+                let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+                for property in cadenceStaticComputedVarBodies(in: source) {
+                    propertiesRead += 1
+                    _ = cadencePlainStringLiterals(in: property.body)
+                }
+            }
+        }
+        #expect(filesRead >= 500, "the crash-safety walk read \(filesRead) files")
+        #expect(propertiesRead > 0, "non-vacuity: the walk found no computed static var at all")
+    }
+
     // MARK: - Exemptions rot
 
     /// Each exemption claims a specific file still types a specific shared constant for a specific
@@ -1191,6 +1300,7 @@ func cadenceSharedStringConstants() throws -> [CadenceSharedStringConstant] {
     // comparison rather than a compile failure.
     try cadenceSharedStoredStringConstants(in: cadenceSharedConstantRoots())
         + cadenceSharedFunctionStringConstants(in: cadenceSharedConstantRoots())
+        + cadenceSharedComputedVarStringConstants(in: cadenceSharedConstantRoots())
     // A total order, not just an order on the literal: one function can vend several constants and
     // one literal can be vended twice, so sorting on the literal alone leaves the result up to
     // `sort`'s instability and makes a harvest that reads the same tree twice answer differently.
@@ -1243,6 +1353,35 @@ func cadenceSharedFunctionStringConstants(in roots: [String]) throws -> [Cadence
                 guard literal.count >= 12, !cadenceIsGlyphName(literal) else { continue }
                 found.append(
                     CadenceSharedStringConstant(name: function.name, literal: literal, declaredIn: path)
+                )
+            }
+        }
+    }
+    return found
+}
+
+/// The half of the harvest that reads a **computed property**: `static var x: String { … "…" … }`.
+///
+/// **T-700.** [[T-555]] taught the harvest to read a `static func` body and stopped there, so a
+/// constant spelled as a computed `static var` stayed invisible for exactly the reason a function
+/// was: the stored half only ever matched the initializer pattern `= "…"`, and a computed property
+/// has no initializer. `CadenceAppBuildIdentity.version` and `.build` are the two on this tree, and
+/// both of their `Info.plist` keys were re-typed in `CadenceDataExportService` — the second
+/// hand-written copy `CadenceAppBuildIdentity`'s own doc comment says is how two surfaces come to
+/// disagree about which key holds the build number. A wrong key there is a silent `?? "0"` rather
+/// than a crash, which is what makes it the kind of duplication that drifts unnoticed.
+///
+/// The literal test is `cadencePlainStringLiterals(in:)`, the same lexer the function half uses and
+/// for the same reason — read its doc comment before changing anything here.
+func cadenceSharedComputedVarStringConstants(in roots: [String]) throws -> [CadenceSharedStringConstant] {
+    var found: [CadenceSharedStringConstant] = []
+    for path in roots {
+        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+        for property in cadenceStaticComputedVarBodies(in: source) {
+            for literal in Set(cadencePlainStringLiterals(in: property.body)).sorted() {
+                guard literal.count >= 12, !cadenceIsGlyphName(literal) else { continue }
+                found.append(
+                    CadenceSharedStringConstant(name: property.name, literal: literal, declaredIn: path)
                 )
             }
         }
@@ -1470,6 +1609,39 @@ func cadenceStaticFunctionBodies(in source: String) -> [(name: String, body: Str
         guard parameters.upperBound <= body.lowerBound else { continue }
         let between = source[parameters.upperBound..<body.lowerBound]
         guard !between.contains("func"), !between.contains("}") else { continue }
+        bodies.append((String(source[nameRange]), String(source[body])))
+    }
+    return bodies
+}
+
+/// Every **computed** `static var` body in `source`, paired with the property's name.
+///
+/// **T-700.** The same brace matching `cadenceStaticFunctionBodies(in:)` does, with the one
+/// difference that separates a computed property from a stored one: there is no parameter list, so
+/// the body's `{` is the first brace after the type annotation, and a `=` between the name and that
+/// brace means the declaration is **stored** — `static var all: [X] = [privacyPolicy, support]`,
+/// whose "body" would otherwise be the next declaration's. `func`, `var` or `}` in the same span
+/// says the same thing more loudly: the brace found belongs to something else.
+///
+/// Refused rather than asserted, for the reason `cadenceStaticFunctionBodies` records at length: a
+/// source-scan helper that traps takes the whole test host with it, and a crashed host emits no
+/// `.swift:line:col: error:` line at all, so the run reads as "nothing to see".
+func cadenceStaticComputedVarBodies(in source: String) -> [(name: String, body: String)] {
+    guard let pattern = try? NSRegularExpression(pattern: #"\bstatic\s+var\s+(\w+)\s*:"#) else { return [] }
+    var bodies: [(name: String, body: String)] = []
+    let range = NSRange(source.startIndex..., in: source)
+    for match in pattern.matches(in: source, range: range) {
+        guard let nameRange = Range(match.range(at: 1), in: source),
+              let body = CadenceSourceScan.matchedRange(
+                  after: nameRange.upperBound,
+                  in: source,
+                  open: "{",
+                  close: "}"
+              ) else { continue }
+        guard nameRange.upperBound <= body.lowerBound else { continue }
+        let between = source[nameRange.upperBound..<body.lowerBound]
+        guard !between.contains("="), !between.contains("}"),
+              !between.contains("func"), !between.contains("var") else { continue }
         bodies.append((String(source[nameRange]), String(source[body])))
     }
     return bodies

@@ -247,36 +247,13 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   first. `toggleSubtask` stays hand-written either way: `Subtask.isDone` is not a field of `AppTask`
   and the snapshot is not about it.
 
-
-- [T-780] **Nothing makes an agent *use* `scripts/agent-commit.sh`.** [[T-679]] is fixed in the sense
-  that the incantation is now a script that refuses the four measured failures — but the instruction
-  to call it is prose in `AGENTS.md` and `docs/SUBAGENT_RUNBOOK.md`, which is exactly the shape T-679
-  was filed about (`git add <specific paths>` was also prose, was also followed, and was also
-  insufficient). A bare `git commit` still works and still sweeps a sibling's staged hunk. Candidate:
-  a repo-checked-in `core.hooksPath` with a `pre-commit` that refuses a commit staging paths the
-  caller did not declare, with an escape hatch for the user's own commits. Not done here because a
-  hook changes the user's git configuration, which is their call, not an agent's.
-
-- [T-781] **A declined hunk that is never re-committed is still caught by nothing automatic.**
-  `agent-commit.sh` records what a `path=<content-file>` reconstruction declined and refuses the
-  *next* commit of that path unless it carries them (`DECLINED-HUNK-LOST`) — the Batch M failure
-  where m3 correctly declined m4's work, m4 committed without it, and HEAD stopped compiling. But if
-  nobody commits that path again, no commit-time check ever fires. The backstop is
-  `./scripts/agent-commit.sh status`, and reading it is a habit, not a mechanism. Candidate: have
-  `scripts/xcb.sh` print outstanding records at the end of every run, so the listing lands in front
-  of whoever is already looking at a build log.
-
-- [T-782] **An App-Sandboxed test host cannot run the `/usr/bin` developer shims, and nothing says
-  so.** Measured 2026-09-03 while wiring [[T-719]]: `Cadence.app` is sandboxed, so a `Process` spawned
-  from `CadenceTests` inherits the sandbox, and there `/usr/bin/git` and `/usr/bin/python3` — both
-  xcrun shims — fail with *"xcrun: error: cannot be used within an App Sandbox"*, exit 1, nothing on
-  stdout. Separately, zsh writes here-document temp files to `$TMPPREFIX`, which **zsh itself sets to
-  `/tmp/zsh` at startup** (so it is never empty and a `[[ -z $TMPPREFIX ]]` guard never fires); the
-  sandbox denies that write and the script dies with `can't create temp file for here document`
-  before its first line runs. Both are fixed inside `scripts/mutate.sh` and `scripts/agent-commit.sh`
-  and both are in `docs/SUBAGENT_RUNBOOK.md`, but nothing stops the next script a test shells out to
-  from repeating either. `/bin/echo` runs fine, so a naive "can I spawn at all?" probe says yes and
-  proves nothing.
+- [T-719] **Nothing runs `scripts/mutate.sh selftest`.** `scripts/xcb.sh`'s guards are pinned by
+  `CadenceBuildInvocationHygieneTests` — a source scan that fails if the zero-test refusal is deleted —
+  and the mutation runner's five refusals ([[T-530]]) are pinned only by its own `selftest`, which no
+  test target invokes and no hook runs. That is the hollow-instrument shape one layer up: a guard whose
+  own guard is that somebody remembers to type it. Pin it the way `xcb.sh` is pinned, or add a test that
+  shells out to `./scripts/mutate.sh selftest` and fails on a non-zero exit (it takes under a second and
+  builds nothing, so cost is not the objection).
 
 - [T-720] **`TaskRecurrenceRule.shortLabel` is a copy of `label` with one arm changed.**
   `Cadence/Models/ModelEnums.swift` — `label` returns Never/Daily/Weekly/Monthly/Yearly and `shortLabel`
@@ -332,20 +309,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the sweep in either direction; the ticket owns both halves. Found by [[T-555]]; both live sites
   are ledgered in `cadenceStaticFuncConstantLedger`.
 
-- [T-700] **The shared-constant harvest's remaining blind spot is a *computed* `static var`, and it
-  is hiding a live duplication.** [[T-555]] taught the harvest to read `static func` bodies; it
-  still reads `static let`/`static var` only through the initializer pattern `= "…"`, so a constant
-  written `static var version: String { … "CFBundleShortVersionString" … }` is invisible for the
-  same reason a function was. Measured over `Shared/` + `Models/`: two such constants, both in
-  `Cadence/Shared/AppStoreReviewReadiness.swift` (`version` and `build`), and **both Info.plist keys
-  are re-typed** in `Cadence/Services/CadenceDataExportService.swift:71-72`. `CadenceAppBuildIdentity`'s
-  own doc comment names this exact hazard — a second hand-written copy is how two surfaces come to
-  disagree about which key holds the build number — and the second copy already exists. A wrong key
-  here is a silent `?? "0"`, not a crash, so it is the kind of duplication that drifts unnoticed. The fix is
-  small — `cadenceStaticFunctionBodies(in:)` already brace-matches, and a computed property is the
-  same read with a different signature in front of it (`CadenceSourceScan.matchedBody`'s doc comment
-  says so out loud) — but it belongs with its own before/after measurement rather than bolted onto
-  T-555's.
 
 - [T-689] **The Goals screen says "No goals yet" when every goal is completed.** Both surfaces draw
   `CadenceEmptyStateCopy.goalsTitle(isNarrowed: false)` whenever the active count is zero, so a user
@@ -1439,22 +1402,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the answer. `AppStoreReviewReadinessTests.appInfoPlistContainsReviewReadyPrivacyKeys` reads the
   **file**, so today it is asserting over the copy that may not be the one that ships.
 
-- [T-668] **`cadenceFunctionBody` is a near-copy of the pre-[[T-644]] reader and still has its
-  defect.** Found 2026-09-01 while closing T-644. It lives at global scope in
-  `CadenceTests/FocusPickerPlayControlTests.swift:982`, takes the first `{` after the declaration
-  string, and is used at **83 call sites across 19 files** — so the fix that landed on
-  `CadenceSourceScan.functionBody(named:)` reaches none of them.
-  It has already cost a scan: `CadenceTodayRolloverSurfaceTests.theRollCommitsThroughThePendingChangeUnit`
-  widened to the whole file *because* this reader stops at `rollOver`'s `commit:` default. That is the
-  [[T-374]] shape — a helper copied instead of shared — committed inside the test target.
-  Fix: delete it and route its callers through `CadenceSourceScan`, or, if the arbitrary
-  declaration-prefix argument is load-bearing, give it the same parameter balancing and pin it with
-  the same fixture. Its callers are mostly whole-suite scans, so measure before assuming the change
-  is inert: unlike T-644, some of these 83 sites may be reading a default closure today.
-  Related residue: `CadenceDeleteConfirmationCommitTests` scans `CadenceTaskMutationSupport.swift`
-  whole because the old reader could not read `deleteTasks`. The reader can now; narrowing that scan
-  to the body is a small follow-up, but the needle there spans `processPendingChanges()` **and** the
-  gate, which is a claim about adjacency, so it is not a mechanical swap.
 
 - [T-672] **Ten copies of the search field's clear button, and not one of them has a name.** From
   [[T-637]], which widened the icon-only-button ledger to the whole app and found them. Every
@@ -1527,36 +1474,34 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   which is `Cadence/macOS/Views/TasksPanelSupportViews.swift` — the widening is enforced by the walk,
   not by the name.
 
+- [T-679] **The git index is shared between concurrent agents, and file-disjointness does not protect
+  it.** Measured 2026-09-02 in the Batch D run: d1 staged a `git rm` of
+  `Cadence/macOS/Views/TaskSortHelpers.swift`, and d2's next commit swept it in — so the deletion
+  landed in `91d533c` ([[T-637]]) instead of `5b0c2b8` ([[T-639]]). **No work was lost and the file is
+  correctly gone from HEAD**; what broke is that the commit carrying a change is not the commit whose
+  message explains it, which is the whole reason this repo puts reasoning in commit messages.
+  **The existing rule was followed and is insufficient.** Every brief says `git add <specific paths>`,
+  never `git add -A`, and both agents complied — but `git add` writes to **one index shared by every
+  agent in the checkout**, and a bare `git commit` takes whatever is staged, including a sibling's
+  hunk. The `git hash-object` / `git update-index` reconstruction the Batch A and B agents used for a
+  shared *file* happens to dodge this as well, but nothing anywhere says so.
+  **AMENDED 2026-09-02 — the first fix shape filed here was wrong, and an agent caught it.** This
+  entry originally said to require an explicit pathspec (`git commit -- <paths>`), and every Batch E
+  and F brief repeated that. It is right only for a file the agent owns alone. For a **shared** file
+  it is actively harmful: `git commit -- <paths>` commits *worktree* content, so it takes the
+  sibling's in-flight hunks with yours, and it silently defeats the `git hash-object` reconstruction
+  the earlier batches used — because that reconstruction lives in the **index**, which the pathspec
+  form ignores. The agent that found this committed the index instead, after verifying the only
+  remaining delta was its sibling's six label conversions.
+  Two more faces of the same hazard, both measured in Batch F: **after committing over a stale shared
+  index, `git status` reports your own landed work as a staged revert**, because the index still holds
+  the previous HEAD's blobs for your paths; and **marker-based hunk filtering breaks when two agents
+  edit within three lines**, since `-U3` merges them into one hunk. A private `GIT_INDEX_FILE` avoids
+  the shared index entirely and is the cleanest answer.
+  Written up in `docs/SUBAGENT_RUNBOOK.md`; what remains open here is making it mechanical rather than
+  a rule agents are told.
 
-- [T-687] **[[T-609]]'s scan has two measured blind spots, and one of them is bigger than T-609 was.**
-  Both were found *by* the T-609 work — the first by a surviving mutation, which is the argument for
-  mutating even a scan you are only reading through.
-  **(1) The fallback spelled as a constant, 27 sites in 15 files.** T-609's needle requires a string
-  *literal* between the `?` and the `:`, because that is the shape [[T-569]] measured. Allow a
-  constant — `goal.title.isEmpty ? CadenceTitleNormalization.defaultGoalTitle : goal.title` — and the
-  same untrimmed ternary appears 27 more times. These are mostly sites [[T-505]]/[[T-513]] already
-  de-literalised: they read the right constant and still draw a blank line for a title of spaces, so
-  the constant sweep passes them and T-609's does not see them.
-  `iOSFeatureDetailViews.swift` (7), `iOSTrackingEditorSheets.swift` (3), `MarkdownNoteSupport.swift`
-  (2), `iOSFeatureViews.swift` (2), `iOSListSupportViews.swift` (2), `iOSSearchView.swift` (2), and
-  one each in `AIActionService`, `iOSInboxRemindersSection`, `iOSMarkdownAccessoryViews`,
-  `iOSTaskDetailSheetSections`, `iOSTaskRowActionViews`, `InboxSupportViews`, `LinksView`,
-  `SchedulePanelComponents`, `macOSRootSupportViews`.
-  **Not a blind sweep, and that is the whole ticket:** the 27 are **not uniform**. `LinksView.swift:102`
-  falls back to the URL string, `iOSListSupportViews.swift:797` to `link.url`, and
-  `MarkdownNoteSupport.swift:85`/`:86` to a *template's* title and subtitle. Those fall back to another
-  **real value**, not to a placeholder, so "should this branch trim?" is a decision per site. Widening
-  T-609's regex would have swept them behind one substitution — the mistake T-609 was explicitly told
-  to avoid one axis over.
-  **(2) The same shape on a `name`, 7 live sites.** T-609 is scoped to identifiers ending
-  `title`/`Title`. `GoalsSupportViews.swift:434` and `TaskBundlePickerSupportViews.swift:320`
-  (`task.containerName` → "Inbox"), `CadenceSearchCandidateSupport.swift:60` (→ "Inbox"),
-  `GoalListLinkHelpers.swift:103` (→ "No Context"), `iOSCalendarEventEditSheet.swift:395`
-  (→ "Unknown calendar"), `iOSRootSidebar.swift:776` (`item.name` → "Untitled"), and
-  `iOSColumnWindDownSupport.swift:50`, which is the trimmed-test/untrimmed-return spelling on
-  `config.name`. `iOSSettingsContextSection.swift:78` is the correct hand-spelling and is the control.
-  The boundary is written into `CadenceEmptyTitleFallbackSweepTests`' header with both counts, so the
-  scan says what it does **not** cover rather than implying it covers everything.
+
 
 - [T-688] **Two fallback strings that disagree with the family, and neither is decidable from the
   literal.** Found while sweeping [[T-609]] and deliberately left, because T-609's rule was "route
@@ -2095,56 +2040,162 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   this batch's time budget risked the load-bearing tool rather than the finding. `TEST_RESULT`
   itself (the aggregate zero-test count) is already fixed the same way as `xcb.sh`'s.
 
+- [T-787] **`scripts/agent-commit.sh`'s `show_outstanding` empties `$PATH` for its own scope.**
+  Found live while using the tool to land [[T-667]]/[[T-721]]/[[T-660]]: every commit that leaves a
+  declined-hunk record prints `show_outstanding:4: command not found: sed` /
+  `... command not found: head` right after reporting success. `local root=$1 quiet=${2:-} any=0
+  record path` declares a function-local `path`, and in zsh `path` is tied to `$PATH` even as a
+  local — `path=$(sed -n ... | head -1)` on the next line overwrites `$PATH` for the rest of the
+  function's scope, so every command after it (`sed`, `head`) fails to execute. Reproduced in
+  isolation: a two-line zsh function of exactly this shape prints the right value once, then
+  `command not found` on everything that follows. The commit itself is unaffected (it happens before
+  this diagnostic runs) — only the "OUTSTANDING DECLINED HUNKS" listing silently fails to print,
+  which is the tool's own backstop for a hunk nobody has accounted for yet. Same family as the two
+  `path`/`$PATH` traps already in `docs/SUBAGENT_RUNBOOK.md`. Fix: rename the local to something not
+  in `{path, cdpath, fpath, manpath, status, argv, options}`.
+
+- [T-783] **[[T-687]] part (2), refiled: the same untrimmed ternary on a `name`, 7 live sites.**
+  T-687 part (1) is closed — the 27 constant-fallback title sites are routed and swept. Part (2) is
+  not, and is scoped out of that sweep by construction: `CadenceEmptyTitleFallbackSweepTests`'
+  needles capture `[A-Za-z0-9_.]*[Tt]itle`, so an identifier ending `name`/`Name` is invisible to
+  both of them. The seven measured by T-609: `GoalsSupportViews.swift:434` and
+  `TaskBundlePickerSupportViews.swift:320` (`task.containerName` → "Inbox"),
+  `CadenceSearchCandidateSupport.swift:60` (→ "Inbox"), `GoalListLinkHelpers.swift:103` (→ "No
+  Context"), `iOSCalendarEventEditSheet.swift:395` (→ "Unknown calendar"), `iOSRootSidebar.swift:776`
+  (`item.name` → "Untitled"), and `iOSColumnWindDownSupport.swift:50`, which is the
+  trimmed-test/untrimmed-return spelling on `config.name`. `iOSSettingsContextSection.swift:78` is
+  the correct hand-spelling and is the control. Re-measure before sweeping: the `name` family has
+  its own real-value fallbacks the way the title family did.
+
+- [T-784] **`CadenceCalendarConsistencySurfaceTests.noCalendarSurfaceStillSpellsTheNewEventFallback`
+  is red at `HEAD`, and it is a stale needle rather than a regression.** Measured 2026-09-03 over a
+  clean `git archive HEAD` tree at `022ab0e`: a full `CadenceTests` run is 4212 passed / 1 failed,
+  and this is the one. The assertion is
+  `matchCount(#"onCreateEvent\?\(CadenceEventTitleSupport\.storedTitle\(title\)"#, in: canvas) == 1`,
+  which requires the call and its first argument to be adjacent; `TimelineDayCanvas.swift:298` has
+  since been reflowed so the argument sits on its own line, and the count is 0. The code is correct —
+  the canvas *does* route through `CadenceEventTitleSupport.storedTitle` — so the guard is reading
+  something other than what its rule says, the same family as [[T-644]]/[[T-659]]/[[T-668]]. Fix the
+  needle to tolerate the line break (or read the argument list through
+  `CadenceSourceScan.matchedBody(after:in:open:close:)`), and keep the `onCreateEvent?(title.isEmpty`
+  absence assertion beside it.
+
+- [T-785] **Two scans left reading wider than they now need to, both unblocked by [[T-668]].**
+  (1) `MarkdownNoteSupport.resolved(_:with:)` holds the last two constant-fallback ternaries in the
+  app — `override.title.isEmpty ? template.title : override.title` and the `subtitle` twin — and is
+  the one measured exemption in `CadenceEmptyTitleFallbackSweepTests`. They fall back to the
+  *template's* own value rather than to a placeholder, and both sides are **stored** strings, so
+  trimming there rewrites what a user saved. Decide the override-merge semantics, then either route
+  them or say in the exemption why they stay.
+  (2) `CadenceDeleteConfirmationCommitTests` scans `CadenceTaskMutationSupport.swift` whole because
+  the pre-T-668 reader could not read `deleteTasks`. It can now, and `CadenceSourceScan.declarationBody`
+  is the call. It is not a mechanical swap: the needle there spans `processPendingChanges()` **and**
+  the gate, which is a claim about adjacency, so narrowing it needs the ordering claim restated
+  rather than the span shrunk.
+
 
 ## Done
 
-- [T-679] **CLOSED 2026-09-03 — committing out of a shared checkout is a script now, not a rule.**
-  `scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]...`. It refuses `FOREIGN-STAGED`
-  (the shared index holds a path you did not name — Batch D, where d1's `git rm` landed in `91d533c`
-  instead of `5b0c2b8`, and Batch M's stale `docs/TODO.md` blob), assembles the tree in a private
-  `GIT_INDEX_FILE`, commits it by plumbing, and then **repairs the shared index** and verifies your
-  paths are clean against the new HEAD — the Batch M residue where a correct private-index commit left
-  the shared index 274 deletions behind HEAD, so the next agent's commit would have reverted it. The
-  `<path>=<content-file>` form is the reconstruction form for a file a sibling is also editing;
-  `git commit -- <path>` is still wrong there and the runbook says why.
-  **The declined-hunk case is catchable, and it is caught.** A reconstruction whose content differs
-  from the worktree is by construction declining something; those lines are recorded, and the **next**
-  commit of that path is refused as `DECLINED-HUNK-LOST` unless it carries them or clears the record
-  with `--accept-declined <path>`. That is Batch M's fourth failure exactly, where m3 correctly
-  declined m4's in-flight hunk, m4 committed without it, and HEAD stopped compiling on a required
-  parameter one composer never passed. What it cannot do is notice a path nobody commits again —
-  filed as [[T-781]].
-  `./scripts/agent-commit.sh selftest` induces every refusal against a throwaway repository (26
-  checks), including a positive control proving the private-index pattern *without* the repair really
-  does leave the shared index dirty. Pinned by `CadenceGuardScriptSelftestTests` ([[T-719]]).
-  Mutations M1–M3, M5, M7 (`scripts/mutate.sh`): disabling `FOREIGN-STAGED`, deleting the shared-index
-  repair, and stopping the declined-hunk refusal from firing were each KILLED. Using it at all is
-  still a rule rather than a mechanism — [[T-780]].
+- [T-668] **CLOSED 2026-09-03 — one brace matcher, and the answer to "how many of the 83 read a
+  different span" is measured at zero.** The copy is gone from `FocusPickerPlayControlTests`:
+  `cadenceFunctionBody` lives in `CadenceTests/CadenceSourceScanSupport.swift` now and is a wrapper
+  over a new `CadenceSourceScan.declarationBody(_:in:)`, which `functionBody(named:)` is *also*
+  written in terms of — `declarationBody("func \(name)(", in: source)` is the whole of it. So the
+  [[T-644]] balancing is one implementation, not two.
+  **The arbitrary declaration prefix was load-bearing, so deleting the helper was never available.**
+  Counted over the tree: of the 83 pre-existing call sites, 38 pass a `func`-shaped prefix, **40
+  pass something `func <name>(` cannot express** — `var body: some View` (7), `Group` (3),
+  `struct <X>: View`/`: ViewModifier` (9), `.onChange(of: …)` (3), `if phase != .active`,
+  `static var live: Self`, `private var options: CadenceTaskViewOptions` (2),
+  `shouldChangeTextIn range: NSRange,` — and 5 compute the prefix at run time. Two parameter lists
+  can now stand between the prefix and the body and both are balanced: the one the prefix left
+  **open** (`"static func rollOver("`) and the one that **begins** right after a prefix that stopped
+  at the name (`"static func handleCommandKeyEvent"`).
+  **The measurement.** An instrumented build computed the old span and the new one at every call and
+  printed both: a full `CadenceTests` run made **96 invocations, 92 distinct (site, declaration)
+  pairs, all 19 files reached**, and **0 of the 83 pre-existing sites read a different span**. The
+  ticket's warning that some of them might be reading a default closure today is measured false —
+  the change is inert exactly as T-644 was. The one divergence in the tree is the site this ticket
+  unblocked: `CadenceTodayRolloverSurfaceTests.theRollCommitsThroughThePendingChangeUnit`, narrowed
+  from the whole file back to `rollOver(`'s body (old span 15 characters — ` try $0.save() ` — new
+  span 271).
+  Failing-first: the new fixture asserts `cadenceFunctionBody("static func rollOver(", …)` does not
+  contain `try $0.save()`; against the unmodified reader that call throws `.tooShort`, because the
+  default closure it returns is 15 characters against the 40-character floor.
+  Mutations, all KILLED: **M1** stops collecting the prefix's own unclosed parenthesis (the
+  pre-T-644 defect exactly) — killed by
+  `theDeclarationBodyReaderSkipsADefaultedClosureInAnOpenParameterList` **and**
+  `theFunctionBodyReaderSkipsADefaultedClosureInTheParameterList`, which is the two entry points
+  being one reader; **M1b**, the same mutation scoped to `CadenceTodayRolloverSurfaceTests`, killed
+  by `theRollCommitsThroughThePendingChangeUnit`, so the narrowing is load-bearing rather than
+  cosmetic; **M2** drops the second balancing, killed by the same fixture's `"static func rollOver"`
+  (prefix-at-the-name) assertion.
+  Residue: [[T-785]] part (2) — `CadenceDeleteConfirmationCommitTests` can be narrowed now, but its
+  needle is a claim about adjacency and is not a mechanical swap.
 
-- [T-719] **CLOSED 2026-09-03 — `CadenceGuardScriptSelftestTests` runs both guard scripts' selftests
-  on every `CadenceTests` run.** 5 tests. Two shell out (`./scripts/mutate.sh selftest`,
-  `./scripts/agent-commit.sh selftest`) and fail on a non-zero exit; **exit 0 is not enough**, so each
-  run must also name every refusal it claims to induce and print a `checks: N passed, M failed` tally
-  derived from the checks that actually ran — a count a selftest gutted to `return 0` cannot produce.
-  `theCheckerRejectsASelftestThatAssertsNothing` runs that reading against four stubs (silent,
-  headers-but-no-checks, a lost mode, a red exit) so the reading is not vacuous, and a source scan —
-  `xcb.sh`'s own pinning shape — asserts each refusal is still in the script body *and* still induced
-  in its selftest. Mutation M4 (bypass `mutate.sh`'s own `NEEDLE-ABSENT` guard) KILLED, plus two
-  weakening pairs settled by control: M5→M6 (dropping the tally reading survives only alongside M5's
-  violation, so `tally.failed != 0` is load-bearing) and M7→M8 (dropping a refusal from the required
-  list). 6 killed, 2 survived-as-evidence, 0 inconclusive; baseline green over 5 tests, 0 Swift warnings.
-  **Two sandbox facts fell out of it, both measured.** The test host is App-Sandboxed, so the
-  `/usr/bin` xcrun shims for `git` and `python3` refuse to run and both scripts now probe for a working
-  binary; and zsh sets `$TMPPREFIX` to `/tmp/zsh` itself at startup, so `mutate.sh`'s here-document
-  died before its first line under the sandbox and no `[[ -z ]]` guard could ever have noticed.
-  Written up in [[T-782]] and `docs/SUBAGENT_RUNBOOK.md`.
+- [T-687] **CLOSED 2026-09-03 (part 1) — the constant-fallback ternary is swept, 25 sites routed and
+  the 2 that are not are named line by line.** Part (2), the same shape on a `name`, is refiled as
+  [[T-783]]; it was never in this batch's scope and the sweep says out loud that it does not cover
+  it.
+  Independently re-measured before anything was changed: **27 sites in 15 files**, the same
+  distribution the ticket recorded, found by widening T-609's needle from a string *literal* between
+  the `?` and the `:` to an identifier.
+  **The 27 are not uniform, and the split is not quite the one the ticket predicted.** 22 are
+  ordinary placeholder fallbacks that [[T-505]]/[[T-513]] had already de-literalised — they read the
+  right constant and still drew a blank line for a title of spaces. Of the five the ticket flagged
+  as falling back to a real value, **two are not defects at all**: `LinksView.swift:102` and
+  `iOSListSupportViews.swift:696` test `CadenceTitleNormalization.normalized(newTitle)`, a value that
+  is *already trimmed*, so `.isEmpty` there is correct. (The ticket named 102 and 797 and missed 696,
+  which is the same shape as 102.) A third, `iOSListSupportViews.swift:797` (`iOSLinkRow`), is a
+  genuine draw-site fallback to `link.url` and is routed with its fallback unchanged. So 25 sites
+  were routed and 2 remain.
+  Every routed site keeps the exact fallback expression it already had — T-609's standing decision,
+  held: what changed is the trim and nothing else. The two survivors are
+  `MarkdownNoteSupport.swift:85`/`:86`, `resolved(_:with:)`'s override-merge, which falls back to a
+  *template's* stored value rather than a placeholder; they are a measured exemption pinned by
+  `theOverrideMergeExemptionIsStillExactlyTheTwoLinesItWasMeasuredAs` (exact pair, not a file-level
+  pass) and owned by [[T-785]].
+  Instrument: `constantTitleFallbackInstrument`, whose negative witness is T-609's *literal*
+  spelling, so a detector matching both would make either result unattributable.
+  Mutations, both KILLED: **M3** types `iOSFeatureViews.swift:175` back as the untrimmed ternary
+  against the constant — invisible to T-609's own sweep, which is the whole ticket — killed by
+  `noSurfaceHandSpellsAnEmptyTitleFallbackAgainstAConstant`; **M4** changes one of the two exempted
+  lines, killed by `theOverrideMergeExemptionIsStillExactlyTheTwoLinesItWasMeasuredAs`.
+  Found on the way: `CadenceSharedConstantReuseSweepTests.theMilestoneRowsAllNameAMilestone` pinned
+  the *old ternary spelling* of the milestone row, so it went red on a change that preserved its
+  claim. Needle updated to the call, with an added `milestone.title.isEmpty ?` absence assertion so
+  it also fails if the row goes back.
 
-- [T-787] **CLOSED 2026-09-03 — `show_outstanding`'s `local path` no longer empties `$PATH`.** Found
-  by another agent using the tool live. Renamed to `declined_path`, with the reason in a comment naming
-  the whole family (`path`, `cdpath`, `fpath`, `manpath`, `status`, `argv`, `options`). The selftest now
-  asserts the backstop listing really prints and that nothing in it died `command not found`; reverting
-  the rename by hand makes both of those checks fail and the rest pass, which is how a diagnostic that
-  failed silently got a guard.
+- [T-700] **CLOSED 2026-09-03 — the harvest reads a computed `static var` now, and the duplication it
+  was hiding is gone.** `cadenceStaticComputedVarBodies(in:)` is the third half of
+  `cadenceSharedStringConstants()`, brace-matched the same way `cadenceStaticFunctionBodies(in:)` is,
+  with the one guard a property needs that a function does not: an `=` between the name and the next
+  brace means the declaration is **stored**, and taking it would adopt the *next* declaration's body.
+  **Before/after, measured over `Shared/` + `Models/` (173 files):** 198 constants harvested → **200**.
+  The two new ones are exactly what the ticket named — `version` = `"CFBundleShortVersionString"` and
+  `build` = `"CFBundleVersion"`, both in `Cadence/Shared/AppStoreReviewReadiness.swift` — and they
+  brought exactly two offender hits with them, both in `Cadence/Services/CadenceDataExportService.swift`,
+  which is in neither `CadenceMCPServer`'s nor `CadenceWidgets`' source list, so the T-499 target
+  boundary does not forgive them.
+  Fixed rather than ledgered: `currentAppVersion()` reads `CadenceAppBuildIdentity.version`/`.build`.
+  The `bundle:` seam it dropped was never passed by any caller, and **the two copies had already
+  drifted** — the export fell back to `"0"` for the short version where both About screens fall back
+  to `"1.0"`, which is the disagreement `CadenceAppBuildIdentity`'s own doc comment predicted.
+  `CadenceAppBuildIdentity` is `nonisolated` now, because the export service is a `nonisolated enum`
+  and reading a main-actor property from it is a warning against a zero baseline.
+  The widening is pinned on fixtures rather than on the tree, since the tree is the thing it exists
+  to let change: a positive, a stored-declaration negative, and a walk of every Swift file in all
+  three shipped targets plus `CadenceTests` for the crash-safety reason `cadenceStaticFunctionBodies`
+  records.
+  Mutations, both KILLED: **M5** re-types `"CFBundleVersion"` in the export service, killed by
+  `noCallSiteRetypesASharedStringConstant` — nothing fired on that line before this widening;
+  **M6** deletes the `=` refusal from the reader.
+  **M6 SURVIVED on its first run, and that is the finding.** In the first fixture a
+  `static func vended()` stood between the stored `static var all` and the next brace, so the *`func`*
+  refusal caught it and the `=` refusal was never the discriminator — a guard with no test, in a
+  reader written for exactly this class of defect. `theComputedVarHarvestRefusesAStoredDeclarationOnTheInitializerAlone`
+  is the source where `=` is the only thing refusing it (a stored `var` followed by an `init`, with
+  no `func`, `var` or `}` between), and M6 re-run against it was KILLED.
 
 - [T-685] **CLOSED 2026-09-03 — a refused iOS list-editor save now puts the child projects' tasks
   back too.** `iOSListEditorSheet.save()`'s area branch snapshotted `area.tasks ?? []`, which is the

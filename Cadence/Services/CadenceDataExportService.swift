@@ -67,10 +67,17 @@ nonisolated enum CadenceDataExportService {
         "Cadence Archive \(DateFormatters.dateKey(from: date))"
     }
 
-    nonisolated static func currentAppVersion(bundle: Bundle = .main) -> String {
-        let short = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
-        let build = bundle.infoDictionary?["CFBundleVersion"] as? String ?? "0"
-        return "\(short) (\(build))"
+    /// **T-700.** Read off `CadenceAppBuildIdentity` rather than looked up again here. The two
+    /// `Info.plist` keys were spelled twice — once there for both About screens, once here for the
+    /// archive header — which is exactly the second hand-written copy that type's own doc comment
+    /// names as how two surfaces come to disagree about which key holds the build number. A wrong
+    /// key is a silent fallback rather than a crash, so nothing would have said so.
+    ///
+    /// The `bundle:` seam that used to be here was never passed by any caller, and the two copies
+    /// had already drifted: this one fell back to `"0"` for the short version where the About
+    /// screens fall back to `"1.0"`. One answer now, whichever it is.
+    nonisolated static func currentAppVersion() -> String {
+        "\(CadenceAppBuildIdentity.version) (\(CadenceAppBuildIdentity.build))"
     }
 
     // MARK: - Building
