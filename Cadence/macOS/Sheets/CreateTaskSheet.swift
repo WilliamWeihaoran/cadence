@@ -193,6 +193,14 @@ struct CreateTaskSheet: View {
                     .foregroundStyle(Theme.dim.opacity(0.5))
             }
             .buttonStyle(.cadencePlain)
+            // T-673: the glyph says "remove"; VoiceOver still needs to know remove *what* — a
+            // draft subtask has no model yet, so the row hands down its own text, normalised the
+            // same way an unnamed one would render.
+            .accessibilityLabel("Remove")
+            .accessibilityValue(TaskTitleSupport.displayTitle(
+                subtaskTitles[index],
+                fallback: TaskTitleSupport.defaultCompactDisplayTitle
+            ))
         }
         .padding(.leading, 52)
         .padding(.trailing, 16)

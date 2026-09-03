@@ -165,6 +165,10 @@ struct QuickCreateTaskDetailsView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
+            // T-673: this row already has the draft's own text as `title`; hand it down rather
+            // than leaving VoiceOver with eight identical "Remove" announcements.
+            .accessibilityLabel("Remove")
+            .accessibilityValue(TaskTitleSupport.displayTitle(title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
@@ -445,6 +449,10 @@ struct QuickCreateBundleTaskSelectionView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
+            // T-673: same normalisation the row's own title text already reads, so an untitled
+            // task removed from the block announces the same placeholder it displays.
+            .accessibilityLabel("Remove")
+            .accessibilityValue(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)

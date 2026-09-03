@@ -89,6 +89,14 @@ struct HabitListCard: View {
                         .foregroundStyle(isDoneToday ? Color(hex: habit.colorHex) : Theme.dim.opacity(0.55))
                 }
                 .buttonStyle(.cadencePlain)
+                // T-673: same shared action label the task row and subtask circle read, plus the
+                // habit's own normalised title so eight identical announcements don't collapse
+                // into one indistinguishable "Complete task".
+                .accessibilityLabel((isDoneToday ? CadenceTaskCompletionState.done : .todo).accessibilityActionLabel)
+                .accessibilityValue(CadenceTitleNormalization.display(
+                    habit.title,
+                    fallback: CadenceTitleNormalization.defaultHabitTitle
+                ))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 13)

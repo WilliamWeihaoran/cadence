@@ -360,6 +360,18 @@ struct GoalLinkedListRow: View {
     let link: GoalListLink
     let onDetach: () -> Void
 
+    // T-673: `link.title` falls back to "Missing List" only when neither relationship is set —
+    // an area or project with a blank *name* passes that empty string straight through. Route it
+    // through the same normalisation the area/project pickers use, keyed on which side is set.
+    private var normalizedTitle: String {
+        CadenceTitleNormalization.display(
+            link.title,
+            fallback: link.area != nil
+                ? CadenceTitleNormalization.defaultAreaName
+                : CadenceTitleNormalization.defaultProjectName
+        )
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: link.icon)
@@ -385,6 +397,9 @@ struct GoalLinkedListRow: View {
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.cadencePlain)
+            // T-673: the glyph already says what it removes; the subject is this row's own list.
+            .accessibilityLabel("Detach")
+            .accessibilityValue(normalizedTitle)
         }
         .padding(10)
         .background(Theme.surfaceElevated.opacity(0.5))
@@ -447,6 +462,10 @@ struct GoalTaskContributorRow: View {
                         .frame(width: 22, height: 22)
                 }
                 .buttonStyle(.cadencePlain)
+                // T-673: this contributor is the task above; hand its own normalised title down
+                // rather than letting an untitled task announce as a blank line.
+                .accessibilityLabel("Detach")
+                .accessibilityValue(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultDisplayTitle))
             }
         }
         .padding(10)

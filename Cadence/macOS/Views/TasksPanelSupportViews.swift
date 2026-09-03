@@ -87,6 +87,19 @@ struct SubtaskRow: View {
     var showDelete: Bool = false
     var onDelete: (() -> Void)? = nil
 
+    // T-673: the same normalisation the visible title below already reads, shared so the
+    // completion circle and the delete glyph announce the same subject the row displays.
+    private var displayTitle: String {
+        TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
+    }
+
+    // T-673: macOS's subtask circle used to spell no state at all; a `Subtask` has only the two
+    // states `CadenceTaskCompletionGlyph.binary(isDone:)` models, so read the same completion
+    // state iOS's row and macOS's task-row circle already read theirs from.
+    private var completionState: CadenceTaskCompletionState {
+        subtask.isDone ? .done : .todo
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             Button { subtask.isDone.toggle() } label: {
@@ -95,8 +108,10 @@ struct SubtaskRow: View {
                     .foregroundStyle(subtask.isDone ? Theme.green : Theme.dim.opacity(0.6))
             }
             .buttonStyle(.cadencePlain)
+            .accessibilityLabel(completionState.accessibilityActionLabel)
+            .accessibilityValue(displayTitle)
 
-            Text(TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+            Text(displayTitle)
                 .font(.system(size: 13))
                 .foregroundStyle(subtask.isDone ? Theme.dim : Theme.muted)
                 .strikethrough(subtask.isDone, color: Theme.dim)
@@ -111,6 +126,8 @@ struct SubtaskRow: View {
                         .foregroundStyle(Theme.dim.opacity(0.5))
                 }
                 .buttonStyle(.cadencePlain)
+                .accessibilityLabel("Remove")
+                .accessibilityValue(displayTitle)
             }
         }
         .padding(.vertical, 3)
