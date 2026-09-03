@@ -860,6 +860,148 @@ struct CadenceTestTargetHygieneTests {
             """) == ["TheRealOne"]
         )
     }
+
+    // MARK: - The real-tree sweep manifest (T-808)
+
+    /// **The pin.** Every `@Test` on `CadenceRealTreeSweepManifest.txt` still exists.
+    ///
+    /// This is the assertion the manifest was built for. An audit measured 216 tests that walk the
+    /// real product tree and found **0** of them pinned: delete one and the ledgers, parsers and
+    /// fixtures beside it all keep passing, so an app-wide sweep can stop happening without one
+    /// red line anywhere. Deleting any named function now fails here **and**
+    /// `theRealTreeSweepManifestIsExactlyWhatTheScanFinds` below, and the two say different things:
+    /// this one names the function that went missing, that one names the file to regenerate.
+    ///
+    /// It asserts nothing about what any swept rule *checks* — that would be a second copy of a
+    /// detector, and the suites remain the behavioural authority for their own rules.
+    @Test func everyRealTreeSweepOnTheManifestStillExists() throws {
+        let listed = try CadenceRealTreeSweepScan.manifest()
+        let live = Set(
+            try cadenceTestDeclarations()
+                .map { CadenceRealTreeSweepScan.Entry(suite: $0.suite, name: $0.name) }
+        )
+
+        #expect(!listed.isEmpty, "the manifest is empty, so it pins nothing")
+        #expect(
+            Set(listed).count == listed.count,
+            "the manifest lists a name twice, so one deletion would still leave it looking pinned"
+        )
+
+        let gone = listed.filter { !live.contains($0) }.sorted()
+        #expect(
+            gone.isEmpty,
+            """
+            these product-tree sweeps are on the manifest but no longer declared: \
+            \(gone.map(\.description).joined(separator: ", ")). Either the @Test was deleted — \
+            which is what this manifest exists to make visible — or it was renamed or moved, in \
+            which case regenerate with `scripts/real-tree-sweep-manifest.sh <id> --write`.
+            """
+        )
+    }
+
+    /// **And the manifest is what the scan finds, not what someone typed.** A ledger nothing
+    /// regenerates is the failure this repository keeps re-finding, so the committed file is
+    /// compared to the derivation every run: a new sweep that is not listed fails here, and so
+    /// does a listed name the scan no longer classifies.
+    ///
+    /// On a mismatch the regenerated file is printed between banners, which is exactly what
+    /// `scripts/real-tree-sweep-manifest.sh` lifts back out of the log — so no second copy of the
+    /// classifier lives in a shell script where nothing can fail on it.
+    @Test func theRealTreeSweepManifestIsExactlyWhatTheScanFinds() throws {
+        let found = try CadenceRealTreeSweepScan.entries()
+        let listed = try CadenceRealTreeSweepScan.manifest()
+
+        let unlisted = Set(found).subtracting(listed).sorted()
+        let stale = Set(listed).subtracting(found).sorted()
+        if !unlisted.isEmpty || !stale.isEmpty {
+            CadenceRealTreeSweepScan.printRegenerated(found)
+        }
+
+        #expect(
+            unlisted.isEmpty,
+            """
+            these sweep the real product tree and are not on the manifest, so deleting them would \
+            still be invisible: \(unlisted.map(\.description).joined(separator: ", ")). \
+            Regenerate with `scripts/real-tree-sweep-manifest.sh <id> --write`.
+            """
+        )
+        #expect(
+            stale.isEmpty,
+            """
+            the manifest names these and the scan no longer classifies them as product-tree \
+            sweeps: \(stale.map(\.description).joined(separator: ", ")).
+            """
+        )
+    }
+
+    /// The instrument's own witnesses, in this file rather than in a neighbouring suite — the
+    /// T-161 lesson that a detector nothing checks is how "no offenders" and "blind" come to look
+    /// alike.
+    ///
+    /// The three fixtures are the three ways this classification is wrong if any one of its
+    /// conditions is dropped: a walk of the app tree behind a helper (must fire), a fixed-file
+    /// assertion about one real app file (must not), and a walk of `CadenceTests` (must not — it
+    /// sweeps the test target, not the app).
+    @Test func theRealTreeSweepScanTellsASweepFromAFixedFileAssertion() throws {
+        let walksTheApp = """
+        import Testing
+
+        struct FixtureSweepTests {
+            private func appSources() throws -> [String] {
+                try CadenceSourceScan.swiftFiles(under: "Cadence")
+            }
+
+            @Test func noSurfaceHandTypesTheThing() throws {
+                for path in try appSources() { _ = path }
+            }
+        }
+        """
+        let readsOneFixedFile = """
+        import Testing
+
+        struct FixtureFixedFileTests {
+            @Test func theSharedHelperIsSpelledOnce() throws {
+                let source = try CadenceSourceScan.sourceFile("Cadence/Shared/CadencePickerSupport.swift")
+                #expect(source.contains("func items("))
+            }
+        }
+        """
+        let walksTheTestTarget = """
+        import Testing
+
+        struct FixtureTestTreeTests {
+            @Test func everyTestFileIsCounted() throws {
+                for path in try CadenceSourceScan.swiftFiles(under: "CadenceTests") { _ = path }
+            }
+        }
+        """
+
+        let found = try CadenceRealTreeSweepScan.entries(inSources: [
+            (path: "CadenceTests/FixtureSweepTests.swift", source: walksTheApp),
+            (path: "CadenceTests/FixtureFixedFileTests.swift", source: readsOneFixedFile),
+            (path: "CadenceTests/FixtureTestTreeTests.swift", source: walksTheTestTarget),
+        ])
+
+        #expect(
+            found.map(\.description) == ["FixtureSweepTests/noSurfaceHandTypesTheThing"],
+            "the classifier found \(found.map(\.description)) rather than the one walk of the app"
+        )
+    }
+
+    /// Non-vacuity for the walk itself: the manifest names sweeps from four different files, and
+    /// each is spelled out rather than counted. A manifest that had quietly emptied — a scan that
+    /// read no files, a parse that matched nothing — passes both assertions above and fails this.
+    @Test func theRealTreeSweepManifestNamesTheSweepsItIsSupposedTo() throws {
+        let listed = Set(try CadenceRealTreeSweepScan.manifest().map(\.description))
+        for expected in [
+            "CadenceRetiredCopyTests/noRetiredCopyIsStillDrawnAnywhereInTheApp",
+            "CadenceEmptyStateAuditTests/noEmptyStateSentenceIsSpelledInTwoFiles",
+            "CadenceSeedColourSourceTests/noFileOnTheMacOSSurfaceHandTypesAColourHex",
+            "WidgetSupportTests/theTitleTrimRuleIsDeclaredOnceInAFileTheWidgetTargetCompiles",
+        ] {
+            #expect(listed.contains(expected), "the manifest no longer names \(expected)")
+        }
+    }
 }
 
 // MARK: - Reading the test target
