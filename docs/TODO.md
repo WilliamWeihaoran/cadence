@@ -333,6 +333,14 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **Not a duplicate of the [[T-609]] sweep**: that one hunts the inline
   `x.isEmpty ? "Untitled" : x` ternary, and this site has no fallback at all — there is no ternary
   for a sweep of that shape to see.
+  **CLOSED 2026-09-03 (`4cbd2fd`).** `missingLink` now reads
+  `CadenceTitleNormalization.display(_:fallback:)` for both the area and the project name, the
+  same call `dormantLinks` already made — an unnamed active list's broken-link row draws
+  "Untitled Area"/"Untitled Project" instead of a blank line. Reproduced through T-624's evidence
+  gate (`observedCalendarIDs` containing the dead identifier), so the failing-first test exercises
+  the actual guarded path rather than a shortcut around it. Pinned by
+  `CadenceCalendarLinkHealthTests.anUnnamedActiveListsBrokenLinkRowStillHasSomethingToPutOnIt`;
+  2 mutations (area site, project site), 2 killed.
 
 - [T-447] *(narrowed 2026-08-30: both landings reviewed. T-281 is a faithful but visually inert extraction — the two headers were already byte-identical before it. T-283's renames are correct and complete. Defects found and filed separately as [[T-492]] and [[T-493]]. Predicate two is effectively answered off-device already: the commit outcome is covered in `CadenceEventKitPlatformParityTests` and its position by `theEventSheetKeepsItsCommitNoticeInsideTheHeader` — only the pixel is left. Predicate one is narrowed by `nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader`: **nothing in `Cadence/` writes that environment key**, so only SwiftUI's own re-derivation inside NavigationStack -> HStack -> .frame remains device-only. That residue belongs with T-55 / T-280.)*
   *(**PREDICATE TWO SETTLED 2026-09-02, observed; PREDICATE ONE CANNOT BE POSED AS WRITTEN.**
@@ -1658,6 +1666,12 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`CadenceCalendarEventSearchSupport.swift:29`, `iOSSearchView.swift:616`,
   `iOSCalendarEventEditSheet.swift:101`): those feed a matcher, not a label. Found while hoisting
   [[T-547]]; not fixed there because it is a behaviour change on a surface that ticket did not touch.
+  **CLOSED 2026-09-03 (`4cbd2fd`).** Both display sites now read
+  `CadenceAppleCalendarNaming.unnamedCalendarTitle` instead of `""`, matching iOS. Failing-first
+  reproduced with an unsaved `EKEvent(eventStore:)` never assigned a calendar — `event.calendar ==
+  nil` with no TCC prompt, since nothing is saved or fetched. Pinned by
+  `CadenceTests.aTimedEventWithNoCalendarDrawsTheSharedFallbackNotABlankTitle` and
+  `anAllDayEventWithNoCalendarDrawsTheSharedFallbackNotABlankTitle`; 2 mutations, 2 killed.
 
 - [T-694] **The calendar access card's *title* still reads as a fault in the state that is not one.**
   [[T-543]] fixed the glyph and the sentence: before anybody is asked, both surfaces now draw a neutral
@@ -1668,6 +1682,26 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   both surfaces and pinned by value in two tests, and the notification pane's
   `CadenceNotificationSettingsCopy.accessRequiredTitle` is the same shape one screen over — so rewording it
   is a house-wide copy decision, not the tail of a glyph fix.
+  **PARTIALLY CLOSED 2026-09-03 (`4cbd2fd`) — Notifications pane only.** User decision: two titles,
+  one per state, demand phrasing reserved for denied. `NotificationManager` gained `isDenied`
+  (mirroring `CalendarManager.isDenied`); both Notifications panes now draw the new
+  `CadenceNotificationSettingsCopy.connectOfferTitle` ("Connect Notifications") before anyone has
+  been asked and keep `accessRequiredTitle` ("Notification access required") for the denied state.
+  **The Calendar pane's half is not done**: its card is in `SettingsListManagementSections.swift`,
+  owned by another agent this batch, and the cross-platform copy-scan test
+  (`bothCalendarSettingsSurfacesReadEveryConvergedCalendarString`) requires macOS and iOS to read
+  the same constants, so an iOS-only edit would have broken that test rather than fixed the ticket.
+  Residue filed as [[T-777]].
+
+- [T-777] **T-694's Calendar pane still owes its offer title.** The Notifications pane split is
+  done (see T-694, closed above): `CadenceNotificationSettingsCopy.connectOfferTitle` before
+  asking, `accessRequiredTitle` kept for denied. The Calendar pane needs the same shape —
+  `CadenceCalendarSettingsCopy` gains a `connectOfferTitle` ("Connect Apple Calendar"), and
+  `SettingsListManagementSections.calendarAccessCard` (macOS) and `iOSCalendarSettingsSection`
+  (iOS) both move their not-denied branch onto it, leaving `accessDeniedTitle` ("Calendar access
+  denied") for the denied branch exactly as today. Both files must move together in one change:
+  `CadenceSettingsSectionCopyTests.bothCalendarSettingsSurfacesReadEveryConvergedCalendarString`
+  scans both surfaces for the same constants and fails if only one is edited.
 
 - [T-703] **The six lifecycle section titles should become a composer now that [[T-555]] has landed —
   and the reason they are six literals is a constraint that no longer exists.** [[T-546]] hoisted
