@@ -81,13 +81,25 @@ enum CadenceTaskStatusEditing {
 
     /// An explicit status, including `.cancelled` — the one transition `toggleCompletion` cannot
     /// spell.
+    ///
+    /// **It catches and records, exactly as the toggle above does (T-643).** The mutation under it
+    /// throws now, and the answer to "where does the user look" is the same one T-636(a) settled:
+    /// one centre read once at the shell, not a notice owned by whichever surface happened to
+    /// write the status. Nothing is reconciled on the failure path — `commitSettle` and
+    /// `commitEdit` have already put the transition back, so there is none to reconcile, and
+    /// reconciling anyway would retire a reminder for work that is still open.
     static func setStatus(
         _ status: TaskStatus,
         for task: AppTask,
         in context: ModelContext,
         reconciler: CadenceWindDownReconciler? = nil
     ) {
-        CadenceTaskMutationSupport.setStatus(status, for: task, modelContext: context)
+        do {
+            try CadenceTaskMutationSupport.setStatus(status, for: task, modelContext: context)
+        } catch {
+            CadenceTaskSettleFailureCenter.shared.record()
+            return
+        }
         reconcile(context, reconciler)
     }
 

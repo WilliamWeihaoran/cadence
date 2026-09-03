@@ -104,20 +104,70 @@ enum CadenceTaskMutationSupport {
         }
     }
 
-    static func setStatus(_ status: TaskStatus, for task: AppTask, modelContext: ModelContext) {
-        applyStatusCompletion(status, to: task, modelContext: modelContext)
-        try? modelContext.save()
+    /// An explicit status, and the completion spine's other door (T-643).
+    ///
+    /// [[T-636]](a) gave `toggleCompletion` above a commit boundary and left this one, because two
+    /// of the files that reach it were owned by another change in flight. It was the same defect:
+    /// `applyStatusCompletion` → `markDone`/`markCancelled` → `spawnNextOccurrenceIfNeeded` →
+    /// `context.insert`, under a `try? modelContext.save()`. `.cancelled` is the transition the
+    /// toggle cannot spell, so this was the only door a cancelled occurrence's successor could be
+    /// minted through — pending in the app's one `ModelContext`, for the next unrelated `save()`
+    /// to take or the next unrelated `rollback()` to discard.
+    ///
+    /// **The two halves of the switch undo differently, because they are different kinds of
+    /// change** — the same split `toggleCompletion` makes, drawn here between statuses rather than
+    /// between directions:
+    ///
+    /// - `.done` and `.cancelled` settle, so they may insert a successor: `commitSettle`, which
+    ///   un-inserts it and puts the status, timestamp and `recurrenceSpawnedTaskID` back;
+    /// - `.todo` and `.inProgress` insert nothing at all — `applyStatusCompletion` writes two
+    ///   fields and stops — so the undo is an ordinary `commitEdit` over exactly those two fields.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    static func setStatus(
+        _ status: TaskStatus,
+        for task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        switch status {
+        case .done, .cancelled:
+            try commitSettle(task, in: modelContext, commit: commit) {
+                applyStatusCompletion(status, to: task, modelContext: modelContext)
+            }
+        case .todo, .inProgress:
+            let previousStatus = task.status
+            let previousCompletedAt = task.completedAt
+            _ = applyStatusCompletion(status, to: task, modelContext: modelContext)
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+                task.status = previousStatus
+                task.completedAt = previousCompletedAt
+            }
+        }
     }
 
-    static func applyStatusCompletion(_ status: TaskStatus, to task: AppTask, modelContext: ModelContext) {
+    /// The transition itself, answering with the successor it spawned or `nil`.
+    ///
+    /// It hands the successor back for the reason `spawnNextOccurrenceIfNeeded` returns it at all
+    /// (T-628): `commitInsert` un-inserts the objects it was given, so the one object that was
+    /// inserted has to travel up to the frame that owns the commit. The two open cases have
+    /// nothing to hand back, and that is the claim `setStatus` above reads to decide which undo a
+    /// status is owed.
+    @discardableResult
+    static func applyStatusCompletion(
+        _ status: TaskStatus,
+        to task: AppTask,
+        modelContext: ModelContext
+    ) -> AppTask? {
         switch status {
         case .done:
-            CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
+            return CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
         case .cancelled:
-            CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: modelContext)
+            return CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: modelContext)
         case .todo, .inProgress:
             task.status = status
             task.completedAt = nil
+            return nil
         }
     }
 

@@ -1162,14 +1162,16 @@ enum CadenceSaveCommitRule {
         //
         // `toggleCompletion` left this list with T-636(a): it commits through `commitSettle` and
         // throws, and `CadenceTaskStatusEditing` names the refusal on
-        // `CadenceTaskSettleFailureCenter`. `setStatus` is the same shape and is still here,
-        // because its surfaces are two files another change owns.
+        // `CadenceTaskSettleFailureCenter`. **`setStatus` left with [[T-643]]**, the same door with
+        // the other key: its settling half goes through the same `commitSettle` and its open half
+        // through `commitEdit` over the two fields it writes, and the wrapper records the refusal
+        // beside the toggle's. That empties `CadenceTaskMutationSupport.swift` out of this list —
+        // do not re-add the file without re-deriving which function it is for.
         //
         // `CadenceFocusSupport.complete` left with T-636(c) — the focus timer's own door onto the
         // same recurrence insert. It throws, settles through the shared `commitSettle`, and puts
         // the banked minutes back; `CadenceTaskStatusEditing.completeFocusSession` records the
         // refusal and answers `false` so the stopwatch is not cleared over it.
-        "Cadence/Shared/CadenceTaskMutationSupport.swift": ["setStatus"],
         "Cadence/macOS/Views/ListNotesSupportViews.swift": ["toggleEmbeddedTask"],
         "Cadence/macOS/Views/NoteEditorPane.swift": ["toggleEmbeddedTask"],
         "Cadence/macOS/Views/NotePanel.swift": ["toggleEmbeddedTask"],

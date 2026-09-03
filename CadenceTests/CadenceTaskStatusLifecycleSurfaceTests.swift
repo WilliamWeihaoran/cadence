@@ -209,6 +209,144 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
         #expect(!centre.settleFailed)
     }
 
+    // MARK: - T-643: the spine's other half, reached by an explicit status
+
+    /// **`setStatus` is `toggleCompletion`'s other door onto the same insert.** T-636(a) gave the
+    /// toggle a commit boundary and left this one, because two of the files that reach it were
+    /// owned by another change in flight. It is the same defect through a different door:
+    /// `applyStatusCompletion` → `markDone`/`markCancelled` → `spawnNextOccurrenceIfNeeded` →
+    /// `context.insert`, under a `try? modelContext.save()`.
+    ///
+    /// `.cancelled` rather than `.done` here on purpose: it is the transition `toggleCompletion`
+    /// cannot spell, so it is the one only this entry point can leave pending, and it spawns the
+    /// successor exactly as `markDone` does (T-202's rule — a cancelled occurrence skips, the
+    /// series carries on).
+    @Test func aRefusedCancelUnInsertsTheSuccessorAndPutsTheStatusBack() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Repeats daily")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-05-01"
+        context.insert(task)
+        try context.save()
+
+        #expect(throws: (any Error).self) {
+            try CadenceTaskMutationSupport.setStatus(.cancelled, for: task, modelContext: context) { _ in
+                throw CommitRefused()
+            }
+        }
+
+        #expect(task.status == .todo, "the status went back")
+        #expect(task.completedAt == nil)
+        #expect(task.recurrenceSpawnedTaskID == nil, "and so did the pointer at the successor")
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 1, "no successor was left pending")
+    }
+
+    /// The same transition, accepted: the successor is in the store rather than pending in the
+    /// context. Without this the test above passes on a `setStatus` that settles nothing at all.
+    @Test func anAcceptedStatusSettleCommitsTheSuccessorRatherThanLeavingItPending() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Repeats daily")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-05-01"
+        context.insert(task)
+        try context.save()
+
+        try CadenceTaskMutationSupport.setStatus(.done, for: task, modelContext: context)
+
+        #expect(task.status == .done)
+        #expect(task.recurrenceSpawnedTaskID != nil)
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 2)
+        #expect(!context.hasChanges, "the successor was left pending in the context")
+    }
+
+    /// **The open half's undo is an edit, not a settle.** `.todo` and `.inProgress` insert nothing
+    /// — `applyStatusCompletion` writes two fields and stops — so there is no successor to
+    /// un-insert and the undo is an ordinary `commitEdit` over exactly those two fields. A refused
+    /// re-open must leave the task settled, which is the state the swallow could not produce: it
+    /// left the row reading `.inProgress` over a store that still holds it done.
+    @Test func aRefusedReopenThroughSetStatusLeavesTheTaskSettled() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "finished")
+        task.status = .done
+        let finishedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        task.completedAt = finishedAt
+        context.insert(task)
+        try context.save()
+
+        #expect(throws: (any Error).self) {
+            try CadenceTaskMutationSupport.setStatus(.inProgress, for: task, modelContext: context) { _ in
+                throw CommitRefused()
+            }
+        }
+
+        #expect(task.status == .done, "the row re-drew in progress over a store that still holds it done")
+        #expect(task.completedAt == finishedAt, "and the timestamp it cleared never came back")
+    }
+
+    /// The accepted open half, so the refusal above is not green over a `setStatus` that never
+    /// reaches `.inProgress` at all.
+    @Test func anAcceptedReopenThroughSetStatusClearsTheCompletionTimestamp() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "finished")
+        task.status = .done
+        task.completedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        context.insert(task)
+        try context.save()
+
+        try CadenceTaskMutationSupport.setStatus(.inProgress, for: task, modelContext: context)
+
+        #expect(task.status == .inProgress)
+        #expect(task.completedAt == nil)
+        #expect(!context.hasChanges, "the re-open was left pending in the context")
+    }
+
+    /// `applyStatusCompletion` hands the successor back rather than swallowing it, for the reason
+    /// `spawnNextOccurrenceIfNeeded` returns it at all: `commitInsert` un-inserts the objects it
+    /// was given, so the one object that must come back up the chain is the one that was inserted.
+    /// The two open cases have nothing to hand back, and saying so is what makes the branch above
+    /// an edit rather than a settle.
+    @Test func applyStatusCompletionAnswersWithTheSuccessorItSpawned() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Repeats daily")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-05-01"
+        context.insert(task)
+        try context.save()
+
+        let spawned = CadenceTaskMutationSupport.applyStatusCompletion(.done, to: task, modelContext: context)
+        #expect(spawned != nil, "the settle answered nil over a task that spawned a successor")
+        #expect(spawned?.id == task.recurrenceSpawnedTaskID, "the answer is not the row the pointer names")
+
+        let open = AppTask(title: "open")
+        context.insert(open)
+        #expect(
+            CadenceTaskMutationSupport.applyStatusCompletion(.inProgress, to: open, modelContext: context) == nil,
+            "an open status inserted something"
+        )
+    }
+
+    /// The wrapper names this refusal the way it names the toggle's, and for the same reason: the
+    /// surface that reaches it is `iOSTaskDetailSheet`'s status well, and a notice owned by one
+    /// surface is missing from the rest. One centre, one alert, read at the shell.
+    @Test func theAppSideWrapperNamesARefusedStatusChangeRatherThanSwallowingIt() throws {
+        let wrapper = try strippingComments(sourceFile("Cadence/Shared/CadenceTaskStatusEditing.swift"))
+        let body = try cadenceFunctionBody("static func setStatus(", in: wrapper)
+        #expect(body.contains("try CadenceTaskMutationSupport.setStatus("))
+
+        let record = try #require(body.range(of: "CadenceTaskSettleFailureCenter.shared.record()"))
+        let reconcile = try #require(body.range(of: "reconcile(context, reconciler)"))
+        #expect(record.lowerBound < reconcile.lowerBound)
+        #expect(
+            body[record.upperBound..<reconcile.lowerBound].contains("return"),
+            "a refused status change falls through to the reconcile"
+        )
+    }
+
     // MARK: - T-344: the circle toggles settled, not done
 
     @Test func theCircleRestoresACancelledTaskRatherThanCompletingIt() throws {
