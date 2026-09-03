@@ -80,8 +80,8 @@ nonisolated enum iOSTaskInspectorMetrics {
     ///
     /// Derived, not stated: the indent *is* the circle plus the gap, and writing it out again is
     /// how `(isRegularWidth ? 26 : 24) + 12` came to restate a ramp that lived in another file.
-    /// Same lesson as `CadencePageHeaderMetrics.iconSize` — a tile can never be resized without its
-    /// glyph following.
+    /// Same lesson as `CadencePageHeaderMetrics.tileGlyphRatio` — a tile can never be resized
+    /// without its glyph following.
     static var titleColumnInset: CGFloat {
         completionGlyphSize + titleRowSpacing
     }

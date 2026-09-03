@@ -1191,7 +1191,7 @@ enum CadenceSaveCommitRule {
         // `CadenceMarkdownImageCommitSurfaceTests`.
         //
         // [[T-651]] emptied the rest of [[T-631]]'s family, closed since this list was written.
-        // `MarkdownEditorView.createInlineTag` and `KanbanTagPickerPopover.body` (in
+        // `MarkdownEditor.createInlineTag` and `KanbanTagPickerPopover.body` (in
         // `KanbanCardMetaSupportViews.swift`) both called `TagSupport.resolveTags` from an ambient
         // `ModelContext` and committed nothing; both now go through
         // `TagSupport.committedTag(named:in:commit:)`, which commits the row it minted, if any,

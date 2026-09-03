@@ -36,8 +36,12 @@ import Testing
 ///   `static let`-only after it was widened; every name in it still resolved. T-625 is the same
 ///   shape. A name-resolution rule is blind to both, on purpose.
 /// - **File-qualified references.** This repo writes `<FileBaseName>.<symbol>` for a fileprivate
-///   type, so a claim whose member is declared anywhere in `Type.swift` is excluded — which also
-///   swallows a genuine confusion between two types that share a file (T-717).
+///   type, so a claim whose member is declared anywhere in `Type.swift` is excluded — but only when
+///   the file declares exactly one **non-private** nominal type ([[T-717]]). `NotesView.swift` and
+///   `SettingsTagsSection.swift` hold several `private` helper types beside their eponymous one and
+///   keep the exclusion; `DateFormatters.swift` and `CadenceCalendarDayBadge.swift` each hold two
+///   types that are *both* public, so the exclusion no longer covers a claim naming one when the
+///   member lives on the other.
 ///
 /// **The ledger is the guard.** Set equality in both directions: no offender may go unlisted, and
 /// no listed entry may go stale. The repository uses tombstones deliberately and well — 22 survive
@@ -168,6 +172,39 @@ enum CadenceCommentSymbolClaim {
     static let memberPattern =
         "\\b(?:func|var|let|case|typealias|struct|class|enum|actor)\\s+`?([A-Za-z_][A-Za-z0-9_]*)`?"
 
+    /// Whether `range` — a `nominalTypePattern` match's range, so it starts at the `struct` /
+    /// `class` / `enum` / `protocol` / `actor` keyword — is modified by `private` or `fileprivate`
+    /// on the same line.
+    ///
+    /// Reads only back to the previous newline, not the whole file: a `private` several
+    /// declarations earlier must not be allowed to attach itself to a type it never modified. This
+    /// repo writes one declaration per line with its access modifier immediately before the type
+    /// keyword (`private struct Helper`, `nonisolated enum DateFormatters`, `private final class
+    /// MarkdownEditorScrollView`), so a same-line check is exact for the style actually in use.
+    static func isPrivatelyDeclared(_ range: Range<String.Index>, in code: String) -> Bool {
+        let prefix = linePrefix(before: range, in: code)
+        let tokens = prefix.split(whereSeparator: { !($0.isLetter || $0.isNumber) })
+        return tokens.contains("private") || tokens.contains("fileprivate")
+    }
+
+    /// Whether `range` sits at column 0 — this repo indents every nested declaration, so an
+    /// unindented line is a top-level one. `NotesView.swift`'s `NotesPage` is a nested enum with no
+    /// `private` of its own (nesting inside a type is not the same disclosure as a second sibling
+    /// type at file scope), and counting it as a second public type would have narrowed the
+    /// exclusion away from `NotesView.NotesDateJumpButton`, which [[T-717]] says must stay excluded.
+    static func isTopLevelDeclaration(_ range: Range<String.Index>, in code: String) -> Bool {
+        let prefix = linePrefix(before: range, in: code)
+        guard let first = prefix.first else { return true }
+        return first != " " && first != "\t"
+    }
+
+    private static func linePrefix(before range: Range<String.Index>, in code: String) -> Substring {
+        let lineStart = code[code.startIndex..<range.lowerBound]
+            .lastIndex(of: "\n")
+            .map { code.index(after: $0) } ?? code.startIndex
+        return code[lineStart..<range.lowerBound]
+    }
+
     /// Which names exist, and where.
     ///
     /// `membersByType` is deliberately a **superset**: every declaration at any depth inside a
@@ -178,6 +215,20 @@ enum CadenceCommentSymbolClaim {
         var nominalTypes: Set<String> = []
         var membersByType: [String: Set<String>] = [:]
         var namesByFileBaseName: [String: Set<String>] = [:]
+        /// Every **top-level, non-private, non-fileprivate** nominal type declared in a file of
+        /// that base name. What the file-qualified exclusion narrows on ([[T-717]]):
+        /// `NotesView.swift` has eight nominal types and `SettingsTagsSection.swift` has six, but
+        /// all but the eponymous one are `private` — implementation detail the convention is *for*.
+        /// `DateFormatters.swift` and `CadenceCalendarDayBadge.swift` each have exactly two, neither
+        /// marked `private`, so a claim naming one when the member lives on the other is a genuine
+        /// mix-up between two equally public types, not a fileprivate row.
+        ///
+        /// **Top-level only, not merely non-private.** `NotesView` nests `NotesPage` with no
+        /// `private` of its own — nesting inside a type is not the same disclosure as a second
+        /// sibling type at file scope — so counting every non-private declaration regardless of
+        /// depth would have counted `NotesPage` as a second public type and narrowed the exclusion
+        /// away from `NotesView.NotesDateJumpButton`, which [[T-717]] says must stay excluded.
+        var publicNominalTypesByFileBaseName: [String: Set<String>] = [:]
 
         static func build(from files: [(path: String, code: String)]) -> SymbolIndex {
             var index = SymbolIndex()
@@ -198,6 +249,14 @@ enum CadenceCommentSymbolClaim {
                         names.insert(capture.text)
                     }
                     index.namesByFileBaseName[base] = names
+
+                    var nominals = index.publicNominalTypesByFileBaseName[base] ?? []
+                    for capture in CadenceSourceScan.captures(nominalTypePattern, in: code)
+                    where isTopLevelDeclaration(capture.range, in: code)
+                        && !isPrivatelyDeclared(capture.range, in: code) {
+                        nominals.insert(capture.text)
+                    }
+                    index.publicNominalTypesByFileBaseName[base] = nominals
                 }
 
                 for header in CadenceSourceScan.captures(anyTypePattern, in: code) {
@@ -225,6 +284,9 @@ enum CadenceCommentSymbolClaim {
             }
             for (base, names) in other.namesByFileBaseName {
                 merged.namesByFileBaseName[base, default: []].formUnion(names)
+            }
+            for (base, nominals) in other.publicNominalTypesByFileBaseName {
+                merged.publicNominalTypesByFileBaseName[base, default: []].formUnion(nominals)
             }
             return merged
         }
@@ -287,7 +349,14 @@ enum CadenceCommentSymbolClaim {
             guard world.nominalTypes.contains(claim.type) else { return nil }
             guard !synthesizedMembers.contains(claim.member) else { return nil }
             guard world.membersByType[claim.type]?.contains(claim.member) != true else { return nil }
-            guard world.namesByFileBaseName[claim.type]?.contains(claim.member) != true else { return nil }
+            // File-qualified, and only when the file has exactly one non-private nominal type
+            // ([[T-717]]): a second *public* type sharing the file has to say which one it means,
+            // so the exclusion no longer covers that case — private helper types stay uncounted,
+            // because they are exactly what the convention is for.
+            if world.namesByFileBaseName[claim.type]?.contains(claim.member) == true,
+               world.publicNominalTypesByFileBaseName[claim.type]?.count == 1 {
+                return nil
+            }
             return claim.span
         }
     }
@@ -428,15 +497,40 @@ enum CadenceCommentSymbolClaim {
         #expect(fires("`CadenceCommentClaimOtherFixture.render*`") == false)
         // A path parses as `Type.member` and is not one.
         #expect(fires("`CadenceCommentClaimOtherFixture.swift`") == false)
-        // File-qualified: the member is declared in `CadenceCommentClaimWidgetFixture.swift`,
-        // on a *different* type in that file. This repo names a fileprivate type that way, so the
-        // reference resolves and the detector must stay quiet — the one exclusion that also hides a
-        // real confusion, which is why it is ledgered as a blind spot rather than left implicit.
+        // File-qualified: the member is declared on `Helper`, a *private* type sharing the file
+        // with `CadenceCommentClaimWidgetFixture`. This repo names a fileprivate type that way, and
+        // `Helper` is the only other nominal type in the file, so the reference resolves and the
+        // detector must stay quiet.
         #expect(fires("`CadenceCommentClaimWidgetFixture.paint`") == false)
         // The same member name against a type whose file declares nothing of the sort.
         #expect(fires("`CadenceCommentClaimOtherFixture.paint`") == true)
         #expect(fires("`CadenceCommentClaimWidgetFixture.render`") == true)
         #expect(fires("`CadenceCommentClaimOtherFixture.render`") == true)
+    }
+
+    /// **[[T-717]]'s narrowing, load-bearing on its own fixture.** A private helper sharing a file
+    /// does not cost the file-qualified exclusion — the case above already shows that — but a
+    /// *second public type* does, because the reader can no longer tell a correct file-qualified
+    /// reference from a genuine mix-up between the two.
+    @Test func theFileQualifiedExclusionStopsAtASecondPublicTypeButNotAtAPrivateOne() {
+        let index = CadenceCommentSymbolClaim.SymbolIndex.build(from: [
+            (path: "CadenceCommentClaimSharedFixture.swift",
+             code: "enum CadenceCommentClaimSharedFixtureOwner { static let title = \"\" }\n"
+                 + "enum CadenceCommentClaimSharedFixtureCoTenant { static func render() {} }")
+        ])
+
+        func fires(_ comment: String) -> Bool {
+            !CadenceCommentSymbolClaim.offendingSpans(
+                in: "/// \(comment)\nlet unused = 0\n",
+                against: index
+            ).isEmpty
+        }
+
+        // Two nominal types in the file, neither `private` — `render` is `CoTenant`'s, not
+        // `Owner`'s, and the file-qualified exclusion must not paper over that.
+        #expect(fires("`CadenceCommentClaimSharedFixtureOwner.render`"))
+        // The type that actually declares it is never in question.
+        #expect(fires("`CadenceCommentClaimSharedFixtureCoTenant.render`") == false)
     }
 
     // MARK: - The ledger
@@ -478,43 +572,12 @@ enum CadenceCommentSymbolClaim {
         "CadenceTests/iOSCalendarMetricsTests.swift `CadencePageHeaderMetrics.tileSize`"
     ]
 
-    /// Stale: the sentence points a present-tense reader at a symbol that is not there. Every one
-    /// of these is the T-333 class, and every one is owned by [[T-716]].
-    ///
-    /// The names below are deliberately written **without** backticks. Spelled as this repo spells
-    /// a symbol, each one would be a claim about a symbol that resolves to nothing — in a file that
-    /// sweeps for exactly that — and this ledger would list itself nine more times. What each names,
-    /// and what it should have named:
-    ///
-    /// - PrivacyDataResetOutcome.statusMessage — the member is accountAndDataStatusMessage.
-    /// - ListNotesView.normalizedFolderPath — declared in ListNotesListSupportViews.swift, on a
-    ///   fileprivate row; no ListNotesView has it. Presented as the live source of the convention.
-    /// - CadenceTaskComposerSupport.showsSectionChip — no declaration of that name exists anywhere
-    ///   in the tree, and a second comment in the same file appeals to "the rule showsSectionChip"
-    ///   as well.
-    /// - CadencePageHeaderMetrics.iconSize, twice, both as a bare "see also" — the identity tile and
-    ///   its glyph ramp were dropped from page headers on both platforms, and iOSCalendarMetricsTests
-    ///   records that tileSize went with them.
-    /// - DataIntegrityRepairServiceTests.duplicateDailyNotesAreMerged — cited as pinning behaviour;
-    ///   no test of that name exists.
-    /// - CadenceTodayRolloverSurfaceTests.theMacDerivedStateStillDerivesExactlyWhatItUsedTo — the
-    ///   test is real but was renamed with an InTodayRolloverSurface suffix when test names became
-    ///   unique across suites.
-    /// - CalDayColumn.onDropTaskAtMinute — "forwards straight to", present tense; the closure lives
-    ///   on TimelineDayCanvas, TimelineDropInteractionSupport and SchedulePanelShellViews.
-    /// - TodayTasksWidgetView.statusPresentation — "the same three stops ... use", present tense;
-    ///   nothing of that name is declared.
-    static let staleClaims = [
-        "Cadence/Shared/CadenceDataExportPresentation.swift `PrivacyDataResetOutcome.statusMessage`",
-        "Cadence/Shared/CadenceNoteFolderSupport.swift `ListNotesView.normalizedFolderPath`",
-        "Cadence/Shared/CadenceTaskDropSupport.swift `CadenceTaskComposerSupport.showsSectionChip`",
-        "Cadence/iOS/iOSTaskInspectorMetrics.swift `CadencePageHeaderMetrics.iconSize`",
-        "Cadence/macOS/Views/CommitmentSharedViews.swift `CadencePageHeaderMetrics.iconSize`",
-        "CadenceTests/AINoteActionReviewTests.swift `DataIntegrityRepairServiceTests.duplicateDailyNotesAreMerged`",
-        "CadenceTests/CadenceCancelledTaskReachabilityTests.swift `CadenceTodayRolloverSurfaceTests.theMacDerivedStateStillDerivesExactlyWhatItUsedTo`",
-        "CadenceTests/TimelineMetricsTests.swift `CalDayColumn.onDropTaskAtMinute`",
-        "CadenceWidgets/MilestoneMomentumWidget.swift `TodayTasksWidgetView.statusPresentation`"
-    ]
+    /// Stale, once: the sentence pointed a present-tense reader at a symbol that was not there.
+    /// **[[T-716]] fixed all nine** — each comment now names the symbol it meant, in the same
+    /// change that deleted its ledger line, so nothing here needs a tombstone: a corrected
+    /// sentence names a real declaration, which is the tombstones' territory only if the repo
+    /// later removes what it now correctly names.
+    static let staleClaims: [String] = []
 
     static var ledger: [String] { (deliberateTombstones + staleClaims).sorted() }
 
@@ -528,7 +591,7 @@ enum CadenceCommentSymbolClaim {
         #expect(tombstones == tombstones.sorted())
         #expect(stale == stale.sorted())
         #expect(tombstones.count == 30)
-        #expect(stale.count == 9)
+        #expect(stale.count == 0)
     }
 
     /// The sweep. Exact set equality, both directions, over every Swift file in all five targets.

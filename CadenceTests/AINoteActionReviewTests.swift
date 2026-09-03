@@ -604,8 +604,8 @@ struct AINoteActionReviewTests {
     }
 
     /// A note carrying an area *and* a project. Not a contrived state:
-    /// `DataIntegrityRepairServiceTests.duplicateDailyNotesAreMerged` pins that the repair service
-    /// deliberately keeps both owners on a merged note.
+    /// `DataIntegrityRepairServiceTests.duplicateCanonicalNotesAreMergedWithoutDroppingContentOrTags`
+    /// pins that the repair service deliberately keeps both owners on a merged note.
     private func doubleOwnedNote() throws -> DoubleOwnedNote {
         let modelContext = try emptyStore()
         let context = Context(name: "Work")

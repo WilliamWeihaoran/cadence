@@ -8,7 +8,7 @@ import AppKit
 
 /// **T-629: image insertion wrote a reference for an asset row the store may never hold.**
 ///
-/// The three image doors — macOS's `MarkdownEditorView.createAssets`, iOS's `insertPickedImages`
+/// The three image doors — macOS's `MarkdownEditor.createAssets`, iOS's `insertPickedImages`
 /// and `createPastedImageAssets` — each called `MarkdownImageAssetService.createAsset(… in:)`,
 /// which does `modelContext.insert(asset)` and nothing else, and then committed it with `try?
 /// modelContext.save()`. That is half 1 of the `try? save()` rule (`AGENTS.md`), **existence, one

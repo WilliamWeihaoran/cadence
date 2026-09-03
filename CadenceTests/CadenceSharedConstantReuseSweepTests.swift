@@ -854,7 +854,7 @@ struct CadenceSharedConstantReuseSweepTests {
     ///
     /// [[T-555]]. The instrument's two witnesses are the nearest possible miss and both are real
     /// code: the positive is `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)`, the constant that
-    /// found this gap; the negative is `CadenceCalendarDayBadge.markedDayLabel(date:hasItems:)`,
+    /// found this gap; the negative is `CadenceCalendarDayAccessibility.markedDayLabel(date:hasItems:)`,
     /// whose accessibility label *nests* a nineteen-character literal inside an interpolation. A
     /// detector built on `"([^"\\\n]{12,})"` instead of a lexer fires on that negative — which is
     /// why the instrument is the fixture rather than a comment claiming it was checked.
@@ -1451,7 +1451,7 @@ func cadenceSharedConstantOffenders(
 ///   counts as a literal while claiming only to widen where they are looked for.
 /// - `") receive this session's time."` — the tail of an interpolated literal, read as though the
 ///   interpolation's closing quote opened it.
-/// - `" : String(format: "` out of `DateFormatters.timeString` — the closing quote of one literal
+/// - `" : String(format: "` out of `TimeFormatters.timeString` — the closing quote of one literal
 ///   paired with the opening quote of the next, so the "constant" is a span of **code**. Harmless
 ///   on this tree only because nothing else types it; a detector reading source as copy is the
 ///   `codeOnly` trap wearing different clothes.

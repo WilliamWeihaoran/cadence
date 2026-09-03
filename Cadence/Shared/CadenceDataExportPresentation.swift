@@ -39,7 +39,7 @@ nonisolated struct CadenceArchiveDocument: FileDocument {
 
 /// Every user-facing word the export shows, on both platforms, in one place.
 ///
-/// The reset already works this way (`PrivacyDataResetOutcome.statusMessage`) and for the reason
+/// The reset already works this way (`PrivacyDataResetOutcome.accountAndDataStatusMessage`) and for the reason
 /// T-19 names: a data-safety control has to say plainly what it does, and copy written twice is
 /// copy that comes to say two things. In particular the last sentence of `description` — that an
 /// archive cannot be read back in yet — is not a caveat a view may drop.

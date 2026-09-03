@@ -48,7 +48,7 @@ struct CommitmentIconTile: View {
     var size: CGFloat = 32
     /// Defaulted from the one glyph-to-tile ratio rather than restated, so a caller that resizes
     /// the tile and forgets the glyph gets a proportional tile instead of a third ratio. See
-    /// `CadencePageHeaderMetrics.iconSize`.
+    /// `CadencePageHeaderMetrics.tileGlyphRatio`.
     var iconSize: CGFloat? = nil
     /// Defaults to the shared tile radius rather than `min(12, size * 0.28)` — see
     /// `CadencePageHeaderMetrics.tileCornerRadius` for the renders that settled it.

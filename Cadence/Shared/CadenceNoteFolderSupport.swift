@@ -7,7 +7,7 @@ import SwiftUI
 // until T-193 the only agreement was four macOS call sites that happened to share one private
 // helper.
 //
-// **The convention, read off `ListNotesView.normalizedFolderPath` and its three co-readers rather
+// **The convention, read off `NoteFolderSheet.normalizedFolderPath` and its three co-readers rather
 // than invented here:**
 //
 // - The separator is `/`.

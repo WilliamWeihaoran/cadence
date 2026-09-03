@@ -68,7 +68,7 @@ enum CadenceTaskDropSupport {
     static func dropKey(for task: AppTask) -> String {
         var parts = [listKey(for: task)]
         // Inbox is the absence of a list, and a list is what owns sections, so there is nothing to
-        // name there — the same rule `CadenceTaskComposerSupport.showsSectionChip` applies.
+        // name there — the same rule `CadenceTaskComposerSupport.showsSectionRow` applies.
         if task.project != nil || task.area != nil {
             parts.append("section:\(task.resolvedSectionName)")
         }
@@ -349,7 +349,8 @@ enum CadenceTaskDropSupport {
             let trimmed = listName.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { placement.append(trimmed) }
             // The default section is what a task in that list gets anyway, so naming it says
-            // nothing the list has not already said — the rule `showsSectionChip` applies.
+            // nothing the list has not already said — the rule
+            // `CadenceTaskInspectorSupport.showsSectionSegment` applies.
             if seed.sectionName != TaskSectionDefaults.defaultName {
                 placement.append(seed.sectionName)
             }

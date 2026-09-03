@@ -579,7 +579,7 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
 /// `Project.loggedMinutes` are CloudKit-synced scalars written with `+=`. Two devices that each
 /// bank a session read the same starting value, each write their own sum, and the record that
 /// arrives second wins — so one of the two sessions is gone. Not merely a wrong stat:
-/// `GoalContributionSummary.summary(for:)` folds `actualMinutes` into an hours-mode goal's
+/// `GoalContributionResolver.summary(for:)` folds `actualMinutes` into an hours-mode goal's
 /// progress, so a dropped session is wrong goal progress. The repo already met the same shape one
 /// level up — `DataIntegrityRepairService` reconciles two duplicate lists' `loggedMinutes` with
 /// `max`, not `sum`, because a sum there would double-count — which is the tell that a counter is

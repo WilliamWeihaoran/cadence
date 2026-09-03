@@ -604,7 +604,7 @@ struct CadenceCancelledTaskReachabilityTests {
     /// lives. This recomputes it with the code that used to be inline in
     /// `TasksPanelDerivedState.init`, verbatim, and asserts the new array is identical — order
     /// included, because the section renders this array directly. Same shape as
-    /// `CadenceTodayRolloverSurfaceTests.theMacDerivedStateStillDerivesExactlyWhatItUsedTo`.
+    /// `CadenceTodayRolloverSurfaceTests.theMacDerivedStateStillDerivesExactlyWhatItUsedToInTodayRolloverSurface`.
     ///
     /// It ran over both modes until T-487, and over a one-case `TasksPanelMode` until T-564(a)
     /// collapsed the enum. `legacyDoneTasks` used to keep a `mode` parameter and a

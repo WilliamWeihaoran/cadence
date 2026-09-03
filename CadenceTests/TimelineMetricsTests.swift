@@ -254,8 +254,8 @@ struct TimelineMetricsTests {
 
     @Test func droppingScheduledTaskOnADifferentDayColumnUpdatesBothDateAndStartMinute() throws {
         // Simulates dragging a task block from one day column to another in the
-        // Week/2W calendar view: `CalDayColumn.onDropTaskAtMinute` forwards straight
-        // to `SchedulingActions.dropTask(task, to: <target column's dateKey>, startMin:)`.
+        // Week/2W calendar view: `CalDayColumn` wires `TimelineDayCanvas.onDropTaskAtMinute`
+        // straight to `SchedulingActions.dropTask(task, to: <target column's dateKey>, startMin:)`.
         // The task must land on the *new* day, not just move within its original day.
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)

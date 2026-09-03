@@ -316,7 +316,7 @@ struct MilestoneMomentumWidgetView: View {
         CadenceWidgetDateSupport.dueLabel(for: goal.nextActionDueDate, todayKey: todayKey)
     }
 
-    /// Red / amber / blue, the same three stops `TodayTasksWidgetView.statusPresentation` and
+    /// Red / amber / blue, the same three stops `CadenceTodayWidgetTask.widgetStatus(for:)` and
     /// `CalendarSnapshotWidget.upcomingDueTint` use — all three tint a label that
     /// `CadenceWidgetDateSupport.dueLabel` produced, so they have to agree on what it means.
     ///
