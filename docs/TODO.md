@@ -43,6 +43,19 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-792] **A goal's linked-list and task-contributor rows now announce a normalised title;
+  the visible `Text` beside them still reads it raw.** Found while landing [[T-673]] and
+  deliberately left — fixing it would have been a copy change to a display the ticket was not
+  about. `Views/GoalsSupportViews.swift`'s `GoalLinkedListRow` draws `Text(link.title)` and
+  `GoalTaskContributorRow` draws `Text(task.title)`; both rows' detach buttons now read
+  `.accessibilityValue(…)` through `CadenceTitleNormalization.display` /
+  `TaskTitleSupport.displayTitle` with a real fallback, so an area, project or task with a blank
+  *name* (not `nil` — `GoalListLink.title` only falls back to `"Missing List"` when both
+  relationships are unset, per [[T-751]]) now announces "Untitled Area" / "Untitled Project" /
+  "Untitled Task" while the row beside it draws an empty line. Same family as the other
+  untitled-row tickets ([[T-505]], [[T-513]], [[T-687]]); the fix is routing both `Text`s through
+  the same call the accessibility value already makes.
+
 - [T-771] **Two words for one bucket, and a third that means something else.** The catch-all over
   "lists no offered context owns" is called **"Other"** by `CadenceSidebarLists.ungroupedTitle` —
   read by the macOS sidebar, the iPad sidebar and `ContainerPickerFilterSupport.groups` — and
@@ -1459,19 +1472,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   a `.focused` binding dropped, one glyph size drifted, the opacity tint restored — were all
   killed. Follow-ups: [[T-789]], [[T-790]], [[T-791]].
 
-- [T-673] **A row's remove/complete glyph never says which row it belongs to (8 sites, 5 files).**
-  From [[T-637]]. Six bare `xmark` buttons remove a thing — a draft subtask
-  (`Sheets/CreateTaskSheet.swift:188`, `Views/QuickCreateChoiceSupportViews.swift:158`), a task
-  picked into a block (`:438`), a goal's linked item (`Views/GoalsSupportViews.swift:381` and
-  `:443`), a saved subtask (`Views/TasksPanelSupportViews.swift:108`) — and two completion circles
-  tick one (`Views/TasksPanelSupportViews.swift:92`, `Views/HabitsSupportViews.swift:86`).
-  **This is the [[T-594]] shape rather than a missing string.** The action is guessable from the
-  glyph; the *subject* is not, and a list of eight identical "Remove" announcements is no better
-  than eight silent ones. Each name has to carry the item, which means the row has to hand it down —
-  the same conclusion `iOSTaskAttributeChip.field` reached on the phone. The two circles should take
-  `CadenceTaskCompletionState.accessibilityActionLabel`, which already exists and which iOS's circle
-  was pointed at in [[T-611]]; macOS's subtask circle still spells its own state.
-
 - [T-674] **Ten icon-only controls in helpers and chrome, four of them behind a helper that takes a
   symbol and no name (10 sites, 9 files).** From [[T-637]]. Steppers and navigation —
   `TimelineZoomControl`'s `minus`/`plus` (`Services/SchedulingService.swift:369`, `:382`),
@@ -2124,6 +2124,39 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 ## Done
+
+- [T-673] **CLOSED 2026-09-04 — all eight remove/complete glyphs hand their row's own subject down,
+  the two circles read the shared completion-state label, sha `a3068e3c`.** From [[T-637]]. Six
+  `xmark` removals now pair `.accessibilityLabel("Remove")` / `"Detach"` with `.accessibilityValue(…)`
+  reading the row's own title — a draft subtask (`Sheets/CreateTaskSheet.swift`,
+  `Views/QuickCreateChoiceSupportViews.swift`'s two subtask/task rows), a goal's linked list and its
+  task contributor (`Views/GoalsSupportViews.swift`, both), a saved subtask
+  (`Views/TasksPanelSupportViews.swift`). The two completion circles (the saved subtask's toggle and
+  `Views/HabitsSupportViews.swift`'s habit toggle) read
+  `CadenceTaskCompletionState.accessibilityActionLabel` now, same as [[T-594]]'s task row and
+  [[T-611]]'s iOS circle, rather than spelling their own state — a `Subtask`/`Habit` has only the two
+  states `.done`/`.todo` maps to, no mid-fill states to model.
+  **Every title routes through the existing normalisation rather than being interpolated raw**:
+  `TaskTitleSupport.displayTitle` for a subtask/task subject, `CadenceTitleNormalization.display` for
+  a goal's linked area/project (keyed on which relationship is set) and a habit — so an untitled row
+  announces the same placeholder it already renders instead of a blank line.
+  No site needed a judgement call; all eight had a genuine subject to hand down.
+  `CadenceRowSubjectAccessibilityTests` (9 tests) pins each site by source shape — the value is the
+  row's own property, not a passed constant, which a naive "label exists" test would have let
+  through. Failing-first against the pre-fix tree (0 tests exist there; the suite itself is the new
+  material). `scripts/mutate.sh`, 7 mutations, **all KILLED, none survived**: a hardcoded constant
+  swapped in for the subject at each of the 8 sites (one mutation covers both `SubtaskRow` sites at
+  once via `count: 2`), one dropped `.accessibilityValue` entirely, one reverted the habit circle to
+  hand-spelling its own state instead of reading the shared label. Build: 0 compile errors, 0
+  warnings (both counts from a run that recompiled every touched file).
+  **`Views/TasksPanelSupportViews.swift` is shared with [[T-672]]** (o1's `CadenceSearchFieldClearButton`
+  landed at `7e58fc6c` while this was in flight, in the same file); committed as a
+  `path=<content-file>` reconstruction of HEAD plus only this ticket's hunk, refused once as
+  `REMOVES-HEAD-LINES` (the legitimate `Text(TaskTitleSupport.displayTitle(…))` → `Text(displayTitle)`
+  collapse) and re-run with `--removes 1`.
+  Residue: [[T-792]] — the visible title text beside two of these glyphs (`GoalLinkedListRow`,
+  `GoalTaskContributorRow`) still reads its title raw, so an untitled one now announces the
+  placeholder VoiceOver expects while drawing a blank line beside it.
 
 - [T-679] **CLOSED 2026-09-03 — committing out of a shared checkout is a script now, not a rule.**
   `scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]...`. It refuses `FOREIGN-STAGED`
