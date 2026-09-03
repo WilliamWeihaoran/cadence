@@ -50,6 +50,8 @@ struct TimelineDayCanvas: View {
     @AppStorage(CalendarWorkHoursPreferences.startMinuteKey) private var workHoursStartMinute = CalendarWorkHoursPreferences.defaultStartMinute
     @AppStorage(CalendarWorkHoursPreferences.endMinuteKey) private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
     @Environment(\.modelContext) private var modelContext
+    /// Set when the store refuses a block formed by dropping a task on a task ([[T-655]]).
+    @State private var bundleCreateFailed = false
 
     private func clearDraftCreation() {
         TimelineDayCanvasStateSupport.clearDraftCreation(
@@ -156,7 +158,7 @@ struct TimelineDayCanvas: View {
                 activeDragBundleID: $activeDragBundleID,
                 onTaskDroppedOnBundle: onDropTaskOnBundle,
                 onCreateBundleFromTasks: { targetTask, draggedTask in
-                    _ = SchedulingActions.createBundle(from: targetTask, adding: draggedTask, in: modelContext)
+                    formBundle(from: targetTask, adding: draggedTask)
                 },
                 onTaskSelected: selectTaskBlock,
                 onBundleSelected: selectBundleBlock
@@ -173,6 +175,32 @@ struct TimelineDayCanvas: View {
         }
         .frame(width: width, height: metrics.totalHeight)
         .coordinateSpace(name: Self.coordinateSpaceName)
+        .alert(CadenceTaskMutationSupport.bundleCreateFailureAlertTitle, isPresented: $bundleCreateFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)
+        }
+    }
+
+    /// **Two tasks become a block, and the block is committed here ([[T-655]]).**
+    ///
+    /// Every frame below this one is handed a `ModelContext` — `SchedulingActions.insertBundle`,
+    /// `CadenceTaskMutationSupport.insertBundle`, `addTask` — which is this repo's statement that
+    /// the caller owns the unit of work. This canvas reached for the ambient context, so it is that
+    /// caller; it used to drop the answer on the floor and report nothing either way.
+    ///
+    /// The gesture has no draft popover to keep open, so the refusal is an alert, the same one
+    /// `SchedulePanel` and the calendar day column raise for the create-a-block gesture.
+    private func formBundle(from targetTask: AppTask, adding draggedTask: AppTask) {
+        do {
+            _ = try SchedulingActions.insertBundle(
+                from: targetTask,
+                adding: draggedTask,
+                in: modelContext
+            )
+        } catch {
+            bundleCreateFailed = true
+        }
     }
 
     private func resetCanvasSelection() {

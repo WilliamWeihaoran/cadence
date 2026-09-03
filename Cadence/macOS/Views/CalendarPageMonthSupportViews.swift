@@ -548,6 +548,11 @@ struct CalDayColumn: View {
     let showHalfHourMarks: Bool
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
+    /// The two refusals this column can produce. Separate flags because they are separate units of
+    /// work with separate sentences — a task the store would not take and a block the store would
+    /// not take are not the same message ([[T-655]]).
+    @State private var taskCreateFailed = false
+    @State private var bundleCreateFailed = false
 
     private var dateKey: String {
         DateFormatters.dateKey(from: date)
@@ -575,23 +580,18 @@ struct CalDayColumn: View {
             showWorkHoursHighlight: true,
             usesTaskPanelForTaskCreation: false,
             onCreateTask: { title, startMin, endMin, containerSelection, sectionName, notes, subtaskTitles in
-                SchedulingActions.createTask(
+                createTask(
                     title: title,
-                    dateKey: dateKey,
                     startMin: startMin,
                     endMin: endMin,
                     containerSelection: containerSelection,
                     sectionName: sectionName,
                     notes: notes,
-                    subtaskTitles: subtaskTitles,
-                    areas: areas,
-                    projects: projects,
-                    in: modelContext
+                    subtaskTitles: subtaskTitles
                 )
             },
             onCreateBundle: { title, startMin, endMin, selectedTasks in
-                let bundle = SchedulingActions.createBundle(title: title, dateKey: dateKey, startMin: startMin, endMin: endMin, in: modelContext)
-                selectedTasks.forEach { SchedulingActions.addTask($0, to: bundle) }
+                createBundle(title: title, startMin: startMin, endMin: endMin, adding: selectedTasks)
             },
             onDropTaskAtMinute: { task, startMin in
                 SchedulingActions.dropTask(task, to: dateKey, startMin: startMin)
@@ -620,6 +620,75 @@ struct CalDayColumn: View {
             Rectangle()
                 .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.timelineDaySeparatorOpacity))
                 .frame(width: CalendarVisualStyle.timelineDaySeparatorLineWidth)
+        }
+        // Both refusals are alerts rather than inline notices for the reason `SchedulePanel`'s is:
+        // the draft popover the user typed into has already dismissed itself by the time the store
+        // answers, so there is nothing left on screen to write under.
+        .alert(TaskCreationService.createFailureAlertTitle, isPresented: $taskCreateFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(TaskCreationService.saveFailureNotice)
+        }
+        .alert(CadenceTaskMutationSupport.bundleCreateFailureAlertTitle, isPresented: $bundleCreateFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)
+        }
+    }
+
+    /// **The drag-created task is committed here, and a refusal is named here ([[T-655]]).**
+    ///
+    /// The closure this replaces called `SchedulingActions.createTask`, which is handed this
+    /// column's `ModelContext` and so — correctly — leaves the commit to whoever owns the unit of
+    /// work. Nobody did: the task, its subtasks and its container assignment sat pending in the
+    /// app's one context while the quick-create popover closed as though they had landed.
+    private func createTask(
+        title: String,
+        startMin: Int,
+        endMin: Int,
+        containerSelection: TaskContainerSelection,
+        sectionName: String,
+        notes: String,
+        subtaskTitles: [String]
+    ) {
+        do {
+            try SchedulingActions.insertTask(
+                title: title,
+                dateKey: dateKey,
+                startMin: startMin,
+                endMin: endMin,
+                containerSelection: containerSelection,
+                sectionName: sectionName,
+                notes: notes,
+                subtaskTitles: subtaskTitles,
+                areas: areas,
+                projects: projects,
+                in: modelContext
+            )
+        } catch {
+            taskCreateFailed = true
+        }
+    }
+
+    /// **The block and the tasks ticked into it are one commit ([[T-655]]).**
+    ///
+    /// The same fix [[T-636]](e) made on `SchedulePanel`, through the same unit: `insertBundle`
+    /// creates the block, moves the ticked tasks into it, and either commits both or puts both
+    /// back. Committing the block first and adding its members afterwards would leave an empty
+    /// block in the store and the memberships pending, which is the same defect with a smaller
+    /// blast radius.
+    private func createBundle(title: String, startMin: Int, endMin: Int, adding tasks: [AppTask]) {
+        do {
+            try SchedulingActions.insertBundle(
+                title: title,
+                dateKey: dateKey,
+                startMin: startMin,
+                endMin: endMin,
+                adding: tasks,
+                in: modelContext
+            )
+        } catch {
+            bundleCreateFailed = true
         }
     }
 }

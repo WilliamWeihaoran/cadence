@@ -103,6 +103,18 @@ struct TaskCreationService {
     /// differently.
     static let saveFailureNotice = "Couldn't save this task."
 
+    /// The alert title that carries `saveFailureNotice` on a surface with no inline place to put
+    /// it — the calendar day column's drag-to-create, whose draft popover has already dismissed by
+    /// the time the store answers ([[T-655]]).
+    ///
+    /// Beside the sentence rather than at the call site for the reason
+    /// `CadenceTaskMutationSupport.bundleCreateFailureAlertTitle` gives: the title and the body are
+    /// one message, and two surfaces naming the same failure differently is what holding both here
+    /// prevents. "Create" rather than "Save" because this family is a creation — there is nothing
+    /// the user could fear losing, which is what the edit and delete families' second sentences
+    /// exist to deny.
+    static let createFailureAlertTitle = "Couldn't Create Task"
+
     /// Builds and inserts the task, and leaves the commit to the caller.
     ///
     /// Prefer `createTask(from:into:)` on any surface that reports success — dismissing, navigating

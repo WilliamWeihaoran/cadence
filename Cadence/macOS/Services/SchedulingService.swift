@@ -161,6 +161,56 @@ enum SchedulingActions {
         TaskCreationService(areas: areas, projects: projects).insertTask(from: draft, into: context)
     }
 
+    /// Creates a scheduled task in a list or section from a drag on a calendar day column, and
+    /// **commits it** ([[T-655]]).
+    ///
+    /// A differently-named sibling of `createTask(title:…containerSelection:…)` above rather than a
+    /// commit added to it, for the reason [[T-636]](e) gave when it added `insertBundle` beside
+    /// `createBundle`: the commit index resolves a call by *name*, so it vouches for a name only
+    /// once **every** overload of it on that type commits. `SchedulingActions` declares two
+    /// `createTask`, so committing in one of them would have silenced nothing.
+    ///
+    /// The undo is `TaskCreationService.createTask`'s, which is the whole insertion — the task and
+    /// the subtasks the quick-create popover typed alongside it. `AppTask.subtasks` declares no
+    /// cascade, so un-inserting only the task would leave those rows in the context attached to
+    /// nothing.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    @discardableResult
+    static func insertTask(
+        title: String,
+        dateKey: String,
+        startMin: Int,
+        endMin: Int,
+        containerSelection: TaskContainerSelection,
+        sectionName: String,
+        notes: String = "",
+        subtaskTitles: [String] = [],
+        areas: [Area],
+        projects: [Project],
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> AppTask? {
+        let draft = TaskCreationDraft(
+            title: title,
+            notes: notes,
+            priority: .none,
+            container: containerSelection,
+            sectionName: sectionName,
+            dueDateKey: "",
+            scheduledDateKey: dateKey,
+            subtaskTitles: subtaskTitles,
+            tags: [],
+            scheduledStartMin: startMin,
+            estimatedMinutes: max(5, endMin - startMin)
+        )
+        return try TaskCreationService(areas: areas, projects: projects).createTask(
+            from: draft,
+            into: context,
+            commit: commit
+        )
+    }
+
     /// Move an existing task to a new date/time. Materialises the default estimate if the task has
     /// none, so the block it lands in is the length `AppTask.timelineDurationMinutes` already draws.
     static func dropTask(_ task: AppTask, to dateKey: String, startMin: Int) {
@@ -217,6 +267,55 @@ enum SchedulingActions {
             adding: draggedTask,
             modelContext: context
         )
+    }
+
+    /// Forms a block out of a scheduled task plus a task dropped onto it, and **commits the block
+    /// and both memberships as one unit** ([[T-655]]).
+    ///
+    /// The committing sibling of `createBundle(from:adding:in:)` above, added rather than folded
+    /// into it for the reason `insertTask` records — `createBundle` has two overloads on this type
+    /// and the index needs unanimity before it will vouch for the name.
+    ///
+    /// **Both tasks are restored on a refusal, not just the block.** `commitInsert` un-inserts the
+    /// `TaskBundle`, and that on its own would leave two tasks detached from whatever block they
+    /// were in, moved onto a day the store never agreed to and stripped of their time slot and any
+    /// calendar link — the same five fields `insertBundle(title:…adding:in:)` restores through
+    /// `BundleMembership`, and the same reason.
+    ///
+    /// **It cannot promise the store holds no block, and that is a finding rather than a caveat.**
+    /// `CadenceTaskMutationSupport.addTask` — the shared mutation moves each task with — ends
+    /// `try? modelContext.save()`, so the pair is already committed before this frame's `commit` is
+    /// asked. In the app the two are the same `save()` and refuse together, so a real refusal
+    /// leaves nothing behind; an injected one cannot model that. What this frame does own either
+    /// way is that neither task is left where the store never agreed to put it, and that the
+    /// canvas is told. `SchedulingActions.addTask`, which `insertBundle(title:…adding:in:)` uses,
+    /// has no save of its own. [[T-760]].
+    ///
+    /// Answers `nil` for a pair the shared mutation refuses — the same task twice, or a target
+    /// with no day and time — which is "nothing to make" rather than a failure, so there is
+    /// nothing to commit and nothing to report.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    @discardableResult
+    static func insertBundle(
+        from targetTask: AppTask,
+        adding draggedTask: AppTask,
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> TaskBundle? {
+        let members = [BundleMembership(targetTask), BundleMembership(draggedTask)]
+        guard let bundle = createBundle(from: targetTask, adding: draggedTask, in: context) else {
+            return nil
+        }
+        do {
+            try CadencePendingChangePersistence.commitInsert(of: bundle, in: context, commit: commit)
+        } catch {
+            for member in members {
+                member.restore()
+            }
+            throw error
+        }
+        return bundle
     }
 
     static func removeTaskFromBundle(_ task: AppTask, keepOnBundleDate: Bool = true) {

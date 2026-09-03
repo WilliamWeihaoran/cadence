@@ -1359,15 +1359,15 @@ enum CadenceSaveCommitRule {
         "Cadence/macOS/Views/NoteEditorPane.swift": [
             "body", "noteTagsBinding", "persistEditorContentIfNeeded",
         ],
-        // [[T-636]](e): `SchedulingActions.createTask`/`createBundle` insert into a context they
-        // were handed and commit nothing, and the canvas that calls them commits nothing either.
-        // `SchedulePanel.body` left this list in that ticket: the panel owns the unit of work, so
-        // it commits it — through `SchedulingActions.insertBundle(title:…adding:in:commit:)`, the
-        // block and its members as one insert — and names a refusal in an alert on the panel. The
-        // two below are the same shape on two other canvases, still calling the pending spelling
-        // ([[T-655]]).
-        "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift": ["body"],
-        "Cadence/macOS/Views/TimelineDayCanvas.swift": ["body"],
+        // [[T-636]](e) and [[T-655]] emptied the three canvas entries that used to sit here.
+        // `SchedulingActions.createTask`/`createBundle` insert into a context they were handed and
+        // commit nothing — correctly — and `SchedulePanel.body`, `CalDayColumn.body` and
+        // `TimelineDayCanvas.body` each committed nothing either. All three own their unit of work
+        // now, through `SchedulingActions.insertTask` / `insertBundle`, and each names its refusal
+        // in an alert. **The siblings stayed** rather than growing a commit: the index vouches for
+        // a name only when every overload of it commits, so a commit added to one `createBundle`
+        // would have silenced nothing while the other still inserted and returned. Pinned by
+        // `CadenceFocusSessionAndBlockCommitTests`.
         // [[T-636]](a): the completion spine again, reached from a control that has no `try?` at
         // all — which is why only this half can see these two.
         // [[T-621]] added `bundleTimerControls` beside it. Banking a focus session now inserts a
