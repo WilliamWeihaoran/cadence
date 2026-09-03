@@ -285,6 +285,101 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         )
     }
 
+    // MARK: - T-708: the notice that had no way to go away
+
+    /// The component decides dismissal, and it decides it as a *parameter*.
+    ///
+    /// The bare form is still the default, because 43 of the 49 call sites sit beside the control
+    /// that failed and are cleared by the next press of it. The dismissable form exists for the
+    /// six that are not: a notice inside a markdown editing surface, where the next thing the user
+    /// does is type, and typing never reaches the door that set it.
+    @Test func theInlineFailureNoticeDrawsADismissControlOnlyWhenItIsGivenOne() throws {
+        let path = "Cadence/Shared/Components/CadenceInlineFailureNotice.swift"
+        let raw = try CadenceSourceScan.sourceFile(path)
+        let code = CadenceSourceScan.codeOnly(raw)
+        #expect(raw.count > 1_000, "\(path) read as \(raw.count) characters")
+        #expect(code != raw, "expected comments and literals to have been blanked")
+        #expect(code.count == raw.count, "the stripper changed the length")
+
+        // Optional and defaulted, so the 43 bare callers keep compiling and keep looking the same.
+        #expect(
+            CadenceSourceScan.matchCount(#"var onDismiss: \(\(\) -> Void\)\?"#, in: code) == 1,
+            "dismissal is not an optional parameter of the component"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"let onDismiss:"#, in: code) == 0,
+            "a required onDismiss would force a control on every call site"
+        )
+        #expect(code.contains("if let onDismiss {"), "the control is drawn unconditionally")
+        #expect(code.contains("Button(action: onDismiss)"), "nothing calls back to the caller")
+        #expect(raw.contains(#"accessibilityLabel("Dismiss")"#), "the dismiss control is unlabelled")
+
+        // Both branches draw the same sentence — one component, not two spellings of red text.
+        #expect(
+            CadenceSourceScan.matchCount(#"\bsentence\b"#, in: code) == 3,
+            "the dismissable and bare forms no longer share one sentence view"
+        )
+        #expect(code.contains("@ViewBuilder"), "a two-branch body needs it")
+    }
+
+    /// Exactly six call sites take a dismissal, and every one of them is a markdown editing
+    /// surface. Named individually rather than counted, because a count that still totals six
+    /// cannot tell you the six are the six that need it.
+    @Test func onlyTheMarkdownEditingSurfacesOfferToDismissTheirFailureNotice() throws {
+        let dismissable = try CadenceScanInstrument(
+            "inline failure notice with a dismissal",
+            fires: "CadenceInlineFailureNotice(text: imageFailureNotice) { self.imageFailureNotice = nil }",
+            andNotOn: "CadenceInlineFailureNotice(text: imageFailureNotice)",
+            by: { CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: [A-Za-z]+\) \{"#, in: $0) > 0 }
+        )
+
+        let paths = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        let hits = try dismissable.sweep(
+            paths,
+            atLeast: 400,
+            including: Self.macEditor,
+            read: CadenceSourceScan.strippedSourceReader()
+        )
+        #expect(
+            hits == [
+                "Cadence/iOS/iOSMarkdownEditingSurface.swift",
+                "Cadence/macOS/Editor/MarkdownEditorView.swift",
+                "Cadence/macOS/Views/ListNotesSupportViews.swift",
+                "Cadence/macOS/Views/NoteEditorPane.swift",
+                "Cadence/macOS/Views/NotePanel.swift"
+            ],
+            "a dismissal appeared outside the markdown editing surfaces, or left one of them"
+        )
+
+        // Five files, six notices: the iOS surface carries both of its own.
+        var withDismissal = 0
+        var total = 0
+        for path in paths {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            total += CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: "#, in: code)
+            withDismissal += CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: [A-Za-z]+\) \{"#, in: code)
+        }
+        #expect(total == 49, "the inline notice has \(total) call sites, not the 49 this test was written over")
+        #expect(withDismissal == 6, "\(withDismissal) call sites offer a dismissal, not 6")
+
+        // And each of the six is named, so one swapping places with another is still a failure.
+        for (path, notices) in [
+            (Self.macEditor, ["CadenceInlineFailureNotice(text: imageFailureNotice) { self.imageFailureNotice = nil }"]),
+            (Self.iosSurface, [
+                "CadenceInlineFailureNotice(text: imageFailureNotice) { self.imageFailureNotice = nil }",
+                "CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"
+            ]),
+            ("Cadence/macOS/Views/NotePanel.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
+            ("Cadence/macOS/Views/NoteEditorPane.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
+            ("Cadence/macOS/Views/ListNotesSupportViews.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"])
+        ] {
+            let source = try CadenceSourceScan.sourceFile(path)
+            for notice in notices {
+                #expect(source.contains(notice), "\(path) no longer offers to dismiss \(notice)")
+            }
+        }
+    }
+
     // MARK: - The scan read what it claims to
 
     /// Both files are real, long, and carry the needles a blanked reader could not produce.

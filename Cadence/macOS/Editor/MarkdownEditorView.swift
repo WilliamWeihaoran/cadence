@@ -133,7 +133,7 @@ struct MarkdownEditor: View {
             }
 
             if let imageFailureNotice {
-                CadenceInlineFailureNotice(text: imageFailureNotice)
+                CadenceInlineFailureNotice(text: imageFailureNotice) { self.imageFailureNotice = nil }
                     .padding(.horizontal, MarkdownEditorMetrics.firstTextColumnInset)
                     .padding(.bottom, 6)
                     .zIndex(5)

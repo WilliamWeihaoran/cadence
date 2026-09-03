@@ -165,13 +165,13 @@ struct iOSMarkdownEditingSurface: View {
             )
 
             if let imageFailureNotice {
-                CadenceInlineFailureNotice(text: imageFailureNotice)
+                CadenceInlineFailureNotice(text: imageFailureNotice) { self.imageFailureNotice = nil }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 6)
             }
 
             if let embeddedTaskFailureNotice {
-                CadenceInlineFailureNotice(text: embeddedTaskFailureNotice)
+                CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 6)
             }

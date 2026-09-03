@@ -163,7 +163,7 @@ struct TaskNoteEditorPane: View {
             // Under the editor rather than over the card: the card is drawn by the text view, so
             // there is nothing in SwiftUI's tree to attach a notice to at the point of the refusal.
             if let embeddedTaskFailureNotice {
-                CadenceInlineFailureNotice(text: embeddedTaskFailureNotice)
+                CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
             }
