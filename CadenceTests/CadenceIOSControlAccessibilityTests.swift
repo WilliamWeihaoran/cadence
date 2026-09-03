@@ -46,10 +46,15 @@ struct CadenceIOSControlAccessibilityTests {
     /// is a complete deliverable on its own. The three follow-ups are grouped by *fix shape*, not
     /// by folder, because the same shape repeats across folders:
     ///
-    /// - **T-672 — the search field's clear button, ten near-copies (10 sites, 10 files).** The
-    ///   identical `if !query.isEmpty { Button { query = "" } label: { Image("xmark.circle.fill") } }`
-    ///   in ten pickers. One shared component named once, per the repo's "prefer one shared
-    ///   component over near-copies" rule; this is a duplication finding that a naming rule found.
+    /// - **T-672 — the search field's clear button, ten near-copies (10 sites, 10 files). CLOSED.**
+    ///   The identical `if !query.isEmpty { Button { query = "" } label: { Image("xmark.circle.fill") } }`
+    ///   in ten pickers, now one `CadenceSearchFieldClearButton` that names itself — a duplication
+    ///   finding that a naming rule found, so it was fixed as one. An *eleventh* copy was in the
+    ///   tree and not in this ledger: `FocusPickerSupportViews`' clear button already carried
+    ///   `.cadenceControlLabel("Clear search")`, so no naming rule could see it, and leaving it
+    ///   hand-spelled would have left the near-copy this ticket exists to remove. It migrated too.
+    ///   `CadenceSearchFieldClearButtonTests` pins the call sites, which is what a rule on the
+    ///   component alone would miss.
     /// - **T-673 — a row's own glyph never says which row (8 sites, 5 files).** Six `xmark`
     ///   removals (a subtask, a picked task, a detached goal link) and two completion circles. The
     ///   T-594 shape: the action is guessable from the glyph and the *subject* is not, so the name
@@ -72,16 +77,10 @@ struct CadenceIOSControlAccessibilityTests {
     private static let knownUnnamedIconButtonSites: [String: Int] = [
         "Cadence/iOS/iOSMarkdownPreview.swift": 2,                          // T-611
         "Cadence/iOS/iOSTaskDetailSheet.swift": 1,                          // T-611
-        "Cadence/macOS/CadenceCalendarPicker.swift": 1,                     // T-672
         "Cadence/macOS/Services/SchedulingService.swift": 2,                // T-674 (zoom −/+)
         "Cadence/macOS/Sheets/CreateTaskSheet.swift": 1,                    // T-673
         "Cadence/macOS/Sheets/ListEditorSupportViews.swift": 1,             // T-674
-        "Cadence/macOS/Views/CadenceContextPicker.swift": 1,                // T-672
-        "Cadence/macOS/Views/ContainerPickerSupportViews.swift": 1,         // T-672
         "Cadence/macOS/Views/FocusBundleTaskSupportViews.swift": 1,         // T-674
-        "Cadence/macOS/Views/GlobalSearchSupportViews.swift": 1,            // T-672
-        "Cadence/macOS/Views/GoalPickerViews.swift": 1,                     // T-672
-        "Cadence/macOS/Views/GoalTimelineSupportViews.swift": 1,            // T-672
         "Cadence/macOS/Views/GoalTimelineView.swift": 1,                    // T-674
         "Cadence/macOS/Views/GoalsSupportViews.swift": 2,                   // T-673 (detach ×2)
         "Cadence/macOS/Views/HabitsFormSupportViews.swift": 1,              // T-674
@@ -90,10 +89,8 @@ struct CadenceIOSControlAccessibilityTests {
         "Cadence/macOS/Views/QuickCreateChoiceSupportViews.swift": 2,       // T-673 (remove ×2)
         "Cadence/macOS/Views/SettingsSupportViews.swift": 1,                // T-674
         "Cadence/macOS/Views/SidebarComponents.swift": 1,                   // T-674
-        "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift": 2,        // T-672 ×1, T-674 ×1
-        "Cadence/macOS/Views/TaskTitleInlineTagPicker.swift": 1,            // T-672
-        "Cadence/macOS/Views/TasksPanelSupportViews.swift": 3,              // T-672 ×1, T-673 ×2
-        "Cadence/macOS/Views/TildeContainerPicker.swift": 1,                // T-672
+        "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift": 1,        // T-674 (back chevron)
+        "Cadence/macOS/Views/TasksPanelSupportViews.swift": 2,              // T-673 ×2
     ]
 
     @Test func noIconOnlyButtonInTheAppIsLeftWithoutAnAccessibleName() throws {
@@ -133,9 +130,11 @@ struct CadenceIOSControlAccessibilityTests {
             if count > 0 { actual[path] = count }
         }
         #expect(actual == Self.knownUnnamedIconButtonSites, "measured: \(actual.sorted { $0.key < $1.key })")
-        // The headline, so the report and the ledger cannot disagree: T-637 measured 31 in 24.
-        #expect(actual.values.reduce(0, +) == 31)
-        #expect(actual.count == 24)
+        // The headline, so the report and the ledger cannot disagree: T-637 measured 31 in 24,
+        // and T-672 closed 10 of them in 10 files — 8 files left the ledger outright, and the two
+        // that carried a second ticket's site lost one each.
+        #expect(actual.values.reduce(0, +) == 21)
+        #expect(actual.count == 16)
         // And the file the ticket was filed about is clean — see the ledger's own note.
         #expect(actual["Cadence/iOS/iOSTaskRowActionViews.swift"] == nil)
     }
@@ -154,9 +153,9 @@ struct CadenceIOSControlAccessibilityTests {
         // T-611's population, unchanged: 3 sites in 2 files.
         #expect(touch.values.reduce(0, +) == 3)
         #expect(touch.count == 2)
-        // T-637's: 28 sites in 22 files that the iOS-scoped walk could not see.
-        #expect(desktop.values.reduce(0, +) == 28)
-        #expect(desktop.count == 22)
+        // T-637's: 28 sites in 22 files that the iOS-scoped walk could not see, less T-672's 10.
+        #expect(desktop.values.reduce(0, +) == 18)
+        #expect(desktop.count == 14)
         // Nothing else — `Cadence/Shared/`, `Models/` and `Services/` are swept and clean, which
         // is a measurement of those trees, not an exclusion of them.
         #expect(touch.count + desktop.count == ledger.count)

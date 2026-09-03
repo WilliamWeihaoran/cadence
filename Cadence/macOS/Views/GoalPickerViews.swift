@@ -189,17 +189,7 @@ struct GoalLinkPickerList: View {
                     pick(flattenedItems[highlightIndex].id)
                 }
 
-            if !searchQuery.isEmpty {
-                Button {
-                    searchQuery = ""
-                    isSearchFocused = true
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                }
-                .buttonStyle(.cadencePlain)
-            }
+            CadenceSearchFieldClearButton(text: $searchQuery, glyphSize: 12, focus: $isSearchFocused)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

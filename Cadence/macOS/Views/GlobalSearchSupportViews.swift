@@ -214,14 +214,12 @@ struct GlobalSearchHeader: View {
                 .focused($isSearchFocused)
                 .onSubmit(submit)
 
-            if !draftQuery.isEmpty {
-                Button(action: clear) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(Theme.dim)
-                }
-                .buttonStyle(.cadencePlain)
-            }
+            CadenceSearchFieldClearButton(
+                text: $draftQuery,
+                glyphSize: 16,
+                focus: $isSearchFocused,
+                onClear: clear
+            )
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)

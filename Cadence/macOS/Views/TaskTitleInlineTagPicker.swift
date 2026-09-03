@@ -95,14 +95,7 @@ struct TaskTitleInlineTagPicker: View {
                     onRestoreLiteral()
                     return .handled
                 }
-            if !query.isEmpty {
-                Button { query = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim.opacity(0.5))
-                }
-                .buttonStyle(.cadencePlain)
-            }
+            CadenceSearchFieldClearButton(text: $query, glyphSize: 11, focus: $isSearchFocused)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

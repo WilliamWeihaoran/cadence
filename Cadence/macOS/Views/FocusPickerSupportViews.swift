@@ -98,17 +98,7 @@ struct FocusPickSessionCard: View {
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.text)
                 .focused($searchFieldFocused)
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                }
-                .buttonStyle(.cadencePlain)
-                .cadenceControlLabel("Clear search")
-            }
+            CadenceSearchFieldClearButton(text: $searchText, glyphSize: 12, focus: $searchFieldFocused)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 11)

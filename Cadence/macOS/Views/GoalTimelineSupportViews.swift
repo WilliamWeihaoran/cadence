@@ -297,6 +297,7 @@ private struct GoalTimelineDeadlineChip: View {
 struct GoalTimelineFilterPopover: View {
     @Binding var searchText: String
     @Binding var statusFilter: GoalStatusFilter
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -308,16 +309,8 @@ struct GoalTimelineFilterPopover: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.text)
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.dim)
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
+                    .focused($isSearchFocused)
+                CadenceSearchFieldClearButton(text: $searchText, glyphSize: 12, focus: $isSearchFocused)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
