@@ -55,6 +55,24 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   pinned by `CadenceContextlessListSurfaceTests` so whichever way it goes has to be written down.
   Filed by [[T-683]], which did the mechanical half and left this.
 
+- [T-768] **The two macOS event deletes still report through the global alert, and the reason is
+  reasoned rather than measured.** Residue of [[T-658]], which moved Save and quick-create to an
+  inline notice on the popover holding the draft and deliberately left Delete where it was.
+  The argument for leaving it: both deletes leave through `DeleteConfirmationManager`, whose
+  `DeleteConfirmationOverlay` (`macOSRootSupportViews.swift:614`) covers the whole window, so
+  pressing its Delete button is a click outside a transient `NSPopover` and closes the editor before
+  EventKit answers — an inline notice would have nothing to draw on, and suppressing the alert for
+  it would turn a reported failure into a silent one. There is also no draft to lose: nothing was
+  typed.
+  **Two things are worth doing.** (1) `presentRefusable(…)` already exists for exactly this shape
+  (T-376: the overlay stays open and says the delete was refused), and it is the surface that asked
+  the question, so it beats a global alert — but it takes a fixed `failureNotice: String` and an
+  `attempt: () -> Bool`, so it cannot carry `CalendarWriteFailure.message`. Widening it to a typed
+  refusal is the work. (2) **Measure the premise.** "The overlay closes the popover" is AppKit
+  reasoning about `NSPopover.behavior == .transient`, not an observation: `run-macos-app.sh` refuses
+  while the user's own Cadence is running, which it was for the whole of that batch. If the popover
+  in fact survives, `deleteOutcome(for:)` is a three-line addition and Delete joins Save.
+
 - [T-759] **Two `SchedulingActions.createTask` overloads no longer have an app caller.** Found while
   landing [[T-655]] and deliberately left. `createTask(title:dateKey:startMin:endMin:in:)` had none
   before that ticket; `createTask(title:…containerSelection:…in:)` lost its last one when
@@ -1220,25 +1238,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   it: the block window is what keeps half 2 honest, and following calls out of it widens that
   window. Until then the three macOS sites are recorded in T-648's prose only.
 
-- [T-658] **A refused macOS calendar write closes the popover and loses the whole draft; iOS keeps
-  it.** From [[T-636]](d), which resolved CXT-012 and CXT-015 downward — those are EventKit, not a
-  `ModelContext` commit, and they are **not** silent (`CalendarManager.record(_:)` →
-  `lastWriteFailure` → `.calendarWriteFailureAlert()`, mounted at `SchedulePanel.swift:180` and
-  `CalendarPageView.swift:149`). This is the residue that survived that reading, and it is a parity
-  gap rather than a swallowed failure.
-  macOS discards the typed `CalendarWriteFailure?` at the call site and closes regardless:
-  `CalendarBoardItemSupportViews.swift:168,177` (save) and `:186,187` (delete),
-  `TimelineEventBlock.swift:123,132`, and quick-create, where the callback type is narrowed to
-  `Void` before it reaches the editor that owns the draft (`TimelineDayCanvas.swift:33,261,263`,
-  supplied by `SchedulePanel.swift:133` and `CalendarPageMonthSupportViews.swift:606`). The user
-  loses the title, notes, chosen calendar and time range, then gets a global alert with nothing to
-  retype into.
-  iOS is the shape to copy: `iOSCalendarEventEditSheet` keeps the sheet open and writes
-  `CadenceCalendarEventEditingSupport.saveFailureNotice(for:)` / `deleteFailureNotice(for:)`, and
-  `iOSCalendarQuickCreateSheet` captures the typed create result. The shared copy already exists in
-  `CadenceCalendarEventEditingSupport`, so this is threading a return value and one notice, not new
-  plumbing.
-
 - [T-654] **The block focus timer banks its minutes over a swallowed save, then clears the clock.**
   Found while landing [[T-636]](c), which fixed the single-task door beside it.
   `iOSFocusView.logBundleSession` calls `CadenceFocusSupport.logElapsedSeconds(_:across:)` →
@@ -1759,15 +1758,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   paths-filter action and the supply-chain surface that brings. **Decide it rather than leaving it in
   a comment**, and note the cost the file records: ~6-10 billed runner-minutes per iOS run.
 
-- [T-708] **The inline image-failure notice has no way to go away.**
-  From [[T-649]], and it predates it: [[T-629]] introduced `imageFailureNotice` on both editors and
-  neither platform gives it a dismissal, an auto-clear, or a timeout. It is cleared only by the *next*
-  image insertion through the same door — `MarkdownEditorView.createAssets`,
-  `iOSMarkdownEditingSurface.insertPickedImages` / `createPastedImageAssets` — so a user who pastes
-  one bad picture and then goes back to typing keeps a red sentence under the toolbar for the rest of
-  the session. `CadenceInlineFailureNotice` is a bare `Text`; whatever is decided should be decided
-  for that component rather than twice at its call sites, and it has other callers to check first.
-
 - [T-709] **`CadenceBuildInvocationHygieneTests` sweeps `.md` and `.sh`, and CI is `.yml`.**
   From [[T-535]]. `scannedPaths()` appends a file only when it `hasSuffix(".md")` or `hasSuffix(".sh")`,
   so `.github/workflows/*.yml` is outside the walk entirely — and those files contain `xcodebuild`
@@ -2165,6 +2155,47 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   strings they are (`theGoalSheetsCatchAllHeadingIsStillItsOwnWord`), and converging them fails that
   test rather than passing quietly — mutation M7 is the evidence.
   Residue: [[T-771]].
+
+- [T-658] **CLOSED 2026-09-03 (`b29e9a9`) — a refused macOS calendar save keeps the popover, the
+  draft and all of it; only Delete still leaves through the alert.** iOS was the shape to copy and
+  now is copied for the two paths that cost the user typing.
+  **The rule is a value now, not a habit.** `CadenceCalendarWriteOutcome` (`.committed` /
+  `.refused(notice:)`) and `CadenceCalendarEventEditingSupport.saveOutcome(for:)` say the thing the
+  macOS call sites were not saying: a refusal and a success are *different decisions about the
+  editor*, not two ways of closing it. `CalendarManager.report(_:into:onCommitted:)` applies one to
+  a surface, and clearing `lastWriteFailure` is part of reporting rather than tidy-up — on macOS an
+  alert raised over a popover dismisses that popover, so leaving the global alert armed would have
+  re-created the loss inline reporting exists to stop.
+  **Five sites, and the quick-create callback un-narrowed.** `CalendarBoardEventCard` and
+  `TimelineEventBlock` each report twice: the rejected write, and the branch where the edited range
+  cannot be formed at all — which closed the popover in *silence*, with EventKit never asked. That
+  second one was not in the ticket. The create callback answers `CalendarWriteFailure?` from
+  `SchedulePanelShellViews` down through `TimelineDayCanvas`; `QuickCreateChoicePopover`'s own
+  callback stays `Void` on purpose, because the canvas is the frame that dismisses it, so the canvas
+  is where the decision belongs and the popover reads the answer back as a binding — the shape
+  `TaskBundleDetailPopover` records for its own notice (T-628).
+  **Delete is deliberately not on this path**, and there is no `deleteOutcome` to tempt anyone: both
+  deletes leave through `DeleteConfirmationManager`'s full-window overlay, which closes the transient
+  popover before EventKit answers, and they have no draft to lose. Pinned as an exact-zero, not
+  assumed. 6 mutations, 6 killed — including the silent-range branch and the alert handover.
+  Residue: [[T-768]].
+
+- [T-708] **CLOSED 2026-09-03 (`481c21c`) — dismissal is a parameter of the notice, because the
+  callers genuinely want two things.** All 49 `CadenceInlineFailureNotice` call sites were read
+  first, which is what decided it.
+  **Forty-three sit beside the control that failed** — Save, Create, Restore, Delete, Seed — and are
+  cleared by the next press of that control. Checked rather than assumed: every one of the four call
+  sites with no `= nil` anywhere in their own file takes its notice as a passed-in `let` or
+  `@Binding` and the owner clears it. An ✕ next to a Save button the user is about to press again is
+  chrome that says nothing, so those keep the bare sentence and look exactly as they did.
+  **Six are in a markdown editing surface**, where the failing act — paste an image, tick an embedded
+  task — is not what the user does next. They go back to typing, and typing never reaches the door
+  that set the notice, so the red sentence sat under the toolbar for the rest of the session. Those
+  six pass `onDismiss` and draw an ✕. The ticket named the two `imageFailureNotice` sites; the four
+  `embeddedTaskFailureNotice` ones in the same editors are the same case under a different name and
+  were fixed with them rather than left to be re-filed.
+  Both forms draw one `sentence` view, so the component still cannot grow a second spelling of red
+  text — pinned, and mutating it apart is one of the 3 mutations, 3 killed.
 
 - [T-655] **CLOSED 2026-09-03 (`793c3f6`) — the last two canvases commit what they create, and
   each names its own refusal.** The rest of [[T-636]](e). `SchedulingActions.createTask` and
