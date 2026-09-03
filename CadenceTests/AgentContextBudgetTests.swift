@@ -112,8 +112,10 @@ private func expectLineCount(_ relativePath: String, isAtMost limit: Int) throws
     let wcDashL = lineCount - 1
     #expect(
         lineCount <= limit,
-        "\(relativePath) has \(lineCount) lines by this test's count (\(wcDashL) by `wc -l`); "
-            + "keep it at or under \(limit) here, i.e. at or under \(limit - 1) by `wc -l`."
+        """
+        \(relativePath) has \(lineCount) lines by this test's count (\(wcDashL) by `wc -l`); \
+        keep it at or under \(limit) here, i.e. at or under \(limit - 1) by `wc -l`.
+        """
     )
 }
 
