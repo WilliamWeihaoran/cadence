@@ -263,15 +263,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   that file, twice of them here. Decide whether `shortLabel` earns its existence at all; if it does, it
   should derive from `label` and override the one arm rather than re-type the other four.
 
-- [T-721] **"tests executed" counts result *lines*, not tests, and a failing test prints two.**
-  `scripts/xcb.sh`'s `tests_seen()` counts per-test result lines, which is exactly right for the zero-test
-  guard it exists for ([[T-552]]) and is **not** a test count: swift-testing prints both
-  `✘ Test x() recorded an issue` and `✘ Test x() failed after …`, so a two-test suite reports 2 when green,
-  3 with one failure and 4 with two — measured across the [[T-530]] trial's runs of
-  `HabitFrequencyLabelTests`. `scripts/mutate.sh` now prints it as *"test result lines"* for that reason.
-  Nothing is broken; the risk is an agent quoting the number as "N tests ran" in a report, or asserting an
-  exact test count against it. Either rename it in `xcb.sh` too, or make it count distinct test names.
-
 - [T-714] **A refused column rename still has one path with nowhere to appear.**
   Residue from [[T-645]], same family as [[T-646]]. The rename now commits at `onSubmit`, at the name
   field losing focus, and from every other control in the popover — all while the popover is up. The
@@ -1376,20 +1367,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   refusal and leave the tag pending" (matching T-497's in-place answer) or something that actually
   reasons about the insert.
 
-- [T-660] **The agent-guide cap is stated in one unit and enforced in another, and it has now cost a
-  batch.** `AgentContextBudgetTests.expectLineCount` splits on `"\n"` with
-  `omittingEmptySubsequences: false`, so a file ending in a trailing newline — every file here — counts
-  **one higher than `wc -l`**. The limit is 200 by that count, i.e. **199 by `wc -l`**.
-  Measured 2026-09-01: a Batch B agent added one line to `AGENTS.md`, checked `wc -l`, read **200**,
-  reported *"AGENTS.md is at 200 lines, the cap"* and committed. The integration pass at merged HEAD
-  came back `** TEST FAILED **` with `(lineCount → 201) <= (limit → 200)`. The agent was careful and
-  measured; the instrument disagreed with the rule's own wording.
-  Neither the test's failure message nor `AGENTS.md` says which count is meant, so **every agent that
-  reaches for the obvious tool gets the wrong answer by exactly one.**
-  Fix shape: make the message self-describing — report both counts, or name the `wc -l` equivalent in
-  the same sentence — and say the unit wherever the cap is written down. This is the [[T-644]] /
-  [[T-659]] family: an instrument that reads something slightly other than what the rule says.
-
 - [T-661] **The portable export carries a device-local calendar identifier.** Found while landing
   [[T-624]]'s evidence gate; not fixed, and it is a decision rather than a bug.
   `CadenceArchiveArea` and `CadenceArchiveProject`
@@ -1439,41 +1416,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the answer. `AppStoreReviewReadinessTests.appInfoPlistContainsReviewReadyPrivacyKeys` reads the
   **file**, so today it is asserting over the copy that may not be the one that ships.
 
-- [T-667] **Three suites cannot be reached by `-only-testing:` at all, and the repo's own tool hands
-  you the identifier that runs nothing.** Found 2026-09-01 while measuring [[T-644]]'s blast radius:
-  a 52-suite scoped run reported `** TEST SUCCEEDED **` over 593 tests, and **four of the 52 had
-  executed nothing**. Caught only by diffing the `✔ Suite` lines against the requested flags.
-  **The trigger was mis-attributed when filed, and the corrected rule is narrower and stranger.**
-  The original entry blamed `@Suite("display name")` and listed nine suites. Measured 2026-09-01 by
-  running each alone, one full build per probe:
-  - `CadenceTodayRolloverSurfaceTests` — `@Suite("Today rollover")`, cases are bare `@Test func` →
-    **25 tests executed.** Selectable.
-  - `CadenceTestTargetHygieneTests` — no suite display name, cases are `@Test("…")` →
-    **14 tests executed.** Selectable.
-  - `ListDetailPageTests` — `@Suite("List detail page resolution")` **and** `@Test("…")` cases →
-    **0 tests**, exit 0.
-  - `MarkdownTableMobileEditingTests` — same combination → **0 tests**, exit 0.
-  **So neither attribute is sufficient on its own; a suite is unreachable only when it carries a
-  `@Suite` display name *and* its cases carry `@Test` display names.** Cross-tabulating the eight
-  display-named suite files against their case style, exactly **three** qualify:
-  `ListDetailPageTests` (9 cases), `RootModalKeyDispositionTests` (6), `MarkdownTableMobileEditingTests`
-  (27) — **42 tests**, not nine suites' worth. The other five display-named suites select normally.
-  In a **full** run all of them execute, printing `◇ Suite "…" started` — so these are not dead
-  tests, they are tests no scoped run can select.
-  **Consequence, and it is the reason this was worth measuring rather than trusting:**
-  `CadenceTodayRolloverSurfaceTests` was on the original list and is *not* affected, so the four
-  mutations [[T-635]] killed inside it stand. **No scoped run in this session touched any of the
-  three real offenders**, so nothing already landed is in doubt.
-  **`scripts/test-suite-index.sh --scope` still hands out the unusable identifier** for those three —
-  it reads `struct X` and never looks at the attributes, so it confidently returns an answer that runs
-  nothing, which is worse than no answer because the runbook tells agents to trust it.
-  **`scripts/xcb.sh`'s zero-test guard cannot see this.** It counts results for the whole run, so a
-  suite contributing nothing inside a multi-suite run is invisible; the guard fires only when such a
-  suite is scoped alone. That is the [[T-552]] hazard surviving inside the mitigation for it.
-  Fix shape, in order of value: (a) find the spelling that *does* select one of the three, or
-  establish there is none; (b) teach `test-suite-index.sh` to read the attributes and either emit a
-  working identifier or refuse; (c) make the guard able to notice a requested suite that contributed
-  nothing, which is the only check that would have caught this without a human diffing log lines.
 - [T-668] **`cadenceFunctionBody` is a near-copy of the pre-[[T-644]] reader and still has its
   defect.** Found 2026-09-01 while closing T-644. It lives at global scope in
   `CadenceTests/FocusPickerPlayControlTests.swift:982`, takes the first `{` after the declaration
@@ -2141,15 +2083,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   claim it guards, the prune must be liveness-and-age, a pruned live waiter must re-file under its
   original stamp). Not urgent while only one simulator is in play, and cheap the day two are.
 
-- [T-750] **`AGENTS.md`'s "hard 200-line cap" is really 199, and the runbook tells you to measure it
-  the way that gets it wrong.** `AgentContextBudgetTests.expectLineCount` counts
-  `split(separator: "\n", omittingEmptySubsequences: false)`, which on a newline-terminated file is
-  `wc -l` **plus one** for the trailing empty element. `docs/SUBAGENT_RUNBOOK.md` says *"check
-  `wc -l AGENTS.md` before you report"* - so an agent who trims to exactly 200 by that instruction
-  ships 201 by the test's count and turns a green batch into a rerun. Measured 2026-09-03: cost one
-  full-suite red run in [[T-650]]. Fix either end (count lines the way the instruction says, or say
-  199 in the instruction), but not both, and pin whichever with a fixture - the interesting property
-  is that the guide's own measuring instruction agrees with the guard.
+- [T-786] **`scripts/mutate.sh` cannot verify a mutation against a `@Test("...")` display-named
+  test.** Found while fixing [[T-667]]. `FAILED_SWIFT_TESTING = re.compile(r"✘ Test
+  ([A-Za-z0-9_]+)\(\)")` and `classify_run`'s `missing = [t for t in tests if ("Test %s()" % t) not
+  in log and ("%s]" % t) not in log]` both assume a test's function name appears literally in the
+  log; for a `@Test("...")` case it never does (swift-testing prints only the quoted display name),
+  so a `tests=` plan naming one always reports `TEST-ABSENT` even when the test genuinely ran and
+  passed or failed. `SUITE-ABSENT`'s `if suite not in body` has the same blind spot for a suite
+  carrying a `@Suite` display name. Affects `ListDetailPageTests`, `RootModalKeyDispositionTests`,
+  `MarkdownTableMobileEditingTests`, and any display-named case in `CadenceTaskComposerLayoutTests.swift`
+  — 52 tests across 5 files. `scripts/test-suite-index.sh --labels` now carries the exact
+  function-name → display-name mapping this needs; `classify_run` would have to resolve each
+  planned test/suite name through it before checking presence. Not fixed here: this sits inside
+  `mutate.sh`'s verdict logic, which carries its own extensive `selftest`, and reworking it under
+  this batch's time budget risked the load-bearing tool rather than the finding. `TEST_RESULT`
+  itself (the aggregate zero-test count) is already fixed the same way as `xcb.sh`'s.
 
 
 ## Done
@@ -5576,6 +5524,59 @@ before filing**: this list has had the same ticket re-reported more than once.
   mutation putting the deleted exemption back is KILLED by that same test.
   Six mutations, six KILLED, zero survivors: each undo removed, the successor swallowed again, and
   the wrapper's `record()` and its `return` each deleted.
+
+- [T-721] **CLOSED 2026-09-03 (`3a38f80b`) — the postflight line calls the number what it is.**
+  `tests_seen()`'s count is per-test RESULT LINES (right for the zero-test guard: a failing test
+  prints two, `recorded an issue` and `failed after`) and not a test count. `scripts/xcb.sh`'s
+  postflight now prints `test result lines:` instead of `tests executed:`, matching
+  `scripts/mutate.sh`'s own wording. Nothing about the count changed.
+
+- [T-660] **CLOSED 2026-09-03 (`3a38f80b`) — the cap's failure message now names both counts.**
+  `AgentContextBudgetTests.expectLineCount` still counts
+  `split(separator: "\n", omittingEmptySubsequences: false)` — one higher than `wc -l` on every
+  newline-terminated file here, always by exactly one (pieces = newlines + 1, unconditionally) — but
+  its `#expect` message now reads "N lines by this test's count (M by `wc -l`)" and states the limit
+  both ways too, so an agent who reaches for `wc -l` sees the discrepancy instead of landing on it
+  silently. `docs/SUBAGENT_RUNBOOK.md`'s cap bullet no longer tells you to check `wc -l AGENTS.md`
+  and stop at 200; it says 199. [[T-750]] is a duplicate, closed alongside this.
+
+- [T-750] **CLOSED 2026-09-03 (`3a38f80b`) — duplicate of [[T-660]].** Filed independently by a
+  later batch after hitting the identical trap; no separate fix.
+
+- [T-667] **CLOSED 2026-09-03 (`3a38f80b`) — the three suites were never unreachable; the counter
+  that measured them was blind to a display name.** Re-measured before fixing, because a
+  hand-eyeballed "0 tests" is exactly the evidence this repo has learned not to trust: real logs
+  already sitting in this session's own scratch history (`cadence-xcb-t667b.log`, `-t667d.log`) show
+  `-only-testing:CadenceTests/ListDetailPageTests` and
+  `-only-testing:CadenceTests/MarkdownTableMobileEditingTests` — the plain type name, the very
+  identifier the ticket said selected nothing — running and passing every one of their tests (9/9
+  and 27/27, `✔ Suite "..." passed`). `RootModalKeyDispositionTests` (6 cases, all `@Test("...")`)
+  was not separately captured live in this batch, but the mechanism is structurally identical.
+  **The actual bug:** swift-testing's console reporter prints `✔ Test "<display name>" passed` for a
+  `@Test("...")` case instead of `✔ Test funcName() passed`, and `xcb.sh`'s `TEST_RESULT_PATTERN`
+  (`scripts/mutate.sh`'s parallel `TEST_RESULT` too) matched only the bareword form — so a suite that
+  ran and passed every case under a display name counted as zero. Re-running `xcb.sh check-test-log`
+  against the historical `ListDetailPageTests` log: `0 test result(s)` before this fix, `9 test
+  result(s)` after, same log, same bytes. Not scoped to these three: it was silent for any
+  `@Test("...")` case in the target — 52 of them across 5 files.
+  **Fix, in the order asked:** (a) no new spelling was needed — the plain type name already selects
+  each suite; the ticket's "0 tests" was the counter's blind spot, not a selection failure.
+  (b) `scripts/test-suite-index.sh` gained `--label`/`--labels` (the string swift-testing will
+  actually print for a suite) and `list` mode now marks a display-named case with the quoted text to
+  grep instead of its function name — the trap that produced the original reading
+  (`grep '✔ Test <name>()'`, the exact spelling `docs/SUBAGENT_RUNBOOK.md` recommends) now has a
+  documented way out, pinned in that same file. (c) `xcb.sh`'s postflight gained a second guard
+  beside the aggregate zero-test check: for every requested `-only-testing:CadenceTests/<Suite>`, it
+  resolves the suite's runtime label (one `--labels` call, not one per suite) and confirms a
+  `Suite ... started` line for that label actually appears, catching a suite that contributed
+  nothing inside a larger passing run regardless of cause. Proved against a synthetic four-suite log
+  mixing the three real suites (two by their quoted display name) with a nonexistent fifth: the real
+  three are recognised, the fake one is flagged and the run exits 6.
+  `scripts/mutate.sh`'s `TEST_RESULT` is widened the same way (46/46 selftest checks still pass
+  unchanged); its `FAILED_SWIFT_TESTING` capture and the `SUITE-ABSENT`/`TEST-ABSENT` name-matching
+  are **not** fixed here — both need the same function-name → display-name resolution and sit inside
+  verdict logic with its own selftest, riskier to touch under this batch than to file. Residue:
+  [[T-786]].
 
 ## Cancelled
 
