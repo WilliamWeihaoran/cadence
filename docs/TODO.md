@@ -341,6 +341,17 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the fix either: the Goals page carries no search field and no status picker, so there is no filter
   to try differently. It needs a third case for "every goal is done", which is a copy decision of
   the same shape as `activeListsSubtitle(hasArchived:)`.
+  **CLOSED 2026-09-03 (`663bc13`) — re-measured first, and the premise had narrowed: macOS already
+  said "No matching goals"** (`GoalStatusFilter` defaults to `.active`, and `narrowsResults` is true
+  for everything but `.all`), so only `iOSFeatureViews.iOSGoalsView` still had the defect.
+  `CadenceEmptyStateCopy.goalsTitle` gained `allComplete: Bool = false` (default keeps the Mac's two
+  call sites untouched); the Goals empty state moved from a `static let` to a computed `var` reading
+  this instance's own `goals`/`activeGoals`, and now reads the user-decided title **"All goals
+  complete"** with subtitle "Nothing in flight. Add another when you're ready." exactly when `goals`
+  is non-empty and `activeGoals` is not. Checked the one open question — whether macOS's `.all`
+  filter shares the defect — and it does not: `.all` matches every `GoalStatus`, so a done goal
+  still renders as a row under it instead of being hidden, and the empty branch is unreachable with
+  goals present. 4 tests updated/added in `CadenceEmptyStateAuditTests`; 2 mutations, both killed.
 
 - [T-690] **A paused or cancelled project reaches no Settings lifecycle section, so it cannot be
   reopened or deleted there.** `SettingsView.swift` and `iOSSettingsView.swift` both hand
@@ -353,6 +364,36 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `SettingsListManagementSections.lifecycleCard` spells `statusLabel: area.isDone ? "Completed" :
   "Archived"` inline — the exact collapse `CadenceListSearchLifecycle` was written to end, and it
   would label a cancelled project "Archived" the moment one reached the card.
+  **CLOSED 2026-09-03 (`663bc13`).** `CadenceListLifecycleSectionCopy` gained `pausedProjects`
+  ("Paused Projects") and `cancelledProjects` ("Cancelled Projects"), in the same
+  `"<status> <plural noun>"` voice the existing six use, read off `CadenceListSearchLifecycle`. Both
+  `SettingsListsSection` (macOS) and `iOSListsLifecycleSettingsSection` (iOS) gained the matching
+  groups and now filter projects by `.status == .paused` / `.status == .cancelled`. The project row's
+  inline `project.isDone ? "Completed" : "Archived"` collapse is gone, replaced by
+  `CadenceListSearchSupport.lifecycle(of: project).statusLabel` — the mapping this ticket named as
+  already existing — and `primaryLabel` moved from `isDone ? "Reopen" : "Unarchive"` to
+  `isArchived ? "Unarchive" : "Reopen"` for the same reason: a done/paused/cancelled project is not
+  being "unarchived". **Did not build [[T-703]]'s composer**: kept eight plain literals rather than
+  a `sectionTitle(_:of:)` function, because an interpolated title (`"\(status) \(noun)"`) is
+  invisible to `cadenceSharedStringConstants` by construction — exactly the protection [[T-546]]
+  exists for — and a composer built from finished-string `switch` cases would only trade eight named,
+  self-documenting constants for one function with the same eight branches while inviting invalid
+  pairs the current per-type design can't express (there is no `.paused` `Context`, no `.cancelled`
+  `Area`). Left as recorded prose in `CadenceSettingsSectionCopy.swift` and the test suite rather than
+  half-building it. 2 tests updated (renamed to reflect sixteen call sites, not twelve), 1 new
+  assertion added; 3 mutations, all killed.
+
+- [T-777] **T-694's Calendar pane still owed its offer title** (see below). **CLOSED 2026-09-03
+  (`663bc13`), same commit as T-690** — handed off mid-run once T-694's Notifications half landed
+  and needed `SettingsListManagementSections.swift`. `CadenceCalendarSettingsCopy.accessRequiredTitle`
+  ("Calendar access required") is retired; `connectOfferTitle` ("Connect Apple Calendar") takes its
+  place in the not-denied branch on both `SettingsListManagementSections.calendarAccessCard` (macOS)
+  and `iOSCalendarSettingsSection` (iOS), moved together in one change as
+  `bothCalendarSettingsSurfacesReadEveryConvergedCalendarString` requires. `accessDeniedTitle`
+  ("Calendar access denied") is untouched. New test
+  `theCalendarAccessCardDrawsOneTitlePerStateOnBothSurfaces` mirrors T-694's Notifications one, with
+  a regex rather than a literal `.contains` because the Mac wraps the ternary onto three lines where
+  the phone keeps it on one. 2 mutations, both killed.
 
 - [T-691] **The broken-calendar-link row draws no title for an unnamed list.**
   `CadenceCalendarLinkHealth.missingLinks` passes `area.name` / `project.name` straight into
@@ -1667,6 +1708,8 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   (`bothCalendarSettingsSurfacesReadEveryConvergedCalendarString`) requires macOS and iOS to read
   the same constants, so an iOS-only edit would have broken that test rather than fixed the ticket.
   Residue filed as [[T-777]].
+  **FULLY CLOSED 2026-09-03 (`663bc13`) — Calendar half via [[T-777]].** Both panes now move
+  together; see T-777 below for the shape.
 
 - [T-777] **T-694's Calendar pane still owes its offer title.** The Notifications pane split is
   done (see T-694, closed above): `CadenceNotificationSettingsCopy.connectOfferTitle` before
@@ -1696,6 +1739,15 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the harvest, because no call site can re-type an interpolated value verbatim. A composer that picks
   between finished strings stays inside it; one that interpolates a noun does not. Which of those you
   build decides whether the sweep still guards these six.
+  **Considered and declined while closing [[T-690]], 2026-09-03.** `pausedProjects`/
+  `cancelledProjects` were added as two more plain literals, not as the tail end of a composer. The
+  "it is how T-690's titles get made at all" framing above turned out not to force the composer: two
+  more `static let`s did the same job with no interpolation risk. A composer built the safe way (a
+  `switch` returning finished strings, per this ticket's own closing note) would not have shrunk
+  anything — the same eight branches, moved from eight declarations into one function — and would
+  have made an invalid pairing constructible (`.paused` + `Context`, `.completed` + `Context`) that
+  the current one-constant-per-real-case shape cannot express. Left open in case a future caller
+  actually needs runtime composition rather than a fixed set; not needed by T-690.
 
 - [T-704] **[[T-560]]'s leak was cleaned and its mechanism closed, but never reproduced — so it is not
   known to be fixed.** Two instrumented runs on 2026-09-02 (21 tests, 19 of them building and saving
