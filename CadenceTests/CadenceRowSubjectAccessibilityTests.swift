@@ -161,7 +161,7 @@ struct CadenceRowSubjectAccessibilityTests {
     /// invites exactly the mistake `docs/SUBAGENT_RUNBOOK.md` warns against: a `>=` here would stay
     /// green if one of the eight regressed while an unrelated `.accessibilityValue` appeared
     /// somewhere else. Counted **within each declaration's own body**, not the whole file — a
-    /// whole-file count would also catch `ContainerPickerBadge.accessibilityValue(label)`
+    /// whole-file count would also catch `ContainerPickerBadge`'s own `.accessibilityValue(label)`
     /// (`TasksPanelSupportViews.swift:246`, T-594's own list-badge fix), which is a ninth
     /// `.accessibilityValue(` in one of these five files that has nothing to do with this ticket.
     @Test func exactlyEightAccessibilityValuesWereAddedAcrossTheEightSites() throws {
