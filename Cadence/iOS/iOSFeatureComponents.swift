@@ -31,7 +31,7 @@ struct iOSTaskCompletionCircle: View {
                 .fill(glyph.isFilled ? glyph.tint : Color.clear)
             if !glyph.isFilled {
                 Circle()
-                    .stroke(glyph.tint, lineWidth: 1.6)
+                    .strokeBorder(glyph.tint, lineWidth: 1.6)
             }
             mark
         }

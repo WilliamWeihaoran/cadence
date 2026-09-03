@@ -321,7 +321,7 @@ struct TimelineBundleBlock: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: style.cornerRadius)
-                .stroke(
+                .strokeBorder(
                     selectedBundleID == bundle.id || isDropTargeted
                         ? accent.opacity(0.62)
                         : TimelineHoverVisuals.borderColor(

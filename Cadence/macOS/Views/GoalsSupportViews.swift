@@ -228,7 +228,7 @@ struct GoalDirectionHeaderCard: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                    .stroke(tint.opacity(0.65), lineWidth: 1.5)
+                    .strokeBorder(tint.opacity(0.65), lineWidth: 1.5)
                     .opacity(isSelected ? 1 : 0)
             )
         }
@@ -304,7 +304,7 @@ struct GoalMissionCard: View {
             .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 14, shadowY: 6)
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                    .stroke(Theme.blue.opacity(0.75), lineWidth: 1.5)
+                    .strokeBorder(Theme.blue.opacity(0.75), lineWidth: 1.5)
                     .opacity(isSelected ? 1 : 0)
             )
         }
@@ -367,7 +367,7 @@ struct GoalLinkedListRow: View {
                 .foregroundStyle(Color(hex: link.colorHex))
                 .frame(width: 26, height: 26)
                 .background(Color(hex: link.colorHex).opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             VStack(alignment: .leading, spacing: 2) {
                 Text(link.title)
                     .font(.system(size: 12, weight: .semibold))
@@ -471,7 +471,7 @@ struct AttachListCandidateRow: View {
                     .foregroundStyle(color)
                     .frame(width: 28, height: 28)
                     .background(color.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.system(size: 13, weight: .semibold))

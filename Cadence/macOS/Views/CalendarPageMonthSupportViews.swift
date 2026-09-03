@@ -106,7 +106,7 @@ private struct MonthChipPlate: ViewModifier {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                    .stroke(border, lineWidth: 1)
+                    .strokeBorder(border, lineWidth: 1)
             )
             .shadow(color: Theme.chipShadow, radius: 3, y: 1)
     }
@@ -485,7 +485,7 @@ struct AllDayTaskChip: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                .stroke(Theme.borderSubtle, lineWidth: 1)
+                .strokeBorder(Theme.borderSubtle, lineWidth: 1)
         )
         .shadow(color: Theme.chipShadow, radius: 4, y: 1)
         .contentShape(Rectangle())
@@ -527,7 +527,7 @@ struct AllDayEventChip: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                .stroke(eventColor.opacity(CalendarEventVisualStyle.chipBorderOpacity()), lineWidth: 1)
+                .strokeBorder(eventColor.opacity(CalendarEventVisualStyle.chipBorderOpacity()), lineWidth: 1)
         )
         .shadow(color: Theme.chipShadow, radius: 3, y: 1)
         .draggable(CalendarEventDragPayload.string(for: event))

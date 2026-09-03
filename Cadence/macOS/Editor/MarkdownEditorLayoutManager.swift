@@ -284,7 +284,7 @@ final class CadenceLayoutManager: NSLayoutManager {
             let barRect = MarkdownDecorationGeometry.quoteBarRect(backgroundRect: backgroundRect, depth: depth)
 
             MarkdownStylist.codeBackground.withAlphaComponent(0.68).setFill()
-            NSBezierPath(roundedRect: backgroundRect, xRadius: 7, yRadius: 7).fill()
+            NSBezierPath(roundedRect: backgroundRect, xRadius: Theme.radiusControlCompact, yRadius: Theme.radiusControlCompact).fill()
 
             MarkdownStylist.blueColor.withAlphaComponent(0.85).setFill()
             NSBezierPath(roundedRect: barRect, xRadius: 2, yRadius: 2).fill()

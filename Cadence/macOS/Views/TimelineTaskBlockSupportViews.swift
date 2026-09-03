@@ -39,7 +39,7 @@ struct TimelineDraggedTaskPreview: View {
                     .fill(Theme.blue.opacity(0.16))
                     .overlay(
                         RoundedRectangle(cornerRadius: style.cornerRadius)
-                            .stroke(Theme.blue.opacity(0.55), lineWidth: 1)
+                            .strokeBorder(Theme.blue.opacity(0.55), lineWidth: 1)
                     )
                     .frame(width: frame.width, height: frame.height)
 
@@ -65,7 +65,7 @@ struct TimelineDraggedTaskPreview: View {
                             .fill(Theme.bg.opacity(0.94))
                             .overlay(
                                 Capsule()
-                                    .stroke(Theme.blue.opacity(0.45), lineWidth: 1)
+                                    .strokeBorder(Theme.blue.opacity(0.45), lineWidth: 1)
                             )
                     )
                     .shadow(color: Theme.chipShadow, radius: 8, y: 3)
@@ -292,7 +292,7 @@ func timelineBlockBody(
     }
     .overlay(
         RoundedRectangle(cornerRadius: style.cornerRadius)
-            .stroke(
+            .strokeBorder(
                 TimelineHoverVisuals.borderColor(
                     tint: taskColor,
                     isSelected: showSelection,

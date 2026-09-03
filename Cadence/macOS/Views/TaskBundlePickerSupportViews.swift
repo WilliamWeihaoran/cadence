@@ -122,7 +122,7 @@ struct TaskBundleTaskPickerPanel: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
+                .strokeBorder(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
         }
     }
 
@@ -189,7 +189,7 @@ struct TaskBundleTaskPickerPanel: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
         .background(Theme.surface.opacity(0.58))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
     }
 
     private func resultSectionLabel(_ title: String) -> some View {
@@ -225,7 +225,7 @@ struct TaskBundleTaskPickerPanel: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 7)
             .background(Theme.surfaceElevated.opacity(0.58))
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
         .buttonStyle(.cadencePlain)
     }
@@ -254,7 +254,7 @@ struct TaskBundleTaskPickerPanel: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 7)
             .background(Theme.surfaceElevated.opacity(0.58))
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
         .buttonStyle(.cadencePlain)
     }

@@ -310,7 +310,7 @@ struct GlobalSearchResultRow: View {
             .background(isHighlighted ? result.tint.opacity(0.09) : Color.clear)
             .overlay {
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(isHighlighted ? result.tint.opacity(0.18) : Color.clear, lineWidth: 1)
+                    .strokeBorder(isHighlighted ? result.tint.opacity(0.18) : Color.clear, lineWidth: 1)
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))

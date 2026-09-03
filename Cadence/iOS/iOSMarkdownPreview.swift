@@ -511,9 +511,9 @@ private struct iOSMarkdownPreviewTaskChip: View {
             .padding(.horizontal, 8)
             .frame(height: 22)
             .background(chip.tint.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
                     .strokeBorder(chip.tint.opacity(0.22), lineWidth: 1)
             }
     }

@@ -249,7 +249,7 @@ private struct AITaskDraftRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay {
             RoundedRectangle(cornerRadius: 12)
-                .stroke(validation.isValid ? Theme.borderSubtle : Theme.red.opacity(0.45), lineWidth: 1)
+                .strokeBorder(validation.isValid ? Theme.borderSubtle : Theme.red.opacity(0.45), lineWidth: 1)
         }
     }
 }

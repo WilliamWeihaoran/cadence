@@ -79,7 +79,7 @@ struct FocusPickSessionCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
+                .strokeBorder(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
         )
         .overlay(alignment: .top) {
             Rectangle()
@@ -116,7 +116,7 @@ struct FocusPickSessionCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(searchFieldFocused ? Theme.blue.opacity(0.42) : Theme.borderSubtle.opacity(0.85), lineWidth: 1)
+                .strokeBorder(searchFieldFocused ? Theme.blue.opacity(0.42) : Theme.borderSubtle.opacity(0.85), lineWidth: 1)
         }
     }
 
@@ -213,7 +213,7 @@ private struct FocusPickItemRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(isHovered ? tint.opacity(0.2) : Theme.borderSubtle.opacity(0.35), lineWidth: 1)
+                    .strokeBorder(isHovered ? tint.opacity(0.2) : Theme.borderSubtle.opacity(0.35), lineWidth: 1)
             }
         }
         .buttonStyle(.cadencePlain)

@@ -83,10 +83,10 @@ struct GoalTimelineBarView: View {
         let color = Color(hex: goal.colorHex)
 
         return ZStack {
-            RoundedRectangle(cornerRadius: 7)
+            RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
                 .fill(color.opacity(goal.status == .done ? 0.10 : 0.16))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
                         .strokeBorder(isSelected ? color.opacity(0.95) : color.opacity(0.55), lineWidth: isSelected ? 1.5 : 1)
                 )
 
@@ -109,7 +109,7 @@ struct GoalTimelineBarView: View {
                 resizeHandle(edge: .trailing)
             }
         }
-        .contentShape(RoundedRectangle(cornerRadius: 7))
+        .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         .gesture(dragGesture(mode: .move))
         .shadow(color: isSelected ? color.opacity(0.18) : Color.clear, radius: 8, y: 2)
     }

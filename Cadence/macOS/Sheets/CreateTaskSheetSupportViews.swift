@@ -122,10 +122,10 @@ struct TaskDateChip: View {
                         : Color.clear
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7)
-                        .stroke(isOn ? activeColor.opacity(0.25) : Theme.borderSubtle, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
+                        .strokeBorder(isOn ? activeColor.opacity(0.25) : Theme.borderSubtle, lineWidth: 1)
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             }
             .buttonStyle(.cadencePlain)
             .onHover { isHovered = $0 }

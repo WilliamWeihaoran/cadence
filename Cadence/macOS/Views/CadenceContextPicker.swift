@@ -56,7 +56,7 @@ struct CadenceContextPickerButton: View {
             .contentShape(Rectangle())
             .background(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius))
-            .overlay(RoundedRectangle(cornerRadius: style.cornerRadius).stroke(Theme.borderSubtle))
+            .overlay(RoundedRectangle(cornerRadius: style.cornerRadius).strokeBorder(Theme.borderSubtle))
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {

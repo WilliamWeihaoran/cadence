@@ -473,6 +473,16 @@ nonisolated struct Theme {
     static let radiusCard: CGFloat = 18
     /// Large surfaces: page headers, sheets, popovers, modal shells.
     static let radiusPanel: CGFloat = 22
+    /// Compact variant of `radiusControl` — small glyph wells, inline pickers, hover
+    /// highlights, and popover rows that sit a size class below a full control.
+    /// **Descriptive, not a chosen tier**: 55 call sites already spelled this literal `7`
+    /// (two of them as `radiusControl - 3`) before this token existed — one origin copied
+    /// 55 times, not 55 independent design decisions. Named so the existing value has one
+    /// place to live, not to declare a new step in the scale. Defined relative to
+    /// `radiusControl`, the same relationship the two `radiusControl - 3` sites already
+    /// assumed. Do not converge this onto `radiusControl` or `10` — that would be a visible
+    /// change to every one of those 55 sites, none of which anyone has reviewed.
+    static let radiusControlCompact: CGFloat = radiusControl - 3
 
 }
 

@@ -254,7 +254,7 @@ private struct TimelineTaskBundleDropShelf: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.amber.opacity(isTargeted ? 0.72 : 0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                .strokeBorder(Theme.amber.opacity(isTargeted ? 0.72 : 0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
         }
         .padding(TimelineMetricsSupport.bundleDropShelfPadding)
         .contentShape(Rectangle())

@@ -211,7 +211,10 @@ struct iOSCalendarMetricsTests {
     ///
     /// Also here because it is the same file and the same shape: one 7pt radius spelled two ways,
     /// `Theme.radiusControl - 3` on the "Creating here" marker and a bare `cornerRadius: 7` on the
-    /// slot chip twelve views down.
+    /// slot chip twelve views down. T-616 named that 7pt step `Theme.radiusControlCompact` and
+    /// swept both spellings onto it — the token, not `radiusControl - 3`, is now the one this file
+    /// should read at both sites (`CadenceRadiusControlCompactSweepTests` owns the app-wide sweep;
+    /// this assertion is scoped to the one file this suite already had open).
     @Test func theTodayTimelineDrawsTheSameHourLadder() throws {
         let panel = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
@@ -237,10 +240,12 @@ struct iOSCalendarMetricsTests {
         #expect(!panel.contains("0.55 : 0.25"))
         #expect(!panel.contains("0.9 : 0.45"))
 
-        // One 7pt radius, one spelling — the file's only hardcoded radius is gone.
+        // One 7pt radius, one spelling — the file's only hardcoded radius is gone, and the old
+        // `radiusControl - 3` derivation is gone with it: both sites now read the named token.
         #expect(CadenceSourceScan.matchCount("cornerRadius: 7", in: panel) == 0)
+        #expect(CadenceSourceScan.matchCount("Theme\\.radiusControl - 3", in: panel) == 0)
         #expect(
-            CadenceSourceScan.matchCount("Theme\\.radiusControl - 3", in: panel) == 2
+            CadenceSourceScan.matchCount("Theme\\.radiusControlCompact", in: panel) == 2
         )
     }
 

@@ -380,7 +380,7 @@ struct iOSSegmentedPill: View {
     // a pill.
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.radiusControl - 3, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
 
         Button(action: action) {
             HStack(spacing: 6) {

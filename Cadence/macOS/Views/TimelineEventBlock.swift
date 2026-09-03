@@ -362,7 +362,7 @@ struct TimelineEventBlock: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: style.cornerRadius)
-                .stroke(
+                .strokeBorder(
                     TimelineHoverVisuals.borderColor(
                         tint: item.calendarColor,
                         isSelected: isSelected,

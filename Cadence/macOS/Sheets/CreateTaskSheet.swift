@@ -270,7 +270,7 @@ struct CreateTaskSheet: View {
                     .foregroundStyle(Theme.onColor)
                     .frame(width: 26, height: 26)
                     .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
             }
             .buttonStyle(.cadencePlain)
             .disabled(trimmedTitle.isEmpty)

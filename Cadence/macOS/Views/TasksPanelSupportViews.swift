@@ -210,7 +210,7 @@ struct ContainerPickerBadge: View {
             .overlay {
                 if outlined {
                     RoundedRectangle(cornerRadius: compact ? 6 : 7)
-                        .stroke(Theme.borderSubtle, lineWidth: 1)
+                        .strokeBorder(Theme.borderSubtle, lineWidth: 1)
                 }
             }
         }
@@ -335,10 +335,10 @@ struct TaskSectionPickerBadge: View {
             .frame(height: compact ? 22 : 32)
             .contentShape(Rectangle())
             .background(compact ? Color.clear : Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             .overlay {
                 if compact {
-                    RoundedRectangle(cornerRadius: 7).stroke(Theme.borderSubtle, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.radiusControlCompact).strokeBorder(Theme.borderSubtle, lineWidth: 1)
                 }
             }
         }

@@ -1139,7 +1139,7 @@ struct iOSTimelineBundleBlock: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .stroke(allDone ? Theme.doneFill.opacity(0.4) : Theme.amber.opacity(0.2), lineWidth: 1)
+                    .strokeBorder(allDone ? Theme.doneFill.opacity(0.4) : Theme.amber.opacity(0.2), lineWidth: 1)
             }
         }
         .buttonStyle(.iosPressable)

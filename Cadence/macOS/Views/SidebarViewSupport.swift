@@ -171,7 +171,7 @@ enum SidebarMetrics {
     // MARK: App header
 
     static let appMarkSize: CGFloat = 24
-    static let appMarkCornerRadius: CGFloat = 7
+    static let appMarkCornerRadius: CGFloat = Theme.radiusControlCompact
     static let appMarkFallbackIconSize: CGFloat = 13
     static let appTitleFontSize: CGFloat = 15
     /// Sized so `appMarkSize + headerSpacing == iconSlotWidth + iconLabelSpacing`: the

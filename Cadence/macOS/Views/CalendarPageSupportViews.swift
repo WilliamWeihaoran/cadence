@@ -84,7 +84,7 @@ private struct CalendarViewModeControl: View {
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius)
-                                .stroke(presentation == .timeline && viewMode == mode ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
+                                .strokeBorder(presentation == .timeline && viewMode == mode ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.cadencePlain)
@@ -103,7 +103,7 @@ private struct CalendarViewModeControl: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius)
-                            .stroke(presentation == .board ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
+                            .strokeBorder(presentation == .board ? Theme.blue.opacity(0.26) : Color.clear, lineWidth: 1)
                     )
             }
             .buttonStyle(.cadencePlain)
@@ -114,7 +114,7 @@ private struct CalendarViewModeControl: View {
                 .fill(Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 9)
-                        .stroke(Theme.borderSubtle.opacity(0.56), lineWidth: 1)
+                        .strokeBorder(Theme.borderSubtle.opacity(0.56), lineWidth: 1)
                 )
         )
     }
@@ -146,7 +146,7 @@ private struct CalendarBoardWindowNavigationControl: View {
                 .fill(Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 9)
-                        .stroke(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
+                        .strokeBorder(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
                 )
         )
     }
@@ -184,7 +184,7 @@ private struct CalendarToolbarZoomControl: View {
                 .fill(Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 9)
-                        .stroke(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
+                        .strokeBorder(Theme.borderSubtle.opacity(0.48), lineWidth: 1)
                 )
         )
     }

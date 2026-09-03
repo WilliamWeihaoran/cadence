@@ -604,7 +604,7 @@ struct HoveredTaskDatePickerOverlay: View {
             .background(
                 RoundedRectangle(cornerRadius: Theme.radiusPanel)
                     .fill(Theme.surface)
-                    .overlay(RoundedRectangle(cornerRadius: Theme.radiusPanel).stroke(Theme.borderSubtle.opacity(0.4)))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.radiusPanel).strokeBorder(Theme.borderSubtle.opacity(0.4)))
             )
             .shadow(color: Theme.overlayCardShadow, radius: 24, x: 0, y: 14)
         }
@@ -689,7 +689,7 @@ struct DeleteConfirmationOverlay: View {
                     .fill(Theme.surface)
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.radiusPanel)
-                            .stroke(Theme.borderSubtle, lineWidth: 1)
+                            .strokeBorder(Theme.borderSubtle, lineWidth: 1)
                     )
             )
             .shadow(color: Theme.overlayCardShadow, radius: 28, x: 0, y: 16)

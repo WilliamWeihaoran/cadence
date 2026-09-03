@@ -89,7 +89,7 @@ struct CollapsibleNoteSection<Content: View>: View {
             }
             .buttonStyle(.cadencePlain)
             .cadenceHoverHighlight(
-                cornerRadius: 7,
+                cornerRadius: Theme.radiusControlCompact,
                 fillColor: Theme.surfaceElevated.opacity(0.55),
                 strokeColor: Theme.borderSubtle.opacity(0.8)
             )

@@ -19,7 +19,7 @@ let kanbanColumnWidth: CGFloat = 236
 /// transient drop-target wash / dashed outline and the search-navigation highlight ring.
 let kanbanColumnCornerRadius: CGFloat = 10
 /// Cards keep a container so they read as objects sitting directly on the canvas.
-let kanbanCardCornerRadius: CGFloat = 7
+let kanbanCardCornerRadius: CGFloat = Theme.radiusControlCompact
 
 // MARK: - Shared column chrome constants
 //

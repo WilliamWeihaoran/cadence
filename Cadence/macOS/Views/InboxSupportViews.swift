@@ -120,7 +120,7 @@ private struct AppleReminderTaskRow: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isHovered ? Theme.purple.opacity(0.18) : Color.clear, lineWidth: 1)
+                .strokeBorder(isHovered ? Theme.purple.opacity(0.18) : Color.clear, lineWidth: 1)
         }
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.borderSubtle.opacity(0.22)).frame(height: 0.5)

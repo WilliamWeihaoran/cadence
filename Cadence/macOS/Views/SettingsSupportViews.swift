@@ -89,7 +89,7 @@ struct ContextSettingsRow: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .stroke(isDropTarget ? Theme.blue.opacity(0.45) : Color.clear, lineWidth: 1)
+                    .strokeBorder(isDropTarget ? Theme.blue.opacity(0.45) : Color.clear, lineWidth: 1)
             )
 
             if isEditing {
@@ -234,7 +234,7 @@ struct SidebarTabSettingsRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            RoundedRectangle(cornerRadius: 7)
+            RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
                 .fill(Color(hex: tintHex).opacity(0.15))
                 .frame(width: 30, height: 30)
                 .overlay {
@@ -275,7 +275,7 @@ struct SidebarTabSettingsRow: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(isDropTarget ? Theme.blue.opacity(0.45) : Color.clear, lineWidth: 1)
+                .strokeBorder(isDropTarget ? Theme.blue.opacity(0.45) : Color.clear, lineWidth: 1)
         )
         .draggable(destination.rawValue)
         .dropDestination(for: String.self) { items, _ in

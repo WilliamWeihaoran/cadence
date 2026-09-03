@@ -508,7 +508,7 @@ struct KanbanSectionEditorPopover: View {
                                 .frame(width: 18, height: 18)
                                 .overlay {
                                     Circle()
-                                        .stroke(
+                                        .strokeBorder(
                                             CadenceColorPalette.matches(hex, editorColorHex) ? Theme.text : .clear,
                                             lineWidth: 1.5
                                         )

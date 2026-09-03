@@ -77,8 +77,8 @@ struct CadenceTodayRolloverBanner: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-                    .contentShape(RoundedRectangle(cornerRadius: 7))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+                    .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             }
             .buttonStyle(.plain)
             .fixedSize()

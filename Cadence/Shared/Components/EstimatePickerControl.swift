@@ -443,7 +443,7 @@ private struct EstimateRollerColumn: View {
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
         .overlay(
             RoundedRectangle(cornerRadius: Self.cornerRadius)
-                .stroke(isFocused ? Theme.blue.opacity(0.5) : Theme.borderSubtle, lineWidth: 1)
+                .strokeBorder(isFocused ? Theme.blue.opacity(0.5) : Theme.borderSubtle, lineWidth: 1)
         )
     }
 

@@ -111,7 +111,7 @@ struct CreateGoalSheet: View {
                         .padding(10)
                         .background(Theme.surfaceElevated)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.borderSubtle))
 
                     fieldLabel("Definition of Done")
                     TextField("What does done look like?", text: $desc)
@@ -121,7 +121,7 @@ struct CreateGoalSheet: View {
                         .padding(10)
                         .background(Theme.surfaceElevated)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.borderSubtle))
 
                     fieldLabel("Context")
                     CadenceContextPickerButton(
@@ -176,7 +176,7 @@ struct CreateGoalSheet: View {
                         .padding(8)
                         .background(Theme.surfaceElevated)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.borderSubtle))
                     }
 
                     HStack(spacing: 16) {

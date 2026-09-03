@@ -29,7 +29,7 @@ struct HabitFormFields: View {
                 .padding(10)
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.borderSubtle))
 
             if !contexts.isEmpty {
                 HabitFormLabel("Context")
@@ -170,7 +170,7 @@ private struct HabitFrequencyPicker: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .stroke(isSelected ? tint.opacity(0.42) : Theme.borderSubtle, lineWidth: 1)
+                    .strokeBorder(isSelected ? tint.opacity(0.42) : Theme.borderSubtle, lineWidth: 1)
             )
         }
         .buttonStyle(.cadencePlain)
@@ -211,7 +211,7 @@ private struct HabitWeekdayPicker: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
-                                .stroke(isSelected ? Color.clear : Theme.borderSubtle, lineWidth: 1)
+                                .strokeBorder(isSelected ? Color.clear : Theme.borderSubtle, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.cadencePlain)
@@ -252,7 +252,7 @@ private struct HabitNumberStepper: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color(hex: tintHex).opacity(0.24), lineWidth: 1)
+                        .strokeBorder(Color(hex: tintHex).opacity(0.24), lineWidth: 1)
                 )
 
             stepButton(systemImage: "plus", isDisabled: value >= range.upperBound) {
@@ -262,7 +262,7 @@ private struct HabitNumberStepper: View {
         .padding(12)
         .background(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
     }
 
     private func stepButton(systemImage: String, isDisabled: Bool, action: @escaping () -> Void) -> some View {
@@ -273,7 +273,7 @@ private struct HabitNumberStepper: View {
                 .frame(width: 30, height: 30)
                 .background(Theme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.borderSubtle, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.borderSubtle, lineWidth: 1))
         }
         .buttonStyle(.cadencePlain)
         .disabled(isDisabled)
@@ -344,7 +344,7 @@ private struct HabitReminderPicker: View {
         .padding(12)
         .background(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
     }
 }
 
@@ -377,7 +377,7 @@ private struct HabitFrequencyNote: View {
         .padding(12)
         .background(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
     }
 }
 #endif

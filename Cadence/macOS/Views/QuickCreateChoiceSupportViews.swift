@@ -169,7 +169,7 @@ struct QuickCreateTaskDetailsView: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
         .background(Theme.surfaceElevated.opacity(0.52))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
     }
 
     private func commitSubtaskDraft() {
@@ -291,7 +291,7 @@ struct QuickCreateCompactSection<Content: View>: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
+                .strokeBorder(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
         )
     }
 }
@@ -327,7 +327,7 @@ struct QuickCreateInspectorValue: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .background(Theme.surfaceElevated.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
     }
 }
 
@@ -449,7 +449,7 @@ struct QuickCreateBundleTaskSelectionView: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
         .background(Theme.surfaceElevated.opacity(0.62))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
     }
 
     private func addSelectedTask(_ task: AppTask) {

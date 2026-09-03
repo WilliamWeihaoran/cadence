@@ -100,7 +100,7 @@ struct HabitListCard: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                    .stroke(Color(hex: habit.goal?.colorHex ?? habit.colorHex).opacity(0.75), lineWidth: 1.5)
+                    .strokeBorder(Color(hex: habit.goal?.colorHex ?? habit.colorHex).opacity(0.75), lineWidth: 1.5)
                     .opacity(isSelected ? 1 : 0)
             )
         }
@@ -196,7 +196,7 @@ struct HabitDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 9))
                         .overlay(
                             RoundedRectangle(cornerRadius: 9)
-                                .stroke(Theme.borderSubtle, lineWidth: 1)
+                                .strokeBorder(Theme.borderSubtle, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.cadencePlain)

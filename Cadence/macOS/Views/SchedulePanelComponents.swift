@@ -142,7 +142,7 @@ struct TaskDetailPopover: View {
                 .fill(Theme.surface)
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(Theme.borderSubtle, lineWidth: 1)
+                        .strokeBorder(Theme.borderSubtle, lineWidth: 1)
                 )
         )
         .onAppear {

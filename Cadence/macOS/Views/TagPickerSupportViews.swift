@@ -42,7 +42,7 @@ struct TagPickerControl: View {
                 .padding(.horizontal, showsLabel ? 9 : 0)
                 .frame(width: showsLabel ? nil : 24, height: 24)
                 .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             }
             .buttonStyle(.cadencePlain)
             .cadenceControlLabel("Edit tags")

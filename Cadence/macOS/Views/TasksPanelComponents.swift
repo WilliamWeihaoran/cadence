@@ -122,7 +122,7 @@ struct MacTaskRow: View {
         .background(TaskRowBackground(task: task, isHovered: isHovered, hoverFill: hoverBackgroundFill))
         .overlay {
             RoundedRectangle(cornerRadius: Theme.radiusCard)
-                .stroke(
+                .strokeBorder(
                     TaskHoverVisuals.borderColor(isHovered: isHovered),
                     lineWidth: 1
                 )

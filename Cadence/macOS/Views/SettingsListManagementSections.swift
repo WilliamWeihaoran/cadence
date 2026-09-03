@@ -508,8 +508,8 @@ private struct SettingsCalendarRow: View {
                 .foregroundStyle(Theme.text)
                 .frame(width: 28, height: 28)
                 .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.borderSubtle))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+                .overlay(RoundedRectangle(cornerRadius: Theme.radiusControlCompact).strokeBorder(Theme.borderSubtle))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()

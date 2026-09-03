@@ -258,7 +258,7 @@ private struct SettingsTagRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay {
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Theme.borderSubtle, lineWidth: 1)
+                .strokeBorder(Theme.borderSubtle, lineWidth: 1)
         }
         .opacity(tag.isArchived ? 0.72 : 1)
         .animation(.easeInOut(duration: 0.15), value: isEditing)
@@ -386,7 +386,7 @@ private struct SettingsTagRow: View {
                 .foregroundStyle(color)
                 .frame(width: 28, height: 28)
                 .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
         .buttonStyle(.cadencePlain)
         .cadenceControlLabel(accessibilityLabel)
@@ -482,7 +482,7 @@ private struct TagColorSwatches: View {
                         .overlay {
                             if isSelected {
                                 Circle()
-                                    .stroke(Theme.text.opacity(0.78), lineWidth: 2)
+                                    .strokeBorder(Theme.text.opacity(0.78), lineWidth: 2)
                             }
                         }
                 }

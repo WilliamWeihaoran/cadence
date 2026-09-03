@@ -508,7 +508,7 @@ private struct iOSScheduleHourRow: View {
             .padding(.horizontal, 8)
             .frame(height: 24)
             .background(Theme.blue.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl - 3, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
         }
     }
 
@@ -639,7 +639,7 @@ private struct iOSScheduleReadyTaskRow: View {
                             .frame(height: 26)
                             .background(Theme.blue.opacity(0.11))
                             .clipShape(
-                                RoundedRectangle(cornerRadius: Theme.radiusControl - 3, style: .continuous)
+                                RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
                             )
                             .padding(.vertical, 9)
                             .contentShape(Rectangle())

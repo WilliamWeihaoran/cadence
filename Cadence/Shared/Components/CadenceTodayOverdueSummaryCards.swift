@@ -44,7 +44,7 @@ private struct CadenceOverdueSummaryCard<Content: View>: View {
                 )
                 .overlay {
                     RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                        .stroke(Theme.borderSubtle, lineWidth: 1)
+                        .strokeBorder(Theme.borderSubtle, lineWidth: 1)
                         .allowsHitTesting(false)
                 }
                 .contentShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
@@ -181,7 +181,7 @@ private struct CadenceOverdueSummaryIconTile: View {
     }
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 7)
+        RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
             .fill(tint.opacity(0.16))
             .frame(width: 30, height: 30)
             .overlay {

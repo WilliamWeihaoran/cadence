@@ -297,7 +297,7 @@ struct TaskDetailActionsSection: View {
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
 
     private static let controlHeight: CGFloat = 32
-    private static let cornerRadius: CGFloat = 7
+    private static let cornerRadius: CGFloat = Theme.radiusControlCompact
 
     /// Set when "Mark done" was refused and put back (T-628). The inspector is the one surface
     /// that reaches the settle *without* going through `TaskCompletionAnimationManager`, so the
@@ -385,7 +385,7 @@ struct TaskDetailActionsSection: View {
                 .frame(width: Self.controlHeight, height: Self.controlHeight)
                 .background(
                     RoundedRectangle(cornerRadius: Self.cornerRadius)
-                        .stroke(Theme.borderSubtle, lineWidth: 1)
+                        .strokeBorder(Theme.borderSubtle, lineWidth: 1)
                 )
                 .contentShape(Rectangle())
         }

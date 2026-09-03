@@ -66,7 +66,7 @@ private struct MarkdownSlashCommandPickerView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
                     .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
                             .fill(index == highlightedIndex ? Color(nsColor: MarkdownStylist.blueColor).opacity(0.16) : Color.clear)
                     )
                 }
@@ -211,7 +211,7 @@ private struct MarkdownReferencePickerView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
                             .fill(index == highlightedIndex ? Color(nsColor: MarkdownStylist.blueColor).opacity(0.16) : Color.clear)
                     )
                 }
@@ -475,7 +475,7 @@ private struct MarkdownTagPickerView: View {
     }
 
     private func rowBackground(_ isHighlighted: Bool) -> some View {
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
+        RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
             .fill(isHighlighted ? Color(nsColor: MarkdownStylist.blueColor).opacity(0.16) : Color.clear)
     }
 }

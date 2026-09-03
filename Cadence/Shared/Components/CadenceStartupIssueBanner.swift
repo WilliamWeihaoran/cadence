@@ -176,7 +176,7 @@ struct CadenceStartupIssueBanner: View {
         .frame(maxWidth: model.maxWidth)
         .background(Theme.surfaceElevated)
         .overlay {
-            shape.stroke(model.tone.tint.opacity(0.22), lineWidth: 1)
+            shape.strokeBorder(model.tone.tint.opacity(0.22), lineWidth: 1)
         }
         .clipShape(shape)
         .shadow(color: Theme.overlayCardShadow, radius: 22, x: 0, y: 10)

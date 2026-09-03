@@ -43,7 +43,7 @@ struct FocusNotesPanel: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
+                .strokeBorder(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
         }
         .onAppear {
             loadEditorStateIfNeeded(force: true)

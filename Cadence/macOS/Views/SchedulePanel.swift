@@ -194,7 +194,7 @@ struct SchedulePanel: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: 14)
-                .stroke(Theme.blue.opacity(isFocusHighlighted ? 0.95 : 0), lineWidth: 2)
+                .strokeBorder(Theme.blue.opacity(isFocusHighlighted ? 0.95 : 0), lineWidth: 2)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 6)
         }

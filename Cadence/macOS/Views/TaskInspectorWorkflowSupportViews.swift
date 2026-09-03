@@ -346,12 +346,12 @@ private struct TaskRecurrencePickerPanel: View {
         }
         .padding(2)
         .background(
-            RoundedRectangle(cornerRadius: 7)
+            RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
                 .fill(Theme.surfaceRecessed)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 7)
-                .stroke(Theme.borderSubtle, lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
+                .strokeBorder(Theme.borderSubtle, lineWidth: 1)
         )
     }
 

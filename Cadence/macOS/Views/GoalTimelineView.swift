@@ -35,7 +35,7 @@ struct GoalsViewModeToggle: View {
                         .foregroundStyle(selection == mode ? Theme.text : Theme.dim)
                         .frame(width: 30, height: 28)
                         .background(selection == mode ? Theme.surfaceElevated : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
                 }
                 .buttonStyle(.cadencePlain)
                 .cadenceControlLabel(mode.title)
@@ -45,7 +45,7 @@ struct GoalsViewModeToggle: View {
         .padding(3)
         .background(Theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
     }
 }
 
@@ -181,7 +181,7 @@ struct GoalTimelineView: View {
             .padding(3)
             .background(Theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
 
             HStack(spacing: 4) {
                 timelineNavButton(systemImage: "chevron.left") {
@@ -197,7 +197,7 @@ struct GoalTimelineView: View {
             .padding(3)
             .background(Theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.borderSubtle, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
 
             Button {
                 showsFilter.toggle()
@@ -212,7 +212,7 @@ struct GoalTimelineView: View {
                 .frame(height: 32)
                 .background(Theme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: 9))
-                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.borderSubtle, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Theme.borderSubtle, lineWidth: 1))
             }
             .buttonStyle(.cadencePlain)
             .popover(isPresented: $showsFilter, arrowEdge: .bottom) {
@@ -344,7 +344,7 @@ struct GoalTimelineView: View {
                 .foregroundStyle(Theme.dim)
                 .frame(width: 26, height: 26)
                 .background(Theme.surfaceElevated.opacity(0.7))
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
         .buttonStyle(.cadencePlain)
     }

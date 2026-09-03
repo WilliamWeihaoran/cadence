@@ -426,13 +426,13 @@ private struct MarkdownReferenceMenuButton: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.muted)
                 .frame(width: 28, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: 7))
+                .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
         .menuStyle(.borderlessButton)
         .buttonStyle(.cadencePlain)
         .background(Theme.bg.opacity(0.001))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .cadenceHoverHighlight(cornerRadius: 7, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+        .cadenceHoverHighlight(cornerRadius: Theme.radiusControlCompact, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
         .accessibilityLabel(accessibilityLabel)
         .help(accessibilityLabel)
     }
@@ -449,12 +449,12 @@ private struct MarkdownToolbarButton: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.muted)
                 .frame(width: 28, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: 7))
+                .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
         .buttonStyle(.cadencePlain)
         .background(Theme.bg.opacity(0.001))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .cadenceHoverHighlight(cornerRadius: 7, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+        .cadenceHoverHighlight(cornerRadius: Theme.radiusControlCompact, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
         .accessibilityLabel(accessibilityLabel)
         .help(accessibilityLabel)
     }
@@ -474,12 +474,12 @@ private struct MarkdownToolbarTextButton: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(Theme.muted)
                 .frame(width: 30, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: 7))
+                .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
         .buttonStyle(.cadencePlain)
         .background(Theme.bg.opacity(0.001))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .cadenceHoverHighlight(cornerRadius: 7, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+        .cadenceHoverHighlight(cornerRadius: Theme.radiusControlCompact, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
         .accessibilityLabel(accessibilityLabel)
         .help(accessibilityLabel)
     }

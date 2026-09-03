@@ -97,7 +97,7 @@ struct CommitmentSearchField: View {
         .clipShape(RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius, style: .continuous)
-                .stroke(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
+                .strokeBorder(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
         }
         .frame(maxWidth: .infinity)
     }
@@ -129,7 +129,7 @@ struct CommitmentFilterBar<Item: Hashable>: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
+                .strokeBorder(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
         }
     }
 }

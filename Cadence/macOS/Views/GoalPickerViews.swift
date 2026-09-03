@@ -41,7 +41,7 @@ struct GoalLinkPickerButton: View {
             .contentShape(Rectangle())
             .background(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius))
-            .overlay(RoundedRectangle(cornerRadius: style.cornerRadius).stroke(Theme.borderSubtle))
+            .overlay(RoundedRectangle(cornerRadius: style.cornerRadius).strokeBorder(Theme.borderSubtle))
         }
         .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
@@ -224,7 +224,7 @@ struct GoalLinkPickerList: View {
                     .foregroundStyle(tint)
                     .frame(width: 24, height: 24)
                     .background(tint.opacity(colorHex == nil ? 0.06 : 0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)

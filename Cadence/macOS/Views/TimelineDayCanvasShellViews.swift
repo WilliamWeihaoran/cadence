@@ -50,7 +50,7 @@ struct TimelineDraftGhostLayer: View {
                 .fill(Theme.blue.opacity(0.18))
                 .overlay(
                     RoundedRectangle(cornerRadius: style.cornerRadius)
-                        .stroke(Theme.blue.opacity(0.55), lineWidth: 1)
+                        .strokeBorder(Theme.blue.opacity(0.55), lineWidth: 1)
                 )
 
             HStack(spacing: 8) {
@@ -66,7 +66,7 @@ struct TimelineDraftGhostLayer: View {
             .clipShape(Capsule())
             .overlay(
                 Capsule()
-                    .stroke(Theme.blue.opacity(0.28), lineWidth: 1)
+                    .strokeBorder(Theme.blue.opacity(0.28), lineWidth: 1)
             )
             .shadow(color: Theme.chipShadow, radius: 4, x: 0, y: 2)
             .padding(.top, 6)

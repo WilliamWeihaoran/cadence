@@ -325,7 +325,7 @@ struct QuickCreateChoicePopover: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
+                .strokeBorder(Theme.borderSubtle.opacity(0.8), lineWidth: 1)
         )
     }
 
@@ -357,14 +357,14 @@ struct QuickCreateChoicePopover: View {
                 .frame(maxWidth: .infinity, minHeight: 24)
                 .padding(.horizontal, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
                         .fill(isSelected ? tint.opacity(0.12) : Color.clear)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
                         .strokeBorder(isSelected ? tint.opacity(0.24) : Theme.borderSubtle.opacity(0.38), lineWidth: 1)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 7))
+                .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
         .buttonStyle(.cadencePlain)
     }

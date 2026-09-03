@@ -171,7 +171,7 @@ struct InlineTaskComposer: View {
         .padding(.vertical, 3)
         .overlay {
             RoundedRectangle(cornerRadius: 6)
-                .stroke(Theme.borderSubtle, lineWidth: 1)
+                .strokeBorder(Theme.borderSubtle, lineWidth: 1)
         }
         .accessibilityLabel("Scheduled \(label)")
     }

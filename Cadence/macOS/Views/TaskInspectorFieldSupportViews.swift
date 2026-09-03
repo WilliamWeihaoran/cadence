@@ -350,10 +350,10 @@ struct TaskPriorityMarkControl: View {
             .frame(minWidth: 28, minHeight: 28)
             .background(isSet ? tint.opacity(0.10) : Theme.surfaceElevated)
             .overlay(
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(isSet ? tint.opacity(0.30) : Theme.borderSubtle, lineWidth: 1)
+                RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
+                    .strokeBorder(isSet ? tint.opacity(0.30) : Theme.borderSubtle, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             .contentShape(Rectangle())
     }
 }
@@ -415,10 +415,10 @@ struct TaskInspectorEstimateChip: View {
             .frame(minHeight: 28)
             .background(Theme.surfaceElevated)
             .overlay(
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(Theme.borderSubtle, lineWidth: 1)
+                RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
+                    .strokeBorder(Theme.borderSubtle, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             .contentShape(Rectangle())
         }
         .buttonStyle(.cadencePlain)

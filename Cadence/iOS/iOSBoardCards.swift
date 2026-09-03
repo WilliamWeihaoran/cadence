@@ -535,7 +535,7 @@ struct iOSCalendarBoardBundleCard: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                .stroke(isTargeted ? Theme.amber.opacity(0.74) : (allDone ? Theme.doneFill.opacity(0.35) : Theme.amber.opacity(0.2)), lineWidth: isTargeted ? 1.5 : 1)
+                .strokeBorder(isTargeted ? Theme.amber.opacity(0.74) : (allDone ? Theme.doneFill.opacity(0.35) : Theme.amber.opacity(0.2)), lineWidth: isTargeted ? 1.5 : 1)
         }
         .onTapGesture {
             bundleInspector(bundle)

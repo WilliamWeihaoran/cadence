@@ -372,7 +372,7 @@ private struct TagEditSheet: View {
                             .overlay {
                                 if colorHex.caseInsensitiveCompare(option) == .orderedSame {
                                     Circle()
-                                        .stroke(Theme.text.opacity(0.8), lineWidth: 2)
+                                        .strokeBorder(Theme.text.opacity(0.8), lineWidth: 2)
                                 }
                             }
                     }

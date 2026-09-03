@@ -353,7 +353,7 @@ struct CadenceTagChip: View {
         .background(fillColor)
         .overlay(
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
-                .stroke(strokeColor, lineWidth: 1)
+                .strokeBorder(strokeColor, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
         .opacity(style.chipOpacity)

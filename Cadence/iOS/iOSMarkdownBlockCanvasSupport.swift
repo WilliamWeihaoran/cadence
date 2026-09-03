@@ -137,7 +137,7 @@ struct iOSMarkdownLiveCodeBlockLayoutInfo {
         let tint = isClosed ? UIColor(Theme.amber) : UIColor(Theme.red)
         let chipWidth = min(rect.width, max(58, ceil(label.size(withAttributes: headerAttributes(tint: tint)).width) + 18))
         let chipRect = CGRect(x: rect.minX, y: rect.minY, width: chipWidth, height: rect.height)
-        let path = UIBezierPath(roundedRect: chipRect, cornerRadius: 7)
+        let path = UIBezierPath(roundedRect: chipRect, cornerRadius: Theme.radiusControlCompact)
         tint.withAlphaComponent(0.13).setFill()
         path.fill()
         tint.withAlphaComponent(0.24).setStroke()
