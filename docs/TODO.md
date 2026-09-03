@@ -43,6 +43,17 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-809] **Two sweeps outside [[T-808]]'s product-tree boundary are still unpinned.** The R19
+  audit counted them; `CadenceRealTreeSweepManifest.txt` deliberately does not, because its rule is
+  "walks Swift source under `Cadence`/`CadenceWidgets`/`CadenceMCPServer`" and neither does.
+  `CadenceInPlaceEditFlushCommitTests/themoveAnswerIsDiscardedAtFiveTestCallSitesAndNowhereElse`
+  enumerates `CadenceTests` (the discard-site harvest), and
+  `TodayAndInboxNamingTests/noAgentFacingDocSpellsARetiredIPadName` enumerates agent-facing docs.
+  Both have the same hole the manifest closed for the other 240: delete the `@Test` and nothing goes
+  red. Wanted: either widen the manifest with a second, separately-rooted section (test-target and
+  docs sweeps), or a small sibling manifest — but **not** a looser rule on the product one, whose
+  three conditions are each load-bearing and witnessed.
+
 - [T-795] **The icon-only-button suite is red on HEAD independent of T-674, for a reason worth
   fixing before the next agent reads its output as a regression.** Measured 2026-09-04 against an
   unmodified HEAD (`8bec9eb`) in an isolated `git archive` tree, twice: `CadenceIconOnlyButtonAccessibilityTests`
@@ -2144,6 +2155,38 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 ## Done
+
+- [T-808] **CLOSED 2026-09-04 — the 216 unpinned product-tree sweeps are pinned by one generated
+  manifest, sha `7761d2b0`.** An outside audit (R19 in `docs/CODEX_REQUESTS.md`) measured 216
+  `@Test` functions that walk `Cadence/`, `CadenceWidgets/` or `CadenceMCPServer/` and **0** of them
+  pinned: delete any one and the ledgers, parsers and fixtures beside it all stay green while an
+  app-wide sweep silently stops happening. `CadenceTests/CadenceRealTreeSweepManifest.txt` now names
+  them — **240 entries at HEAD** — and `CadenceTestTargetHygieneTests` fails three ways on it: a
+  manifest name that is no longer declared, a sweep the scan finds that is not listed, and a listed
+  name the scan no longer classifies.
+  - **Generated, not typed.** `CadenceRealTreeSweepScan` derives the list from the target's own
+    source: a `@Test` counts when its body plus every declaration it transitively names contains a
+    walk (`swiftFiles(`, `enumerator(atPath:`, `.sweep(`, …), a product-root path literal, and
+    Swift-source evidence. `scripts/real-tree-sweep-manifest.sh <id> --write` reruns it and rewrites
+    the file from what it computed, lifted out of the `xcodebuild` log between two banners — so the
+    classifier exists once, in Swift, where a test can fail on it. `scripts/test-suite-index.sh`
+    could not produce this: it answers *which suite declares a test* and has no notion of reach.
+  - **Why 240 and not 216.** 214 of the audit's 216 are on the manifest; 26 more sweeps it missed
+    are too (whole suites: `CadenceTildeContainerPickerTests`, `CadenceSearchFieldClearButtonTests`,
+    `CadenceCapturePaletteTests`, plus nine in `CadenceEmptyStateAuditTests`). Two audit entries are
+    deliberately **not** on it, and both fall outside the audit's own stated boundary:
+    `CadenceInPlaceEditFlushCommitTests/themoveAnswerIsDiscardedAtFiveTestCallSitesAndNowhereElse`
+    walks `CadenceTests`, not the app, and `TodayAndInboxNamingTests/noAgentFacingDocSpellsARetiredIPadName`
+    walks agent-facing docs. [[T-809]] tracks pinning those. The audit's list also still spelled
+    `CadenceIOSControlAccessibilityTests`, renamed by [[T-678]] four commits earlier — four of its
+    216 names needed remapping by hand, which is the argument for generating this rather than typing
+    it, in one line.
+  - **Proved by mutation, not by reading.** `scripts/mutate.sh` against a `git archive HEAD` tree:
+    deleting either of two manifest lines is KILLED, and deleting a whole swept `@Test`
+    (`WidgetSupportTests/theTitleTrimRuleIsDeclaredOnceInAFileTheWidgetTargetCompiles`) is KILLED.
+  - **What it does not do:** it never asks what a swept rule *asserts*. The suites remain the
+    behavioural authority; over-inclusion (a detector self-check that shares a file with a sweep)
+    costs nothing but a pinned name, while under-inclusion is the failure it exists to prevent.
 
 - [T-674] **CLOSED 2026-09-04 — ten icon-only controls now say something, and four helpers can no
   longer ship one that does not, sha `a79dd92c`.** From [[T-637]]. `TimelineZoomControl`'s inline
