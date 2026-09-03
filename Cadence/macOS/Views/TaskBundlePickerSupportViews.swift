@@ -12,6 +12,7 @@ struct TaskBundleTaskPickerPanel: View {
     let onAdd: (AppTask) -> Void
 
     @State private var selectedList: TaskBundlePickerListOption?
+    @FocusState private var isSearchFocused: Bool
 
     private var queryTokens: [String] {
         searchText
@@ -149,17 +150,9 @@ struct TaskBundleTaskPickerPanel: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.text)
+                .focused($isSearchFocused)
 
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim.opacity(0.55))
-                }
-                .buttonStyle(.cadencePlain)
-            }
+            CadenceSearchFieldClearButton(text: $searchText, glyphSize: 11, focus: $isSearchFocused)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
