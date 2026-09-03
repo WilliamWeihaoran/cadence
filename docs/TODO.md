@@ -1276,42 +1276,83 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   a fix; the cheapest honest shape is probably for the setter to answer and the list to close only
   on success.
 
-- [T-651] **The other half of [[T-631]]'s tag family, now pointing at a closed ticket.** VERIFIED
-  2026-09-01 while landing T-631. Four sites are still ledgered in
-  `CadenceSaveCommitRule`'s exemption lists against T-631's *family*, and T-631 itself is closed, so
-  nothing is left scheduled to fix them:
-  `KanbanCardMetaSupportViews.body` (existence — the tag-picker binding's setter swallows the save
-  that would commit the tag `onCreateTag` just inserted), `MarkdownEditorView.createInlineTag`
-  (existence **and** report — the swallowed commit is followed by `return .tag(tag)`, which the
-  editor writes into the note, so the phantom tag is in the note's text as well as in Settings ›
-  Tags), and `CadenceNotePlanningSupport.update`.
-  **Three of them now have an answer off the shelf**: `TagSupport.committedTag(named:in:commit:)`
-  (`Cadence/Shared/CadenceInlineTagCreation.swift`) commits the rows it minted and answers `nil`
-  rather than an unsaved `Tag`. `createInlineTag` already returns an Optional, so it is a `guard`.
-  **The fourth is genuinely harder and is the reason T-631 stopped where it did**:
-  `NoteEditorPane.noteTagsBinding` and `.persistEditorContentIfNeeded` write tags through
-  `TagSupport.setTags` / `syncNoteTagsFromMarkdown` on the *debounced autosave* path, where what an
-  undo means under the user's caret is the question `commitEdit`'s doc leaves open. Do not fold that
-  one in with the other three.
+- [T-651] **CLOSED 2026-09-03 (`34c0f4e`).** Three of the four sites now commit.
+  `KanbanCardMetaSupportViews.swift`'s `KanbanTagPickerPopover.body` and
+  `MarkdownEditorView.createInlineTag` both called `TagSupport.resolveTags` from an ambient
+  `ModelContext` and committed nothing; both now go through
+  `TagSupport.committedTag(named:in:commit:)`. `createInlineTag`'s *report* half — the swallowed
+  save followed by `return .tag(tag)`, the suggestion the editor writes into the note — needed a
+  second change: its remaining in-place edit (un-archiving the tag, bumping `updatedAt`) now goes
+  through `CadencePendingChangePersistence.commitEdit(in:undo:)` instead of a bare `try?`, so
+  nothing in the function swallows a commit at all. `CadenceNotePlanningSupport.update` is the
+  third — it now calls a new `TagSupport.syncNoteTagsFromMarkdownCommittingInsertions`
+  (`Cadence/Shared/CadenceInlineTagCreation.swift`) instead of the raw `syncNoteTagsFromMarkdown`;
+  `update`'s signature is unchanged, so none of its nine callers moved.
+  **The fourth, `NoteEditorPane.noteTagsBinding`/`.persistEditorContentIfNeeded`, is untouched, as
+  directed** — it inserts rows on the debounced-autosave path, and the T-497 caret decision
+  ("the edit is in-place on an object the store already holds, so there is nothing to un-insert")
+  does not cover an insert. `NoteEditorPane.body`'s own, differently-attributed exemption (it
+  reaches the same `syncNoteTagsFromMarkdown`, pinned by
+  `CadenceInlineTagCommitSurfaceTests.theNoteEditorPanesBodyExemptionIsTheTagSyncNotASubtask`) was
+  never one of the four named sites and is also untouched.
+  Mutations M1–M3 (`scripts/mutate.sh`) reverted each of the three fixes in turn; all three were
+  KILLED by `CadenceSaveCommitDisciplineTests` (`noSwallowedSaveCommitsAnInsertOrADelete` /
+  `noSwallowedSaveIsFollowedByADismissOrACompletionHandler`).
+  **Residue**: [[T-762]] — the `NoteEditorPane` debounced-autosave undo question this ticket left
+  open on purpose.
 
-- [T-653] **Two `TagSupport` maintenance exemptions are justified by a rationale that stopped being
-  true.** VERIFIED 2026-09-01 while landing [[T-631]]. `existenceExemptions` holds
-  `seedDefaultTags`, `deduplicateTags` and `syncAllNoteTagsFromMarkdown` under "launch-time
-  maintenance with no user watching and nothing to report to". Measured:
-  **`seedDefaultTags` has no launch caller at all.** [[T-528]] removed every automatic one —
-  `PersistenceController.performStartupMaintenance` says so in a twenty-line comment, and
-  `CadenceFirstLaunchEmptyStoreTests` holds it there. Its four remaining callers are all "Add
-  Defaults" **buttons a person pressed**: `SettingsTagsSection`, `iOSSettingsTagsSection`,
-  `TagPickerSupportViews` and `iOSTaskDetailComponents`. There is a user watching, and the empty
-  state disappearing is the report.
-  **`deduplicateTags`' swallowed save is unreachable.** Its only caller in the app is
-  `seedDefaultTags`, which passes `save: false`.
-  `syncAllNoteTagsFromMarkdown` is the one entry the rationale still fits: `PersistenceController`
-  calls it with `saveChanges: false` and the only caller that lets it save is
-  `CadenceModelContainerFactory`, on the MCP boundary, where there genuinely is nobody to tell.
-  So the fix is a `commit:`/`throws` seed for the four buttons plus a corrected comment, not a
-  wholesale rewrite — and the comment is worth fixing on its own, because it currently tells the
-  next reader something measurably false.
+- [T-653] **CLOSED 2026-09-03 (`34c0f4e`).** Re-measured before acting, nine batches on: all three
+  claims still held. `seedDefaultTags` still has no launch caller —
+  `PersistenceController.performStartupMaintenance` still says so in its own comment, and
+  `CadenceFirstLaunchEmptyStoreTests` still holds it there. Its four callers are still exactly
+  `SettingsTagsSection`, `iOSSettingsTagsSection` (`iOSTagsSettingsSection`), `TagPickerSupportViews`
+  (`TagPickerPlaceholderRow`) and `iOSTaskDetailComponents` (`iOSTaskTagPickerPopover`).
+  `deduplicateTags`'s only app caller is still `seedDefaultTags`, passing `save: false`.
+  All four buttons now call a new `TagSupport.seedDefaultTagsCommitting(in:commit:)`
+  (`Cadence/Shared/CadenceInlineTagCreation.swift`), which runs `seedDefaultTags(saveChanges: false)`
+  and commits the whole cascade — the insert **and** the dedup merge's delete, together — through
+  `CadencePendingChangePersistence.commitDelete(in:commit:)`, so a refusal rolls both back rather
+  than leaving a half-seeded, half-merged table. Each button shows the refusal inline
+  (`CadenceInlineFailureNotice`), the way `SettingsTagsSection.createTag` already does for the
+  sibling action beside it.
+  The `existenceExemptions["Cadence/Services/TagSupport.swift"]` comment no longer calls
+  `seedDefaultTags`/`deduplicateTags` "launch-time maintenance with no user watching and nothing to
+  report to" — that stopped being true when [[T-528]] removed the launch caller. It now says the two
+  raw declarations stay exempt because they are still handed a `ModelContext` whose caller commits,
+  and names `seedDefaultTagsCommitting` as that caller.
+  `syncAllNoteTagsFromMarkdown`'s entry and rationale are untouched — `PersistenceController` still
+  passes `saveChanges: false` and only `CadenceMCPStorePreparation.prepare` (the MCP boundary) lets
+  it save.
+  Two new behavioural tests in `TagSupportTests` pin the wrapper directly. The rollback one caught
+  itself first: a mutation removing `commitDelete`'s rollback **survived** the initial version of
+  `arefusedSeedCommitRollsBackBothTheInsertAndTheMerge`, because reading a second context cannot
+  tell "rolled back" from "never reached the store" apart — both look identical from outside the
+  context that held the refused change. Fixed to save the same context again after the refusal,
+  which is what an unrelated autosave would do; that version was KILLED (M5) as intended.
+  `CadenceFirstLaunchEmptyStoreTests.seedCallOffsets` now keys on
+  `TagSupport.seedDefaultTagsCommitting(` rather than the raw name; its four-file caller list is
+  unchanged. Mutations M4–M6 (`scripts/mutate.sh`): M4 reverted one button to the raw seed call and
+  was KILLED by `noUnpromptedCodePathSeedsTheDefaultTags`'s caller-list assertion; M5 and M6 broke
+  the wrapper's rollback and its commit respectively and were both KILLED by the two new
+  `TagSupportTests`.
+
+- [T-762] **`NoteEditorPane`'s debounced-autosave tag writes are still the one open piece of
+  [[T-651]]'s family, left there on purpose.** `noteTagsBinding`'s `Binding<[Tag]>` setter and
+  `.persistEditorContentIfNeeded` both write tags through `TagSupport.setTags(named:on:in:)` /
+  `syncNoteTagsFromMarkdown(_:in:)` — an ambient `ModelContext`, no commit — on the path that fires
+  a few seconds after the user stops typing, not on an explicit Save.
+  The question T-497 answered for in-place field edits does not answer this one: T-497's decision
+  ("the edit is in-place on an object the store already holds, so there is nothing to un-insert")
+  is about a field write, and `resolveTags`/`setTags` **insert** a `Tag` row when the markdown names
+  one that does not exist yet. An insert has something to un-insert, so the caret question is live
+  again: what does undoing a `Tag` insert mean when it happened three keystrokes ago, under a caret
+  that has since moved, on a debounce timer the user never asked to fire? `commitInsert`'s per-row
+  undo is built for a discrete action (a button press) with a clear "before" to restore to, not for
+  a live document that has kept moving since the row was minted.
+  Not started here. Whoever picks this up should read `CadencePendingChangePersistence.commitEdit`'s
+  doc on why `rollback()` is unavailable, and decide whether the answer is "no undo, name the
+  refusal and leave the tag pending" (matching T-497's in-place answer) or something that actually
+  reasons about the insert.
 
 - [T-660] **The agent-guide cap is stated in one unit and enforced in another, and it has now cost a
   batch.** `AgentContextBudgetTests.expectLineCount` splits on `"\n"` with
