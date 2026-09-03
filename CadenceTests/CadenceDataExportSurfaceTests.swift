@@ -481,6 +481,11 @@ struct CadenceDataExportSurfaceTests {
             mentions == [
                 "Cadence/Services/CadenceDataExportService.swift",
                 "Cadence/Shared/CadenceDataExportPresentation.swift",
+                // T-813/T-817: the terminal recovery screen is a *third* export caller, deliberately
+                // outside the loop below — it is not a Settings surface and does not show
+                // `CadenceDataExportPresentation`'s copy, because "export an archive" is not what a
+                // user needs to hear when every store this launch tried has already failed.
+                "Cadence/Shared/Components/CadenceTerminalRecoveryView.swift",
                 "Cadence/iOS/iOSDataExportSettingsSection.swift",
                 "Cadence/macOS/Views/SettingsDataSafetySection.swift",
             ],

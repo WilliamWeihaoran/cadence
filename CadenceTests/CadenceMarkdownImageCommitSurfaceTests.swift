@@ -359,7 +359,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
             total += CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: "#, in: code)
             withDismissal += CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: [A-Za-z]+\) \{"#, in: code)
         }
-        #expect(total == 49, "the inline notice has \(total) call sites, not the 49 this test was written over")
+        // T-813/T-817: 51, not 49 -- `CadenceTerminalRecoveryView` added two (neither dismissable;
+        // there is nothing to dismiss back to on the one screen that shows when every store this
+        // launch tried has already failed).
+        #expect(total == 51, "the inline notice has \(total) call sites, not the 51 this test was written over")
         #expect(withDismissal == 6, "\(withDismissal) call sites offer a dismissal, not 6")
 
         // And each of the six is named, so one swapping places with another is still a failure.

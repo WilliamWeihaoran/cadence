@@ -22,6 +22,16 @@ final class QuickTaskPanelController: NSObject {
     var isVisible: Bool { panel?.isVisible == true }
 
     func show(seed: TaskCreationSeed = TaskCreationSeed()) {
+        // T-817: `container` is `nil` on the one launch where nothing SwiftData could open
+        // worked at all. There is no task store to capture into, and the global hotkey that
+        // drives this is registered independently of whether the main window ever got one — see
+        // `CadenceAppDelegate` — so this has to fail silently rather than crash on a force unwrap
+        // that used to be implicit in `container`'s non-optional type.
+        guard let container = PersistenceController.shared.container else {
+            logger.error("Quick task panel requested with no ModelContainer available; ignoring.")
+            return
+        }
+
         let panel = ensurePanel()
         logger.debug("Preparing quick task panel")
 
@@ -31,7 +41,7 @@ final class QuickTaskPanelController: NSObject {
             successAction: { [weak self] in self?.showCaptureSuccessThenClose() }
         )
         .padding(Self.shadowPadding)
-        .modelContainer(PersistenceController.shared.container)
+        .modelContainer(container)
         .environment(TaskCreationManager.shared)
         .preferredColorScheme(.dark)
 

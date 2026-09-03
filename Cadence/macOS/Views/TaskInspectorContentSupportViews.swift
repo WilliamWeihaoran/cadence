@@ -166,6 +166,11 @@ final class TaskNotesPanelController: NSObject, NSWindowDelegate {
     private override init() {}
 
     func show(task: AppTask, referenceNotes: [Note] = [], referenceTasks: [AppTask] = []) {
+        // T-817: `container` is `nil` only on a launch degraded enough that no `AppTask` this
+        // panel could be asked to open even exists to have been fetched — but the type is
+        // optional now, so this stays a guard rather than a force unwrap.
+        guard let container = PersistenceController.shared.container else { return }
+
         let panel = ensurePanel()
         let content = TaskNotesExpandedEditorSheet(
             task: task,
@@ -173,7 +178,7 @@ final class TaskNotesPanelController: NSObject, NSWindowDelegate {
             referenceTasks: referenceTasks,
             onClose: { [weak self] in self?.close() }
         )
-        .modelContainer(PersistenceController.shared.container)
+        .modelContainer(container)
         .environment(CadenceDeepLinkManager.shared)
         .environment(CalendarManager.shared)
         .environment(AISettingsManager.shared)

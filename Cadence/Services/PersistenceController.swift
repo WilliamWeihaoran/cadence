@@ -10,7 +10,27 @@ struct PersistenceController {
     /// sync at all. Every surface that showed this used to have to guess which from the prose.
     private(set) static var startupIssue: CadenceStartupIssue?
 
-    let container: ModelContainer
+    /// Set only when `container` is `nil` — the CloudKit store, the on-disk recovery store, and a
+    /// fully in-memory container all failed to open. See `makeRecoveryContainer`'s final catch.
+    ///
+    /// This used to be a `fatalError`, unconditionally, on a launch already three failures deep.
+    /// It is not reachable by anything a user or a synced record can drive — recreating it needs
+    /// SwiftData to be unable to construct even an in-memory container, which is not a storage or
+    /// network condition, since in-memory needs neither — but "not reachable" is not the same
+    /// promise as "cannot happen", and the trap's cost when it does is the worst first impression
+    /// the app has: a crash on launch with no explanation and no way to recover anything. This is
+    /// the honest alternative: say plainly that nothing could be opened, and try, once, to read
+    /// whatever *is* still on disk well enough to export it — see
+    /// `attemptReadOnlyStoreForRecoveryExport()`.
+    private(set) static var terminalFailure: CadenceStartupTerminalFailure?
+
+    /// `nil` exactly when `terminalFailure` is set. `CadenceApp` reads this to decide whether it
+    /// can build the normal app shell at all, or has to fall back to
+    /// `CadenceTerminalRecoveryView` instead — a `ModelContainer` this app never got is not a
+    /// container any view can safely assume, including the two floating panels
+    /// (`QuickTaskPanelController`, `TaskNotesPanelController`) that build their own `.modelContainer`
+    /// off `PersistenceController.shared.container` outside the app's main window group.
+    let container: ModelContainer?
 
     static let schema = CadenceSchema.schema
 
@@ -161,7 +181,7 @@ struct PersistenceController {
         return try ModelContainer(for: schema, configurations: [cloudConfig])
     }
 
-    private static func makeRecoveryContainer(issue: String) -> ModelContainer {
+    private static func makeRecoveryContainer(issue: String) -> ModelContainer? {
         startupIssue = CadenceStartupIssue(kind: .recoveryStore, message: issue)
         do {
             let recoveryDirectoryURL = try recoveryStoreDirectoryURL()
@@ -186,9 +206,102 @@ struct PersistenceController {
                 )
                 return try ModelContainer(for: schema, configurations: [fallbackConfig])
             } catch {
-                fatalError("\(issue) In-memory recovery store creation also failed: \(error.localizedDescription)")
+                // Every store this launch could have opened — CloudKit, an on-disk recovery
+                // store, a fully in-memory one — has now failed. There is nothing left to fall
+                // back to that is still "the app": `container` stays `nil` and `CadenceApp` shows
+                // `CadenceTerminalRecoveryView` instead of building a window group around a store
+                // that does not exist.
+                terminalFailure = CadenceStartupTerminalFailure(
+                    message: "\(issue) In-memory store creation also failed: \(error.localizedDescription)"
+                )
+                return nil
             }
         }
+    }
+
+    /// A best-effort, read-only, export-only open of whatever store this device actually has —
+    /// tried only from `CadenceTerminalRecoveryView`, after `terminalFailure` is already set.
+    ///
+    /// This is not a fourth attempt at the sequence above. `init` already tried the primary store
+    /// **with CloudKit**, a separate on-disk recovery store **without** it, and a fully in-memory
+    /// store, and all three failed before this is ever reachable. What none of those three tried
+    /// is the thing this does first: the primary store's own file, local-only, read-only. If the
+    /// boot failure was CloudKit's — an unreachable network, a bad container entitlement, a
+    /// rejected schema push, all common and all outside this app's control — the user's actual
+    /// data is sitting on disk untouched, and this is what gets it into an export instead of
+    /// behind a launch-time crash. If the primary store's file cannot be read at all, this falls
+    /// back to whatever on-disk recovery stores exist from a previous launch.
+    ///
+    /// Resolving the real URLs and opening a container are two different functions —
+    /// `recoveryExportCandidateStoreURLs` and `openFirstAvailableReadOnlyStore` below — for the
+    /// same reason `recoveryStoreDirectoryURL` is built on the already-pure
+    /// `recoveryStoreDirectoryCandidates`: a test can hand the open logic real, isolated temporary
+    /// files without ever touching this device's actual app-group container.
+    static func attemptReadOnlyStoreForRecoveryExport(fileManager: FileManager = .default) -> ModelContainer? {
+        let primaryStoreURL = try? CadenceStoreSupport.primaryStoreURL(fileManager: fileManager)
+        let primaryStoreDirectoryURL = try? CadenceStoreSupport.primaryStoreDirectoryURL(fileManager: fileManager)
+        let applicationSupportDirectoryURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+
+        let candidateStoreURLs = recoveryExportCandidateStoreURLs(
+            primaryStoreURL: primaryStoreURL,
+            recoveryDirectoryCandidates: recoveryStoreDirectoryCandidates(
+                primaryStoreDirectoryURL: primaryStoreDirectoryURL,
+                applicationSupportDirectoryURL: applicationSupportDirectoryURL,
+                temporaryDirectoryURL: fileManager.temporaryDirectory
+            )
+        )
+        return openFirstAvailableReadOnlyStore(from: candidateStoreURLs)
+    }
+
+    /// The ordered list of store files `attemptReadOnlyStoreForRecoveryExport` will try: the
+    /// primary store first (if one was resolved at all — a `nil` is dropped, not passed through as
+    /// a URL that cannot exist), then each recovery directory's `recovery.store`, in the order
+    /// `recoveryStoreDirectoryCandidates` already ranks them.
+    ///
+    /// Pure and independently testable: given the same two inputs, this always returns the same
+    /// list, with no filesystem access at all.
+    static func recoveryExportCandidateStoreURLs(
+        primaryStoreURL: URL?,
+        recoveryDirectoryCandidates: [URL]
+    ) -> [URL] {
+        var candidateStoreURLs: [URL] = []
+        if let primaryStoreURL {
+            candidateStoreURLs.append(primaryStoreURL)
+        }
+        candidateStoreURLs.append(contentsOf: recoveryDirectoryCandidates.map {
+            $0.appendingPathComponent("recovery.store")
+        })
+        return candidateStoreURLs
+    }
+
+    /// Opens the first URL in `candidateStoreURLs` that opens successfully, read-only and with
+    /// CloudKit switched off. `nil` if none do.
+    ///
+    /// No explicit existence check runs before the open, and that absence is measured rather than
+    /// assumed: a `FileManager.fileExists` guard sat here first, a mutation dropped it, and every
+    /// test in this file still passed. `allowsSave: false` against a URL with no store there
+    /// already refuses instead of creating one — the exact asymmetry
+    /// `CadenceSharedStoreWriteGateTests.aWriteCapableOpenCreatesAMissingStoreAndAReadOnlyOpenDoesNot`
+    /// measures for T-311 — so a second, redundant check here could only ever restate a guarantee
+    /// `allowsSave: false` already gives for free. `allowsSave: false` is spelled explicitly below
+    /// rather than left to a shared default, because it is the one line actually standing between
+    /// this recovery path and writing into a store it did not create — and a "successful" open of
+    /// an empty store it *did* just create would tell someone their data was recovered when
+    /// nothing was, the opposite of what this screen exists to be honest about.
+    static func openFirstAvailableReadOnlyStore(from candidateStoreURLs: [URL]) -> ModelContainer? {
+        for storeURL in candidateStoreURLs {
+            let configuration = ModelConfiguration(
+                "Cadence Recovery Export",
+                schema: schema,
+                url: storeURL,
+                allowsSave: false,
+                cloudKitDatabase: .none
+            )
+            if let container = try? ModelContainer(for: schema, configurations: [configuration]) {
+                return container
+            }
+        }
+        return nil
     }
 
     static func recoveryStoreDirectoryCandidates(
