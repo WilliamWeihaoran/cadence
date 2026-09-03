@@ -25,10 +25,14 @@ nonisolated enum CadenceCalendarSettingsCopy {
     /// to go and that is a different place on each platform.
     static let accessDeniedTitle = "Calendar access denied"
 
-    /// Settings → Calendar, before anyone has been asked.
-    static let accessRequiredTitle = "Calendar access required"
+    /// Settings → Calendar, before anyone has been asked. **T-694/T-777.** Used to be
+    /// `accessRequiredTitle`, phrased as a demand nobody had earned yet — the same defect T-543
+    /// already fixed for this card's glyph and sentence, left open for the title until the
+    /// Notifications pane's split (T-694) gave it a name to mirror. `accessDeniedTitle` above is
+    /// unchanged: that state genuinely is a fault the reader has to go and fix.
+    static let connectOfferTitle = "Connect Apple Calendar"
 
-    /// The sentence under `accessRequiredTitle` — **the same one on both surfaces since T-543.**
+    /// The sentence under `connectOfferTitle` — **the same one on both surfaces since T-543.**
     ///
     /// T-524 found the two panes disagreeing here and deliberately did not converge them: macOS
     /// said "Allow Cadence to create and sync calendar events.", iOS said the sentence below, both
@@ -283,21 +287,23 @@ nonisolated enum CadenceListSettingsCopy {
 /// around them and left these alone only because a sibling agent might have owned those files.
 ///
 /// **Every title is `"<status> <plural noun>"`, and the status word is the one
-/// `CadenceListSearchLifecycle.statusLabel` already vends** — which is what leaves room for the
-/// sections that do not exist yet. `ProjectStatus` has five cases and Settings shows two of them
-/// (T-690): a `.paused` or `.cancelled` project reaches no group here at all, so it can be neither
-/// reopened nor deleted from this screen. Closing that ticket adds `pausedProjects` and
-/// `cancelledProjects` to this enum, and the rule above already decides what they say —
-/// `CadenceSettingsSectionCopyTests.everyLifecycleSectionTitleFollowsTheStatusThenNounRule` pins it
-/// against the same five-case vocabulary, so the seventh and eighth titles cannot be invented in a
-/// different voice.
+/// `CadenceListSearchLifecycle.statusLabel` already vends** — which is what left room for the
+/// sections that did not exist yet. `ProjectStatus` has five cases and Settings showed only two of
+/// them (T-690): a `.paused` or `.cancelled` project reached no group here at all, so it could be
+/// neither reopened nor deleted from this screen. `pausedProjects` and `cancelledProjects` close
+/// that gap, in the voice the rule above already decided —
+/// `CadenceSettingsSectionCopyTests.everyLifecycleSectionTitleFollowsTheStatusThenNounRule` pins
+/// them against the same five-case vocabulary, so the seventh and eighth titles could not be
+/// invented in a different one.
 ///
-/// They are six plain literals rather than one `sectionTitle(_:of:)` composer on purpose. An
+/// They are eight plain literals rather than one `sectionTitle(_:of:)` composer on purpose. An
 /// interpolated title is invisible to `cadenceSharedStringConstants`, which harvests
 /// `static let x = "…"` only — that is the recorded gap behind `CadenceEmptyStateCopy.goalsTitle`,
-/// a converged string a *seventh* call site could re-type with nothing to catch it. Six declared
+/// a converged string a *ninth* call site could re-type with nothing to catch it. Eight declared
 /// literals stay inside the sweep; a composer with no caller would be dead code that also left the
-/// sweep blind.
+/// sweep blind. (T-703 proposed exactly that composer once a `static func` could be harvested —
+/// this file is why the answer is still no: the harvest that would need to see through it reads
+/// literal declarations, not interpolated ones.)
 ///
 /// There is no `activeAreas`/`activeProjects` here because Settings → Lists is the inactive
 /// screen: active areas and projects live on the Lists page, and only contexts show their active
@@ -314,8 +320,14 @@ nonisolated enum CadenceListLifecycleSectionCopy {
     static let completedAreas = "Completed Areas"
     static let archivedAreas = "Archived Areas"
 
-    /// Settings → Lists. Two of the four inactive `ProjectStatus` cases; see T-690 for the other
-    /// two.
+    /// Settings → Lists. Two of the four inactive `ProjectStatus` cases; see the pair below for
+    /// the other two.
     static let completedProjects = "Completed Projects"
     static let archivedProjects = "Archived Projects"
+
+    /// Settings → Lists (T-690). The remaining two inactive `ProjectStatus` cases. `Area` has no
+    /// paused or cancelled status, so these are project-only — there is no `pausedAreas` /
+    /// `cancelledAreas` to pair them with.
+    static let pausedProjects = "Paused Projects"
+    static let cancelledProjects = "Cancelled Projects"
 }

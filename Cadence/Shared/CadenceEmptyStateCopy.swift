@@ -218,8 +218,23 @@ nonisolated enum CadenceEmptyStateCopy {
     /// a single popover button labelled *Filter* holding both ("Try a different filter."). Same
     /// reasoning as `savedLinksSubtitle` naming no control at all — copy converges when the
     /// surfaces really do show the same thing, not because two sentences sit next to each other.
-    static func goalsTitle(isNarrowed: Bool) -> String {
-        isNarrowed ? "No matching goals" : "No goals yet"
+    ///
+    /// **A third case, for "every goal is done" (T-689).** `isNarrowed` answers "is a filter or a
+    /// search hiding rows that exist" — true on the Mac, which carries both — but the phone's
+    /// `iOSGoalsView` has neither control, so it could only ever pass `false`, and a reader who had
+    /// finished all five of their goals saw "No goals yet" beside an empty list that was not
+    /// actually a first run. `isNarrowed: true` is not the fix either: it reads "No matching
+    /// goals", which promises a filter to try differently, and this page has none.
+    ///
+    /// `allComplete` is the caller's own answer to "does the collection hold goals that this page
+    /// is simply choosing not to show" — true exactly when the underlying collection is non-empty
+    /// and every goal in it is inactive, never inferred here. It only matters when `isNarrowed` is
+    /// `false`: a real filter miss still reads "No matching goals" regardless of why the filter
+    /// missed. Defaulted to `false` so the Mac's two existing call sites, which have no such state
+    /// to report, keep reading exactly as they did.
+    static func goalsTitle(isNarrowed: Bool, allComplete: Bool = false) -> String {
+        if isNarrowed { return "No matching goals" }
+        return allComplete ? "All goals complete" : "No goals yet"
     }
 
     /// **The Habits page's title, on both surfaces** (T-548).

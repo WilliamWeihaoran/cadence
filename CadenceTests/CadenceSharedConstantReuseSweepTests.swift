@@ -896,6 +896,7 @@ struct CadenceSharedConstantReuseSweepTests {
         for (name, literal) in [
             ("goalsTitle", "No matching goals"),
             ("goalsTitle", "No goals yet"),
+            ("goalsTitle", "All goals complete"),
             ("habitsTitle", "No matching habits"),
             ("habitsTitle", "No habits yet"),
             ("eyebrow", "No lists yet"),

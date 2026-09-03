@@ -254,6 +254,9 @@ struct iOSListsLifecycleSettingsSection: View {
     let archivedAreas: [Area]
     let completedProjects: [Project]
     let archivedProjects: [Project]
+    /// T-690: the other two of `ProjectStatus`'s five cases. `Area` carries neither.
+    let pausedProjects: [Project]
+    let cancelledProjects: [Project]
     let onReopenArea: (Area) -> Void
     let onReopenProject: (Project) -> Void
     /// Delete is here for the same reason macOS's Settings → Lists has it: a completed or archived
@@ -263,7 +266,8 @@ struct iOSListsLifecycleSettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if completedAreas.isEmpty && archivedAreas.isEmpty && completedProjects.isEmpty && archivedProjects.isEmpty {
+            if completedAreas.isEmpty && archivedAreas.isEmpty && completedProjects.isEmpty
+                && archivedProjects.isEmpty && pausedProjects.isEmpty && cancelledProjects.isEmpty {
                 CadenceSettingsSectionLabel(text: CadenceSettingsEmptyStateCopy.inactiveListsSectionTitle)
                 iOSSettingsCard {
                     iOSSettingsEmptyInlineRow(
@@ -288,6 +292,14 @@ struct iOSListsLifecycleSettingsSection: View {
                 if !archivedProjects.isEmpty {
                     CadenceSettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedProjects)
                     lifecycleCard(projects: archivedProjects)
+                }
+                if !pausedProjects.isEmpty {
+                    CadenceSettingsSectionLabel(text: CadenceListLifecycleSectionCopy.pausedProjects)
+                    lifecycleCard(projects: pausedProjects)
+                }
+                if !cancelledProjects.isEmpty {
+                    CadenceSettingsSectionLabel(text: CadenceListLifecycleSectionCopy.cancelledProjects)
+                    lifecycleCard(projects: cancelledProjects)
                 }
             }
         }
@@ -328,8 +340,15 @@ struct iOSListsLifecycleSettingsSection: View {
                             areaName: project.area?.name
                         ),
                         color: Color(hex: project.colorHex),
-                        statusLabel: project.isDone ? "Completed" : "Archived",
-                        primaryLabel: project.isDone ? "Reopen" : "Unarchive",
+                        // Not `project.isDone ? "Completed" : "Archived"` (T-690): that collapse
+                        // has no branch for `.paused`/`.cancelled` and would label a cancelled
+                        // project "Archived". `CadenceListSearchSupport.lifecycle(of:)` maps every
+                        // `ProjectStatus` case onto `CadenceListSearchLifecycle`, which already
+                        // spells all five.
+                        statusLabel: CadenceListSearchSupport.lifecycle(of: project).statusLabel,
+                        // "Unarchive" is only true of `.archived`; a done, paused or cancelled
+                        // project reads "Reopen".
+                        primaryLabel: project.isArchived ? "Unarchive" : "Reopen",
                         primaryAction: { onReopenProject(project) },
                         deleteAction: { onDeleteProject(project) }
                     )

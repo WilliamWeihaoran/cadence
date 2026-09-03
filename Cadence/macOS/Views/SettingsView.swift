@@ -196,6 +196,8 @@ struct SettingsView: View {
                 archivedAreas: areas.filter(\.isArchived),
                 completedProjects: projects.filter(\.isDone),
                 archivedProjects: projects.filter(\.isArchived),
+                pausedProjects: projects.filter { $0.status == .paused },
+                cancelledProjects: projects.filter { $0.status == .cancelled },
                 onReopenArea: reopenArea(_:),
                 onDeleteArea: { pendingDeleteArea = $0 },
                 onReopenProject: reopenProject(_:),

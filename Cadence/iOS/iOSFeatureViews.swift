@@ -128,7 +128,7 @@ struct iOSGoalsView: View {
             eyebrow: shapeEyebrow,
             title: "Goals",
             count: activeGoals.count,
-            empty: Self.emptyState,
+            empty: emptyState,
             actionTitle: "New Goal",
             actionSystemImage: "plus",
             action: { editorMode = .new(nil) },
@@ -208,11 +208,23 @@ struct iOSGoalsView: View {
     }
 
     /// The one empty state this screen has, read by **both** panes. See `iOSFeatureEmptyState`.
-    private static let emptyState = iOSFeatureEmptyState(
-        systemImage: "sparkles",
-        title: CadenceEmptyStateCopy.goalsTitle(isNarrowed: false),
-        subtitle: "Create a direction, then nest milestones and habits underneath it."
-    )
+    ///
+    /// **A third case, for "every goal is done" (T-689).** This page has no search field and no
+    /// status picker, so `activeGoals.isEmpty` was always read as a first run — a reader who had
+    /// completed every one of their goals saw "No goals yet" beside a list that was not actually
+    /// empty. `allComplete` is true only when `goals` itself is non-empty and `activeGoals` is not,
+    /// so a genuinely first-run store still reads the original words. Computed rather than
+    /// `static let` because it now depends on this instance's own `goals`.
+    private var emptyState: iOSFeatureEmptyState {
+        let allComplete = !goals.isEmpty && activeGoals.isEmpty
+        return iOSFeatureEmptyState(
+            systemImage: "sparkles",
+            title: CadenceEmptyStateCopy.goalsTitle(isNarrowed: false, allComplete: allComplete),
+            subtitle: allComplete
+                ? "Nothing in flight. Add another when you're ready."
+                : "Create a direction, then nest milestones and habits underneath it."
+        )
+    }
 
     /// **What the detail pane says with nothing selected** (T-533).
     ///
@@ -237,7 +249,7 @@ struct iOSGoalsView: View {
         if let goal = selected {
             detailView(for: goal)
         } else {
-            iOSFeatureEmptyDetail(matching: Self.emptyState)
+            iOSFeatureEmptyDetail(matching: emptyState)
         }
     }
 }

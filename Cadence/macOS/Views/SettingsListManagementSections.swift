@@ -211,7 +211,7 @@ struct SettingsCalendarSection: View {
                 tint: calendarManager.isDenied ? Theme.amber : Theme.blue,
                 title: calendarManager.isDenied
                     ? CadenceCalendarSettingsCopy.accessDeniedTitle
-                    : CadenceCalendarSettingsCopy.accessRequiredTitle,
+                    : CadenceCalendarSettingsCopy.connectOfferTitle,
                 detail: calendarManager.isDenied
                     ? "Allow Cadence from System Settings, Privacy & Security, Calendars."
                     : CadenceCalendarSettingsCopy.accessRequiredDetail
@@ -624,6 +624,10 @@ struct SettingsListsSection: View {
     let archivedAreas: [Area]
     let completedProjects: [Project]
     let archivedProjects: [Project]
+    /// T-690: the other two of `ProjectStatus`'s five cases. `Area` carries neither, so these are
+    /// project-only, same as `completedProjects`/`archivedProjects` above.
+    let pausedProjects: [Project]
+    let cancelledProjects: [Project]
     let onReopenArea: (Area) -> Void
     let onDeleteArea: (Area) -> Void
     let onReopenProject: (Project) -> Void
@@ -631,7 +635,8 @@ struct SettingsListsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if completedAreas.isEmpty && archivedAreas.isEmpty && completedProjects.isEmpty && archivedProjects.isEmpty {
+            if completedAreas.isEmpty && archivedAreas.isEmpty && completedProjects.isEmpty
+                && archivedProjects.isEmpty && pausedProjects.isEmpty && cancelledProjects.isEmpty {
                 // The eyebrow is half of T-600(b) here: every other branch of this pane names
                 // the group it is showing, and the empty one — the only branch a reader with no
                 // inactive lists ever sees — named nothing.
@@ -661,6 +666,14 @@ struct SettingsListsSection: View {
                 if !archivedProjects.isEmpty {
                     SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.archivedProjects)
                     lifecycleCard(projects: archivedProjects)
+                }
+                if !pausedProjects.isEmpty {
+                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.pausedProjects)
+                    lifecycleCard(projects: pausedProjects)
+                }
+                if !cancelledProjects.isEmpty {
+                    SettingsSectionLabel(text: CadenceListLifecycleSectionCopy.cancelledProjects)
+                    lifecycleCard(projects: cancelledProjects)
                 }
             }
         }
@@ -704,8 +717,16 @@ struct SettingsListsSection: View {
                             areaName: project.area?.name
                         ),
                         color: Color(hex: project.colorHex),
-                        statusLabel: project.isDone ? "Completed" : "Archived",
-                        primaryLabel: project.isDone ? "Reopen" : "Unarchive",
+                        // Not `project.isDone ? "Completed" : "Archived"` (T-690): that collapse
+                        // has no branch for `.paused` or `.cancelled`, so a cancelled project
+                        // reaching this card would be labelled "Archived". `ProjectStatus` has
+                        // five cases and `CadenceListSearchLifecycle` is the type that already
+                        // spells all of them; `CadenceListSearchSupport.lifecycle(of:)` is the one
+                        // place that maps a project's status onto it.
+                        statusLabel: CadenceListSearchSupport.lifecycle(of: project).statusLabel,
+                        // "Unarchive" is only true of `.archived` — a done, paused or cancelled
+                        // project is not being unarchived, so those three read "Reopen".
+                        primaryLabel: project.isArchived ? "Unarchive" : "Reopen",
                         onPrimary: { onReopenProject(project) },
                         onDelete: { onDeleteProject(project) }
                     )

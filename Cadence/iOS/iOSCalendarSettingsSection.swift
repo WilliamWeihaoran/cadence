@@ -200,7 +200,7 @@ struct iOSCalendarSettingsSection: View {
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(calendarManager.isDenied ? CadenceCalendarSettingsCopy.accessDeniedTitle : CadenceCalendarSettingsCopy.accessRequiredTitle)
+                    Text(calendarManager.isDenied ? CadenceCalendarSettingsCopy.accessDeniedTitle : CadenceCalendarSettingsCopy.connectOfferTitle)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
 

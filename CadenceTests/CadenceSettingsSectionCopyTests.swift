@@ -31,7 +31,9 @@ struct CadenceSettingsSectionCopyTests {
         ("CadenceCalendarLinkHealth.brokenLinksSectionTitle", "Broken Calendar Links"),
         ("CadenceCalendarLinkHealth.noRelinkTargetsLabel", "No Apple calendars available"),
         ("CadenceCalendarSettingsCopy.accessDeniedTitle", "Calendar access denied"),
-        ("CadenceCalendarSettingsCopy.accessRequiredTitle", "Calendar access required"),
+        // **T-694/T-777.** Was `accessRequiredTitle` ("Calendar access required"), the same demand
+        // phrasing T-543 already fixed for this card's glyph and sentence.
+        ("CadenceCalendarSettingsCopy.connectOfferTitle", "Connect Apple Calendar"),
         ("CadenceCalendarSettingsCopy.noConnectableListsLabel", "No active areas or projects"),
         ("CadenceCalendarSettingsCopy.unconnectedSummary", "Not connected to any area or project"),
         ("CadenceCalendarSettingsCopy.connectMenuLabel", "Connect to areas and projects"),
@@ -324,6 +326,41 @@ struct CadenceSettingsSectionCopyTests {
             #expect(
                 code.contains("calendarManager.isDenied ? Theme.amber : Theme.blue"),
                 "\(path) tints the not-yet-asked glyph as a warning"
+            )
+        }
+    }
+
+    /// **T-694/T-777: the calendar card's *title* gets the same split its glyph already has.**
+    ///
+    /// Mirrors `theNotificationsAccessCardDrawsOneTitlePerStateOnBothSurfaces`, closed against the
+    /// Notifications pane in the same batch: `accessRequiredTitle` used to head the not-yet-asked
+    /// state too ("Calendar access required"), phrased as a demand nobody had earned yet, right
+    /// beside a glyph and sentence T-543 had already turned into an offer. `accessDeniedTitle` is
+    /// untouched — that state genuinely is a fault — so this asserts the ternary rather than mere
+    /// presence, the same shape the glyph test above uses and for the same reason: presence alone
+    /// would stay green over a card that read the offer title and the demand title in the same
+    /// branch.
+    @Test func theCalendarAccessCardDrawsOneTitlePerStateOnBothSurfaces() throws {
+        for path in Self.calendarSurfaces {
+            let code = try Self.strippedSource(at: path)
+
+            #expect(
+                CadenceSourceScan.matchCount("CadenceCalendarSettingsCopy.accessDeniedTitle", in: code) == 1,
+                "\(path) reads the denied-state title a number of times other than once"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("CadenceCalendarSettingsCopy.connectOfferTitle", in: code) == 1,
+                "\(path) does not offer exactly one not-yet-asked title"
+            )
+            // A regex rather than `.contains`, because the Mac wraps this ternary onto three
+            // lines (the combined expression is long) while the phone keeps it on one — the same
+            // branch, reformatted by whichever surface's line-length the file was wrapped for.
+            #expect(
+                CadenceSourceScan.matchCount(
+                    #"calendarManager\.isDenied\s*\?\s*CadenceCalendarSettingsCopy\.accessDeniedTitle\s*:\s*CadenceCalendarSettingsCopy\.connectOfferTitle"#,
+                    in: code
+                ) == 1,
+                "\(path) does not branch its title on calendarManager.isDenied exactly this way"
             )
         }
     }
@@ -844,7 +881,7 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceCalendarLinkHealth.brokenLinksSectionTitle == "Broken Calendar Links")
         #expect(CadenceCalendarLinkHealth.noRelinkTargetsLabel == "No Apple calendars available")
         #expect(CadenceCalendarSettingsCopy.accessDeniedTitle == "Calendar access denied")
-        #expect(CadenceCalendarSettingsCopy.accessRequiredTitle == "Calendar access required")
+        #expect(CadenceCalendarSettingsCopy.connectOfferTitle == "Connect Apple Calendar")
         #expect(CadenceCalendarSettingsCopy.noConnectableListsLabel == "No active areas or projects")
         #expect(CadenceCalendarSettingsCopy.unconnectedSummary == "Not connected to any area or project")
         #expect(CadenceCalendarSettingsCopy.connectMenuLabel == "Connect to areas and projects")
@@ -1055,9 +1092,9 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
-    // MARK: - T-546: six lifecycle eyebrows, spelled once
+    // MARK: - T-546/T-690: eight lifecycle eyebrows, spelled once
 
-    /// The six lifecycle section titles, as the expression every call site must read and the
+    /// The eight lifecycle section titles, as the expression every call site must read and the
     /// literal no surface may still type.
     private static let lifecyclePairs: [(expression: String, literal: String)] = [
         ("CadenceListLifecycleSectionCopy.activeContexts", "Active Contexts"),
@@ -1066,6 +1103,9 @@ struct CadenceSettingsSectionCopyTests {
         ("CadenceListLifecycleSectionCopy.archivedAreas", "Archived Areas"),
         ("CadenceListLifecycleSectionCopy.completedProjects", "Completed Projects"),
         ("CadenceListLifecycleSectionCopy.archivedProjects", "Archived Projects"),
+        // T-690: the other two of `ProjectStatus`'s five cases. Project-only — `Area` has neither.
+        ("CadenceListLifecycleSectionCopy.pausedProjects", "Paused Projects"),
+        ("CadenceListLifecycleSectionCopy.cancelledProjects", "Cancelled Projects"),
     ]
 
     /// Which file draws which group, and how many times. Settings → Contexts and Settings → Lists
@@ -1080,6 +1120,8 @@ struct CadenceSettingsSectionCopyTests {
                 "CadenceListLifecycleSectionCopy.archivedAreas",
                 "CadenceListLifecycleSectionCopy.completedProjects",
                 "CadenceListLifecycleSectionCopy.archivedProjects",
+                "CadenceListLifecycleSectionCopy.pausedProjects",
+                "CadenceListLifecycleSectionCopy.cancelledProjects",
             ]
         ),
         (
@@ -1096,23 +1138,30 @@ struct CadenceSettingsSectionCopyTests {
                 "CadenceListLifecycleSectionCopy.archivedAreas",
                 "CadenceListLifecycleSectionCopy.completedProjects",
                 "CadenceListLifecycleSectionCopy.archivedProjects",
+                "CadenceListLifecycleSectionCopy.pausedProjects",
+                "CadenceListLifecycleSectionCopy.cancelledProjects",
             ]
         ),
     ]
 
-    /// **The twelve call sites read the six names.**
+    /// **The sixteen call sites read the eight names.**
     ///
-    /// A *seventh* surface typing one of the six out again is caught by machinery that already
+    /// Eight names rather than six, and sixteen call sites rather than twelve, since T-690 added
+    /// `pausedProjects`/`cancelledProjects` alongside the six T-546 converged — both project-only,
+    /// so only the Mac's one file and the phone's list-and-template file gained two call sites
+    /// each; `iOSSettingsView.swift` only ever drew contexts and is unchanged.
+    ///
+    /// A *ninth* surface typing one of the eight out again is caught by machinery that already
     /// exists — `CadenceSharedConstantReuseSweepTests.noCallSiteRetypesASharedStringConstant`
     /// sweeps all of `Cadence/` for every harvested constant, and
     /// `everyConvergedSettingsStringIsHarvestedByTheSharedConstantSweep` below is what proves the
-    /// harvest sees these six. This test is the other half: the call sites that exist today.
+    /// harvest sees these eight. This test is the other half: the call sites that exist today.
     ///
     /// Asserting the constants merely *exist* and hold the right words would stay green over a
     /// tree where every call site had gone back to typing the literal, which is the state this
     /// ticket found. So each file is checked for the exact expression an exact number of times —
     /// once where it draws the group, **zero** where it does not — and for the literal being gone.
-    @Test func everyLifecycleSectionLabelIsReadRatherThanTypedAtAllTwelveCallSites() throws {
+    @Test func everyLifecycleSectionLabelIsReadRatherThanTypedAtAllSixteenCallSites() throws {
         for surface in Self.lifecycleSurfaces {
             let code = try Self.strippedSource(at: surface.path)
             for pair in Self.lifecyclePairs {
@@ -1130,16 +1179,15 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
-    /// The six titles, read off the compiled constants, and the rule that decides what a seventh
-    /// would say.
+    /// The eight titles, read off the compiled constants.
     ///
-    /// **This is the room T-690 needs.** `ProjectStatus` has five cases; Settings shows two of
-    /// them, so a `.paused` or `.cancelled` project reaches no group on either platform and can be
-    /// neither reopened nor deleted from the only screen that lists inactive lists. Every title
-    /// here is `"<status> <plural noun>"` with the status word taken from
+    /// **T-690 closed the room the six left.** `ProjectStatus` has five cases; Settings used to
+    /// show only two of them, so a `.paused` or `.cancelled` project reached no group on either
+    /// platform and could be neither reopened nor deleted from the only screen that lists inactive
+    /// lists. Every title here is `"<status> <plural noun>"` with the status word taken from
     /// `CadenceListSearchLifecycle` — the type that already carries all five spellings — so
-    /// `pausedProjects` and `cancelledProjects` are two more constants in one voice rather than two
-    /// more copy decisions.
+    /// `pausedProjects` and `cancelledProjects` are two more constants in the same voice rather
+    /// than two more copy decisions.
     @Test func everyLifecycleSectionTitleFollowsTheStatusThenNounRule() {
         #expect(CadenceListLifecycleSectionCopy.activeContexts == "\(CadenceListSearchLifecycle.active.statusLabel) Contexts")
         #expect(CadenceListLifecycleSectionCopy.archivedContexts == "\(CadenceListSearchLifecycle.archived.statusLabel) Contexts")
@@ -1148,9 +1196,9 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceListLifecycleSectionCopy.completedProjects == "\(CadenceListSearchLifecycle.completed.statusLabel) Projects")
         #expect(CadenceListLifecycleSectionCopy.archivedProjects == "\(CadenceListSearchLifecycle.archived.statusLabel) Projects")
 
-        // The two the rule already decides and Settings does not yet show (T-690).
-        #expect(CadenceListSearchLifecycle.paused.statusLabel == "Paused")
-        #expect(CadenceListSearchLifecycle.cancelled.statusLabel == "Cancelled")
+        // T-690: the seventh and eighth titles, in the same voice as the six above.
+        #expect(CadenceListLifecycleSectionCopy.pausedProjects == "\(CadenceListSearchLifecycle.paused.statusLabel) Projects")
+        #expect(CadenceListLifecycleSectionCopy.cancelledProjects == "\(CadenceListSearchLifecycle.cancelled.statusLabel) Projects")
     }
 
     // MARK: - Non-vacuity

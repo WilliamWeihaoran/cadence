@@ -999,6 +999,15 @@ struct CadenceEmptyStateAuditTests {
         #expect(CadenceEmptyStateCopy.selectWeekTitle == "Select a week")
         #expect(CadenceEmptyStateCopy.selectMeetingNoteTitle == "Select a meeting note")
 
+        // T-689's third case. `isNarrowed` still wins when both could apply — a real filter miss
+        // reads "No matching goals" regardless of whether every goal also happens to be done —
+        // and the default keeps the Mac's two existing call sites, which never pass `allComplete`
+        // at all, reading exactly as they did.
+        #expect(CadenceEmptyStateCopy.goalsTitle(isNarrowed: false, allComplete: true) == "All goals complete")
+        #expect(CadenceEmptyStateCopy.goalsTitle(isNarrowed: false, allComplete: false) == "No goals yet")
+        #expect(CadenceEmptyStateCopy.goalsTitle(isNarrowed: true, allComplete: true) == "No matching goals")
+        #expect(CadenceEmptyStateCopy.goalsTitle(isNarrowed: false) == "No goals yet")
+
         // A title is not a sentence: the full-stop rule below is about subtitles, and these three
         // are the whole empty state on a pane with nothing selected.
         for title in [
@@ -1007,6 +1016,7 @@ struct CadenceEmptyStateAuditTests {
             CadenceEmptyStateCopy.selectMeetingNoteTitle,
             CadenceEmptyStateCopy.habitsTitle(isNarrowed: false),
             CadenceEmptyStateCopy.goalsTitle(isNarrowed: false),
+            CadenceEmptyStateCopy.goalsTitle(isNarrowed: false, allComplete: true),
         ] {
             #expect(title.hasSuffix(".") == false, "\"\(title)\" is a title with a full stop")
         }
@@ -1203,9 +1213,17 @@ struct CadenceEmptyStateAuditTests {
         #expect(code != raw, "the stripper blanked no comments in a file that has them")
 
         // Both detail panes render the chooser's own empty state rather than the house line.
+        // **T-689 split this pair.** Habits still reads a `static let`, so its two call sites
+        // still say `Self.emptyState`; Goals' is now a computed `var` (it has to see this
+        // instance's own `activeGoals`), so its two call sites drop the `Self.` that named a
+        // static member.
         #expect(
-            emptyStateOccurrences(of: "iOSFeatureEmptyDetail(matching: Self.emptyState)", in: code) == 2,
-            "a detail pane no longer repeats its own list's empty state"
+            emptyStateOccurrences(of: "iOSFeatureEmptyDetail(matching: Self.emptyState)", in: code) == 1,
+            "Habits' detail pane no longer repeats its own list's empty state"
+        )
+        #expect(
+            emptyStateOccurrences(of: "iOSFeatureEmptyDetail(matching: emptyState)", in: code) == 1,
+            "Goals' detail pane no longer repeats its own list's empty state"
         )
         #expect(
             emptyStateOccurrences(of: "iOSFeatureEmptyDetail(systemImage:", in: code) == 0,
@@ -1213,7 +1231,8 @@ struct CadenceEmptyStateAuditTests {
         )
 
         // And they read it from the same value the chooser does, so the two panes cannot drift.
-        #expect(emptyStateOccurrences(of: "empty: Self.emptyState", in: code) == 2)
+        #expect(emptyStateOccurrences(of: "empty: Self.emptyState", in: code) == 1)
+        #expect(emptyStateOccurrences(of: "empty: emptyState", in: code) == 1)
 
         // **The titles are read, not typed** (T-548). This used to pin each of the four sentences
         // at exactly one occurrence in this file, which held the two panes of *this* page level
@@ -1221,8 +1240,13 @@ struct CadenceEmptyStateAuditTests {
         // `"No goals yet"` had been re-typed here after T-540 moved it into a shared constant.
         // Both titles are `CadenceEmptyStateCopy` functions now, and the pin is that this file
         // reads each once and spells neither.
+        //
+        // **T-689 gave Goals' reader a third argument.** `allComplete` answers "every goal is
+        // done", a question this file computes locally (`activeGoals.isEmpty` beside a non-empty
+        // `goals`) rather than one `CadenceEmptyStateCopy` can infer, so the call site names both
+        // arguments rather than reading the two-argument form Habits still does.
         for reader in [
-            "CadenceEmptyStateCopy.goalsTitle(isNarrowed: false)",
+            "CadenceEmptyStateCopy.goalsTitle(isNarrowed: false, allComplete: allComplete)",
             "CadenceEmptyStateCopy.habitsTitle(isNarrowed: false)",
         ] {
             #expect(
@@ -1230,12 +1254,20 @@ struct CadenceEmptyStateAuditTests {
                 "\(reader) is not read exactly once in this file"
             )
         }
-        for title in ["No goals yet", "No habits yet"] {
+        for title in ["No goals yet", "No habits yet", "All goals complete"] {
             #expect(
                 emptyStateOccurrences(of: title, in: code) == 0,
                 "\(title) is spelled at a call site again instead of read"
             )
         }
+
+        // **The third case's own subtitle** (T-689). Unlike the title, it is not read from a
+        // shared constant — Habits has no equivalent third case to converge with yet — so it is
+        // pinned as a literal the same way the two first-run subtitles below are.
+        #expect(
+            emptyStateOccurrences(of: "Nothing in flight. Add another when you're ready.", in: code) == 1,
+            "the all-goals-complete subtitle is not spelled exactly once in this file"
+        )
 
         // **The subtitles stay at their call sites and are pinned as they were, because they have
         // already drifted from the Mac's** — "Create a goal for an ongoing direction, then nest
