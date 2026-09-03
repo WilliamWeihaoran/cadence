@@ -255,6 +255,36 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   shells out to `./scripts/mutate.sh selftest` and fails on a non-zero exit (it takes under a second and
   builds nothing, so cost is not the objection).
 
+- [T-780] **Nothing makes an agent *use* `scripts/agent-commit.sh`.** [[T-679]] is fixed in the sense
+  that the incantation is now a script that refuses the four measured failures — but the instruction
+  to call it is prose in `AGENTS.md` and `docs/SUBAGENT_RUNBOOK.md`, which is exactly the shape T-679
+  was filed about (`git add <specific paths>` was also prose, was also followed, and was also
+  insufficient). A bare `git commit` still works and still sweeps a sibling's staged hunk. Candidate:
+  a repo-checked-in `core.hooksPath` with a `pre-commit` that refuses a commit staging paths the
+  caller did not declare, with an escape hatch for the user's own commits. Not done here because a
+  hook changes the user's git configuration, which is their call, not an agent's.
+
+- [T-781] **A declined hunk that is never re-committed is still caught by nothing automatic.**
+  `agent-commit.sh` records what a `path=<content-file>` reconstruction declined and refuses the
+  *next* commit of that path unless it carries them (`DECLINED-HUNK-LOST`) — the Batch M failure
+  where m3 correctly declined m4's work, m4 committed without it, and HEAD stopped compiling. But if
+  nobody commits that path again, no commit-time check ever fires. The backstop is
+  `./scripts/agent-commit.sh status`, and reading it is a habit, not a mechanism. Candidate: have
+  `scripts/xcb.sh` print outstanding records at the end of every run, so the listing lands in front
+  of whoever is already looking at a build log.
+
+- [T-782] **An App-Sandboxed test host cannot run the `/usr/bin` developer shims, and nothing says
+  so.** Measured 2026-09-03 while wiring [[T-719]]: `Cadence.app` is sandboxed, so a `Process` spawned
+  from `CadenceTests` inherits the sandbox, and there `/usr/bin/git` and `/usr/bin/python3` — both
+  xcrun shims — fail with *"xcrun: error: cannot be used within an App Sandbox"*, exit 1, nothing on
+  stdout. Separately, zsh writes here-document temp files to `$TMPPREFIX`, which **zsh itself sets to
+  `/tmp/zsh` at startup** (so it is never empty and a `[[ -z $TMPPREFIX ]]` guard never fires); the
+  sandbox denies that write and the script dies with `can't create temp file for here document`
+  before its first line runs. Both are fixed inside `scripts/mutate.sh` and `scripts/agent-commit.sh`
+  and both are in `docs/SUBAGENT_RUNBOOK.md`, but nothing stops the next script a test shells out to
+  from repeating either. `/bin/echo` runs fine, so a naive "can I spawn at all?" probe says yes and
+  proves nothing.
+
 - [T-720] **`TaskRecurrenceRule.shortLabel` is a copy of `label` with one arm changed.**
   `Cadence/Models/ModelEnums.swift` — `label` returns Never/Daily/Weekly/Monthly/Yearly and `shortLabel`
   returns None/Daily/Weekly/Monthly/Yearly. Four of the five arms are byte-identical, so four strings are
