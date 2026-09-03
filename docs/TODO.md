@@ -1167,31 +1167,37 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-642] **The iOS settle-failure alert may be invisible from the two surfaces that are sheets.**
-  From [[T-636]](a). `CadenceTaskStatusEditing.toggleCompletion` records a refused settle on
-  `CadenceTaskSettleFailureCenter` and `iOSRootView` mounts the alert — one host for six surfaces,
-  the shape macOS already uses (`TaskCompletionAnimationManager.settleFailed` +
-  `macOSRootView`). But two of the six — `iOSTaskDetailSheet` and `iOSCalendarBundleDetailSheet` —
-  tick the circle from **inside a sheet the same shell is presenting**, and on iOS a view that is
-  already presenting cannot present again. `iOSRootView` records that constraint itself, for the
-  task inspector: *"a sheet that grows task rows of its own needs a nearer host"*.
-  **Unverified either way** — this was not run on a simulator, so the claim is "the alert may not
-  reach those two", not "it does not". Answer it by looking, and if it is real the fix is the
-  nearer-host pattern `iOSTaskInspectorHost` already spells, not a second flag.
-  The store is correct regardless: `commitSettle` puts the status, the timestamp and the successor
-  back before anything is recorded, so the circle re-draws open on its own.
-
-- [T-643] **`CadenceTaskMutationSupport.setStatus` is the other half of the completion spine, and
-  still swallows.** From [[T-636]](a), which fixed `toggleCompletion` beside it and left this one
-  because two of its surfaces were files another change owned. It is the same defect through a
-  different door: `applyStatusCompletion` reaches `markDone`/`markCancelled` →
-  `spawnNextOccurrenceIfNeeded` → `context.insert`, and `setStatus` ends `try? modelContext.save()`.
-  It is the last entry in that file's `existenceExemptions` line, and
-  `TaskEmbedFieldEditorPopover.content` is its indirect-report half.
-  **The plumbing exists now**: `CadenceTaskMutationSupport.commitSettle` is shared, and
-  `CadenceTaskSettleFailureCenter` is the surface the wrapper reports into. The work is making
-  `applyStatusCompletion` return the spawned task, threading `commit:`, and deciding what the
-  `.todo`/`.inProgress` branch's undo is — it inserts nothing, so it is a `commitEdit`.
+- [T-642] **NARROWED 2026-09-03 by measurement. The alert is *not* invisible — the sheet is
+  dismissed to make room for it and does not return.** Both halves of the original ticket are
+  disproved, and both disproofs are the point of keeping this open.
+  **Driven**, on a booted iPhone 17 Pro simulator (iOS 26.5), against a build of this tree whose
+  `CadenceTaskStatusEditing.toggleCompletion` refuses every commit, so every circle tap records a
+  refusal on `CadenceTaskSettleFailureCenter`:
+  - *Positive control.* Ticking a task row's circle on Today shows `iOSRootView`'s alert —
+    *"Couldn't Update Task / Couldn't save these changes. Nothing was changed."*
+  - *The claim under test.* Ticking the circle **inside `iOSTaskDetailSheet`** shows the **same
+    alert**. The premise — "a view that is already presenting cannot present again", therefore the
+    alert never reaches those two surfaces — is **wrong** for `.alert` on iOS 26. What actually
+    happens is that SwiftUI **dismisses the presented sheet in order to present the root's alert**,
+    and the sheet does not come back when the alert is dismissed. The user is told; the user loses
+    the sheet they were working in.
+  **The fix this ticket recommended is disproved, not merely unchosen.** The nearer-host pattern —
+  a second `.alert` inside the sheet, bound to the same `CadenceTaskSettleFailureCenter.settleFailed`
+  — was built in a minimal SwiftUI app with the identical modifier order (alert on the root, then
+  the host that presents the sheet) and driven on the same simulator. It is **strictly worse**: the
+  sheet is still dismissed **and** neither alert renders, so the message is lost entirely. Do not
+  mount a second alert on that flag.
+  **`iOSCalendarBundleDetailSheet` was not driven** — reaching it needs a bundle to exist, and the
+  seeded store has none. It is presented only by `iOSBundleInspectorHost`, from the same root, in
+  the same modifier order, which is a reason to *expect* the same behaviour and is not evidence of
+  it. Drive it before claiming it.
+  **So what is left to decide** is the real symptom above, with two options already eliminated. A
+  third shape is needed: an inline notice inside the sheet, the way `TaskEmbedFieldEditorPopover`
+  shows `CadenceInlineFailureNotice`; or a centre that records *which* surface should own the
+  sentence, so the shell stays quiet while a sheet is up. The store is correct under all of these —
+  `commitSettle` puts the status, the timestamp and the successor back before anything is recorded,
+  so the circle re-draws open on its own — which is why this is a "where was I" defect and not a
+  data one. **Nothing in `Cadence/iOS/` was changed for this reading.**
 
 - [T-657] **The save-commit detector cannot see a success report handed *sideways* one frame down.**
   Found while landing [[T-636]](b), and it is the reason three of [[T-648]]'s four sites are not in
@@ -5278,6 +5284,26 @@ before filing**: this list has had the same ticket re-reported more than once.
   "descriptive, not chosen" framing; `scripts/mutate.sh` confirms reverting one converted site is
   KILLED. `iOSCalendarMetricsTests.theTodayTimelineDrawsTheSameHourLadder` — which had pinned the *old*
   `radiusControl - 3` spelling at this file's two sites — updated to expect the token instead.
+
+- [T-643] **CLOSED 2026-09-03 (`db6abae`) — the completion spine's other door commits now, and the
+  two halves of its switch undo differently.** `CadenceTaskMutationSupport.setStatus` throws and
+  takes `commit:`. `.done` and `.cancelled` settle through the same `commitSettle` [[T-636]](a)
+  gave `toggleCompletion`: `applyStatusCompletion` **returns** the successor it spawned now, so
+  `commitInsert` has the one object it must un-insert, and a refusal also puts the status, the
+  timestamp and `recurrenceSpawnedTaskID` back. The ticket's open question — what the
+  `.todo`/`.inProgress` branch's undo is — resolves to an ordinary `commitEdit` over exactly the
+  two fields that branch writes, `status` and `completedAt`, snapshotted before the transition:
+  they insert nothing, so there is no successor to un-insert, and what the swallow left behind
+  there was a row reading `.inProgress` over a store that still held the task done.
+  `CadenceTaskStatusEditing.setStatus` catches and records on `CadenceTaskSettleFailureCenter`
+  beside the toggle, and skips the reconcile on the failure path for T-636's reason: the transition
+  has already been put back, so reconciling would retire a reminder for work that is still open.
+  `Cadence/Shared/CadenceTaskMutationSupport.swift` leaves `existenceExemptions` entirely.
+  `TaskEmbedFieldEditorPopover.content` stays in `indirectReportExemptions`, measured rather than
+  assumed — `everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule` still finds it, and a
+  mutation putting the deleted exemption back is KILLED by that same test.
+  Six mutations, six KILLED, zero survivors: each undo removed, the successor swallowed again, and
+  the wrapper's `record()` and its `return` each deleted.
 
 ## Cancelled
 
