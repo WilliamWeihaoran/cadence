@@ -112,7 +112,11 @@ struct CadenceContextlessListSurfaceTests {
                 query: "",
                 contexts: fixture.offered,
                 areas: fixture.areas,
-                projects: fixture.projects
+                projects: fixture.projects,
+                // Nothing assigned, matching the `groups` entry below: this registry asks what a
+                // control offers as a *fresh* choice. The list a draft is already in is T-684's
+                // question and is pinned in `CadenceTildeContainerPickerTests`.
+                selection: .inbox
             )
             .map(\.name)
             // Inbox is a row of this panel rather than a list, and none of the other three
@@ -298,11 +302,13 @@ struct CadenceContextlessListSurfaceTests {
         // from the tasks themselves and sorts them onto the tail. Correct today, and correct for a
         // reason that lives in a different function.
         "Cadence/Shared/CadenceTaskQuerySupport.swift": 2,
-        // **The known remaining instance (T-683).** The initial-linked-list picker buckets by
-        // context and appends a catch-all keyed on `context == nil` under a heading spelled
-        // "No Context" — so it is right for a list with no context and wrong for one whose context
-        // was not offered. Latent rather than live: every caller passes an unfiltered context
-        // query. Written in a SwiftUI `body`, which is why the registry above cannot reach it.
+        // Correct: catch-all keyed on the offered set (T-683). It was the sixth instance of the
+        // fold — a bucket keyed on `context == nil`, right for a list with no context and wrong
+        // for one whose context exists and was not offered. Latent rather than live even then,
+        // because every caller passes an unfiltered context query; fixed anyway, because the next
+        // caller is what latent means. Its heading is still the word "No Context" rather than
+        // `ungroupedTitle`'s "Other" — a user-visible copy decision, deliberately not taken here,
+        // and asserted as the value it is by `theCatchAllHeadingIsReadFromOnePlace…`.
         "Cadence/macOS/Sheets/CreateGoalSheet.swift": 2,
         // Correct: the optional-to-optional comparison. `nil == nil` is the unfiled bucket, so the
         // new list is numbered against the siblings it will actually sit beside (T-559).
@@ -358,7 +364,58 @@ struct CadenceContextlessListSurfaceTests {
         #expect(actual["Cadence/iOS/iOSRootSidebar.swift"] == nil)
     }
 
-    // MARK: - 3. T-559: the Mac can make and correct one
+    // MARK: - 3. T-683: the goal sheet's initial-linked-list picker
+
+    /// **The sixth instance, and the one the behavioural registry cannot reach.**
+    ///
+    /// `CreateGoalSheet` buckets lists inline in a SwiftUI `body`, so no test can call its
+    /// grouping — the ledger above exists precisely because of that. What is checkable is which
+    /// question the catch-all asks: `context == nil` is right for a list that belongs to no
+    /// context and wrong for one whose context exists and was not offered, which is the ordinary
+    /// state of a list under an archived context.
+    ///
+    /// Latent on this tree — `allContexts` is an unfiltered `@Query`, so nothing is dropped today —
+    /// and fixed anyway, because "latent" here names the caller that has not been written yet.
+    @Test func theGoalSheetsInitialListPickerBucketsOnTheOfferedContextsRatherThanOnNil() throws {
+        let raw = try cadenceTestSource("Cadence/macOS/Sheets/CreateGoalSheet.swift")
+        let code = CadenceSourceScan.codeOnly(raw)
+        #expect(code != raw, "the comment stripper read the wrong file")
+        #expect(code.contains("struct CreateGoalSheet: View"), "non-vacuity: still the sheet")
+        // The fold it is a catch-all for is still there; this is not a test that passed by the
+        // picker being deleted.
+        #expect(CadenceSourceScan.matchCount("\\.context\\?\\.id\\s*==\\s*ctx\\.id", in: code) == 2)
+
+        #expect(code.contains("let offered = Set(allContexts.map(\\.id))"))
+        #expect(
+            CadenceSourceScan.matchCount(
+                "!CadenceSidebarLists\\.isOffered\\(\\$0\\.context\\?\\.id, among: offered\\)",
+                in: code
+            ) == 2,
+            "the goal sheet's catch-all does not ask the offered-context question for both kinds"
+        )
+        // The pre-T-683 spelling, for both kinds.
+        #expect(CadenceSourceScan.matchCount("\\$0\\.context == nil", in: code) == 0)
+    }
+
+    /// **The heading is deliberately unchanged.** Three spellings are live in the app: "Other"
+    /// (`CadenceSidebarLists.ungroupedTitle`, both sidebars and the container picker) and
+    /// "No Context" (here and `GoalLinkCandidateGroup.title`) are the same bucket under two words,
+    /// and "No context" — the macOS context picker's own none-row — is a different idea, an unset
+    /// *field*. Converging the first two is a user-visible copy change, so T-683 landed the
+    /// mechanical half and left the wording alone. Pinned as the values they actually are, so the
+    /// divergence stays a decision on the record rather than a thing nobody noticed.
+    @Test func theGoalSheetsCatchAllHeadingIsStillItsOwnWord() throws {
+        // `strippingComments`, not `codeOnly`: the value being pinned is *inside* a string
+        // literal, and `codeOnly` blanks literal contents.
+        let raw = try cadenceTestSource("Cadence/macOS/Sheets/CreateGoalSheet.swift")
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(code != raw, "the comment stripper read the wrong file")
+        #expect(CadenceSourceScan.matchCount("Section\\(\"No Context\"\\)", in: code) == 1)
+        #expect(code.contains("CadenceSidebarLists.ungroupedTitle") == false)
+        #expect(CadenceSidebarLists.ungroupedTitle == "Other")
+    }
+
+    // MARK: - 4. T-559: the Mac can make and correct one
 
     /// `CreateListSheet` takes an optional context and states it in a row that can change it.
     ///
@@ -471,7 +528,7 @@ struct CadenceContextlessListSurfaceTests {
         #expect(SidebarNewListTarget(context: nil).id == CadenceSidebarLists.Section.ungroupedID)
     }
 
-    // MARK: - 4. T-559: moving a list takes its tasks with it
+    // MARK: - 5. T-559: moving a list takes its tasks with it
 
     /// **T-293, one level up.** `AppTask.context` is a denormalized copy of the list's, so a list
     /// that changes context and leaves its tasks behind drops them out of the context while they
@@ -578,5 +635,80 @@ struct CadenceContextlessListSurfaceTests {
         #expect(area.name == "Filed")
         #expect(area.context?.id == work.id)
         #expect(cascaded.context?.id == work.id)
+    }
+
+    /// **T-685, the same defect on iOS.** The Mac's editors ask `inheritedContextTargets` what the
+    /// move reaches; `iOSListEditorSheet.save()` re-derived it as `area.tasks ?? []`, which is the
+    /// direct tasks only. `reassignTasks` then calls the shared reassignment, which by design also
+    /// re-points every child project that inherits — tasks the snapshot never held, so a refused
+    /// save put the area back and left them in the context the save did not land.
+    ///
+    /// `save()` is private to a SwiftUI `View`, so the branch is reached the only way it can be:
+    /// the set the editor *names* is read out of its source, and then that set is actually
+    /// snapshotted, moved and restored here. A scan alone would only pin a spelling; this asserts
+    /// what the spelling costs the user.
+    @Test func theIOSListEditorsAreaUndoSetRestoresACascadedChildProjectsTasks() throws {
+        let editor = CadenceSourceScan.strippingComments(
+            try cadenceTestSource("Cadence/iOS/iOSListEditorViews.swift")
+        )
+        #expect(editor.contains("struct iOSListEditorSheet: View"), "the scan read the wrong file")
+        let save = try #require(CadenceSourceScan.functionBody(named: "save", in: editor))
+        #expect(save.contains("case .editArea(let area):"), "the editor no longer has an area branch")
+
+        let namesTheCascade = CadenceSourceScan.matchCount(
+            #"CadenceListEditSnapshot\(\s*area,\s*tasks: CadenceTaskMutationSupport\.inheritedContextTargets\(area: area\)\s*\)"#,
+            in: save
+        ) == 1
+        let namesTheDirectTasksOnly = CadenceSourceScan.matchCount(
+            #"CadenceListEditSnapshot\(area, tasks: area\.tasks \?\? \[\]\)"#,
+            in: save
+        ) == 1
+        #expect(
+            namesTheCascade != namesTheDirectTasksOnly,
+            "the area branch names neither undo set this test knows how to run"
+        )
+
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let work = Context(name: "Work")
+        let home = Context(name: "Home")
+        let area = Area(name: "Filed", context: work)
+        let inheriting = Project(name: "Inheriting", context: nil, area: area)
+        let direct = AppTask(title: "Direct")
+        direct.area = area
+        direct.context = work
+        let cascaded = AppTask(title: "Cascaded")
+        cascaded.project = inheriting
+        cascaded.context = work
+
+        for model in [work, home] { modelContext.insert(model) }
+        modelContext.insert(area)
+        modelContext.insert(inheriting)
+        for model in [direct, cascaded] { modelContext.insert(model) }
+        area.projects = [inheriting]
+        area.tasks = [direct]
+        inheriting.tasks = [cascaded]
+        try modelContext.save()
+
+        let targets = namesTheCascade
+            ? CadenceTaskMutationSupport.inheritedContextTargets(area: area)
+            : (area.tasks ?? [])
+        let undo = CadenceListEditSnapshot(area, tasks: targets)
+
+        area.name = "Renamed"
+        area.context = home
+        CadenceTaskMutationSupport.reassignInheritedContext(in: area.tasks ?? [], area: area)
+        #expect(direct.context?.id == home.id)
+        #expect(cascaded.context?.id == home.id, "the cascade did not reach the child project")
+
+        undo.restore()
+
+        #expect(area.name == "Filed")
+        #expect(area.context?.id == work.id)
+        #expect(direct.context?.id == work.id)
+        #expect(
+            cascaded.context?.id == work.id,
+            "the iOS editor's undo set left a child project's tasks in the context the refused save did not land"
+        )
     }
 }

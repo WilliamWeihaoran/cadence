@@ -448,7 +448,18 @@ struct iOSListEditorSheet: View {
                 // Snapshotted before the first write, and it holds the tasks as well as the list:
                 // `reassignTasks` below re-points every one of them. See `CadenceListEditSnapshot`
                 // for why this is a snapshot rather than `modelContext.rollback()`.
-                let undo = CadenceListEditSnapshot(area, tasks: area.tasks ?? [])
+                //
+                // **`area.tasks` is not that set (T-685).** The reassignment below cascades by
+                // design ([[T-340]]): an area's move also re-points the tasks of every child
+                // project whose own `context` is `nil`, because those read their context through
+                // the area. Snapshotting the area's direct tasks alone restored the area and left
+                // those tasks pointing at the context a refused save never landed.
+                // `inheritedContextTargets` is the set the cascade actually writes, and it is what
+                // the Mac's editors already hand their snapshot.
+                let undo = CadenceListEditSnapshot(
+                    area,
+                    tasks: CadenceTaskMutationSupport.inheritedContextTargets(area: area)
+                )
                 area.name = trimmedName
                 area.desc = details
                 area.icon = normalizedIcon
@@ -464,7 +475,13 @@ struct iOSListEditorSheet: View {
                 area.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
                 try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
             case .editProject(let project):
-                let undo = CadenceListEditSnapshot(project, tasks: project.tasks ?? [])
+                // Nothing inherits from a project, so this is `project.tasks` — asked for by the
+                // same name the area branch uses, so neither branch re-derives the set the
+                // reassignment reaches.
+                let undo = CadenceListEditSnapshot(
+                    project,
+                    tasks: CadenceTaskMutationSupport.inheritedContextTargets(project: project)
+                )
                 project.name = trimmedName
                 project.desc = details
                 project.icon = normalizedIcon

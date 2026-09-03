@@ -158,8 +158,22 @@ struct CreateGoalSheet: View {
                                     }
                                 }
                             }
-                            let looseAreas = areas.filter { $0.context == nil }
-                            let looseProjects = projects.filter { $0.context == nil }
+                            // **The catch-all is keyed on the offered contexts, not on `nil`
+                            // (T-683).** `context == nil` is right for a list that belongs to no
+                            // context and wrong for one whose context exists and was not offered —
+                            // an archived context is the ordinary way to reach that, and the lists
+                            // inside one do not disappear with it. Sixth instance of the fold
+                            // T-534, T-538 and T-558 each had to correct; the membership question
+                            // is `CadenceSidebarLists.isOffered` so it stays one question.
+                            // Latent today — `allContexts` is an unfiltered `@Query` — which is
+                            // why this is the same rule and not a new one.
+                            let offered = Set(allContexts.map(\.id))
+                            let looseAreas = areas.filter {
+                                !CadenceSidebarLists.isOffered($0.context?.id, among: offered)
+                            }
+                            let looseProjects = projects.filter {
+                                !CadenceSidebarLists.isOffered($0.context?.id, among: offered)
+                            }
                             if !looseAreas.isEmpty || !looseProjects.isEmpty {
                                 Section("No Context") {
                                     ForEach(looseAreas) { area in

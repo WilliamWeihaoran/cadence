@@ -98,14 +98,24 @@ struct CadenceTildeContainerPickerTests {
         names(query: query, offering: fixture.contexts, fixture)
     }
 
-    private func names(query: String, offering contexts: [Context], _ fixture: ListFixture) -> [String] {
+    private func names(
+        query: String,
+        offering contexts: [Context],
+        holding selection: TaskContainerSelection? = nil,
+        _ fixture: ListFixture
+    ) -> [String] {
         TildeContainerPickerSupport.flatContainers(
             query: query,
             contexts: contexts,
             areas: fixture.areas,
-            projects: fixture.projects
+            projects: fixture.projects,
+            selection: selection
         )
         .map(\.name)
+    }
+
+    private func names(holding selection: TaskContainerSelection?, _ fixture: ListFixture) -> [String] {
+        names(query: "", offering: fixture.contexts, holding: selection, fixture)
     }
 
     // MARK: - The list both panels show
@@ -165,6 +175,125 @@ struct CadenceTildeContainerPickerTests {
         #expect(names(query: "min", fixture).isEmpty)
         #expect(names(query: "in", fixture) == ["Inbox"])
         #expect(names(query: "zzz", fixture).isEmpty)
+    }
+
+    // MARK: - T-684: the list the draft is already in
+
+    /// **T-534's first defect, on the last list-offering surface that had not learned it.**
+    ///
+    /// `flatContainers` filtered on `isActive` alone and took no selection at all, while the panel
+    /// it feeds *is* handed one for the checkmark — so a draft already filed in an archived list
+    /// got a panel that could highlight a row it would not draw, and the one correction the user
+    /// needed was the one row missing. Each archived list is named rather than counted: an
+    /// assertion that some archived row came back cannot tell which.
+    @Test func theTildeListKeepsTheArchivedListTheDraftIsAlreadyIn() throws {
+        let fixture = try makeListFixture()
+        let archivedArea = try #require(fixture.areas.first { $0.name == "Archive Me" })
+        let archivedProject = try #require(fixture.projects.first { $0.name == "Shelved" })
+
+        // Nothing assigned: the retirement rule stands, exactly as before.
+        #expect(names(holding: nil, fixture).contains("Archive Me") == false)
+        #expect(names(holding: nil, fixture).contains("Shelved") == false)
+        #expect(names(holding: .inbox, fixture).contains("Archive Me") == false)
+
+        // Assigned: that one row is drawn, in its own context's run, and no other retired list
+        // comes back with it.
+        let holdingArea = names(holding: .area(archivedArea.id), fixture)
+        #expect(
+            holdingArea
+                == ["Inbox", "Archive Me", "Admin", "Operations", "Cadence", "Garage", "Loose Ends", "Stray"]
+        )
+
+        let holdingProject = names(holding: .project(archivedProject.id), fixture)
+        #expect(
+            holdingProject
+                == ["Inbox", "Admin", "Operations", "Shelved", "Cadence", "Garage", "Loose Ends", "Stray"]
+        )
+    }
+
+    /// The same rule inside the trailing bucket, which is where T-558 put the context-less lists.
+    /// "Lost" is archived *and* has no context, so a panel that applied the selection only to the
+    /// per-context runs would still refuse to draw it.
+    @Test func theTildeListKeepsAnArchivedContextLessListTheDraftIsAlreadyIn() throws {
+        let fixture = try makeListFixture()
+        let lost = try #require(fixture.areas.first { $0.name == "Lost" })
+
+        #expect(names(holding: nil, fixture).contains("Lost") == false)
+        #expect(
+            names(holding: .area(lost.id), fixture)
+                == ["Inbox", "Admin", "Operations", "Cadence", "Garage", "Loose Ends", "Lost", "Stray"]
+        )
+    }
+
+    /// **The panel cannot highlight a row it will not draw.** The checkmark and the rows are one
+    /// question asked twice, so they are answered from the same value — the assertion the
+    /// selection-less signature made unprovable.
+    @Test func everySelectionTheTildePanelWouldCheckIsARowTheTildeListOffers() throws {
+        let fixture = try makeListFixture()
+
+        var selections: [TaskContainerSelection] = [.inbox]
+        selections += fixture.areas.map { .area($0.id) }
+        selections += fixture.projects.map { .project($0.id) }
+        #expect(selections.count == 10)
+
+        for selection in selections {
+            let items = TildeContainerPickerSupport.flatContainers(
+                query: "",
+                contexts: fixture.contexts,
+                areas: fixture.areas,
+                projects: fixture.projects,
+                selection: selection
+            )
+            #expect(
+                items.contains { $0.tag == selection },
+                "the panel would check \(selection) and draw no row for it"
+            )
+        }
+    }
+
+    /// And the query still narrows it: a selection re-admits one list, it does not defeat search.
+    @Test func theTildeQueryStillNarrowsTheListTheDraftIsAlreadyIn() throws {
+        let fixture = try makeListFixture()
+        let archivedArea = try #require(fixture.areas.first { $0.name == "Archive Me" })
+
+        #expect(
+            names(query: "arch", offering: fixture.contexts, holding: .area(archivedArea.id), fixture)
+                == ["Archive Me"]
+        )
+        #expect(
+            names(query: "ad", offering: fixture.contexts, holding: .area(archivedArea.id), fixture)
+                == ["Admin"]
+        )
+    }
+
+    /// Both hosts hand the panel's list the same selection they hand the panel, so the two halves
+    /// cannot disagree at the call site either.
+    @Test func bothMacOSTildeHostsHandTheSameSelectionToTheRowsAndToTheCheckmark() throws {
+        for (path, expression) in [
+            (Self.titleFieldPath, "containerSelection?.wrappedValue"),
+            (Self.quickCreatePath, "selectedContainer")
+        ] {
+            let raw = try cadenceTestSource(path)
+            let code = CadenceSourceScan.codeOnly(raw)
+            #expect(code != raw, "\(path): the comment stripper removed nothing")
+            // A computed property, so the brace matcher is reached directly — `functionBody`
+            // needs a `(` it does not have.
+            let declaration = try #require(
+                code.range(of: "var tildeListSearchView"),
+                "no tildeListSearchView in \(path)"
+            )
+            let body = try #require(
+                CadenceSourceScan.matchedBody(
+                    after: declaration.upperBound,
+                    in: code,
+                    open: "{",
+                    close: "}"
+                ),
+                "tildeListSearchView never balances in \(path)"
+            )
+            #expect(CadenceSourceScan.matchCount("selection: \(NSRegularExpression.escapedPattern(for: expression))", in: body) == 2,
+                    "\(path) does not pass \(expression) to both halves")
+        }
     }
 
     // MARK: - What committing a choice means

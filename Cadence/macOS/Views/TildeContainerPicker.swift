@@ -52,11 +52,21 @@ enum TildeContainerPickerSupport {
     /// `context == nil`, so a list whose context exists but was not handed to this function lands
     /// in the same place — the rule T-534's picker and T-538's two sidebars already apply. There is
     /// no heading here because this panel has no headings; the bucket is a position, not a section.
+    ///
+    /// **`selection` is T-534's *first* defect, arriving here last (T-685's sibling, T-684).**
+    /// "Which lists may I offer" is a rule about *fresh* choices, and the list the draft is already
+    /// in is not a fresh choice. Filtering on `isActive` alone meant a draft sitting in an archived
+    /// or completed list got a panel with no row for where it is — and `TildeContainerPicker` is
+    /// handed the same selection for its checkmark, so the panel could highlight a row it would not
+    /// draw. Narrowed through `pickableAreas` / `pickableProjects`, the pair
+    /// `ContainerPickerFilterSupport.groups` already uses, so the two macOS list pickers cannot
+    /// drift on the rule.
     static func flatContainers(
         query: String,
         contexts: [Context],
         areas: [Area],
-        projects: [Project]
+        projects: [Project],
+        selection: TaskContainerSelection?
     ) -> [TildeContainerItem] {
         let needle = query.lowercased()
         func matches(_ name: String) -> Bool {
@@ -79,8 +89,21 @@ enum TildeContainerPickerSupport {
             )
         }
 
-        let offerableAreas = areas.filter { $0.isActive && matches($0.name) }
-        let offerableProjects = projects.filter { $0.isActive && matches($0.name) }
+        // Applied inside the closure rather than handed over as `flatMap(…selectedAreaID)`: an
+        // unapplied reference to a main-actor-isolated method is a value in a nonisolated context,
+        // which is a warning, and the warning baseline here is zero.
+        let offerableAreas = CadenceTaskComposerSupport
+            .pickableAreas(
+                areas,
+                selectedID: selection.flatMap { CadenceTaskComposerSupport.selectedAreaID($0) }
+            )
+            .filter { matches($0.name) }
+        let offerableProjects = CadenceTaskComposerSupport
+            .pickableProjects(
+                projects,
+                selectedID: selection.flatMap { CadenceTaskComposerSupport.selectedProjectID($0) }
+            )
+            .filter { matches($0.name) }
         let offered = Set(contexts.map(\.id))
 
         var result: [TildeContainerItem] = []

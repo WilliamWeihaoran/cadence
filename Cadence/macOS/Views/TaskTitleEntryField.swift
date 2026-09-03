@@ -249,7 +249,8 @@ struct TaskTitleEntryField: View {
                 query: tildeSearchQuery,
                 contexts: contexts,
                 areas: areas,
-                projects: projects
+                projects: projects,
+                selection: containerSelection?.wrappedValue
             ),
             selection: containerSelection?.wrappedValue,
             onSelect: selectTildeContainerItem,

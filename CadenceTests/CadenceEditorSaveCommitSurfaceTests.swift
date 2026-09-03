@@ -811,13 +811,23 @@ struct CadenceEditorSaveCommitSurfaceTests {
         let listEditor = try scanned("Cadence/iOS/iOSListEditorViews.swift")
         let listSave = try #require(CadenceSourceScan.functionBody(named: "save", in: listEditor))
         #expect(CadenceSourceScan.matchCount(#"commitInsert\(of: (area|project), in: modelContext\)"#, in: listSave) == 2)
-        // The two edit branches re-point every task in the list, so each snapshots the list *and*
-        // its tasks — and neither reaches for a rollback.
+        // The two edit branches re-point every task the change *reaches*, so each snapshots the
+        // list and that same set — named by `inheritedContextTargets`, never re-derived as
+        // `list.tasks ?? []`. For an area those differ: the cascade also writes the tasks of every
+        // child project with no context of its own, and a snapshot that omits them restores the
+        // area while leaving those tasks in the context the refused save did not land (T-685).
+        // Neither branch reaches for a rollback.
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"CadenceListEditSnapshot\(\s*(area|project),\s*tasks: CadenceTaskMutationSupport\.inheritedContextTargets\(\1: \1\)\s*\)"#,
+                in: listSave
+            ) == 2
+        )
         #expect(
             CadenceSourceScan.matchCount(
                 #"CadenceListEditSnapshot\((area|project), tasks: \1\.tasks \?\? \[\]\)"#,
                 in: listSave
-            ) == 2
+            ) == 0
         )
         #expect(listSave.contains("reassignTasks("))
 
@@ -1072,6 +1082,19 @@ struct CadenceEditorSaveCommitSurfaceTests {
             CadenceSourceScan.matchCount(
                 #"CadenceListEditSnapshot\((area|project), tasks: \1\.tasks \?\? \[\]\)"#,
                 in: "CadenceListEditSnapshot(area, tasks: project.tasks ?? [])"
+            ) == 0
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"CadenceListEditSnapshot\(\s*(area|project),\s*tasks: CadenceTaskMutationSupport\.inheritedContextTargets\(\1: \1\)\s*\)"#,
+                in: "CadenceListEditSnapshot(\n    area,\n    tasks: CadenceTaskMutationSupport.inheritedContextTargets(area: area)\n)"
+            ) == 1
+        )
+        // The half T-685 was: the cascaded set named for the wrong list.
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"CadenceListEditSnapshot\(\s*(area|project),\s*tasks: CadenceTaskMutationSupport\.inheritedContextTargets\(\1: \1\)\s*\)"#,
+                in: "CadenceListEditSnapshot(area, tasks: CadenceTaskMutationSupport.inheritedContextTargets(project: project))"
             ) == 0
         )
     }

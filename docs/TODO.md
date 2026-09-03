@@ -43,6 +43,18 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-771] **Two words for one bucket, and a third that means something else.** The catch-all over
+  "lists no offered context owns" is called **"Other"** by `CadenceSidebarLists.ungroupedTitle` —
+  read by the macOS sidebar, the iPad sidebar and `ContainerPickerFilterSupport.groups` — and
+  **"No Context"** by the two goal-attach surfaces (`CreateGoalSheet`'s initial-linked-list picker
+  and `GoalLinkCandidateGroup.title`, which is both platforms' goal sheet). Same rows, same rule,
+  two words. Separately, the macOS context picker's own none-row says **"No context"**, which is a
+  *different* idea — an unset field on the thing being edited, not a bucket of leftovers — and must
+  stay distinct whichever way the first two go. Converging "Other" and "No Context" is a
+  user-visible copy change, so it needs a decision rather than a refactor; both current values are
+  pinned by `CadenceContextlessListSurfaceTests` so whichever way it goes has to be written down.
+  Filed by [[T-683]], which did the mechanical half and left this.
+
 - [T-759] **Two `SchedulingActions.createTask` overloads no longer have an app caller.** Found while
   landing [[T-655]] and deliberately left. `createTask(title:dateKey:startMin:endMin:in:)` had none
   before that ticket; `createTask(title:…containerSelection:…in:)` lost its last one when
@@ -841,42 +853,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   picker-surface file set are derived from the tree now. Mutation A is the evidence: pre-filtering at a
   macOS call site kills **only** the new sweep while all four pinning tests stay green. **Recorded as a
   closed investigation so the abstraction is not proposed again without new evidence.**
-
-- [T-683] **`CreateGoalSheet`'s linked-list picker is the sixth instance of the context fold, and its
-  catch-all asks the wrong question.** `macOS/Sheets/CreateGoalSheet.swift` buckets lists with
-  `ForEach(allContexts) { ctx in ForEach(areas.filter { $0.context?.id == ctx.id }) … }` and then appends a
-  `Section("No Context")` built from `$0.context == nil`. Right for a list with no context, **wrong for one
-  whose context exists but was not offered** — the ordinary state of an archived one, and exactly the
-  distinction [[T-534]], [[T-538]] and [[T-558]] each had to make. Latent rather than live: `allContexts` is
-  an unfiltered `@Query`, so nothing is dropped today. The fix is one call to the now-shared
-  `CadenceSidebarLists.isOffered(_:among:)`. Found while closing T-558; the file belonged to another agent
-  in that batch, which is why it is a ticket and not a commit. Recorded in
-  `CadenceContextlessListSurfaceTests.knownContextDerivedListSites`.
-  **The heading has three spellings and two of them mean one thing.** "Other"
-  (`CadenceSidebarLists.ungroupedTitle`, both sidebars and the container picker) and "No Context" (here and
-  `GoalLinkCandidateGroup.title`, both goal-attach sheets on both platforms) are the same bucket under two
-  words; "No context" — the macOS context picker's own none-row — is a different idea, an unset *field*.
-  Converging the first two is a user-visible copy decision, so it is named here rather than done quietly.
-
-- [T-684] **The `~` list panel still cannot show a task the list it is already in, when that list is
-  archived or completed.** This is [[T-534]]'s *first* defect — the one
-  `CadencePickerSupport.selectable(_:selectedID:)` exists for — and `TildeContainerPickerSupport.flatContainers`
-  is the one list-offering surface that never learned it: it filters on `$0.isActive` and takes no
-  `selection:` parameter at all, while `TildeContainerPicker` **is** handed a `selection` for the checkmark.
-  So the panel can highlight a row it will not draw. [[T-558]] fixed the context-less half of the same
-  function and deliberately did not widen into this one. Fix is T-534's shape:
-  `flatContainers(query:contexts:areas:projects:selection:)` narrowing through `pickableAreas` /
-  `pickableProjects`, as `ContainerPickerFilterSupport.groups` already does. Both macOS composers already
-  hold a selection to pass.
-
-- [T-685] **iOS's list editor cannot undo the half of a context move that it cascades.**
-  `iOSListEditorViews.save()` snapshots `CadenceListEditSnapshot(area, tasks: area.tasks ?? [])`, but the
-  `reassignTasks` it then runs calls `CadenceTaskMutationSupport.reassignInheritedContext`, which by design
-  also re-points the tasks of every child project whose own `context` is `nil` ([[T-340]]). Those tasks are
-  written and **not** snapshotted, so a refused save restores the area and leaves its child projects' tasks
-  pointing at the context the save did not land. [[T-559]] added
-  `CadenceTaskMutationSupport.inheritedContextTargets(area:project:)` for exactly this and the macOS editors
-  read it; iOS should read it instead of `area.tasks ?? []`. One line plus an iOS-simulator build.
 
 - [T-562] *(RESOLVED 2026-08-31 — **this ticket's premise was wrong, and the wrong half was mine.**
   Not a regression, not a never-worked, and not a sidebar defect at all. `testLaunchesToTodayWithSeededSidebarLists`
@@ -2135,6 +2111,60 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 ## Done
+
+- [T-685] **CLOSED 2026-09-03 — a refused iOS list-editor save now puts the child projects' tasks
+  back too.** `iOSListEditorSheet.save()`'s area branch snapshotted `area.tasks ?? []`, which is the
+  tasks filed *directly* in the area. The `reassignTasks` it then runs cascades by design
+  ([[T-340]]): an area's move also re-points the tasks of every child project whose own `context` is
+  `nil`, because those read their context through the area. Those tasks were written and never
+  snapshotted, so a refused save restored the area's own fields — name, description, icon, colour,
+  context — and left the child projects' tasks pointing at the context the save had not landed. Now
+  both branches ask `CadenceTaskMutationSupport.inheritedContextTargets` for the set the
+  reassignment actually reaches, which is what the two macOS editors already do; the project branch
+  is behaviourally identical (nothing inherits from a project) and is respelled so neither branch
+  re-derives the set.
+  **Proven behaviourally, not by spelling.** `theIOSListEditorsAreaUndoSetRestoresACascadedChildProjectsTasks`
+  reads which of the two sets the `.editArea` branch *names* out of the editor's source — `save()` is
+  private to a SwiftUI `View` — then snapshots that set, moves the area, runs the real cascade and
+  restores. Before the fix the cascaded task was still in the new context after `restore()`. 8
+  mutations, 8 killed (2 re-spelled after a reflow); iOS-simulator build clean, 0 warnings.
+
+- [T-684] **CLOSED 2026-09-03 — the `~` panel can no longer highlight a row it will not draw.**
+  [[T-534]]'s *first* defect, on the last list-offering surface that had not learned it.
+  `TildeContainerPickerSupport.flatContainers` filtered on `$0.isActive` and took no `selection:` at
+  all, while `TildeContainerPicker` **is** handed a selection for its checkmark — so a draft already
+  filed in an archived or completed list got a panel with no row for where it is, and the one
+  correction the user needed was the one row missing. Now
+  `flatContainers(query:contexts:areas:projects:selection:)`, narrowed through `pickableAreas` /
+  `pickableProjects` exactly as `ContainerPickerFilterSupport.groups` does, so the two macOS list
+  pickers cannot drift on the rule. Both composers pass the same value to the rows and to the
+  checkmark, and that agreement is itself pinned.
+  **Measured before and after:** over the 10 selections the panel's own fixture can hold, 3 were
+  rows it would check and not draw (an archived area, an archived project, and an archived list with
+  no context at all — [[T-558]]'s trailing bucket needed the rule too). After: 0.
+  `selectedAreaID` / `selectedProjectID` are applied inside the `flatMap` closure rather than handed
+  over as unapplied references — a main-actor-isolated method as a value in a nonisolated context is
+  a warning, and the baseline here is zero.
+
+- [T-683] **CLOSED 2026-09-03 — the mechanical half landed; the wording did not.** `CreateGoalSheet`'s
+  initial-linked-list picker was the sixth instance of the context fold: a catch-all keyed on
+  `$0.context == nil`, right for a list that belongs to no context and wrong for one whose context
+  exists and was not offered — the ordinary state of a list under an archived context. It now asks
+  `CadenceSidebarLists.isOffered(_:among:)`, the same question [[T-534]], [[T-538]] and [[T-558]]
+  each converged on. Latent before and latent after — `allContexts` is an unfiltered `@Query`, so
+  nothing was being dropped — fixed anyway, because "latent" here names the caller nobody has
+  written yet. Its ledger line in `CadenceContextlessListSurfaceTests.knownContextDerivedListSites`
+  moves from "the known remaining instance" to "correct by the offered set"; the count stays 2 and
+  the file total stays 27 across 9 files.
+  **The three heading spellings are deliberately untouched.** "Other"
+  (`CadenceSidebarLists.ungroupedTitle` — both sidebars and the container picker) and "No Context"
+  (this sheet and `GoalLinkCandidateGroup.title`, the two goal-attach surfaces) are the same bucket
+  under two words; "No context" — the macOS context picker's own none-row — is a different idea, an
+  unset *field*, and must not be folded in with them. Converging the first two is a user-visible copy
+  decision that nobody has made, so it was not made here. Both live values are asserted as the
+  strings they are (`theGoalSheetsCatchAllHeadingIsStillItsOwnWord`), and converging them fails that
+  test rather than passing quietly — mutation M7 is the evidence.
+  Residue: [[T-771]].
 
 - [T-655] **CLOSED 2026-09-03 (`793c3f6`) — the last two canvases commit what they create, and
   each names its own refusal.** The rest of [[T-636]](e). `SchedulingActions.createTask` and
