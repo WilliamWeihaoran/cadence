@@ -279,9 +279,14 @@ struct CadenceCalendarConsistencySurfaceTests {
         // branch by name rather than by a bare `isEmpty` sweep over the file, because the two
         // fallbacks are different copy owned by different types.
         let canvas = try scannedSource("Cadence/macOS/Views/TimelineDayCanvas.swift")
+        // The needle tolerates a line break after `onCreateEvent?(` because T-658 reflowed that
+        // call onto several lines to capture the returned `CalendarWriteFailure?`. It went red on a
+        // change that preserved everything it claims — the argument is still the stored title, it
+        // just moved to its own line. Adjacency was never the claim; **which function wraps the
+        // title** is.
         #expect(
             CadenceSourceScan.matchCount(
-                #"onCreateEvent\?\(CadenceEventTitleSupport\.storedTitle\(title\)"#,
+                #"onCreateEvent\?\(\s*CadenceEventTitleSupport\.storedTitle\(title\)"#,
                 in: canvas
             ) == 1
         )

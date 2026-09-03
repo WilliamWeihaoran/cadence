@@ -2097,18 +2097,16 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the correct hand-spelling and is the control. Re-measure before sweeping: the `name` family has
   its own real-value fallbacks the way the title family did.
 
-- [T-784] **`CadenceCalendarConsistencySurfaceTests.noCalendarSurfaceStillSpellsTheNewEventFallback`
-  is red at `HEAD`, and it is a stale needle rather than a regression.** Measured 2026-09-03 over a
-  clean `git archive HEAD` tree at `022ab0e`: a full `CadenceTests` run is 4212 passed / 1 failed,
-  and this is the one. The assertion is
-  `matchCount(#"onCreateEvent\?\(CadenceEventTitleSupport\.storedTitle\(title\)"#, in: canvas) == 1`,
-  which requires the call and its first argument to be adjacent; `TimelineDayCanvas.swift:298` has
-  since been reflowed so the argument sits on its own line, and the count is 0. The code is correct —
-  the canvas *does* route through `CadenceEventTitleSupport.storedTitle` — so the guard is reading
-  something other than what its rule says, the same family as [[T-644]]/[[T-659]]/[[T-668]]. Fix the
-  needle to tolerate the line break (or read the argument list through
-  `CadenceSourceScan.matchedBody(after:in:open:close:)`), and keep the `onCreateEvent?(title.isEmpty`
-  absence assertion beside it.
+- [T-784] **CLOSED 2026-09-03.** A stale needle, not a regression, and the code was correct the
+  whole time. `noCalendarSurfaceStillSpellsTheNewEventFallback` required
+  `onCreateEvent?(CadenceEventTitleSupport.storedTitle(title)` to be **adjacent**, and
+  [[T-658]] reflowed that call across several lines to capture the returned
+  `CalendarWriteFailure?`. The needle now tolerates the break.
+  **Adjacency was never the claim** — which function wraps the title is. A regex that pins
+  formatting alongside the thing it means to pin goes red on a change that preserves
+  everything it asserts, which is the [[T-565]] class in a test rather than a comment.
+  Found twice independently: by the merged-HEAD pass and by an agent running a full suite,
+  which is the argument for fixing it rather than teaching people to ignore it.
 
 - [T-785] **Two scans left reading wider than they now need to, both unblocked by [[T-668]].**
   (1) `MarkdownNoteSupport.resolved(_:with:)` holds the last two constant-fallback ternaries in the
