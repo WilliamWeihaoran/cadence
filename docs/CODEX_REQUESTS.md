@@ -741,6 +741,39 @@ named in R5. **M through Q will follow.** The two claims most worth checking are
 — an idempotence argument, and a "this only ever raises / never loses" argument — because neither has
 an outside reader and both are easy to believe.
 
+ANSWER 2026-09-04 (current snapshot):
+
+```text
+Tree read: a3068e3
+Dirty files: 29
+```
+
+**T-672 is source-correct and pinned; T-673 fixed the product but left one committed detector stale.**
+
+| Commit | Claim audit | Can this happen today? |
+|---|---|---|
+| `7e58fc6` / T-672 | **MEASURED:** all 11 search-clear call sites now use `CadenceSearchFieldClearButton`; the component requires a glyph size and focus binding, clears before its callback, restores focus, and owns one help/accessibility string (`CadenceSearchFieldClearButton.swift:36-69`). `CadenceSearchFieldClearButtonTests.swift:81-204` pins the 11-site ledger and the helper contract. The commit's build and mutation-run claims were **not independently rerun**. | **No live defect found.** The production wiring and source pins agree on this tree. |
+| `a3068e3` / T-673 | **MEASURED:** the eight named row remove/complete glyphs now expose the affected row through `.accessibilityValue`; the exact population is pinned at `CadenceRowSubjectAccessibilityTests.swift:28-189`. **Also measured:** `CadenceIOSControlAccessibilityTests.swift:225-237` still expects `TasksPanelSupportViews.swift` to contain unnamed icon-only buttons, while T-673 removed that file's last two such glyphs. | **The accessibility product bug is fixed. The stale committed test is live today:** a full committed-source unit run should fail until that old expectation is updated. This is the collateral T-789 predicted, not an inferred UI regression. |
+
+Suggested fix for the T-673 residue: update/rename the broad icon-only detector in the same closure
+commit, remove `TasksPanelSupportViews.swift` from its expected unnamed population, and keep the new
+row-subject suite as the semantic pin. Do not change the now-correct product labels.
+
+Thirty-second confirmation:
+
+```sh
+rg -n 'CadenceSearchFieldClearButton\(' Cadence --glob '*.swift'
+sed -n '225,237p' CadenceTests/CadenceIOSControlAccessibilityTests.swift
+rg -n 'accessibility(Label|Value)' Cadence/macOS/Views/TasksPanelSupportViews.swift
+```
+
+**Looks solid:** both commits use exact source populations rather than example-only tests. T-672's
+component contract is especially strong: removing focus restoration or one production call is a
+named failure, not merely a visual regression.
+
+**Not checked:** no build, test, mutation, VoiceOver, or runtime interaction was run. Product and
+test-source claims above are clean-tree source measurements; execution claims remain unverified.
+
 ## R12 — Standing: which open tickets did the last batch invalidate?
 
 After each landed batch, intersect its changed files and named symbols with `docs/TODO.md` and the
@@ -750,6 +783,36 @@ re-deriving it. A clean result should be one sentence.
 
 This is not R11: R11 asks whether the new commit did what it claimed. This asks what **other work**
 the commit made stale.
+
+ANSWER 2026-09-04 (current snapshot):
+
+```text
+Tree read: a3068e3
+Dirty files: 29
+```
+
+Three open-ticket descriptions changed; the rest of the overlapping population did not.
+
+| Ticket | What changed |
+|---|---|
+| **T-673** | **MEASURED:** implementation is now committed at `a3068e3`, but clean-HEAD `docs/TODO.md:1467-1482` still presents it as open. Its closure ledger has not landed. |
+| **T-789** | **MEASURED:** its predicted collateral failure is now present: the old detector still expects two unnamed controls in `TasksPanelSupportViews.swift`, while T-673 named them. This is no longer prospective cleanup; it belongs in the T-673 closure. |
+| **T-791** | **MEASURED:** the instruction to do a source-rule shape check *before* T-673 closes was missed. Reword it as a retrospective T-673 check plus the still-prospective T-674 check. |
+
+**Unchanged:** T-674 still describes ten sites in nine files on clean HEAD; T-790's proposed work is
+unaffected. The dirty checkout appears to contain later coordinator work, but it was deliberately
+excluded from this committed-tree audit.
+
+Thirty-second confirmation:
+
+```sh
+git show --stat --oneline a3068e3
+sed -n '1467,1490p' docs/TODO.md
+sed -n '225,237p' CadenceTests/CadenceIOSControlAccessibilityTests.swift
+```
+
+**Not checked:** no build or tests. This answer only intersects clean-HEAD changed files/symbols with
+the committed TODO text.
 
 ## R13 — Which correct features are one wiring deletion from becoming inert?
 
@@ -1169,6 +1232,134 @@ The third column is the one that matters. Report the unpinned ones as a list a s
 written against, and say how many of the total are already pinned — if it turns out most are, R18's
 four are an anomaly and the shared-suite fix is wrong.
 
+ANSWER 2026-09-04:
+
+```
+Tree read: d2c4593
+Dirty files: 38
+```
+
+**FILE ONE SHARED MANIFEST TICKET FOR ALL 216 REAL-PRODUCT-TREE TESTS. ZERO OF 216 ARE PINNED.**
+
+Operational definition: this includes an `@Test` that directly or transitively enumerates Swift
+files under `Cadence`, `CadenceWidgets`, or `CadenceMCPServer`, or derives a real production file
+set and iterates it. It excludes fixed-file source assertions and synthetic fixture-only tests.
+`AgentContextBudgetTests` was deliberately removed from the mechanical candidate set because it
+walks `AGENTS.md`, not product source.
+
+- **MEASURED inventory:** 216 test functions in 84 suites. Each row below has **0 current rejected
+  deviations** according to its exact empty/ledger/equality assertion at HEAD.
+- **REASONED deletion result:** **NO** for every row below. An exact-name search found no second
+  executable assertion requiring any one function to exist. The apparent cross-references are
+  comments, detector fixtures, or tests of production behavior; deleting the named `@Test` changes
+  none of those inputs. This was not mutation-run, so keep confidence separate from severity.
+- **Already pinned:** **0 / 216**. R18's four are representative, not anomalous. A shared exact
+  manifest checked by `CadenceTestTargetHygieneTests` is the right shape; adding another fixture
+  beside each sweep still leaves deletion green.
+
+The complete unpinned population, with `population = 0; pinned = NO` applying to every name:
+
+```text
+AINoteActionReviewTests: theWriteIsReachableOnlyThroughTheReviewGate; nothingInTheAIPathLogsOrPersistsARequest; theSourceScanActuallyReachesTheFilesItAssertsAbout
+CadenceAccentStorageSweepTests: noStoredDeclarationAnywhereInTheAppFreezesAnAccent
+CadenceAppleCalendarNamingTests: onlyTheDeclarationTypesTheAppleCalendarLiteral
+CadenceAreaPickerConsolidationTests: noAreaPickerDerivesItsOwnList; theAreaPickerReadsTheSharedList; theAreaPickerSupportIsNotASecondCopyOfTheContextPicker
+CadenceBundleInspectorHostTests: theBundlePanelIsDrawnOnlyBehindTheGuardedWrapper; everyPaneThatPresentsTheBundlePanelGoesThroughTheGuardedWrapper; exactlyOneBundleHostIsInstalledAndItIsAboveBothShells; theBundleHostAsksTheOneSharedRuleAboutTheTwoFactsItCanSee; theSourceScanIsNotVacuousInBundleInspectorHost
+CadenceCancelledTaskReachabilityTests: theSourceScanIsNotVacuousInCancelledTaskReachability
+CadenceChoicePickerDismissalTests: everyChoicePopoverCallSiteIsCountedAndOnlyTheCommittingOnesAnswer; nochoicePopoverIsHandedAselectionBindingThatCommits
+CadenceSeedColourSourceTests: noFileOnTheMacOSSurfaceHandTypesAColourHex
+CadenceColumnWindDownSurfaceTests: iOSWindsDownAColumnThroughTheSharedServiceFromOnePlaceOnly; theSourceScanActuallyReadsTheseFilesInColumnWindDownSurface
+CadenceCommentSymbolClaimTests: thePartitionCoversEveryCharacterExactlyOnce; everyQualifiedSymbolClaimInACommentResolvesOrIsLedgered
+CadenceContainerPickerConsolidationTests: noCallSitePreFiltersTheListsItHandsTheContainerPicker; noAppSurfaceReSpellsTheTaskToSelectionGetterTheComposerSupportDeclares; noAppSurfaceReDerivesTheContainerTokenPrefixArithmetic; noAppSurfaceHandsAListControlAnArrayItHasAlreadyNarrowed; noSurfaceThatReadsASharedPickerListNarrowsTheArrayItReadsItFrom
+CadenceContextPickerConsolidationTests: noContextPickerDerivesItsOwnList; everyContextPickerReadsTheSharedList
+CadenceContextlessListSurfaceTests: everyPlaceThatDerivesListsFromAContextIsOnTheLedger; theListEditorContextRowIsDeclaredInExactlyOnePlace
+CadenceControlAccessibilityLabelTests: noControlInTheAppGainsATooltipWithoutAnAccessibleName; theUnnamedTooltipLedgerStatesHowManySitesEachFileStillHas; noVisibleToggleInTheAppIsLeftWithoutAnAccessibleName; noSharedOrDesktopAccessibilityHintNamesATouchGesture; theGestureHintDetectorSeparatesATouchOnlySurfaceFromASharedOne; noAccessibilityLabelInTheAppSpellsItsOwnFallbackForAnEmptyTitle
+CadenceDataExportSurfaceTests: neitherPlatformReSpellsTheExport; theSourceScanActuallyReachesBothPlatformsSourceInDataExportSurface
+CadenceDeletedSelectionGuardTests: theSelectionGuardSourceScanIsNotVacuous
+CadenceEditorSaveCommitSurfaceTests: everyRollbackCallSiteInTheAppIsADeleteCommit
+CadenceEmptyStateAuditTests: noEmptyStateSentenceIsSpelledInTwoFiles; theEmptyStateComponentSetIsDerivedFromTheDeclarations; everyEmptyStateShapedViewIsOneTheSweepReads; everyCopyBearingArgumentOfAnEmptyStateComponentIsReadable; noEmptyStateCallSiteRetypesTheSharedCopy; noMacReachableCopyAsksForATouchGesture
+CadenceEmptyTitleFallbackSweepTests: noSurfaceHandSpellsAnEmptyTitleFallback; noSurfaceHandSpellsAnEmptyTitleFallbackAgainstAConstant; noSurfaceTestsATrimmedTitleAndThenReturnsTheUntrimmedOne; everyTitlePromptInTheAppIsANounPhrase; noGoalPickerCallSiteRepeatsTheEmptyTextDefault
+CadenceFirstLaunchEmptyStoreTests: noUnpromptedCodePathSeedsTheDefaultTags
+CadenceGlobalUndoSurfaceTests: noAppSourceHandsAnUndoManagerToAnything
+CadenceGoalListLinkSurfaceTests: onlyTheSharedHelperConstructsALink; theSourceScanActuallyReachesBothPlatformsSourceInGoalListLinkSurface
+CadenceHabitCompletionDuplicateTests: onlyTheHabitCompletionStoreConstructsAHabitCompletion; nothingUnderCadenceEverWritesAHabitDayQuantityAboveOne
+CadenceIOSControlAccessibilityTests: noIconOnlyButtonInTheAppIsLeftWithoutAnAccessibleName; theUnnamedIconButtonLedgerStatesHowManySitesEachFileStillHas; theIconOnlyRuleReachesTheDesktopTreeAndNotOnlyTheTouchTree; theTooltipSweepFindsNothingOnATreeThatCannotDrawTooltips
+CadenceInMemoryStoreHygieneTests: noInMemoryStoreInTheRepositoryLeavesCloudKitMirroringOn; theRepositoryDeclaresExactlyThreeInMemoryStores
+CadenceInPlaceEditFlushCommitTests: everyProductCallerOfMoveToContainerGuardsOnTheAnswer; themoveAnswerIsDiscardedAtFiveTestCallSitesAndNowhereElse
+CadenceInboxRemindersSurfaceTests: markingAReminderCompleteIsReachableFromBothPlatforms; nothingButTheManagerResolvesAConnectionStateFromTheFlags; theSourceScanActuallyReachesBothPlatformsSourceInInboxRemindersSurface
+CadenceKanbanColumnLifecycleSurfaceTests: theSourceScanActuallyReadsTheseFilesAndThePatternsWork
+CadenceLaunchWiringTests: exactlyOneProductionCallSiteRegistersForSilentPush; onlyTheRegistrarAsksAppKitToRegister; coldLaunchStillAsksForNoNotificationPermission
+CadenceListDeletionSurfaceTests: iOSCallsTheSharedCascadesFromOnePlaceOnly; bothPlatformsReadTheSameCascadeSentence; theSourceScanActuallyReadsTheseFilesInListDeletionSurface
+CadenceListWindDownSurfaceTests: noIOSSurfaceWindsAListDownByHand; theSourceScanActuallyReadsTheseFilesInListWindDownSurface
+CadenceMarkdownImageCommitSurfaceTests: onlyTheMarkdownEditingSurfacesOfferToDismissTheirFailureNotice
+CadenceMarkdownImageInsertionScopeTests: everyOutOfStoreEditorHostPassesTheFlagAndNoOtherHostNeedsTo
+CadenceMarkdownSourceInventoryTests: everyStoredStringOnEveryModelIsClassified; theModelScanActuallyReadTheModelSources
+SharedComponentsPlatformFenceTests: sharedComponentsFolderHoldsNoWholeFilePlatformFence
+TodayAndInboxNamingTests: noLiveSourceSpellsARetiredIPadName; nothingOutsideTheTwoPaneTodayHostBuildsATwoPaneOnlyView; everyIPadPrefixedTypeIsBuiltOnlyFromAWidthGatedHost; noAgentFacingDocSpellsARetiredIPadName
+NoteEditorSheetHeaderTests: noEditorSheetSurfaceSpellsTheHostGutterRampItself; noCallSiteHandsTheSharedHeaderAWidth; nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader
+CadenceNoteDeletionSurfaceTests: theIOSDeleteIsRequestedByRowsAndPerformedOnlyByTheModifier; theSourceScanActuallyReadsTheseFilesInNoteDeletionSurface
+CadenceNoteFolderSurfaceTests: onlyTheSharedFilingHelperWritesAFolderPath; theIOSListDetailNotesTabIsTheFolderColumn; neitherPlatformDeclaresItsOwnCopyOfTheConvention; theSourceScanActuallyReachesBothPlatformsSourceInNoteFolderSurface
+CadenceNoteReferencePanelSurfaceTests: backlinksAreResolvedInExactlyThreePlaces; iOSNeverDerivesReferencesItself; theSourceScanActuallyReachesBothPlatformsSourceInNoteReferencePanelSurface
+CadenceNoteTitleSyncSurfaceTests: bothCommitPathsCallTheOneRule; neitherPlatformKeepsItsOwnCopyOfTheRule; noIOSSurfaceWritesANoteBodyWithoutTheSharedCommit; theSourceScanActuallyReachesBothPlatformsSourceInNoteTitleSyncSurface
+CadenceNotesEditorPreferencesTests: theOnlyCodeMentionOfTheRetiredNotesTabKeyIsItsRetirement
+CadenceNotesListSupportTests: theFoldHasExactlyOneOwner; neitherPlatformDeclaresItsOwnCopy; noHandTypedLetterspacingIsLeftInTheApp
+CadenceNotificationsEnabledToggleTests: neitherPlatformDeclaresItsOwnCopyOfTheToggleReaction
+CadenceNotificationsAuthorizationLifecycleTests: theLifecycleHookIsOneTypeRatherThanOnePerPermission
+CadencePageHeaderMetricsTests: noTileCallSitePassesItsOwnCorner
+CadencePaneWidthRuleHomesTests: theWidthRuleIsDeclaredOnlyInItsRegisteredHomes; theInventoryIsStillTwentyFourDeclarationsAcrossFiveFiles; theRegisterNamesEveryFileTheScanFinds; theSourceScanActuallyReachesTheFilesItIsCounting
+CadencePressFeedbackSurfaceTests: noIOSSurfaceWearsTheHoverWash; theSharedPickersKeepOneUnfencedStyle
+CadencePrivacyDataResetSurfaceTests: neitherPlatformReSpellsTheResetSequence; bothResetSurfacesReachTheOneConfirmationGate; theSourceScanActuallyReachesBothPlatformsSourceInPrivacyDataResetSurface
+CadenceRadiusControlCompactSweepTests: noFileOutsideThemeSpellsALiteralCornerRadiusOfSeven; noCallSiteOutsideThemeSpellsRadiusControlMinusThree
+CadenceRecurrenceEndSurfaceTests: nothingOutsideTheWorkflowAndTheModelWritesTheEndFieldsDirectly; noSurfaceTypesARecurrenceScopeSentenceOutAgain; theCalendarRecurrenceScopeIsDeclaredOnceAndOutsideEveryPlatformFence; theSourceScanActuallyReachesBothPlatformsSourceInRecurrenceEndSurface
+CadenceSyncSurfaceTests: bothPlatformsResolveTheOneSyncVerdict; onlyOneFileInTheAppTalksToCloudKitDirectly; theSourceScanActuallyReachesBothSettingsSurfaces
+CadenceRetiredCopyTests: noRetiredCopyIsStillDrawnAnywhereInTheApp; theRetiredCopySweepReachesEverySurfaceOfTheApp
+CadenceRootSelectionLaunchContractTests: theMacRootOwnsNoSceneRestoredState
+CadenceSaveCommitDisciplineTests: noSwallowedSaveCommitsAnInsertOrADelete; noSwallowedSaveIsFollowedByADismissOrACompletionHandler; noSuccessReportFollowsACommitSwallowedOneFrameDown; noInsertIsLeftPendingWithNoCommitAnywhereInItsDeclaration; theSaveCommitSweepReachesEverySurfaceOfTheApp; everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule
+CadenceSettingsSectionCopyTests: theFixedGlyphSettingsEmptyRowIsDeletedRatherThanLeftUnused; theMacWorkHoursSentenceNamesEverySurfaceThatDrawsTheBand
+CadenceSharedBoardChromeTests: theForkedColumnHeaderSpellingsAreGone; theForkedChipSpellingsAreGone; theForkedInlineEmptySpellingsAreGone; theSourceScanActuallyReachesBothPlatformsSourceInSharedBoardChrome; theUnifiedComponentsAreNoLongerInThePrefixStrippedIntersection
+CadenceSectionEyebrowConvergenceTests: noSurfaceHandRollsTheSharedEyebrow
+CadenceCalendarWeekdayHeaderConvergenceTests: theOnlyTwoWeekdayLabelsInTheAppReadTheSharedMetric; theMonthGridsWeekdayRowHasNoSizeKnobLeft
+CadenceCompactEyebrowConvergenceTests: noSurfaceHandRollsTheCompactEyebrow; theConvertedCompactSitesCallTheSharedLabel; theEyebrowDocOnlyNamesMetricsTypesThatExist
+CadenceSharedConstantReuseSweepTests: noCallSiteRetypesASharedStringConstant; theSharedConstantSweepReachesEverySurfaceOfTheApp; theHarvestReadsTheSharedConstantsTheSweepWasBuiltFrom; theHarvestDropsGlyphNamesAndKeepsDottedDefaultsKeys; everyUntitledPlaceholderHasOneDeclarationTheSweepCanSee; noSourceFileBuildsAPlaceholderLabelByInterpolation; everyPlaceholderLabelInTheAppIsDeclaredOrRecorded; everyUndeclaredPlaceholderLabelIsStillUndeclaredAndStillTyped; theSharedConstantDetectorSeparatesACallSiteFromProse; theHarvestReadsAConstantSpelledAsAStaticFuncAndNotATemplate; bothNewReadersSurviveEveryFileInTheProduct; everyStaticFuncConstantOffenderIsLedgeredAndEveryLedgerEntryIsStillReal; theComputedVarHalfHarvestsTheBuildIdentityKeysAndNothingElse; theComputedVarReaderSurvivesEverySwiftFileInTheRepository; everySharedLiteralExemptionIsStillLoadBearing
+CadenceSharedTaskRowJobsTests: thereIsOneReadOnlyTagStripAndItIsShared; theMacOSOnlyDetailLineSpellingIsGone; theSourceScanActuallyReachesBothPlatformsSourceInSharedTaskRowJobs; neitherUnifiedJobIsForkedAcrossPlatformsAgain
+CadenceStrokeBorderSweepTests: everyRemainingShapeStrokeCallIsOneOfTheTwoDocumentedExceptions
+CadenceTargetSourceMembershipTests: mcpSourcesOnlyCallTopLevelFunctionsThatTargetCompiles; widgetSourcesOnlyCallTopLevelFunctionsThatTargetCompiles
+CadenceTaskInspectorHostTests: theInspectorPanelIsDrawnOnlyBehindTheGuardedWrapper; everySurfaceThatPresentsTheInspectorGoesThroughTheGuardedWrapper; theHostIsInstalledAboveBothShellsAndInsideTheOneSheetThatCarriesAPage; theSourceScanIsNotVacuousInTaskInspectorHost
+CadenceTaskStatusLifecycleSurfaceTests: theSourceScanIsNotVacuousInTaskStatusLifecycleSurface
+CadenceTaskSurfaceOptionsTests: onlyTheSharedHelperSpellsTheOverflowLine
+CadenceDesktopEmptyStateConvergenceTests: theMacsSecondEmptyStateViewIsDeleted; theEmptyStateSweepReachesTheFilesItClaimsTo
+CadenceTestTargetHygieneTests: noSwiftPathInTheRepositoryIsADirectory
+CadenceTodayOverdueSummarySurfaceTests: bothIOSWidthsDrawTheCardsFromTheOneList; theIOSTapTargetPresentsRatherThanReachingForANavigationManager; neitherPlatformRespellsTheHeadings
+CadenceTodayRolloverSurfaceTests: neitherPlatformRespellsTheKeyOrTheCopy
+CadenceTodayUnificationTests: todayNoLongerHeadsAGroupWithTheNameOfThePage; theRetiredMacOSTodayGroupingsAreGone; eachPlatformsTodayDrawsItsOwnPlatformsGroupHeading; todaysRowsAreTheSharedInteractiveRowAtThePanelsOwnInsets; theTimelinePaneNamesItselfOnceAndTheOtherHostsStillNameThemselves; theSourceScanActuallyReachesBothPlatformsSourceInTodayUnification; theTasksPanelNoLongerCarriesAModeWithOneCase; theDropCoordinatorKeepsOnlyTheHalfItsCallersUse
+CadenceTodayListGroupingTests: macOSTodayLeadsItsSortWithTheSharedRank
+CadenceCalendarZoomTests: theZoomKeyIsSpelledOnceInShippingSource
+CrossPlatformParityTests: everyMemberOfTheWidgetDateVocabularyIsReachedFromSomewhere
+DateFormatterSupportTests: everyDateFormatterInTheAppIsDeclaredInTheFormatterFile
+MarkdownHeadingRampTests: nothingButTheRampDeclaresARamp; theRampHasExactlyThreeReaders; theScannerIsReadingRealSourceInMarkdownHeadingRamp
+NoteExportSurfaceTests: theExportVocabularyIsDeclaredOnceAndOutsideThePlatformGuard; theIOSExportControlIsOneViewWithThreeCallSites; theScannerIsReadingRealSourceInNoteExportSurface; noExportSwallowsTheWriteThatProducesTheFile
+SettingsCoverageCategoryRemovalTests: theParityManifestAndItsChromeAreGone
+MacSettingsAboutAndHabitMetricsTests: bothAboutScreensReadTheSharedIdentityAndTheSharedRow; macOSDataSafetyKeepsThePrivacyParagraphAndNotTheLinks; theSourceScanIsNotVacuousInMacSettingsAboutAndHabitMetrics
+SettingsSharedVocabularyTests: theSettingsStatusBadgeAndItsWrapperAreGone; noSettingsPaneStillDrawsAMenuPicker; bothWorkHoursPickersPresentTheSharedChoiceList; theSourceScanIsNotVacuousInSettingsSharedVocabulary
+SettingsSevenPaneVocabularyTests: theFifthPrivateSettingsRowIsRetiredRatherThanRelocated; noSettingsPaneKeepsAPrivateInsetWell; noSettingsPanePaintsUnderTheSystemSeparatorAtAnyLineBreak
+TaskOrderingTests: theNoDateSentinelLiteralIsSpelledOnceInProductionSource
+WidgetSupportTests: theTitleTrimRuleIsDeclaredOnceInAFileTheWidgetTargetCompiles
+```
+
+Can this happen today? **Yes.** Deleting any one of these functions removes its production-tree
+contract while the remaining 4,225 indexed tests retain no exact requirement for that function.
+
+Thirty-second confirmation:
+
+```sh
+./scripts/test-suite-index.sh | wc -l
+rg -l 'CadenceSourceScan\.swiftFiles|\.sweep\(|enumerator\(atPath:' CadenceTests --glob '*.swift'
+```
+
+**Not checked:** no `@Test` was deleted, no mutation, build, or test ran. The inventory and
+cross-reference search are measured from committed source; the all-green-after-deletion column is
+reasoned and should be proved once by the manifest ticket's mutation test.
+
 ## R20 — What actually blocks the App Store submission?
 
 This is the question the user asks most and the one I answer least precisely, because I answer it
@@ -1191,6 +1382,73 @@ Anything in the second group, name the exact action the user must take, in one l
 readiness doc claims something is done that the repo contradicts, that contradiction is the most
 valuable finding in this request.
 
+ANSWER 2026-09-04:
+
+```
+Tree read: d2c4593
+Dirty files: 38
+```
+
+**THE BINARY CONFIGURATION IS MOSTLY READY; THE SUBMISSION IS NOT PROVABLY READY. FIX ONE STALE
+RELEASE COMMAND, COMPLETE THE METADATA PACKET, THEN HAVE THE USER PERFORM THE APPLE-SIDE GATES.**
+
+Apple's current rules still require Xcode 26 and an iOS 26 SDK for iOS submissions, at least one
+screenshot, required version metadata, and a public privacy-policy URL. CloudKit production schema
+deployment remains a separate console action; a production APS entitlement does not prove it.
+
+| Gate | Verdict | Repository evidence and owner |
+|---|---|---|
+| App bundle id | **MET** | Release has `PRODUCT_BUNDLE_IDENTIFIER = com.haoranwei.Cadence` at `Cadence.xcodeproj/project.pbxproj:788`; packet agrees at `docs/app-store-submission-packet.md:10`. **Agent-verifiable.** |
+| Version/build | **MET** | Release is `MARKETING_VERSION = 1.0`, `CURRENT_PROJECT_VERSION = 16` at `project.pbxproj:769,787`; packet names 1.0 at `:15-16`. **Agent-verifiable.** |
+| App entitlements/capabilities | **MET IN SOURCE** | Sign in with Apple, production-substituted APS, CloudKit, app group, sandbox, network client and Calendar are at `Cadence/Cadence.entitlements:5-28`; Release enables Calendar and user-selected read/write files at `project.pbxproj:775-776`. Reminders correctly has usage text rather than a nonexistent sandbox entitlement. **Agent-verifiable; profile match is Apple-side.** |
+| Widget entitlements | **MET IN SOURCE** | App group and sandbox are at `CadenceWidgets/CadenceWidgets.entitlements:5-10`; Release points at that file and enables sandbox at `project.pbxproj:1099-1103`. **Agent-verifiable; profile match is Apple-side.** |
+| iCloud identifier | **MET IN SOURCE** | `iCloud.com.haoranwei.Cadence` and `CloudKit` are explicit at `Cadence/Cadence.entitlements:11-17`. |
+| CloudKit schema deployed to Production | **NOT CHECKABLE FROM THE REPO** | No deployment receipt, `cktool` export, or console-state record exists. `APS_ENVIRONMENT = production` at `project.pbxproj:764` controls push signing, not CloudKit schema deployment. **User/Apple-side.** |
+| Encryption declaration | **MET** | `ITSAppUsesNonExemptEncryption = false` is in `Cadence/Info.plist:18-19` and duplicated into Release at `project.pbxproj:780`; packet agrees at `docs/app-store-submission-packet.md:17`. |
+| Category | **MET IN SOURCE** | `LSApplicationCategoryType = public.app-category.productivity` at `Cadence/Info.plist:20-21`; packet says Productivity at `docs/app-store-submission-packet.md:12`. App Store Connect equality is not repo-checkable. |
+| Description, keywords, copyright | **NOT CHECKABLE FROM THE REPO; PACKET INCOMPLETE** | Apple requires all three for the version. The packet's field list at `docs/app-store-submission-packet.md:7-24` contains none of them. **Agent can draft and add them; user must enter/confirm them in App Store Connect.** |
+| Marketing URL/promotional text | **MET AS OPTIONAL / ABSENT** | Apple marks Marketing URL and promotional text optional. Their absence is not a blocker; do not invent a required plist key. |
+| Privacy manifests | **MET IN SOURCE** | App declares no tracking plus `CA92.1` UserDefaults and `C617.1` file timestamp at `Cadence/PrivacyInfo.xcprivacy:5-78`; widget declares no tracking and `C617.1` at `CadenceWidgets/PrivacyInfo.xcprivacy:5-20`. The synchronized target group excludes only the files listed at `project.pbxproj:194-208`, not either manifest. Final archive aggregation remains an archive check. |
+| Privacy labels | **NOT CHECKABLE FROM THE REPO** | The intended answers are documented at `docs/apple-release-readiness.md:26-48`, but App Store Connect state is external. **User/Apple-side.** |
+| Privacy/support pages | **MET AS LOCAL CONTENT; PUBLIC GATE NOT CHECKABLE** | URLs are recorded at `docs/app-store-submission-packet.md:18-19`, with local pages at `docs/privacy.html` and `docs/support.html`. The repo does not prove GitHub Pages deployment or current public reachability. |
+| App icon | **MET IN SOURCE** | Release selects `AppIcon` at `project.pbxproj:765,779`; `Cadence/Assets.xcassets/AppIcon.appiconset/Contents.json` names a complete macOS set and all 10 files are present. |
+| App Store screenshots | **NOT MET IN THE REPO / CONNECT UNKNOWN** | The only PNGs are app icons; there is no submission screenshot set despite `docs/app-store-submission-packet.md:52-61` saying to prepare one. Apple currently requires 1-10 screenshots. **Agent can capture them; user must approve/upload them.** |
+| Sandbox / hardened runtime | **MET** | Release sets both `ENABLE_APP_SANDBOX = YES` and `ENABLE_HARDENED_RUNTIME = YES` at `project.pbxproj:771-772`; widget sandbox is `YES` at `:1103`. |
+| Deployment targets and SDK | **MET LOCALLY** | macOS 26.1 and iOS 26.2 are at `project.pbxproj:783,786`; installed macOS/iOS SDKs both report 26.5, satisfying Apple's current Xcode 26/SDK 26 floor. iOS is not this submission channel. |
+| Final archive, distribution signing, embedded contents | **NOT CHECKABLE FROM THE REPO** | Packet requires distribution signing and exclusion of test/MCP artifacts at `docs/app-store-submission-packet.md:76-77`, but no inspected `.xcarchive` exists in the repo. **Agent can inspect an archive after the user/account can sign it.** |
+| Release verification command | **NOT MET** | `docs/apple-release-readiness.md:94` still runs a bare test command, while its own `:103-109` says tests must hold the host lock and root `AGENTS.md` now requires `scripts/xcb.sh`. **Agent-fixable documentation contradiction.** |
+
+### User/Apple-side actions
+
+1. **Deploy CloudKit:** CloudKit Console → `iCloud.com.haoranwei.Cadence` → Production → Deploy Schema Changes; then verify the production schema.
+2. **Match capabilities:** Certificates, Identifiers & Profiles/App Store Connect must enable iCloud/CloudKit, Sign in with Apple, App Groups, Calendar and remote notifications for `com.haoranwei.Cadence`; regenerate the distribution profile if changed.
+3. **Complete metadata:** enter description, keywords, copyright, age-rating answers, category, support URL, privacy URL and privacy labels; choose version 1.0 build 16.
+4. **Publish/verify URLs:** make both GitHub Pages URLs public and confirm the support page exposes usable contact information.
+5. **Upload screenshots:** approve and upload at least one current macOS screenshot; the packet's five-angle set is the better minimum.
+6. **Clear account gates:** accept current agreements, confirm Developer Program membership/roles, tax/banking where applicable, DSA trader status and distribution availability.
+7. **Archive and submit:** create a Release archive with distribution signing, inspect entitlements/privacy report/embedded frameworks, upload it, attach build 16, add review notes, then submit.
+
+Can this block submission today? **Yes.** Missing App Store Connect metadata/screenshots, an
+undeployed CloudKit production schema, or an unsigned/unuploaded archive blocks the button even
+though source configuration is correct. Apple documents the current gates in [required version
+properties](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information),
+[screenshot requirements](https://developer.apple.com/help/app-store-connect/manage-app-information/upload-app-previews-and-screenshots),
+[SDK requirements](https://developer.apple.com/news/upcoming-requirements/), and [CloudKit schema
+deployment](https://developer.apple.com/documentation/CloudKit/deploying-an-icloud-container-s-schema).
+
+Thirty-second confirmation:
+
+```sh
+rg -n 'PRODUCT_BUNDLE_IDENTIFIER|MARKETING_VERSION|CURRENT_PROJECT_VERSION|ENABLE_APP_SANDBOX|ENABLE_HARDENED_RUNTIME|ENABLE_USER_SELECTED_FILES|APS_ENVIRONMENT' Cadence.xcodeproj/project.pbxproj
+plutil -p Cadence/Info.plist Cadence/Cadence.entitlements Cadence/PrivacyInfo.xcprivacy
+find . -type f \( -iname '*screenshot*' -o -iname '*.png' \) -not -path './.git/*'
+xcrun --sdk macosx --show-sdk-version; xcrun --sdk iphoneos --show-sdk-version
+```
+
+**Not checked:** no build, test, archive, signing, upload, URL request, App Store Connect account,
+provisioning profile, agreements, privacy labels, screenshot well, or CloudKit Console state was
+opened. MET IN SOURCE does not mean the external capability or submitted archive matches it.
+
 ## R21 — Are the 28 PRODUCT tickets reachable in a shipped build?
 
 R16's question, pointed at R15's PRODUCT bucket. Two out of two and three out of twenty-two say this
@@ -1210,6 +1468,82 @@ Three sub-answers worth separating:
 Rank the LIVE ON macOS ones by how likely an ordinary first session hits them. That ranking is what
 I will build the next batch from, so it is the deliverable, not the tally.
 
+ANSWER 2026-09-04:
+
+```
+Tree read: d2c4593
+Dirty files: 38
+```
+
+**RECLASSIFY THE STALE PRODUCT BUCKET: 15 LIVE ON macOS, 6 LIVE ON iOS ONLY, 7 ZERO.** None of
+the 15 macOS paths is behind `DEBUG` or a release-excluding platform guard. Six are real work but
+live wholly under `#if os(iOS)`; iOS is explicitly not distributed in
+`docs/apple-release-readiness.md:11`.
+
+| Ticket | Release reach | Settling code |
+|---|---|---|
+| T-771 | **LIVE ON macOS** | macOS reads `CadenceSidebarLists.ungroupedTitle = "Other"` (`CadenceSidebarListsSupport.swift:110`, `ContainerPickerSupportViews.swift:98`) while Create Goal still spells `Section("No Context")` (`CreateGoalSheet.swift:178`). |
+| T-768 | **LIVE ON macOS** | The two event-card delete paths still call `CalendarManager.deleteEvent` at `CalendarBoardItemSupportViews.swift:225` and `TimelineEventBlock.swift:320`; the typed `presentRefusable` path exists separately at `DeleteConfirmationManager.swift:62`. |
+| T-741 | **LIVE ON macOS** | The shared list/permanent title sync and the legacy `# Untitled` repair cycle remain documented and implemented at `CadenceNoteFolderSupport.swift:237` and `NoteMigrationService.swift:484`. Existing pre-T-733 data is required. |
+| T-714 | **LIVE ON macOS** | Column edits still apply at `KanbanSectionColumnView.swift:446`, while the commit/refusal surface starts at `:493`; dismiss-without-another-control remains a release path. |
+| T-689 | **ZERO** | iOS now computes `allComplete` and calls `goalsTitle(...allComplete:)` at `iOSFeatureViews.swift:222`; macOS's filtered/all states do not reproduce the old claim. The Open entry already says CLOSED. |
+| T-690 | **ZERO** | Both settings roots now pass paused/cancelled projects (`SettingsView.swift:199-200`, `iOSSettingsView.swift:291-292`) and both lifecycle sections draw them. Entry already says CLOSED. |
+| T-777 | **ZERO** | Both Calendar panes use `connectOfferTitle` (`SettingsListManagementSections.swift:214`, `iOSCalendarSettingsSection.swift:203`). Both duplicate Open entries are stale/closed. |
+| T-691 | **ZERO** | `CadenceCalendarLinkHealth.missingLink` now normalizes the display title at `CadenceCalendarLinkHealth.swift:181-198`; entry already says CLOSED. |
+| T-168 | **LIVE ON iOS ONLY** | The running focus implementation is `iOSFocusView.swift`; the missing persistent widget state and landscape-specific surface do not affect the shipped Mac target. |
+| T-16 | **LIVE ON macOS** | `AppIcon` ships in the asset catalog and the sidebar reads it at `SidebarSupportViews.swift:74`. This is a visible design backlog, not a correctness defect. |
+| T-17 | **ZERO** | The claimed device-list restriction does not exist: `TARGETED_DEVICE_FAMILY = "1,2"` at `project.pbxproj:757,799`; the entry itself says no project edit is needed and awaits a user-defined device audit. |
+| T-18 | **LIVE ON macOS** | There are no `.strings`, `.xcstrings`, or `.lproj` resources and user-facing Mac copy remains English literals. This is a shipped localization absence, not a latent crash. |
+| T-274 | **LIVE ON macOS** | Export/decode exists (`CadenceDataExportService.swift`), but no production import/restore surface consumes a decoded `CadenceArchive`; a Mac user needing restore has no route. |
+| T-491 | **LIVE ON iOS ONLY** | The capture palette host/scrim is in `iOSCaptureRadialMenu.swift` and iPad root layout; no Mac call path. |
+| T-681 | **LIVE ON macOS** | `TasksPanelSectionViews.swift:137` still applies List-only row chrome beneath a `LazyVStack` host. The path renders in Release but the stated impact remains harmless/invisible. |
+| T-619 | **LIVE ON iOS ONLY** | The defect is disagreement between iOS's grid and macOS `CalendarVisualStyle` (`TimelineMetrics.swift:299`). The shipped Mac has only its own internally consistent ladder. |
+| T-642 | **LIVE ON iOS ONLY** | The root alert/detail-sheet interaction is entirely under `Cadence/iOS/`; the recorded simulator failure is real but not a macOS v1 blocker. |
+| T-688 | **LIVE ON macOS** | The iOS goal-chip half is iOS-only, but Mac quick-create still persists/displays the fallback `"New Task"` at `TimelineDayCanvas.swift:283`. |
+| T-696 | **LIVE ON macOS** | Mac Settings still draws the unconditional work-hours sentence at `SettingsCalendarWorkHoursSection.swift:65`, while weekend suppression remains shared behavior. |
+| T-697 | **LIVE ON iOS ONLY** | The undisclosed ready-slot and initial-hour effects are consumed by `iOSTodaySchedulePanel` and `iOSCalendarTimelineViews`; the Mac subtitle does describe its shipped effect. |
+| T-692 | **LIVE ON macOS** | `CadenceCalendarPicker.swift` still groups/falls back differently from Settings' `unnamedAccountTitle` use at `SettingsListManagementSections.swift:525`. Requires an unnamed EventKit source. |
+| T-693 | **ZERO** | Both Mac display constructors now use `unnamedCalendarTitle` at `CalendarEventPresentationSupport.swift:73,198`; entry already says CLOSED. |
+| T-694 | **ZERO** | Notifications and Calendar now split offer/denied titles (`SettingsNotificationsSection.swift:54`, `SettingsListManagementSections.swift:214`); entry says FULLY CLOSED. |
+| T-729 | **LIVE ON macOS** | The collapsed rail still frames its rotated label with `labelSize` at `CalendarBoardRailSupportViews.swift:133-138`. Release-reachable, presently described as harmless. |
+| T-731 | **LIVE ON iOS ONLY** | The regular-width branches remain in iOS editor sheets (`iOSCalendarEventEditSheet.swift:235`, `iOSEventNoteEditorSheet.swift:81`) behind iOS size class. |
+| T-736 | **LIVE ON macOS** | The editor still calls `applySectionEdits` per name change (`KanbanSectionColumnView.swift:404-408`) while card movement waits for commit at `:510-516`; the transient empty column remains. |
+| T-738 | **LIVE ON macOS** | The same per-keystroke `applySectionEdits` writes the merged section config at `KanbanSectionColumnView.swift:446-464`; no release/debug gate intervenes. |
+| T-752 | **LIVE ON macOS** | The one shared directional notice remains at `CadenceNoteActionSupport.swift:94` and list deletion forwards it at `CadenceListDeletionSummary.swift:137`; the opposite-direction case requires the T-623 orphan/fetch condition. |
+
+### macOS first-session likelihood
+
+1. **T-16** — the icon/sidebar mark is visible on launch.
+2. **T-18** — every non-English user sees the English-only surface immediately.
+3. **T-681** — Today renders the no-op modifiers in the default surface, though no pixel changes.
+4. **T-729** — opening Calendar with a collapsed rail reaches the wrong derivation; current overhang is slight.
+5. **T-736** — renaming a kanban column visibly empties it while typing.
+6. **T-738** — the same ordinary rename writes once per keystroke; visible impact is nil, sync churn is inferred.
+7. **T-771** — needs an unowned list plus sidebar/goal-attach use.
+8. **T-696** — needs opening Calendar work-hours settings; the sentence is wrong on weekends.
+9. **T-688** — needs a blank-title task through Calendar quick create.
+10. **T-274** — only encountered when the user tries to restore an export.
+11. **T-692** — needs an unnamed EventKit account/source.
+12. **T-741** — needs legacy pre-T-733 note content and an edit.
+13. **T-768** — needs deleting an EventKit item and the EventKit write refusing.
+14. **T-714** — needs dismissing a column rename without another commit trigger and a save refusal.
+15. **T-752** — needs an incomplete delete-impact fetch/orphan condition; it is a constraint, not an ordinary-screen defect.
+
+Can this happen today? **Yes for all 15 macOS rows**, but only T-16/T-18 are unconditional visible
+first-session exposure. T-681/T-729 are live code whose own tickets call the impact harmless;
+severity must not be inferred from reachability.
+
+Thirty-second confirmation:
+
+```sh
+rg -n 'ungroupedTitle|No Context|connectOfferTitle|unnamedCalendarTitle|pausedProjects|cancelledProjects|applySectionEdits|listRowBackground|unknownImpactNotice' Cadence
+find Cadence -type f \( -name '*.strings' -o -name '*.xcstrings' \) -o -type d -name '*.lproj'
+```
+
+**Not checked:** no Release build, app, simulator, first-session drive, EventKit refusal, CloudKit
+traffic capture, or mutation ran. LIVE/ZERO is measured from current call paths and guards; the
+ordered likelihood list is reasoned from prerequisites.
+
 ## R22 — Crash and data-loss census in production code
 
 Nothing in this repository has ever swept for this and the App Store is the wrong place to find out.
@@ -1227,6 +1561,121 @@ front of it.
 Rank by that reachability, not by count. If the answer is that all of them are literal-backed and
 safe, say so plainly — that is a good outcome and I will not file a ticket.
 
+ANSWER 2026-09-04:
+
+```text
+Tree read: d2c4593
+Dirty files: 38
+```
+
+**Verdict: no user- or sync-reachable crash/data-loss site was found. Do not file a product bug
+from this census.** The only release trap is the last-resort persistence bootstrap `fatalError`;
+it requires the CloudKit store, disk recovery store, and in-memory container construction all to
+fail. That is an infrastructure hardening opportunity, not an input-shaped live bug.
+
+### Reachability-ranked census
+
+| Reachability | Construct | Measured sites | User/sync can supply the failing input? | Disposition |
+|---|---:|---:|---|---|
+| Release, environmental only | `fatalError` | `PersistenceController.swift:189` | **No.** It is reached only after three container constructions fail, including the in-memory fallback. | Keep out of the product-bug queue; consider replacing the trap with a terminal recovery UI before submission. |
+| Test/programmatic-construction only | `fatalError` | `PersistenceController.swift:27`; `iOSMarkdownTextView.swift:45`; `macOSRootShellViews.swift:180` | **No current production path.** The first belongs to `makeTestContainer`; the other two are `init(coder:)` traps on views constructed programmatically. | No change. |
+| Release-inert assertions | `assertionFailure` | `iOSBundleInspectorHost.swift:48`; `iOSTaskInspectorHost.swift:47` | A missing environment host can reach the call, but optimized Release builds remove the assertion; the action then does nothing rather than crash or lose data. | Keep the assertions; UI-host wiring is a separate reachability concern. |
+| Static regular expressions | `try!` | **19** | **No.** Every pattern is a source literal or literal composition, never markdown, SwiftData, CloudKit, defaults, EventKit, or file content. | No change. |
+| Guarded/OS-contract unwraps | ordinary `!` | **8 non-URL sites** | **No failing input found.** Three are guard/contract-backed; five add bounded day/month offsets to internally constructed dates. | No product ticket. Optional cleanup can remove punctuation risk without changing behavior. |
+| Literal/typed URL construction | ordinary `!` | **8 URL sites** | **No.** Seven are fixed schemes/paths or UUID interpolation; the calendar variant receives canonical date keys from its production callers. | Safe literal-backed group; no change. |
+| Computed array access | subscript expressions | **89 expressions on 83 lines in 36 files** | **No failing input found.** Each is range-derived, index-guarded, clamped after a non-empty guard, or indexes arrays built in lockstep. Synced collection sizes can change values, but not violate those local invariants. | No product ticket. |
+| — | `preconditionFailure` | **0** | — | — |
+| — | `Array(...)[0]` / `.last!` | **0** | — | — |
+| OS-contract collection | `.first!` | **1**, included in the eight non-URL unwraps | **No.** `PersistenceController.swift:351` uses the first application-support URL only after its app-group URL fallback is absent. | Low-value defensive cleanup only. |
+
+### Exact non-subscript sites
+
+The 19 source-controlled regexes are at:
+
+```text
+Cadence/Services/MarkdownTypingTransformSupport.swift:4
+Cadence/Services/MarkdownQuoteSupport.swift:11
+Cadence/Services/MarkdownImageAssetService.swift:145,148
+Cadence/Services/MarkdownLinkSupport.swift:16
+Cadence/Services/MarkdownChecklistSupport.swift:45,50
+Cadence/Services/MarkdownListSupport.swift:68,69
+Cadence/macOS/Editor/MarkdownEditorSupport.swift:232-241
+```
+
+The eight non-URL force unwraps are:
+
+```text
+Cadence/Services/AI/AISettingsManager.swift:117
+  storedModel! is dominated by storedModel?.isEmpty == false.
+Cadence/Services/PersistenceController.swift:351
+  .first! relies on FileManager's applicationSupportDirectory contract.
+Cadence/Shared/Components/CadenceWrappingHStack.swift:54
+  width! is dominated by width?.isFinite == true.
+Cadence/macOS/Views/CalendarMonthGridSupport.swift:200,208
+Cadence/macOS/Views/CalendarPageComponents.swift:100
+Cadence/macOS/Views/CalendarPageSupportViews.swift:251
+Cadence/macOS/Views/CalendarTimelineViewportSupportViews.swift:56
+  Calendar additions use finite loop/page offsets and internally normalized month/day anchors.
+```
+
+The separately safe URL group is:
+
+```text
+Cadence/Services/AI/AIProvider.swift:102
+Cadence/Services/CadenceDeepLink.swift:71,73,75,77,79,80
+Cadence/macOS/Views/SettingsListManagementSections.swift:237
+```
+
+### Computed-array appendix
+
+**MEASURED:** a parser-free lexical sweep began with 1,538 bracket candidates, removed type syntax,
+attributes, literals, and dictionary accesses, then reviewed all 89 remaining array expressions.
+This is the complete reviewed file/line ledger; repeated expressions on one line appear once here.
+
+```text
+Models: Area.swift:163-167; HabitInsights.swift:24; Project.swift:164-168
+Services: MCPReadOnly/CadenceReadDTOs.swift:76; MarkdownChecklistSupport.swift:76,79;
+  MarkdownNoteSupport.swift:360,361,376,397,435,442; MarkdownPreviewParser.swift:67;
+  MarkdownTableEditSupport.swift:83,215,217,247,260;
+  MarkdownTableLayoutSupport.swift:85,98,110,113,126
+Shared: CadenceFlowLayoutSupport.swift:91-93; CadenceFocusBundleSupport.swift:247;
+  CadenceMarkdownPresentationSupport.swift:65; CadenceOrderReassignment.swift:71,76;
+  CadenceScheduleSupport.swift:261,582; Components/CadenceDatePicker.swift:129;
+  Components/EstimatePickerControl.swift:312
+iOS: iOSListEditorViews.swift:355; iOSMarkdownPreview.swift:199; iOSSearchView.swift:534
+macOS: CadenceCalendarPicker.swift:129,181; Editor/MarkdownSlashCommandSupport.swift:154,304,570;
+  Editor/MarkdownTaskEmbedDrawingSupport.swift:207,210,227,230,241,243,365;
+  Sheets/CreateTaskSheet.swift:182; Views/CadenceContextPicker.swift:170,196;
+  Views/CalendarMonthGridSupport.swift:113,212; Views/CalendarPageComponents.swift:211,212;
+  Views/CalendarPageMonthGridSupport.swift:75,111,112; Views/ContainerPickerSupportViews.swift:122;
+  Views/GlobalSearchOverlayStateSupport.swift:22,24; Views/GlobalSearchSupportViews.swift:146,158;
+  Views/GoalPickerViews.swift:189,215; Views/HabitsFormSupportViews.swift:206;
+  Views/KanbanCardSupportViews.swift:254; Views/TasksPanelSupportViews.swift:290;
+  Views/TildeContainerPicker.swift:281; Views/TimelineMetricsSupport.swift:161,162,166,171,173
+```
+
+Can this happen today? **The production persistence trap can happen only under a catastrophic local
+store/bootstrap failure; none of the surveyed traps or subscripts can be driven to failure by a
+user action or synced record on the current call paths.** That conclusion is REASONED from the
+MEASURED census and the local guards, not crash telemetry.
+
+Thirty-second confirmation:
+
+```sh
+rg -n 'try!|fatalError\(|preconditionFailure\(|assertionFailure\(' Cadence --glob '*.swift'
+rg -n '\.first!|\.last!|Array\([^)]*\)\[[[:space:]]*0[[:space:]]*\]' Cadence --glob '*.swift'
+```
+
+**Looks solid:** the picker, markdown-table, layout, search, and calendar-grid accesses consistently
+derive indices from `.indices`, explicit bounds, non-empty guards, or arrays produced together. In
+particular, `MarkdownTableEditSupport.swift` validates row/column addresses before all five edits,
+and all three `MarkdownSlashCommandSupport.swift` commit paths use `indices.contains` immediately
+before indexing.
+
+**Not checked:** no build, tests, app run, sanitizer, fuzz input, crash telemetry, or SwiftSyntax AST
+pass. The array count is a reviewed lexical census; operator overloads and code generated outside
+the committed Swift sources are outside it.
+
 ## R23 — The whole icon-only-control census, not three tickets' worth
 
 T-672, T-673 and T-674 were each filed from a partial look and each named its own count (10, 8, 10).
@@ -1241,6 +1690,79 @@ Then: subtract the 28 that T-672/673/674 name. **How many are left?** If the rem
 will fold it into the same batch. If it is 60, the three tickets are the wrong shape and I need one
 sweep test instead, and I would rather learn that before four agents finish.
 
+ANSWER 2026-09-04:
+
+```text
+Tree read: d2c4593
+Dirty files: 38
+```
+
+**Answer: four unnamed source sites remain after subtracting Batch O's 28. Three are the already
+owned iOS sites in T-611. Only one is new.** Keep T-672/T-673/T-674 as shaped; fold the new macOS
+site into T-674 and widen the source test so this control shape cannot remain invisible.
+
+### Whole-app source census
+
+| Tree | Explicitly named bare-icon `Button` | Self-naming `Label(text, systemImage:)` | Unnamed bare-icon `Button` | Unnamed icon tap gesture | Unnamed total |
+|---|---:|---:|---:|---:|---:|
+| `Cadence/Shared` | 2 | 0 | 0 | 0 | 0 |
+| `Cadence/iOS` | 23 | 51 | 3 | 0 | 3 |
+| `Cadence/macOS` | 30 | 6 | 28 | **1** | **29** |
+| `Cadence/Models` + `Cadence/Services` | 0 | 0 | 0 | 0 | 0 |
+| **Total** | **55** | **57** | **31** | **1** | **32** |
+
+These are **source-site counts**, matching the ticket/test convention. A `ForEach` site can create
+many runtime controls. Toolbars, context menus, and swipe actions are included in the `Button`
+walk; 57 context/menu/action rows use a non-empty `Label` and therefore carry their own usable
+text. No `Label("", systemImage:)` exists.
+
+### The subtraction
+
+```text
+32 unnamed icon-only source sites
+- 28 macOS Button sites owned by T-672/T-673/T-674
+=  4 remaining
+
+3 = Cadence/iOS/iOSMarkdownPreview.swift:328,371 and
+    Cadence/iOS/iOSTaskDetailSheet.swift:244, already owned by T-611
+1 = Cadence/macOS/Sheets/CreateContextSheet.swift:126-135, newly uncovered
+```
+
+#### [P2, MEASURED] The icon palette is a control, but neither named nor seen by the control test
+
+`IconGrid` renders each offered system image in a `ZStack` and changes `selected` from
+`.onTapGesture` at `CreateContextSheet.swift:126-135`. There is no accessibility label, button
+trait, accessibility action, or `Button`. Keyboard and assistive-technology users therefore do not
+receive the control semantics that the adjacent visual grid presents. The current detector in
+`CadenceIOSControlAccessibilityTests.swift:84-116` intentionally recognizes only a `Button` whose
+label is a bare `Image`, so it reports the committed 31-site ledger while this site remains live.
+
+Can this happen today? **Yes.** Open context creation/editing on macOS and reach the icon grid. The
+cells are pointer-tappable in Release. No unusual persisted or synced state is required.
+
+**Suggested fix:** in T-674, make each icon cell a plain-style `Button`, give it a stable label such
+as `"Select \(humanizedIconName) icon"`, expose selected state, and preserve the existing fixed
+frame/visual treatment. Extend `CadenceIOSControlAccessibilityTests` (or a sibling source rule) to
+recognize icon-only `.onTapGesture` controls until the conversion lands; the durable preference is
+to ban that shape and require semantic `Button`s.
+
+Thirty-second confirmation:
+
+```sh
+rg -n 'knownUnnamedIconButtonSites|actual.values.reduce|desktop.values.reduce' CadenceTests/CadenceIOSControlAccessibilityTests.swift
+rg -n -B 10 -A 2 '\.onTapGesture' Cadence/macOS/Sheets/CreateContextSheet.swift
+rg -n 'Label\(""[[:space:]]*,[[:space:]]*systemImage:' Cadence --glob '*.swift'
+```
+
+**Looks solid:** the existing exact ledger is unusually useful: it pins all 31 unnamed bare-image
+buttons by file and count, proves the 3/28 iOS/macOS split, and explicitly excludes self-naming
+`Label` rows. The 55 named bare-image buttons use the established `.cadenceControlLabel` or
+`.accessibilityLabel` pattern rather than relying on a glyph name.
+
+**Not checked:** no build, tests, VoiceOver session, keyboard traversal, Accessibility Inspector,
+or runtime toolbar/menu expansion. Classification is source-measured; the quality of each of the
+112 existing names was not linguistically reviewed in this request.
+
 ## R24 — What does the iOS surface have that nothing can catch?
 
 The macOS test target never compiles `Cadence/iOS/`. That means every iOS-only file is unpinned by
@@ -1254,3 +1776,716 @@ Then the useful half: name the **iOS-only behaviours that have a macOS twin**, w
 against the shared layer would cover both. Those are the cheap wins. And name the iOS-only
 behaviours with no macOS twin at all — those are the genuinely uncovered ones, and I want to know
 whether that list is five things or fifty before deciding whether iOS ships in v1.
+
+ANSWER 2026-09-04:
+
+```text
+Tree read: d2c4593
+Dirty files: 38
+```
+
+**Premise correction:** the macOS product build does not exclude every file under `Cadence/iOS`.
+The synchronized target includes the folder (`project.pbxproj:194-209,220-227`), and platform fences
+do the exclusion. **100 of 105 Swift files, containing 39,742 of 40,487 lines, are wholly wrapped in
+`#if os(iOS)` and therefore absent from the macOS module.** Five metric/copy files are deliberately
+platform-neutral and do compile for macOS:
+
+```text
+Cadence/iOS/iOSSchedulePanelCopy.swift                  23 lines
+Cadence/iOS/iOSTaskInspectorMetrics.swift              110 lines
+Cadence/iOS/iOSTaskCollectionMetrics.swift             153 lines
+Cadence/iOS/iOSCalendarMetrics.swift                   297 lines
+Cadence/iOS/iOSEditorSheetMetrics.swift                162 lines
+                                                       ---------
+                                                       745 lines
+```
+
+So the useful release number is **100 files / 39,742 lines unavailable to a macOS build or macOS
+test**, not 105 / 40,487.
+
+### Shared-code test proxy
+
+It is not possible to state how many shared lines are *executed* from a source-only audit. Compiling
+a file is not executing it, and identifier mention is not line coverage. The following is a
+MEASURED static ownership proxy over all 173 Swift files / 32,522 lines in `Cadence/Shared` and
+`Cadence/Models`: declared types were matched against comment/string-stripped iOS, macOS, and test
+sources.
+
+| iOS-dependent shared/model group | Files | Lines | What the number proves |
+|---|---:|---:|---|
+| Direct type reference from `CadenceTests` | 117 | 26,557 | At least one declaration in each file is named by a unit-test source. It does **not** prove whole-file execution. |
+| macOS reference, no direct test reference | **23** | **3,003** | iOS depends on it and macOS can exercise it indirectly, but no test names its declarations. This is the closest defensible source proxy for “only through macOS call sites.” |
+| iOS reference, no macOS or direct test reference | **7** | **1,133** | Neither the macOS surface nor a direct unit-test reference reaches the declared type. Highest-value shared-layer gap. |
+| No iOS type reference found by this proxy | 26 | 1,829 | Outside the iOS-dependent denominator; may contain free functions or indirect dependencies the type-name proxy cannot attribute. |
+
+The seven strongest cheap-test candidates are exact:
+
+```text
+Cadence/Shared/CadenceCapturePaletteSupport.swift          424
+Cadence/Shared/CadenceDetailPanelPresentation.swift         93
+Cadence/Shared/CadenceNoteDateNavigation.swift              87
+Cadence/Shared/CadenceProjectPickerSupport.swift            32
+Cadence/Shared/CadenceSwipeActionSupport.swift              263
+Cadence/Shared/CadenceTaskStatusEditing.swift               173
+Cadence/Shared/Components/CadenceWrappingHStack.swift        61
+                                                           ----
+                                                          1,133 lines
+```
+
+The 23 macOS-proxy/no-direct-test files are:
+
+```text
+CadenceBundleTaskRowSupport.swift; CadenceCalendarEventStyle.swift;
+CadenceCalendarModeSupport.swift; CadenceCloudAccountProbe.swift; CadenceColorPalette.swift;
+CadenceDeepLinkResolutionSupport.swift; CadenceMarkdownImageInsertionNotice.swift;
+CadenceTaskRecurrenceEndPresentation.swift; CadenceTodayOverdueSummarySupport.swift;
+CalendarRecurrenceEditScope.swift; Components/CadenceAccentPalettePicker.swift;
+Components/CadenceBoardColumnHeader.swift; Components/CadenceBoardMetadataChip.swift;
+Components/CadenceDatePicker.swift; Components/CadenceInlineEmpty.swift;
+Components/CadenceInlineFailureNotice.swift; Components/CadenceTaskDetailLineLabel.swift;
+Components/CadenceTodayOverdueSummaryCards.swift; Components/CadenceTodayRolloverBanner.swift;
+Components/EmptyStateView.swift; Components/GoalProgressBar.swift;
+Components/HabitProgressViews.swift; GoalPresentationPalette.swift
+```
+
+### iOS behaviours with a macOS twin
+
+These are **behaviour families**, not file counts. Their UI composition is platform-specific, but
+their decisions can be pinned once in the shared layer and consumed by both surfaces.
+
+| Family | iOS witness | Shared seam / cheap test target |
+|---|---|---|
+| Task compose, placement, tags, priority, subtasks | `iOSCalendarQuickCreateSheet.swift:16-124`; `iOSTaskDetailSheet.swift:5-86` | `CadenceTaskComposerSupport`, `CadenceTaskPlanningSupport`, `CadenceTaskFieldEditCommit` |
+| Complete, cancel, reopen, settle and recurrence spawn/end | `iOSFocusView.swift:658`; `iOSTaskRowActionViews.swift:608-806` | `CadenceTaskStatusEditing`, `CadenceTaskRecurrenceWorkflowSupport`, `CadenceTaskRecurrenceEndPresentation` |
+| Area/project/list editing, section merge and wind-down | `iOSListEditorViews.swift:353-382`; `iOSColumnWindDownSupport.swift:10-185` | `CadenceSectionEditingSupport`, `CadenceSectionConfigMerge`, list-deletion planning |
+| Sorting, grouping, Today rollover and overdue presentation | `iOSTaskCollectionViews.swift:11`; `iOSTodayCompactViews.swift:1` | task query/presentation, `CadenceTodayRolloverSupport`, `CadenceTodayOverdueSummarySupport` |
+| Notes, folders, references, exports and markdown transformations | `iOSListNotesView.swift:24-55`; `iOSNoteExportMenu.swift:55-77` | note planning/folder/reference/export services and markdown parsers |
+| Calendar dates, grids, planning, links and recurrence scope | `iOSCalendarMonthViews.swift:13-81`; `iOSCalendarEventEditSheet.swift:16-141` | calendar date/grid/planning/link support and `CalendarRecurrenceEditScope` |
+| Goals, habits, milestones and progress | `iOSTrackingEditorComponents.swift:4-167`; `iOSFeatureDetailViews.swift:1` | goal/habit mutation, presentation and contribution summaries |
+| Reminder/notification reconciliation | `iOSInboxRemindersSection.swift:27-150`; `iOSNotificationsSettingsSection.swift:5` | reminder presentation and habit-notification reconciliation |
+| Cloud account/sync/store-recovery decisions | `iOSSettingsOverviewSections.swift:4-78` | `CadenceCloudAccountProbe`, `CadenceSyncHealth`, persistence recovery verdicts |
+| Deep-link destination and root selection | `iOSRootView.swift:231-306` | `CadenceDeepLinkResolutionSupport`, feature destination and shell navigation bridge |
+| Settings/defaults and export/review presentation | `iOSSettingsComponents.swift:4-116`; `iOSDataExportSettingsSection.swift:22-74` | settings copy/preferences, data-export presentation, App Store review readiness |
+
+The cheap-win list is therefore **11 families**, led by the seven shared files with no macOS/test
+reference and the 23 shared files with only a macOS proxy. A test should target the named shared
+decision, not screenshot the two UIs and call that behavioral coverage.
+
+### Genuinely iOS-only behaviour
+
+There are **10 meaningful platform-only families**, not fifty unrelated features:
+
+1. UIKit markdown editing, text storage/layout, keyboard selection, canvas drawing, and mobile
+   accessory strips (`iOSMarkdownEditor.swift:5-191`, `iOSMarkdownTextView.swift:4`,
+   `iOSMarkdownBlockCanvasRendering.swift:32-92`).
+2. Compact per-tab `NavigationStack` state, the More tab, and width-transition handoff
+   (`iOSRootView.swift:36-64,198-207`, `iOSMoreTabView.swift:14-37`).
+3. iPad regular-width split/detail composition and size-class presentation branches
+   (`iOSFeatureComponents.swift:163-282`, `iOSListViews.swift:10-50`).
+4. Touch capture radial menu, hold/release selection, scrim, and floating-create interaction
+   (`iOSCaptureRadialMenu.swift:231-315,415`).
+5. Custom swipe tray, full-swipe threshold, and gesture arbitration (`iOSSwipeActionRow.swift:12-96`).
+6. Touch board paging, drag/drop and press feedback (`iOSCalendarBoardView.swift:6-46,256-269`,
+   `iOSBoardCards.swift:227-371`).
+7. Mobile focus-session screen and landscape/compact timer composition (`iOSFocusView.swift:84-153`).
+8. Photos/file export and share-controller presentation (`iOSNoteExportMenu.swift:55-77`,
+   `iOSDataExportSettingsSection.swift:22-74`).
+9. iOS sheet/cover/inspector environment ownership (`iOSBundleInspectorHost.swift:34-87`,
+   `iOSTaskInspectorHost.swift:34-66`).
+10. The UIKit/EventKit authorization and write adapter itself (`iOSCalendarManager.swift:7-51,176-261`).
+    Calendar policy has a macOS twin, but this implementation does not; extract a protocol before
+    claiming one test covers both adapters.
+
+Can this happen today? **Yes.** Any defect confined to those 100 fenced files can ship while every
+macOS unit test remains green, because the compiler never type-checks that code for the tested
+destination. The five neutral metric files are the narrow exception.
+
+**Recommended release action:** add an iOS Simulator build gate first; it cheaply catches all
+39,742 lines for compilation. Then add an iOS test host/UI smoke target for the 10 platform-only
+families. In parallel, write ordinary shared unit tests for the seven no-proxy files, beginning with
+`CadenceTaskStatusEditing` and `CadenceSwipeActionSupport`; follow with the 23 macOS-proxy files.
+
+Thirty-second confirmation:
+
+```sh
+find Cadence/iOS -name '*.swift' -print0 | xargs -0 wc -l
+rg -L '^#if os\(iOS\)' Cadence/iOS --glob '*.swift'
+sed -n '194,227p' Cadence.xcodeproj/project.pbxproj
+```
+
+**Looks solid:** 117 iOS-dependent shared/model files already have direct test references, including
+the central task mutation/planning/query, recurrence workflow, note planning/folder, calendar
+planning/link, reminder reconciliation, and sync-health seams. The codebase has already done much
+of the expensive extraction work; the missing value is targeted pinning and an iOS compile/runtime
+lane.
+
+**Not checked:** no macOS or iOS build, test, simulator, runtime coverage, linker map, or Xcode
+scheme inspection beyond committed project membership. The 117/23/7 split is a static declaration-
+reference proxy and must not be represented as executed-line coverage.
+
+---
+
+## Note on R19–R24 (coordinator, 2026-09-04)
+
+Four of the six changed the plan. **R20** is now the ship checklist — it replaced a document I had
+been quoting with a state audit, and the split between agent-fixable and Apple-side is exactly the
+line I kept blurring. **R21** shrank the product backlog instead of growing it: 7 of 28 have no
+population and 6 are iOS-only. **R19** is the most alarming result of the run — 0 of 216, where I had
+assumed R18's four were unlucky. **R22 found nothing, and that is a good answer**; the 89-subscript
+census reviewed individually rather than counted is why I believe it.
+
+**R24's premise correction was right and mine was wrong.** The macOS target does not exclude
+`Cadence/iOS/`; platform fences do. Keep correcting the request's premise in the first line.
+
+**Decided since:** v1 ships **English-only**. T-18 is deferred as scope, not overlooked. Do not
+re-file it, and do not count missing localization as a finding in anything below.
+
+The next six are all pre-ship risk. The app **has never been used by anyone**, so code-derived
+answers about what a first run looks like are the only evidence that exists.
+
+## R25 — What does a brand-new user actually see, screen by screen?
+
+Nobody has ever run this app with an empty store and no permissions granted. Every quality judgement
+we have is from tests and from source. Before screenshots are captured and a build is submitted, I
+want the first run derived from code.
+
+Walk the launch path from `PersistenceController` and the root shells. Report, in order: what the
+window shows at first paint with zero tasks, zero lists, zero goals and no calendar access; which
+empty states appear and what each one says verbatim; whether anything is seeded (tags, default
+lists, a sample task); what the sidebar contains; and where the first call to action is, if there is
+one.
+
+Then the question I care most about: **is there any point in that sequence where the app looks
+broken rather than empty?** A blank pane with no explanation, a section header over nothing, a
+control that does nothing until data exists, a spinner with no terminal state. Name each with
+`file:line` and say what a first-time user would conclude.
+
+If the first run is genuinely clean, say so plainly — I will trust that more than a list of nitpicks.
+
+ANSWER 2026-09-04:
+
+```text
+Tree read: a3068e3
+Dirty files: 29
+```
+
+**The ordinary minimum-window first run is coherent and empty, not broken. One wide-window error
+path can produce a permanent spinner.**
+
+### What appears, in order
+
+1. `CadenceApp` constructs the shared `PersistenceController` and `NotificationManager`, but does
+   not request a permission (`CadenceApp.swift:20-28`). Startup maintenance repairs/migrates the
+   store; it does not seed a sample task, list, goal, habit, or default tag
+   (`PersistenceController.swift:64-107`).
+2. The macOS root selects Today by default (`macOSRootView.swift:20-22`;
+   `macOSRootStateSupport.swift:10-13`). At the 960pt window floor with the stored 264pt sidebar,
+   the detail is 696pt and uses the two-pane **tasks + timeline** layout; Notes appears only once the
+   detail reaches 1,094pt (`CadenceRegularPaneLayout.swift:617-642`).
+3. The sidebar contains Today, Tasks, Calendar and Notes in its primary navigation; Goals and Habits
+   below; Settings and Focus in the footer. With no contexts/lists, its middle list region is simply
+   empty (`SidebarView.swift:55-77,181-208`). It has no orphaned section header.
+4. Today shows a `Today` header with count 0 and a visible `+` whose accessible name is `New task`
+   (`TasksPanelSupportViews.swift:36-74`). The empty state says **“Nothing planned”** and
+   **“Add a task with +, or schedule one from Inbox.”**
+   (`CadenceTodayPresentationSupport.swift:81-86`; `TasksPanel.swift:320-339`). This is the first
+   call to action. The adjacent timeline has a `Timeline` header and empty hour grid, which remains
+   usable for scheduling (`SchedulePanelShellViews.swift:23-35`; `SchedulePanel.swift:105-143`).
+5. On a wide window, mounting `NotePanel` creates today's note, this week's note and the stable
+   `Notepad` record if absent (`CadenceNotePlanningSupport.swift:123-131`;
+   `NoteMigrationService.swift:421-463`). These are infrastructure records with empty content, not
+   sample data.
+
+### Live risky spot
+
+**P2, MEASURED source / INFERRED runtime:** `NotePanel.swift:80-99,113` draws an unlabelled
+`ProgressView` whenever any active-tab note is nil. `loadOrCreateCoreNotes` swallows all three
+creation/fetch failures with `try?` and carries no error state or retry
+(`CadenceNotePlanningSupport.swift:123-131`). **Can this happen today? Yes**, on a wide first run if
+the shared store refuses a fetch/save. The user sees an indefinitely spinning note pane and will
+reasonably conclude Cadence is stuck. No matching open TODO was found.
+
+**Suggested fix:** make `loadOrCreateCoreNotes` throwing (or return a typed result), keep loading,
+loaded and failed states distinct in `NotePanel`, and show `CadenceInlineFailureNotice` with Retry.
+Because these helpers insert and save, preserve the pending-change discipline while propagating the
+failure; do not replace the swallowed errors with another `try?` one frame up.
+
+Thirty-second confirmation:
+
+```sh
+sed -n '80,115p' Cadence/macOS/Views/NotePanel.swift
+sed -n '123,131p' Cadence/Shared/CadenceNotePlanningSupport.swift
+sed -n '320,340p' Cadence/macOS/Views/TasksPanel.swift
+```
+
+**Looks solid:** the default-width shell gives an empty user a named destination, a concrete next
+action, and a functional planning surface. It neither invents sample work nor asks for Calendar at
+launch.
+
+**Not checked:** no app launch, screenshot, build, test, accessibility session, or deliberately
+failing store. Window composition and failure reachability are derived from clean source.
+
+## R26 — The permission prompts, in order, with their explanations
+
+Cadence asks for Calendar, Reminders, Notifications, and iCloud. App Review rejects apps that prompt
+without context, and users deny prompts they don't understand. Neither failure is visible in a test.
+
+For each permission: where is it requested (`file:line`), **what triggers the request** — launch, a
+user action, or a view appearing — what usage-description string does `Info.plist` supply, and is
+there any in-app explanation shown *before* the system prompt.
+
+Then the half nobody checks: **what happens on denial.** For each, trace the denied path. Does the
+feature degrade with an explanation, fail silently, show an error that blames the user, or leave a
+control that appears functional and does nothing? A silently dead control after a denied prompt is
+the most common reason a first session ends badly.
+
+Flag any permission requested at launch rather than at point of use. That is both a review risk and
+the single biggest cause of blanket denials.
+
+ANSWER 2026-09-04:
+
+```text
+Tree read: a3068e3
+Dirty files: 29
+```
+
+**No user-visible permission is requested at launch. Calendar quick-create has one live denied-state
+dead control; the other permission surfaces degrade explicitly.**
+
+| Capability | Trigger and pre-prompt explanation | System usage string | Denial path |
+|---|---|---|---|
+| Calendar | **User action.** macOS Settings (`SettingsListManagementSections.swift:207-237`), iOS Settings (`iOSCalendarSettingsSection.swift:192-239`), iOS Search (`iOSSearchView.swift:465-500`) and iOS quick-create (`iOSCalendarQuickCreateSheet.swift:340-357`) ask only after the user presses Allow. Each shows an explanation first. | `Info.plist:22-23`: “Cadence uses Calendar to show events and to create, update, or delete calendar events when you ask it to.” | Settings and Search switch to explanatory denied copy and Open Settings. **Quick-create does not; finding below.** |
+| Reminders | **User action** from the macOS/iOS Reminders settings or Inbox connection card. The shared state supplies the explanation and chooses Request, Open Settings, or no action (`CadenceRemindersPresentationSupport.swift:74-163`); the actual EventKit request is `CadenceRemindersManager.swift:130-166`. | `Info.plist:24-25`: “Cadence uses Reminders to show your active reminders in Inbox and mark them complete when you check them off.” | Denied offers Open Reminders Settings; restricted explains that device policy blocks access and deliberately offers no dead action. No silent failure found. |
+| Notifications | **User action** in Settings. Both surfaces explain which task/due/habit alerts are local before calling the sole authorization method (`CadenceSettingsSectionCopy.swift:166-192`; `NotificationManager.swift:52-60`; `iOSNotificationsSettingsSection.swift:62-113`). | None is required or supplied; local-notification authorization has no Info.plist usage-description key. | A denial leaves the explanatory access card; iOS immediately opens app Settings after the denied answer. That is abrupt but explicit, not silent. |
+| iCloud | **Not a TCC permission prompt.** The CloudKit-backed store is selected during persistence setup (`PersistenceController.swift:143-161`). Settings probes account status on appearance or explicit refresh (`CadenceCloudAccountProbe.swift:19-50`). | No usage-description string exists or is required for the user's iCloud account state. | Signed-out/restricted/error states are rendered as sync/account status. There is no app-controlled Allow button that could become inert. |
+
+`CadenceAppDelegate.swift:27-34` does register for silent remote notifications at launch, but that API
+does **not** display the local-notification permission prompt and does not contradict the result above.
+
+### Finding
+
+**P1 first-session trap, MEASURED:** `iOSCalendarQuickCreateSheet.swift:342-357` branches only on
+`!calendarManager.isAuthorized`. After the first request is denied, it continues to show
+**“Allow Calendar Access”**. A second press calls `requestAccess()` again; EventKit cannot re-present
+the system prompt, the function answers false, and `normalizeCalendarSelection()` changes no visible
+state. **Can this happen today? Yes:** deny Calendar from this sheet once and the only offered control
+is silently dead. The correct pattern already exists twelve lines of logic away in iOS Calendar
+Settings (`iOSCalendarSettingsSection.swift:207-222`) and in Search: branch on `isDenied`, explain the
+state, and offer Open Settings. No matching open TODO was found.
+
+**Suggested fix:** make quick-create consume the same shared Calendar authorization presentation
+state as Settings/Search. For `.notDetermined`, show Allow; for `.denied`, show platform-specific
+copy plus Open Settings; for `.restricted`, explain and expose no action. Pin the state-to-action
+mapping in a pure shared test, then source-pin the sheet to that mapping.
+
+Thirty-second confirmation:
+
+```sh
+sed -n '340,358p' Cadence/iOS/iOSCalendarQuickCreateSheet.swift
+sed -n '207,222p' Cadence/iOS/iOSCalendarSettingsSection.swift
+rg -n 'requestAuthorization\(|requestFullAccess|requestAccess\(' Cadence --glob '*.swift'
+```
+
+**Looks solid:** Calendar and Reminders usage descriptions accurately name both reads and writes;
+none of the four capabilities surprises the user with a launch-time system prompt; Reminders has a
+particularly complete four-state presentation model.
+
+**Not checked:** no permission dialogs were driven on device/simulator, no App Review submission was
+performed, and no build/tests ran. Request and denied paths are clean-source control-flow readings.
+
+## R27 — Audit the English, because English is all v1 ships
+
+The user has decided v1 is English-only. That raises the bar on the English: it is the whole
+interface, not one localization among several.
+
+Census every user-facing string in `Cadence/` — labels, buttons, headers, empty states, alerts,
+notice text, menu items, tooltips, notification bodies. Report:
+
+- **Terminology collisions.** The same concept spelled two ways. We have already been bitten by
+  "Block" vs "Task Bundle" and by "Other" vs "No Context". Find the rest by concept, not by string.
+- **Case inconsistency.** Sentence case vs Title Case on comparable controls, in the same surface.
+- **Page headers that describe the page the user is already on.** This is a standing repo rule in
+  `CLAUDE.md`; report violations even though a sweep supposedly covers it, because I want to know
+  whether the sweep is complete.
+- **Copy that blames the user, or that states a failure without a next action.**
+- **Actual errors** — typos, wrong articles, broken interpolation, a sentence that reads wrong when
+  its count is 1.
+
+Rank by how many surfaces each problem touches. A single wrong word in ten places outranks ten
+one-off awkward sentences.
+
+ANSWER 2026-09-04:
+
+```text
+Tree read: a3068e3
+Dirty files: 29
+```
+
+The lexical census found **2,428 candidate user-facing constructor/modifier lines** (`Text`,
+`Button`, `Label`, `Toggle`, fields, menus, help and accessibility labels), followed by targeted
+reads of shared copy enums, alert/notice text and notification bodies. That is a source census, not
+a claim that every string literal is visible: interpolation, wrappers and dead branches require the
+concept-level review below.
+
+### Findings, ranked by spread
+
+1. **P1 — “Block” has drifted back to “Bundle” across 9 files / 11 live UI literals (MEASURED).**
+   `TaskBundle.defaultDisplayTitle` says Block and current iOS block creation/detail agrees, but
+   Focus and macOS creation/edit/delete still say `Bundle`, `Bundle tasks`, `Bundle Focus`,
+   `Log Bundle Session`, `Bundle title`, `Delete Bundle?`, and `Delete Bundle`
+   (`CadenceFocusBundleSupport.swift:163`; `iOSFocusView.swift:500`;
+   `FocusChromeSupportViews.swift:120`; `FocusBundleTaskSupportViews.swift:20`;
+   `FocusLogSessionPopovers.swift:163`; `FocusSidebarSupportViews.swift:155`;
+   `QuickCreateChoicePopover.swift:248,355`; `TimelineBundleBlock.swift:62`;
+   `TimelineBundleBlockSupportViews.swift:71,203`). **Can this happen today? Yes**, through ordinary
+   Block creation, editing and Focus. T-567 is closed and only centralized the untitled fallback;
+   it does not cover this live vocabulary collision.
+
+2. **P2 — four count strings are grammatically wrong at 1 (MEASURED).** “1 selected tasks” at
+   `FocusLogSessionPopovers.swift:166`, “1 tasks” at `FocusSidebarSupportViews.swift:156`,
+   “Collapsed, 1 notes” at `CadenceNotesListSupport.swift:692`, and “1 milestones / 1 habits” at
+   `iOSFeatureViews.swift:184-190`. **Can this happen today? Yes** with one selected task, one Block
+   member, one note in a collapsed group, or a goal with one child/habit.
+
+3. **P2 — Markdown control capitalization differs across the two editor surfaces (MEASURED).** iOS
+   keyboard/accessory commands say `Bulleted List`, `Numbered List`, `Code Block`, `Note Link`, and
+   `Task Reference` (`iOSMarkdownTextView.swift:58-72`;
+   `iOSMarkdownAccessoryViews.swift:530-546`), while macOS VoiceOver says `Bulleted list`,
+   `Numbered list`, `Code block`, `Note link`, and `Task reference`
+   (`MarkdownEditorView.swift:329-363`). The shared slash-command vocabulary already exists in
+   `MarkdownSlashCommandCoreSupport.swift:34-50`; use it as the correct pattern.
+
+4. **P3 — Reminders' pre-consent heading blames the state before the user has chosen (MEASURED).**
+   `.notDetermined` says **“Reminders access required”** at
+   `CadenceRemindersPresentationSupport.swift:91-97`, while Calendar and Notifications correctly
+   distinguish a neutral `Connect ...` offer from an after-denial `... access required` warning.
+   **Can this happen today? Yes**, on the first visit to Reminders settings. It is not a dead control,
+   but it is the one remaining demand-shaped permission introduction.
+
+5. **Already filed, do not duplicate:** T-771 owns `Other` versus `No Context` versus actual
+   `Context` terminology. Its population remains live on this tree.
+
+### Suggested fixes
+
+- Add shared, user-facing Block vocabulary beside `TaskBundle.defaultDisplayTitle`, migrate only
+  product words (leave Settings' technical `Bundle ID` alone), and source-scan for UI string
+  literals containing Bundle outside an explicit exemption.
+- Add a tiny shared pluralization helper for count+noun and use it for all four measured sites;
+  test 0, 1 and 2.
+- Make the Markdown core own sentence-case accessibility titles and have both toolbar adapters read
+  them. Do not create a second case table.
+- Give Reminders the Calendar/Notifications two-title state model: `Connect Reminders` before the
+  prompt, `Reminders access required` only after denial.
+
+Thirty-second confirmation:
+
+```sh
+rg -n '"[^"]*Bundle[^"]*"' Cadence --glob '*.swift'
+rg -n 'selected tasks|\) tasks|\) notes|milestones /|milestones.*habits' Cadence --glob '*.swift'
+rg -n 'PageHeader\([^\n]*subtitle:' Cadence --glob '*.swift'
+```
+
+**Looks solid:** the page-header rule currently has **zero** direct `PageHeader(... subtitle:)`
+violations. Save/delete failure copy generally uses object-specific shared notices and does not
+blame the user. No additional spelling typo survived the candidate review beyond the count grammar
+above.
+
+**Not checked:** no runtime localization extraction, screenshot OCR, VoiceOver reading, build, or
+tests. Strings assembled indirectly by arbitrary functions can evade a constructor-based census;
+the concrete findings are measured at their source sites.
+
+## R28 — The widget extension nobody has audited
+
+`CadenceWidgets` ships inside the submitted binary and has never been reviewed. It reads the shared
+store through the app group, which means it can be wrong in ways the app is not.
+
+Report: which widget families and sizes are declared; what each timeline provider returns for
+`placeholder`, `snapshot` and `timeline`; how often it refreshes and whether that budget is
+realistic; what it shows when the app group store is empty, unreadable, or the user has never opened
+the app; and whether anything in the widget can write, rather than read.
+
+Two specific risks worth naming if present: a placeholder that shows real user data (it renders in
+contexts the user may not expect), and a timeline that never reloads after the app changes data.
+
+ANSWER 2026-09-04:
+
+```text
+Tree read: a3068e3
+Dirty files: 29
+```
+
+**Four widget families ship. Their data/privacy and write boundaries are sound; Milestone Momentum
+alone can carry yesterday's labels past midnight.**
+
+| Family | Sizes | Provider behavior | Scheduled refresh |
+|---|---|---|---|
+| Today Tasks | small, medium, large, extra large (`TodayTasksWidget.swift:160-171`) | Placeholder is synthetic tasks; snapshot reads the current store; timeline emits one current entry (`:15-43,46-125,128-140`). | ready 15m, empty 30m, unavailable 5m, capped at next day +60s (`CadenceTodayWidgetSupport.swift:135-154`). |
+| Habit Check-In | small, medium, large (`HabitCheckInWidget.swift:103-114`) | Placeholder is eight hardcoded habits; snapshot/timeline read current store (`:14-40,43-79`). | ready 20m, empty 45m, unavailable 5m, capped at next day +60s (`CadenceHabitWidgetSupport.swift:116-134`). |
+| Calendar Snapshot | small, medium, large, extra large (`CalendarSnapshotWidget.swift:89-100`) | Placeholder is synthetic; snapshot/timeline read a 14-day current-store window (`:13-39,42-84`). | ready 20m, empty 45m, unavailable 5m, capped at next day +60s (`CadenceCalendarWidgetSupport.swift:126-144`). |
+| Milestone Momentum | small, medium, large, extra large (`MilestoneMomentumWidget.swift:102-113`) | Placeholder is four hardcoded goals; snapshot/timeline read up to five current goals (`:13-39,42-73`). | ready 30m, empty 60m, unavailable 5m, **no day-boundary cap** (`CadenceMilestoneWidgetSupport.swift:118-129`). |
+
+All four open the app-group store read-only with CloudKit disabled in the widget process and map any
+open/fetch failure to a typed unavailable snapshot. Empty and unavailable states are explicit:
+
+- Today: “Nothing planned today” / “Widget needs Cadence”
+  (`TodayTasksWidgetView.swift:409-427`).
+- Habits: “No habits due today” / “Habit widget needs Cadence”
+  (`HabitCheckInWidget.swift:295-310`).
+- Calendar: “Schedule is clear” / “Calendar widget needs Cadence”
+  (`CalendarSnapshotWidget.swift:352-367`).
+- Milestones: “No active milestones” / “Milestone widget needs Cadence”
+  (`MilestoneMomentumWidget.swift:388-403`).
+
+The unavailable message tells the user to open Cadence once; the never-opened and unreadable-store
+cases therefore do not render a blank widget. **No placeholder reads user data.**
+
+### Writes and reloads
+
+Today completion and Habit check-in are the only widget UI writes
+(`TodayTasksWidgetView.swift:432`; `HabitCheckInWidget.swift:241`). Their intents use writable shared
+containers, propagate save errors, publish the external-write marker and force a widget reload
+(`CadenceWidgetIntents.swift:26-49,57-100,183-247`). Calendar and Milestones are read-only links.
+
+The app asks WidgetKit to reload whenever its scene leaves active
+(`iOSRootView.swift:159-172`; `macOSRootView.swift:324-329`), while privacy reset, palette changes and
+widget writes force reloads. Therefore the requested “timeline never reloads after the app changes
+data” failure is **not present**. WidgetKit still controls the actual delivery time, as intended.
+
+### Finding
+
+**P2, MEASURED:** Milestone Momentum is the only date-sensitive provider whose reload calculation
+does not cap at the next day. Its cards carry `nextActionDueDate` and `dueTodayLabel`, yet a ready
+entry created at 23:50 may remain for about 20 minutes after midnight; an empty one for about 50.
+**Can this happen today? Yes**, without any unusual state. The three sibling support types already
+contain the correct `min(fallback, nextStartOfDay + 60s)` pattern. No matching TODO was found.
+
+**Suggested fix:** reuse a shared widget reload policy that accepts ready/empty intervals and always
+applies the day-boundary cap. Add a pure date test at 23:50 proving all four families request a
+reload at 00:01 rather than after their fallback interval.
+
+Thirty-second confirmation:
+
+```sh
+sed -n '118,129p' Cadence/Services/CadenceMilestoneWidgetSupport.swift
+sed -n '126,144p' Cadence/Services/CadenceCalendarWidgetSupport.swift
+rg -n 'reloadAllWidgets' Cadence CadenceWidgets --glob '*.swift'
+```
+
+**Looks solid:** every family has synthetic gallery data, explicit empty/unavailable rendering,
+bounded retry, and a deep link. Interactive writes use the same recurrence/habit helpers as the app
+and force refresh only after a successful change.
+
+**Not checked:** no widget gallery, timeline execution, app-group corruption, build, tests, or real
+WidgetKit scheduling. Refresh timing and state behavior are source-measured policy.
+
+## R29 — Does the MCP boundary still compile, and has it drifted?
+
+`CadenceMCPServer` uses an **explicit Sources list**, which means the app scheme cannot see it break.
+It has been outside every green run this entire project. That is the same hollow-instrument shape as
+R19, one target over.
+
+Report: whether the target's Sources list still matches the files on disk; whether anything it reads
+has drifted from the current SwiftData models — a renamed property, a changed optionality, a model
+it does not know about; and whether it is included in the submitted app bundle or genuinely
+separate. If it ships inside the app, its correctness is a review concern; if it does not, say so
+and I will stop treating it as one.
+
+State plainly whether you can determine it compiles without building it, and do not guess.
+
+ANSWER 2026-09-04:
+
+```text
+Tree read: a3068e3
+Dirty files: 29
+```
+
+**Static membership and schema checks pass. I cannot determine that the target compiles without
+building it, and I did not build it.**
+
+### Measured static result
+
+- `CadenceMCPServer` is a standalone command-line target (`project.pbxproj:454-471`). The Cadence app
+  embeds and depends on `CadenceWidgets`, not the MCP executable (`project.pbxproj:120-128`). **It is
+  genuinely separate and is not an App Review binary concern.**
+- Its explicit Sources phase contains **43 unique Swift entries**, all 43 paths exist, and all four
+  files under `CadenceMCPServer/` are present (`project.pbxproj:604-652`). There are no orphaned MCP
+  server source files or missing listed files.
+- The model tree declares **21 `@Model` types**. `CadenceSchema.schema` contains all 21 exactly once
+  (`CadenceSchema.swift:4-26`), and every declaring model file is in the MCP Sources phase.
+- MCP read-only and read-write containers both construct against that exact shared schema
+  (`CadenceModelContainerFactory.swift:68-102`). There is no second MCP-owned schema to drift.
+- The tool surface still names tasks, Blocks, contexts, containers, tags, all note/document kinds,
+  goals, habits and links, plus write tools for task lifecycle and core-note append
+  (`CadenceMCPToolDefinitions.swift:61-224`). No current model family is silently absent from the
+  compiled source inventory.
+- Neither `7e58fc6` nor `a3068e3` changed a model property or MCP source. A targeted reference read
+  found no renamed-property or optionality mismatch in the current MCP DTO/service code.
+
+That last point is **source-measured but not compiler-measured**. It cannot catch a Swift type-check,
+actor-isolation, extension-membership, linker or deployment-setting failure. A source list that
+looks complete is necessary evidence, not a compile result.
+
+### Existing work
+
+Do not file a duplicate. T-435 already records the honest closure: CI must build
+`-scheme CadenceMCPServer` directly (`docs/TODO.md:4753-4759`). Its source guard was strengthened,
+but the direct CI lane remains open. The current audit changes neither its premise nor its fix.
+
+Thirty-second static confirmation:
+
+```sh
+sed -n '604,652p' Cadence.xcodeproj/project.pbxproj
+find CadenceMCPServer -name '*.swift' -print | sort
+sed -n '4,26p' Cadence/Services/CadenceSchema.swift
+```
+
+Compiler confirmation, deliberately **not run** here:
+
+```sh
+/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
+  -project Cadence.xcodeproj -scheme CadenceMCPServer \
+  -derivedDataPath /tmp/cadence-mcp-verify build
+```
+
+**Looks solid:** sharing `CadenceSchema.schema` between app and MCP container construction removes
+the most dangerous drift class, and the explicit target currently includes every model declaration.
+The server's separation from the submitted app means an MCP-only defect does not block App Store
+review, though it still blocks an honest MCP release.
+
+**Not checked:** compilation, linking, execution, store opening, tool round trips, build warnings, or
+the commit message's earlier MCP-build claim.
+
+## R30 — Contrast and Dynamic Type against the theme tokens
+
+Every colour in this app comes from `Theme.swift` by repo rule, which makes contrast checkable
+arithmetically rather than by eye — a rare case where a read-only audit can settle an accessibility
+question properly.
+
+Compute the WCAG contrast ratio for every foreground/background token pair the app actually uses, in
+both light and dark. Report pairs below 4.5:1 for body text and below 3:1 for large text and control
+glyphs, with the token names and where the pair is used. Secondary and dimmed text is where this
+usually fails, and `Theme.dim` on a tinted background is the specific case I would check first.
+
+Separately: does any user-facing text use a fixed point size instead of a Dynamic Type text style?
+List those sites. A fixed 12pt label is unreadable to a user who has raised their system text size,
+and it is invisible to every test we have.
+
+ANSWER 2026-09-04:
+
+```text
+Tree read: a3068e3
+Dirty files: 29
+```
+
+**Premise correction:** Cadence has no light appearance. `Theme.preferredColorScheme` is fixed to
+`.dark`, and the source explicitly says there is one neutral ramp (`Theme.swift:8-15,245-259,378-379`).
+There is therefore no honest light-mode result to report. Source also cannot prove every inherited,
+opacity-composited or user-owned `colorHex` pair, but the named direct token families already expose
+three systemic failures.
+
+Ratios below are WCAG relative-luminance calculations from the committed sRGB hex values.
+
+### Neutral foregrounds
+
+| Foreground | `bg` | `surface` | `surfaceElevated` | `surfaceHighlight` | Result |
+|---|---:|---:|---:|---:|---|
+| `text` | 17.02 | 15.86 | 14.84 | 14.05 | Pass |
+| `muted` | 7.76 | 7.24 | 6.77 | 6.41 | Pass |
+| `subdued` | 6.70 | 6.24 | 5.84 | 5.53 | Pass |
+| `dim` | **4.12** | **3.84** | **3.59** | **3.40** | **Fails 4.5 for body text everywhere**; full-strength only passes the 3.0 large-text/control floor. |
+
+`Theme.dim.opacity(0.85)` falls to 3.26/3.11/2.96 on bg/surface/elevated; at 0.82 it is
+3.11/2.98/2.84, and at 0.76 or below it is under 3 even on bg. The app has **32 direct dim-opacity
+foreground sites**. Reachable failures include active task secondary text
+(`iOSTaskViews.swift:209-214`), Add Subtask (`CreateTaskSheet.swift:210-219`), row remove glyphs
+(`CreateTaskSheet.swift:188-203`; `TasksPanelSupportViews.swift:108,126`), Focus separators
+(`FocusChromeSupportViews.swift:53-57`), habit completion glyphs
+(`HabitsSupportViews.swift:89`; `iOSFeatureDetailViews.swift:445`) and the shared empty-state glyph
+(`EmptyStateView.swift:17-19`). Disabled-only controls are WCAG-exempt and were not used to make the
+finding.
+
+### Foregrounds on colored fills
+
+`Theme.onColor` is white at 26 foreground sites; `onColorSecondary` is white at 75% at one direct
+site (`Theme.swift:404-416`). Opaque white contrast against every selectable accent is:
+
+| Palette | blue | red | green | amber | purple | teal |
+|---|---:|---:|---:|---:|---:|---:|
+| Cadence | **2.75** | **2.78** | **2.08** | **1.90** | **2.72** | **1.98** |
+| Ember | 3.23 | 3.05 | **2.11** | **2.38** | **2.64** | **2.44** |
+| Glacier | **2.21** | **2.50** | **2.00** | **1.54** | **2.73** | **1.75** |
+
+Every value fails 4.5 for ordinary text; all but Ember blue/red also fail 3.0 for large text and
+control glyphs. The 75% secondary token is necessarily worse. **Can this happen today? Yes:** the
+pair is visible on the iOS floating create button (`iOSFloatingCreateTaskButton.swift:46-52`), the
+macOS Today add button (`TasksPanelSupportViews.swift:61-70`), 11pt red Delete buttons
+(`SettingsSupportViews.swift:213-220,418-425`), tag/context chips
+(`TaskTitleEntryField.swift:222-227,270-275`) and 10pt calendar chips
+(`CalendarPageMonthSupportViews.swift:193-203,512-520`). User-selected colors make a constant-white
+foreground still less defensible because their contrast is unbounded.
+
+The marker pair is worse: `markerHighlightText #fff4c2` on `markerHighlightFill #f6c343` is
+**1.48:1** (`Theme.swift:314-316`; `MarkdownEditorSupport.swift:219-221`). Highlighted Markdown text
+is therefore a live body-text failure.
+
+### Dynamic Type
+
+This is systemic, not a handful of labels. **MEASURED:** `Cadence/` contains **1,257**
+`.font(.system(size: ...))` modifiers across **180 Swift files**, **zero** Dynamic Type style font
+modifiers (`.body`, `.headline`, `.caption`, etc.), and no `@ScaledMetric`, `UIFontMetrics` or
+`.dynamicTypeSize` adoption. A structural classification found at least **891 user-facing
+Text/Button/Label/field sites in 175 files**; the remainder are mostly icon geometry. Listing 891
+lines inline would make this handoff materially harder to use, so the exhaustive line ledger is the
+first confirming command below. The highest concentrations are:
+
+```text
+26  Cadence/macOS/Views/GoalsSupportViews.swift
+25  Cadence/macOS/Views/SettingsSectionViews.swift
+25  Cadence/iOS/iOSMarkdownPreview.swift
+24  Cadence/macOS/Views/SettingsSupportViews.swift
+24  Cadence/macOS/Views/QuickCreateChoiceSupportViews.swift
+21  Cadence/macOS/Views/TasksPanelSupportViews.swift
+19  Cadence/macOS/Views/KanbanColumnSupportViews.swift
+18  Cadence/iOS/iOSSettingsTemplateAndListSections.swift
+18  Cadence/iOS/iOSFeatureDetailViews.swift
+17  Cadence/macOS/Views/HabitsSupportViews.swift
+17  Cadence/iOS/iOSTodaySchedulePanel.swift
+17  Cadence/iOS/iOSCalendarSettingsSection.swift
+16  Cadence/macOS/Views/SettingsListManagementSections.swift
+16  Cadence/macOS/Views/FocusLogSessionPopovers.swift
+16  Cadence/iOS/iOSCalendarTimelineViews.swift
+```
+
+**Can this happen today? Yes.** On iOS, raising the system content-size category does not turn these
+fixed points into semantic Dynamic Type styles. This is an app-wide accessibility architecture gap,
+not a one-screen defect.
+
+### Suggested fix and order
+
+1. Replace `onColor` with a contrast-resolving foreground. App-owned bright accents can use a dark
+   foreground; user-owned colors need black/white selection from measured luminance. Pin every
+   palette stop at 4.5 for text and 3.0 for glyphs.
+2. Change marker-highlight text to a dark token that reaches 4.5 against the yellow fill.
+3. Reserve `dim` for disabled/decorative content. Promote readable captions to `subdued` or `muted`
+   and remove alpha from semantic text/control glyphs.
+4. Introduce a small semantic typography layer backed by Dynamic Type styles, then migrate by shared
+   components first: settings fields/cards, page/pane headers, task rows, editor accessories, and
+   only then leaf views. Use `@ScaledMetric(relativeTo:)` where fixed geometry must track text.
+
+Thirty-second confirmation:
+
+```sh
+rg -n '\.font\(\.system\(size:' Cadence --glob '*.swift'
+rg -n '\.font\(\.(body|headline|caption|footnote)|@ScaledMetric|\.dynamicTypeSize' Cadence --glob '*.swift'
+rg -n 'foregroundStyle\(Theme\.(onColor|dim)' Cadence --glob '*.swift'
+```
+
+**Looks solid:** `text`, `muted` and `subdued` all clear 4.5 on every neutral surface stop, often by
+a wide margin. App accent colors used *as foregrounds on the dark neutral ramp* are also strong; the
+failure is specifically the reversed white-on-bright-fill contract and over-dimmed content.
+
+**Not checked:** no Accessibility Inspector, Increase Contrast mode, screenshot sampling,
+user-selected color corpus, build, tests, or visual Dynamic Type run. Ratios are measured; actual
+pair reachability is source-derived where cited and cannot account for arbitrary SwiftUI compositing.
+
+<!-- FOLDED-THROUGH: R24 -->
