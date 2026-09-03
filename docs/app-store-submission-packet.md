@@ -98,14 +98,27 @@ Do not answer "Data Not Collected" for the app target because Cadence stores and
 
 ## Screenshot And Metadata Checklist
 
+App Store Connect takes 1 to 10 macOS screenshots per localisation, at exactly one of 1280x800,
+1440x900, 2560x1600, or 2880x1800 pixels, PNG or JPEG, RGB, flattened, with no alpha channel. A raw
+`screencapture` of a window has transparent rounded corners and is rejected for that reason.
+
+Candidates, and the two scripts that reproduce them, live in `docs/screenshots/`. Read
+`docs/screenshots/README.md` before regenerating: it carries the launch and capture rules, including
+that a locked screen makes capture impossible.
+
 Prepare screenshots that show actual product functionality, not placeholder/sample-only screens:
 
 - Today or timeline planning surface.
 - Notes/editor surface.
 - Calendar integration surface.
-- Goals or habits surface.
+- A list in board (Kanban) mode, or the goals/habits surface.
 - Settings privacy/data safety surface.
 - Widget examples if widgets are highlighted in metadata.
+
+The seeded content in `docs/screenshots/seed-screenshot-data.py` is written to be plausible product
+data. Do not ship a capture of the UI-test fixture in `Cadence/Services/CadenceUITestSupport.swift`:
+"UI Test Workspace", "Alpha Area" and "Beta Project" are exactly the placeholder-looking content
+review flags.
 
 Metadata must avoid claims that are not true for the build:
 
