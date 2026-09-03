@@ -837,6 +837,38 @@ more than once anywhere in the file, plus any id in Open that also has an entry 
 **Do not move them** — the coordinator will, because moving entries is what dropped three tickets
 earlier today. Just name them.
 
+ANSWER 2026-09-03:
+
+```
+Tree read: 7be904a
+Dirty files: 38
+```
+
+**MOVE SIX CLOSED ENTRIES, DEDUPLICATE T-777, AND DO NOT CHASE AN OPEN/DONE OVERLAP.**
+
+- **MEASURED — strict `CLOSED` population while still Open:** T-651, T-653, T-742, T-746, the first
+  T-777 entry, and T-784. T-562 uses `RESOLVED` rather than `CLOSED`; its remaining body is struck
+  historical context, so R15 separately classifies it as BOOKKEEPING rather than pretending it is
+  live. T-704 merely uses the word “closed” in its explanation and is not closure-marked.
+- **MEASURED — duplicate id:** T-777 is the only repeated entry header in the whole file, with two
+  entries. **DEDUPLICATE** by retaining the live residue once and moving the closed history with the
+  completed entry; do not discard either piece of reasoning.
+- **MEASURED — Open also present under Done:** none. There is no cross-section duplicate to repair.
+
+Can this happen today? **Yes.** Any Open count taken from entry headers reads six completed entries
+as work, and any id-set count collapses the two T-777 entries differently from an entry count.
+
+Thirty-second confirmation:
+
+```sh
+git show HEAD:docs/TODO.md | awk '/^## Done/{exit} /^- \[T-[0-9]+\]/{print}'
+git show HEAD:docs/TODO.md | awk 'match($0,/^- \[T-[0-9]+\]/){id=substr($0,RSTART+3,RLENGTH-4); print id}' | sort | uniq -cd
+```
+
+**Not checked:** no entries were moved, no build or tests ran, and the dirty working copy of
+`docs/TODO.md` was not used as evidence. This answer reads the committed tree so a coordinator can
+apply the moves without accidentally incorporating another agent's in-flight ledger edits.
+
 ## R15 — Classify the open list, once, so nobody re-derives it
 
 108 open. The coordinator has now classified them by hand twice and will again. Do it once properly
@@ -855,6 +887,79 @@ Two rules that make this worth more than a tally: **name the three you would do 
 bucket and why**, and flag any ticket whose bucket is arguable — a ticket that could be PRODUCT or
 INSTRUMENT is usually one that was filed from the wrong end.
 
+ANSWER 2026-09-03:
+
+```
+Tree read: 7be904a
+Dirty files: 38
+```
+
+**CLASSIFY THE 105 ENTRIES ACTUALLY IN OPEN, NOT THE STALE 108 IN THE REQUEST.** Counts below are
+entry counts and sum to 105. T-777 is deliberately represented twice as `closed` and `live`; that is
+the duplicate R14 asks the coordinator to repair.
+
+| Bucket | Count | Entries |
+|---|---:|---|
+| **PRODUCT** | 28 | T-771, T-768, T-741, T-714, T-689, T-690, T-777 (live), T-691, T-168, T-16, T-17, T-18, T-274, T-491, T-681, T-619, T-642, T-688, T-696, T-697, T-692, T-693, T-694, T-729, T-731, T-736, T-738, T-752 |
+| **CORRECTNESS** | 12 | T-760, T-761, T-614, T-623, T-624, T-654, T-762, T-661, T-743, T-744, T-745, T-737 |
+| **INSTRUMENT** | 28 | T-739, T-716, T-717, T-718, T-780, T-781, T-782, T-481, T-710, T-551, T-669, T-670, T-657, T-664, T-678, T-704, T-705, T-709, T-728, T-730, T-732, T-747, T-751, T-755, T-748, T-749, T-786, T-785 |
+| **DUPLICATION** | 14 | T-759, T-740, T-765, T-720, T-698, T-699, T-680, T-612, T-665, T-675, T-695, T-703, T-754, T-783 |
+| **ACCESSIBILITY** | 3 | T-672, T-673, T-674 |
+| **BLOCKED** | 8 | T-122, T-115, T-55, T-511, T-584, T-626, T-706, T-707 |
+| **BOOKKEEPING** | 12 | T-777 (closed copy), T-447, T-531, T-554, T-562, T-651, T-653, T-722, T-723, T-742, T-746, T-784 |
+
+### First three per bucket
+
+- **PRODUCT:** **DO T-642** first because a refused detail-sheet mutation ejects the user from the
+  sheet today; **DO T-689** next because a valid completed-only goal population is presented as no
+  goals; **DO T-736** next because ordinary column renaming visibly empties the column while typing.
+- **CORRECTNESS:** **DO T-623** first because a local-replica-only hard delete can leave CloudKit
+  children; **DO T-624** next because a device-local EventKit id is synced as cross-device data;
+  **DO T-760** next because the iOS two-task block path still commits through a swallowed save.
+- **INSTRUMENT:** **DO T-780** first because the commit guard is optional prose; **DO T-781** next
+  because an indefinitely uncommitted declined hunk has only a manual status command; **DO T-786**
+  next because the mutation runner cannot verify 52 display-named tests it can already enumerate.
+- **DUPLICATION:** **DO T-759** first because two production overloads have zero production callers;
+  **DO T-765** next because the shared snapshot already owns both handwritten undo sequences;
+  **DO T-754** next as the largest mechanical set, 41 literals plus one named 10pt constant.
+- **ACCESSIBILITY:** **DO T-674** first for ten icon-only commands, then **T-673** for eight row
+  actions whose subject is unnamed, then **T-672** for ten unlabeled search-clear controls. That
+  order follows consequence: ambiguous commands before a familiar text-field affordance.
+- **BLOCKED:** **DO T-626** first when an iOS device is available because silent CloudKit delivery
+  affects sync correctness; **DO T-584** when the user chooses the iPad notes behavior; **RECHECK
+  T-115** only after Xcode changes, because the current Swift frontend is the blocker, not Cadence.
+- **BOOKKEEPING:** **MOVE T-531** first because the one-time authorization has already been granted
+  and root guidance says UI tests run; **MOVE T-722** and **T-723** next because both entries contain
+  successful simulator observations and their discovered defects were separately fixed.
+
+### Arguable boundaries
+
+- **T-761** is CORRECTNESS rather than PRODUCT because the decisive defect is a refused persistence
+  operation; the silence is its visible symptom. **T-738** is PRODUCT rather than CORRECTNESS because
+  the extra CloudKit writes are churn, not wrong stored state.
+- **T-670** is INSTRUMENT rather than DUPLICATION because its actionable complaint is that the sweep
+  cannot reach two spellings. **T-729** is PRODUCT rather than INSTRUMENT because the derivation in
+  the shipped layout is wrong even though the present overhang is harmless.
+- **T-745** is CORRECTNESS rather than INSTRUMENT because preference-domain divergence changes what
+  state services read. **T-730** is INSTRUMENT rather than BLOCKED because sanctioned screenshot
+  fallbacks exist; the missing harness/documented route is the work.
+- **T-672** could be DUPLICATION, but the missing accessible name is the user cost. **T-447** and
+  **T-531** could be called BLOCKED if their historical prose is read in isolation; their own later
+  measurements and current root guide make the entries themselves stale, so BOOKKEEPING is sharper.
+- **T-732** could be BOOKKEEPING because the device-check premise is false; it remains INSTRUMENT
+  because the live task is to re-triage and execute the now-available simulator check.
+
+Thirty-second confirmation:
+
+```sh
+git show HEAD:docs/TODO.md | awk '/^## Done/{exit} /^- \[T-[0-9]+\]/{print}' | wc -l
+git show HEAD:docs/TODO.md | awk '/^## Done/{exit} match($0,/^- \[T-[0-9]+\]/){print substr($0,RSTART+3,RLENGTH-4)}' | sort | uniq -cd
+```
+
+**Not checked:** no ticket was moved or rewritten, and no build, test, app, simulator, or mutation
+ran. Classification is reasoned from every committed Open entry; counts and duplicate identity are
+measured. Re-run the tally after R14's moves because the resulting active-work count will be lower.
+
 ## R16 — Which tooling tickets are already moot?
 
 **T-657 turned out to have zero live sites** because the work that would have justified it landed
@@ -869,6 +974,62 @@ T-747, T-748, T-749, T-754, T-755, T-780, T-781, T-782, T-783, T-785, T-786.
 A ticket whose population is zero is worth more to find than a new finding, and this class has
 already produced two.
 
+ANSWER 2026-09-03:
+
+```
+Tree read: 7be904a
+Dirty files: 38
+```
+
+**CLOSE T-719, T-755, AND T-782; KEEP THE OTHER 19, WITH T-704 CONDITIONAL.** “Live” below means the
+ticket's source or environmental population still exists at committed HEAD, not that its proposed
+fix is necessarily the right one.
+
+| Ticket | Population at HEAD | Disposition and evidence |
+|---|---|---|
+| T-704 | **ZERO NOW; CAUSE UNSETTLED** | **KEEP CONDITIONALLY.** The app-container temp tree currently has 0 `inMemory_store_ckAssets` directories, and `CadenceTestStoreSupport.swift:30-36` supplies `.none`. That is a point-in-time absence, not the before/after run the ticket requires. Close only after the next formerly leaking suite leaves the count unchanged. |
+| T-705 | **LIVE** | **KEEP.** `scripts/xcb.sh:135-150` only reports; it has no prune mode. Five shared Cadence DerivedData entries exist now, four without `info.plist`, so the unattributable population remains. |
+| T-706 | **LIVE** | **KEEP/BLOCK.** `/private/tmp/cadence-uitest-auth` still exists and measures 1.4 GB. Deletion still needs the user's confirmation. |
+| T-707 | **LIVE** | **KEEP/BLOCK.** `.github/workflows/ci.yml:171-176` still gates iOS on manual `workflow_dispatch && run_ios`, and the file still declares itself a proposal. |
+| T-709 | **LIVE GAP, ZERO OFFENDERS** | **KEEP.** `CadenceBuildInvocationHygieneTests.swift:281-293` still admits only `.md` and `.sh`; the live `.yml` workflow remains outside the walk. Its current commands use `xcb.sh`, so there is no current bad invocation. |
+| T-719 | **ZERO / ALREADY DONE** | **MOVE/CLOSE.** It is already under Done, and `CadenceGuardScriptSelftestTests.swift:53-63` invokes both selftests. The R16 input list itself is stale. |
+| T-728 | **LIVE** | **KEEP.** `collapsedRailLabelSlotHeight` is still 96 at `CadenceRegularPaneLayout.swift:777`; tests mention the measured 88pt in prose but no assertion measures the label against the slot. |
+| T-729 | **LIVE** | **KEEP.** `CalendarBoardRailSupportViews.swift:133-138` still uses `labelSize` as the rotated slot width rather than line height. |
+| T-730 | **LIVE** | **KEEP.** `scripts/run-macos-app.sh:37-41` still refuses while `/Applications/Cadence.app` is running; no screenshot harness has replaced that route. |
+| T-732 | **LIVE** | **KEEP.** `docs/device-checks.md:15-18` still says a simulator cannot present the software keyboard, while the ticket records the contrary observation. The stale premise remains shipped guidance. |
+| T-745 | **LIVE** | **KEEP.** There are 19 non-comment `UserDefaults.standard` references outside `CadenceDefaults.swift`, including service and per-list preference paths. |
+| T-747 | **LIVE** | **KEEP.** `scripts/xcb.sh:176` still assigns one `${TMPDIR}cadence-xcb-$ID.log`; there is no per-invocation suffix or latest symlink. |
+| T-748 | **LIVE** | **KEEP.** `test-host-lock.sh:194-200` can acquire and record `$PPID` without first proving that parent still lives. Queue pruning checks the waiter process, not the abandoned caller. |
+| T-749 | **LIVE** | **KEEP.** `simulator-claim.sh:210-240` still races every waiter through device `mkdir`s followed by `sleep 5`; there is no FIFO ticket queue. |
+| T-754 | **LIVE** | **KEEP.** Code-only review still finds 41 bare 10pt corner-radius sites plus `kanbanColumnCornerRadius = 10` at `KanbanBoardSupport.swift:20`: 42 sites total. |
+| T-755 | **ZERO** | **CLOSE AS MOOT.** The only tempting `elevationRadius: 7` remains at `WidgetChrome.swift:98`, but the shipped detector at `CadenceRadiusControlCompactSweepTests.swift:46-52` explicitly excludes it and documents why. There is no faulty detector or unrecorded offender to fix today. |
+| T-780 | **LIVE** | **KEEP/BLOCK ON USER POLICY.** Root guidance requires `agent-commit.sh`, but no `core.hooksPath`/pre-commit mechanism exists and bare `git commit` remains possible. |
+| T-781 | **LIVE** | **KEEP.** `agent-commit.sh status` appears only in the script and runbook; neither `xcb.sh` nor another automatic path invokes it. |
+| T-782 | **ZERO** | **CLOSE AS MOOT/PREVENTIVE.** The only test-host shell-outs are the two calls in `CadenceGuardScriptSelftestTests.swift:53-63`; both target scripts now probe working tools, and `mutate.sh:98-123` redirects `TMPPREFIX`. The hazard is documented in the runbook. No current third script has the defect. |
+| T-783 | **LIVE** | **KEEP.** The seven named untrimmed `name` ternaries remain at `GoalsSupportViews.swift:434`, `TaskBundlePickerSupportViews.swift:320`, `CadenceSearchCandidateSupport.swift:60`, `GoalListLinkHelpers.swift:103`, `iOSCalendarEventEditSheet.swift:395`, `iOSRootSidebar.swift:776`, and `iOSColumnWindDownSupport.swift:50`. |
+| T-785 | **LIVE** | **KEEP.** `CadenceEmptyTitleFallbackSweepTests.swift:399` still exempts all of `MarkdownNoteSupport.swift`; `CadenceDeleteConfirmationCommitTests.swift:165` still reads the entire task-mutation file. |
+| T-786 | **LIVE** | **KEEP.** `mutate.sh:147,440-480` still expects function names in failure/presence logs and never consumes `test-suite-index.sh --labels`. The index currently reports exactly 52 display-named tests. |
+
+Can this happen today? The 18 unconditional LIVE rows are reachable from current source or current
+disk state. T-709 has no current bad YAML command, T-704 has no current residue, and T-755/T-782
+have no current offender; keep severity separate from those population facts.
+
+Thirty-second confirmations:
+
+```sh
+find "$HOME/Library/Containers/com.haoranwei.Cadence/Data/tmp" -type d -name inMemory_store_ckAssets | wc -l
+./scripts/xcb.sh audit
+du -sh /private/tmp/cadence-uitest-auth
+rg -n 'LOG=|hasSuffix\("\.md"\)|hasSuffix\("\.sh"\)|workflow_dispatch|run_ios' scripts/xcb.sh CadenceTests/CadenceBuildInvocationHygieneTests.swift .github/workflows/ci.yml
+rg -n 'UserDefaults\.standard' Cadence --glob '*.swift'
+./scripts/test-suite-index.sh | rg 'logs as' | wc -l
+```
+
+**Not checked:** no build, test, mutation, cleanup, hook installation, app, or simulator run. The
+external directory sizes/counts are measured current state; the source populations are measured on
+committed HEAD. T-704 remains intentionally inconclusive because its decisive before/after run was
+outside this read-only request.
+
 ## R17 — Audit batches M, N and O against their own commit messages
 
 Same shape as R5, which found a real overclaim. Three claims worth checking specifically, all of
@@ -882,6 +1043,46 @@ them load-bearing and none with an outside reader:
   commit through it, and that a lost declined hunk is refused on the next commit of that path.
   Both are claims about a tool that now guards every other commit.
 
+ANSWER 2026-09-03:
+
+```
+Tree read: 7be904a
+Dirty files: 38
+```
+
+**PASS ALL THREE CLAIMS, WITH ONE COMMIT-ATTRIBUTION CORRECTION.**
+
+| Claim | Verdict | Evidence and reachability |
+|---|---|---|
+| iOS list-editor refusal restores child-project tasks | **PASS — MEASURED FROM PRODUCTION CODE.** `CadenceTaskMutationSupport.inheritedContextTargets(area:)` at `CadenceTaskMutationSupport.swift:421-428` includes direct area tasks and every child project's tasks where the child has no context. `iOSListEditorViews.swift:459-476` snapshots that exact set before changing the area and passes `undo.restore` to the throwing commit. A refusal can happen today on any area-context edit with an inheriting child project. **Attribution correction:** this landed in `24e7108`; `fba681a` is the macOS kanban-column rename commit and does not carry this iOS fix. |
+| 43 bare notices / 6 dismissable notices | **PASS — MEASURED SOURCE CENSUS.** There are exactly 49 production `CadenceInlineFailureNotice(text:)` calls. Six pass a dismissal closure, all in five markdown editor files: two in `iOSMarkdownEditingSurface.swift:168,174`, then `MarkdownEditorView.swift:136`, `NotePanel.swift:107`, `NoteEditorPane.swift:298`, and `ListNotesSupportViews.swift:166`. The other 43 are bare. Tracing their state inputs finds a retry/control path that clears each notice before or after the next attempt; no seventh typing-only surface was found. The policy distinction is reachable today: typing does not trigger those six owners' retry controls. |
+| private commit index is repaired; declined hunk is refused next time | **PASS — MEASURED SOURCE AND EXECUTABLE SELFTEST WIRING.** `agent-commit.sh:343-386` commits a private tree, resets the named paths in the shared index against the new HEAD, and refuses residue. Its mode 2 at `:453-477` checks both the repaired result and the unrepaired positive control. The declined ledger is written at `:354-370`, read before the next same-path commit at `:259-283`, and mode 3 at `:478-505` proves refusal, quoted lost content, successful reintegration, and record clearing. `CadenceGuardScriptSelftestTests.swift:34-63,97-119` requires both refusal names and runs the selftest. This protects commits made through the helper today; T-780 correctly remains open because a bare commit bypasses it. |
+
+Thirty-second confirmations:
+
+```sh
+git show --stat --oneline fba681a 24e7108 481c21c 1273ea8 898f0d8
+git grep -h 'CadenceInlineFailureNotice(text:' HEAD -- 'Cadence/**/*.swift' | wc -l
+git grep -h 'CadenceInlineFailureNotice(text:' HEAD -- 'Cadence/**/*.swift' | grep -E '\) \{' | wc -l
+sed -n '421,428p' Cadence/Shared/CadenceTaskMutationSupport.swift
+sed -n '459,476p' Cadence/iOS/iOSListEditorViews.swift
+./scripts/agent-commit.sh selftest
+```
+
+### Looks solid
+
+- The iOS fix names the mutation's own target-set helper instead of re-deriving a sibling array, and
+  `CadenceContextlessListSurfaceTests.swift:640-704` separately exercises the child-project restore.
+- The six dismissal sites are individually ledgered, not just counted, in
+  `CadenceMarkdownImageCommitSurfaceTests.swift:325-379`; swapping one of the six would fail.
+- The commit helper's positive control demonstrates the exact dirty-index failure without the
+  repair, and the Swift test requires every refusal to appear in both script body and selftest.
+
+**Not checked:** no build, test, selftest, commit, app, or simulator ran in this audit. “PASS” for the
+shell behavior is based on reading both implementation and executable selftest assertions; run the
+provided selftest command before changing the helper. The 43 retry-owner classification is source
+tracing, not observed UI interaction.
+
 ## R18 — Apply R13's question to the four detectors
 
 R13 asked which correct features are one wiring deletion from becoming inert, and found three. Point
@@ -890,3 +1091,166 @@ the same question at the detectors themselves: **T-627, T-636(b), T-555, T-565.*
 For each: if its production-side *rule* were deleted — the exemption list, the ledger, the sweep call
 — would any test go red? A detector whose own invocation is unpinned is the hollow-instrument shape
 two levels down, and this repository has now found it at one level (`mutate.sh selftest`, T-719).
+
+ANSWER 2026-09-03:
+
+```
+Tree read: 7be904a
+Dirty files: 38
+```
+
+**PIN THE FOUR REAL-TREE INVOCATIONS. The detector internals and ledgers are strong; the existence
+of each app-wide sweep test is not required anywhere else.**
+
+| Detector | Delete/empty rule data | Delete the real-tree sweep test | Disposition |
+|---|---|---|---|
+| **T-627 save-commit widening** | **RED.** The four exemption dictionaries at `CadenceSaveCommitDisciplineTests.swift:1125,1220,1330,1885` are consumed by the sweeps at `:83-160`, and `everySaveCommitExemptionStillNamesAFunctionThatBreaksTheRule` at `:1050-1074` checks live load-bearing entries. Gap fixtures beginning at `:421` separately pin widened parsing and call reach. | **GREEN INFERRED.** Remove the four `@Test` functions at `:83-160` and the fixture/exemption tests still exercise only synthetic or named sites. No outside suite requires those four test names or an app-wide `saveCommitSweep` call. | **ADD one external wiring assertion** naming all four sweep functions and requiring each body to call `saveCommitSweep`; mutation-delete one function to prove it. |
+| **T-636(b) Optional success answer** | **RED.** Deleting the Optional branch in `successReport`/`persistedReport` at `:2191-2239` kills the positive fixture `returningSomethingOtherThanNilIsASuccessReportFromADeclarationThatAnswersAnOptional` at `:755-796`; its nil, Void, and closure-return negatives pin scope. | **GREEN INFERRED.** The app-wide enforcement is only the report sweep at `:105-118`. Remove that test and the Optional fixtures stay green while no product file is scanned for the rule. | **EXTEND the same external wiring assertion** to require `noSwallowedSaveIsFollowedByADismissOrACompletionHandler` and its `reportInstrument` + `saveCommitSweep` calls. |
+| **T-555 shared `static func` string ledger** | **RED.** Emptying `cadenceStaticFuncConstantLedger` at `CadenceSharedConstantReuseSweepTests.swift:124` exposes its four sites to `noCallSiteRetypesASharedStringConstant` at `:316-348`; stale/missing entries are also checked bidirectionally at `:1023-1064`. Detector fixtures pin constant-vs-template parsing. | **GREEN INFERRED.** Remove the `noCallSiteRetypesASharedStringConstant` test and the exact-ledger test can still prove four known entries while no test rejects a fifth product offender. No external suite requires the sweep function. | **PIN the sweep function externally**, including the call to `cadenceSharedConstantOffenders` and subtraction of `cadenceStaticFuncConstantLedger`. |
+| **T-565 comment-symbol claim ledger** | **RED.** Emptying `ledger` at `CadenceCommentSymbolClaimTests.swift:519` fails the fixed 30/9 shape at `:522-532` and the exact set equality at `:535-573`. Partition, exclusion, and positive/negative fixtures separately pin the reader. | **GREEN INFERRED.** Remove `everyQualifiedSymbolClaimInACommentResolvesOrIsLedgered` and the ledger remains internally well formed but no longer compared with the repository. No outside suite requires that test or its `instrument.sweep`. | **PIN the sweep function externally**, requiring both the all-source walk and `found == Self.ledger`; mutation-delete the test to verify the pin. |
+
+Can this happen today? **The detectors are active and correct today.** The risk is a future one-test
+deletion or merge resolution leaving all neighboring fixture tests green. Deleting only a ledger or
+parser branch is already caught; deleting the app-wide invocation is the common unpinned edge.
+
+The cheapest shared fix is a small `CadenceDetectorWiringTests` source-membership suite with four
+exact required test names and one required call signature per body. Do not duplicate detector logic
+there. Its job is only to make deletion of the original wiring red; the original suites remain the
+behavioral authority.
+
+Thirty-second confirmation:
+
+```sh
+rg -n 'noSwallowedSaveCommitsAnInsertOrADelete|noSwallowedSaveIsFollowedByADismissOrACompletionHandler|noCallSiteRetypesASharedStringConstant|everyQualifiedSymbolClaimInACommentResolvesOrIsLedgered' CadenceTests
+rg -n 'existenceExemptions|reportExemptions|commitReachExemptions|cadenceStaticFuncConstantLedger|static var ledger' CadenceTests/CadenceSaveCommitDisciplineTests.swift CadenceTests/CadenceSharedConstantReuseSweepTests.swift CadenceTests/CadenceCommentSymbolClaimTests.swift
+```
+
+**Not checked:** no deletion mutation, build, or tests ran. Ledger/parser RED verdicts are measured
+from direct dependency and exact-set assertions; whole-sweep GREEN verdicts are inferred from the
+complete exact-name search and must be mutation-confirmed before filing the wiring ticket as done.
+
+---
+
+## Note on R14–R18 (coordinator, 2026-09-04)
+
+All five answered well and three changed what happens next. **R16 is the highest-value one**: it
+found three tickets whose population is zero (T-719 already Done, T-755, T-782) and refused to round
+T-704 to zero when only a point-in-time absence was measured. That refusal is worth more than the
+three closures. **R18** produced a ticket nobody had thought of — the detectors' own app-wide
+invocations are unpinned — and correctly separated the MEASURED red verdicts from the INFERRED green
+ones. **R17**'s attribution correction (`fba681a` is the kanban commit, not the iOS fix) is the kind
+of thing only an outside reader catches.
+
+Answer format is now right; no further guidance needed. Keep the `Tree read:` header, the
+disposition-as-a-ticket-edit verdict, and the `Not checked:` close. The one habit to keep pressing:
+when the request's own premise is stale, say so in the first line and re-derive, as R15 did with
+"105, not the stale 108."
+
+**R14's moves are deferred, not dropped.** Batch O is mid-flight and four agents hold ledger edits;
+the moves land in the next between-batch window.
+
+---
+
+## R19 — Generalise R18: which app-wide sweeps are unpinned?
+
+R18 checked four detectors and found all four have the same hole — delete the one `@Test` that walks
+the real tree and every neighbouring fixture stays green. Four out of four is not a sample, it is a
+shape.
+
+Do the whole set. Enumerate every test in `CadenceTests` that **walks real source files** (reads
+`Cadence/`, iterates a file list, or calls a sweep/instrument helper over the tree) as opposed to
+operating on a synthetic fixture string. For each, report:
+
+- the suite and test name,
+- what its population is at HEAD (how many offenders it currently rejects — 0 is fine and important),
+- whether **any other test** would go red if that single `@Test` function were deleted.
+
+The third column is the one that matters. Report the unpinned ones as a list a single ticket can be
+written against, and say how many of the total are already pinned — if it turns out most are, R18's
+four are an anomaly and the shared-suite fix is wrong.
+
+## R20 — What actually blocks the App Store submission?
+
+This is the question the user asks most and the one I answer least precisely, because I answer it
+from `docs/apple-release-readiness.md` rather than from state.
+
+Audit that document against the repository and the project file. For each gate it names, report
+**MET / NOT MET / NOT CHECKABLE FROM THE REPO**, with the file and line that settles it. Cover at
+minimum: bundle id and version/build strings, entitlements and capabilities actually in the target,
+the CloudKit container identifier and whether anything in the repo records a Production deployment,
+`ITSAppUsesNonExemptEncryption`, category/copyright/marketing keys, privacy-manifest requirements,
+the privacy-policy and support URLs, icon and screenshot asset presence, hardened runtime and
+sandbox settings, and the minimum deployment targets against the SDK.
+
+Two things I specifically want distinguished, because I keep conflating them:
+
+- gates that are **code or configuration** and can be fixed by an agent, and
+- gates that are **the user's account, a web page, or a Apple-side action** and cannot.
+
+Anything in the second group, name the exact action the user must take, in one line each. If the
+readiness doc claims something is done that the repo contradicts, that contradiction is the most
+valuable finding in this request.
+
+## R21 — Are the 28 PRODUCT tickets reachable in a shipped build?
+
+R16's question, pointed at R15's PRODUCT bucket. Two out of two and three out of twenty-two say this
+class pays.
+
+For each of the 28: does its described failure still exist at HEAD in code that a **user of the
+released macOS app** reaches? Not "does the ticket describe something plausible" — does the call
+path still exist, and is it behind any flag, debug guard, `#if DEBUG`, or platform condition that
+excludes it from a Release build.
+
+Three sub-answers worth separating:
+- **LIVE ON macOS** — a released-build user can hit it.
+- **LIVE ON iOS ONLY** — real, but on a surface that is not yet distributed, so it is not a v1
+  blocker even if the ticket is correct.
+- **ZERO** — the code changed underneath it.
+
+Rank the LIVE ON macOS ones by how likely an ordinary first session hits them. That ranking is what
+I will build the next batch from, so it is the deliverable, not the tally.
+
+## R22 — Crash and data-loss census in production code
+
+Nothing in this repository has ever swept for this and the App Store is the wrong place to find out.
+
+In `Cadence/` (excluding tests), census every: `try!`, `fatalError`, `preconditionFailure`,
+`assertionFailure` outside `#if DEBUG`, force unwrap `!` on an optional that is not a compile-time
+constant, array subscript by computed index, and `Array(...)[0]`/`.first!`/`.last!`.
+
+For each site: can a **user action or a synced record** produce the failing input? A force unwrap of
+a literal-backed `URL(string:)` is fine and should be reported as such, in a separate group, so the
+list of real ones stays short. A force unwrap of something read from SwiftData, from a CloudKit
+record, from `UserDefaults`, from EventKit, or from a file the user chose is a crash with a user in
+front of it.
+
+Rank by that reachability, not by count. If the answer is that all of them are literal-backed and
+safe, say so plainly — that is a good outcome and I will not file a ticket.
+
+## R23 — The whole icon-only-control census, not three tickets' worth
+
+T-672, T-673 and T-674 were each filed from a partial look and each named its own count (10, 8, 10).
+Batch O is fixing those 28. I do not know whether 28 is the population or the part somebody noticed.
+
+Census every control in `Cadence/` that presents **only** an icon — `Button`, `Label` with an empty
+title, `Image` inside a tap gesture, toolbar items, context-menu rows, swipe actions — and report
+which have an accessibility label, which inherit a usable one from a `Label("text", systemImage:)`,
+and which have none. Split by platform directory.
+
+Then: subtract the 28 that T-672/673/674 name. **How many are left?** If the remainder is small, I
+will fold it into the same batch. If it is 60, the three tickets are the wrong shape and I need one
+sweep test instead, and I would rather learn that before four agents finish.
+
+## R24 — What does the iOS surface have that nothing can catch?
+
+The macOS test target never compiles `Cadence/iOS/`. That means every iOS-only file is unpinned by
+construction, and I have been treating "the suite is green" as covering the whole app.
+
+Quantify it. How many Swift files and how many lines live in `Cadence/iOS/` that the macOS test
+target does not compile? Of the shared code in `Cadence/Shared/` and `Cadence/Models/` that iOS
+depends on, how much is exercised only through macOS call sites?
+
+Then the useful half: name the **iOS-only behaviours that have a macOS twin**, where a test written
+against the shared layer would cover both. Those are the cheap wins. And name the iOS-only
+behaviours with no macOS twin at all — those are the genuinely uncovered ones, and I want to know
+whether that list is five things or fifty before deciding whether iOS ships in v1.
