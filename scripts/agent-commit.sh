@@ -44,6 +44,12 @@
 #   DECLINED-HUNK-LOST   a hunk a previous agent declined for this path is in neither HEAD nor the
 #                        content you are staging, so this commit strands it. Clear it deliberately
 #                        with --accept-declined <path> if it was abandoned on purpose.
+#   LEDGER-IDS-LOST      a `TODO.md` you are committing no longer has a `- [T-n]` entry HEAD had.
+#                        `--drops-ids <exact,sorted,list>` retires them deliberately. A line count
+#                        cannot show you this; an id can.
+#   REMOVES-HEAD-LINES   the staged content drops lines HEAD has, and you did not say how many.
+#                        `--removes <exact count>` acknowledges them. A reconstruction built on a
+#                        stale HEAD reverts a sibling's landed work in exactly this shape.
 #   SHARED-INDEX-DIRTY   the post-commit repair did not leave your paths clean (reported, not silent)
 #
 # PATH FORMS
@@ -93,12 +99,20 @@ usage() {
 
 ledger_key() { print -r -- "${1//\//__}" }
 
-# Lines present in the worktree file and in no line of the staged blob. Whole-line set membership,
-# not diff hunks: `-U3` merges two agents' edits into one hunk once they are within three lines of
-# each other, which is how marker-based hunk filtering quietly took a sibling's work before.
+# Lines present in the worktree file, in no line of the staged blob, AND in no line of the version
+# this commit is replacing. Whole-line set membership, not diff hunks: `-U3` merges two agents'
+# edits into one hunk once they are within three lines of each other, which is how marker-based
+# hunk filtering quietly took a sibling's work before.
+#
+# The third input is what makes the record mean something. Without it, every line YOU deliberately
+# deleted reads as a hunk you declined -- measured on this script's own first real use, where a
+# `docs/TODO.md` ledger move recorded 179 lines, most of them the three tickets the commit was
+# closing. Only a line the previous commit did not have can be a sibling's in-flight work.
 # Trivial lines (blank, or nothing but punctuation and braces) carry no meaning on their own.
-declined_lines() {  # $1 = staged content, $2 = worktree content
-    grep -F -x -v -f "$1" -- "$2" 2>/dev/null | awk '
+declined_lines() {  # $1 = staged content, $2 = worktree content, $3 = content being replaced
+    grep -F -x -v -f "$1" -- "$2" 2>/dev/null \
+        | { [[ -s "$3" ]] && grep -F -x -v -f "$3" || cat } \
+        | awk '
         { t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t)
           if (length(t) >= 4 && t !~ /^[][(){}.,;:+*&|<>=!?-]+$/) print }'
 }
@@ -109,6 +123,16 @@ declined_lines() {  # $1 = staged content, $2 = worktree content
 # losing exactly the backstop listing this function exists to print. Same family as the two
 # `path`/`$PATH` traps already in docs/SUBAGENT_RUNBOOK.md. Nothing here may be named `path`,
 # `cdpath`, `fpath`, `manpath`, `status`, `argv` or `options`.
+# An append-only ledger names its entries, and losing one is a different event from deleting a
+# line. `docs/TODO.md` is the repository's ledger and every entry opens `- [T-<n>]`; a commit that
+# drops an id is almost always a reconstruction built on a stale worktree copy rather than a
+# deliberate retirement. Measured 2026-09-03: n2 lost three of a sibling's tickets exactly this way
+# and caught it by diffing the id sets by hand, which is the check this makes automatic.
+ledger_ids() {  # $1 = file
+    grep -oE '^- \[T-[0-9]+\]' -- "$1" 2>/dev/null | sed 's/^- \[//; s/\]$//' | sort -u
+}
+is_ledger_path() { [[ "${1:t}" == "TODO.md" ]] }
+
 show_outstanding() {
     local any=0 record declined_path
     [[ -d "$LEDGER" ]] || return 0
@@ -142,7 +166,7 @@ cmd_status() {
 
 cmd_commit() {
     local id=$1; shift
-    local message="" have_message=0
+    local message="" have_message=0 declared_removals="" declared_dropped_ids=""
     local -a paths accepted
     paths=(); accepted=()
 
@@ -154,6 +178,10 @@ cmd_commit() {
                 message="$(<"$2")"; have_message=1; shift 2 ;;
             --accept-declined) [[ $# -ge 2 ]] || refuse BAD-OPTION "--accept-declined needs a path"
                 accepted+=("$2"); shift 2 ;;
+            --removes) [[ $# -ge 2 ]] || refuse BAD-OPTION "--removes needs a count"
+                declared_removals="$2"; shift 2 ;;
+            --drops-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--drops-ids needs a comma-separated id list"
+                declared_dropped_ids="$2"; shift 2 ;;
             --) shift; paths+=("$@"); break ;;
             -*) refuse BAD-OPTION "unknown option $1" ;;
             *)  paths+=("$1"); shift ;;
@@ -255,6 +283,61 @@ $(print -r -- "$lost" | sed 's/^/    /')
         rm -f "$record"
     done
 
+    # 3a. A ledger entry HEAD has and your staged content does not is a LOST TICKET, and it hides
+    #     inside any line count large enough to be worth reading past. Name the ids, not the lines.
+    local -a lost_ids
+    lost_ids=()
+    for name in "${names[@]}"; do
+        is_ledger_path "$name" || continue
+        [[ -n "${staged_content[$name]+x}" ]] || continue
+        git cat-file -e "HEAD:$name" 2>/dev/null || continue
+        local ledger_head="$scratch/$(ledger_key "$name").ledgerhead"
+        git cat-file -p "HEAD:$name" > "$ledger_head"
+        local gone
+        gone=$(comm -23 <(ledger_ids "$ledger_head") <(ledger_ids "${staged_content[$name]}"))
+        [[ -n "$gone" ]] || continue
+        lost_ids+=(${(f)gone})
+    done
+    if (( ${#lost_ids} )); then
+        local declared_sorted="${(j:,:)${(o)${(s:,:)declared_dropped_ids}}}"
+        local lost_sorted="${(j:,:)${(o)lost_ids}}"
+        if [[ "$declared_sorted" != "$lost_sorted" ]]; then
+            rm -rf "$scratch"
+            refuse LEDGER-IDS-LOST "this commit drops ledger entries HEAD has: ${(j:, :)lost_ids}
+  A reconstruction built on a stale copy loses a sibling's tickets in exactly this shape, and a
+  line count hides it. Re-read \`git show HEAD:<path>\` and rebuild, or, if you really mean to
+  retire them, say so: --drops-ids $lost_sorted"
+        fi
+    fi
+
+    # 3b. A line HEAD has and your staged content does not is a DELETION, and a reconstruction built
+    #     on a stale HEAD deletes a sibling's landed work without either of you seeing it. Measured
+    #     twice on 2026-09-03 within an hour, both on `docs/TODO.md`, both reverting a ledger edit
+    #     that had already landed. So the count has to be said out loud, the way `count:` does in
+    #     scripts/mutate.sh -- the point is not the number, it is looking at what is going.
+    local -a removed_report
+    removed_report=()
+    local total_removed=0 removed
+    for name in "${names[@]}"; do
+        git cat-file -e "HEAD:$name" 2>/dev/null || continue
+        local head_blob="$scratch/$(ledger_key "$name").head"
+        git cat-file -p "HEAD:$name" > "$head_blob"
+        if [[ -n "${staged_content[$name]+x}" ]]; then
+            removed=$(grep -F -x -v -f "${staged_content[$name]}" -- "$head_blob" 2>/dev/null | grep -c .)
+        else
+            removed=$(grep -c . "$head_blob")      # the whole file is being deleted
+        fi
+        (( removed > 0 )) || continue
+        total_removed=$(( total_removed + removed ))
+        removed_report+=("$name: $removed")
+    done
+    if (( total_removed > 0 )) && [[ "$declared_removals" != "$total_removed" ]]; then
+        rm -rf "$scratch"
+        refuse REMOVES-HEAD-LINES "this commit removes $total_removed line(s) that HEAD has (${(j:, :)removed_report}).
+  A reconstruction built on a stale HEAD deletes a sibling's landed work exactly like this. Read
+  \`git diff HEAD -- <path>\` first, then say the number: --removes $total_removed"
+    fi
+
     # 4. Commit the private index by plumbing: no hook, no editor, and the shared index untouched.
     local tree headsha newsha
     tree=$(GIT_INDEX_FILE="$priv" git write-tree) || { rm -rf "$scratch"; refuse WRITE-TREE "cannot write the tree" }
@@ -274,7 +357,9 @@ $(print -r -- "$lost" | sed 's/^/    /')
         [[ -n "${source_of[$name]}" ]] || continue      # worktree form declines nothing by construction
         [[ -f "$name" ]] || continue
         [[ -n "${staged_content[$name]+x}" ]] || continue
-        declined=$(declined_lines "${staged_content[$name]}" "$name")
+        local previous="$scratch/$(ledger_key "$name").previous"
+        git cat-file -p "$headsha:$name" > "$previous" 2>/dev/null || : > "$previous"
+        declined=$(declined_lines "${staged_content[$name]}" "$name" "$previous")
         [[ -n "$declined" ]] || continue
         mkdir -p "$LEDGER"
         record="$LEDGER/$(ledger_key "$name").declined"
@@ -340,7 +425,8 @@ cmd_selftest() {
         print -r -- "line one" > mine.txt
         print -r -- "shared start" > shared.txt
         print -r -- "sibling file" > theirs.txt
-        git add mine.txt shared.txt theirs.txt >/dev/null
+        print -rl -- "# Ledger" "" "- [T-101] first" "  body" "" "- [T-102] second" "  body" > TODO.md
+        git add mine.txt shared.txt theirs.txt TODO.md >/dev/null
         git commit -qm "base
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
@@ -419,6 +505,18 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "the ledger record is cleared" $( [[ -z $(print -rl -- "$CADENCE_DECLINED_LEDGER"/*.declined(N)) ]] && print 1 || print 0 )
 
     say ""
+    say " mode 3c -- a line this commit deliberately DELETES is not a hunk it declined"
+    # The worktree still HAS the line; only the reconstruction drops it. That is the ledger-move
+    # shape, and without the third input it reads as 179 declined hunks.
+    ( cd "$ws"
+      git show HEAD:shared.txt > shared.txt
+      grep -v "A's own line" shared.txt > delrecon.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" a5 -m "$M" --removes 1 shared.txt=delrecon.txt 2>&1 ); rc=$?
+    check "the deletion commits" $(( rc == 0 )) "exit $rc: $out"
+    check "and nothing was recorded as declined" \
+        $( [[ "$out" != *"were declined"* && -z $(print -rl -- "$CADENCE_DECLINED_LEDGER"/*.declined(N)) ]] && print 1 || print 0 ) "$out"
+
+    say ""
     say " mode 3b -- --accept-declined clears a record deliberately, and only then"
     ( cd "$ws"
       print -r -- "abandoned line" >> shared.txt
@@ -434,6 +532,45 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "--accept-declined lets it through" $(( rc == 0 )) "exit $rc: $out"
     check "and it says the record was cleared on purpose" \
         $( [[ "$out" == *"--accept-declined"* ]] && print 1 || print 0 ) "$out"
+
+    say ""
+    say " mode 4b (REMOVES-HEAD-LINES) -- deleting a line HEAD has must be said out loud"
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws"
+      git show HEAD:shared.txt > shared.txt
+      git show HEAD:shared.txt | sed '$d' > cut.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" c1 -m "$M" shared.txt=cut.txt 2>&1 ); rc=$?
+    check "an undeclared removal is refused" \
+        $( [[ $rc == 3 && "$out" == *REMOVES-HEAD-LINES* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the count is named" $( [[ "$out" == *"removes 1 line(s)"* ]] && print 1 || print 0 ) "$out"
+    out=$( cd "$ws" && zsh "$here" c1 -m "$M" --removes 2 shared.txt=cut.txt 2>&1 ); rc=$?
+    check "a WRONG count is still refused" \
+        $( [[ $rc == 3 && "$out" == *REMOVES-HEAD-LINES* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" c1 -m "$M" --removes 1 shared.txt=cut.txt 2>&1 ); rc=$?
+    check "the exact count lets it through" $(( rc == 0 )) "exit $rc: $out"
+
+    say ""
+    say " mode 4c (LEDGER-IDS-LOST) -- a ledger entry HEAD has cannot vanish inside a line count"
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    # A stale reconstruction: it keeps T-101, adds T-103, and silently loses T-102.
+    ( cd "$ws"
+      print -rl -- "# Ledger" "" "- [T-101] first" "  body" "" "- [T-103] third" "  body" > stale.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" d1 -m "$M" TODO.md=stale.md 2>&1 ); rc=$?
+    check "a dropped ledger id is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-IDS-LOST* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the id is named, not just a line count" \
+        $( [[ "$out" == *"T-102"* && "$out" != *"T-101"* ]] && print 1 || print 0 ) "$out"
+    out=$( cd "$ws" && zsh "$here" d1 -m "$M" --drops-ids T-101 TODO.md=stale.md 2>&1 ); rc=$?
+    check "naming the WRONG id is still refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-IDS-LOST* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" d1 -m "$M" --drops-ids T-102 --removes 1 TODO.md=stale.md 2>&1 ); rc=$?
+    check "retiring it deliberately is allowed" $(( rc == 0 )) "exit $rc: $out"
+    # And the ordinary case -- adding an entry, losing none -- must not be refused at all.
+    ( cd "$ws"
+      git show HEAD:TODO.md > grown.md
+      print -rl -- "" "- [T-104] fourth" "  body" >> grown.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" d2 -m "$M" TODO.md=grown.md 2>&1 ); rc=$?
+    check "an append-only ledger edit needs no flag" $(( rc == 0 )) "exit $rc: $out"
 
     say ""
     say " mode 4 (NO-PATHS / UNKNOWN-PATH / NOTHING-TO-COMMIT / NO-COAUTHOR-TRAILER / NOT-REPO-ROOT)"

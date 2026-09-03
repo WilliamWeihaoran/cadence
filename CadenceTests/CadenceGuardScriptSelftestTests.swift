@@ -34,11 +34,15 @@ struct CadenceGuardScriptSelftestTests {
     /// Every refusal `scripts/agent-commit.sh` makes. `SHARED-INDEX-DIRTY` is the post-commit repair
     /// (T-679's third measured failure: a private index used correctly, leaving the shared one 274
     /// deletions behind HEAD); `DECLINED-HUNK-LOST` is the fourth, where a hunk both agents declined
-    /// landed nowhere and HEAD stopped compiling.
+    /// landed nowhere and HEAD stopped compiling. `LEDGER-IDS-LOST` and `REMOVES-HEAD-LINES` are the
+    /// two the tool grew from its own first hours of use: a reconstruction built on a stale copy
+    /// reverts a sibling's landed work, and inside a line count a lost ticket is invisible.
     static let commitHelperRefusals = [
         "FOREIGN-STAGED",
         "SHARED-INDEX-DIRTY",
         "DECLINED-HUNK-LOST",
+        "LEDGER-IDS-LOST",
+        "REMOVES-HEAD-LINES",
         "NO-PATHS",
         "UNKNOWN-PATH",
         "NOTHING-TO-COMMIT",

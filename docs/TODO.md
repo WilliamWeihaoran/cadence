@@ -247,13 +247,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   first. `toggleSubtask` stays hand-written either way: `Subtask.isDone` is not a field of `AppTask`
   and the snapshot is not about it.
 
-- [T-719] **Nothing runs `scripts/mutate.sh selftest`.** `scripts/xcb.sh`'s guards are pinned by
-  `CadenceBuildInvocationHygieneTests` — a source scan that fails if the zero-test refusal is deleted —
-  and the mutation runner's five refusals ([[T-530]]) are pinned only by its own `selftest`, which no
-  test target invokes and no hook runs. That is the hollow-instrument shape one layer up: a guard whose
-  own guard is that somebody remembers to type it. Pin it the way `xcb.sh` is pinned, or add a test that
-  shells out to `./scripts/mutate.sh selftest` and fails on a non-zero exit (it takes under a second and
-  builds nothing, so cost is not the objection).
 
 - [T-780] **Nothing makes an agent *use* `scripts/agent-commit.sh`.** [[T-679]] is fixed in the sense
   that the incantation is now a script that refuses the four measured failures — but the instruction
@@ -1504,34 +1497,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   which is `Cadence/macOS/Views/TasksPanelSupportViews.swift` — the widening is enforced by the walk,
   not by the name.
 
-- [T-679] **The git index is shared between concurrent agents, and file-disjointness does not protect
-  it.** Measured 2026-09-02 in the Batch D run: d1 staged a `git rm` of
-  `Cadence/macOS/Views/TaskSortHelpers.swift`, and d2's next commit swept it in — so the deletion
-  landed in `91d533c` ([[T-637]]) instead of `5b0c2b8` ([[T-639]]). **No work was lost and the file is
-  correctly gone from HEAD**; what broke is that the commit carrying a change is not the commit whose
-  message explains it, which is the whole reason this repo puts reasoning in commit messages.
-  **The existing rule was followed and is insufficient.** Every brief says `git add <specific paths>`,
-  never `git add -A`, and both agents complied — but `git add` writes to **one index shared by every
-  agent in the checkout**, and a bare `git commit` takes whatever is staged, including a sibling's
-  hunk. The `git hash-object` / `git update-index` reconstruction the Batch A and B agents used for a
-  shared *file* happens to dodge this as well, but nothing anywhere says so.
-  **AMENDED 2026-09-02 — the first fix shape filed here was wrong, and an agent caught it.** This
-  entry originally said to require an explicit pathspec (`git commit -- <paths>`), and every Batch E
-  and F brief repeated that. It is right only for a file the agent owns alone. For a **shared** file
-  it is actively harmful: `git commit -- <paths>` commits *worktree* content, so it takes the
-  sibling's in-flight hunks with yours, and it silently defeats the `git hash-object` reconstruction
-  the earlier batches used — because that reconstruction lives in the **index**, which the pathspec
-  form ignores. The agent that found this committed the index instead, after verifying the only
-  remaining delta was its sibling's six label conversions.
-  Two more faces of the same hazard, both measured in Batch F: **after committing over a stale shared
-  index, `git status` reports your own landed work as a staged revert**, because the index still holds
-  the previous HEAD's blobs for your paths; and **marker-based hunk filtering breaks when two agents
-  edit within three lines**, since `-U3` merges them into one hunk. A private `GIT_INDEX_FILE` avoids
-  the shared index entirely and is the cleanest answer.
-  Written up in `docs/SUBAGENT_RUNBOOK.md`; what remains open here is making it mechanical rather than
-  a rule agents are told.
-
-
 
 - [T-688] **Two fallback strings that disagree with the family, and neither is decidable from the
   literal.** Found while sweeping [[T-609]] and deliberately left, because T-609's rule was "route
@@ -2070,19 +2035,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   this batch's time budget risked the load-bearing tool rather than the finding. `TEST_RESULT`
   itself (the aggregate zero-test count) is already fixed the same way as `xcb.sh`'s.
 
-- [T-787] **`scripts/agent-commit.sh`'s `show_outstanding` empties `$PATH` for its own scope.**
-  Found live while using the tool to land [[T-667]]/[[T-721]]/[[T-660]]: every commit that leaves a
-  declined-hunk record prints `show_outstanding:4: command not found: sed` /
-  `... command not found: head` right after reporting success. `local root=$1 quiet=${2:-} any=0
-  record path` declares a function-local `path`, and in zsh `path` is tied to `$PATH` even as a
-  local — `path=$(sed -n ... | head -1)` on the next line overwrites `$PATH` for the rest of the
-  function's scope, so every command after it (`sed`, `head`) fails to execute. Reproduced in
-  isolation: a two-line zsh function of exactly this shape prints the right value once, then
-  `command not found` on everything that follows. The commit itself is unaffected (it happens before
-  this diagnostic runs) — only the "OUTSTANDING DECLINED HUNKS" listing silently fails to print,
-  which is the tool's own backstop for a hunk nobody has accounted for yet. Same family as the two
-  `path`/`$PATH` traps already in `docs/SUBAGENT_RUNBOOK.md`. Fix: rename the local to something not
-  in `{path, cdpath, fpath, manpath, status, argv, options}`.
 
 - [T-783] **[[T-687]] part (2), refiled: the same untrimmed ternary on a `name`, 7 live sites.**
   T-687 part (1) is closed — the 27 constant-fallback title sites are routed and swept. Part (2) is
@@ -2123,6 +2075,77 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 ## Done
+
+- [T-679] **CLOSED 2026-09-03 — committing out of a shared checkout is a script now, not a rule.**
+  `scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]...`. It refuses `FOREIGN-STAGED`
+  (the shared index holds a path you did not name — Batch D, where d1's `git rm` landed in `91d533c`
+  instead of `5b0c2b8`, and Batch M's stale `docs/TODO.md` blob), assembles the tree in a private
+  `GIT_INDEX_FILE`, commits it by plumbing, and then **repairs the shared index** and verifies your
+  paths are clean against the new HEAD — the Batch M residue where a correct private-index commit left
+  the shared index 274 deletions behind HEAD, so the next agent's commit would have reverted it. The
+  `<path>=<content-file>` form is the reconstruction form for a file a sibling is also editing;
+  `git commit -- <path>` is still wrong there and the runbook says why.
+  **The declined-hunk case is catchable, and it is caught.** A reconstruction whose content differs
+  from the worktree is by construction declining something; those lines are recorded, and the **next**
+  commit of that path is refused as `DECLINED-HUNK-LOST` unless it carries them or clears the record
+  with `--accept-declined <path>`. That is Batch M's fourth failure exactly, where m3 correctly
+  declined m4's in-flight hunk, m4 committed without it, and HEAD stopped compiling on a required
+  parameter one composer never passed. What it cannot do is notice a path nobody commits again —
+  filed as [[T-781]].
+  `./scripts/agent-commit.sh selftest` induces every refusal against a throwaway repository (32
+  checks), including a positive control proving the private-index pattern *without* the repair really
+  does leave the shared index dirty. Pinned by `CadenceGuardScriptSelftestTests` ([[T-719]]).
+  Mutations M1–M3, M5, M7 (`scripts/mutate.sh`): disabling `FOREIGN-STAGED`, deleting the shared-index
+  repair, and stopping the declined-hunk refusal from firing were each KILLED. Using it at all is
+  still a rule rather than a mechanism — [[T-780]].
+  **Two amendments the same day, both from its own first real use, both on `docs/TODO.md`.**
+  (1) "Declined" was first computed as *worktree lines the staged blob does not have*, which counts
+  every line the commit deliberately **deletes**: this ticket's own ledger move recorded 179 of them,
+  most of them the three tickets it was closing. A line can only be a sibling's in-flight work if the
+  commit being replaced did not have it either, so the version at `HEAD` is a third input now.
+  `mode 3c` is that shape — the worktree keeps a line the reconstruction drops — and reverting the
+  third input makes it, and only it, fail.
+  (2) **A reconstruction built on a stale `HEAD` silently reverts a sibling's landed work**, and that
+  happened twice within the hour, both on `docs/TODO.md`: `169d594` dropped three of a sibling's open
+  tickets, `820aa98` restored them and in doing so dropped this ticket's own three closing entries.
+  Nothing in the tool noticed, because deleting a line is a legitimate thing for a commit to do. So
+  it is said out loud instead: `REMOVES-HEAD-LINES` refuses any commit whose staged content drops
+  lines `HEAD` has unless `--removes <exact count>` names how many — the same shape as `count:` in
+  `scripts/mutate.sh`, where the point is not the number but looking at what is going. `mode 4b`
+  induces it (undeclared, wrong count, exact count); deleting the guard makes exactly those four
+  checks fail and the other 28 pass.
+  (3) A line count is the wrong unit for a ledger. `docs/TODO.md` lost three of a sibling's tickets
+  inside one, and the agent who caught it did so by diffing the **ticket-id sets** against the parent
+  commit. That is `LEDGER-IDS-LOST` now: a commit of a `TODO.md` that no longer carries a `- [T-n]`
+  entry `HEAD` had is refused with the ids named, and `--drops-ids <exact,sorted,list>` retires them
+  deliberately. `mode 4c` induces it — a reconstruction that keeps T-101, adds T-103 and loses T-102 —
+  and with the guard deleted the same commit is refused only as *"removes 1 line(s)"*, which is
+  character for character how the three real ones went missing. An append-only edit needs no flag.
+
+- [T-719] **CLOSED 2026-09-03 — `CadenceGuardScriptSelftestTests` runs both guard scripts' selftests
+  on every `CadenceTests` run.** 5 tests. Two shell out (`./scripts/mutate.sh selftest`,
+  `./scripts/agent-commit.sh selftest`) and fail on a non-zero exit; **exit 0 is not enough**, so each
+  run must also name every refusal it claims to induce and print a `checks: N passed, M failed` tally
+  derived from the checks that actually ran — a count a selftest gutted to `return 0` cannot produce.
+  `theCheckerRejectsASelftestThatAssertsNothing` runs that reading against four stubs (silent,
+  headers-but-no-checks, a lost mode, a red exit) so the reading is not vacuous, and a source scan —
+  `xcb.sh`'s own pinning shape — asserts each refusal is still in the script body *and* still induced
+  in its selftest. Mutation M4 (bypass `mutate.sh`'s own `NEEDLE-ABSENT` guard) KILLED, plus two
+  weakening pairs settled by control: M5→M6 (dropping the tally reading survives only alongside M5's
+  violation, so `tally.failed != 0` is load-bearing) and M7→M8 (dropping a refusal from the required
+  list). 6 killed, 2 survived-as-evidence, 0 inconclusive; baseline green over 5 tests, 0 Swift warnings.
+  **Two sandbox facts fell out of it, both measured.** The test host is App-Sandboxed, so the
+  `/usr/bin` xcrun shims for `git` and `python3` refuse to run and both scripts now probe for a working
+  binary; and zsh sets `$TMPPREFIX` to `/tmp/zsh` itself at startup, so `mutate.sh`'s here-document
+  died before its first line under the sandbox and no `[[ -z ]]` guard could ever have noticed.
+  Written up in [[T-782]] and `docs/SUBAGENT_RUNBOOK.md`.
+
+- [T-787] **CLOSED 2026-09-03 — `show_outstanding`'s `local path` no longer empties `$PATH`.** Found
+  by another agent using the tool live. Renamed to `declined_path`, with the reason in a comment naming
+  the whole family (`path`, `cdpath`, `fpath`, `manpath`, `status`, `argv`, `options`). The selftest now
+  asserts the backstop listing really prints and that nothing in it died `command not found`; reverting
+  the rename by hand makes both of those checks fail and the rest pass, which is how a diagnostic that
+  failed silently got a guard.
 
 - [T-668] **CLOSED 2026-09-03 — one brace matcher, and the answer to "how many of the 83 read a
   different span" is measured at zero.** The copy is gone from `FocusPickerPlayControlTests`:

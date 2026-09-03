@@ -407,6 +407,17 @@ Which path form to use:
   edits into one hunk, so "take only my hunks" quietly takes the sibling's too. Reconstruct from the
   tree you actually tested instead.
 
+- **A `docs/TODO.md` that loses a ticket is refused by id, not by line count.** A stale
+  reconstruction drops entries a sibling landed, and a line count large enough to be worth reading
+  past hides them — measured 2026-09-03, three tickets lost that way and caught by diffing the id
+  sets by hand. `LEDGER-IDS-LOST` names the missing `T-<n>`s; `--drops-ids <exact,sorted,list>`
+  retires them on purpose.
+- **A reconstruction built on a stale `HEAD` reverts a sibling's landed work**, and deleting a line is
+  a legitimate thing for a commit to do, so nothing could tell the two apart. It is said out loud
+  instead: a commit whose staged content drops lines `HEAD` has is refused as `REMOVES-HEAD-LINES`
+  until `--removes <exact count>` names how many. Re-read `git show HEAD:<path>` rather than raising
+  the number. Measured twice in one hour on 2026-09-03, both on `docs/TODO.md` (`169d594`, `820aa98`).
+
 **The gap it does not close.** If nobody ever commits the declined path again, no commit-time check
 fires. `./scripts/agent-commit.sh status` is the backstop; read it before closing a batch.
 
