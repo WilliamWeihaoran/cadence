@@ -2,7 +2,8 @@ import Foundation
 import Testing
 @testable import Cadence
 
-/// **The control-accessibility rules the tooltip sweep cannot reach** (T-611, widened by T-637).
+/// **The control-accessibility rules the tooltip sweep cannot reach** (T-611, widened by T-637,
+/// renamed by T-678).
 ///
 /// `CadenceControlAccessibilityLabelTests` carries the app's widest rule, and it keys on
 /// `.help(…)`. That modifier does not exist on iOS, so that sweep is *structurally* blind to
@@ -10,13 +11,14 @@ import Testing
 /// were unnamed. `theTooltipSweepFindsNothingOnATreeThatCannotDrawTooltips` below states that as a
 /// measurement rather than leaving it as an assumption.
 ///
-/// **The icon-only rule below is app-wide now, despite the file's name.** T-611 seeded it here
-/// because that was the tree with no rule at all, and scoped it to `Cadence/iOS/` for a reason that
-/// has since expired: T-610 was rewriting `knownUnnamedTooltipSites` over the same file set at the
-/// time, and two exact ledgers over one moving file set means every tooltip fix has to edit both.
-/// T-610 settled at one entry, so T-637 widened the sweep to `Cadence/` and left it here rather
-/// than moving 150 lines of brace-walking between two suites mid-batch. A `.help` tooltip is a
-/// pointer affordance; it is not an accessible name, which is why the same control can be clean
+/// **The icon-only rule below is app-wide** — T-611 seeded it here because that was the tree with
+/// no rule at all, and scoped it to `Cadence/iOS/` for a reason that has since expired: T-610 was
+/// rewriting `knownUnnamedTooltipSites` over the same file set at the time, and two exact ledgers
+/// over one moving file set means every tooltip fix has to edit both. T-610 settled at one entry,
+/// so T-637 widened the sweep to `Cadence/`, and **T-678 renamed the suite to match** once the two
+/// widenings stopped colliding — the file kept its iOS-only name for one batch on purpose, stated
+/// in its own header rather than left silent, and this is that rename landing. A `.help` tooltip is
+/// a pointer affordance; it is not an accessible name, which is why the same control can be clean
 /// under one rule and an offender under the other.
 ///
 /// Its own file rather than a section of the other one, because these two suites are edited by
@@ -27,7 +29,7 @@ import Testing
 /// target launches the app, so an announcement is not a fact any test here has measured.
 ///
 /// **Deliberately not `@MainActor`.** Everything below is source text and `nonisolated` values.
-struct CadenceIOSControlAccessibilityTests {
+struct CadenceIconOnlyButtonAccessibilityTests {
 
     /// **The sites this rule has not reached yet, by file and count, with the ticket that owns each.**
     ///
