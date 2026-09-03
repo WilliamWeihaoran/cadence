@@ -43,6 +43,43 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-795] **The icon-only-button suite is red on HEAD independent of T-674, for a reason worth
+  fixing before the next agent reads its output as a regression.** Measured 2026-09-04 against an
+  unmodified HEAD (`8bec9eb`) in an isolated `git archive` tree, twice: `CadenceIconOnlyButtonAccessibilityTests`
+  fails two different ways that are really one cause. First, its ledger still lists five files
+  [[T-673]]'s own commit (`a3068e3`) already cleaned —
+  `Sheets/CreateTaskSheet.swift`, `Views/GoalsSupportViews.swift`, `Views/HabitsSupportViews.swift`,
+  `Views/QuickCreateChoiceSupportViews.swift`, `Views/TasksPanelSupportViews.swift` — so
+  `theUnnamedIconButtonLedgerStatesHowManySitesEachFileStillHas` reports a stale ledger. Second, and
+  less obvious, `theIconOnlyButtonDetectorSeesABareGlyphAndLeavesALabelledOneAlone`'s own
+  non-vacuity witness for "the detector still reaches the desktop tree" is
+  `Views/TasksPanelSupportViews.swift` — the same file T-673 just named, now clean, so the fixture
+  no longer proves what its own comment claims. [[T-792]] tracks a *different* T-673 residue (the
+  raw `Text` beside two glyphs); this is the ledger/witness staleness itself, filed separately so it
+  does not get lost inside T-792's narrower scope.
+
+- [T-796] **A `Menu` whose whole label is a bare `Image(systemName:)` is invisible to both the
+  icon-only-`Button` sweep and [[T-674]]'s new icon-only-`.onTapGesture` sweep — neither keys on
+  `Menu`.** Measured 2026-09-04: four sites, four files, have no accessible name at all —
+  `Views/ListNotesViewSupportViews.swift:20`, `Editor/MarkdownEditorView.swift:432`,
+  `iOS/iOSCalendarSettingsSection.swift:348`, `iOS/iOSCalendarBundleDetailSheet.swift:352`. A fifth,
+  `iOS/iOSMarkdownAccessoryViews.swift:632`, already carries `.accessibilityLabel("More
+  formatting")` and is clean — proof the shape is fixable the same way, not a reason the other four
+  were missed. Not folded into T-674: that ticket's population was fixed at 10 sites in 9 files
+  before this was found, and a `Menu` label is a third control shape after `Button` and
+  `.onTapGesture`, wide enough to want its own sweep rather than a fourth ad hoc fix.
+
+- [T-797] **`CreateContextSheet.ColorGrid`'s swatches share `IconGrid`'s exact defect one struct up
+  — a bare `.onTapGesture` with no `Button`, no accessible name — and [[T-674]]'s new
+  `CadenceIconOnlyTapGestureAccessibilityTests` correctly does not fire on them.** The detector
+  keys on `Image(systemName:)`; a swatch draws a `Circle().fill(Color(hex:))`, no `Image` at all, so
+  the two are different shapes by the letter of what the rule checks even though a sighted user
+  meets them as siblings in the same sheet. Deliberately left rather than folded in: `IconGrid`'s
+  fix names the icon by its SF Symbol identifier (`"Select \(icon) icon"`, matching the sibling iOS
+  grids' own `.accessibilityLabel(icon)` convention); a swatch has no symbol name to borrow; it
+  needs a decision on what a colour's own name is (`Theme`'s own token name, when the hex matches
+  one? the raw hex string otherwise?) before it can take the same fix shape.
+
 - [T-792] **A goal's linked-list and task-contributor rows now announce a normalised title;
   the visible `Text` beside them still reads it raw.** Found while landing [[T-673]] and
   deliberately left — fixing it would have been a copy change to a display the ticket was not
@@ -1472,23 +1509,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   a `.focused` binding dropped, one glyph size drifted, the opacity tint restored — were all
   killed. Follow-ups: [[T-789]], [[T-790]], [[T-791]].
 
-- [T-674] **Ten icon-only controls in helpers and chrome, four of them behind a helper that takes a
-  symbol and no name (10 sites, 9 files).** From [[T-637]]. Steppers and navigation —
-  `TimelineZoomControl`'s `minus`/`plus` (`Services/SchedulingService.swift:369`, `:382`),
-  `HabitsFormSupportViews.stepButton:270`, `GoalTimelineView.timelineNavButton:341`,
-  `TaskBundlePickerSupportViews`' back chevron `:132` — plus `SidebarComponents`' add-list `plus`
-  `:126`, `KanbanColumnSupportViews`' column-editor `ellipsis` `:347`, and three private
-  icon-button helpers: `SettingsSupportViews.actionButton:149`,
-  `FocusBundleTaskSupportViews.focusRowIconButton:152`, and
-  `Sheets/ListEditorSupportViews.ListEditorIconCell:272`.
-  **The last one is the interesting one and it sets the fix shape.** `ListEditorIconCell` already
-  takes `var accessibilityLabel: String? = nil` and applies it through
-  `ListEditorOptionalControlLabel` — so the mechanism is built, and **one of its two call sites
-  passes a string**. A defaulted optional name is a name nobody adds. Do what [[T-611]] did to
-  `iOSTaskAttributeChip`: make the parameter a `let` with no default, so the next caller **fails to
-  build** rather than fails a sweep. The other three helpers should gain the same required
-  parameter in the same change.
-
 - [T-675] **The app has three row-separator weights and only one of them is named.** Found while
   closing [[T-618]], which named the 0.35 one as `Theme.rowSeparator` over four agreeing sites. The
   other two are in `Cadence/macOS/Views/GoalTimelineSupportViews.swift`: a goal row's bottom rule
@@ -2124,6 +2144,56 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 ## Done
+
+- [T-674] **CLOSED 2026-09-04 — ten icon-only controls now say something, and four helpers can no
+  longer ship one that does not, sha `a79dd92c`.** From [[T-637]]. `TimelineZoomControl`'s inline
+  `minus`/`plus` and the picker's back chevron carry `.cadenceControlLabel(…)` directly, having no
+  shared helper to carry it for them: "Zoom out"/"Zoom in" (matching `CalendarToolbarZoomControl`'s
+  own words for the same concept) and "Back to all lists". `SidebarComponents`' add-list `plus`
+  reads "Add list to \(title)" from the section title already in scope;
+  `KanbanColumnSupportViews`' column-editor `ellipsis` reads "Edit column".
+  **The four private helpers all gained the same required parameter, in the same change**, per
+  T-611's compile gate rather than a per-call-site sweep: `HabitsFormSupportViews.stepButton` (now
+  "Decrease"/"Increase \(title.lowercased())" — the stepper names what it increments, not its
+  glyph), `GoalTimelineView.timelineNavButton` ("Earlier"/"Jump to today"/"Later" — navigation, not
+  a stepper), `SettingsSupportViews.actionButton` ("Rename"/"Archive"/"Delete \(context.name)"),
+  and `FocusBundleTaskSupportViews.focusRowIconButton` ("Move up"/"Move down"/"Remove from
+  bundle"). `Sheets/ListEditorSupportViews.ListEditorIconCell` — the site that set the fix shape —
+  had `var accessibilityLabel: String? = nil`; it is now `let accessibilityLabel: String`, no
+  default, and its one silent call site (the icon strip's per-glyph cell) now passes the SF Symbol
+  name itself, matching the sibling iOS icon grids' own `.accessibilityLabel(icon)` convention
+  (`iOSListEditorViews.swift`, `iOSTrackingEditorComponents.swift`) rather than inventing a fourth
+  spelling. The dead `ListEditorOptionalControlLabel` wrapper the optional made necessary is gone.
+  **A coordinator addendum, same day: `CreateContextSheet.IconGrid`'s per-glyph cell drew a `ZStack`
+  mutating `selected` from a bare `.onTapGesture`** — no `Button`, no accessible name, invisible to
+  the `Button`-keyed sweep by construction. Converted to a `Button` with `.cadenceControlLabel("Select
+  \(icon) icon")` and `.accessibilityAddTraits(.isSelected)` when current. Measured before
+  converting, not assumed: exactly one site in the whole tree combines `Image(systemName:)` with a
+  nearby `.onTapGesture` and no enclosing `Button`/`Menu` (246-character gap); the nearest look-alike
+  (`iOSCalendarBundleDetailSheet`'s `Menu` trigger) sits at 511. `CadenceIconOnlyTapGestureAccessibilityTests`
+  (4 tests) bans the shape outright — a straight `#expect(offenders.isEmpty)`, not a ledger, since
+  the found population was one and the fix removed it — and pins the 300-character window against
+  the three nearest real look-alikes (`CalendarPageMonthSupportViews.swift`, `LinksView.swift`,
+  `iOSCalendarBundleDetailSheet.swift`) rather than leaving the measurement a comment.
+  Deleting a call site's name argument fails the build, confirmed with `scripts/mutate.sh`: five
+  mutations, one per required-parameter helper (`ListEditorIconCell`, `stepButton`,
+  `timelineNavButton`, `actionButton`, `focusRowIconButton`), each `INVALID (DID-NOT-COMPILE)` with
+  exactly 1 compile error — the whole argument for the compile gate over a sweep. Build: 0 compile
+  errors, 0 warnings across the `Cadence`, `CadenceWidgets` and `CadenceMCPServer` schemes (all
+  three rebuilt the touched files). `CadenceIconOnlyButtonAccessibilityTests`'s own ledger and
+  witness were independently confirmed stale on unmodified HEAD before this landed — filed as
+  [[T-795]] rather than fixed here, since fixing someone else's suite is not this ticket's fix
+  shape.
+  **`Views/TaskBundlePickerSupportViews.swift` is shared with [[T-672]]'s clear-button migration**
+  (`7e58fc6c`, landed mid-batch): the first reconstruction (`a79dd92c`) was built against a scratch
+  copy taken before that commit landed, and while it carried this ticket's own back-chevron label
+  correctly, it silently reverted the clear-button migration in the same file. Caught by re-diffing
+  the just-landed HEAD against the live working tree rather than trusting the reconstruction file,
+  and corrected in a second commit, `12077cf3`, before either was reported here.
+  Residue: [[T-795]] (the icon-button suite's own stale ledger/witness), [[T-796]] (an icon-only
+  `Menu` label is a third unnamed-control shape), [[T-797]] (`ColorGrid`'s swatches share the exact
+  defect `IconGrid` had, one struct up, and need a naming decision before they can take the same
+  fix).
 
 - [T-673] **CLOSED 2026-09-04 — all eight remove/complete glyphs hand their row's own subject down,
   the two circles read the shared completion-state label, sha `a3068e3c`.** From [[T-637]]. Six
