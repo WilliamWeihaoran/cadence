@@ -113,7 +113,14 @@ ARGV = sys.argv[2:]
 # The same evidence scripts/xcb.sh counts: swift-testing's per-test lines and XCTest's, in both the
 # serial (`Test Case`) and parallel (`Test case`) spellings. The `Executed N tests` summary is
 # deliberately not the signal -- a run that died before reaching a test never prints it at all.
-TEST_RESULT = re.compile(r"(?:✔|✘) Test [A-Za-z0-9_]+\(\)|Test [Cc]ase .*(?:passed|failed)")
+# The quoted alternative matches a `@Test("...")` case's display-name form (T-667): swift-testing
+# prints `Test "name"` instead of `Test funcName()` for one of those, so without it this count read
+# a suite that ran and passed every case as zero -- measured against real logs for
+# `ListDetailPageTests` (9/9) and `MarkdownTableMobileEditingTests` (27/27). `FAILED_SWIFT_TESTING`
+# below is not widened to match: it still cannot name a failing display-named test, which is
+# tracked as residue rather than fixed here (it needs the function-name -> display-name mapping
+# `scripts/test-suite-index.sh --labels` now carries, not just a wider regex).
+TEST_RESULT = re.compile(r'(?:✔|✘) Test (?:[A-Za-z0-9_]+\(\)|"[^"]*")|Test [Cc]ase .*(?:passed|failed)')
 FAILED_SWIFT_TESTING = re.compile(r"✘ Test ([A-Za-z0-9_]+)\(\)")
 FAILED_XCTEST = re.compile(r"Test [Cc]ase '-\[[^ ]+ ([A-Za-z0-9_]+)\]' failed")
 COMPILE_ERROR = re.compile(r"\.swift:[0-9]+:[0-9]+: error:")
@@ -842,8 +849,10 @@ def main():
 
 def selftest():
     failures = []
+    performed = []
 
     def check(name, condition, detail=""):
+        performed.append(name)
         say("  %-4s %s%s" % ("ok" if condition else "FAIL", name, "" if condition else "  <- " + detail))
         if not condition:
             failures.append(name)
@@ -875,7 +884,7 @@ def selftest():
             return apply_mutation(workspace, backups, baselines, mutation)
 
         say("")
-        say(" mode 1 -- a stale needle must not read as a survivor")
+        say(" mode 1 (NEEDLE-ABSENT) -- a stale needle must not read as a survivor")
         stale = apply(plan_for('return "Weekly"', 'return "X"'))
         check("stale needle is refused", not stale.ok and stale.reason == "NEEDLE-ABSENT", stale.reason)
         check("the file was left alone", read_bytes(source) == original)
@@ -893,7 +902,7 @@ def selftest():
         check("the file is byte-identical again", read_bytes(source) == original)
 
         say("")
-        say(" mode 2b -- a stranded earlier mutation must void the next mutation, not survive it")
+        say(" mode 2b (NOT-PRISTINE) -- a stranded earlier mutation must void the next, not survive it")
         write_bytes(source, original.replace(b'"Daily"', b'"Doubly"'))
         stranded = apply(plan_for('case .daily:', 'case .daily :'))
         check("a non-pristine file is refused", not stranded.ok and stranded.reason == "NOT-PRISTINE",
@@ -901,7 +910,7 @@ def selftest():
         restore(source, backup, original)
 
         say("")
-        say(" mode 3 -- a needle that also occurs in a comment is ambiguous, not a survivor")
+        say(" mode 3 (NEEDLE-AMBIGUOUS) -- a needle that also occurs in a comment is not a survivor")
         ambiguous = apply(plan_for('"Daily"', '"Weekly"'))
         check("an ambiguous needle is refused",
               not ambiguous.ok and ambiguous.reason == "NEEDLE-AMBIGUOUS", ambiguous.reason)
@@ -914,7 +923,7 @@ def selftest():
         check("restore is verified", restore(source, backup, original))
 
         say("")
-        say(" mode 4 -- a mutation that never compiled, and a run that took the host with it")
+        say(" mode 4 (DID-NOT-COMPILE / TOOLCHAIN-CRASH / NO-TESTS-RAN) -- a mutation that never\n     compiled, and a run that took the host with it")
         compile_log = ("CompileSwift normal arm64\n"
                        "/x/Cadence/Models/ModelEnums.swift:459:29: error: cannot find 'Daily' in scope\n"
                        "** TEST FAILED **\n")
@@ -977,7 +986,7 @@ def selftest():
               scoped.verdict == "INVALID" and scoped.reason == "SUITE-ABSENT", scoped.reason)
 
         say("")
-        say(" a red run with no failing test is not a kill")
+        say(" RED-WITHOUT-A-FAILING-TEST -- a red run with no failing test is not a kill")
         red = classify_run(70, "✔ Test somethingElse() passed after 0.001 seconds.\n** TEST FAILED **\n")
         check("red without a failing test is INVALID",
               red.verdict == "INVALID" and red.reason == "RED-WITHOUT-A-FAILING-TEST", red.reason)
@@ -1002,7 +1011,7 @@ def selftest():
         check("restore is verified", restore_mutation(workspace, backups, baselines, good_pair))
 
         say("")
-        say(" mode 5 -- a weakened assertion that survives is inconclusive until it is paired")
+        say(" mode 5 (INCONCLUSIVE) -- a weakened assertion that survives is nothing until it is paired")
 
         def weakening(ident, path, pair=None, verdict=SURVIVED, failed=()):
             mutation = Mutation(ident)
@@ -1080,6 +1089,9 @@ def selftest():
         shutil.rmtree(workspace, ignore_errors=True)
 
     say("")
+    # A machine-readable tally, derived from the checks that actually ran. A selftest gutted to
+    # `return 0` would still exit 0; it could not print a non-zero passed count (T-719).
+    say("checks: %d passed, %d failed" % (len(performed) - len(failures), len(failures)))
     if failures:
         say("SELFTEST FAILED: %s" % ", ".join(failures))
         return 1

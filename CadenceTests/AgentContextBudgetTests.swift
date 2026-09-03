@@ -100,11 +100,21 @@ private func repositoryFile(_ relativePath: String) throws -> String {
     try String(contentsOf: repositoryRoot().appendingPathComponent(relativePath), encoding: .utf8)
 }
 
+/// T-660/T-750. `omittingEmptySubsequences: false` counts a trailing newline's empty final element,
+/// so this reads **one higher than `wc -l`** on every file here — all of them newline-terminated.
+/// The invariant is exact and unconditional (`wc -l` == the number of `\n` bytes == pieces − 1), so
+/// the failure message states both counts instead of leaving an agent to reach for `wc -l` and land
+/// on the wrong one by exactly one.
 private func expectLineCount(_ relativePath: String, isAtMost limit: Int) throws {
     let lineCount = try repositoryFile(relativePath)
         .split(separator: "\n", omittingEmptySubsequences: false)
         .count
-    #expect(lineCount <= limit, "\(relativePath) has \(lineCount) lines; keep active agent context compact.")
+    let wcDashL = lineCount - 1
+    #expect(
+        lineCount <= limit,
+        "\(relativePath) has \(lineCount) lines by this test's count (\(wcDashL) by `wc -l`); "
+            + "keep it at or under \(limit) here, i.e. at or under \(limit - 1) by `wc -l`."
+    )
 }
 
 /// Every `AGENTS.md` in the repository, repository-relative, discovered rather than enumerated.

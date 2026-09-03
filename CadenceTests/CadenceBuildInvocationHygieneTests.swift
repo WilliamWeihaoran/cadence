@@ -179,8 +179,10 @@ struct CadenceBuildInvocationHygieneTests {
             "scripts/xcb.sh declares no TEST_RESULT_PATTERN"
         )
 
-        // The pattern is a real regex, not `-1`-returning rubble.
-        #expect(CadenceSourceScan.matchCount(pattern, in: Self.swiftTestingRunLog) == 2)
+        // The pattern is a real regex, not `-1`-returning rubble. 4, not 2 (T-667): the bareword
+        // pass/fail pair and the quoted-display-name pass/fail pair must both be seen, or the
+        // pattern has regressed to the blind spot that read a passing named suite as empty.
+        #expect(CadenceSourceScan.matchCount(pattern, in: Self.swiftTestingRunLog) == 4)
         #expect(CadenceSourceScan.matchCount(pattern, in: Self.xctestRunLog) == 1)
         #expect(CadenceSourceScan.matchCount(pattern, in: Self.emptyRunLog) == 0)
 
@@ -225,11 +227,17 @@ struct CadenceBuildInvocationHygieneTests {
     ** TEST SUCCEEDED **
     """
 
-    /// A real swift-testing run: one pass and one failure, so the pattern is pinned on both.
+    /// A real swift-testing run: one pass and one failure in the bareword form, plus the same pair
+    /// in the quoted-display-name form a `@Test("...")` case prints (T-667) -- `xcb.sh`'s pattern
+    /// used to see only the first two of these four lines, which is exactly how a suite that ran
+    /// and passed every case got counted as zero.
     private static let swiftTestingRunLog = """
     ◇ Test theRowStillDraws() started.
     ✔ Test theRowStillDraws() passed after 0.001 seconds.
     ✘ Test theRowDoesNot() recorded an issue at Foo.swift:12:5
+    ◇ Test "The row still draws, named" started.
+    ✔ Test "The row still draws, named" passed after 0.001 seconds.
+    ✘ Test "The row does not, named" recorded an issue at Foo.swift:13:5
     ** TEST FAILED **
     """
 

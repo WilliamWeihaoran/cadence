@@ -51,12 +51,23 @@ below.
   blind" finding from exactly this — the same mutation, re-scoped to the real suite name, killed a test.
   **So: after every mutation run, assert the log actually contains the test you mutated**
   (`grep -c '✔ Test <name>()\|✘ Test <name>()'`), not just the exit code. `scripts/test-suite-index.sh`
-  gives you the right identifier; nothing forces you to use it.
-- **`AGENTS.md` has a hard 200-line cap, enforced by `AgentContextBudgetTests`.** If your work earns a
+  gives you the right identifier; nothing forces you to use it. **That grep is blind to a
+  `@Test("...")` case** (T-667): swift-testing prints `✔ Test "display name" passed` for one of
+  those, never the function name, so the bareword grep reads 0 whether it passed or failed. 52 tests
+  in 5 files use one; `test-suite-index.sh` (no flag) marks each with the quoted text to grep
+  instead, and `--label`/`--labels` give the string a whole suite logs under. `xcb.sh`'s own counter
+  had the identical blind spot and is fixed; a scoped run over one of the three suites T-667 first
+  reported as "unreachable" (`ListDetailPageTests`, `RootModalKeyDispositionTests`,
+  `MarkdownTableMobileEditingTests`) always ran and passed every case under the plain type name —
+  the ticket's own "0 tests" came from this same grep, not from a selection failure.
+- **`AGENTS.md` has a hard 200-line cap by `AgentContextBudgetTests`'s own count, which is 199 by
+  `wc -l`** (T-660/T-750: the test splits on `"\n"` without dropping the trailing empty element, so
+  a newline-terminated file — every file here — reads one higher than `wc -l`). If your work earns a
   new always-read rule, you must remove or link out something else in the same change — that is the
-  repo's stated convention, and it is a test, not a style note. Two agents in a row have landed a good
-  rule and left the file over the cap, which turns a green batch into a rerun. Write the rule tight,
-  put the detail here instead, and check `wc -l AGENTS.md` before you report.
+  repo's stated convention, and it is a test, not a style note. **Check `wc -l AGENTS.md` and stop at
+  199, not 200** — two agents in a row trimmed to 200 by `wc -l`, shipped 201 by the test, and turned
+  a green batch into a rerun. The test's own failure message now names both counts if you land on it
+  anyway.
 - **`pgrep -f 'foo/run-batch.sh'` does not match a script invoked as `./run-batch.sh`** — the process
   command line is `/bin/zsh ./run-batch.sh`. A liveness check written that way reports a healthy run as
   gone, which is how one agent came to launch a duplicate runner. Same family as the `pgrep -f

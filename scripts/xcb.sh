@@ -62,11 +62,19 @@ shared_cadence_entries() {
 }
 
 # --- the zero-test guard (T-552) ---------------------------------------------
-# Evidence that a test RAN, in the two shapes this repository's logs use: swift-testing's
-# `✔ Test name()` / `✘ Test name()`, and XCTest's `Test Case '-[Suite testName]' passed`.
+# Evidence that a test RAN, in the shapes this repository's logs use: swift-testing's
+# `✔ Test name()` / `✘ Test name()`, its `✔ Test "display name"` / `✘ Test "display name"` form for
+# a case declared `@Test("...")`, and XCTest's `Test Case '-[Suite testName]' passed`.
 # `[Cc]ase` is deliberate: Xcode 26.6 writes `Test case '…' passed` (lowercase) in a PARALLEL run and
 # `Test Case` (capital) serially. Measured 2026-08-31 — a scoped parallel run with 33 real results was
 # refused as "executed 0 tests". A zero-test guard that false-negatives is the exact trap it exists to close.
+#
+# The quoted form is not cosmetic (T-667): a suite scoped alone by `-only-testing:CadenceTests/<X>`
+# can run and pass every one of its tests while this pattern, before it matched quotes too, counted
+# zero -- measured directly against `ListDetailPageTests` (9/9 passed, 0 counted) and
+# `MarkdownTableMobileEditingTests` (27/27 passed, 0 counted) from real logs. That is not a filter
+# that selected nothing; it is this guard's own blind spot, and it is silent for any `@Test("...")`
+# case in the target (52 of them, in 5 files, at last count), not only those three suites.
 #
 # The `Executed N tests` summary is deliberately NOT the signal. It is the line a run that died
 # before reaching any test never prints at all, so keying on it would read total silence as a full
@@ -78,7 +86,7 @@ shared_cadence_entries() {
 # string, and CadenceBuildInvocationHygieneTests lifts this exact pattern out of this file and runs
 # it against literal log fixtures to prove it still discriminates. An anchor the two engines read
 # differently would make that check evidence about something other than this script.
-TEST_RESULT_PATTERN='(✔|✘) Test [A-Za-z0-9_]+\(\)|Test [Cc]ase .*(passed|failed)'
+TEST_RESULT_PATTERN='(✔|✘) Test ([A-Za-z0-9_]+\(\)|"[^"]*")|Test [Cc]ase .*(passed|failed)'
 
 tests_seen() { grep -acE "$TEST_RESULT_PATTERN" "$1" 2>/dev/null | tr -d ' '; }
 
@@ -288,10 +296,52 @@ say "  compile errors:  $(grep -cE '\.swift:[0-9]+:[0-9]+: error:' "$LOG" | tr -
 say "  warnings:        $(grep -c 'warning:' "$LOG" | tr -d ' ')"
 if (( IS_TEST_RUN )); then
   RAN=$(tests_seen "$LOG")
-  say "  tests executed:  $RAN"
+  # Not a test count (T-721): this counts per-test RESULT LINES, and swift-testing prints two for a
+  # failing test (`recorded an issue` and `failed after`), so a 2-test suite reads 2 green, 3 with
+  # one failure, 4 with two. Right for the zero-test guard below; wrong to quote as "N tests ran".
+  say "  test result lines: $RAN"
   if (( RAN == 0 )); then
     empty_run_diagnostic "$LOG"
     (( STATUS == 0 )) && STATUS=4
+  else
+    # --- the per-requested-suite guard (T-667) ---------------------------------
+    # The check above answers "did the run execute anything at all", which cannot see one
+    # REQUESTED suite, among several, that contributed nothing -- the T-667 shape exactly: a
+    # 52-suite scoped run reported 593 tests and SUCCEEDED while 4 of the 52 executed zero, caught
+    # only by a human diffing `✔ Suite` lines against the requested flags. This automates that
+    # diff. Only runs when RAN > 0: a wholly empty run is already the case above.
+    #
+    # A suite's own Swift type name does not appear in swift-testing's event stream once it or its
+    # cases carry a display name (T-667) -- the log speaks only in display-name vocabulary then --
+    # so this asks `test-suite-index.sh --label`, which reads the same source `xcb.sh` cannot, for
+    # the string the log will actually use, rather than grepping for the type name itself.
+    requested=(${(f)"$(grep -oE -- '-only-testing:CadenceTests/[^ "'"'"']*' "$LOG" 2>/dev/null | sed 's#^-only-testing:CadenceTests/##' | sort -u)"})
+    if (( ${#requested} )); then
+      # One process for every suite in the target, not one per requested suite: `--labels` walks
+      # `CadenceTests/` once and prints `TypeName<TAB>label` for each, so a 52-suite request costs
+      # one subprocess here instead of 52.
+      typeset -A suite_label_map
+      while IFS=$'\t' read -r type_name suite_label; do
+        [[ -z "$type_name" ]] && continue
+        suite_label_map[$type_name]="$suite_label"
+      done < <("$ROOT_DIR/scripts/test-suite-index.sh" --labels 2>/dev/null)
+      for suite in $requested; do
+        [[ -z "$suite" ]] && continue
+        label="${suite_label_map[$suite]:-$suite}"
+        if [[ "$label" == "$suite" ]]; then
+          marker="Suite $suite started"
+        else
+          marker="Suite \"$label\" started"
+        fi
+        if ! grep -qF -- "$marker" "$LOG" 2>/dev/null; then
+          say ""
+          say "!! T-667: requested suite '$suite' never started (expected \"$marker\" somewhere in"
+          say "   the log) even though this run's total test result lines is $RAN. It contributed 0"
+          say "   -- a typo'd suite name, or one folded into a larger passing run that hid it."
+          (( STATUS == 0 )) && STATUS=6
+        fi
+      done
+    fi
   fi
 fi
 if [[ "$(shared_cadence_entries)" != "$before_entries" ]]; then
