@@ -682,13 +682,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 
-- [T-489] **DECIDE: `.stroke` vs `.strokeBorder` app-wide.** Withdrawn from [[T-449]] rather than done.
-  `macOS/Views/SettingsListManagementSections.swift:381` draws a 28x28 glyph at radius 7 with `.stroke`,
-  which centres the 1pt line on the path — so the control renders 1pt wider than it measures, the defect
-  `CadenceSettingsWell`'s own doc names as the tell. `.strokeBorder` is the value-preserving fix, but it
-  is a 1pt visual change nobody has looked at and **28 other sites spell it the same way**. Either an
-  app-wide sweep or nothing.
-
 
 - [T-491] **The iPad capture palette's scrim stops at the detail pane.** Found while closing [[T-282]].
   `iPadMacStyleRootShell` clips `detail()` and the capture host is inside it, so an open palette **dims
@@ -1019,15 +1012,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   success"?* A refused save leaves the rows where the user dragged them until the next launch silently
   undoes it — which is the shape the `try? save()` rule exists to catch, but the write itself is a field
   edit. Answer it once in `AGENTS.md`, then make both platforms match.
-
-- [T-616] **`cornerRadius: 7` at 55 sites with no token, and `Theme`'s radius scale has nothing at 7.**
-  Measured by the [[T-596]] agent while disproving that ticket's "inner-pill idiom" claim: the token
-  spelling `Theme.radiusControl - 3` stands at **2** sites against **55** bare literals. `Theme`'s scale
-  is 10/18/22.
-  So the question is not "hoist the literal" — it is **whether 7 should be a named step in the scale**.
-  If it should, name it once and sweep. If it should not, 55 sites are drawing a radius the design
-  system does not contain, which is a bigger finding than the drift. Decide before sweeping; a
-  mechanical replace would enshrine an accident 55 times.
 
 - [T-619] **The two platforms' timed grids draw different hour ladders.** macOS `CalendarVisualStyle`
   0.36/0.30 at 0.95/0.85pt against iOS's 0.46/0.20 at 0.5pt. Out of scope for [[T-595]]/[[T-596]], which
@@ -2036,6 +2020,28 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   one-sentence rule becomes a one-sentence-per-direction rule.
   **Not actionable on its own**, and filed as a constraint rather than a defect: whoever picks up
   [[T-623]] or any successor hits this before they write a line of UI.
+
+- [T-754] **41 more sites spell `Theme.radiusControl` (10) as the bare literal `cornerRadius: 10`,
+  plus one more named constant that does the same** (`kanbanColumnCornerRadius` in
+  `KanbanBoardSupport.swift`, sitting right next to the `kanbanCardCornerRadius` [[T-616]] just
+  converted). Found while sweeping [[T-616]]'s "7" — unlike that ticket, no naming decision is
+  needed here: `Theme.radiusControl` already exists and already means 10. This is a plain hoist, not
+  a "should this be a step in the scale" question, and it was left alone because converging 41 call
+  sites onto a shared token is its own review, not a rider on a "7" ticket. `Theme.radiusCard` (18)
+  and `Theme.radiusPanel` (22) were checked the same way and have **zero** bare-literal sites —
+  10 is the only tier still leaking.
+
+- [T-755] **A `*Radius: <n>` sweep pattern will false-positive on `CadenceWidgets/WidgetChrome.swift`'s
+  `elevationRadius`.** Found and caught by `CadenceRadiusControlCompactSweepTests` mid-development
+  ([[T-616]]): a first-draft detector matched any identifier ending in `Radius`, and `elevationRadius`
+  matched the "7" case at one of its four widget-size tiers. It is a `shadow(radius:)` **blur**
+  radius, not a corner radius, and scales 5/6/7/8 across the four sizes — real scatter, a deliberate
+  per-tier value, not "one origin copied N times." The shipped detector requires `cornerRadius`
+  (bare or as a `*CornerRadius` name) or `radius`/`xRadius`/`yRadius` exactly, which does not match
+  `elevationRadius` — but the next person writing a radius sweep by hand, rather than reusing
+  `CadenceRadiusControlCompactSweepTests`' pattern, can make the same near-miss. Filed so the
+  distinction (corner radius vs. shadow blur radius, both spelled `*Radius`) is written down
+  somewhere other than a test's inline comment.
 
 ## Done
 
@@ -5181,6 +5187,40 @@ before filing**: this list has had the same ticket re-reported more than once.
   not just the labels — equal words over a wrong span would **destroy a series** while passing a
   label-only check.
   **Closed 2026-08-31. `CalendarRecurrenceEditScope` moved to `Cadence/Shared/` verbatim — cases, raw values, labels and the `EKSpan` mapping all preserved — and `private enum iOSCalendarRecurrenceEditScope` is deleted, 5 references repointed. **`thePhonesPrivateCalendarScopeEnumMatchesTheMacOne` was replaced rather than merely deleted**: it existed only because the duplication did, but dropping it outright would have left the `EKSpan` mapping unpinned, and **equal labels over a wrong span would destroy a recurring series while passing a label-only check**. Two successors took its place. No MCP or widget build needed, established by reading the target source lists rather than building speculatively: each pulls three files from `Shared/` and **zero** from `macOS/`, and neither list contains the moved file.**
+
+- [T-489] **CLOSED 2026-09-03 (`2a8a70a`) - swept `.stroke` to `.strokeBorder` app-wide, wherever the
+  shape is filled.** 83 sites converted: every `RoundedRectangle`/`Circle`/`Capsule` `.stroke` drawing a
+  control/card/chip boundary, including a selection ring overlaid on a filled sibling shape
+  (`SettingsTagsSection.swift`, `TagPickerPopoverViews.swift`) and an outline-only button with no
+  separate fill (`TaskInspectorContentSupportViews.swift`'s `iconButton`) — both still "the shape is
+  filled" in the sense the decision meant, since each bounds a control's rendered area rather than
+  drawing a line-like decoration. Two sites deliberately left as `.stroke`, and documented as such:
+  `TaskCompletionAnimationViews.swift`'s progress-ring track (line 23) and its `.trim`-ed arc (line
+  27) have no companion fill at all — a stroke-only decoration, which is the ticket's own carve-out.
+  Bare `Path`/`NSBezierPath`/`UIBezierPath` canvas drawing (the markdown editor's AppKit code and its
+  iOS equivalents) and `Canvas`'s `GraphicsContext.stroke(Path, ...)` were left alone on the same
+  ground: `.strokeBorder` is not a member of either type. `SettingsListManagementSections.swift`'s
+  28x28 glyph well — the site that reopened this ticket from [[T-449]] — now reads
+  `.strokeBorder(Theme.borderSubtle)`. `CadenceStrokeBorderSweepTests` sweeps the whole tree rather
+  than a fixed file list and pins the two exceptions by exact line; `scripts/mutate.sh` confirms
+  reverting the motivating site, and "helpfully" converting one of the two exceptions, are each
+  KILLED.
+
+- [T-616] **CLOSED 2026-09-03 (`2a8a70a`) - named the de-facto 7pt radius `Theme.radiusControlCompact`
+  and swept every spelling onto it.** Measured 54 bare `cornerRadius: 7` call sites (one more than the
+  ticket's 55 once one `NSBezierPath(xRadius:yRadius:)` pair and 3 `Theme.radiusControl - 3` sites — one
+  more than the ticket's 2 — are counted separately), plus 3 *named* constants one level removed from a
+  direct call site that were still the bare literal — `kanbanCardCornerRadius` (28+ call sites),
+  `SidebarMetrics.appMarkCornerRadius`, and a private `TaskInspectorContentSupportViews.cornerRadius` —
+  one more spelling of the same accidental copy. Defined `Theme.radiusControlCompact` as
+  `radiusControl - 3`, the relationship the two pre-existing `radiusControl - 3` sites already assumed,
+  so every site draws the identical `7` it drew before — no rendered pixel moved. Documented as
+  descriptive of an existing copied value, not a new chosen tier: do **not** converge it onto
+  `Theme.radiusControl` (10). `CadenceRadiusControlCompactSweepTests` sweeps the whole tree for both the
+  bare-literal and `radiusControl - 3` spellings and pins that the token's own doc comment states the
+  "descriptive, not chosen" framing; `scripts/mutate.sh` confirms reverting one converted site is
+  KILLED. `iOSCalendarMetricsTests.theTodayTimelineDrawsTheSameHourLadder` — which had pinned the *old*
+  `radiusControl - 3` spelling at this file's two sites — updated to expect the token instead.
 
 ## Cancelled
 
