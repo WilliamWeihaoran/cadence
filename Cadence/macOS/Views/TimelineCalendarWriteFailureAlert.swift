@@ -32,4 +32,32 @@ extension View {
         modifier(CalendarWriteFailureAlert())
     }
 }
+
+extension CalendarManager {
+    /// Reports one write outcome on a surface that is **holding the user's draft** (T-658).
+    ///
+    /// The alert above is the backstop for surfaces with nothing on screen to write under — a
+    /// drag-move, a resize, an all-day chip dropped on the timeline. An event editor is not one of
+    /// those: it has a title, notes, a chosen calendar and a time range in it, so a refusal belongs
+    /// beside the button that was pressed and the editor has to stay open to hold them.
+    ///
+    /// Clearing `lastWriteFailure` is part of reporting, not a tidy-up. Two reports of one refusal
+    /// is one too many, and on macOS an alert raised over a popover dismisses that popover — which
+    /// is exactly the draft loss this exists to stop.
+    ///
+    /// `onCommitted` defaults to doing nothing so a caller that refused *before* reaching EventKit
+    /// — an unformable date range — can report `.refused` without inventing a success branch.
+    func report(
+        _ outcome: CadenceCalendarWriteOutcome,
+        into notice: Binding<String?>,
+        onCommitted: () -> Void = {}
+    ) {
+        notice.wrappedValue = outcome.failureNotice
+        if outcome.closesEditor {
+            onCommitted()
+        } else {
+            lastWriteFailure = nil
+        }
+    }
+}
 #endif

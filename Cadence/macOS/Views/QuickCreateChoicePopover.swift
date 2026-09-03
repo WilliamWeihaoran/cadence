@@ -13,6 +13,13 @@ struct QuickCreateChoicePopover: View {
     let onCreateBundle: ((String, [AppTask]) -> Void)?
     let onCreateEvent: ((String, String, String) -> Void)?
     let onCancel: () -> Void
+    /// What to say when the event the user just typed was refused by Apple Calendar (T-658).
+    ///
+    /// Host-owned, like `CalendarEventEditPopover`'s: the host is the frame that dismisses this
+    /// popover, so it is the only frame that can decide to keep the draft on screen instead. The
+    /// Task and Bundle tabs deliberately keep their alerts — their hosts hand the draft to a
+    /// separate panel or sheet, so by the time the store answers there is nothing left here.
+    @Binding var createFailureNotice: String?
     let usesTaskPanelForTaskCreation: Bool
 
     @Environment(CalendarManager.self) private var calendarManager
@@ -62,6 +69,7 @@ struct QuickCreateChoicePopover: View {
         onCreateBundle: ((String, [AppTask]) -> Void)? = nil,
         onCreateEvent: ((String, String, String) -> Void)?,
         onCancel: @escaping () -> Void,
+        createFailureNotice: Binding<String?>,
         usesTaskPanelForTaskCreation: Bool = true,
         defaultsToCalendarEvent: Bool = false
     ) {
@@ -72,6 +80,7 @@ struct QuickCreateChoicePopover: View {
         self.onCreateBundle = onCreateBundle
         self.onCreateEvent = onCreateEvent
         self.onCancel = onCancel
+        _createFailureNotice = createFailureNotice
         self.usesTaskPanelForTaskCreation = usesTaskPanelForTaskCreation
         let initialMode: Mode = defaultsToCalendarEvent && onCreateEvent != nil ? .calendarEvent : .timeBlock
         _mode = State(initialValue: initialMode)
@@ -179,6 +188,10 @@ struct QuickCreateChoicePopover: View {
                 }
             }
             .frame(minHeight: modeFormMinHeight, alignment: .topLeading)
+
+            if mode == .calendarEvent, let createFailureNotice {
+                CadenceInlineFailureNotice(text: createFailureNotice)
+            }
 
             HStack(spacing: 8) {
                 CadenceActionButton(
@@ -311,8 +324,7 @@ struct QuickCreateChoicePopover: View {
                 query: tildeSearchQuery,
                 contexts: contexts,
                 areas: areas,
-                projects: projects,
-                selection: selectedContainer
+                projects: projects
             ),
             selection: selectedContainer,
             onSelect: selectTildeContainerItem,

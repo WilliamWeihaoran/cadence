@@ -166,6 +166,7 @@ struct CalendarBoardEventCard: View {
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @State private var showPopover = false
     @State private var isHovered = false
+    @State private var actionFailureNotice: String?
 
     private var tint: Color {
         item.calendarColor
@@ -185,17 +186,29 @@ struct CalendarBoardEventCard: View {
             CalendarEventEditPopover(
                 item: editItem,
                 onSave: { title, startMin, duration, calendarID, scope in
-                    if let range = editItem.eventDateRangeForEditedSegment(startMin: startMin, durationMinutes: duration) {
-                        calendarManager.updateEvent(
-                            item.ekEvent,
-                            title: title,
-                            startDate: range.start,
-                            endDate: range.end,
-                            calendarID: calendarID,
-                            scope: scope
+                    // Both refusals used to close the popover: the unformable range silently, and
+                    // the rejected write behind a global alert with nothing to retype into. The
+                    // range branch has no cause to name — EventKit was never asked — so it passes
+                    // `nil`, the way `iOSCalendarQuickCreateSheet` does for an unparseable date key.
+                    guard let range = editItem.eventDateRangeForEditedSegment(startMin: startMin, durationMinutes: duration) else {
+                        calendarManager.report(
+                            .refused(notice: CadenceCalendarEventEditingSupport.saveFailureNotice(for: nil)),
+                            into: $actionFailureNotice
                         )
+                        return
                     }
-                    showPopover = false
+                    let failure = calendarManager.updateEvent(
+                        item.ekEvent,
+                        title: title,
+                        startDate: range.start,
+                        endDate: range.end,
+                        calendarID: calendarID,
+                        scope: scope
+                    )
+                    calendarManager.report(
+                        CadenceCalendarEventEditingSupport.saveOutcome(for: failure),
+                        into: $actionFailureNotice
+                    ) { showPopover = false }
                 },
                 onDelete: { scope in
                     deleteConfirmationManager.present(
@@ -204,10 +217,16 @@ struct CalendarBoardEventCard: View {
                             ? "This will permanently delete \"\(item.title)\" and future events from your calendar."
                             : "This will permanently delete \"\(item.title)\" from your calendar."
                     ) {
+                        // Delete deliberately stays on `.calendarWriteFailureAlert()`. The
+                        // confirmation overlay is a full-window layer, so pressing its Delete
+                        // button is a click outside this transient popover and closes it before
+                        // the store has answered — an inline notice would have nowhere to draw.
+                        // There is also no draft to keep here: nothing was typed.
                         calendarManager.deleteEvent(item.ekEvent, scope: scope)
                         showPopover = false
                     }
-                }
+                },
+                actionFailureNotice: $actionFailureNotice
             )
         }
     }

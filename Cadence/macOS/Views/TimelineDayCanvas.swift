@@ -30,7 +30,12 @@ struct TimelineDayCanvas: View {
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
     var externalEvents: [CalendarEventItem] = []
     /// Optional: if provided, the drag-to-create popover will offer a "Calendar Event" tab.
-    var onCreateEvent: ((String, Int, Int, String, String) -> Void)? = nil
+    ///
+    /// It answers with the typed `CalendarWriteFailure?` rather than `Void` (T-658). The narrowing
+    /// to `Void` happened here: `CalendarManager.createStandaloneEvent` has returned a cause since
+    /// T-339, the hosts threw it away on the way in, and this canvas then dismissed the popover the
+    /// user had typed the event into whatever the store answered.
+    var onCreateEvent: ((String, Int, Int, String, String) -> CalendarWriteFailure?)? = nil
     /// Calendar pages should treat dragged time slots as events first; task timelines keep time blocks first.
     var prefersCalendarEventCreation = false
     /// Optional: called when an all-day event chip is dropped onto the timeline, with the event identifier and target minute.
@@ -50,8 +55,10 @@ struct TimelineDayCanvas: View {
     @AppStorage(CalendarWorkHoursPreferences.startMinuteKey) private var workHoursStartMinute = CalendarWorkHoursPreferences.defaultStartMinute
     @AppStorage(CalendarWorkHoursPreferences.endMinuteKey) private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
     @Environment(\.modelContext) private var modelContext
+    @Environment(CalendarManager.self) private var calendarManager
     /// Set when the store refuses a block formed by dropping a task on a task ([[T-655]]).
     @State private var bundleCreateFailed = false
+    @State private var eventCreateFailureNotice: String?
 
     private func clearDraftCreation() {
         TimelineDayCanvasStateSupport.clearDraftCreation(
@@ -259,6 +266,7 @@ struct TimelineDayCanvas: View {
     private func finishDraftCreation() {
         showNewTaskPopover = false
         draftSelection = nil
+        eventCreateFailureNotice = nil
     }
 
     /// `start`/`end` are the range the ghost is drawing and the popover is anchored to. Every
@@ -287,10 +295,20 @@ struct TimelineDayCanvas: View {
                     finishDraftCreation()
                 },
                 onCreateEvent: onCreateEvent == nil ? nil : { title, calendarID, notes in
-                    onCreateEvent?(CadenceEventTitleSupport.storedTitle(title), start, end, calendarID, notes)
-                    finishDraftCreation()
+                    let failure = onCreateEvent?(
+                        CadenceEventTitleSupport.storedTitle(title),
+                        start,
+                        end,
+                        calendarID,
+                        notes
+                    ) ?? nil
+                    calendarManager.report(
+                        CadenceCalendarEventEditingSupport.saveOutcome(for: failure),
+                        into: $eventCreateFailureNotice
+                    ) { finishDraftCreation() }
                 },
                 onCancel: finishDraftCreation,
+                createFailureNotice: $eventCreateFailureNotice,
                 usesTaskPanelForTaskCreation: usesTaskPanelForTaskCreation,
                 defaultsToCalendarEvent: prefersCalendarEventCreation
             )

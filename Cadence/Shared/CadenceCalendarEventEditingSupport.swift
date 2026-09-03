@@ -47,6 +47,26 @@ enum CadenceCalendarEventEditingSupport {
         return "\(operation) \(failure.message)"
     }
 
+    /// What a surface holding the user's draft should do with the result of one save.
+    ///
+    /// **T-658.** iOS decided this at each sheet — `if let failure { actionError = …; return }` —
+    /// and macOS decided the opposite by not deciding: `CalendarBoardEventCard`,
+    /// `TimelineEventBlock` and the quick-create popover all discarded the `CalendarWriteFailure?`
+    /// at the call site and closed the popover regardless, so a refused write took the title, the
+    /// notes, the chosen calendar and the time range with it. One rule, in one place, so the two
+    /// platforms cannot drift apart again.
+    ///
+    /// **There is no `deleteOutcome`, on purpose.** Both macOS event deletes go through
+    /// `DeleteConfirmationManager`, whose overlay covers the whole window — pressing its Delete
+    /// button is a click outside the transient popover and closes it before EventKit answers, so
+    /// an inline notice would have nothing to draw on. They keep `.calendarWriteFailureAlert()`,
+    /// which already names the cause, and they have no draft to lose. iOS keeps
+    /// `deleteFailureNotice(for:)` because its sheet has no such step in the middle.
+    static func saveOutcome(for failure: CalendarWriteFailure?) -> CadenceCalendarWriteOutcome {
+        guard failure != nil else { return .committed }
+        return .refused(notice: saveFailureNotice(for: failure))
+    }
+
     /// Shown in place of the calendar picker and the delete button when the event cannot be
     /// written. It names the calendar so the sentence is about *this* event rather than a
     /// general disclaimer.
@@ -85,5 +105,36 @@ enum CadenceCalendarEventEditingSupport {
         guard isEventEditable else { return false }
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         return writableCalendarIDs.contains(selectedCalendarID)
+    }
+}
+
+/// The result of one attempted Apple Calendar write, as the surface showing the draft sees it.
+///
+/// The draft is the whole point of the type. Closing an editor is how both platforms report that a
+/// write landed, so an editor that closes on a refusal has told the user it worked *and* thrown
+/// away everything they typed — there is no "retype it here" left on screen. `.refused` therefore
+/// carries the sentence to show and, by not being `.committed`, says the editor stays put.
+///
+/// `nonisolated` for the reason `CalendarWriteFailure` records: the project sets
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, which would hand this bare value type a
+/// main-actor-isolated synthesized `Equatable` that a `#expect` expansion cannot use.
+nonisolated enum CadenceCalendarWriteOutcome: Equatable {
+    /// The store took it. The editor may close; its draft is now the event.
+    case committed
+    /// The store refused it. The editor stays open, with the draft still in it, showing this.
+    case refused(notice: String)
+
+    /// Whether the surface may close. Only a committed write earns that.
+    var closesEditor: Bool {
+        self == .committed
+    }
+
+    /// The sentence to put beside the controls the user pressed, or `nil` when there is nothing
+    /// to say because nothing went wrong.
+    var failureNotice: String? {
+        switch self {
+        case .committed: return nil
+        case .refused(let notice): return notice
+        }
     }
 }

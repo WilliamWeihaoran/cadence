@@ -33,6 +33,7 @@ struct TimelineEventBlock: View {
     @State private var resizeSession: TimelineResizeSession? = nil
     @State private var isHovered = false
     @State private var pendingMutation: PendingEventMutation?
+    @State private var actionFailureNotice: String?
 
     private var effectiveStartMin: Int  { liveStartMin      ?? item.startMin       }
     private var effectiveDuration: Int  { liveDurationMinutes ?? item.durationMinutes }
@@ -119,17 +120,29 @@ struct TimelineEventBlock: View {
                 CalendarEventEditPopover(
                     item: item,
                     onSave: { title, startMin, duration, calendarID, scope in
-                        if let range = item.eventDateRangeForEditedSegment(startMin: startMin, durationMinutes: duration) {
-                            calendarManager.updateEvent(
-                                item.ekEvent,
-                                title: title,
-                                startDate: range.start,
-                                endDate: range.end,
-                                calendarID: calendarID,
-                                scope: scope
+                        // Closing the popover is the only report that Save worked, so a refusal has
+                        // to leave it open — the title, notes, calendar and time range the user
+                        // typed live in its `@State` and nothing else on screen holds them (T-658).
+                        // An unformable range never reached EventKit, so it names no cause.
+                        guard let range = item.eventDateRangeForEditedSegment(startMin: startMin, durationMinutes: duration) else {
+                            calendarManager.report(
+                                .refused(notice: CadenceCalendarEventEditingSupport.saveFailureNotice(for: nil)),
+                                into: $actionFailureNotice
                             )
+                            return
                         }
-                        selectedEventID = nil
+                        let failure = calendarManager.updateEvent(
+                            item.ekEvent,
+                            title: title,
+                            startDate: range.start,
+                            endDate: range.end,
+                            calendarID: calendarID,
+                            scope: scope
+                        )
+                        calendarManager.report(
+                            CadenceCalendarEventEditingSupport.saveOutcome(for: failure),
+                            into: $actionFailureNotice
+                        ) { selectedEventID = nil }
                     },
                     onDelete: { scope in
                         // The popover already asked for a scope, so the scope dialog is skipped —
@@ -137,9 +150,15 @@ struct TimelineEventBlock: View {
                         // rather than a third copy of it. This copy had already drifted: it
                         // bypassed `requestEventMutation`, so its message never mentioned future
                         // occurrences even when the user had chosen them.
+                        //
+                        // Delete stays on `.calendarWriteFailureAlert()` while Save moved inline,
+                        // and the asymmetry is the confirmation overlay: it is a full-window layer,
+                        // so its Delete button is a click outside this transient popover and closes
+                        // it before the store answers. Save has no such step, and a draft to keep.
                         selectedEventID = nil
                         applyEventMutation(.delete, scope: scope)
-                    }
+                    },
+                    actionFailureNotice: $actionFailureNotice
                 )
             }
             .position(x: frame.centerX, y: frame.centerY)

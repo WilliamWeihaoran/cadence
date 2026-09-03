@@ -83,7 +83,7 @@ struct SchedulePanelTimelineViewport: View {
     let onCreateBundle: (String, Int, Int, [AppTask]) -> Void
     let onDropBundleAtMinute: (TaskBundle, Int) -> Void
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
-    let onCreateEvent: (String, Int, Int, String, String) -> Void
+    let onCreateEvent: (String, Int, Int, String, String) -> CalendarWriteFailure?
 
     var body: some View {
         let hourHeight = TimelineZoom.hourHeight(viewportHeight: geoSize.height, level: zoomLevel)

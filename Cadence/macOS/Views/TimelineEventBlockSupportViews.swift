@@ -9,6 +9,16 @@ struct CalendarEventEditPopover: View {
     let item: CalendarEventItem
     let onSave: (String, Int, Int, String, CalendarRecurrenceEditScope) -> Void
     let onDelete: (CalendarRecurrenceEditScope) -> Void
+    /// What to say when the host's save was refused (T-658).
+    ///
+    /// A binding rather than local `@State`, for the reason `TaskBundleDetailPopover` records for
+    /// its own: the host is the frame that performs the write, the frame that sees the typed
+    /// `CalendarWriteFailure`, and the frame that decides *not* to close this popover — a notice
+    /// this view set itself would be drawn for one frame and dismissed with it.
+    ///
+    /// Save only. Delete leaves through `DeleteConfirmationManager`'s full-window overlay, which
+    /// closes this popover on the way, so its refusal is reported by the global alert instead.
+    @Binding var actionFailureNotice: String?
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
@@ -31,11 +41,13 @@ struct CalendarEventEditPopover: View {
     init(
         item: CalendarEventItem,
         onSave: @escaping (String, Int, Int, String, CalendarRecurrenceEditScope) -> Void,
-        onDelete: @escaping (CalendarRecurrenceEditScope) -> Void
+        onDelete: @escaping (CalendarRecurrenceEditScope) -> Void,
+        actionFailureNotice: Binding<String?>
     ) {
         self.item = item
         self.onSave = onSave
         self.onDelete = onDelete
+        _actionFailureNotice = actionFailureNotice
         let s = item.startMin
         let e = item.startMin + item.durationMinutes
         _title = State(initialValue: item.title)
@@ -113,6 +125,9 @@ struct CalendarEventEditPopover: View {
                 calendarCard
                 linkedNoteCard
                 actionButtons
+                if let actionFailureNotice {
+                    CadenceInlineFailureNotice(text: actionFailureNotice)
+                }
             }
             .padding(20)
         }
