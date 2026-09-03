@@ -324,7 +324,8 @@ struct QuickCreateChoicePopover: View {
                 query: tildeSearchQuery,
                 contexts: contexts,
                 areas: areas,
-                projects: projects
+                projects: projects,
+                selection: selectedContainer
             ),
             selection: selectedContainer,
             onSelect: selectTildeContainerItem,
