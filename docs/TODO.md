@@ -1229,18 +1229,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `CadenceCalendarEventEditingSupport`, so this is threading a return value and one notice, not new
   plumbing.
 
-- [T-650] **`scripts/test-host-lock.sh` has no fairness, and with 3-4 agents that is now the run's
-  main wall-clock cost.** Measured 2026-09-01 in the Batch A run: one agent's `acquire` was starved for
-  **~65 minutes** behind two siblings, with no queue and no ageing — it had to commit its green work
-  first and run its mutations afterwards to make progress at all. Every waiter races on release, so a
-  short run that arrives at the right instant beats a long one that has been waiting an hour.
-  The lock itself is correct and must stay: a UI-test run launches a real `Cadence.app`, and two
-  concurrent test hosts is the hazard it was written for (T-117). What is missing is only the ordering.
-  A ticket-and-turn file, or an ageing bonus, would do; the cheapest honest version is a FIFO of
-  waiter ids the releaser hands the lock to directly.
-  **Note the interaction with mutation runs**: a mutation batch is many short acquisitions in a row, so
-  a starved agent is starved repeatedly, not once.
-
 - [T-654] **The block focus timer banks its minutes over a swallowed save, then clears the clock.**
   Found while landing [[T-636]](c), which fixed the single-task door beside it.
   `iOSFocusView.logBundleSession` calls `CadenceFocusSupport.logElapsedSeconds(_:across:)` →
@@ -2043,7 +2031,76 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   distinction (corner radius vs. shadow blur radius, both spelled `*Radius`) is written down
   somewhere other than a test's inline comment.
 
+- [T-748] **An orphaned `acquire` still takes the lock with nobody left to run under it.**
+  [[T-650]] made it wait its turn instead of jumping the queue, which is strictly better and not the
+  fix: `pkill -f 'run-batch-<tag>.sh'` does not match the runner's `test-host-lock.sh acquire ...`
+  child, so the orphan keeps waiting, reaches the head, records its own already-dead pid as the
+  owner and strands the lock for the full 2700s lease. `docs/SUBAGENT_RUNBOOK.md` documents the
+  manual cleanup, which means it keeps happening. The candidate fix is four lines and was
+  deliberately not landed in [[T-650]]: at the moment of `mkdir`, refuse if `$PPID` is dead, because
+  a waiter whose parent is gone has nothing to hold the lock *for*. It was left out because three
+  sibling agents were mid-run against the live lock, and a new refusal on the acquire path is
+  exactly the change you do not ship into that. Land it on a quiet tree, with a selftest trial: a
+  waiter whose parent is killed must decline the lock rather than take it.
+
+- [T-749] **`scripts/simulator-claim.sh` has the unfairness [[T-650]] just removed from the test-host
+  lock.** Its wait loop is `sleep 5; (( waited += 5 ))` with no queue and no ageing - the same shape,
+  and the same consequence: a 16-minute claim wait was measured in the same batch that produced the
+  65-minute test-host starvation. There is now a working pattern to copy one file over, ticket
+  directory and all, including the parts that are easy to get wrong (the queue must live outside the
+  claim it guards, the prune must be liveness-and-age, a pruned live waiter must re-file under its
+  original stamp). Not urgent while only one simulator is in play, and cheap the day two are.
+
+- [T-750] **`AGENTS.md`'s "hard 200-line cap" is really 199, and the runbook tells you to measure it
+  the way that gets it wrong.** `AgentContextBudgetTests.expectLineCount` counts
+  `split(separator: "\n", omittingEmptySubsequences: false)`, which on a newline-terminated file is
+  `wc -l` **plus one** for the trailing empty element. `docs/SUBAGENT_RUNBOOK.md` says *"check
+  `wc -l AGENTS.md` before you report"* - so an agent who trims to exactly 200 by that instruction
+  ships 201 by the test's count and turns a green batch into a rerun. Measured 2026-09-03: cost one
+  full-suite red run in [[T-650]]. Fix either end (count lines the way the instruction says, or say
+  199 in the instruction), but not both, and pin whichever with a fixture - the interesting property
+  is that the guide's own measuring instruction agrees with the guard.
+
+
 ## Done
+
+- [T-650] **CLOSED 2026-09-03 (`743ddcf`) - the lock is a FIFO now, and the ordering was shown
+  rather than claimed.** A waiter files a ticket in `${LOCK}.queue` named by a microsecond arrival
+  stamp, and only the ticket at the head may call `mkdir`; everyone else stands aside. So "next"
+  means "waiting longest", not "whose 10-second sleep happened to end first". The queue lives
+  outside the lock directory on purpose - `release` does `rm -rf "$LOCK"`, which would delete the
+  queue of everyone waiting on it - and `status` now prints it, holder first.
+  **The trial is the ticket's own sentence.** `test-host-lock.sh selftest` queues w1..w3 behind a
+  held lock and starts w4 *at the instant of release*. With no queue, w4's very first `mkdir` lands
+  on a free lock while the other three are still asleep, so the newest arrival is served first -
+  deterministically, which is why this discriminates where evenly staggered waiters do not: with a
+  1.2s stagger inside a 10s poll, phase order and arrival order agree by accident and the unfair
+  lock passes. Against `git show HEAD:scripts/test-host-lock.sh`, three runs of three:
+  `w4 w1 w2 w3`. Against the new one, three of three: `w1 w2 w3 w4`.
+  **Both safety properties are in the same selftest, and were re-proven, not reasoned about.** An
+  expired lease whose owner pid is dead is still NOT reclaimed while a test host is live (the
+  conjunction is what stops a second host against the one app-group container), and the same lock
+  *is* reclaimable once that host is gone. A waiter killed with SIGKILL - no trap can run - does not
+  hold its place: the next waiter prunes the ticket and takes the lock. The prune is
+  liveness-**and**-age, because a stopped process is indistinguishable from a dead one and just as
+  bad for the head of a queue; a live waiter whose ticket is pruned re-files it under its original
+  arrival stamp, so pruning can never cost anyone their place.
+  **Mutation-tested by hand**, since `mutate.sh` drives Swift suites by name and there is no Swift
+  here: removing the head-gate fails only the ordering trial, widening the live-host conjunction
+  fails only the no-reclaim trial, disabling the prune fails only the killed-waiter trial. Each
+  mutation was confirmed landed by byte comparison against a `cp` backup.
+  **The price is stated in the header where the escape hatch is**: release-and-re-acquire no longer
+  wins, so a mutation batch of a dozen short runs interleaves with siblings instead of monopolising
+  the host. One lease across many runs is still `xcb.sh <id> raw test`, verified end to end under a
+  held `k1-lease` - three consecutive `raw test` runs, none of which acquired anything and none of
+  which deadlocked, with the lock still recorded to `k1-lease` after all three. Poll halved to 5s:
+  with a FIFO that interval is handoff latency, not a race window.
+  **Confirmed on the real lock, not only in the harness.** A sibling (`xcb-k3`) arrived 20s into
+  that held lease, queued behind it for 35s rather than racing for it, and was served on release;
+  and three waiters filed 4s apart against the real `${TMPDIR}` lock were listed in arrival order by
+  `status` and served `A B C`. An earlier full-suite run showed two real siblings (`xcb-integfix`,
+  `xcb-k3`) queued behind it in arrival order, which is the shape that used to be invisible.
+  Residue: [[T-748]], [[T-749]], [[T-750]].
 
 - [T-621] **CLOSED 2026-09-03 (`db1e9c6`) — focus minutes are a ledger of sessions now, and the
   counters are repaired from it rather than replaced by it.** The three `+=` sites wrote CloudKit-
