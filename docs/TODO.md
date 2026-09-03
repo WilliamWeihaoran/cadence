@@ -2099,6 +2099,20 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   this batch's time budget risked the load-bearing tool rather than the finding. `TEST_RESULT`
   itself (the aggregate zero-test count) is already fixed the same way as `xcb.sh`'s.
 
+- [T-787] **`scripts/agent-commit.sh`'s `show_outstanding` empties `$PATH` for its own scope.**
+  Found live while using the tool to land [[T-667]]/[[T-721]]/[[T-660]]: every commit that leaves a
+  declined-hunk record prints `show_outstanding:4: command not found: sed` /
+  `... command not found: head` right after reporting success. `local root=$1 quiet=${2:-} any=0
+  record path` declares a function-local `path`, and in zsh `path` is tied to `$PATH` even as a
+  local — `path=$(sed -n ... | head -1)` on the next line overwrites `$PATH` for the rest of the
+  function's scope, so every command after it (`sed`, `head`) fails to execute. Reproduced in
+  isolation: a two-line zsh function of exactly this shape prints the right value once, then
+  `command not found` on everything that follows. The commit itself is unaffected (it happens before
+  this diagnostic runs) — only the "OUTSTANDING DECLINED HUNKS" listing silently fails to print,
+  which is the tool's own backstop for a hunk nobody has accounted for yet. Same family as the two
+  `path`/`$PATH` traps already in `docs/SUBAGENT_RUNBOOK.md`. Fix: rename the local to something not
+  in `{path, cdpath, fpath, manpath, status, argv, options}`.
+
 
 ## Done
 
