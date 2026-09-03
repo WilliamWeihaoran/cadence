@@ -1426,23 +1426,38 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **file**, so today it is asserting over the copy that may not be the one that ships.
 
 
-- [T-672] **Ten copies of the search field's clear button, and not one of them has a name.** From
-  [[T-637]], which widened the icon-only-button ledger to the whole app and found them. Every
-  picker in the app spells the same control by hand —
-  `if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") } }` —
-  and none states an accessible name, so ten different search fields each carry a glyph VoiceOver
-  reads as nothing. The ten, with the line at the time of measurement:
-  `CadenceCalendarPicker.swift:185`, `Views/CadenceContextPicker.swift:174`,
-  `Views/ContainerPickerSupportViews.swift:271`, `Views/GlobalSearchSupportViews.swift:218`,
-  `Views/GoalPickerViews.swift:193`, `Views/GoalTimelineSupportViews.swift:312`,
-  `Views/TaskBundlePickerSupportViews.swift:153`, `Views/TaskTitleInlineTagPicker.swift:99`,
-  `Views/TasksPanelSupportViews.swift:378`, `Views/TildeContainerPicker.swift:212`.
-  **This is a duplication finding that an accessibility rule happened to surface**, so fix it as
-  one: a shared `Cadence/Shared/` clear-button component that names itself, per the root guide's
-  "prefer one shared component over near-copies". They already differ in ways nobody chose — font
-  size 11 vs 12 vs 16, `Theme.dim` vs `Theme.dim.opacity(0.5)` vs `0.55`, and four of the ten
-  restore focus to the field afterwards while six do not. Deleting the ten entries' share of
-  `knownUnnamedIconButtonSites` is part of the change; the ledger is exact, so a partial fix fails.
+- [T-672] **CLOSED 2026-09-04 (`7e58fc6c`) — one `CadenceSearchFieldClearButton`, and there were
+  eleven copies, not ten.** `Cadence/Shared/Components/CadenceSearchFieldClearButton.swift` is the
+  control now; the ten ledgered pickers call it, and so does an **eleventh** copy no accessibility
+  ledger could see — `FocusPickerSupportViews`' clear button already carried
+  `.cadenceControlLabel("Clear search")`, so it was clean under every naming rule and still a
+  near-copy. A ticket filed as a naming finding was a duplication finding, and the duplication is
+  what was counted.
+  **The three differences, re-measured before deciding.** Tint: five drew `Theme.dim`, five
+  `Theme.dim.opacity(0.5)`, one `0.55` — `Theme.dim` wins, being the plurality, the tint the
+  `magnifyingglass` at the other end of all eleven rows already draws, and a named ramp rather than
+  the one-off opacity `Cadence/Shared/AGENTS.md` rules out. Weight: ten default, one `.semibold`;
+  default wins. Size: **kept as a required parameter**, because it is the one difference that was
+  chosen — in nine of the eleven rows the clear glyph is drawn at exactly the size of that row's
+  own leading glyph (11 in the compact pickers, 12 in the popovers), and the two that differ are
+  the two whose leading glyph is emphasised (Cmd+K's 18pt `command` clears at 16, the focus
+  picker's 13pt semibold magnifier clears at 12). No default, the [[T-674]] shape: the twelfth call
+  site states its scale or fails to build.
+  **Focus was the real question and it was not a design difference.** Four restored focus and
+  seven did not — the split the ticket describes as four-of-ten is four-of-eleven, and one of the
+  four is Cmd+K, which restores focus inside `GlobalSearchInteractionSupport.clearQuery` rather
+  than at the button. Clicking a SwiftUI `Button` takes key focus off the `TextField` beside it, so
+  the seven left the user typing into nothing after a clear; `NSSearchField`'s own clear button
+  keeps focus. So the component **always** restores it and `focus` is required, which is a visible
+  change at seven sites and the reason two of them — `GoalTimelineFilterPopover` and
+  `TaskBundleTaskPickerPanel` — grew the `@FocusState` they never had.
+  Ten entries left `knownUnnamedIconButtonSites` (31→21 sites, 24→16 files, measured over T-672
+  alone). `CadenceSearchFieldClearButtonTests` pins the **call sites**: the app-wide sweep asserts
+  the only file that spells the control out is the component's own, which is what a rule on the
+  component alone would miss. Failing-first on an isolated HEAD tree named all eleven offenders,
+  and six mutations — a call site respelled by hand, the name dropped, the focus restore dropped,
+  a `.focused` binding dropped, one glyph size drifted, the opacity tint restored — were all
+  killed. Follow-ups: [[T-789]], [[T-790]], [[T-791]].
 
 - [T-673] **A row's remove/complete glyph never says which row it belongs to (8 sites, 5 files).**
   From [[T-637]]. Six bare `xmark` buttons remove a thing — a draft subtask
@@ -2072,6 +2087,40 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   is the call. It is not a mechanical swap: the needle there spans `processPendingChanges()` **and**
   the gate, which is a claim about adjacency, so narrowing it needs the ordering claim restated
   rather than the span shrunk.
+
+- [T-789] **The icon-only detector's positive witness is a file the ledger is emptying.**
+  `CadenceIOSControlAccessibilityTests.theIconOnlyButtonDetectorSeesABareGlyphAndLeavesALabelledOneAlone`
+  asserts the detector `fires(on:)` `Cadence/macOS/Views/TasksPanelSupportViews.swift` — T-637's
+  half of the test, the one that proves the widening reached the desktop tree. That file is only a
+  witness while it still holds an unnamed icon-only button, and [[T-673]] is removing its last two.
+  Measured 2026-09-04 in the shared checkout mid-batch: with T-673's and [[T-674]]'s edits in the
+  tree the assertion is already red, and it is red for the *right* reason — the file got fixed.
+  The `including:` witness in the sweep above is fine (it is a claim about the **walk**), so only
+  the `fires(on:)` line needs re-pointing, at a literal fixture rather than at a file the next
+  ticket will clean. This is the [[T-161]] shape one layer out: a detector self-check that a
+  *successful* fix turns red.
+
+- [T-790] **The search field itself is the next near-copy, four rows deep.** Found closing
+  [[T-672]], which unified the clear button and left the row around it duplicated.
+  `ContainerPickerSupportViews`, `TasksPanelSupportViews`, `TaskTitleInlineTagPicker` and
+  `TildeContainerPicker` each spell the same row by hand: an 11pt `magnifyingglass` in `Theme.dim`,
+  a `.plain` `TextField` at 12pt in `Theme.text` bound to a `@FocusState`, the shared clear button,
+  and `.padding(.horizontal, 12).padding(.vertical, 8)`. `CadenceCalendarPicker`,
+  `CadenceContextPicker` and `GoalPickerViews` draw a 12pt variant of the same thing with a
+  `Theme.surfaceElevated` background and a radius-8 clip. Seven rows, two shapes.
+  Not folded into T-672 deliberately: the clear button is one control with one behaviour, and a
+  search **row** carries a placeholder, a submit action, arrow-key handling and an escape hatch
+  that differ per picker — which is a parameter list to design, not a hoist to perform.
+
+- [T-791] **A named copy is invisible to a naming ledger, so `knownUnnamedIconButtonSites`
+  understates duplication by construction.** [[T-672]] was filed over ten sites and found eleven:
+  the eleventh already had `.cadenceControlLabel("Clear search")`, so no rule keyed on a missing
+  name could see it, and a fix that trusted the ledger would have left one hand-spelled copy of the
+  control it was consolidating. The two remaining follow-ups are the same shape — [[T-673]]'s
+  "remove this row" glyphs and [[T-674]]'s icon-button helpers are both idioms that plausibly
+  appear elsewhere *with* a label. Before either closes, sweep for the **shape** rather than for
+  the gap: the population a duplication ticket has to fix is not the population an accessibility
+  sweep reported.
 
 
 ## Done
