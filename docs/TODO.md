@@ -43,6 +43,56 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-847] **`Theme.dim` fails the body-text contrast floor on every surface.** Measured by an outside
+  audit (R30 in `docs/CODEX_REQUESTS.md`) against all four backgrounds: **4.12 / 3.84 / 3.59 / 3.40**.
+  WCAG wants 4.5 for body text; `dim` clears only the 3.0 large-text/control floor. This is the
+  widest-spread quality defect found in the run — and note that [[T-672]] has just converged eleven
+  search-field clear buttons onto `Theme.dim`, so the population is growing, not shrinking. **Premise
+  correction that matters:** Cadence has no light appearance — `Theme.preferredColorScheme` is fixed
+  to dark — so these are the only numbers that exist, not half of them. Decide whether `dim` is a
+  large-text-and-controls-only token and enforce that, or raise it.
+- [T-848] **The accent palettes and the Markdown highlight fail even the 3:1 floor.** Cadence: blue
+  2.75, red 2.78, green 2.08, amber 1.90, purple 2.72, teal 1.98. Glacier is worse — amber **1.54**,
+  teal 1.75. Highlighted Markdown text measures **1.48:1** (`Theme.swift:314-316`;
+  `MarkdownEditorSupport.swift:219-221`), which is close to unreadable. User-chosen accents are a
+  design decision, but a shipped default that no one can read is not.
+- [T-843] **"Block" has drifted back to "Bundle" in 11 live UI literals across 9 files.**
+  `TaskBundle.defaultDisplayTitle` says Block and iOS block creation agrees, but Focus and macOS
+  creation/edit/delete still say `Bundle`, `Bundle tasks`, `Bundle Focus`, `Log Bundle Session`,
+  `Bundle title`, `Delete Bundle?` and `Delete Bundle`: `CadenceFocusBundleSupport.swift:163`,
+  `iOSFocusView.swift:500`, `FocusChromeSupportViews.swift:120`,
+  `FocusBundleTaskSupportViews.swift:20`, `FocusLogSessionPopovers.swift:163`,
+  `FocusSidebarSupportViews.swift:155`, `QuickCreateChoicePopover.swift:248,355`,
+  `TimelineBundleBlock.swift:62`, `TimelineBundleBlockSupportViews.swift:71,203`. Reachable through
+  ordinary Block creation, editing and Focus. **[[T-567]] is closed and does not cover this** — it
+  centralised only the untitled fallback. Fix: shared user-facing Block vocabulary beside
+  `defaultDisplayTitle`, product words only (leave Settings' technical `Bundle ID` alone), plus a
+  source scan for `Bundle` in UI literals outside an explicit exemption.
+- [T-844] **Four count strings are ungrammatical at 1.** "1 selected tasks"
+  (`FocusLogSessionPopovers.swift:166`), "1 tasks" (`FocusSidebarSupportViews.swift:156`),
+  "Collapsed, 1 notes" (`CadenceNotesListSupport.swift:692`), "1 milestones / 1 habits"
+  (`iOSFeatureViews.swift:184-190`). One shared pluralisation helper; test 0, 1 and 2.
+- [T-845] **The two Markdown editors disagree on capitalisation.** iOS says `Bulleted List`,
+  `Code Block`, `Note Link`; macOS VoiceOver says `Bulleted list`, `Code block`, `Note link`. The
+  shared vocabulary already exists at `MarkdownSlashCommandCoreSupport.swift:34-50`. Have the core
+  own sentence-case titles and both adapters read them — do not build a second case table.
+- [T-846] **Reminders demands access before the user has chosen.** `.notDetermined` says "Reminders
+  access required" (`CadenceRemindersPresentationSupport.swift:91-97`), where Calendar and
+  Notifications correctly use a neutral `Connect …` offer and reserve `… access required` for after
+  a denial. Reachable on the first visit to Reminders settings. Give it the same two-title model.
+- [T-849] **The note panel draws an unlabelled failure.** `NotePanel.swift:80-99,113`;
+  `loadOrCreateCoreNotes` swallows. Make it throwing or return a typed result, and keep loading.
+- [T-851] **Milestone Momentum is the only widget whose reload calculation is unshared.** Its three
+  sibling support types already share one. Widgets ship inside the submitted binary, so a timeline
+  that never reloads is a shipped defect. Reuse a shared policy that accepts ready/empty intervals.
+- [T-852] **Nothing has ever proved `CadenceMCPServer` compiles.** It uses an explicit Sources list,
+  so the app scheme cannot see it break, and it has been outside every green run of this project.
+  An outside audit confirmed its membership and schema check out but stated plainly it cannot
+  determine the target compiles without building it. Somebody must build it.
+- [T-850] **iOS calendar quick-create branches on only one denied state.**
+  `iOSCalendarQuickCreateSheet.swift:342-357` should consume the shared Calendar authorization
+  presentation. Real, but iOS is not the v1 distribution channel — **parked behind macOS work.**
+
 - [T-809] **Two sweeps outside [[T-808]]'s product-tree boundary are still unpinned.** The R19
   audit counted them; `CadenceRealTreeSweepManifest.txt` deliberately does not, because its rule is
   "walks Swift source under `Cadence`/`CadenceWidgets`/`CadenceMCPServer`" and neither does.

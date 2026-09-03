@@ -2488,4 +2488,75 @@ failure is specifically the reversed white-on-bright-fill contract and over-dimm
 user-selected color corpus, build, tests, or visual Dynamic Type run. Ratios are measured; actual
 pair reachability is source-derived where cited and cannot account for arbitrary SwiftUI compositing.
 
-<!-- FOLDED-THROUGH: R24 -->
+<!-- FOLDED-THROUGH: R30 -->
+
+## R31 — Standing: has any of R25–R30 gone stale yet?
+
+R16 found three tickets whose population had vanished before anyone worked them, and R19's own
+216-name list had a suite name that a rename four commits earlier had already invalidated. Both
+times the answer arrived correct and decayed.
+
+R25–R30 are now being turned into tickets T-843..T-852. Before an agent picks any of them up,
+re-measure the population of each against current HEAD and report only what changed. Specifically:
+the 11 "Bundle" literals, the four count strings, the `Theme.dim` ratios, the accent-palette ratios,
+the Markdown highlight pair, and the Milestone Momentum reload calculation.
+
+A ticket whose population is already zero is the most valuable thing this request can find, and this
+class has now produced it four times.
+
+## R32 — What did Batch P's four agents each measure that contradicts the others?
+
+p1, p2, p3 and p4 all read the same tree within the same few hours and each reported numbers.
+p3 disagreed with R19's 216 in both directions — 26 sweeps missed, 2 outside the boundary — and was
+right on both counts. That is one audit disagreeing with one audit; I would like a third reading.
+
+Check, against HEAD: the manifest's 240 entries and its three-condition rule; p4's claim that the
+recovery view takes no model context on any path; p2's claim that every description sentence traces
+to a file that implements it; and p1's claim that a fresh store yields zero contexts, areas and
+projects with nothing seeding a starter workspace.
+
+The last one is the one I care most about, because two separate readings now say the app opens
+completely empty and I have never seen it run.
+
+## R33 — The commit-message-to-ledger correspondence nobody checks
+
+Five tickets — T-803, T-804, T-806, T-813, T-817 — were named in commit subjects and had no ledger
+entry at all until the coordinator wrote them by hand. Nothing in this repository checks that
+correspondence, so an id can be spent in a commit message and then reissued to different work.
+
+Measure it across all of history: every `T-<n>` appearing in a commit subject or body, against every
+`- [T-<n>]` entry in `docs/TODO.md` at HEAD. Report ids used in commits with no entry, entries whose
+id appears in no commit, and — the interesting case — any id used by two commits that describe
+unrelated work.
+
+Then say whether this is worth a guard or whether five was the whole population and it was a
+one-week artefact of a blocked permission.
+
+## R34 — Is the empty first run a decision or an accident?
+
+Two independent readings now say a new user gets zero contexts, zero areas and zero projects, and
+that nothing seeds a starter workspace. R25 called that "coherent and empty, not broken."
+
+Trace it properly. Is there any code path that ever intended to seed a starter workspace — a
+disabled flag, a removed call, a fixture that exists only for tests, a migration that would populate
+an empty store? `CadenceUITestSupport.swift` builds "UI Test Workspace / Alpha Area / Beta Project";
+report whether anything outside tests ever reached it.
+
+Then: what is the minimum a user must do, in clicks, before each main surface stops being empty?
+Count it per surface. If Kanban needs a context, then an area, then a project, then a column config
+before it shows anything, that is a number worth knowing before the app is submitted.
+
+## R35 — The 12 CORRECTNESS tickets, reachability-ranked
+
+R21 did this for the 28 PRODUCT tickets and found 7 with no population and 6 iOS-only. Do the same
+for R15's CORRECTNESS bucket: T-760, T-761, T-614, T-623, T-624, T-654, T-762, T-661, T-743, T-744,
+T-745, T-737.
+
+For each: does the described way for data or sync to end up wrong still exist at HEAD, and can it be
+reached by a released macOS build? Separate "the wrong state can be written" from "the wrong state
+can be seen", because those need different fixes and this bucket blurs them.
+
+T-623 is the one to look at hardest — a local-replica-only hard delete leaving CloudKit children is
+the only finding in this whole run that could corrupt a user's data rather than merely display it
+wrongly, and an earlier investigation concluded the proposed gate was both unimplementable and aimed
+at the wrong half of the race.
