@@ -474,6 +474,7 @@ struct TimelineZoomControl: View {
                     .clipShape(RoundedRectangle(cornerRadius: 5))
             }
             .buttonStyle(.cadencePlain)
+            .cadenceControlLabel("Zoom out")
             Text("\(zoomLevel)×")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Theme.dim)
@@ -487,6 +488,7 @@ struct TimelineZoomControl: View {
                     .clipShape(RoundedRectangle(cornerRadius: 5))
             }
             .buttonStyle(.cadencePlain)
+            .cadenceControlLabel("Zoom in")
         }
     }
 }

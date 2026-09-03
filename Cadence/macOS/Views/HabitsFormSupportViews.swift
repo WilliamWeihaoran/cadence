@@ -240,7 +240,11 @@ private struct HabitNumberStepper: View {
 
             Spacer()
 
-            stepButton(systemImage: "minus", isDisabled: value <= range.lowerBound) {
+            stepButton(
+                systemImage: "minus",
+                isDisabled: value <= range.lowerBound,
+                accessibilityLabel: "Decrease \(title.lowercased())"
+            ) {
                 value = max(range.lowerBound, value - 1)
             }
 
@@ -255,7 +259,11 @@ private struct HabitNumberStepper: View {
                         .strokeBorder(Color(hex: tintHex).opacity(0.24), lineWidth: 1)
                 )
 
-            stepButton(systemImage: "plus", isDisabled: value >= range.upperBound) {
+            stepButton(
+                systemImage: "plus",
+                isDisabled: value >= range.upperBound,
+                accessibilityLabel: "Increase \(title.lowercased())"
+            ) {
                 value = min(range.upperBound, value + 1)
             }
         }
@@ -265,7 +273,12 @@ private struct HabitNumberStepper: View {
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
     }
 
-    private func stepButton(systemImage: String, isDisabled: Bool, action: @escaping () -> Void) -> some View {
+    private func stepButton(
+        systemImage: String,
+        isDisabled: Bool,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 11, weight: .bold))
@@ -277,6 +290,7 @@ private struct HabitNumberStepper: View {
         }
         .buttonStyle(.cadencePlain)
         .disabled(isDisabled)
+        .cadenceControlLabel(accessibilityLabel)
     }
 }
 

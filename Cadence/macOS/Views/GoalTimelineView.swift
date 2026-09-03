@@ -184,13 +184,13 @@ struct GoalTimelineView: View {
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.borderSubtle, lineWidth: 1))
 
             HStack(spacing: 4) {
-                timelineNavButton(systemImage: "chevron.left") {
+                timelineNavButton(systemImage: "chevron.left", accessibilityLabel: "Earlier") {
                     shiftReference(by: -rangeStepDays)
                 }
-                timelineNavButton(systemImage: "smallcircle.filled.circle") {
+                timelineNavButton(systemImage: "smallcircle.filled.circle", accessibilityLabel: "Jump to today") {
                     referenceDate = Date()
                 }
-                timelineNavButton(systemImage: "chevron.right") {
+                timelineNavButton(systemImage: "chevron.right", accessibilityLabel: "Later") {
                     shiftReference(by: rangeStepDays)
                 }
             }
@@ -337,7 +337,11 @@ struct GoalTimelineView: View {
         }
     }
 
-    private func timelineNavButton(systemImage: String, action: @escaping () -> Void) -> some View {
+    private func timelineNavButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 10, weight: .semibold))
@@ -347,6 +351,7 @@ struct GoalTimelineView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
         .buttonStyle(.cadencePlain)
+        .cadenceControlLabel(accessibilityLabel)
     }
 
     private func shiftReference(by days: Int) {

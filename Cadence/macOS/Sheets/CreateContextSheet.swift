@@ -124,15 +124,26 @@ struct IconGrid: View {
             spacing: spacing
         ) {
             ForEach(CadenceIconPalette.offeredIcons(for: selected), id: \.self) { icon in
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(selected == icon ? Theme.blue.opacity(0.2) : Theme.surfaceElevated)
-                    Image(systemName: icon)
-                        .font(.system(size: cellSize * 0.44))
-                        .foregroundStyle(selected == icon ? Theme.blue : Theme.dim)
+                // **T-674 addendum.** This used to be a `ZStack` mutating `selected` from
+                // `.onTapGesture` — no `Button`, no accessible name, no selected trait, invisible
+                // to both the tooltip sweep (no `.help`) and the icon-only-`Button` sweep (no
+                // `Button` at all). `CadenceIconOnlyTapGestureAccessibilityTests` bans the shape
+                // outright rather than ledgering it: it was the only site in the tree.
+                Button {
+                    selected = icon
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(selected == icon ? Theme.blue.opacity(0.2) : Theme.surfaceElevated)
+                        Image(systemName: icon)
+                            .font(.system(size: cellSize * 0.44))
+                            .foregroundStyle(selected == icon ? Theme.blue : Theme.dim)
+                    }
+                    .frame(width: cellSize, height: cellSize)
                 }
-                .frame(width: cellSize, height: cellSize)
-                .onTapGesture { selected = icon }
+                .buttonStyle(.plain)
+                .cadenceControlLabel("Select \(icon) icon")
+                .accessibilityAddTraits(selected == icon ? .isSelected : [])
             }
         }
     }

@@ -134,6 +134,7 @@ struct ContextSection: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
+                .cadenceControlLabel("Add list to \(title)")
             }
             .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
             .padding(.top, SidebarMetrics.contextHeaderTopPadding)

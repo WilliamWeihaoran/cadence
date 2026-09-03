@@ -67,9 +67,17 @@ struct ContextSettingsRow: View {
 
                 if isHovered && !isEditing {
                     HStack(spacing: 4) {
-                        actionButton(icon: "pencil") { startEditing() }
-                        actionButton(icon: "archivebox", color: Theme.amber) { onArchive() }
-                        actionButton(icon: "trash", color: Theme.red) { onDelete() }
+                        actionButton(icon: "pencil", accessibilityLabel: "Rename \(context.name)") { startEditing() }
+                        actionButton(
+                            icon: "archivebox",
+                            color: Theme.amber,
+                            accessibilityLabel: "Archive \(context.name)"
+                        ) { onArchive() }
+                        actionButton(
+                            icon: "trash",
+                            color: Theme.red,
+                            accessibilityLabel: "Delete \(context.name)"
+                        ) { onDelete() }
                     }
                     .transition(.opacity)
                 }
@@ -145,7 +153,12 @@ struct ContextSettingsRow: View {
     }
 
     @ViewBuilder
-    private func actionButton(icon: String, color: Color = Theme.dim, action: @escaping () -> Void) -> some View {
+    private func actionButton(
+        icon: String,
+        color: Color = Theme.dim,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 11))
@@ -155,6 +168,7 @@ struct ContextSettingsRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.cadencePlain)
+        .cadenceControlLabel(accessibilityLabel)
     }
 
     private func startEditing() {

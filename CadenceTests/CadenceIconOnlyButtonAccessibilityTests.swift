@@ -61,10 +61,13 @@ struct CadenceIconOnlyButtonAccessibilityTests {
     ///   removals (a subtask, a picked task, a detached goal link) and two completion circles. The
     ///   T-594 shape: the action is guessable from the glyph and the *subject* is not, so the name
     ///   has to carry the item.
-    /// - **T-674 — icon-only helpers and chrome (10 sites, 9 files).** Steppers, timeline
-    ///   navigation, and four private `iconButton`-shaped helpers that take a symbol and no name.
-    ///   The fix is T-611's compile gate rather than a label at each call site: make the helper's
-    ///   name parameter a `let` with no default so the next caller cannot omit it.
+    /// - **T-674 — icon-only helpers and chrome, 10 sites in 9 files. CLOSED.** Steppers, timeline
+    ///   navigation, and four private `iconButton`-shaped helpers that took a symbol and no name.
+    ///   Four helpers (`stepButton`, `timelineNavButton`, `actionButton`, `focusRowIconButton`) and
+    ///   `ListEditorIconCell` now take the name as a `let` with no default — T-611's compile gate,
+    ///   not a label at each call site, so the next caller fails to build rather than fails a
+    ///   sweep. `TimelineZoomControl`'s two inline buttons and the picker's back chevron carry
+    ///   `.cadenceControlLabel(…)` directly, having no shared helper to carry it for them.
     ///
     /// The three iOS entries stay with **T-611**, which filed them.
     ///
@@ -79,19 +82,10 @@ struct CadenceIconOnlyButtonAccessibilityTests {
     private static let knownUnnamedIconButtonSites: [String: Int] = [
         "Cadence/iOS/iOSMarkdownPreview.swift": 2,                          // T-611
         "Cadence/iOS/iOSTaskDetailSheet.swift": 1,                          // T-611
-        "Cadence/macOS/Services/SchedulingService.swift": 2,                // T-674 (zoom −/+)
         "Cadence/macOS/Sheets/CreateTaskSheet.swift": 1,                    // T-673
-        "Cadence/macOS/Sheets/ListEditorSupportViews.swift": 1,             // T-674
-        "Cadence/macOS/Views/FocusBundleTaskSupportViews.swift": 1,         // T-674
-        "Cadence/macOS/Views/GoalTimelineView.swift": 1,                    // T-674
         "Cadence/macOS/Views/GoalsSupportViews.swift": 2,                   // T-673 (detach ×2)
-        "Cadence/macOS/Views/HabitsFormSupportViews.swift": 1,              // T-674
         "Cadence/macOS/Views/HabitsSupportViews.swift": 1,                  // T-673 (done circle)
-        "Cadence/macOS/Views/KanbanColumnSupportViews.swift": 1,            // T-674
         "Cadence/macOS/Views/QuickCreateChoiceSupportViews.swift": 2,       // T-673 (remove ×2)
-        "Cadence/macOS/Views/SettingsSupportViews.swift": 1,                // T-674
-        "Cadence/macOS/Views/SidebarComponents.swift": 1,                   // T-674
-        "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift": 1,        // T-674 (back chevron)
         "Cadence/macOS/Views/TasksPanelSupportViews.swift": 2,              // T-673 ×2
     ]
 
@@ -133,10 +127,10 @@ struct CadenceIconOnlyButtonAccessibilityTests {
         }
         #expect(actual == Self.knownUnnamedIconButtonSites, "measured: \(actual.sorted { $0.key < $1.key })")
         // The headline, so the report and the ledger cannot disagree: T-637 measured 31 in 24,
-        // and T-672 closed 10 of them in 10 files — 8 files left the ledger outright, and the two
-        // that carried a second ticket's site lost one each.
-        #expect(actual.values.reduce(0, +) == 21)
-        #expect(actual.count == 16)
+        // T-672 closed 10 of them in 10 files, and T-674 closed a further 10 sites in 9 files —
+        // all nine left the ledger outright, T-674's population having no site shared with T-672.
+        #expect(actual.values.reduce(0, +) == 11)
+        #expect(actual.count == 7)
         // And the file the ticket was filed about is clean — see the ledger's own note.
         #expect(actual["Cadence/iOS/iOSTaskRowActionViews.swift"] == nil)
     }
@@ -155,9 +149,10 @@ struct CadenceIconOnlyButtonAccessibilityTests {
         // T-611's population, unchanged: 3 sites in 2 files.
         #expect(touch.values.reduce(0, +) == 3)
         #expect(touch.count == 2)
-        // T-637's: 28 sites in 22 files that the iOS-scoped walk could not see, less T-672's 10.
-        #expect(desktop.values.reduce(0, +) == 18)
-        #expect(desktop.count == 14)
+        // T-637's: 28 sites in 22 files that the iOS-scoped walk could not see, less T-672's 10
+        // and T-674's 10.
+        #expect(desktop.values.reduce(0, +) == 8)
+        #expect(desktop.count == 5)
         // Nothing else — `Cadence/Shared/`, `Models/` and `Services/` are swept and clean, which
         // is a measurement of those trees, not an exclusion of them.
         #expect(touch.count + desktop.count == ledger.count)

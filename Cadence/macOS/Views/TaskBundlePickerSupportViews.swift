@@ -12,7 +12,6 @@ struct TaskBundleTaskPickerPanel: View {
     let onAdd: (AppTask) -> Void
 
     @State private var selectedList: TaskBundlePickerListOption?
-    @FocusState private var isSearchFocused: Bool
 
     private var queryTokens: [String] {
         searchText
@@ -139,6 +138,7 @@ struct TaskBundleTaskPickerPanel: View {
                         .foregroundStyle(Theme.dim)
                 }
                 .buttonStyle(.cadencePlain)
+                .cadenceControlLabel("Back to all lists")
             } else {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11))
@@ -149,9 +149,17 @@ struct TaskBundleTaskPickerPanel: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.text)
-                .focused($isSearchFocused)
 
-            CadenceSearchFieldClearButton(text: $searchText, glyphSize: 11, focus: $isSearchFocused)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim.opacity(0.55))
+                }
+                .buttonStyle(.cadencePlain)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

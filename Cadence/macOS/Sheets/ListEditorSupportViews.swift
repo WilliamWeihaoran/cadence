@@ -223,7 +223,8 @@ struct ListEditorIconStrip: View {
                 ListEditorIconCell(
                     icon: icon,
                     isSelected: icon == selected,
-                    tint: Color(hex: colorHex)
+                    tint: Color(hex: colorHex),
+                    accessibilityLabel: icon
                 ) {
                     selected = icon
                 }
@@ -253,11 +254,15 @@ struct ListEditorIconStrip: View {
 }
 
 /// One icon cell. Hover and selection share a single fill on a single shape — never two layers.
+///
+/// **`accessibilityLabel` has no default (T-674).** It used to default to `nil`, so the "More
+/// icons" cell got a name and the plain glyph cells silently did not — a name nobody adds. The
+/// next icon cell now fails to build instead of failing a sweep.
 private struct ListEditorIconCell: View {
     let icon: String
     let isSelected: Bool
     let tint: Color
-    var accessibilityLabel: String? = nil
+    let accessibilityLabel: String
     let action: () -> Void
 
     @State private var isHovered = false
@@ -276,26 +281,12 @@ private struct ListEditorIconCell: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .modifier(ListEditorOptionalControlLabel(text: accessibilityLabel))
+        .cadenceControlLabel(accessibilityLabel)
     }
 
     private var fill: Color {
         if isSelected { return tint.opacity(0.16) }
         return isHovered ? Theme.surfaceHover : Theme.surfaceElevated
-    }
-}
-
-/// A name and a tooltip, from one string, only when there is something to say — an empty help
-/// string still arms a tooltip, and a cell with no words has nothing to announce either.
-private struct ListEditorOptionalControlLabel: ViewModifier {
-    let text: String?
-
-    func body(content: Content) -> some View {
-        if let text {
-            content.cadenceControlLabel(text)
-        } else {
-            content
-        }
     }
 }
 

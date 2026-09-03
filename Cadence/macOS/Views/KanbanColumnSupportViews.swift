@@ -364,6 +364,7 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
+            .cadenceControlLabel("Edit column")
             .popover(isPresented: $showEditor, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
                 editorPopover()
             }

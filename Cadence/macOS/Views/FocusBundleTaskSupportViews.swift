@@ -127,9 +127,9 @@ struct FocusBundleTaskRow: View {
                     .foregroundStyle(Theme.green)
             }
 
-            focusRowIconButton("chevron.up", isDisabled: !canMoveUp) { onMove(-1) }
-            focusRowIconButton("chevron.down", isDisabled: !canMoveDown) { onMove(1) }
-            focusRowIconButton("xmark", isDisabled: false, action: onRemove)
+            focusRowIconButton("chevron.up", isDisabled: !canMoveUp, accessibilityLabel: "Move up") { onMove(-1) }
+            focusRowIconButton("chevron.down", isDisabled: !canMoveDown, accessibilityLabel: "Move down") { onMove(1) }
+            focusRowIconButton("xmark", isDisabled: false, accessibilityLabel: "Remove from bundle", action: onRemove)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -148,7 +148,12 @@ struct FocusBundleTaskRow: View {
         CadenceBundleTaskRowSupport.detailParts(for: task, includesLoggedTime: true)
     }
 
-    private func focusRowIconButton(_ systemName: String, isDisabled: Bool, action: @escaping () -> Void) -> some View {
+    private func focusRowIconButton(
+        _ systemName: String,
+        isDisabled: Bool,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 10, weight: .semibold))
@@ -158,6 +163,7 @@ struct FocusBundleTaskRow: View {
         }
         .buttonStyle(.cadencePlain)
         .disabled(isDisabled)
+        .cadenceControlLabel(accessibilityLabel)
     }
 }
 
