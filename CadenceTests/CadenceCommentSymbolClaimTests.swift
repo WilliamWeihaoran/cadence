@@ -513,8 +513,12 @@ enum CadenceCommentSymbolClaim {
     /// *second public type* does, because the reader can no longer tell a correct file-qualified
     /// reference from a genuine mix-up between the two.
     @Test func theFileQualifiedExclusionStopsAtASecondPublicTypeButNotAtAPrivateOne() {
+        // The file's base name is the *claimed* type's own name — `Owner.swift` — matching the
+        // convention this exclusion is for. A fixture path that did not match `claim.type` would
+        // never reach the file-qualified branch at all, and every assertion below would pass
+        // whether or not the narrowing code was even present.
         let index = CadenceCommentSymbolClaim.SymbolIndex.build(from: [
-            (path: "CadenceCommentClaimSharedFixture.swift",
+            (path: "CadenceCommentClaimSharedFixtureOwner.swift",
              code: "enum CadenceCommentClaimSharedFixtureOwner { static let title = \"\" }\n"
                  + "enum CadenceCommentClaimSharedFixtureCoTenant { static func render() {} }")
         ])
