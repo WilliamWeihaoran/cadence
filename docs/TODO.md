@@ -43,6 +43,51 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-759] **Two `SchedulingActions.createTask` overloads no longer have an app caller.** Found while
+  landing [[T-655]] and deliberately left. `createTask(title:dateKey:startMin:endMin:in:)` had none
+  before that ticket; `createTask(title:…containerSelection:…in:)` lost its last one when
+  `CalDayColumn` moved to `insertTask`. Both are still reached from `TaskBundleTests`
+  (`noSchedulingEntryPointEverGivesATaskACalendarEventID` enumerates them as "scheduling entry
+  points"), so deleting them means deciding what that test is enumerating now — entry points the app
+  has, or entry points that exist. They are also what keeps the *name* `createTask` pending on
+  `SchedulingActions` in the commit index, which costs nothing today and would matter to the next
+  caller. The decision is delete-and-retitle-the-test, or keep-and-say-why in a doc comment; the
+  wrong answer is leaving two production functions with no production caller and no note.
+
+- [T-760] **The shared "two tasks become a block" mutation commits through a swallowed save, and
+  iOS still relies on it.** Found while landing [[T-655]].
+  `CadenceTaskMutationSupport.addTask(_:to:modelContext:)` ends `try? modelContext.save()`, and
+  `insertBundle(from:adding:modelContext:)` calls it twice after `modelContext.insert(bundle)`. So
+  the block is committed by a save nobody can hear refuse — which is also why half 3 never reported
+  the three `formBundle` callers: the name *does* reach a commit, just not one that answers.
+  T-655 gave macOS's `TimelineDayCanvas` a committing wrapper on top
+  (`SchedulingActions.insertBundle(from:adding:in:commit:)`), so a refusal there is un-inserted,
+  restored and named. **iOS is not fixed**: `iOSCalendarTimelineViews.formBundle` and
+  `iOSCalendarBoardView.formBundle` still call the shared mutation directly and report nothing, so
+  the same drag has two behaviours on two platforms — the parity gap [[T-190]] exists to prevent.
+  The fix is the swallow itself: give `insertBundle(from:adding:)` a `commit:` and let `addTask`
+  stop saving on its own behalf, then let the three canvases share one answer. That makes
+  `arefusedDropOfATaskOnATaskLeavesNoBlockAndBothTasksWhereTheyWere` able to read the *store* rather
+  than the context, and turns `theSharedTwoTaskBlockMutationCommitsThroughAswallowedSaveOfItsOwn`
+  red — which is the signal to come back and strengthen it.
+
+- [T-761] **The [[T-656]] class's remaining members, in components and files that batch could not
+  reach.** Counted while landing T-656/[[T-727]] and named rather than left implicit.
+  (a) **`iOSTaskDetailSheet`'s time picker.** `scheduledStartSelection`'s setter reaches
+  `CadenceTaskDateEditing.setScheduledTime` → `CadenceTaskMutationSupport.setScheduledTime`, which
+  ends `try? modelContext.save()`, and `iOSTaskDetailSheetSections` closes the popover on the tap.
+  Exactly T-656's shape; the setter lives in a file another agent owned that batch, so it was
+  reported rather than edited. The committing form it needs already exists.
+  (b) **`iOSTaskRowEstimateChip`.** The same shape on a *different* component:
+  `EstimatePickerPopoverContent`'s value binding forwards to
+  `CadenceTaskMutationSupport.setEstimatedMinutes`, which swallows, and the popover's own closure
+  sets `showPicker = false` unconditionally. That component was outside T-656's census and should
+  get the same two-form treatment rather than a third spelling.
+  (c) **The row context menu's repeat submenu** discards `iOSTaskRecurrenceSelection.select`'s new
+  answer. It no longer leaves the rule *pending* — the commit and its undo are real now — but a
+  refused rule is still silent there, and a `Menu` has the same no-surface problem
+  `iOSTaskMoveFailureAlertModifier` solves for the list move. The same alert would do it.
+
 - [T-741] **A legacy list note whose body still reads `# Untitled` is re-titled `Untitled` on its
   next content commit, and cleared again on the next launch.** Found while closing [[T-733]] and
   deliberately left. `MarkdownNoteTitleSync` writes the first line of the body to `title` for `.list`
@@ -158,24 +203,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   T-647's *own* spelling — a name absent from the file the sentence is about but present elsewhere —
   is a harder third rule and needs "the scope the sentence implies", which no arithmetic here can
   read. Do the repo-wide-absence half first and say plainly that it is the weaker half.
-
-- [T-727] **`iOSContainerChoicePopover` dismisses itself, so no caller can answer a refusal inside
-  it.** `choiceRow` sets `selection = tag` **and** `isPresented = false` in one button action, which
-  is why [[T-702]]'s row picker had to reach for an alert while the Mac's kanban picker — the same
-  interaction, one platform over — answers inline in a popover that stays open. Four callers:
-  `iOSTaskRowActionViews` (the one that moves a stored task) and three composer/quick-create sheets
-  (`iOSCreateTaskSheetSupportViews`, `iOSTaskDetailComponents`, `iOSCalendarQuickCreateSheet`), which
-  only set a draft and for which self-dismissal is exactly right. Handing the dismissal to the caller
-  would let the row picker report where the user is looking and delete one of the two shapes T-702
-  had to keep. **Deliberately not done inside T-702**: it changes a shared component under three
-  callers that have no refusal to report, which is a wider blast radius than the ticket bought.
-  **Blocked on one design, not on two (2026-09-03).** Deliberately left open rather than half-built:
-  [[T-656]] is the identical defect in `CadenceChoicePopoverList`, whose `Button` action also sets
-  `selection` then `isPresented = false`, and `iOSChoicePicker.swift` already typealiases the iOS
-  names onto that shared type. Two components, one answer — whoever takes them takes both, and picks
-  the spelling once (a `dismissesOnSelect: Bool = true` on each, or a selection setter that returns
-  whether it landed). Building either alone leaves the app with two ways to say the same thing, which
-  is the shape both tickets exist to remove.
 
 - [T-765] **Two callers still write out an undo `CadenceTaskFieldSnapshot` can now do for them.**
   [[T-701]] put `title` and `order` in the snapshot, which was the entire reason
@@ -1247,35 +1274,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `CadenceFocusLedger.reconcile(in:)` puts the counter back once it lands. Still a defect — the
   reset still throws away the seconds the user is watching — but no longer an unrecoverable one.
 
-- [T-655] **Two more canvases create a block and commit nothing.** The rest of [[T-636]](e), which
-  fixed `SchedulePanel` and left these because the closure is copied into three files.
-  `CalendarPageMonthSupportViews.body` (`SchedulingActions.createTask(title:dateKey:…)` and
-  `createBundle(title:…in:)`) and `TimelineDayCanvas.body` (`createBundle(from:adding:in:)`) still
-  insert into a context they were handed and commit nothing; both hold their
-  `commitReachExemptions` entries. The committing unit already exists —
-  `SchedulingActions.insertBundle(title:…adding:in:commit:)` — so the month grid is a small change
-  plus a notice; `createTask` and `createBundle(from:adding:)` still need one each.
-  **Watch the detector while doing it**: the commit index needs *every* overload of a name on a type
-  to commit before it vouches for the name, so fixing one `createBundle` overload silences nothing
-  until its sibling is fixed too. That is why (e) added a differently-named function rather than
-  changing the existing one.
-
-- [T-656] **A shared picker closes itself over its caller's swallowed save, and no half of the rule
-  can see it.** Found while landing [[T-633]].
-  `CadenceChoicePopoverList`'s row button is `selection = row.value; isPresented = false`
-  (`Cadence/Shared/Components/CadenceChoicePicker.swift:127-129`). The `selection` binding's *setter*
-  is the caller's mutation: for the repeat chip it is `iOSTaskRecurrenceSelection.select`, whose
-  non-series branch runs `applyRecurrenceRule` and `try? modelContext.save()`. So the popover
-  closing **is** the success report, and it is unconditional.
-  **Structurally invisible to the detector**: the report is in a different file from the swallow,
-  and the link between them is a `Binding` setter rather than a call, which is not a call-graph
-  edge. Same family as [[T-657]] but a different mechanism — sideways through a binding rather than
-  through a return.
-  This is a class, not a site: every picker built on `CadenceChoicePopoverList` /
-  `iOSChoicePopoverList` whose selection setter swallows a commit has it. Count them before choosing
-  a fix; the cheapest honest shape is probably for the setter to answer and the list to close only
-  on success.
-
 - [T-651] **CLOSED 2026-09-03 (`34c0f4e`).** Three of the four sites now commit.
   `KanbanCardMetaSupportViews.swift`'s `KanbanTagPickerPopover.body` and
   `MarkdownEditorView.createInlineTag` both called `TagSupport.resolveTags` from an ambient
@@ -2103,6 +2101,56 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 
 ## Done
+
+- [T-655] **CLOSED 2026-09-03 (`793c3f6`) — the last two canvases commit what they create, and
+  each names its own refusal.** The rest of [[T-636]](e). `SchedulingActions.createTask` and
+  `createBundle` insert into a context they were handed and commit nothing, which is correct —
+  that signature is this repo's statement that the caller owns the unit of work — and neither
+  remaining caller was doing so. `CalDayColumn` owns **two** units of work (drag out a range and
+  name a task; drag out a range and tick tasks into a block) and committed neither;
+  `TimelineDayCanvas` owns one (drop a task on a scheduled task) and dropped the answer on the
+  floor. Both `commitReachExemptions` entries are gone.
+  **The overload trap the ticket warned about is real, and it bit nothing because the warning was
+  followed.** The commit index resolves a call by *name* and vouches for a name only when every
+  overload of it on that type commits, so `SchedulingActions.insertTask(…)` and
+  `insertBundle(from:adding:in:commit:)` were added beside their non-committing siblings rather
+  than folded into them — the same answer T-636(e) gave when it added
+  `insertBundle(title:…adding:in:commit:)`. Both siblings stay; both still have test callers.
+  **A finding recorded rather than rounded up.** `insertBundle(from:adding:)` cannot promise the
+  store holds no block after a refusal: `CadenceTaskMutationSupport.addTask` ends
+  `try? modelContext.save()`, so the shared mutation commits the pair before this frame's commit is
+  asked. In the app the two are the same `save()` and refuse together; in a test they are not. What
+  the frame owns either way is asserted, and the swallow is pinned by
+  `theSharedTwoTaskBlockMutationCommitsThroughAswallowedSaveOfItsOwn`, so the day it goes the
+  stronger claim replaces this one. 7 mutations, 7 killed — including restoring the
+  `TimelineDayCanvas.body` exemption, which is the evidence half 3 really did stop reporting it.
+  Residue: [[T-759]], [[T-760]].
+
+- [T-656] **CLOSED 2026-09-03 (`23c45a9`) with [[T-727]] — the class was counted before it was
+  fixed, and it is four sites out of thirty-seven.** Every call site of `CadenceChoicePopoverList`
+  (33, counting its `iOSChoicePopoverList` typealias) and `iOSContainerChoicePopover` (4) was read.
+  **Thirty-three set a draft field on a sheet**, where the write cannot be refused and closing on
+  the tap is what picking *means*. Four commit: the task row's repeat, milestone and list chips, and
+  `iOSTaskDetailSheet`'s time picker.
+  **The shape.** Each component keeps its ordinary initialiser and gains a committing one taking the
+  current *value* — not a `Binding` — plus `select:`; the row hands the value to `select` and closes
+  only if it answers `true`, drawing `failureNotice` under the rows otherwise. Taking a value is the
+  load-bearing half: a writable binding beside a `select` closure is two write paths, and a mutation
+  hidden in a binding's setter is exactly what neither half of the `try? save()` rule could follow.
+  Three of the four adopted it; the fourth is [[T-761]], in a file another agent held this batch.
+  The census is pinned as an exact per-file table rather than a floor, and the defect as a
+  `CadenceScanInstrument` detector whose nearest negative is a `Binding` forwarding to a preference
+  write. 6 mutations, 6 killed. Residue: [[T-761]].
+
+- [T-727] **CLOSED 2026-09-03 (`23c45a9`) — same commit, same shape, and the caller split survived
+  it.** The ticket's own condition was that whoever took it took [[T-656]] too and picked the
+  spelling once; that is what happened. The three draft callers
+  (`iOSCreateTaskSheetSupportViews`, `iOSTaskDetailComponents`, `iOSCalendarQuickCreateSheet`) are
+  untouched and still self-dismiss, which the ticket was right to insist on. The fourth,
+  `iOSTaskRowActionViews`, takes the committing form, so [[T-702]]'s alert on the row is now the
+  **context menu's** only — a `Menu` closes itself and cannot be told not to — and the list chip
+  reports inline in a picker that stays open, which is what the Mac's kanban picker has done since
+  T-497. That deletes one of the two shapes T-702 had to keep.
 
 - [T-701] **CLOSED 2026-09-03 - `title` and `order` are in the snapshot, and the set is now pinned
   from three directions.** Adding the two fields was not measurably wrong, so the ticket's preferred
