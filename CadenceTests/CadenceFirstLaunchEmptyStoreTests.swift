@@ -50,6 +50,12 @@ struct CadenceFirstLaunchEmptyStoreTests {
             "NoteMigrationService.migrateAndRecordFailure",
             "TagSupport.syncAllNoteTagsFromMarkdown",
             "DataIntegrityRepairService.repairAndRecordFailure",
+            // T-742. The focus ledger's store-wide reconcile, added last. It was UNPINNED until
+            // 2026-09-03: every ledger test called `reconcile(in:)` directly, so deleting the one
+            // production call and its `changedStore` term left the whole suite green while a task
+            // nobody re-opens kept whatever a merge left it — and an hours-mode `Goal` kept reading
+            // that. A behavioural test of a helper is not a test that anything calls it.
+            "CadenceFocusLedger.reconcile",
         ]
         var cursor = body.startIndex
         for needle in expectedOrder {
@@ -71,6 +77,14 @@ struct CadenceFirstLaunchEmptyStoreTests {
         #expect(
             !body.contains("TagSupport.seedDefaultTags"),
             "startup maintenance seeds the default tags again; an empty store is not evidence the user has never had them"
+        )
+
+        // T-742, the other half. Calling the pass is not enough: its answer has to reach the guard
+        // that decides whether to save, or the reconcile runs and its writes are dropped on the
+        // floor by `guard changedStore`.
+        #expect(
+            body.contains("reconciledFocusMinutes"),
+            "the focus reconcile's answer no longer feeds changedStore, so its repairs are computed and never saved"
         )
     }
 

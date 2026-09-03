@@ -81,6 +81,19 @@ enum CadenceEmptyStateAudit {
     /// harvest. `query` is what the reader typed.
     static let nonCopyArgumentLabels = ["icon", "systemImage", "query"]
 
+    /// `String` parameters that **are** copy but whose words are not authored here — they arrive
+    /// from a shared constant that is audited where it lives.
+    ///
+    /// Added 2026-09-03 for `seedFailureNotice`, and the distinction is the point. T-653 gave the
+    /// "Add Defaults" rows a refusal sentence, and it reads
+    /// `CadencePendingChangePersistence.editFailureNotice` — one shared string, already swept by
+    /// `CadenceSharedConstantReuseSweepTests`. Putting it in `nonCopyArgumentLabels` beside a glyph
+    /// name would have been a lie: it is a sentence a user reads. Putting it in `argumentLabels`
+    /// would have claimed this site owns wording it does not. A third bucket says the true thing —
+    /// **auditable, audited elsewhere** — so a *newly authored* literal in one of these slots is
+    /// still something the next reader has to justify rather than something this list excuses.
+    static let borrowedCopyArgumentLabels = ["seedFailureNotice"]
+
     private static let literalPattern = "\"([^\"\\\\\\n]*)\""
 
     /// The text between the parentheses of each empty-state call, brace-matched over the call's own
@@ -529,6 +542,7 @@ struct CadenceEmptyStateAuditTests {
     @Test func everyCopyBearingArgumentOfAnEmptyStateComponentIsReadable() throws {
         let known = Set(CadenceEmptyStateAudit.argumentLabels)
             .union(CadenceEmptyStateAudit.nonCopyArgumentLabels)
+            .union(CadenceEmptyStateAudit.borrowedCopyArgumentLabels)
         let components = try CadenceEmptyStateAudit.declarations()
             .filter { CadenceEmptyStateAudit.componentNames.contains("\($0.name)(") }
 
