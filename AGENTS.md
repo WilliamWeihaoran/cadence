@@ -71,8 +71,7 @@ Read the nearest scoped `AGENTS.md` before editing under that tree:
 Long references, searchable only when needed:
 
 - `docs/CONTEXT_INDEX.md` - small routing map by change type.
-- `docs/AUDIT_BRIEF.md` - what an external audit report needs to be cheap to act on. Hand it to
-  anyone producing findings; the report that used it cost two greps to verify instead of a search.
+- `docs/AUDIT_BRIEF.md` - what an external audit report needs to be cheap to act on.
 - `docs/AGENTS_REFERENCE.md` - detailed root runbook and red-run history.
 - `docs/SHARED_AGENTS_REFERENCE.md` - detailed Shared guide.
 - `docs/IOS_AGENTS_REFERENCE.md` - detailed iOS guide.
@@ -92,6 +91,8 @@ Long references, searchable only when needed:
 - Prefer one shared component over near-copies.
 - iPhone and iPad share one style; they differ by layout, not by row/chip/header vocabulary.
 - Do not revert unrelated user or agent changes.
+- **Commit with `scripts/agent-commit.sh <id> -m <msg> <path>...`, not `git commit`** (T-679). The
+  index is shared: it refuses a foreign staged path, commits a private one, then repairs the shared one.
 
 ### The `try? save()` rule
 
@@ -126,9 +127,8 @@ the next unrelated `save()` to take or `rollback()` to discard. Enforced by `Cad
 - **It is FIFO (T-650), so release-and-re-acquire goes to the back.** For one lease across many
   runs, take it once and use `xcb.sh <id> raw test`, which skips the lock.
 - **A dead owner pid does not mean a stale lock.** A `nohup`'d `xcodebuild` outlives the shell that
-  acquired the lease, so the recorded pid is routinely gone mid-run. The script reclaims only on an
-  expired lease **and** zero live test hosts. Never force it because the owner looks dead: that
-  starts a second host against the same app-group container — the T-236 corruption it prevents.
+  took the lease, so the pid is routinely gone mid-run. It reclaims only on an expired lease **and**
+  zero live test hosts; forcing it starts a second host on one app-group container (T-236).
 - If `xcodebuild` sits at `Command line invocation` with 0% CPU, suspect a project-file lock before
   debugging Swift.
 - Never create simulator devices. Use one existing stock simulator and `scripts/simulator-claim.sh`.

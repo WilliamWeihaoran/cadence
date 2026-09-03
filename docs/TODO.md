@@ -247,13 +247,36 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   first. `toggleSubtask` stays hand-written either way: `Subtask.isDone` is not a field of `AppTask`
   and the snapshot is not about it.
 
-- [T-719] **Nothing runs `scripts/mutate.sh selftest`.** `scripts/xcb.sh`'s guards are pinned by
-  `CadenceBuildInvocationHygieneTests` — a source scan that fails if the zero-test refusal is deleted —
-  and the mutation runner's five refusals ([[T-530]]) are pinned only by its own `selftest`, which no
-  test target invokes and no hook runs. That is the hollow-instrument shape one layer up: a guard whose
-  own guard is that somebody remembers to type it. Pin it the way `xcb.sh` is pinned, or add a test that
-  shells out to `./scripts/mutate.sh selftest` and fails on a non-zero exit (it takes under a second and
-  builds nothing, so cost is not the objection).
+
+- [T-780] **Nothing makes an agent *use* `scripts/agent-commit.sh`.** [[T-679]] is fixed in the sense
+  that the incantation is now a script that refuses the four measured failures — but the instruction
+  to call it is prose in `AGENTS.md` and `docs/SUBAGENT_RUNBOOK.md`, which is exactly the shape T-679
+  was filed about (`git add <specific paths>` was also prose, was also followed, and was also
+  insufficient). A bare `git commit` still works and still sweeps a sibling's staged hunk. Candidate:
+  a repo-checked-in `core.hooksPath` with a `pre-commit` that refuses a commit staging paths the
+  caller did not declare, with an escape hatch for the user's own commits. Not done here because a
+  hook changes the user's git configuration, which is their call, not an agent's.
+
+- [T-781] **A declined hunk that is never re-committed is still caught by nothing automatic.**
+  `agent-commit.sh` records what a `path=<content-file>` reconstruction declined and refuses the
+  *next* commit of that path unless it carries them (`DECLINED-HUNK-LOST`) — the Batch M failure
+  where m3 correctly declined m4's work, m4 committed without it, and HEAD stopped compiling. But if
+  nobody commits that path again, no commit-time check ever fires. The backstop is
+  `./scripts/agent-commit.sh status`, and reading it is a habit, not a mechanism. Candidate: have
+  `scripts/xcb.sh` print outstanding records at the end of every run, so the listing lands in front
+  of whoever is already looking at a build log.
+
+- [T-782] **An App-Sandboxed test host cannot run the `/usr/bin` developer shims, and nothing says
+  so.** Measured 2026-09-03 while wiring [[T-719]]: `Cadence.app` is sandboxed, so a `Process` spawned
+  from `CadenceTests` inherits the sandbox, and there `/usr/bin/git` and `/usr/bin/python3` — both
+  xcrun shims — fail with *"xcrun: error: cannot be used within an App Sandbox"*, exit 1, nothing on
+  stdout. Separately, zsh writes here-document temp files to `$TMPPREFIX`, which **zsh itself sets to
+  `/tmp/zsh` at startup** (so it is never empty and a `[[ -z $TMPPREFIX ]]` guard never fires); the
+  sandbox denies that write and the script dies with `can't create temp file for here document`
+  before its first line runs. Both are fixed inside `scripts/mutate.sh` and `scripts/agent-commit.sh`
+  and both are in `docs/SUBAGENT_RUNBOOK.md`, but nothing stops the next script a test shells out to
+  from repeating either. `/bin/echo` runs fine, so a naive "can I spawn at all?" probe says yes and
+  proves nothing.
 
 - [T-720] **`TaskRecurrenceRule.shortLabel` is a copy of `label` with one arm changed.**
   `Cadence/Models/ModelEnums.swift` — `label` returns Never/Daily/Weekly/Monthly/Yearly and `shortLabel`
@@ -1504,33 +1527,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   which is `Cadence/macOS/Views/TasksPanelSupportViews.swift` — the widening is enforced by the walk,
   not by the name.
 
-- [T-679] **The git index is shared between concurrent agents, and file-disjointness does not protect
-  it.** Measured 2026-09-02 in the Batch D run: d1 staged a `git rm` of
-  `Cadence/macOS/Views/TaskSortHelpers.swift`, and d2's next commit swept it in — so the deletion
-  landed in `91d533c` ([[T-637]]) instead of `5b0c2b8` ([[T-639]]). **No work was lost and the file is
-  correctly gone from HEAD**; what broke is that the commit carrying a change is not the commit whose
-  message explains it, which is the whole reason this repo puts reasoning in commit messages.
-  **The existing rule was followed and is insufficient.** Every brief says `git add <specific paths>`,
-  never `git add -A`, and both agents complied — but `git add` writes to **one index shared by every
-  agent in the checkout**, and a bare `git commit` takes whatever is staged, including a sibling's
-  hunk. The `git hash-object` / `git update-index` reconstruction the Batch A and B agents used for a
-  shared *file* happens to dodge this as well, but nothing anywhere says so.
-  **AMENDED 2026-09-02 — the first fix shape filed here was wrong, and an agent caught it.** This
-  entry originally said to require an explicit pathspec (`git commit -- <paths>`), and every Batch E
-  and F brief repeated that. It is right only for a file the agent owns alone. For a **shared** file
-  it is actively harmful: `git commit -- <paths>` commits *worktree* content, so it takes the
-  sibling's in-flight hunks with yours, and it silently defeats the `git hash-object` reconstruction
-  the earlier batches used — because that reconstruction lives in the **index**, which the pathspec
-  form ignores. The agent that found this committed the index instead, after verifying the only
-  remaining delta was its sibling's six label conversions.
-  Two more faces of the same hazard, both measured in Batch F: **after committing over a stale shared
-  index, `git status` reports your own landed work as a staged revert**, because the index still holds
-  the previous HEAD's blobs for your paths; and **marker-based hunk filtering breaks when two agents
-  edit within three lines**, since `-U3` merges them into one hunk. A private `GIT_INDEX_FILE` avoids
-  the shared index entirely and is the cleanest answer.
-  Written up in `docs/SUBAGENT_RUNBOOK.md`; what remains open here is making it mechanical rather than
-  a rule agents are told.
-
 
 - [T-687] **[[T-609]]'s scan has two measured blind spots, and one of them is bigger than T-609 was.**
   Both were found *by* the T-609 work — the first by a surviving mutation, which is the argument for
@@ -2099,22 +2095,56 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   this batch's time budget risked the load-bearing tool rather than the finding. `TEST_RESULT`
   itself (the aggregate zero-test count) is already fixed the same way as `xcb.sh`'s.
 
-- [T-787] **`scripts/agent-commit.sh`'s `show_outstanding` empties `$PATH` for its own scope.**
-  Found live while using the tool to land [[T-667]]/[[T-721]]/[[T-660]]: every commit that leaves a
-  declined-hunk record prints `show_outstanding:4: command not found: sed` /
-  `... command not found: head` right after reporting success. `local root=$1 quiet=${2:-} any=0
-  record path` declares a function-local `path`, and in zsh `path` is tied to `$PATH` even as a
-  local — `path=$(sed -n ... | head -1)` on the next line overwrites `$PATH` for the rest of the
-  function's scope, so every command after it (`sed`, `head`) fails to execute. Reproduced in
-  isolation: a two-line zsh function of exactly this shape prints the right value once, then
-  `command not found` on everything that follows. The commit itself is unaffected (it happens before
-  this diagnostic runs) — only the "OUTSTANDING DECLINED HUNKS" listing silently fails to print,
-  which is the tool's own backstop for a hunk nobody has accounted for yet. Same family as the two
-  `path`/`$PATH` traps already in `docs/SUBAGENT_RUNBOOK.md`. Fix: rename the local to something not
-  in `{path, cdpath, fpath, manpath, status, argv, options}`.
-
 
 ## Done
+
+- [T-679] **CLOSED 2026-09-03 — committing out of a shared checkout is a script now, not a rule.**
+  `scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]...`. It refuses `FOREIGN-STAGED`
+  (the shared index holds a path you did not name — Batch D, where d1's `git rm` landed in `91d533c`
+  instead of `5b0c2b8`, and Batch M's stale `docs/TODO.md` blob), assembles the tree in a private
+  `GIT_INDEX_FILE`, commits it by plumbing, and then **repairs the shared index** and verifies your
+  paths are clean against the new HEAD — the Batch M residue where a correct private-index commit left
+  the shared index 274 deletions behind HEAD, so the next agent's commit would have reverted it. The
+  `<path>=<content-file>` form is the reconstruction form for a file a sibling is also editing;
+  `git commit -- <path>` is still wrong there and the runbook says why.
+  **The declined-hunk case is catchable, and it is caught.** A reconstruction whose content differs
+  from the worktree is by construction declining something; those lines are recorded, and the **next**
+  commit of that path is refused as `DECLINED-HUNK-LOST` unless it carries them or clears the record
+  with `--accept-declined <path>`. That is Batch M's fourth failure exactly, where m3 correctly
+  declined m4's in-flight hunk, m4 committed without it, and HEAD stopped compiling on a required
+  parameter one composer never passed. What it cannot do is notice a path nobody commits again —
+  filed as [[T-781]].
+  `./scripts/agent-commit.sh selftest` induces every refusal against a throwaway repository (26
+  checks), including a positive control proving the private-index pattern *without* the repair really
+  does leave the shared index dirty. Pinned by `CadenceGuardScriptSelftestTests` ([[T-719]]).
+  Mutations M1–M3, M5, M7 (`scripts/mutate.sh`): disabling `FOREIGN-STAGED`, deleting the shared-index
+  repair, and stopping the declined-hunk refusal from firing were each KILLED. Using it at all is
+  still a rule rather than a mechanism — [[T-780]].
+
+- [T-719] **CLOSED 2026-09-03 — `CadenceGuardScriptSelftestTests` runs both guard scripts' selftests
+  on every `CadenceTests` run.** 5 tests. Two shell out (`./scripts/mutate.sh selftest`,
+  `./scripts/agent-commit.sh selftest`) and fail on a non-zero exit; **exit 0 is not enough**, so each
+  run must also name every refusal it claims to induce and print a `checks: N passed, M failed` tally
+  derived from the checks that actually ran — a count a selftest gutted to `return 0` cannot produce.
+  `theCheckerRejectsASelftestThatAssertsNothing` runs that reading against four stubs (silent,
+  headers-but-no-checks, a lost mode, a red exit) so the reading is not vacuous, and a source scan —
+  `xcb.sh`'s own pinning shape — asserts each refusal is still in the script body *and* still induced
+  in its selftest. Mutation M4 (bypass `mutate.sh`'s own `NEEDLE-ABSENT` guard) KILLED, plus two
+  weakening pairs settled by control: M5→M6 (dropping the tally reading survives only alongside M5's
+  violation, so `tally.failed != 0` is load-bearing) and M7→M8 (dropping a refusal from the required
+  list). 6 killed, 2 survived-as-evidence, 0 inconclusive; baseline green over 5 tests, 0 Swift warnings.
+  **Two sandbox facts fell out of it, both measured.** The test host is App-Sandboxed, so the
+  `/usr/bin` xcrun shims for `git` and `python3` refuse to run and both scripts now probe for a working
+  binary; and zsh sets `$TMPPREFIX` to `/tmp/zsh` itself at startup, so `mutate.sh`'s here-document
+  died before its first line under the sandbox and no `[[ -z ]]` guard could ever have noticed.
+  Written up in [[T-782]] and `docs/SUBAGENT_RUNBOOK.md`.
+
+- [T-787] **CLOSED 2026-09-03 — `show_outstanding`'s `local path` no longer empties `$PATH`.** Found
+  by another agent using the tool live. Renamed to `declined_path`, with the reason in a comment naming
+  the whole family (`path`, `cdpath`, `fpath`, `manpath`, `status`, `argv`, `options`). The selftest now
+  asserts the backstop listing really prints and that nothing in it died `command not found`; reverting
+  the rename by hand makes both of those checks fail and the rest pass, which is how a diagnostic that
+  failed silently got a guard.
 
 - [T-685] **CLOSED 2026-09-03 — a refused iOS list-editor save now puts the child projects' tasks
   back too.** `iOSListEditorSheet.save()`'s area branch snapshotted `area.tasks ?? []`, which is the

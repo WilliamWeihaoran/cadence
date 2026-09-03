@@ -95,9 +95,32 @@
 # THAT, not a `pkill -f` pattern, and never with -9.
 set -uo pipefail
 ROOT_DIR="${0:A:h:h}"
+# zsh writes here-document temp files to $TMPPREFIX, and zsh SETS that itself at startup, to
+# `/tmp/zsh` -- not to $TMPDIR, and never empty, so a `[[ -z $TMPPREFIX ]]` guard here would never
+# fire. A caller that cannot write /tmp (an App-Sandboxed test host, for one) then dies with
+# `can't create temp file for here document` and exit 1 before one line of this script runs, which
+# is how a passing selftest looked like a broken one. Measured 2026-09-03; point it at $TMPDIR.
+_tmp_base="${TMPDIR:-/tmp/}"; [[ "$_tmp_base" != */ ]] && _tmp_base="$_tmp_base/"
+export TMPPREFIX="${CADENCE_TMPPREFIX:-${_tmp_base}zsh}"
+# `/usr/bin/python3` is an xcrun shim, and xcrun REFUSES to run inside an App Sandbox
+# ("xcrun: error: cannot be used within an App Sandbox"), exiting 1 with nothing on stdout. Probe
+# the candidates by running one, rather than trusting a path to mean an interpreter.
+PYTHON_BIN="${CADENCE_PYTHON:-}"
+if [[ -z "$PYTHON_BIN" ]]; then
+    for _candidate in /usr/bin/python3 /Applications/Xcode.app/Contents/Developer/usr/bin/python3 \
+                      /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+        [[ -x "$_candidate" ]] || continue
+        "$_candidate" -c '' >/dev/null 2>&1 || continue
+        PYTHON_BIN="$_candidate"; break
+    done
+fi
+if [[ -z "$PYTHON_BIN" ]]; then
+    print -r -- "mutate.sh: no working python3 found (tried /usr/bin, Xcode, homebrew)." >&2
+    exit 2
+fi
 # exec, so the pid you see IS the python process: a signal sent to this script has to reach the
 # handler that restores the tree, and a zsh parent waiting on a child does not forward it.
-exec /usr/bin/python3 - "$ROOT_DIR" "$@" <<'PY'
+exec "$PYTHON_BIN" - "$ROOT_DIR" "$@" <<'PY'
 import os
 import re
 import shutil

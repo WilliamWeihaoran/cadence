@@ -9,6 +9,10 @@ cannot show was applied, compiled and tested. Five ways a hand-rolled one has li
 runner does about each, are in "A mutation runner that cannot report a survivor it did not earn"
 below.
 
+**Do not hand-roll a commit either.** `./scripts/agent-commit.sh <id> -m <msg> <path>...` is the
+commit, because the git index is shared between every agent in the checkout and four separate
+batches lost something to that. See "Committing out of a shared checkout" below.
+
 - **Work in an isolated copy.** `mkdir -p /private/tmp/cadence-<tag> && git archive HEAD | tar -x -C
   /private/tmp/cadence-<tag>` — work there, never edit the user's repo, never commit. The coordinator
   diffs your tree against **current HEAD** and lands it. **This is `git archive`, not `rsync`, and the
@@ -363,27 +367,52 @@ Related: this is why a growing "register every shared constant here" list should
 accumulation from the start. The literal form works right up until someone adds the term that breaks
 it, and the failure lands on whoever added it rather than on whoever chose the shape.
 
-## Committing out of a shared checkout: the pathspec is not the mitigation
+## Committing out of a shared checkout: use `scripts/agent-commit.sh`
 
-`git add <specific paths>` and never `git add -A` is necessary and **not sufficient**. The index is
-one object shared by every agent in the checkout (T-679).
+```sh
+./scripts/agent-commit.sh <id> -m "<message ending in the Co-Authored-By line>" <path>...
+./scripts/agent-commit.sh <id> -m "<message>" Cadence/Foo.swift=/tmp/my-recon-of-Foo.swift
+./scripts/agent-commit.sh status        # declined hunks that are still in no commit
+```
 
-- **File is yours alone:** `git commit -- <paths>` is fine.
-- **File also holds a sibling's hunks:** `git commit -- <paths>` is **wrong**. It commits *worktree*
-  content for those paths, so it takes the sibling's in-flight edits with yours — and it silently
-  defeats a `git hash-object` reconstruction, because the reconstruction lives in the index and the
-  pathspec form ignores the index. Rebuild the file as `git show HEAD:<path>` plus only your edits,
-  install it with `git hash-object -w` + `git update-index --cacheinfo`, verify with
-  `git diff --cached --name-only`, then commit **the index** with a bare `git commit`. Check
-  `git status --porcelain` first so the index holds nothing but your paths.
-- **After committing over a stale shared index, `git status` shows your own landed work as a staged
-  revert** — the index still holds the previous HEAD's blobs for your paths. `git reset -- <your
-  paths>` repairs it; verify the index content matches the old HEAD first, so no sibling's staged
-  work is discarded.
+**Do not hand-roll the incantation.** `git add <specific paths>`, never `git add -A`, is necessary
+and not sufficient: the index is one object shared by every agent in the checkout (T-679), and the
+rule was followed every time it failed. Four measured failures, and this is what the helper does
+about each:
+
+- **A sibling's staged hunk swept into your commit** (Batch D: a `git rm` landed in `91d533c`/T-637
+  instead of `5b0c2b8`/T-639). It refuses — `FOREIGN-STAGED` — if the shared index holds any path
+  you did not name, and says whose.
+- **Post-commit residue** (Batch M: a correct private `GIT_INDEX_FILE` commit left the shared index
+  274 deletions behind HEAD, so the next agent's commit would have reverted it). It commits through
+  a private index **and then repairs the shared one**, verifying your paths are clean against the
+  new HEAD before it reports success.
+- **A stale blob in the shared index** (Batch M: a `docs/TODO.md` missing a ticket both HEAD and the
+  worktree had). Same refusal: it never commits worktree-or-index content you did not name, and a
+  stale entry for a path you did not name is `FOREIGN-STAGED`.
+- **A hunk both agents declined** (Batch M: m3 correctly declined m4's in-flight work, m4 then
+  committed without it, and HEAD stopped compiling on a required parameter one composer never
+  passed). Committing `path=<content-file>` whose content differs from the worktree records the
+  declined lines; the **next** commit of that path is refused as `DECLINED-HUNK-LOST` unless it
+  carries them or you clear the record with `--accept-declined <path>`.
+
+Which path form to use:
+
+- **A file you own alone:** `<path>`. Stages the worktree content.
+- **A file a sibling is also editing:** `<path>=<content-file>`. Rebuild it as `git show HEAD:<path>`
+  plus only your edits and pass that file. Never `git commit -- <path>` for a shared file: that
+  commits *worktree* content, taking the sibling's in-flight hunks with yours, and it silently
+  defeats a `git hash-object` reconstruction because that lives in the index the pathspec ignores.
 - **Marker-based hunk filtering breaks when two agents edit within three lines.** `-U3` merges the
   edits into one hunk, so "take only my hunks" quietly takes the sibling's too. Reconstruct from the
-  tree you actually tested instead, and consider a private `GIT_INDEX_FILE` so you never touch the
-  shared index at all.
+  tree you actually tested instead.
+
+**The gap it does not close.** If nobody ever commits the declined path again, no commit-time check
+fires. `./scripts/agent-commit.sh status` is the backstop; read it before closing a batch.
+
+`./scripts/agent-commit.sh selftest` induces every refusal above against a throwaway repository and
+asserts it. `CadenceGuardScriptSelftestTests` runs it, and `scripts/mutate.sh selftest`, on every
+`CadenceTests` run (T-719) — so neither instrument can go hollow unnoticed.
 
 ## Two ways a clean build reports someone else's mess as yours
 
@@ -493,6 +522,10 @@ repository copy would build the repository, mutating one tree and testing anothe
 Still yours to get right: **run it in the background** (`nohup ... &`) — the 10-minute foreground
 tool cap will cut a batch mid-mutation — and kill it by the pid in `<scratch>/runner.pid`, never with
 `-9`, which skips the restore.
+
+`./scripts/mutate.sh selftest` is itself run by `CadenceGuardScriptSelftestTests` on every
+`CadenceTests` run (T-719). It used to be pinned by nothing but somebody remembering to type it —
+which is the hollow-instrument shape this whole section is about, one layer up.
 
 Plan format, `--no-build` dry runs and every option are documented in the header of
 `scripts/mutate.sh`.
