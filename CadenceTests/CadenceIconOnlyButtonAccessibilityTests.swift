@@ -82,11 +82,6 @@ struct CadenceIconOnlyButtonAccessibilityTests {
     private static let knownUnnamedIconButtonSites: [String: Int] = [
         "Cadence/iOS/iOSMarkdownPreview.swift": 2,                          // T-611
         "Cadence/iOS/iOSTaskDetailSheet.swift": 1,                          // T-611
-        "Cadence/macOS/Sheets/CreateTaskSheet.swift": 1,                    // T-673
-        "Cadence/macOS/Views/GoalsSupportViews.swift": 2,                   // T-673 (detach ×2)
-        "Cadence/macOS/Views/HabitsSupportViews.swift": 1,                  // T-673 (done circle)
-        "Cadence/macOS/Views/QuickCreateChoiceSupportViews.swift": 2,       // T-673 (remove ×2)
-        "Cadence/macOS/Views/TasksPanelSupportViews.swift": 2,              // T-673 ×2
     ]
 
     @Test func noIconOnlyButtonInTheAppIsLeftWithoutAnAccessibleName() throws {
@@ -126,11 +121,11 @@ struct CadenceIconOnlyButtonAccessibilityTests {
             if count > 0 { actual[path] = count }
         }
         #expect(actual == Self.knownUnnamedIconButtonSites, "measured: \(actual.sorted { $0.key < $1.key })")
-        // The headline, so the report and the ledger cannot disagree: T-637 measured 31 in 24,
-        // T-672 closed 10 of them in 10 files, and T-674 closed a further 10 sites in 9 files —
-        // all nine left the ledger outright, T-674's population having no site shared with T-672.
-        #expect(actual.values.reduce(0, +) == 11)
-        #expect(actual.count == 7)
+        // The headline, so the report and the ledger cannot disagree: T-637 measured 31 in 24;
+        // T-672 closed 10, T-674 a further 10, and T-673 the last 8 on the desktop tree. What
+        // remains is T-611's original iOS population and nothing else.
+        #expect(actual.values.reduce(0, +) == 3)
+        #expect(actual.count == 2)
         // And the file the ticket was filed about is clean — see the ledger's own note.
         #expect(actual["Cadence/iOS/iOSTaskRowActionViews.swift"] == nil)
     }
@@ -149,10 +144,13 @@ struct CadenceIconOnlyButtonAccessibilityTests {
         // T-611's population, unchanged: 3 sites in 2 files.
         #expect(touch.values.reduce(0, +) == 3)
         #expect(touch.count == 2)
-        // T-637's: 28 sites in 22 files that the iOS-scoped walk could not see, less T-672's 10
-        // and T-674's 10.
-        #expect(desktop.values.reduce(0, +) == 8)
-        #expect(desktop.count == 5)
+        // T-637's 28 desktop sites are all closed — T-672's 10, T-674's 10, T-673's 8. Zero is
+        // the correct number here and it is the reason this test can no longer prove reach from
+        // the ledger: an empty desktop half reads identically whether the widening shipped or was
+        // reverted. Reach is therefore asserted below, on the walk and on a literal, and the
+        // ledger's job here shrinks to stating that nothing new appeared.
+        #expect(desktop.values.reduce(0, +) == 0)
+        #expect(desktop.count == 0)
         // Nothing else — `Cadence/Shared/`, `Models/` and `Services/` are swept and clean, which
         // is a measurement of those trees, not an exclusion of them.
         #expect(touch.count + desktop.count == ledger.count)
@@ -225,9 +223,20 @@ struct CadenceIconOnlyButtonAccessibilityTests {
         let offending = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheet.swift")
         #expect(instrument.fires(on: offending), "the detector cannot see an unnamed icon-only button")
 
-        // T-637's half: the same detector, on a file T-611's walk never handed it.
-        let desktop = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelSupportViews.swift")
-        #expect(instrument.fires(on: desktop), "the detector cannot see the desktop tree's bare glyphs")
+        // T-637's half. This was a real `Cadence/macOS/` file until T-673 named its last two
+        // glyphs; a witness the ledger is actively emptying cannot keep proving anything, so the
+        // shape is pinned on a literal instead (T-795). The claim is about the *detector*, and
+        // the claim about the *walk* reaching `Cadence/macOS/` is the witness list above.
+        #expect(
+            instrument.fires(on: """
+            Button {
+                remove(subtask)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+            }
+            """),
+            "the detector cannot see a bare glyph in the desktop tree's idiom"
+        )
 
         let clean = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskRowActionViews.swift")
         #expect(clean.contains("Button {"), "non-vacuity: the row's buttons are gone")
