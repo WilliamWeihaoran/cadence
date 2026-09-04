@@ -150,7 +150,7 @@ struct GoalTimelineRowBackground: View {
             Rectangle()
                 .fill(fill)
             Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.55))
+                .fill(Theme.rowSeparator)
                 .frame(height: 1)
         }
         .frame(width: width, height: height)
@@ -210,7 +210,7 @@ struct GoalTimelineGroupRow: View {
             }
         }
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.borderSubtle).frame(height: 1)
+            Rectangle().fill(Theme.rowSeparator).frame(height: 1)
         }
         // Higher count first — see `GoalTimelineGoalRailRow`.
         .onTapGesture(count: 2) {
@@ -249,7 +249,7 @@ struct GoalTimelineGoalRailRow: View {
         .contentShape(Rectangle())
         .background(isSelected ? Theme.blue.opacity(0.08) : Color.clear)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.borderSubtle.opacity(0.55)).frame(height: 1)
+            Rectangle().fill(Theme.rowSeparator).frame(height: 1)
         }
         // Higher count first: attached the other way round the single-tap recognizer consumes
         // the event and `onOpen` never fires. Every other double-tap site in the app attaches

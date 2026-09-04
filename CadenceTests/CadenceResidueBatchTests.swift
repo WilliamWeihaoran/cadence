@@ -326,13 +326,18 @@ struct IOSTaskDetailSheetResidueTests {
 /// hover state to a separator weight, and the next person to retune the rule between two rows would
 /// silently retune a card outline too.
 struct CadenceRowSeparatorWeightTests {
-    /// The four rules. Named individually rather than swept, because the claim is about these four
-    /// and a sweep would have to decide what counts as a separator to say anything at all.
+    /// The four rules, and how many times each now reads the shared name. Named individually
+    /// rather than swept, because the claim is about these four and a sweep would have to decide
+    /// what counts as a separator to say anything at all.
+    ///
+    /// `CadenceFieldRows.swift` reads **2**, not 1, since T-675: `CadenceFieldDivider` — the
+    /// between-row rule inside a `CadenceFieldSection`, the same file's `CadenceFieldSectionChrome`
+    /// already drew its `.ruled` top edge at this weight — used to hand-type `0.55` beside it.
     private static let separatorSites = [
-        "Cadence/Shared/Components/CadenceFieldRows.swift",
-        "Cadence/iOS/iOSTaskDetailComponents.swift",
-        "Cadence/iOS/iOSTodaySchedulePanel.swift",
-        "Cadence/iOS/iOSCalendarBundleDetailSheet.swift",
+        "Cadence/Shared/Components/CadenceFieldRows.swift": 2,
+        "Cadence/iOS/iOSTaskDetailComponents.swift": 1,
+        "Cadence/iOS/iOSTodaySchedulePanel.swift": 1,
+        "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 1,
     ]
 
     /// The name resolves to what the four sites drew. A hoist that changes a pixel is not a hoist.
@@ -345,12 +350,12 @@ struct CadenceRowSeparatorWeightTests {
     /// The call sites read the name — which is the assertion above cannot make. A value-only pin
     /// stays green while a fifth row spells `0.35` out again.
     @Test func allFourRowSeparatorsReadTheOneName() throws {
-        for path in Self.separatorSites {
+        for (path, expectedCount) in Self.separatorSites {
             let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
             #expect(source.count > 400, "\(path) read as \(source.count) characters")
             #expect(
-                CadenceSourceScan.matchCount(#"Theme\.rowSeparator"#, in: source) == 1,
-                "\(path) does not draw the shared separator exactly once"
+                CadenceSourceScan.matchCount(#"Theme\.rowSeparator"#, in: source) == expectedCount,
+                "\(path) does not draw the shared separator exactly \(expectedCount) time(s)"
             )
             #expect(
                 !source.contains("Theme.borderSubtle.opacity(0.35)"),
@@ -374,5 +379,80 @@ struct CadenceRowSeparatorWeightTests {
             !picker.contains("Theme.rowSeparator"),
             "a card's hover border now reads the row-separator token"
         )
+    }
+}
+
+/// **T-675.** T-618 named `0.35` for the row rule four sites already agreed on, and left two other
+/// weights unconverged for the same job: `0.55` (`CadenceFieldDivider`'s between-row rule, and two
+/// of the Goal Timeline rail's three row rules) and full-strength `borderSubtle` (the Goal Timeline
+/// rail's third). The filing commit named exactly these three values — "the app has three separator
+/// weights and naming the 0.35 one named the smallest of them" — so the population is these five
+/// call sites, not a whole-tree sweep for "anything that looks like a divider": the tree also draws
+/// full-strength and other-weight `borderSubtle` hairlines for a *different* job (a palette-colored
+/// stand-in for a plain `Divider()`, a section/chrome boundary, a markdown rule) that T-618's own
+/// closure text already excluded on the same reasoning, and folding those in would re-couple two
+/// concepts T-618 was written to keep apart.
+///
+/// Within the Goal Timeline rail itself the drift was visible on the screen, not just in the tree:
+/// `GoalTimelineGroupRow`'s bottom rule drew at full strength while `GoalTimelineGoalRailRow`'s and
+/// `GoalTimelineRowBackground`'s drew at `0.55` — one rail, two weights, between the same kind of
+/// stacked row.
+struct CadenceRowSeparatorConvergenceTests {
+    /// `CadenceFieldDivider` sits four lines under `CadenceFieldSectionChrome`'s `.ruled` case in
+    /// the same file, which already draws `Theme.rowSeparator` for that section's top edge — so a
+    /// second, unnamed weight for the divider *between* the section's own rows was the closest
+    /// possible instance of the drift T-618's doc warns about.
+    @Test func fieldDividerReadsTheNamedSeparator() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceFieldRows.swift")
+        )
+        #expect(source.contains("struct CadenceFieldDivider"), "non-vacuity: wrong file read")
+        let body = try #require(
+            CadenceSourceScan.declarationBody("struct CadenceFieldDivider: View", in: source)
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"Theme\.rowSeparator"#, in: body) == 1,
+            "CadenceFieldDivider does not draw the shared separator exactly once"
+        )
+        #expect(!body.contains("borderSubtle"), "CadenceFieldDivider still re-types a raw weight")
+    }
+
+    /// The Goal Timeline rail's three row rules, each pinned to its own declaration so a fourth row
+    /// kind added later has to make the same choice explicitly rather than inherit one by proximity.
+    @Test func goalTimelineRowRulesReadTheNamedSeparator() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalTimelineSupportViews.swift")
+        )
+        #expect(source.contains("struct GoalTimelineRowBackground"), "non-vacuity: wrong file read")
+
+        for declaration in [
+            "struct GoalTimelineRowBackground: View",
+            "struct GoalTimelineGroupRow: View",
+            "struct GoalTimelineGoalRailRow: View",
+        ] {
+            let body = try #require(
+                CadenceSourceScan.declarationBody(declaration, in: source),
+                "could not read the body of \(declaration)"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"Theme\.rowSeparator"#, in: body) == 1,
+                "\(declaration) does not draw the shared separator exactly once"
+            )
+            #expect(!body.contains("borderSubtle"), "\(declaration) still re-types a raw weight")
+        }
+    }
+
+    /// `GoalTimelineMonthHeader`'s bottom rule is a header/content boundary, not a rule between two
+    /// stacked rows, and is deliberately left outside the convergence above — pinned so "make it a
+    /// fourth" reads as a decision to widen the ticket rather than a sweep that forgot to stop.
+    @Test func goalTimelineMonthHeaderRuleIsUnrelatedAndUnchanged() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalTimelineSupportViews.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.declarationBody("struct GoalTimelineMonthHeader: View", in: source)
+        )
+        #expect(body.contains("Rectangle().fill(Theme.borderSubtle).frame(height: 1)"))
+        #expect(!body.contains("Theme.rowSeparator"), "a header boundary now reads the row token")
     }
 }

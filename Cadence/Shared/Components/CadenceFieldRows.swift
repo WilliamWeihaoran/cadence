@@ -126,7 +126,7 @@ private struct CadenceFieldSectionChrome: ViewModifier {
 struct CadenceFieldDivider: View {
     var body: some View {
         Rectangle()
-            .fill(Theme.borderSubtle.opacity(0.55))
+            .fill(Theme.rowSeparator)
             .frame(height: 1)
             .padding(.vertical, 6)
     }
