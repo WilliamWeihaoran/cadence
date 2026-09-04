@@ -1810,17 +1810,15 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   simulator carries no launch arguments**, so it is back on the device-wide domain. Both are written
   down in `CadenceDefaults`'s doc comment; this ticket is the decision about whether to close them.
 
-- [T-747] **`scripts/xcb.sh` writes every run under one id to the same log path, so a batch deletes
-  its own evidence.** The log is `${TMPDIR}cadence-xcb-<id>.log`, overwritten per invocation. A
-  runner that makes three `xcb.sh j4 test …` calls in sequence — which is the shape the runbook asks
-  for, one script, one lock, several runs — ends holding only the last one's log. The postflight
-  counters go to stdout and survive, but they are aggregates: measured 2026-09-03, a run reported
-  `warnings: 23` and by the time the count was queried the log naming those 23 was gone, so the
-  number could not be attributed to a file — and "a warning count from a run that did not recompile
-  the file is vacuous" is already a rule in `AGENTS.md`, which this makes unverifiable after the
-  fact. The counters are the summary; the log is the evidence, and it is the evidence that gets
-  deleted. Cheapest fix is a per-invocation suffix with the documented path kept as a symlink to the
-  newest.
+- [T-747] **CLOSED 2026-09-04 (`f3a7fba1`) - the log survives, named by invocation.**
+  `scripts/xcb.sh` now writes each run to `${TMPDIR}cadence-xcb-<id>.<timestamp>-<pid>.log` and keeps
+  the documented `${TMPDIR}cadence-xcb-<id>.log` path alive as a symlink to whichever run is newest,
+  so a caller that only knows the old path still finds the right file. **Failing-first, measured**:
+  three `xcb.sh <id> build …` calls in sequence against `git show HEAD:scripts/xcb.sh` leave exactly
+  one log file (the earlier two overwritten); against the fix, three distinct files plus a symlink
+  pointing at the last one.
+  `.github/scripts/check-log.sh` and `scripts/real-tree-sweep-manifest.sh` both read the unsuffixed
+  path, and a symlink is transparent to `cat`/`grep`, so neither needed a change.
 
 - [T-736] **A column being renamed draws as empty until the rename commits.** Filed while landing
   [[T-713]], and it is the visible cost of the decision that ticket took rather than a defect in it.
@@ -1881,25 +1879,63 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   one showing nothing. Same shape as `CadenceInMemoryStoreHygieneTests` — the property is already
   true, and the test is what stops it quietly stopping.
 
-- [T-748] **An orphaned `acquire` still takes the lock with nobody left to run under it.**
-  [[T-650]] made it wait its turn instead of jumping the queue, which is strictly better and not the
-  fix: `pkill -f 'run-batch-<tag>.sh'` does not match the runner's `test-host-lock.sh acquire ...`
-  child, so the orphan keeps waiting, reaches the head, records its own already-dead pid as the
-  owner and strands the lock for the full 2700s lease. `docs/SUBAGENT_RUNBOOK.md` documents the
-  manual cleanup, which means it keeps happening. The candidate fix is four lines and was
-  deliberately not landed in [[T-650]]: at the moment of `mkdir`, refuse if `$PPID` is dead, because
-  a waiter whose parent is gone has nothing to hold the lock *for*. It was left out because three
-  sibling agents were mid-run against the live lock, and a new refusal on the acquire path is
-  exactly the change you do not ship into that. Land it on a quiet tree, with a selftest trial: a
-  waiter whose parent is killed must decline the lock rather than take it.
+- [T-748] **CLOSED 2026-09-04 (`f3a7fba1`) - the head checks its own pulse before taking the
+  lock.** `test-host-lock.sh acquire`'s head-of-queue block now refuses `mkdir` (and drops its own
+  ticket) if `$PPID` -- the caller blocking on `acquire` -- is dead, exactly the four-line fix
+  [[T-650]] named and deliberately left out.
+  **Failing-first, measured, and a real orphan, not a killed process**: a wrapper spawns `acquire` as
+  a genuine child (`; :` stops zsh exec'ing it in the wrapper's place, same trick as the selftest's
+  `waiter()`), only the wrapper is killed, and the lock is released to the now-parentless acquire.
+  Against `git show HEAD:scripts/test-host-lock.sh` it takes the lock (`owner='orphan'`); against the
+  fix it declines (`owner=''`) and the queue drains.
+  Selftest gained `dead-parent-declines` and `dead-parent-recovers` (the latter proving the queue
+  does not stall behind a waiter that declined), alongside [[T-650]]'s three.
 
-- [T-749] **`scripts/simulator-claim.sh` has the unfairness [[T-650]] just removed from the test-host
-  lock.** Its wait loop is `sleep 5; (( waited += 5 ))` with no queue and no ageing - the same shape,
-  and the same consequence: a 16-minute claim wait was measured in the same batch that produced the
-  65-minute test-host starvation. There is now a working pattern to copy one file over, ticket
-  directory and all, including the parts that are easy to get wrong (the queue must live outside the
-  claim it guards, the prune must be liveness-and-age, a pruned live waiter must re-file under its
-  original stamp). Not urgent while only one simulator is in play, and cheap the day two are.
+- [T-749] **CLOSED 2026-09-04 (`f3a7fba1`) - the same FIFO, ported rather than reinvented.**
+  `simulator-claim.sh claim` files an arrival-stamped ticket in `${CLAIMS}.queue` -- a SIBLING of the
+  claims directory, not nested under it, same reasoning as [[T-650]]'s `${LOCK}.queue`: `release`
+  only ever `rm -rf`s one device's own `$CLAIMS/$u.claim`, so nothing today would wipe a nested queue,
+  but the lesson [[T-650]] paid for is that the queue must outlive whatever it queues for on its own
+  terms, not because nothing currently deletes the parent. Only the head may attempt a device.
+  **Failing-first, measured**: w1..w3 queue behind one fake booted device, w4 arrives at the instant
+  of release. Against `git show HEAD:scripts/simulator-claim.sh`: `w4 w1 w2 w3` (the exact starvation
+  shape this ticket measured). Against the fix: `w1 w2 w3 w4`.
+  Gained a `selftest` mode of its own (this script had none before), proving `ordering` and
+  [[T-650]]'s other ported property, that a SIGKILLed waiter's ticket does not block the one behind
+  it (`killed-waiter`).
+  Both `test-host-lock.sh` and `simulator-claim.sh`'s selftests are now wired into
+  `CadenceGuardScriptSelftestTests`, which previously ran neither. `ordering` (both scripts) and
+  `no-reclaim` (`test-host-lock.sh`) are TOLERATED rather than required there -- see [[T-959]]: that
+  test host cannot prove either, and an in-host approximation would prove less than it appears to.
+  Proven instead by the terminal runs above.
+
+- [T-959] **CadenceTests' App-Sandboxed host cannot spawn `ps` or `pgrep` at all -- EPERM at
+  `posix_spawn`, not merely restricted output.** Found landing [[T-748]]/[[T-749]]'s selftests in
+  `CadenceGuardScriptSelftestTests`. [[T-782]] closed a narrower version of this as moot: the only
+  two shell-outs under `CadenceTests` at the time (`CadenceSelftestRun.of`'s `/bin/zsh -f <script>
+  selftest`, and `.probe()`'s `/bin/echo` control) both target working tools, so there was no
+  populated case of a broken one. This is the general rule that closure did not establish.
+  Measured 2026-09-04: `Process().run()` on `/bin/ps` from inside `CadenceTests` throws `Error
+  Domain=NSPOSIXErrorDomain Code=1 "Operation not permitted"` before producing a single byte of
+  output -- an outright launch refusal, not empty output -- and a `zsh` child of that host inherits
+  the same sandbox, so a script's own internal `ps -o command= -p $pid` or `pgrep -f ...` fails
+  identically once it is spawned as this test target's descendant.
+  `test-host-lock.sh`'s `waiter_alive` (`ps`) and `live_test_hosts` (`pgrep`), and
+  `simulator-claim.sh`'s `waiter_alive` (ported from the same file), all depend on one of these --
+  which is why `ordering` (both scripts) and `no-reclaim` (`test-host-lock.sh`) cannot be proven from
+  `CadenceGuardScriptSelftestTests` and are TOLERATED there by name (see that suite's
+  `testHostLockPropertiesUnverifiableInThisSandbox` / `simulatorClaimPropertiesUnverifiableInThisSandbox`)
+  rather than asserted dishonestly.
+  Separately, but found the same afternoon and the same family: a freshly-written, freshly-`chmod
+  +x`'d script cannot always be exec'd DIRECTLY from inside this host either --
+  `simulator-claim.sh selftest`'s fake `simctl` died with "can't create temp file for here document"
+  (the `$TMPPREFIX` issue [[T-782]]/[[T-719]] already named) until routed through `/bin/zsh <path>`
+  rather than executing the path itself. Distinct mechanism from the `ps`/`pgrep` finding, same
+  family: this host can run a trusted binary and hand it a path, and cannot always spawn an arbitrary
+  one of its own, no cross-process introspection.
+  Any future selftest wired into this suite that needs either should expect the same wall: tolerate
+  it by name (the pattern above), and prove that property by direct terminal invocation instead --
+  which is what [[T-748]] and [[T-749]]'s entries above do.
 
 - [T-786] **`scripts/mutate.sh` cannot verify a mutation against a `@Test("...")` display-named
   test.** Found while fixing [[T-667]]. `FAILED_SWIFT_TESTING = re.compile(r"✘ Test
@@ -2178,6 +2214,74 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `rm -f`, deleting the stale refusal, and making `check` see an empty ledger are each KILLED, and
   so is backdating the fixture's record by one minute instead of ninety — so it is the age doing the
   refusing and not something else.
+
+- [T-965] **Carried forward verbatim below, unindented and untouched: content v3batchV declined at `c1efab09` on `docs/TODO.md`, not yet folded back in.** v2 hit `DECLINED-HUNK-LOST` committing an unrelated edit to this file and is not the right agent to reconstruct where each of these fragments belongs (they span T-974/T-781 detail, an `agent-commit.sh` pre-commit-hook candidate, T-517's closing discriminators, a DerivedData entry investigation, and a T-535 CI-YAML gap) -- so preserving the text losslessly here beats guessing at placement or discarding it with `--accept-declined`. v3batchV (or whoever next edits this file) should fold each fragment into its proper entry above and delete this ticket. The declined text follows,
+  character-for-character as recorded, starting on the next line:
+- [T-974] **`agent-commit.sh`'s ledger guard validates against one HEAD and commits onto another.**
+  Measured 2026-09-04. u3's `3a381116` dropped u1's `T-935`, which u1 had filed in `72e3122`, even
+  though u3 passed only `--removes 67` and never declared a dropped id. The guard is **not** broken:
+  probed directly at `d6a808e6` with a fixture missing exactly one entry, it refused with
+  `LEDGER-IDS-LOST: T-935`, and `--removes 999` did not bypass it. So the check works and the flag
+  does not weaken it.
+  What fits the evidence is a **race inside the helper**: it reads `git cat-file -p HEAD:<path>` to
+  build the comparison, then later `update-ref`s onto whatever HEAD is by then. A sibling landing in
+  that window makes the new commit a child of a HEAD the validation never saw — so ids that arrived
+  in that window are invisible to the check and vanish silently. Four agents committing concurrently
+  makes the window reachable; this is the first time it has been caught, and only because u3 diffed
+  ticket-id sets afterwards rather than trusting its own commit.
+  **Fix:** capture the HEAD sha once, validate against that sha, and refuse at `update-ref` if HEAD
+  has moved since — the compare-and-swap the helper is currently missing. `git update-ref` takes an
+  expected old value for exactly this. Then pin it with a selftest that lands a sibling commit inside
+  the window and requires the refusal.
+  Until then the working practice stands and it is what caught this: **diff ticket-id sets against
+  the previous known-good commit after any ledger commit**, rather than trusting the guard alone.
+  that the incantation is now a script that refuses the four measured failures — but the instruction
+  to call it is prose in `AGENTS.md` and `docs/SUBAGENT_RUNBOOK.md`, which is exactly the shape T-679
+  was filed about (`git add <specific paths>` was also prose, was also followed, and was also
+  insufficient). A bare `git commit` still works and still sweeps a sibling's staged hunk. Candidate:
+  a repo-checked-in `core.hooksPath` with a `pre-commit` that refuses a commit staging paths the
+  caller did not declare, with an escape hatch for the user's own commits. Not done here because a
+  hook changes the user's git configuration, which is their call, not an agent's.
+- [T-781] **A declined hunk that is never re-committed is still caught by nothing automatic.**
+  `agent-commit.sh` records what a `path=<content-file>` reconstruction declined and refuses the
+  *next* commit of that path unless it carries them (`DECLINED-HUNK-LOST`) — the Batch M failure
+  where m3 correctly declined m4's work, m4 committed without it, and HEAD stopped compiling. But if
+  nobody commits that path again, no commit-time check ever fires. The backstop is
+  `./scripts/agent-commit.sh status`, and reading it is a habit, not a mechanism. Candidate: have
+  `scripts/xcb.sh` print outstanding records at the end of every run, so the listing lands in front
+  of whoever is already looking at a build log.
+  script should make unattended is now mechanical.** T-517 declined to automate the cleanup because
+  "one of the fourteen is the user's own Xcode entry" and telling them apart needed a human. Two
+  discriminators now do it without one. **The cheap one:** an entry that has an `info.plist` carries
+  `WorkspacePath`, so it is an orphan exactly when that path does not exist — no hashing required.
+  **The one for entries with no `info.plist`** (all 13 of T-517's were in that state): Xcode's
+  rendered as 14 base-26 letters most-significant digit last. Hash every `Cadence.xcodeproj` that
+  exists and an entry matching none of them is unattributable to any live tree. Both were used to clear
+  T-517 and both were positively controlled against the known-live entry first. A
+  `scripts/xcb.sh audit --prune` built on them would refuse to touch an entry it could attribute, which
+  is stricter than the human judgement it replaces. **Not done here because `scripts/xcb.sh` was being
+  edited by another agent at the time** — this is a one-file change to a file with a live sibling, not a
+  hard one.
+  store — and ~2.7 GB of other agent debris is still in `/private/tmp`.** The name has been read as
+  "the one-time macOS UI-test automation grant, re-granting needs the user's password", and three
+  briefs have carried that warning. **It is a `-derivedDataPath` output and nothing else**: `Build/`,
+  `Logs/`, `ModuleCache.noindex`, `SDKStatCaches.noindex`, `SourcePackages/`, `TestResults/`, and an
+  `info.plist` whose only two keys are `LastAccessedDate` (2026-08-31T04:52:39Z) and `WorkspacePath`
+  (the user's real repo). macOS automation and accessibility grants live in the TCC database, not in a
+  build directory, and UI-test runs since have used entirely different DerivedData paths. **Left in
+  place anyway**, on the asymmetry: the downside of being wrong is the user's password, the upside is
+  1.4 GB of temp space, and an agent was live in `CadenceUITests` at the time. Someone should confirm
+  and delete it. The rest of `/private/tmp` is ordinary session debris nobody named — `a2-*`, `b1c-*`,
+  `base_*.swift`, `bf`, `ff.log`, `TODO.backup.md`, `.old.swift`, `.void`, `dry1.sh` — plus live
+  sibling scratch trees (`cadence-g2`, `cadence-g3`, `cadence-g4-scan`, `cadence-integ10`) that must
+  **not** be swept while their agents are running.
+  From [[T-535]]. `scannedPaths()` appends a file only when it `hasSuffix(".md")` or `hasSuffix(".sh")`,
+  so `.github/workflows/*.yml` is outside the walk entirely — and those files contain `xcodebuild`
+  invocations. **There is no live offender**: every invocation in `ci.yml` goes through
+  `scripts/xcb.sh`, which supplies a private `-derivedDataPath` itself. The gap is that nothing would
+  notice a future workflow step calling `xcodebuild` directly. The `xcodebuild` in a YAML `run:` block
+  is shell, so `shellText(at:)` would need a third branch (a script is shell throughout, markdown only
+  inside fences, YAML only inside `run:` blocks) — the extraction is the work, not the walk.
 
 - [T-796] **CLOSED 2026-09-04 (`7f37155b`).** Measured fresh rather than trusted against the
   ticket's own four-day-old count: of the four sites it named, two
