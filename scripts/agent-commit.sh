@@ -52,6 +52,10 @@
 #   LEDGER-CLOSURE-LOST  a `TODO.md` entry that is CLOSED in HEAD is open again in the content you
 #                        are staging, with its id intact -- so LEDGER-IDS-LOST sees nothing wrong.
 #                        `--reopens-ids <exact,sorted,list>` reopens them deliberately.
+#   WORKTREE-BEHIND-HEAD a bare `<path>` whose worktree copy is built on a revision older than
+#                        HEAD's. Committing it writes the stale bytes into history, where no drift
+#                        check looks. Rebuild on `git show HEAD:<path>` and pass the `=` form, or
+#                        `--commits-stale <path>` if the old content really is what you mean.
 #   REMOVES-HEAD-LINES   the staged content drops lines HEAD has, and you did not say how many.
 #                        `--removes <exact count>` acknowledges them. A reconstruction built on a
 #                        stale HEAD reverts a sibling's landed work in exactly this shape.
@@ -75,6 +79,25 @@
 # A `=` form whose content differs from the worktree is, by construction, declining something. The
 # difference is recorded in the declined-hunk ledger under $TMPDIR and reported at the end of every
 # run until some commit of that path accounts for it.
+#
+# WHERE THE BARE FORM GOES WRONG, AND WHY ONLY IT IS DRIFT-CHECKED (T-982)
+#
+# `worktree-drift.sh` gates `xcb.sh test`, so an integration run cannot start against a checkout
+# behind HEAD. That is the right gate for READING. Drift is CREATED one step earlier, here: a bare
+# `<path>` takes the worktree copy, and in this checkout the worktree copy is routinely behind HEAD
+# precisely because this script commits through a private index and a landed commit never writes
+# the checkout (T-975). Commit that copy and the stale bytes are in HEAD, where nothing checks.
+#
+# Reproduced 2026-09-05 in a throwaway repository, and the reproduction changed the shape of the
+# fix. The commit is not unguarded today -- REMOVES-HEAD-LINES fires, because a copy behind HEAD is
+# missing lines HEAD has by construction. But it fires with the wrong diagnosis and then hands the
+# agent the cure for it: *"say the number: --removes 1"*. Typing `--removes 1` was accepted and the
+# sibling's landed line left HEAD. The count is the symptom; "this file is built on an older
+# revision, and here is which one" is the diagnosis, and it is the one an agent can act on.
+#
+# The `=` form is deliberately NOT checked. Rebuilding the file as `git show HEAD:<path>` plus your
+# own edits IS the prescribed repair for this drift, and its content is by definition not the
+# worktree's, so a check that refused it would refuse the fix and leave only the broken path open.
 #
 # THE BACKSTOP, AND WHY IT IS NOT `status` (T-781)
 #
@@ -120,6 +143,8 @@ fi
 
 usage() {
     say "usage: ./scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]..."
+    say "       flags: --removes <n> --drops-ids <ids> --reopens-ids <ids>"
+    say "              --accept-declined <path> --commits-stale <path>"
     say "       ./scripts/agent-commit.sh <id> -F <message-file> <path>..."
     say "       ./scripts/agent-commit.sh status         # report outstanding declined hunks"
     say "       ./scripts/agent-commit.sh check          # exit 3 while any is outstanding"
@@ -184,6 +209,29 @@ is_ledger_path() { [[ "${1:t}" == "TODO.md" ]] }
 #
 # Replayed over all 349 commits that have ever touched docs/TODO.md, this reading fires on exactly
 # those two and on none of the other 347.
+#
+# AND IT STAYS ONE WORD (T-983). The obvious complaint about the above is that it reads only
+# `CLOSED`, so a `RESOLVED` or `VERIFIED` closure is invisible to it. Measured against HEAD's
+# docs/TODO.md on 2026-09-05, over 395 entries, and the measurement settles it the other way:
+#
+#     194  entries whose own first line says CLOSED
+#       4  entries whose own first line says RESOLVED or VERIFIED, none of which also says CLOSED
+#     118  entries in `## Done` with no closure marker on their first line at all
+#
+# Of those four, TWO ARE OPEN TICKETS -- T-623 and T-624, both sitting in `## Open — decided, not
+# started`, both reading `**<the finding>.** VERIFIED 2026-09-01 from CXT-018`. There, VERIFIED
+# means the finding was confirmed to be real: the ledger uses the word with the OPPOSITE sense to
+# the one a widened marker would read into it. Widening to `RESOLVED|VERIFIED` would mark those two
+# closed, and the next ordinary rewrite of either would be refused as a reversion the agent never
+# made -- a false refusal in the commit path, which is the one failure this family must not have.
+# It would buy two true positives (T-562, T-648) for two false ones. A body-wide reading is worse
+# again: 13 open entries mention one of the three words in their prose.
+#
+# So there is no `RESOLVED`/`VERIFIED` closure CONVENTION to read here -- there are two instances
+# and two counterexamples that use the same word to mean "confirmed open". The alternative the
+# ticket allows, establishing a convention the ledger then follows, is a rewrite of 118 unmarked
+# Done entries and is not this script's to make. The narrowness is the finding. Mode 4d's last two
+# checks pin it: an OPEN entry whose own first line says VERIFIED must stay editable.
 ledger_closed_ids() {  # $1 = file
     sed -n 's/^- \[\(T-[0-9][0-9]*\)\].*CLOSED.*/\1/p' -- "$1" 2>/dev/null | sort -u
 }
@@ -269,8 +317,8 @@ cmd_accept() {
 cmd_commit() {
     local id=$1; shift
     local message="" have_message=0 declared_removals="" declared_dropped_ids="" declared_reopened_ids=""
-    local -a paths accepted
-    paths=(); accepted=()
+    local -a paths accepted stale_declared
+    paths=(); accepted=(); stale_declared=()
 
     while (( $# )); do
         case "$1" in
@@ -286,6 +334,8 @@ cmd_commit() {
                 declared_dropped_ids="$2"; shift 2 ;;
             --reopens-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--reopens-ids needs a comma-separated id list"
                 declared_reopened_ids="$2"; shift 2 ;;
+            --commits-stale) [[ $# -ge 2 ]] || refuse BAD-OPTION "--commits-stale needs a path"
+                stale_declared+=("$2"); shift 2 ;;
             --) shift; paths+=("$@"); break ;;
             -*) refuse BAD-OPTION "unknown option $1" ;;
             *)  paths+=("$1"); shift ;;
@@ -351,6 +401,57 @@ cmd_commit() {
   Nothing was committed. Run it again against the new HEAD."
         refuse FOREIGN-STAGED "the shared index holds paths you did not name: ${(j:, :)foreign}
   Another agent staged them. Ask them to commit, or \`git reset -- <path>\` only what you are sure is yours."
+    fi
+
+    # 1b. T-982. Every guard below this line asks a question about the CONTENT being staged. None
+    #     of them asks where that content came from, and for a bare `<path>` it comes from a shared
+    #     checkout that drifts behind HEAD by design. Ask before the content questions, because
+    #     "built on an older revision" is the diagnosis and REMOVES-HEAD-LINES -- which fires on
+    #     this shape too, one step later -- is the symptom plus a cure that makes it worse.
+    #
+    #     One implementation, not a near-copy: `worktree-drift.sh base` is the same reading the
+    #     tree gate uses, asked about one path. It is handed `$headsha` rather than resolving HEAD
+    #     itself, so it answers about the same commit as every check either side of it (T-974).
+    local drift_script="${SCRIPT_PATH:h}/worktree-drift.sh"
+    [[ -f "$drift_script" ]] || refuse DRIFT-CHECK-MISSING "$drift_script is not there, so the bare-path drift check cannot run.
+  Skipping it silently is how a guard becomes decoration; restore the script, or pass the paths as
+  \`<path>=<content-file>\` rebuilt on \`git show HEAD:<path>\`, which needs no check."
+    local -a stale_found stale_report
+    stale_found=(); stale_report=()
+    local reading drc
+    for name in "${names[@]}"; do
+        [[ -z "${source_of[$name]}" ]] || continue      # the `=` form is the repair; never refuse it
+        [[ -f "$name" ]] || continue
+        git cat-file -e "$headsha:$name" 2>/dev/null || continue
+        reading=$(zsh "$drift_script" base "$name" "$headsha" 2>/dev/null); drc=$?
+        # 0 and 3 are readings. Anything else is the check failing to run, and a guard that reads
+        # a crash as "fine" is the hollow instrument this whole file exists to avoid.
+        (( drc == 0 || drc == 3 )) || refuse DRIFT-CHECK-FAILED "\`worktree-drift.sh base $name\` exited $drc and said: ${reading:-(nothing)}
+  Nothing was committed, because the question of whether $name is behind HEAD went unanswered."
+        [[ "$(print -r -- "$reading" | cut -f1)" == behind ]] || continue
+        stale_found+=("$name")
+        stale_report+=("$name  [$(print -r -- "$reading" | cut -f2)]  $(print -r -- "$reading" | cut -f4)")
+    done
+    if (( ${#stale_found} )); then
+        local -a undeclared
+        undeclared=()
+        for name in "${stale_found[@]}"; do
+            local declaredp=0 spec2
+            for spec2 in "${stale_declared[@]}"; do [[ "$spec2" == "$name" ]] && declaredp=1; done
+            (( declaredp )) || undeclared+=("$name")
+        done
+        if (( ${#undeclared} )); then
+            refuse WORKTREE-BEHIND-HEAD "these bare paths hold content HEAD has moved past: ${(j:, :)undeclared}
+$(print -rl -- "${stale_report[@]}" | sed 's/^/    /')
+  A bare \`<path>\` stages the worktree copy, and this checkout drifts behind HEAD by design: a
+  commit lands through a private index and never writes the checkout (T-975). Committing this copy
+  puts the stale bytes in HEAD, where no drift check looks, and every later reader inherits them.
+  A [stale copy] has nothing local in it:  ./scripts/worktree-drift.sh repair
+  A [stale base] has your edits on an old one -- rebuild them on \`git show HEAD:<path>\` and pass
+  that file as \`<path>=<content-file>\`, which is the form this check deliberately leaves alone.
+  If the older content really is what you mean to commit: --commits-stale <path>"
+        fi
+        say "note: committing a path that is behind HEAD at your request (--commits-stale): ${(j:, :)stale_found}"
     fi
 
     local scratch
@@ -757,6 +858,103 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "the exact count lets it through" $(( rc == 0 )) "exit $rc: $out"
 
     say ""
+    say " mode 4b2 (WORKTREE-BEHIND-HEAD) -- a bare <path> must not commit a copy behind HEAD"
+    # T-982, reproduced 2026-09-05 before it was fixed and reproduced here every run. The sibling
+    # below is exactly the shape T-975 measured: it lands a commit through a private index and
+    # repairs the shared index afterwards, so it NEVER writes the checkout -- and `git status` then
+    # prints ` M code.txt` for the stale copy, character for character what it prints for real work.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws"
+      print -rl -- "the first line of code" "the second line of code" "the third line of code" > code.txt
+      zsh "$here" f0 -m "$M" code.txt ) >/dev/null 2>&1
+    # A well-behaved sibling: private index, HEAD advances, checkout untouched, shared index clean.
+    ( cd "$ws"
+      git show HEAD:code.txt > sib.txt
+      print -r -- "the sibling's landed line, which this checkout has never seen" >> sib.txt
+      idx="$ws/sib-index"
+      GIT_INDEX_FILE=$idx git read-tree HEAD
+      b=$(git hash-object -w -- sib.txt)
+      GIT_INDEX_FILE=$idx git update-index --add --cacheinfo "100644,$b,code.txt"
+      t=$(GIT_INDEX_FILE=$idx git write-tree)
+      c=$(print -r -- "$M" | git commit-tree "$t" -p HEAD)
+      git update-ref HEAD "$c"
+      git reset -q -- code.txt
+      rm -f sib.txt ) >/dev/null 2>&1
+    check "the checkout is now behind HEAD on that path" \
+        $( [[ $( cd "$ws" && git show HEAD:code.txt ) == *"sibling's landed line"* \
+           && $( cd "$ws" && cat code.txt ) != *"sibling's landed line"* ]] && print 1 || print 0 )
+    # The control on the whole mode: nothing in the checkout distinguishes this from real work.
+    check "git status cannot tell it from an in-flight edit" \
+        $( [[ "$( cd "$ws" && git status --porcelain -- code.txt )" == " M code.txt" ]] && print 1 || print 0 ) \
+        "$( cd "$ws" && git status --porcelain -- code.txt )"
+    ( cd "$ws" && print -r -- "this agent's own new line" >> code.txt )
+    out=$( cd "$ws" && zsh "$here" f1 -m "$M" code.txt 2>&1 ); rc=$?
+    check "the bare path is refused" \
+        $( [[ $rc == 3 && "$out" == *WORKTREE-BEHIND-HEAD* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and it says which revision the copy is built on, not just a line count" \
+        $( [[ "$out" == *code.txt* && "$out" == *"built on"* && "$out" == *"[stale base]"* ]] && print 1 || print 0 ) "$out"
+    # The diagnosis has to come FIRST. Before this ticket the same commit was refused as
+    # REMOVES-HEAD-LINES -- which then told the agent the number to type to get past it.
+    check "it is the staleness that is complained about, not the removed-line count" \
+        $( [[ "$out" != *REMOVES-HEAD-LINES* ]] && print 1 || print 0 ) "$out"
+    # THE REPRODUCTION, and the reason the count was never enough: this is what a compliant agent
+    # did with the old refusal's own advice, and the sibling's line left HEAD.
+    out=$( cd "$ws" && zsh "$here" f2 -m "$M" --removes 1 code.txt 2>&1 ); rc=$?
+    check "and doing what the OLD refusal advised -- --removes 1 -- no longer gets it through" \
+        $( [[ $rc == 3 && "$out" == *WORKTREE-BEHIND-HEAD* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "the sibling's landed line is still in HEAD" \
+        $( [[ $( cd "$ws" && git show HEAD:code.txt ) == *"sibling's landed line"* ]] && print 1 || print 0 ) \
+        "$( cd "$ws" && git log --oneline )"
+    # The prescribed repair -- rebuild on `git show HEAD:` and pass the `=` form -- must sail
+    # through. A check that refused this would leave an agent with no way forward at all.
+    ( cd "$ws" && git show HEAD:code.txt > rebuilt.txt && print -r -- "this agent's own new line" >> rebuilt.txt )
+    out=$( cd "$ws" && zsh "$here" f3 -m "$M" code.txt=rebuilt.txt 2>&1 ); rc=$?
+    check "rebuilding on HEAD and passing the = form is accepted" $(( rc == 0 )) "exit $rc: $out"
+    check "and HEAD now has BOTH lines" \
+        $( [[ $( cd "$ws" && git show HEAD:code.txt ) == *"sibling's landed line"* \
+           && $( cd "$ws" && git show HEAD:code.txt ) == *"this agent's own new line"* ]] && print 1 || print 0 )
+    # --commits-stale is the deliberate escape, and it must be per-path and exact.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws" && git show HEAD~1:code.txt > code.txt && print -r -- "a second line of this agent's" >> code.txt )
+    out=$( cd "$ws" && zsh "$here" f4 -m "$M" --commits-stale mine.txt --removes 1 code.txt 2>&1 ); rc=$?
+    check "naming the WRONG path in --commits-stale is still refused" \
+        $( [[ $rc == 3 && "$out" == *WORKTREE-BEHIND-HEAD* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" f4 -m "$M" --commits-stale code.txt --removes 1 code.txt 2>&1 ); rc=$?
+    check "naming the right path lets it through deliberately" $(( rc == 0 )) "exit $rc: $out"
+    check "and it says out loud that it committed something behind HEAD" \
+        $( [[ "$out" == *"--commits-stale"* ]] && print 1 || print 0 ) "$out"
+    # The false-positive control that decides whether this guard can live in the commit path at
+    # all: an ordinary bare-path commit of a file built on HEAD must not go near a refusal.
+    ( cd "$ws" && git show HEAD:code.txt > code.txt && print -r -- "an ordinary edit on top of HEAD" >> code.txt )
+    out=$( cd "$ws" && zsh "$here" f5 -m "$M" code.txt 2>&1 ); rc=$?
+    check "an ordinary bare-path edit built on HEAD is not refused" \
+        $( [[ $rc == 0 && "$out" != *WORKTREE-BEHIND-HEAD* ]] && print 1 || print 0 ) "exit $rc: $out"
+    say "         ...and it must not be disableable by the check simply not answering"
+    say "         (DRIFT-CHECK-MISSING / DRIFT-CHECK-FAILED)"
+    # And the guard must not be skippable by the check simply not being there. A copy of this
+    # script with no `worktree-drift.sh` beside it has to REFUSE, not quietly commit unchecked --
+    # "the check could not run, so everything is fine" is the hollow instrument in miniature.
+    ( cd "$ws" && mkdir -p lonely && cp "$here" lonely/agent-commit.sh
+      git show HEAD:code.txt > code.txt && print -r -- "a line committed with no drift check nearby" >> code.txt )
+    out=$( cd "$ws" && zsh "$ws/lonely/agent-commit.sh" f6 -m "$M" code.txt 2>&1 ); rc=$?
+    check "a copy with no worktree-drift.sh beside it refuses rather than skipping the check" \
+        $( [[ $rc == 3 && "$out" == *DRIFT-CHECK-MISSING* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and nothing was committed by it" \
+        $( [[ $( cd "$ws" && git show HEAD:code.txt ) != *"no drift check nearby"* ]] && print 1 || print 0 )
+    # The same point one step along: a drift check that is THERE but fails to answer must not read
+    # as "not behind". Exit 0 and exit 3 are readings; anything else is the question going
+    # unanswered, and rounding that to a pass is how a guard becomes decoration without anyone
+    # editing it. This one is a stub because the failure it stands for -- git unusable, the
+    # sandboxed `xcrun` shim, a syntax error introduced upstream -- has no other reliable fixture.
+    ( cd "$ws" && print -rl -- '#!/bin/zsh' 'print -r -- "something went wrong" >&2; exit 2' > lonely/worktree-drift.sh )
+    out=$( cd "$ws" && zsh "$ws/lonely/agent-commit.sh" f7 -m "$M" code.txt 2>&1 ); rc=$?
+    check "a drift check that exits neither 0 nor 3 is refused, not read as a pass" \
+        $( [[ $rc == 3 && "$out" == *DRIFT-CHECK-FAILED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and nothing was committed by that one either" \
+        $( [[ $( cd "$ws" && git show HEAD:code.txt ) != *"no drift check nearby"* ]] && print 1 || print 0 )
+    ( cd "$ws" && rm -rf lonely && git checkout -q HEAD -- code.txt 2>/dev/null; git reset -q ) >/dev/null 2>&1
+
+    say ""
     say " mode 4c (LEDGER-IDS-LOST) -- a ledger entry HEAD has cannot vanish inside a line count"
     rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
     # A stale reconstruction: it keeps T-101, adds T-103, and silently loses T-102.
@@ -844,6 +1042,39 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" e5 -m "$M" --removes 1 TODO.md=rewrite.md 2>&1 ); rc=$?
     check "and rewriting that prose away is NOT a lost closure" \
         $( [[ $rc == 0 && "$out" != *LEDGER-CLOSURE-LOST* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # T-983, and it is the control that decides the marker stays one word. The two entries below
+    # are the real shape of T-623 and T-624 in HEAD's docs/TODO.md: OPEN tickets whose own first
+    # line says VERIFIED, where the word means the finding was confirmed real -- the opposite of
+    # closed. A marker widened to `RESOLVED|VERIFIED` reads them as closures, and the next ordinary
+    # rewrite of either is then refused as a reversion nobody made. Two false refusals bought for
+    # two true positives; see the measurement above ledger_closed_ids().
+    ( cd "$ws"
+      git show HEAD:TODO.md > verified.md
+      print -rl -- "" "- [T-108] **Hard list deletion walks only the local replica.** VERIFIED 2026-09-05 from CXT-018." \
+                      "  Still open, still not started." \
+                      "" "- [T-109] *(RESOLVED 2026-09-05 — the premise was wrong.)* filed and withdrawn" \
+                      "  body" >> verified.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" e6 -m "$M" TODO.md=verified.md 2>&1 ); rc=$?
+    check "filing an OPEN entry whose first line says VERIFIED is accepted" $(( rc == 0 )) "exit $rc: $out"
+    # The edit that decides it, and it has to be to the entry's OWN FIRST LINE -- that is where a
+    # widened marker would have read a closure, and rewriting an open ticket's headline as it gets
+    # refined is the commonest ledger edit there is. Under `CLOSED` alone these two were never
+    # closed and nothing happens. Under `RESOLVED|VERIFIED` both were, and both just stopped being.
+    ( cd "$ws"
+      git show HEAD:TODO.md \
+        | sed -e 's/^- \[T-108\] .*/- [T-108] **Hard list deletion walks only the local replica.** Confirmed again 2026-09-05./' \
+              -e 's/^- \[T-109\] .*/- [T-109] **The premise was wrong, and here is the better description of why.**/' > verified2.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" e7 -m "$M" --removes 2 TODO.md=verified2.md 2>&1 ); rc=$?
+    check "and rewriting their first lines later is NOT read as reverting a closure (T-983)" \
+        $( [[ $rc == 0 && "$out" != *LEDGER-CLOSURE-LOST* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # The positive control: the same rewrite on an entry that IS marked closed still refuses, so
+    # the two checks above are narrowness and not a guard that has stopped working.
+    ( cd "$ws"
+      git show HEAD:TODO.md \
+        | sed 's/^- \[T-106\] \*\*CLOSED.*/- [T-106] **not shipped after all** back to the open text/' > unclose.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" e8 -m "$M" TODO.md=unclose.md 2>&1 ); rc=$?
+    check "while a genuinely CLOSED entry reverting to open text is still refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-CLOSURE-LOST*T-106* ]] && print 1 || print 0 ) "exit $rc: $out"
 
     say ""
     say " mode 4 (NO-PATHS / UNKNOWN-PATH / NOTHING-TO-COMMIT / NO-COAUTHOR-TRAILER / NOT-REPO-ROOT)"

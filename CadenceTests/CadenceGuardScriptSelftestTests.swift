@@ -53,9 +53,20 @@ struct CadenceGuardScriptSelftestTests {
     /// `DECLINED-HUNK-LOST` only fires on the next commit of that same path, so a record nobody
     /// ever revisits fired nothing at all — two of them sat outstanding for hours in one run,
     /// printed at the end of every commit and acted on by nobody.
+    /// `WORKTREE-BEHIND-HEAD` is T-982, and it is `worktree-drift.sh`'s refusal moved one step
+    /// earlier: that script gates the run that *reads* a drifted checkout, but drift is *created*
+    /// here, when a bare `<path>` stages a worktree copy behind HEAD and writes it into history,
+    /// where no drift check looks. Reproduced 2026-09-05: `REMOVES-HEAD-LINES` did fire on that
+    /// commit — and told the agent the number to type to get past it, after which a sibling's
+    /// landed line left HEAD. `DRIFT-CHECK-MISSING` and `DRIFT-CHECK-FAILED` are the other half:
+    /// a check that cannot run must refuse rather than pass, or the guard is decoration that
+    /// nobody had to edit to disable.
     static let commitHelperRefusals = [
         "FOREIGN-STAGED",
         "HEAD-MOVED",
+        "WORKTREE-BEHIND-HEAD",
+        "DRIFT-CHECK-MISSING",
+        "DRIFT-CHECK-FAILED",
         "SHARED-INDEX-DIRTY",
         "DECLINED-HUNK-LOST",
         "DECLINED-HUNK-STALE",

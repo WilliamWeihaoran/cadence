@@ -5,6 +5,7 @@
 #   ./scripts/worktree-drift.sh report     # the same reading, always exit 0
 #   ./scripts/worktree-drift.sh repair     # restore the stale COPIES from HEAD (never the edits)
 #   ./scripts/worktree-drift.sh ids <path> # the comm -23 on `- [T-n]` id sets, on its own
+#   ./scripts/worktree-drift.sh base <path> [<rev>]   # the reading for ONE path, machine-readable
 #   ./scripts/worktree-drift.sh selftest
 #
 # WHY THIS EXISTS
@@ -46,6 +47,49 @@
 #   * no R within the walk                         ->  cannot tell. The agent has deleted enough
 #     that no revision is contained; treated as in-flight, never refused. A guard that guesses
 #     here would refuse ordinary work, which is the one thing it must not do.
+#
+# WHERE THIS IS ASKED FROM
+#
+#   `xcb.sh test`         gates a whole tree before an integration run READS it (T-975).
+#   `agent-commit.sh`     asks `base <path> <sha>` about each bare `<path>` before it WRITES that
+#                         path into history (T-982). Detecting drift at the reader is the right
+#                         gate for reading, but drift is CREATED one step earlier: a bare `<path>`
+#                         whose copy is behind HEAD puts the stale bytes in a commit, and every
+#                         later reader inherits them from HEAD itself, where no drift check looks.
+#                         The `<path>=<content-file>` form is deliberately NOT checked there --
+#                         rebuilding on `git show HEAD:<path>` is the prescribed repair for this
+#                         very drift, and refusing the repair would be the worst outcome available.
+#
+# THE BLIND SPOT, AND WHY IT STAYS (T-984)
+#
+# A copy that is behind HEAD *and* has lines removed contains no revision of the path, so it reads
+# `cannot tell` and is never refused. That is the one shape this reading cannot see, and it cannot
+# be narrowed by looking harder at the content, because there is nothing there to look at:
+#
+#   Let V be an old revision and let HEAD be V plus one added line `a`. Let `d` be any line of V.
+#     the stale case  an agent holding V deletes d.              Worktree = V - {d}.
+#     the work case   an agent holding HEAD deletes a and d.     Worktree = V - {d}.
+#   The two worktrees are the same bytes. One must be refused and the other must not, and no
+#   function of the worktree and the history can separate them. Every "narrower" rule proposed for
+#   this bucket -- best-overlap ratio, longest contained prefix, thresholded containment -- is such
+#   a function, so each one either refuses the work case or passes the stale case.
+#
+# The only separating evidence is outside the content, and the obvious candidate does not work
+# either. File mtime older than the commit that last touched the path would be real evidence of a
+# copy written before that commit landed -- but the measured T-975 failure is an agent that
+# RECONSTRUCTS from the stale copy, writing a fresh file with stale bytes, so mtime is new and the
+# check is blind exactly where it was aimed. It also false-positives on the `git archive HEAD`
+# build trees the runbook tells agents to make. A guard that misses its own target case and fires
+# on the prescribed workflow is worse than the gap.
+#
+# So the bucket stays open, and the cost is bounded rather than unbounded, in both callers:
+#   * `report`/`check` now NAME the cannot-tell paths instead of calling them in-flight, so a
+#     reader sees which files nothing examined.
+#   * in `agent-commit.sh` this shape is, by construction, a commit that drops lines HEAD has --
+#     which is what REMOVES-HEAD-LINES already gates on a declared exact count. Being behind and
+#     carrying deletions is not un-guarded there; it is guarded by the count instead of by the
+#     diagnosis. Selftest mode 3(f) below pins the non-refusal so a later narrowing has to come
+#     here and argue with the paragraph above rather than quietly flip it.
 #
 # Two shapes of behind, and they are repaired differently, so they are named differently:
 #
@@ -96,6 +140,7 @@ fi
 usage() {
     say "usage: ./scripts/worktree-drift.sh check|report|repair|selftest"
     say "       ./scripts/worktree-drift.sh ids <path>"
+    say "       ./scripts/worktree-drift.sh base <path> [<rev>]   # one path, machine-readable"
 }
 
 # A line that is blank, or nothing but punctuation and braces, carries no meaning on its own: it
@@ -125,14 +170,89 @@ cmd_ids() {
     return 3
 }
 
-# --- the reading --------------------------------------------------------------
+# --- the reading, one path at a time -------------------------------------------
 #
-# Fills the parallel arrays `behind_paths` / `behind_kind` / `behind_detail`, plus `skipped`.
+# Factored out of the tree walk because there are two callers and they ask different questions
+# (T-982). `check` asks about a whole tree that is about to be READ from. `agent-commit.sh` asks
+# about ONE path that is about to be WRITTEN into history -- which is where drift is *created*,
+# one step before the gate that detects it. Both must be the same reading, so it is one function.
+#
+# Sets, for $1 at revision $2, using $3 as scratch:
+#
+#   state_verdict  matches | inflight | cannot-tell | behind | skip
+#   state_kind     "stale copy" | "stale base"           (behind only)
+#   state_base     the revision this copy is built on    (behind only)
+#   state_detail   a sentence; for skip, the reason
+#
+# `cannot-tell` used to be folded into `inflight`, and folding it there is still what it MEANS --
+# it is never refused. It is named separately because it is the check's one blind spot and a
+# reader deserves to see it rather than be told "in-flight" about a file nothing examined. See
+# THE BLIND SPOT below.
 
-typeset -ga behind_paths behind_kind behind_detail skipped inflight
+typeset -g state_verdict state_kind state_base state_detail
+
+read_path_state() {
+    local p=$1 headref=$2 scratch=$3
+    state_verdict=""; state_kind=""; state_base=""; state_detail=""
+    local headlabel="${headref[1,8]}"
+
+    git cat-file -e "$headref:$p" 2>/dev/null \
+        || { state_verdict=skip; state_detail="not in $headlabel -- nothing to be behind"; return 0 }
+    [[ -f "$p" ]] \
+        || { state_verdict=skip; state_detail="absent from the worktree -- a deletion in flight looks like this"; return 0 }
+    # `-` in either numstat column is git's own word for "binary".
+    if [[ "$(git diff --numstat "$headref" -- "$p" 2>/dev/null | awk '{print $1}')" == "-" ]]; then
+        state_verdict=skip; state_detail="binary"; return 0
+    fi
+
+    local wt_lines="$scratch/wt" head_lines="$scratch/head" rev_lines="$scratch/rev"
+    significant < "$p" > "$wt_lines"
+    git show "$headref:$p" | significant > "$head_lines"
+
+    # The cheap question first, and the one that answers almost every path: does this copy already
+    # contain everything HEAD has? Then it is built on HEAD and no walk is needed.
+    local missing_lines; missing_lines=$(comm -23 "$head_lines" "$wt_lines")
+    if [[ -z "$missing_lines" ]]; then
+        state_verdict=inflight; state_detail="contains every line $headlabel has"; return 0
+    fi
+
+    local newest rev base=""
+    newest=$(git rev-list -1 "$headref" -- "$p" 2>/dev/null)
+    for rev in ${(f)"$(git rev-list -n "$WALK_DEPTH" "$headref" -- "$p" 2>/dev/null)"}; do
+        [[ -n "$rev" ]] || continue
+        git show "$rev:$p" 2>/dev/null | significant > "$rev_lines"
+        [[ -s "$rev_lines" ]] || continue
+        if [[ -z "$(comm -23 "$rev_lines" "$wt_lines")" ]]; then base="$rev"; break; fi
+    done
+
+    if [[ -z "$base" ]]; then
+        state_verdict=cannot-tell
+        state_detail="no revision in the last $WALK_DEPTH on this path is wholly contained in it, so there is nothing to call it built on (T-984)"
+        return 0
+    fi
+    if [[ "$base" == "$newest" ]]; then
+        state_verdict=inflight; state_detail="built on ${newest[1,8]}, the newest revision of this path"; return 0
+    fi
+
+    state_verdict=behind; state_base="$base"
+    if [[ "$(git hash-object -- "$p")" == "$(git rev-parse "$base:$p" 2>/dev/null)" ]]; then
+        state_kind="stale copy"
+    else
+        state_kind="stale base"
+    fi
+    state_detail="built on ${base[1,8]} ($(git log -1 --format=%s "$base" 2>/dev/null | cut -c1-58)); $(git rev-list --count "$base..$headref" -- "$p" 2>/dev/null) commit(s) to this path since; $(print -r -- "$missing_lines" | grep -c .) line(s) $headlabel has are not in it"
+    return 0
+}
+
+# --- the reading, over a whole tree ---------------------------------------------
+#
+# Fills the parallel arrays `behind_paths` / `behind_kind` / `behind_detail`, plus `skipped`,
+# `inflight` and `cannot_tell`.
+
+typeset -ga behind_paths behind_kind behind_detail skipped inflight cannot_tell
 
 read_tree_state() {
-    behind_paths=(); behind_kind=(); behind_detail=(); skipped=(); inflight=()
+    behind_paths=(); behind_kind=(); behind_detail=(); skipped=(); inflight=(); cannot_tell=()
 
     local root
     root=$(git rev-parse --show-toplevel 2>/dev/null) || refuse NOT-REPO-ROOT "not inside a git checkout"
@@ -146,49 +266,16 @@ read_tree_state() {
     local -a changed
     changed=(${(f)"$(git diff --name-only HEAD 2>/dev/null)"})
 
-    local p wt_lines head_lines rev rev_lines base newest missing kind detail
+    local p
     for p in "${changed[@]}"; do
         [[ -n "$p" ]] || continue
-        git cat-file -e "HEAD:$p" 2>/dev/null || { skipped+=("$p (not in HEAD -- nothing to be behind)"); continue }
-        [[ -f "$p" ]] || { skipped+=("$p (absent from the worktree -- a deletion in flight looks like this)"); continue }
-        # `-` in either numstat column is git's own word for "binary".
-        if [[ "$(git diff --numstat HEAD -- "$p" 2>/dev/null | awk '{print $1}')" == "-" ]]; then
-            skipped+=("$p (binary)"); continue
-        fi
-
-        wt_lines="$scratch/wt"; significant < "$p" > "$wt_lines"
-        head_lines="$scratch/head"; git show "HEAD:$p" | significant > "$head_lines"
-
-        # The cheap question first, and the one that answers almost every path: does this copy
-        # already contain everything HEAD has? Then it is built on HEAD and no walk is needed.
-        if [[ -z "$(comm -23 "$head_lines" "$wt_lines")" ]]; then
-            inflight+=("$p"); continue
-        fi
-
-        newest=$(git rev-list -1 HEAD -- "$p" 2>/dev/null)
-        base=""
-        for rev in ${(f)"$(git rev-list -n "$WALK_DEPTH" HEAD -- "$p" 2>/dev/null)"}; do
-            [[ -n "$rev" ]] || continue
-            rev_lines="$scratch/rev"
-            git show "$rev:$p" 2>/dev/null | significant > "$rev_lines"
-            [[ -s "$rev_lines" ]] || continue
-            if [[ -z "$(comm -23 "$rev_lines" "$wt_lines")" ]]; then base="$rev"; break; fi
-        done
-
-        if [[ -z "$base" || "$base" == "$newest" ]]; then
-            # No revision is contained, or the newest one is: either way this is somebody's edit,
-            # and refusing it would be refusing ordinary work.
-            inflight+=("$p"); continue
-        fi
-
-        if [[ "$(git hash-object -- "$p")" == "$(git rev-parse "$base:$p" 2>/dev/null)" ]]; then
-            kind="stale copy"
-        else
-            kind="stale base"
-        fi
-        missing=$(comm -23 "$head_lines" "$wt_lines" | grep -c .)
-        detail="built on ${base[1,8]} ($(git log -1 --format=%s "$base" 2>/dev/null | cut -c1-58)); $(git rev-list --count "$base..HEAD" -- "$p" 2>/dev/null) commit(s) to this path since; $missing line(s) HEAD has are not in it"
-        behind_paths+=("$p"); behind_kind+=("$kind"); behind_detail+=("$detail")
+        read_path_state "$p" HEAD "$scratch"
+        case "$state_verdict" in
+            skip)        skipped+=("$p ($state_detail)") ;;
+            cannot-tell) cannot_tell+=("$p") ;;
+            behind)      behind_paths+=("$p"); behind_kind+=("$state_kind"); behind_detail+=("$state_detail") ;;
+            *)           inflight+=("$p") ;;
+        esac
     done
     rm -rf "$scratch"
 }
@@ -211,7 +298,38 @@ print_reading() {
         done
     fi
     (( ${#inflight} )) && say "in-flight edits (built on HEAD, left alone): ${(j:, :)inflight}"
+    if (( ${#cannot_tell} )); then
+        say "cannot tell, so treated as in-flight and NOT refused: ${(j:, :)cannot_tell}"
+        say "  These have lines removed as well as lines missing, so no revision of the path is"
+        say "  contained in them and there is nothing to call them built on. A deliberate deletion"
+        say "  and a stale copy with a deletion on top are the same bytes; see T-984 in this file."
+    fi
     (( ${#skipped} )) && { say "not compared:"; local s; for s in "${skipped[@]}"; do say "  $s"; done }
+    return 0
+}
+
+# The same reading about ONE path, against a caller-chosen revision, in a form a script can read.
+# `agent-commit.sh` needs both (T-982): one path, because it must refuse the path being committed
+# and not a sibling's unrelated drift; and a caller-chosen revision, because every check in that
+# script answers a question about the ONE sha it captured up front, and re-resolving `HEAD` here
+# would ask about a different commit than the guards either side of it (T-974).
+#
+# One tab-separated line on stdout -- verdict, kind, base, detail -- and exit 3 iff behind.
+cmd_base() {
+    (( $# )) || refuse BAD-OPTION "base needs a path"
+    local target=$1 headref=${2:-HEAD}
+    local root
+    root=$(git rev-parse --show-toplevel 2>/dev/null) || refuse NOT-REPO-ROOT "not inside a git checkout"
+    [[ "${PWD:A}" == "${root:A}" ]] || refuse NOT-REPO-ROOT "run from $root, not $PWD (paths are repo-relative)"
+    git rev-parse --verify "$headref" >/dev/null 2>&1 || refuse NO-HEAD "no such revision: $headref"
+    local scratch; scratch=$(mktemp -d "${TMP_BASE}cadence-drift-XXXXXX") || refuse SCRATCH "cannot make a scratch directory"
+    read_path_state "$target" "$headref" "$scratch"
+    rm -rf "$scratch"
+    # `printf`, not `print -r`: `print -r` does not interpret escapes, so `"a\tb"` emits the two
+    # characters `\` and `t` and every `cut -f2` downstream silently reads the whole line as
+    # field 1 -- a caller that then compares field 2 against "stale copy" gets a quiet no.
+    printf '%s\t%s\t%s\t%s\n' "$state_verdict" "${state_kind:--}" "${state_base:--}" "$state_detail"
+    [[ "$state_verdict" == behind ]] && return 3
     return 0
 }
 
@@ -384,6 +502,21 @@ cmd_selftest() {
     check "and it is named as not compared, rather than silently ignored" \
         $( [[ "$out" == *"not compared"* && "$out" == *ordered.txt* ]] && print 1 || print 0 ) "$out"
     ( cd "$ws" && git checkout -q HEAD -- ordered.txt )
+    # (f) T-984. THE BLIND SPOT, pinned deliberately. An old revision with a line deleted from it
+    #     contains no revision of the path, so there is nothing to call it built on and it is not
+    #     refused. This is not an oversight to be tightened later: the bytes below are ALSO what an
+    #     agent on HEAD produces by deleting the two lines HEAD added plus one more, and that agent
+    #     is doing ordinary work. Same file, two histories, opposite verdicts required -- see THE
+    #     BLIND SPOT at the top of this file before changing this check to a refusal.
+    ( cd "$ws" && git show HEAD^:code.swift | sed '1d' > code.swift )
+    out=$( cd "$ws" && zsh "$here" check 2>&1 ); rc=$?
+    check "an old revision WITH a deletion on top is not refused (T-984, deliberately)" $(( rc == 0 )) "exit $rc: $out"
+    check "and it is named as cannot-tell, not quietly called in-flight" \
+        $( [[ "$out" == *"cannot tell"*code.swift* && "$out" != *"in-flight edits"*code.swift* ]] && print 1 || print 0 ) "$out"
+    check "the refusal it would have got without the deletion is the control" \
+        $( [[ "$( cd "$ws" && git show HEAD^:code.swift > code.swift; zsh "$here" check 2>&1 )" == *WORKTREE-BEHIND-HEAD* ]] && print 1 || print 0 ) \
+        "the same copy without the deletion is not refused either, so mode 3f proves nothing"
+    ( cd "$ws" && git checkout -q HEAD -- code.swift )
 
     say ""
     say " mode 4 -- a STALE BASE (old revision plus local edits) is caught, and NOT auto-restored"
@@ -423,6 +556,34 @@ cmd_selftest() {
     check "and it passes once the copy is current" $(( rc == 0 )) "exit $rc: $out"
 
     say ""
+    say " mode 5b -- \`base <path> <rev>\` is the same reading for one path, in a form a script reads"
+    # T-982. This is what agent-commit.sh calls, so it has to answer about the path it was asked
+    # about and about the revision it was HANDED -- not about the tree, and not about whatever
+    # `HEAD` resolves to at the moment it runs, which is a different commit under four agents.
+    ( cd "$ws" && git show HEAD^:code.swift > code.swift )
+    out=$( cd "$ws" && zsh "$here" base code.swift "$( cd "$ws" && git rev-parse HEAD )" 2>&1 ); rc=$?
+    check "base reports a stale copy as behind, and exits 3" \
+        $( [[ $rc == 3 && "$out" == behind* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and names the kind in its second field" \
+        $( [[ "$(print -r -- "$out" | cut -f2)" == "stale copy" ]] && print 1 || print 0 ) "$out"
+    check "and the base revision in its third" \
+        $( [[ "$(print -r -- "$out" | cut -f3)" == "$( cd "$ws" && git rev-parse HEAD^ )" ]] && print 1 || print 0 ) "$out"
+    # The path it was NOT asked about must not leak in: ordered.txt is clean here, and a `base`
+    # that answered about the tree would have to say something about code.swift when asked about it.
+    out=$( cd "$ws" && zsh "$here" base ordered.txt 2>&1 ); rc=$?
+    check "a clean path is not behind even while another path in the tree is" \
+        $( [[ $rc == 0 && "$out" != behind* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # Handed the OLD revision, the same stale copy is current -- which is the whole reason the
+    # revision is a parameter rather than the string HEAD.
+    out=$( cd "$ws" && zsh "$here" base code.swift "$( cd "$ws" && git rev-parse HEAD^ )" 2>&1 ); rc=$?
+    check "and against the revision it IS, the same copy is not behind" \
+        $( [[ $rc == 0 && "$out" != behind* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" base 2>&1 ); rc=$?
+    check "base with no path is refused rather than answering about nothing" \
+        $( [[ $rc == 3 && "$out" == *BAD-OPTION* ]] && print 1 || print 0 ) "exit $rc: $out"
+    ( cd "$ws" && git checkout -q HEAD -- code.swift )
+
+    say ""
     say " mode 6 (NOT-REPO-ROOT) -- paths are repo-relative, so anywhere else is a wrong answer"
     out=$( cd "$ws/.." && zsh "$here" check 2>&1 ); rc=$?
     check "running from outside the checkout root is refused" \
@@ -445,6 +606,7 @@ cmd_selftest() {
 
 case "${1:-}" in
     check)    shift; cmd_check "$@"; exit $? ;;
+    base)     shift; cmd_base "$@"; exit $? ;;
     report)   shift; cmd_report "$@"; exit $? ;;
     repair)   shift; cmd_repair "$@"; exit $? ;;
     ids)      shift; cmd_ids "$@"; exit $? ;;
