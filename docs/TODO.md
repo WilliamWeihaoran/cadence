@@ -43,6 +43,24 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-992] **The `=` content file is never asked where it was built, and that is the commonest way
+  staleness propagates.** [[T-982]] deliberately checks only the bare form, on instruction: the `=`
+  reconstruction is the prescribed repair and refusing it would close the only way out. But
+  `worktree-drift.sh`'s own header names the real failure as *every agent that reconstructs a file
+  from the worktree instead of `git show HEAD:<path>`* — and that reconstruction arrives here as an
+  `=` content file. `read_path_state` takes a file path, so running it against the **content file**
+  rather than the worktree copy looks sound: a genuine rebuild-on-HEAD contains every line HEAD has
+  and reads `inflight`; a rebuild that also deletes lines reads `cannot-tell` and is not refused
+  either. The only shape refused would be "old revision plus edits", which is the bug. **Needs a
+  decision before code** — it is the one form the ticket said to leave alone.
+- [T-991] **`--commits-stale` lands a stale copy on purpose and leaves no trace.** Every other
+  deliberate override in `agent-commit.sh` that discards something leaves a record somebody has to
+  clear — a declined hunk writes to `$TMPDIR/cadence-declined-hunks` and `check` fails while it is
+  outstanding. `--commits-stale` writes nothing. So a batch cannot answer *did anyone knowingly
+  commit a copy behind HEAD, and on which path*, after the fact — which is the exact question all
+  four measured instances of [[T-975]] were found by asking. A record in the same ledger, or at
+  minimum the path and base sha in the commit trailer.
+
 - [T-981] **CLOSED 2026-09-05 (`0fbe7ecc`) — a closure could revert inside an intact id set.**
   `LEDGER-IDS-LOST` compares ids, not content, so an entry whose text changed from a closure back to
   the original open ticket lost no id and nothing refused. `LEDGER-CLOSURE-LOST` now refuses an id
@@ -59,16 +77,16 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   outright at `169d594d`, before [[T-679]]'s id guard existed. The drift [[T-975]] describes was
   real and 27 tickets were genuinely fixed-but-open; the *mechanism* was mostly closures **never
   written**, not closures reverted. Do not re-cite the 51.
-- [T-984] **A copy that is behind HEAD *and* has deletions reads as in-flight.**
+- [T-984] **CLOSED 2026-09-05 (`f72b1fd`).** **As a decision not to narrow.** A copy behind HEAD carrying deletions is byte-identical to an agent on HEAD who deleted the newer lines plus one more, so no function of the worktree and the history separates them; mtime, the only non-content candidate, is fresh on the very reconstruction it is aimed at. The construction is written into the script header. Those paths are now named `cannot tell` rather than folded into in-flight, and mode 3f pins the non-refusal so a later narrowing has to argue with the paragraph. **Filed as:** **A copy that is behind HEAD *and* has deletions reads as in-flight.**
   `scripts/worktree-drift.sh` finds the newest revision whose every non-trivial line the worktree
   still contains. A stale copy with lines removed contains no such revision, so it is reported as
   "cannot tell" and never refused. That is the safe direction — the alternative would refuse real
   work — but it is a real blind spot and the one shape the check cannot see.
-- [T-983] **The closure marker reads only `CLOSED`.** `LEDGER-CLOSURE-LOST` anchors on `CLOSED` on
+- [T-983] **CLOSED 2026-09-05 (`f72b1fd`).** **As a decision to leave it.** Over HEAD's 395 entries: 194 first lines say `CLOSED`, 4 say `RESOLVED`/`VERIFIED`, and **two of those four are open tickets** ([[T-623]], [[T-624]]) where VERIFIED means the finding was confirmed real -- the ledger uses the word in the opposite sense. Widening buys 2 true positives for 2 false refusals in the commit path, and there is no alternative convention to read: 118 Done entries carry no marker at all. Pinned by two mode-4d controls and a killed widening mutation. **Filed as:** **The closure marker reads only `CLOSED`.** `LEDGER-CLOSURE-LOST` anchors on `CLOSED` on
   an entry's own first line. `RESOLVED` and `VERIFIED` closures are invisible to it. Deliberately
   narrow: 16 open tickets mention the word in prose and a body-wide reading would mark them closed
   and refuse the next ordinary rewrite. Widening needs a marker convention, not a looser regex.
-- [T-982] **`agent-commit.sh` will still commit a worktree-form path that is behind HEAD.**
+- [T-982] **CLOSED 2026-09-05 (`f72b1fd`).** The drift check guarded where staleness is *detected*, not where it is *created*. `agent-commit.sh` now refuses a bare `<path>` built on a revision older than HEAD's, **before** its content guards run, through one shared `read_path_state`. **Reproduced first, and the reproduction changed the diagnosis:** the commit was already refused as `REMOVES-HEAD-LINES` -- and that refusal told the agent to type `--removes 1`, which was accepted and dropped a sibling's landed line. Being behind HEAD implies missing lines HEAD has, so the count always fired; it was a number the agent was invited to type. The `=` reconstruction form is deliberately unchecked ([[T-992]]); `--commits-stale <path>` is the per-path escape ([[T-991]]); `DRIFT-CHECK-MISSING`/`DRIFT-CHECK-FAILED` stop absence reading as a pass. **Filed as:** **`agent-commit.sh` will still commit a worktree-form path that is behind HEAD.**
   [[T-975]]'s check gates `xcb.sh test`, which is where drift is *detected*; it is **created** one
   step earlier, when an agent commits a stale worktree copy. The same check belongs in the commit
   path — refusing a bare `<path>` whose content is behind HEAD, while leaving the
@@ -83,7 +101,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the call in the heartbeat prompt itself, as step 2, ahead of batch work.** What remains is the
   runbook line so the next coordinator does the same; until then it is reachable only by memory.
 
-- [T-977] **`scripts/real-tree-sweep-manifest.sh selftest` is a check nothing runs.** [[T-873]] fixed the
+- [T-977] **CLOSED 2026-09-05 (`452c8037`).** Wired into `ci.yml`'s `macos-tests` job rather than into `CadenceGuardScriptSelftestTests` -- **checked first, and the established pattern would not have worked**: the sandboxed host cannot spawn what that selftest needs ([[T-959]]), so the in-target version would have been permanently red or permanently skipped. Reasoned, not measured: no hosted run was triggered. **Filed as:** **`scripts/real-tree-sweep-manifest.sh selftest` is a check nothing runs.** [[T-873]] fixed the
   regenerator and pinned the fix with a `selftest` subcommand that drives the script against a
   deliberately stale manifest and fails on an empty body — and no caller invokes it: it is not in
   `scripts/xcb.sh`'s preflight, not in `.github/workflows/ci.yml`, and not reachable from
@@ -208,7 +226,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   behaviourally needs the wrapper to forward a `commit:` closure to the shared helper, the way
   `CadenceFocusPlanningSupport.complete` already does. **That is a production signature change made
   for testability** — worth deciding deliberately rather than inside a coverage batch.
-- [T-882] **Correct the record on the seven-file coverage audit.** R24 in `docs/CODEX_REQUESTS.md`
+- [T-882] **CLOSED 2026-09-05 (`6afea7b`).** R24's table corrected in place: six of its seven files have dedicated behavioural suites. Its real value is preserved -- it pointed at files whose *covered* status hid live holes, and two were found and mutation-proved ([[T-879]], [[T-880]]). **Filed as:** **Correct the record on the seven-file coverage audit.** R24 in `docs/CODEX_REQUESTS.md`
   named seven shared files that iOS depends on and "neither macOS nor any test reaches". Measured by
   r2 on 2026-09-04: **six of the seven have dedicated behavioural suites** —
   `CadenceCapturePaletteSupport` alone has 115 mentions across 10 of its 11 types and a 967-line
@@ -294,7 +312,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `everyRealTreeSweepOnTheManifestStillExists`/`theRealTreeSweepManifestIsExactlyWhatTheScanFinds`
   (proving the T-808 manifest itself is untouched and still exact) alongside all four new tests.
 
-- [T-934] **`iOSTrackingColorGrid` still names its colour swatches by their hex value
+- [T-934] **CLOSED 2026-09-05 (`65860c6`).** Named by action -- the convention [[T-797]] established -- rather than by hex, which a screen reader cannot verify. **Filed as:** **`iOSTrackingColorGrid` still names its colour swatches by their hex value
   (`.accessibilityLabel("Color \(color)")`), the one holdout against the convention every other
   swatch grid in the tree already uses.** Found while closing [[T-797]]. `TagColorSwatches`
   (`SettingsTagsSection.swift`), `ListEditorColorStrip`, `iOSListColorSwatch`,
@@ -324,7 +342,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   instead), which is the same "parameter list to design" judgement call [[T-790]] declined for
   the search row, not a mechanical duplication removal.
 
-- [T-792] **A goal's linked-list and task-contributor rows now announce a normalised title;
+- [T-792] **CLOSED 2026-09-05 (`452c8037`).** `GoalLinkedListRow` and `GoalTaskContributorRow` drew `link.title`/`task.title` raw while their own `.accessibilityValue` already used the normalised title -- so an untitled row announced a placeholder and showed a blank line. Both now read the normalised value. **Filed as:** **A goal's linked-list and task-contributor rows now announce a normalised title;
   the visible `Text` beside them still reads it raw.** Found while landing [[T-673]] and
   deliberately left — fixing it would have been a copy change to a display the ticket was not
   about. `Views/GoalsSupportViews.swift`'s `GoalLinkedListRow` draws `Text(link.title)` and
@@ -401,7 +419,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   refused rule is still silent there, and a `Menu` has the same no-surface problem
   `iOSTaskMoveFailureAlertModifier` solves for the list move. The same alert would do it.
 
-- [T-739] **`#expect(x == 0.5 * 1.6)` fails where `#expect(x == retired * 1.6)` passes, for the same
+- [T-739] **CLOSED 2026-09-05 (`452c8037`).** The `AnyHashable` boxing mechanism moved from one suite's doc comment into `docs/SUBAGENT_RUNBOOK.md`, where any suite author reaches it. The trap is that both sides print the same number. **Filed as:** **`#expect(x == 0.5 * 1.6)` fails where `#expect(x == retired * 1.6)` passes, for the same
   numbers.** Measured 2026-09-03 while writing [[T-496]]'s suite, in `CadenceTests` on macOS:
   `#expect(adopted == 0.5 * 1.6)` recorded *"Expectation failed: (adopted → 0.8) == (0.5 * 1.6 →
   0.8)"* — both sides printing `0.8` — while `#expect(adopted == 0.4 * 2)` and `#expect(adopted ==
@@ -1778,7 +1796,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   once the map is supplied: 5 new checks, 54/54 passing, no `xcodebuild` needed since `classify_run`
   is pure and is exercised only against real log shapes.
 
-- [T-964] **`scripts/mutate.sh`'s new display-label resolution (T-786) silently drops a collision if
+- [T-964] **CLOSED 2026-09-05 (`452c8037`).** `mutate.sh`'s label to function reverse map silently kept one of a colliding pair. It now returns an explicit `INVALID`/`LABEL-MAP-COLLISION` verdict, with a selftest scenario and a non-collision control. **Filed as:** **`scripts/mutate.sh`'s new display-label resolution (T-786) silently drops a collision if
   two `@Test("...")` cases ever share the exact same display string.** `classify_run`'s
   `label_to_func = {label: func for func, label in labels.items() if label}` is a dict
   comprehension, so two functions with an identical display label leave only the *last* one
