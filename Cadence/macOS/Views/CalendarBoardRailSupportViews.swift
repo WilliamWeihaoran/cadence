@@ -125,7 +125,10 @@ struct CalendarBoardRailColumn: View {
                     .foregroundStyle(Theme.dim)
 
                 // Rotation is a render transform and leaves layout bounds alone, so the slot is
-                // stated rather than measured — see `collapsedRailLabelSlotHeight`.
+                // stated rather than measured — see `collapsedRailLabelSlotHeight`. The rotated
+                // footprint swaps the label's two dimensions: the slot's width is the text's line
+                // height, not its font's point size (T-729), and its height is the text's own width,
+                // bounded by `collapsedRailLabelSlotHeight`.
                 Text(rail.label)
                     .font(.system(size: CadenceBoardColumnHeaderMetrics.labelSize, weight: .semibold))
                     .kerning(CadenceBoardColumnHeaderMetrics.labelKerning)
@@ -133,7 +136,7 @@ struct CalendarBoardRailColumn: View {
                     .fixedSize()
                     .rotationEffect(.degrees(-90))
                     .frame(
-                        width: CadenceBoardColumnHeaderMetrics.labelSize,
+                        width: CadenceBoardColumnHeaderMetrics.labelLineHeight,
                         height: CadenceCalendarBoardLayout.collapsedRailLabelSlotHeight
                     )
 

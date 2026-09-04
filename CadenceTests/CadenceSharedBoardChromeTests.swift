@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import Cadence
@@ -1614,6 +1615,105 @@ struct CadenceUppercaseLabelTrackingTests {
         #expect(
             board.contains("CadenceCalendarWeekdayHeaderMetrics") == false,
             "the board header now cites the calendar too — the citation graph is no longer 4 of 6"
+        )
+    }
+}
+
+/// **T-728 and T-729.** Both live in the collapsed Calendar Board rail's rotated label, one comment
+/// above `CalendarBoardRailColumn.collapsedContent`'s `Text(rail.label)`.
+///
+/// **T-728: `UNSCHEDULED` measures 88pt against a 96pt `collapsedRailLabelSlotHeight` was prose,
+/// not a test.** `CadenceUppercaseLabelTrackingTests`' own doc comment above states the figure as
+/// the structural argument that adopting 0.08em tracking cannot overflow the collapsed rail — but
+/// nothing here compared the two numbers; a widened label or a shrunk slot could disagree with that
+/// sentence and every test in this file would still pass. `labelFitsTheCollapsedRailSlot` below
+/// measures every `CalendarBoardRail` label at the real font, weight and kerning
+/// `CalendarBoardRailColumn` draws it with, the same way the doc comment says it was checked once —
+/// by `NSAttributedString.size()` — and asserts the result against the slot, for every case rather
+/// than the two that happened to exist when the comment was written.
+///
+/// **T-729: the same view's `.frame` gave the rotated label's *width* the font's point size, not its
+/// line height.** Rotation swaps the label's two dimensions in the slot: the height it is framed to
+/// is the text's pre-rotation *width*, correctly bounded by `collapsedRailLabelSlotHeight`; the width
+/// it is framed to is the text's pre-rotation *height* — a line of type, not a point size — and
+/// `CadenceBoardColumnHeaderMetrics.labelSize` names the latter. A system font's line height is
+/// measurably taller than its point size, so the slot was narrower than the rotated glyphs need,
+/// which is the overhang the ticket describes as slight and reachable on any Calendar open with a
+/// collapsed rail. `CadenceBoardColumnHeaderMetrics.labelLineHeight` is the fix, read from the
+/// platform's own font metrics rather than approximated by a second literal; the tests below pin
+/// both that the call site reads it and that reading it is not a no-op rename of `labelSize`.
+struct CadenceCollapsedRailLabelSlotTests {
+    /// The body of `CalendarBoardRailColumn.collapsedContent`, comment-stripped once for every test
+    /// below rather than re-read per test.
+    private func collapsedContentBody() throws -> String {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarBoardRailSupportViews.swift")
+        )
+        #expect(source.count > 400, "read \(source.count) characters")
+        return try #require(
+            CadenceSourceScan.declarationBody("private var collapsedContent: some View", in: source),
+            "could not read collapsedContent's body"
+        )
+    }
+
+    /// **T-728.** The measurement the doc comment describes, run for real: every rail label, at the
+    /// font/kerning `collapsedContent` draws it with, against the slot it is framed to. A label that
+    /// grows past the slot fails here instead of only overhanging on screen.
+    @Test func labelFitsTheCollapsedRailSlot() {
+        let font = NSFont.systemFont(
+            ofSize: CadenceBoardColumnHeaderMetrics.labelSize,
+            weight: .semibold
+        )
+        for rail in CalendarBoardRail.allCases {
+            let attributed = NSAttributedString(
+                string: rail.label,
+                attributes: [
+                    .font: font,
+                    .kern: CadenceBoardColumnHeaderMetrics.labelKerning,
+                ]
+            )
+            let measuredWidth = attributed.size().width
+            #expect(
+                measuredWidth <= CadenceCalendarBoardLayout.collapsedRailLabelSlotHeight,
+                "\(rail.label) measures \(measuredWidth)pt, past the \(CadenceCalendarBoardLayout.collapsedRailLabelSlotHeight)pt slot"
+            )
+        }
+    }
+
+    /// **T-729, the call site.** A value-only pin cannot see which dimension a fifth rail label's
+    /// frame reads; this reads the source so a regression back to `labelSize` — or a rewrite that
+    /// drops the reference some other way — fails here rather than only on a screen with a collapsed
+    /// rail open.
+    @Test func collapsedLabelFrameReadsLineHeightNotPointSize() throws {
+        let body = try collapsedContentBody()
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceBoardColumnHeaderMetrics\.labelLineHeight"#, in: body) == 1,
+            "collapsedContent does not frame the rotated label's width with the line height exactly once"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"width:\s*CadenceBoardColumnHeaderMetrics\.labelSize"#, in: body) == 0,
+            "collapsedContent still frames the rotated label's width with the font's point size"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"height:\s*CadenceCalendarBoardLayout\.collapsedRailLabelSlotHeight"#,
+                in: body
+            ) == 1,
+            "collapsedContent's rotated-label frame no longer bounds its height with the stated slot"
+        )
+    }
+
+    /// **T-729, the derivation.** `labelLineHeight` has to be a real read of the platform's font
+    /// metrics rather than `labelSize` under a second name — a mutation that redefined it as
+    /// `labelSize` would still make the call-site test above pass, since the identifier used at the
+    /// call site would not have changed.
+    @Test func labelLineHeightIsARealMeasurementNotAnAliasForPointSize() {
+        #expect(CadenceBoardColumnHeaderMetrics.labelLineHeight > CadenceBoardColumnHeaderMetrics.labelSize)
+        #expect(
+            CadenceBoardColumnHeaderMetrics.labelLineHeight
+                == NSLayoutManager().defaultLineHeight(
+                    for: NSFont.systemFont(ofSize: CadenceBoardColumnHeaderMetrics.labelSize, weight: .semibold)
+                )
         )
     }
 }

@@ -1,5 +1,11 @@
 import SwiftUI
 
+#if canImport(AppKit)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
+
 /// Every measurement the one board-column header draws itself with.
 ///
 /// **There is deliberately no surface axis here**, which is the finding rather than an omission.
@@ -42,6 +48,32 @@ nonisolated struct CadenceBoardColumnHeaderMetrics: Sendable {
     /// what is shared and the size stays this file's to state — which is what makes the 9pt compact
     /// tier able to take the same ratio without taking the same tracking.
     static let labelKerning: CGFloat = labelSize * SectionEyebrowLabel.kerningRatio
+
+    /// The rendered height of one line of the label, at `labelSize`/semibold.
+    ///
+    /// **T-729.** `CalendarBoardRailColumn`'s collapsed rail rotates this label -90° and then states
+    /// an explicit `.frame` for it, because rotation is a render transform that leaves SwiftUI's own
+    /// layout bounds alone — the frame has to be told what the rotated footprint is rather than
+    /// measuring it. That footprint swaps the label's two pre-rotation dimensions: the slot's
+    /// *height* becomes the text's width, bounded by `CadenceCalendarBoardLayout
+    /// .collapsedRailLabelSlotHeight`, and its *width* becomes the text's own line height — not
+    /// `labelSize`, which is the font's point size and, for a system font, measurably shorter than
+    /// the line it sets. Reading the platform's own metrics is what keeps the two in step with each
+    /// other's system font without hand-tuning a second number to approximate it.
+    static var labelLineHeight: CGFloat {
+        let font = labelFont
+        #if canImport(AppKit)
+        return NSLayoutManager().defaultLineHeight(for: font)
+        #elseif canImport(UIKit)
+        return font.lineHeight
+        #endif
+    }
+
+    #if canImport(AppKit)
+    private static var labelFont: NSFont { NSFont.systemFont(ofSize: labelSize, weight: .semibold) }
+    #elseif canImport(UIKit)
+    private static var labelFont: UIFont { UIFont.systemFont(ofSize: labelSize, weight: .semibold) }
+    #endif
 
     /// The task/item count at the trailing edge.
     ///
