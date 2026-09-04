@@ -1135,6 +1135,24 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   hairline and a Retina hairline are genuinely different physical things, so do not assume they should
   match before checking.
 
+  **STOPPED HERE 2026-09-04, deliberately, rather than guessed.** Briefed to "match perceived
+  weight, derive the value per platform, pin the derivation" — a mechanism, not a target number —
+  and the number is the part still missing. Measured as opacity times line width (a rough
+  ink-per-line proxy, since neither platform varies only one axis): macOS's major/minor ladder is
+  0.36×0.95 / 0.30×0.85 = 0.342 / 0.255, a minor:major ratio of 0.746; iOS's is 0.46×0.5 / 0.20×0.5
+  = 0.230 / 0.100, a ratio of 0.435. Those two ratios are the actual disagreement — not the raw
+  numbers, which were never going to match given `iOSCalendarHairlineMetrics.width`'s own doc names
+  a real reason (a 2x/3x-screen hairline) macOS's 0.95/0.85 does not share.
+  Deriving iOS's opacities from macOS's by holding ink-per-line equal — `opacity_iOS =
+  (opacity_mac × width_mac) / width_iOS` — lands at 0.684 major / 0.510 minor, roughly double and
+  2.5× today's 0.46 / 0.20. That is exactly the kind of large, unverified swing this repo's own
+  filed text warns against ("do not assume they should match before checking"), and checking means
+  looking at a rendered screen, which this agent's brief does not authorize (no app launch, no
+  simulator). So the mechanism is scoped but the anchor is not: whoever closes this needs either a
+  rendered comparison to pick the target ratio, or an explicit number from the user the way T-675
+  got `0.35`. Filing it back rather than landing an arithmetic guess on a screen a user looks at
+  daily.
+
 - [T-623] **Hard list deletion walks only the local replica.** VERIFIED 2026-09-01 from CXT-018.
   **RE-SIZED AND RE-SEVERED 2026-09-03**, after both blocking claims were checked against source
   rather than inherited. The mechanism is real and unchanged. **The severity is lower than filed,
