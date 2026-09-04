@@ -163,17 +163,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   above the crossover, so today every filled block would take dark ink. Two arms of
   `whiteOnAnAccentFillFailsEveryHueWhileDarkInkClearsThemAll` already hold both halves of the
   measurement and go red the moment either stops being true.
-- [T-856] **The marker-highlight tokens are only legible because of an alpha declared in another
-  file.** `Theme.markerHighlightText` on `Theme.markerHighlightFill`, compared as the pair is
-  spelled, is **1.48:1**. It ships at 7.03:1 only because `MarkdownEditorLayoutManager.swift:135`
-  paints the fill at 0.38 alpha over `Theme.nsBg`. Nothing in `Theme` says so, so a second surface
-  that reasonably draws `markerHighlightText` on an opaque `markerHighlightFill` gets the 1.48 -
-  and the reuse has already started: `MarkdownTaskEmbedDrawingSupport.swift` takes
-  `highlightFillColor` as a chip tint at 0.13/0.22 alpha. The shipped path is pinned by
-  `theMarkerHighlightIsMeasuredAtTheAlphaTheEditorActuallyDrawsIt`, which reads the alpha out of the
-  drawing code and fails if it moves toward opaque; a *new* call site is not. Options: name the
-  composite as its own token so the legible pair is the spellable one, or extend the scan to every
-  read of `markerHighlightFill` and require an alpha at each.
 - [T-843] **"Block" has drifted back to "Bundle" in 11 live UI literals across 9 files.**
   `TaskBundle.defaultDisplayTitle` says Block and iOS block creation agrees, but Focus and macOS
   creation/edit/delete still say `Bundle`, `Bundle tasks`, `Bundle Focus`, `Log Bundle Session`,
@@ -1808,16 +1797,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   one showing nothing. Same shape as `CadenceInMemoryStoreHygieneTests` — the property is already
   true, and the test is what stops it quietly stopping.
 
-- [T-754] **41 more sites spell `Theme.radiusControl` (10) as the bare literal `cornerRadius: 10`,
-  plus one more named constant that does the same** (`kanbanColumnCornerRadius` in
-  `KanbanBoardSupport.swift`, sitting right next to the `kanbanCardCornerRadius` [[T-616]] just
-  converted). Found while sweeping [[T-616]]'s "7" — unlike that ticket, no naming decision is
-  needed here: `Theme.radiusControl` already exists and already means 10. This is a plain hoist, not
-  a "should this be a step in the scale" question, and it was left alone because converging 41 call
-  sites onto a shared token is its own review, not a rider on a "7" ticket. `Theme.radiusCard` (18)
-  and `Theme.radiusPanel` (22) were checked the same way and have **zero** bare-literal sites —
-  10 is the only tier still leaking.
-
 - [T-748] **An orphaned `acquire` still takes the lock with nobody left to run under it.**
   [[T-650]] made it wait its turn instead of jumping the queue, which is strictly better and not the
   fix: `pkill -f 'run-batch-<tag>.sh'` does not match the runner's `test-host-lock.sh acquire ...`
@@ -2021,6 +2000,29 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   already a second synced caller — so the sweep is worth having before one is added, not after.
 
 ## Done
+- [T-856] **CLOSED 2026-09-04 (`036f95cf`).** `Theme.markerHighlightFill` is no longer the raw
+  pen hue -- it is `markerHighlightAccent` pre-composited over `bg` at the alpha that used to live
+  only in `MarkdownEditorLayoutManager.swift`'s own `.withAlphaComponent(0.38)`, flattened to an
+  opaque colour via a new `Color.composited(over:)` helper. The raw hue moved to the new
+  `Theme.markerHighlightAccent`; `MarkdownEditorLayoutManager` paints the composite with a bare
+  `.setFill()`, and `MarkdownTaskEmbedDrawingSupport`'s two chip/priority call sites read the raw
+  accent through the new `highlightAccentColor` mirror so their tint stays pixel-identical.
+  `CadenceContrastFloorTests` measures `markerHighlightText` against the pre-composited fill
+  directly rather than reading an alpha out of the drawing code, and two new tests pin that the
+  layout manager applies no alpha of its own and that the task-embed chips keep reading the raw
+  accent rather than the composite.
+
+- [T-754] **CLOSED 2026-09-04 (`b0b2eefb`).** Re-measured before starting: 42 sites, not 42-as-
+  originally-counted -- 41 SwiftUI `cornerRadius: 10` call sites, one `NSBezierPath`
+  `xRadius`/`yRadius: 10` pair in `MarkdownEditorLayoutManager`'s code-block drawing, and the named
+  `kanbanColumnCornerRadius` constant in `KanbanBoardSupport.swift`. All now read
+  `Theme.radiusControl`. Two sites that spell a coincidental `10` are left alone, each reasoned
+  through and named as an exemption in the new sweep test: `TimelineMetrics.swift`'s
+  `TimelineBlockStyle.schedule` (paired with a deliberately-tuned sibling `.calendar` at `9`) and
+  `MarkdownEditorTextViewDecorations.swift`'s image-selection ring (one member of a concentric-inset
+  family: image at `8`, surface wash at `9`, ring at `8 + 2 = 10`). `CadenceRadiusControlSweepTests`
+  fails on any new bare `cornerRadius: 10` outside those two.
+
 - [T-771] **CLOSED 2026-09-04 (`1169e59a`).** Decided in favour of `CadenceSidebarLists.ungroupedTitle`
   ("Other") over the goal-attach surfaces' own `"No Context"` literal — same row, same rule, one
   spelling. `CreateGoalSheet`'s initial-linked-list picker and `GoalLinkCandidateGroup.title` (both
