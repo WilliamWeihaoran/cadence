@@ -37,10 +37,22 @@ struct CadenceGuardScriptSelftestTests {
     /// landed nowhere and HEAD stopped compiling. `LEDGER-IDS-LOST` and `REMOVES-HEAD-LINES` are the
     /// two the tool grew from its own first hours of use: a reconstruction built on a stale copy
     /// reverts a sibling's landed work, and inside a line count a lost ticket is invisible.
+    /// `HEAD-MOVED` is T-974, and it is the one that made the others conditional: every refusal
+    /// above answers a question about the HEAD it read, and the script used to read HEAD afresh at
+    /// each step and commit onto whichever HEAD existed last. A sibling landing in that window took
+    /// a ticket with it while `LEDGER-IDS-LOST` reported nothing — because it had been satisfied,
+    /// correctly, against a commit that was no longer HEAD.
+    /// `DECLINED-HUNK-STALE` and `DECLINED-HUNKS-OUTSTANDING` are T-781, the missing backstop:
+    /// `DECLINED-HUNK-LOST` only fires on the next commit of that same path, so a record nobody
+    /// ever revisits fired nothing at all — two of them sat outstanding for hours in one run,
+    /// printed at the end of every commit and acted on by nobody.
     static let commitHelperRefusals = [
         "FOREIGN-STAGED",
+        "HEAD-MOVED",
         "SHARED-INDEX-DIRTY",
         "DECLINED-HUNK-LOST",
+        "DECLINED-HUNK-STALE",
+        "DECLINED-HUNKS-OUTSTANDING",
         "LEDGER-IDS-LOST",
         "REMOVES-HEAD-LINES",
         "NO-PATHS",

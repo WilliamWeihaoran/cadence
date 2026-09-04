@@ -4,6 +4,8 @@
 #   ./scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]...
 #   ./scripts/agent-commit.sh <id> -F <message-file> <path>...
 #   ./scripts/agent-commit.sh status                    # outstanding declined-hunk records
+#   ./scripts/agent-commit.sh check                     # exit 3 while any record is outstanding
+#   ./scripts/agent-commit.sh accept <path>             # clear one record deliberately
 #   ./scripts/agent-commit.sh selftest                  # prove the refusals still fire
 #
 # WHY THIS EXISTS
@@ -50,6 +52,13 @@
 #   REMOVES-HEAD-LINES   the staged content drops lines HEAD has, and you did not say how many.
 #                        `--removes <exact count>` acknowledges them. A reconstruction built on a
 #                        stale HEAD reverts a sibling's landed work in exactly this shape.
+#   HEAD-MOVED           a sibling commit landed between the validation and the commit. Every check
+#                        above answers a question about ONE HEAD; committing onto a later one asks
+#                        nothing about the difference. Re-read HEAD and run it again.
+#   DECLINED-HUNK-STALE  a declined-hunk record has been outstanding longer than
+#                        $CADENCE_DECLINED_STALE_MINUTES (default 30). Not necessarily YOUR path:
+#                        a record nobody clears is a hunk in no commit, and printing it has
+#                        already failed twice. See T-781 below.
 #   SHARED-INDEX-DIRTY   the post-commit repair did not leave your paths clean (reported, not silent)
 #
 # PATH FORMS
@@ -64,9 +73,25 @@
 # difference is recorded in the declined-hunk ledger under $TMPDIR and reported at the end of every
 # run until some commit of that path accounts for it.
 #
-# WHAT IT CANNOT DO. If nobody ever commits that path again, no commit-time check fires. `status`
-# is the backstop: it lists every outstanding record, and a coordinator can read it before closing
-# a batch.
+# THE BACKSTOP, AND WHY IT IS NOT `status` (T-781)
+#
+# The check above fires on the NEXT commit of that path. If nobody ever commits that path again,
+# nothing fires at all -- and `status` only helps a coordinator who remembers to run it, which is
+# the same prose-shaped protection T-679 was filed about. Measured in one run: two declined records
+# sat outstanding for hours, printed at the end of every commit, and nobody acted on either.
+#
+# So there are two, and neither needs anyone to remember:
+#
+#   `check`  -- the explicit gate. Exits 3 while ANY record is outstanding, whatever its age. This
+#               is the batch-completion check: a batch with a hunk in no commit is not finished.
+#   DECLINED-HUNK-STALE -- the automatic one. Once a record is older than
+#               $CADENCE_DECLINED_STALE_MINUTES (default 30), the next commit by ANY agent in this
+#               checkout is refused until it is dealt with. Every agent commits, so this fires
+#               without a coordinator in the loop. Fresh records -- the ordinary in-flight case,
+#               minutes old -- block nothing.
+#
+# `accept <path>` clears one record out of band, for the case where the hunk really was abandoned
+# and the person clearing it is not the person committing that file.
 
 set -uo pipefail
 
@@ -93,7 +118,9 @@ fi
 usage() {
     say "usage: ./scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]..."
     say "       ./scripts/agent-commit.sh <id> -F <message-file> <path>..."
-    say "       ./scripts/agent-commit.sh status"
+    say "       ./scripts/agent-commit.sh status         # report outstanding declined hunks"
+    say "       ./scripts/agent-commit.sh check          # exit 3 while any is outstanding"
+    say "       ./scripts/agent-commit.sh accept <path>  # clear one deliberately"
     say "       ./scripts/agent-commit.sh selftest"
 }
 
@@ -133,6 +160,20 @@ ledger_ids() {  # $1 = file
 }
 is_ledger_path() { [[ "${1:t}" == "TODO.md" ]] }
 
+STALE_MINUTES="${CADENCE_DECLINED_STALE_MINUTES:-30}"
+
+# Age from the record's mtime, not from a field inside it: records written before this check
+# existed have no timestamp field, and treating "no field" as "age zero" would exempt exactly the
+# records that have been sitting longest.
+record_age_minutes() {  # $1 = record file
+    local mtime now
+    mtime=$(stat -f %m -- "$1" 2>/dev/null) || { print -r -- 0; return 0 }
+    now=$(date +%s)
+    print -r -- $(( (now - mtime) / 60 ))
+}
+
+outstanding_records() { print -rl -- "$LEDGER"/*.declined(N) }
+
 show_outstanding() {
     local any=0 record declined_path
     [[ -d "$LEDGER" ]] || return 0
@@ -154,12 +195,45 @@ show_outstanding() {
 
 cmd_status() {
     say "declined-hunk ledger: $LEDGER"
-    local before=$(print -rl -- "$LEDGER"/*.declined(N) | grep -c . )
+    local before=$(outstanding_records | grep -c . )
     if (( before == 0 )); then
         say "  (empty -- every declined hunk has been accounted for)"
     else
         show_outstanding
     fi
+}
+
+# The batch-completion gate. `status` reports; this one FAILS, which is the difference that makes
+# it usable from a heartbeat, a wrapper or a coordinator's closing step without anyone reading it.
+cmd_check() {
+    local -a records
+    records=("$LEDGER"/*.declined(N))
+    if (( ${#records} == 0 )); then
+        say "declined-hunk ledger is empty; every declined hunk is in a commit."
+        return 0
+    fi
+    show_outstanding
+    say ""
+    refuse DECLINED-HUNKS-OUTSTANDING "${#records} declined hunk record(s) are in no commit.
+  A batch does not close over one of these: the lines above were taken out of one agent's
+  reconstruction and never put into anyone's commit. Fold each into a commit of that path, or, if
+  it was abandoned deliberately, say so: ./scripts/agent-commit.sh accept <path>"
+}
+
+# Clearing a record out of band. `--accept-declined` only reaches a path THIS commit names, and the
+# agent who has to clear an abandoned hunk is usually not the one committing that file next.
+cmd_accept() {
+    (( $# )) || refuse BAD-OPTION "accept needs a path"
+    local target record
+    for target in "$@"; do
+        record="$LEDGER/$(ledger_key "$target").declined"
+        [[ -f "$record" ]] || refuse UNKNOWN-PATH "no declined-hunk record for $target
+  Outstanding records are: $(outstanding_records | sed 's|.*/||; s|\.declined$||' | tr '\n' ' ')"
+        say "cleared the declined-hunk record for $target (declined by $(sed -n 's/^# by: //p' "$record" | head -1) at $(sed -n 's/^# commit: //p' "$record" | head -1)):"
+        grep -v '^# ' "$record" | sed 's/^/    /'
+        rm -f "$record"
+    done
+    return 0
 }
 
 # --- commit -------------------------------------------------------------------
@@ -192,6 +266,17 @@ cmd_commit() {
     root=$(git rev-parse --show-toplevel 2>/dev/null) || refuse NOT-REPO-ROOT "not inside a git checkout"
     [[ "${PWD:A}" == "${root:A}" ]] || refuse NOT-REPO-ROOT "run from $root, not $PWD (paths are repo-relative)"
 
+    # THE SHA EVERY CHECK BELOW IS ABOUT (T-974). Read HEAD exactly once, here, and never write
+    # `HEAD` again in this function: `git cat-file -p HEAD:<path>` re-resolves the ref on every
+    # call, so with four agents committing at once the guards can be answered against one commit
+    # and the tree assembled from another. Measured 2026-09-04: a sibling landed in that window,
+    # `git rev-parse HEAD` just before commit-tree returned the SIBLING's sha, the compare-and-swap
+    # therefore compared the new head against itself and passed -- and the tree, built by
+    # `read-tree` at the old head, reverted the sibling's `docs/TODO.md` and took `T-935` with it.
+    # LEDGER-IDS-LOST had already run and been satisfied, against a HEAD that no longer existed.
+    local headsha
+    headsha=$(git rev-parse HEAD 2>/dev/null) || refuse NO-HEAD "no HEAD to commit onto"
+
     (( have_message )) || refuse NO-MESSAGE "pass -m <message> or -F <message-file>"
     (( ${#paths} )) || refuse NO-PATHS "name every path you are committing; a commit naming none is the bare \`git commit\` this replaces"
 
@@ -213,7 +298,7 @@ cmd_commit() {
         fi
         [[ -n "${source_of[$name]+x}" ]] && refuse BAD-OPTION "$name named twice"
         names+=("$name"); source_of[$name]="$src"
-        if [[ -z "$src" && ! -e "$name" ]] && ! git cat-file -e "HEAD:$name" 2>/dev/null; then
+        if [[ -z "$src" && ! -e "$name" ]] && ! git cat-file -e "$headsha:$name" 2>/dev/null; then
             refuse UNKNOWN-PATH "$name is in neither HEAD nor the worktree"
         fi
     done
@@ -223,17 +308,25 @@ cmd_commit() {
     local -a foreign
     foreign=()
     local staged
-    for staged in ${(f)"$(git diff --cached --name-only HEAD 2>/dev/null)"}; do
+    for staged in ${(f)"$(git diff --cached --name-only "$headsha" 2>/dev/null)"}; do
         [[ -n "$staged" ]] || continue
         [[ -n "${source_of[$staged]+x}" ]] || foreign+=("$staged")
     done
-    (( ${#foreign} )) && refuse FOREIGN-STAGED "the shared index holds paths you did not name: ${(j:, :)foreign}
+    if (( ${#foreign} )); then
+        # Ask the cheaper question first. A sibling that committed between the sha capture above and
+        # this diff has repaired the shared index against the NEW head, which reads as "changed"
+        # against ours -- so their landed paths would be reported as a foreign staged hunk: a true
+        # refusal with a false reason, sending the agent to `git reset` a sibling's committed work.
+        [[ "$(git rev-parse HEAD 2>/dev/null)" == "$headsha" ]] || refuse HEAD-MOVED "HEAD moved to $(git rev-parse --short HEAD 2>/dev/null) while this commit was starting; it was ${headsha[1,8]} a moment ago.
+  Nothing was committed. Run it again against the new HEAD."
+        refuse FOREIGN-STAGED "the shared index holds paths you did not name: ${(j:, :)foreign}
   Another agent staged them. Ask them to commit, or \`git reset -- <path>\` only what you are sure is yours."
+    fi
 
     local scratch
     scratch=$(mktemp -d "${TMP_BASE}cadence-agent-commit-${id}-XXXXXX") || refuse SCRATCH "cannot make a scratch directory"
     local priv="$scratch/index"
-    GIT_INDEX_FILE="$priv" git read-tree HEAD || { rm -rf "$scratch"; refuse READ-TREE "cannot read HEAD into a private index" }
+    GIT_INDEX_FILE="$priv" git read-tree "$headsha" || { rm -rf "$scratch"; refuse READ-TREE "cannot read HEAD into a private index" }
 
     # 2. Assemble the tree in the PRIVATE index. The shared one is never written.
     local blob mode headmode content
@@ -248,7 +341,7 @@ cmd_commit() {
             continue
         fi
         blob=$(git hash-object -w -- "$content") || { rm -rf "$scratch"; refuse HASH-OBJECT "cannot hash $content" }
-        headmode=$(git ls-tree HEAD -- "$name" | awk '{print $1}')
+        headmode=$(git ls-tree "$headsha" -- "$name" | awk '{print $1}')
         mode="${headmode:-100644}"
         [[ -z "$headmode" && -x "$content" ]] && mode=100755
         GIT_INDEX_FILE="$priv" git update-index --add --cacheinfo "$mode,$blob,$name" || { rm -rf "$scratch"; refuse UPDATE-INDEX "cannot stage $name" }
@@ -259,20 +352,26 @@ cmd_commit() {
     # 3. A declined hunk that this commit does not carry either is stranded, and that is the Batch M
     #    failure that stopped HEAD compiling. Refuse unless it is in HEAD or in what you are staging.
     local record key acceptp lost
+    local -a clear_on_success
+    clear_on_success=()
     for name in "${names[@]}"; do
         key=$(ledger_key "$name"); record="$LEDGER/$key.declined"
         [[ -f "$record" ]] || continue
         acceptp=0
         for spec in "${accepted[@]}"; do [[ "$spec" == "$name" ]] && acceptp=1; done
         if (( acceptp )); then
-            rm -f "$record"
-            say "note: cleared the declined-hunk record for $name at your request (--accept-declined)"
+            # NOT `rm -f` here. Every refusal from this point on -- REMOVES-HEAD-LINES,
+            # LEDGER-IDS-LOST, and since T-974 HEAD-MOVED, which a racing agent will hit and then
+            # retry -- ends with nothing committed. Deleting the record before the commit lands
+            # means the retry runs with the protection already spent.
+            clear_on_success+=("$record")
+            say "note: will clear the declined-hunk record for $name at your request (--accept-declined)"
             continue
         fi
         local haystack="$scratch/$key.haystack"
         : > "$haystack"
         [[ -n "${staged_content[$name]+x}" ]] && cat "${staged_content[$name]}" >> "$haystack"
-        git cat-file -p "HEAD:$name" >> "$haystack" 2>/dev/null
+        git cat-file -p "$headsha:$name" >> "$haystack" 2>/dev/null
         lost=$(grep -v '^# ' "$record" | grep -F -x -v -f "$haystack" 2>/dev/null)
         if [[ -n "$lost" ]]; then
             rm -rf "$scratch"
@@ -280,8 +379,35 @@ cmd_commit() {
 $(print -r -- "$lost" | sed 's/^/    /')
   Fold them in, or clear the record deliberately with --accept-declined $name."
         fi
-        rm -f "$record"
+        clear_on_success+=("$record")
     done
+
+    # 3c. T-781. A record for a path this commit does NOT name fires no check at all -- the guard
+    #     above is per-path and only on the next commit of that path. Two records survived a whole
+    #     run that way, printed at the end of every commit and acted on by nobody. So a record that
+    #     has outlived a plausible in-flight edit stops the checkout instead of being reported into
+    #     it. Fresh ones block nothing; this is not a serialisation.
+    local -a stale
+    stale=()
+    for record in "$LEDGER"/*.declined(N); do
+        local skip=0 c
+        for c in "${clear_on_success[@]}"; do [[ "$c" == "$record" ]] && skip=1; done
+        (( skip )) && continue
+        (( $(record_age_minutes "$record") >= STALE_MINUTES )) || continue
+        # Quote the lines, not just the path. "shared.txt has an outstanding record" is a thing to
+        # look up; the lines are the thing to act on, and whoever reads this refusal is usually not
+        # the agent that declined them.
+        stale+=("$(sed -n 's/^# path: //p' "$record" | head -1) (declined by $(sed -n 's/^# by: //p' "$record" | head -1) at $(sed -n 's/^# commit: //p' "$record" | head -1), $(record_age_minutes "$record")m ago)"
+                "$(grep -v '^# ' "$record" | sed 's/^/  | /')")
+    done
+    if (( ${#stale} )); then
+        rm -rf "$scratch"
+        refuse DECLINED-HUNK-STALE "a declined hunk has been in no commit for over ${STALE_MINUTES} minute(s):
+$(print -rl -- "${stale[@]}" | sed 's/^/    /')
+  It is not necessarily yours, and that is the point: nothing else in this checkout will ever
+  notice it. Commit that path with the lines folded in, or -- if the hunk was abandoned on purpose
+  -- clear it: ./scripts/agent-commit.sh accept <path>"
+    fi
 
     # 3a. A ledger entry HEAD has and your staged content does not is a LOST TICKET, and it hides
     #     inside any line count large enough to be worth reading past. Name the ids, not the lines.
@@ -290,9 +416,9 @@ $(print -r -- "$lost" | sed 's/^/    /')
     for name in "${names[@]}"; do
         is_ledger_path "$name" || continue
         [[ -n "${staged_content[$name]+x}" ]] || continue
-        git cat-file -e "HEAD:$name" 2>/dev/null || continue
+        git cat-file -e "$headsha:$name" 2>/dev/null || continue
         local ledger_head="$scratch/$(ledger_key "$name").ledgerhead"
-        git cat-file -p "HEAD:$name" > "$ledger_head"
+        git cat-file -p "$headsha:$name" > "$ledger_head"
         local gone
         gone=$(comm -23 <(ledger_ids "$ledger_head") <(ledger_ids "${staged_content[$name]}"))
         [[ -n "$gone" ]] || continue
@@ -319,9 +445,9 @@ $(print -r -- "$lost" | sed 's/^/    /')
     removed_report=()
     local total_removed=0 removed
     for name in "${names[@]}"; do
-        git cat-file -e "HEAD:$name" 2>/dev/null || continue
+        git cat-file -e "$headsha:$name" 2>/dev/null || continue
         local head_blob="$scratch/$(ledger_key "$name").head"
-        git cat-file -p "HEAD:$name" > "$head_blob"
+        git cat-file -p "$headsha:$name" > "$head_blob"
         if [[ -n "${staged_content[$name]+x}" ]]; then
             removed=$(grep -F -x -v -f "${staged_content[$name]}" -- "$head_blob" 2>/dev/null | grep -c .)
         else
@@ -339,17 +465,33 @@ $(print -r -- "$lost" | sed 's/^/    /')
     fi
 
     # 4. Commit the private index by plumbing: no hook, no editor, and the shared index untouched.
-    local tree headsha newsha
+    local tree newsha
     tree=$(GIT_INDEX_FILE="$priv" git write-tree) || { rm -rf "$scratch"; refuse WRITE-TREE "cannot write the tree" }
-    headsha=$(git rev-parse HEAD) || { rm -rf "$scratch"; refuse NO-HEAD "no HEAD to commit onto" }
-    if [[ "$tree" == "$(git rev-parse "HEAD^{tree}")" ]]; then
+    if [[ "$tree" == "$(git rev-parse "$headsha^{tree}")" ]]; then
         rm -rf "$scratch"
         refuse NOTHING-TO-COMMIT "the tree you assembled is HEAD's tree; nothing you named differs"
+    fi
+    # The compare-and-swap. `git update-ref <ref> <new> <old>` refuses unless the ref is still
+    # <old>, and <old> is the sha the checks above were answered against -- which is the whole
+    # point. Checking it beforehand instead would leave a window of its own; only the swap is
+    # atomic. Refuse first, though, so the common case does not leave a dangling commit object.
+    local nowsha; nowsha=$(git rev-parse HEAD 2>/dev/null)
+    if [[ "$nowsha" != "$headsha" ]]; then
+        rm -rf "$scratch"
+        refuse HEAD-MOVED "HEAD was ${headsha[1,8]} when these checks ran and is ${nowsha[1,8]} now.
+  A sibling committed while this one was validating. Committing anyway would parent your tree on a
+  commit nothing checked, reverting whatever they landed in the paths you named -- that is how
+  T-935 was lost on 2026-09-04. Nothing was committed. Re-read \`git show HEAD:<path>\`, rebuild
+  any reconstruction on the new HEAD, and run this again."
     fi
     newsha=$(print -r -- "$message" | git commit-tree "$tree" -p "$headsha") || { rm -rf "$scratch"; refuse COMMIT-TREE "cannot write the commit" }
     local subject
     subject=$(print -r -- "$message" | head -1)
-    git update-ref -m "commit: $subject" HEAD "$newsha" "$headsha" || { rm -rf "$scratch"; refuse UPDATE-REF "HEAD moved under us; nothing was committed" }
+    git update-ref -m "commit: $subject" HEAD "$newsha" "$headsha" || { rm -rf "$scratch"; refuse HEAD-MOVED "HEAD moved between the check and the swap; nothing was committed. Run it again." }
+
+    # The commit has landed, so the records this commit accounted for can go. Not before: see the
+    # note in step 3.
+    (( ${#clear_on_success} )) && rm -f "${clear_on_success[@]}"
 
     # 5. Record what a reconstruction declined, now that there is a commit sha to name.
     local wt declined
@@ -590,6 +732,194 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "running from outside the checkout root is refused" \
         $( [[ $rc == 3 && "$out" == *NOT-REPO-ROOT* ]] && print 1 || print 0 ) "exit $rc: $out"
 
+    say ""
+    say " mode 5 (HEAD-MOVED) -- validating against one HEAD and committing onto another"
+    # T-974, measured 2026-09-04. Every check above read `HEAD` at the moment it ran, and `headsha`
+    # was captured LATER, just before commit-tree. A sibling landing in that window moved HEAD, so
+    # the compare-and-swap compared the NEW head against itself and passed -- while the tree came
+    # from a `read-tree` of the OLD head, silently reverting every path the sibling had just
+    # committed. That is how u3's commit dropped a sibling's `T-935` while declaring no dropped id:
+    # LEDGER-IDS-LOST had already run, correctly, against a HEAD that no longer existed.
+    #
+    # Landing a commit at a chosen instant inside another process needs that process to run our
+    # code at that instant. A `git` shim on PATH is the obvious way and it does NOT work here: the
+    # macOS test host is App-Sandboxed, and a sandboxed process is not allowed to EXECUTE a file it
+    # just wrote into its own container -- so zsh silently skipped the shim, found the real git
+    # further down PATH, and the mode passed nothing while looking fine. Measured 2026-09-04; the
+    # `.raced` control below is the only reason it was not a green vacuum.
+    #
+    # So intercept in-process instead. zsh SOURCES $ZDOTDIR/.zshenv for every non-`-f` invocation,
+    # and a shell function named `git` shadows the PATH lookup. Reading a file is not executing
+    # one, so the sandbox permits it, and the interception happens inside the very process being
+    # tested rather than beside it.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    print -r -- "$M" > "$ws/sibmsg"
+    mkdir -p "$ws/zdot"
+    print -rl -- \
+        'git() {' \
+        '  if [[ "$1" == write-tree && -n "$CADENCE_RACE_WS" && ! -e "$CADENCE_RACE_WS/.raced" ]]; then' \
+        '    : > "$CADENCE_RACE_WS/.raced"' \
+        '    ( cd "$CADENCE_RACE_WS" || exit 1' \
+        '      unset GIT_INDEX_FILE' \
+        '      command git show HEAD:TODO.md > TODO.md' \
+        "      print -rl -- '' '- [T-935] the sibling ticket' '  body' >> TODO.md" \
+        '      idx="$CADENCE_RACE_WS/sibling-index"' \
+        '      GIT_INDEX_FILE=$idx command git read-tree HEAD' \
+        '      b=$(command git hash-object -w -- TODO.md)' \
+        '      GIT_INDEX_FILE=$idx command git update-index --add --cacheinfo "100644,$b,TODO.md"' \
+        '      t=$(GIT_INDEX_FILE=$idx command git write-tree)' \
+        '      c=$(command git commit-tree "$t" -p HEAD -F "$CADENCE_RACE_WS/sibmsg")' \
+        '      command git update-ref HEAD "$c"' \
+        '      command git rev-parse HEAD > "$CADENCE_RACE_WS/.sibsha"' \
+        '    ) >/dev/null 2>&1' \
+        '  fi' \
+        '  command git "$@"' \
+        '}' > "$ws/zdot/.zshenv"
+    ( cd "$ws" && print -r -- "the racing agent's own line" >> mine.txt )
+    out=$( cd "$ws" && ZDOTDIR="$ws/zdot" CADENCE_RACE_WS="$ws" zsh "$here" r1 -m "$M" mine.txt 2>&1 ); rc=$?
+    check "the sibling really did land a commit inside the validation window" \
+        $( [[ -e "$ws/.raced" ]] && print 1 || print 0 ) \
+        "the interception never fired, so this whole mode proves nothing"
+    check "HEAD moving under the validation is refused" \
+        $( [[ $rc == 3 && "$out" == *HEAD-MOVED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "the sibling's ledger entry is still in HEAD" \
+        $( [[ $( cd "$ws" && git show HEAD:TODO.md ) == *"T-935"* ]] && print 1 || print 0 ) \
+        "$( cd "$ws" && git log --oneline )"
+    check "and nothing of the racing agent's own change landed" \
+        $( [[ $( cd "$ws" && git show HEAD:mine.txt ) != *"racing agent"* ]] && print 1 || print 0 )
+    # Not "HEAD's parent is where we started": a commit parented on the STALE head orphans the
+    # sibling entirely and satisfies that reading. HEAD has to BE the sibling's commit.
+    check "HEAD is exactly the sibling's commit" \
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$(<$ws/.sibsha)" ]] && print 1 || print 0 ) \
+        "$( cd "$ws" && git log --oneline )"
+
+    # The rude sibling above skipped agent-commit.sh's shared-index repair; put the fixture back to
+    # where a well-behaved one would leave it, or every later mode reads FOREIGN-STAGED.
+    ( cd "$ws" && git reset -q ) >/dev/null 2>&1
+
+    # 5b. The same race one step earlier: between reading the sha and the FOREIGN-STAGED diff. The
+    # sibling's own shared-index repair leaves their paths matching the NEW head, so diffing the
+    # index against OUR sha reports their landed work as somebody's foreign staged hunk -- a refusal
+    # with a reason that sends the next agent to `git reset` a commit.
+    print -rl -- \
+        'git() {' \
+        '  if [[ "$1" == rev-parse && "$2" == HEAD && $# -eq 2 && -n "$CADENCE_RACE_WS" && ! -e "$CADENCE_RACE_WS/.raced" ]]; then' \
+        '    local _out _rc' \
+        '    _out=$(command git "$@"); _rc=$?' \
+        '    : > "$CADENCE_RACE_WS/.raced"' \
+        '    ( cd "$CADENCE_RACE_WS" || exit 1' \
+        '      unset GIT_INDEX_FILE' \
+        '      command git show HEAD:theirs.txt > theirs.txt' \
+        "      print -r -- 'the sibling landed this' >> theirs.txt" \
+        '      idx="$CADENCE_RACE_WS/sibling-index"' \
+        '      GIT_INDEX_FILE=$idx command git read-tree HEAD' \
+        '      b=$(command git hash-object -w -- theirs.txt)' \
+        '      GIT_INDEX_FILE=$idx command git update-index --add --cacheinfo "100644,$b,theirs.txt"' \
+        '      t=$(GIT_INDEX_FILE=$idx command git write-tree)' \
+        '      c=$(command git commit-tree "$t" -p HEAD -F "$CADENCE_RACE_WS/sibmsg")' \
+        '      command git update-ref HEAD "$c"' \
+        '      command git reset -q -- theirs.txt' \
+        '    ) >/dev/null 2>&1' \
+        '    print -r -- "$_out"; return $_rc' \
+        '  fi' \
+        '  command git "$@"' \
+        '}' > "$ws/zdot/.zshenv"
+    rm -f "$ws/.raced"
+    ( cd "$ws" && print -r -- "another line of the racing agent's" >> mine.txt )
+    out=$( cd "$ws" && ZDOTDIR="$ws/zdot" CADENCE_RACE_WS="$ws" zsh "$here" r2 -m "$M" mine.txt 2>&1 ); rc=$?
+    check "the earlier race really happened too" \
+        $( [[ -e "$ws/.raced" ]] && print 1 || print 0 ) "the interception never fired"
+    check "it is refused as HEAD-MOVED, not as the sibling's foreign staged hunk" \
+        $( [[ $rc == 3 && "$out" == *HEAD-MOVED* && "$out" != *FOREIGN-STAGED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the sibling's commit is untouched" \
+        $( [[ $( cd "$ws" && git show HEAD:theirs.txt ) == *"the sibling landed this"* ]] && print 1 || print 0 )
+
+    # Fixture housekeeping, not a finding: the interception above is a deliberately RUDE sibling -- it
+    # moves HEAD by plumbing and skips the shared-index repair a real agent-commit.sh run does at
+    # step 6. So the fixture's shared index is left holding the pre-race TODO.md blob, which every
+    # later mode would read as FOREIGN-STAGED. Put it back to where a well-behaved sibling would.
+    ( cd "$ws" && git reset -q ) >/dev/null 2>&1
+
+    say ""
+    say " mode 6 (DECLINED-HUNK-STALE / DECLINED-HUNKS-OUTSTANDING) -- a record nobody clears must"
+    say "         stop something, and \`check\` must be able to fail"
+    # T-781. The DECLINED-HUNK-LOST guard is per-path and fires on the NEXT commit of that path.
+    # A record for a path nobody touches again fires nothing, and `status` only helps someone who
+    # remembers to run it. Two records survived a whole run exactly that way. So: an aged record
+    # refuses the next commit by ANY agent, and `check` fails while any record is outstanding.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws"
+      git show HEAD:shared.txt > shared.txt
+      print -r -- "an abandoned in-flight line" >> shared.txt
+      git show HEAD:shared.txt > recon6.txt
+      print -r -- "agent six's own line" >> recon6.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" s6 -m "$M" shared.txt=recon6.txt 2>&1 ); rc=$?
+    check "a record exists to age" \
+        $( [[ $rc == 0 && -n $(print -rl -- "$CADENCE_DECLINED_LEDGER"/*.declined(N)) ]] && print 1 || print 0 ) "exit $rc: $out"
+    # Fresh: an unrelated commit must sail straight through. A guard that blocks the ordinary
+    # in-flight case would just be a serialisation of the batch.
+    ( cd "$ws" && print -r -- "unrelated one" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" s6 -m "$M" mine.txt 2>&1 ); rc=$?
+    check "a FRESH record blocks an unrelated commit not at all" $(( rc == 0 )) "exit $rc: $out"
+    # Aged: the same unrelated commit is refused, and the refusal names the path that is stuck.
+    local aged; aged=$(print -rl -- "$CADENCE_DECLINED_LEDGER"/*.declined(N) | head -1)
+    touch -t $(date -v-90M +%Y%m%d%H%M) "$aged"
+    ( cd "$ws" && print -r -- "unrelated two" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" s7 -m "$M" mine.txt 2>&1 ); rc=$?
+    check "an AGED record refuses a commit of a path it has nothing to do with" \
+        $( [[ $rc == 3 && "$out" == *DECLINED-HUNK-STALE* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and it names the stuck path and the line" \
+        $( [[ "$out" == *shared.txt* && "$out" == *"abandoned in-flight line"* ]] && print 1 || print 0 ) "$out"
+    check "nothing of the refused commit landed" \
+        $( [[ $( cd "$ws" && git show HEAD:mine.txt ) != *"unrelated two"* ]] && print 1 || print 0 )
+    out=$( cd "$ws" && zsh "$here" check 2>&1 ); rc=$?
+    check "check exits non-zero while a record is outstanding" \
+        $( [[ $rc == 3 && "$out" == *DECLINED-HUNKS-OUTSTANDING* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" accept nosuch.txt 2>&1 ); rc=$?
+    check "accept refuses a path with no record" \
+        $( [[ $rc == 3 && "$out" == *UNKNOWN-PATH* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" accept shared.txt 2>&1 ); rc=$?
+    check "accept clears the record deliberately" \
+        $( [[ $rc == 0 && -z $(print -rl -- "$CADENCE_DECLINED_LEDGER"/*.declined(N)) ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and it quotes what it threw away" \
+        $( [[ "$out" == *"abandoned in-flight line"* ]] && print 1 || print 0 ) "$out"
+    out=$( cd "$ws" && zsh "$here" check 2>&1 ); rc=$?
+    check "check passes once the ledger is empty" $(( rc == 0 )) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" s8 -m "$M" mine.txt 2>&1 ); rc=$?
+    check "and the unrelated commit goes through again" $(( rc == 0 )) "exit $rc: $out"
+
+    say ""
+    say " mode 7 -- a REFUSED commit must not spend the declined-hunk record it was going to clear"
+    # The record used to be deleted while the checks were still running, so any refusal after that
+    # point -- REMOVES-HEAD-LINES, LEDGER-IDS-LOST, and since T-974 HEAD-MOVED, which a racing
+    # agent hits and then RETRIES -- left the retry running with the protection already spent.
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    ( cd "$ws"
+      git show HEAD:shared.txt > shared.txt
+      print -r -- "mode7 in-flight line" >> shared.txt
+      git show HEAD:shared.txt > recon7.txt
+      print -r -- "mode7 owner line" >> recon7.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" s9 -m "$M" shared.txt=recon7.txt 2>&1 ); rc=$?
+    check "a record is written for mode 7" \
+        $( [[ $rc == 0 && -n $(print -rl -- "$CADENCE_DECLINED_LEDGER"/*.declined(N)) ]] && print 1 || print 0 ) "exit $rc: $out"
+    # Folds the declined line back in (so DECLINED-HUNK-LOST is satisfied and the record is queued
+    # for clearing) but also drops a line HEAD has, so the commit is refused after that point.
+    ( cd "$ws"
+      git show HEAD:shared.txt | sed '1d' > refused7.txt
+      print -r -- "mode7 in-flight line" >> refused7.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" sa -m "$M" shared.txt=refused7.txt 2>&1 ); rc=$?
+    check "the commit is refused for removing a line HEAD has" \
+        $( [[ $rc == 3 && "$out" == *REMOVES-HEAD-LINES* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the record it would have cleared is STILL THERE" \
+        $( [[ -n $(print -rl -- "$CADENCE_DECLINED_LEDGER"/*.declined(N)) ]] && print 1 || print 0 ) \
+        "the refused commit consumed the record; the retry would drop the hunk unprotected"
+    # The proof that it still protects: dropping the declined line is refused, exactly as before.
+    ( cd "$ws" && git show HEAD:shared.txt > drop7.txt && print -r -- "sb's line" >> drop7.txt )
+    out=$( cd "$ws" && zsh "$here" sb -m "$M" shared.txt=drop7.txt 2>&1 ); rc=$?
+    check "so dropping the declined hunk is still refused after the failed commit" \
+        $( [[ $rc == 3 && "$out" == *DECLINED-HUNK-LOST*"mode7 in-flight line"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+
     rm -rf "$ws"
     say ""
     # A tally derived from the checks that actually ran. A selftest gutted to `return 0` still exits
@@ -609,6 +939,8 @@ if (( $# == 0 )); then usage; exit 2; fi
 case "$1" in
     selftest) shift; cmd_selftest "$@"; exit $? ;;
     status)   shift; cmd_status "$@"; exit $? ;;
+    check)    shift; cmd_check "$@"; exit $? ;;
+    accept)   shift; cmd_accept "$@"; exit $? ;;
     -h|--help) usage; exit 0 ;;
 esac
 if (( $# < 2 )); then usage; exit 2; fi
