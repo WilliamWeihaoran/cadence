@@ -1570,24 +1570,23 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the decision the codebase already made.
 
 - [T-704] **[[T-560]]'s leak was cleaned and its mechanism closed, but never reproduced — so it is not
-  known to be fixed.** Two instrumented runs on 2026-09-02 (21 tests, 19 of them building and saving
-  through an in-memory `ModelContainer` in the *unfixed* shape, plus a third of 40 tests after the fix)
-  created zero `<app container>/tmp/<UUID>/inMemory_store_ckAssets` directories. **The leak is not
-  dormant, though — it just never fires on the run doing the measuring.** 34 directories appeared
-  between 18:23 and 19:15 on 2026-09-02, *after* the residue was purged, in two identical cycles of
-  3 / 10 / 4 spaced 41 minutes apart: the signature of another agent re-running a fixed trio of suites,
-  one directory per test. Not correlated with UI-test activity (`CadenceUITestStores` was busy
-  17:35-18:16 and again from 20:14, the leak fell entirely between them).
-  So something gates whether CloudKit mirroring initialises — an iCloud or network state, a
-  `NSPersistentCloudKitContainer` setup path taken only sometimes, or simply a tree that predates
-  `b31d0b9` — and it is not established. **The measurement is one line:**
-  `ls -1 ~/Library/Containers/com.haoranwei.Cadence/Data/tmp | wc -l` before and after a run.
-  The decisive observation is cheap and someone will make it for free: once `b31d0b9` is in every
-  agent's archive tree, that trio either stops leaking or it does not. If the count climbs again with
-  `CadenceTestStore` everywhere, the cause is somewhere other than `cloudKitDatabase` and
-  `CadenceInMemoryStoreHygieneTests` is guarding the wrong thing — **and the 3 / 10 / 4 burst sizes are
-  the best lead there is**, because they name the suites: find the three whose test counts are 3, 10
-  and 4 in the tree that leaked.
+  known to be fixed.** **Closed 2026-09-05.** Two earlier instrumented runs on 2026-09-02 (21 tests,
+  19 of them building and saving through an in-memory `ModelContainer` in the *unfixed* shape, plus a
+  third of 40 tests after the fix) created zero `<app container>/tmp/<UUID>/inMemory_store_ckAssets`
+  directories, leaving genuine doubt about whether `cloudKitDatabase` was the real gate.
+  **Reproduced this time, both directions, back to back on the same machine:** `CadenceTestStoreSupport.swift`'s
+  one line reverted to the unfixed spelling (`ModelConfiguration(isStoredInMemoryOnly: true)`, no
+  `cloudKitDatabase: .none`) in a scratch `git archive HEAD` tree, then the *entire* `CadenceTests`
+  target run through it rather than a 21-test slice — 4384 tests. Container tmp held 9 entries and
+  zero `inMemory_store_ckAssets` directories before; 26 entries and **17**, all empty, after, every one
+  timestamped inside the run's own window. Purged those 17, then ran the unmodified (fixed) tree
+  through the identical `-only-testing:CadenceTests` invocation immediately after: 4391 tests, and the
+  container held its original 9 entries and zero `inMemory_store_ckAssets` afterward. Same machine,
+  same test-host, run back to back within the hour -- the only variable was the one line. The earlier
+  nulls were not a false negative about the mechanism; they were too small a sample; a batch of 21
+  apparently is not enough to reliably trip whatever inside SwiftData's CloudKit mirroring setup takes
+  more than that to initialise, and 4384 reliably is. `cloudKitDatabase: .none` is confirmed as the
+  fix, not merely the last thing changed before the residue stopped appearing.
 
 - [T-705] **Nothing prunes an orphaned shared-DerivedData entry, and the judgement [[T-517]] said no
   script should make unattended is now mechanical.** **Closed 2026-09-04 in `d04c0d33`.** T-517
