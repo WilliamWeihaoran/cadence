@@ -379,18 +379,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `scripts/xcb.sh` print outstanding records at the end of every run, so the listing lands in front
   of whoever is already looking at a build log.
 
-- [T-782] **An App-Sandboxed test host cannot run the `/usr/bin` developer shims, and nothing says
-  so.** Measured 2026-09-03 while wiring [[T-719]]: `Cadence.app` is sandboxed, so a `Process` spawned
-  from `CadenceTests` inherits the sandbox, and there `/usr/bin/git` and `/usr/bin/python3` — both
-  xcrun shims — fail with *"xcrun: error: cannot be used within an App Sandbox"*, exit 1, nothing on
-  stdout. Separately, zsh writes here-document temp files to `$TMPPREFIX`, which **zsh itself sets to
-  `/tmp/zsh` at startup** (so it is never empty and a `[[ -z $TMPPREFIX ]]` guard never fires); the
-  sandbox denies that write and the script dies with `can't create temp file for here document`
-  before its first line runs. Both are fixed inside `scripts/mutate.sh` and `scripts/agent-commit.sh`
-  and both are in `docs/SUBAGENT_RUNBOOK.md`, but nothing stops the next script a test shells out to
-  from repeating either. `/bin/echo` runs fine, so a naive "can I spawn at all?" probe says yes and
-  proves nothing.
-
 - [T-720] **`TaskRecurrenceRule.shortLabel` is a copy of `label` with one arm changed.**
   `Cadence/Models/ModelEnums.swift` — `label` returns Never/Daily/Weekly/Monthly/Yearly and `shortLabel`
   returns None/Daily/Weekly/Monthly/Yearly. Four of the five arms are byte-identical, so four strings are
@@ -445,86 +433,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the sweep in either direction; the ticket owns both halves. Found by [[T-555]]; both live sites
   are ledgered in `cadenceStaticFuncConstantLedger`.
 
-
-- [T-689] **The Goals screen says "No goals yet" when every goal is completed.** Both surfaces draw
-  `CadenceEmptyStateCopy.goalsTitle(isNarrowed: false)` whenever the active count is zero, so a user
-  with five finished goals and none in flight reads "No goals yet". [[T-541]] made the detail pane
-  agree with the list rather than contradict it, so the two panes now say this together — the
-  inaccuracy is one sentence, not a disagreement. `isNarrowed: true` ("No matching goals") is not
-  the fix either: the Goals page carries no search field and no status picker, so there is no filter
-  to try differently. It needs a third case for "every goal is done", which is a copy decision of
-  the same shape as `activeListsSubtitle(hasArchived:)`.
-  **CLOSED 2026-09-03 (`663bc13`) — re-measured first, and the premise had narrowed: macOS already
-  said "No matching goals"** (`GoalStatusFilter` defaults to `.active`, and `narrowsResults` is true
-  for everything but `.all`), so only `iOSFeatureViews.iOSGoalsView` still had the defect.
-  `CadenceEmptyStateCopy.goalsTitle` gained `allComplete: Bool = false` (default keeps the Mac's two
-  call sites untouched); the Goals empty state moved from a `static let` to a computed `var` reading
-  this instance's own `goals`/`activeGoals`, and now reads the user-decided title **"All goals
-  complete"** with subtitle "Nothing in flight. Add another when you're ready." exactly when `goals`
-  is non-empty and `activeGoals` is not. Checked the one open question — whether macOS's `.all`
-  filter shares the defect — and it does not: `.all` matches every `GoalStatus`, so a done goal
-  still renders as a row under it instead of being hidden, and the empty branch is unreachable with
-  goals present. 4 tests updated/added in `CadenceEmptyStateAuditTests`; 2 mutations, both killed.
-
-- [T-690] **A paused or cancelled project reaches no Settings lifecycle section, so it cannot be
-  reopened or deleted there.** `SettingsView.swift` and `iOSSettingsView.swift` both hand
-  `SettingsListsSection`/`iOSListsLifecycleSettingsSection` exactly four groups —
-  `filter(\.isDone)` and `filter(\.isArchived)` for areas and projects — while `ProjectStatus` has
-  five cases. `.paused` and `.cancelled` projects are excluded from every active surface by
-  `filter(\.isActive)` and from Settings → Lists by these four filters, leaving search as the only
-  way to reach one. Found while adding [[T-557]]'s dormant-link card, which *does* list all four
-  inactive states because it reads `CadenceListSearchLifecycle`. Same file, same family:
-  `SettingsListManagementSections.lifecycleCard` spells `statusLabel: area.isDone ? "Completed" :
-  "Archived"` inline — the exact collapse `CadenceListSearchLifecycle` was written to end, and it
-  would label a cancelled project "Archived" the moment one reached the card.
-  **CLOSED 2026-09-03 (`663bc13`).** `CadenceListLifecycleSectionCopy` gained `pausedProjects`
-  ("Paused Projects") and `cancelledProjects` ("Cancelled Projects"), in the same
-  `"<status> <plural noun>"` voice the existing six use, read off `CadenceListSearchLifecycle`. Both
-  `SettingsListsSection` (macOS) and `iOSListsLifecycleSettingsSection` (iOS) gained the matching
-  groups and now filter projects by `.status == .paused` / `.status == .cancelled`. The project row's
-  inline `project.isDone ? "Completed" : "Archived"` collapse is gone, replaced by
-  `CadenceListSearchSupport.lifecycle(of: project).statusLabel` — the mapping this ticket named as
-  already existing — and `primaryLabel` moved from `isDone ? "Reopen" : "Unarchive"` to
-  `isArchived ? "Unarchive" : "Reopen"` for the same reason: a done/paused/cancelled project is not
-  being "unarchived". **Did not build [[T-703]]'s composer**: kept eight plain literals rather than
-  a `sectionTitle(_:of:)` function, because an interpolated title (`"\(status) \(noun)"`) is
-  invisible to `cadenceSharedStringConstants` by construction — exactly the protection [[T-546]]
-  exists for — and a composer built from finished-string `switch` cases would only trade eight named,
-  self-documenting constants for one function with the same eight branches while inviting invalid
-  pairs the current per-type design can't express (there is no `.paused` `Context`, no `.cancelled`
-  `Area`). Left as recorded prose in `CadenceSettingsSectionCopy.swift` and the test suite rather than
-  half-building it. 2 tests updated (renamed to reflect sixteen call sites, not twelve), 1 new
-  assertion added; 3 mutations, all killed.
-
-- [T-777] **T-694's Calendar pane still owed its offer title** (see below). **CLOSED 2026-09-03
-  (`663bc13`), same commit as T-690** — handed off mid-run once T-694's Notifications half landed
-  and needed `SettingsListManagementSections.swift`. `CadenceCalendarSettingsCopy.accessRequiredTitle`
-  ("Calendar access required") is retired; `connectOfferTitle` ("Connect Apple Calendar") takes its
-  place in the not-denied branch on both `SettingsListManagementSections.calendarAccessCard` (macOS)
-  and `iOSCalendarSettingsSection` (iOS), moved together in one change as
-  `bothCalendarSettingsSurfacesReadEveryConvergedCalendarString` requires. `accessDeniedTitle`
-  ("Calendar access denied") is untouched. New test
-  `theCalendarAccessCardDrawsOneTitlePerStateOnBothSurfaces` mirrors T-694's Notifications one, with
-  a regex rather than a literal `.contains` because the Mac wraps the ternary onto three lines where
-  the phone keeps it on one. 2 mutations, both killed.
-
-- [T-691] **The broken-calendar-link row draws no title for an unnamed list.**
-  `CadenceCalendarLinkHealth.missingLinks` passes `area.name` / `project.name` straight into
-  `CadenceMissingCalendarLink.name`, so an untitled area's row is a blank line above its summary —
-  the [[T-577]] class. [[T-557]]'s `dormantLinks` passes
-  `CadenceTitleNormalization.display(_:fallback:)` instead, so the two rows in the same settings
-  section now differ in a way that is deliberate on one side and an oversight on the other.
-  **Not a duplicate of the [[T-609]] sweep**: that one hunts the inline
-  `x.isEmpty ? "Untitled" : x` ternary, and this site has no fallback at all — there is no ternary
-  for a sweep of that shape to see.
-  **CLOSED 2026-09-03 (`4cbd2fd`).** `missingLink` now reads
-  `CadenceTitleNormalization.display(_:fallback:)` for both the area and the project name, the
-  same call `dormantLinks` already made — an unnamed active list's broken-link row draws
-  "Untitled Area"/"Untitled Project" instead of a blank line. Reproduced through T-624's evidence
-  gate (`observedCalendarIDs` containing the dead identifier), so the failing-first test exercises
-  the actual guarded path rather than a shortcut around it. Pinned by
-  `CadenceCalendarLinkHealthTests.anUnnamedActiveListsBrokenLinkRowStillHasSomethingToPutOnIt`;
-  2 mutations (area site, project site), 2 killed.
 
 - [T-447] *(narrowed 2026-08-30: both landings reviewed. T-281 is a faithful but visually inert extraction — the two headers were already byte-identical before it. T-283's renames are correct and complete. Defects found and filed separately as [[T-492]] and [[T-493]]. Predicate two is effectively answered off-device already: the commit outcome is covered in `CadenceEventKitPlatformParityTests` and its position by `theEventSheetKeepsItsCommitNoticeInsideTheHeader` — only the pixel is left. Predicate one is narrowed by `nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader`: **nothing in `Cadence/` writes that environment key**, so only SwiftUI's own re-derivation inside NavigationStack -> HStack -> .frame remains device-only. That residue belongs with T-55 / T-280.)*
   *(**PREDICATE TWO SETTLED 2026-09-02, observed; PREDICATE ONE CANNOT BE POSED AS WRITTEN.**
@@ -854,6 +762,10 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   off and the fixed patterns must become `setLocalizedDateFormatFromTemplate` or `Date.FormatStyle`,
   because idiomatic zh is `8月24日` rather than a translated `MMMM d`.
 
+  **DEFERRED -- v1 SCOPE (2026-09-04).** User decision: v1 ships English-only. This is a
+  deliberate scope cut, not an overlooked finding -- do not re-file the string-count or
+  localisation-readiness measurements above as a new ticket.
+
 - [T-274] **Importing a Cadence archive.** [[T-19]] shipped the export and deliberately stopped
   there: an unverified restore is worse than none, because it invites the user to trust it.
   `CadenceDataExportService.decode` already returns a `CadenceArchive`, and
@@ -1025,49 +937,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   picker-surface file set are derived from the tree now. Mutation A is the evidence: pre-filtering at a
   macOS call site kills **only** the new sweep while all four pinning tests stay green. **Recorded as a
   closed investigation so the abstraction is not proposed again without new evidence.**
-
-- [T-562] *(RESOLVED 2026-08-31 — **this ticket's premise was wrong, and the wrong half was mine.**
-  Not a regression, not a never-worked, and not a sidebar defect at all. `testLaunchesToTodayWithSeededSidebarLists`
-  **passes about 4 runs in 5**: 5 runs measured (working tree @5ae916a pass 7.4s; isolated `git archive HEAD`
-  pass 7.1s, FAIL 15.9s, pass 5.8s). The one failure was at `CadenceUITests.swift:74` —
-  `wait(for: .runningForeground, timeout: 10)` inside `launchApp` — so the app never reached the
-  foreground and no sidebar query was ever made. The originating run's xcresult shows the same thing:
-  `CadenceUITestsLaunchTests` **also** failed, at its identical foreground wait, and both tests ran
-  3-5x slower than normal. That exonerates the seeder, the sidebar data path and the identifier.
-  **All three hypotheses killed, H2 by direct measurement:** a 0.3s process poller caught the launch —
-  pid 98099 was `…/Build/Products/Debug/Cadence.app/Contents/MacOS/Cadence` (confirmed via `lsof` txt)
-  carrying the test env vars. XCUITest launches the freshly built debug app, **not**
-  `/Applications/Cadence.app`. The identical-bundle-id hazard does not apply to this target.
-  H1 died to archaeology: the row's accessibility chain is byte-identical from `2d3a82f` (where the
-  test and the identifier were both introduced) to HEAD.
-  **Root cause was process, not code, and it was the orchestrator's:** the originating run was a bare
-  `xcodebuild`, which takes **no test-host lock**, while another agent's hosts were live. `scripts/xcb.sh`
-  acquires the lock (`xcb.sh:183`); bare `xcodebuild` does not. Standing rule now: **run UI tests as
-  `scripts/xcb.sh <id> test -only-testing:CadenceUITests`.** Superseded by [[T-563]] for the residual flake.)*
-  ~~**The first-ever UI test run fails: no seeded sidebar list is visible.**~~ Measured 2026-08-31,
-  immediately after the user granted the macOS automation authorisation that [[T-531]] was blocked on.
-  `Testing started` now reaches real tests, so the gate is open and T-531's blocker is cleared.
-  `testLaunchesToTodayWithSeededSidebarLists` finds `sidebar.destination.today` but then fails at
-  `CadenceUITests.swift:23` after five retries over 5s waiting for `sidebar.list.area.alpha-area`.
-  The other two UI tests skipped (they need `CADENCE_RUN_INTERACTIVE_UI_TESTS=1`).
-  **Do not assume this is a regression.** `CadenceUITests.swift` was last touched in `0dc7d3a`, long
-  before batches 1-10, and the target has been dark that entire time -- so this test may never have
-  passed. Establish that first; "it never worked" and "we broke it" need different fixes.
-  What is already ruled out: the identifier is derived, not typed
-  (`SidebarSupportViews.swift:353` builds `sidebar.list.\(kind.accessibilityFragment).\(slug(label))`,
-  and "Alpha Area" slugs to `alpha-area`); there is no `DisclosureGroup`/collapsed section around the
-  row; the seeder inserts all three lists under a context and does `try? modelContext.save()`
-  (`CadenceUITestSupport.swift:29-44`); `prepareAppState` is wired at `macOSRootView.swift:102`.
-  **Leading hypothesis, and it is cheap to test: the identical bundle id.** `/Applications/Cadence.app`
-  is `com.haoranwei.Cadence` **build 16** -- the same id XCUITest launches ("Open com.haoranwei.Cadence").
-  The runner may be attaching to the user's installed release app instead of the freshly built debug
-  one. Confirm which binary actually launched before theorising further.
-  Second hypothesis: the lists are seeded but never reach the sidebar's data source -- adjacent to
-  [[T-558]] and [[T-559]], though note these seeded lists *do* have a context, so it is not the
-  context-less path those tickets describe.
-  Safety, already checked: the user's real store was NOT written -- `~/Library/Containers/com.haoranwei.Cadence/`
-  Application Support is still dated 2026-08-19, untouched by the run. The per-run
-  `CADENCE_UI_TEST_STORE_ID` isolation held. Keep it that way.
 
 - [T-710] **The seeded sidebar rows are sometimes not there 5s after launch, and nobody has timed them.**
   Found while measuring [[T-563]], and it is the *only* thing left in `CadenceUITests` that is
@@ -1407,66 +1276,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `CadenceFocusLedger.reconcile(in:)` puts the counter back once it lands. Still a defect — the
   reset still throws away the seconds the user is watching — but no longer an unrecoverable one.
 
-- [T-651] **CLOSED 2026-09-03 (`34c0f4e`).** Three of the four sites now commit.
-  `KanbanCardMetaSupportViews.swift`'s `KanbanTagPickerPopover.body` and
-  `MarkdownEditorView.createInlineTag` both called `TagSupport.resolveTags` from an ambient
-  `ModelContext` and committed nothing; both now go through
-  `TagSupport.committedTag(named:in:commit:)`. `createInlineTag`'s *report* half — the swallowed
-  save followed by `return .tag(tag)`, the suggestion the editor writes into the note — needed a
-  second change: its remaining in-place edit (un-archiving the tag, bumping `updatedAt`) now goes
-  through `CadencePendingChangePersistence.commitEdit(in:undo:)` instead of a bare `try?`, so
-  nothing in the function swallows a commit at all. `CadenceNotePlanningSupport.update` is the
-  third — it now calls a new `TagSupport.syncNoteTagsFromMarkdownCommittingInsertions`
-  (`Cadence/Shared/CadenceInlineTagCreation.swift`) instead of the raw `syncNoteTagsFromMarkdown`;
-  `update`'s signature is unchanged, so none of its nine callers moved.
-  **The fourth, `NoteEditorPane.noteTagsBinding`/`.persistEditorContentIfNeeded`, is untouched, as
-  directed** — it inserts rows on the debounced-autosave path, and the T-497 caret decision
-  ("the edit is in-place on an object the store already holds, so there is nothing to un-insert")
-  does not cover an insert. `NoteEditorPane.body`'s own, differently-attributed exemption (it
-  reaches the same `syncNoteTagsFromMarkdown`, pinned by
-  `CadenceInlineTagCommitSurfaceTests.theNoteEditorPanesBodyExemptionIsTheTagSyncNotASubtask`) was
-  never one of the four named sites and is also untouched.
-  Mutations M1–M3 (`scripts/mutate.sh`) reverted each of the three fixes in turn; all three were
-  KILLED by `CadenceSaveCommitDisciplineTests` (`noSwallowedSaveCommitsAnInsertOrADelete` /
-  `noSwallowedSaveIsFollowedByADismissOrACompletionHandler`).
-  **Residue**: [[T-762]] — the `NoteEditorPane` debounced-autosave undo question this ticket left
-  open on purpose.
-
-- [T-653] **CLOSED 2026-09-03 (`34c0f4e`).** Re-measured before acting, nine batches on: all three
-  claims still held. `seedDefaultTags` still has no launch caller —
-  `PersistenceController.performStartupMaintenance` still says so in its own comment, and
-  `CadenceFirstLaunchEmptyStoreTests` still holds it there. Its four callers are still exactly
-  `SettingsTagsSection`, `iOSSettingsTagsSection` (`iOSTagsSettingsSection`), `TagPickerSupportViews`
-  (`TagPickerPlaceholderRow`) and `iOSTaskDetailComponents` (`iOSTaskTagPickerPopover`).
-  `deduplicateTags`'s only app caller is still `seedDefaultTags`, passing `save: false`.
-  All four buttons now call a new `TagSupport.seedDefaultTagsCommitting(in:commit:)`
-  (`Cadence/Shared/CadenceInlineTagCreation.swift`), which runs `seedDefaultTags(saveChanges: false)`
-  and commits the whole cascade — the insert **and** the dedup merge's delete, together — through
-  `CadencePendingChangePersistence.commitDelete(in:commit:)`, so a refusal rolls both back rather
-  than leaving a half-seeded, half-merged table. Each button shows the refusal inline
-  (`CadenceInlineFailureNotice`), the way `SettingsTagsSection.createTag` already does for the
-  sibling action beside it.
-  The `existenceExemptions["Cadence/Services/TagSupport.swift"]` comment no longer calls
-  `seedDefaultTags`/`deduplicateTags` "launch-time maintenance with no user watching and nothing to
-  report to" — that stopped being true when [[T-528]] removed the launch caller. It now says the two
-  raw declarations stay exempt because they are still handed a `ModelContext` whose caller commits,
-  and names `seedDefaultTagsCommitting` as that caller.
-  `syncAllNoteTagsFromMarkdown`'s entry and rationale are untouched — `PersistenceController` still
-  passes `saveChanges: false` and only `CadenceMCPStorePreparation.prepare` (the MCP boundary) lets
-  it save.
-  Two new behavioural tests in `TagSupportTests` pin the wrapper directly. The rollback one caught
-  itself first: a mutation removing `commitDelete`'s rollback **survived** the initial version of
-  `arefusedSeedCommitRollsBackBothTheInsertAndTheMerge`, because reading a second context cannot
-  tell "rolled back" from "never reached the store" apart — both look identical from outside the
-  context that held the refused change. Fixed to save the same context again after the refusal,
-  which is what an unrelated autosave would do; that version was KILLED (M5) as intended.
-  `CadenceFirstLaunchEmptyStoreTests.seedCallOffsets` now keys on
-  `TagSupport.seedDefaultTagsCommitting(` rather than the raw name; its four-file caller list is
-  unchanged. Mutations M4–M6 (`scripts/mutate.sh`): M4 reverted one button to the raw seed call and
-  was KILLED by `noUnpromptedCodePathSeedsTheDefaultTags`'s caller-list assertion; M5 and M6 broke
-  the wrapper's rollback and its commit respectively and were both KILLED by the two new
-  `TagSupportTests`.
-
 - [T-762] **`NoteEditorPane`'s debounced-autosave tag writes are still the one open piece of
   [[T-651]]'s family, left there on purpose.** `noteTagsBinding`'s `Binding<[Tag]>` setter and
   `.persistEditorContentIfNeeded` both write tags through `TagSupport.setTags(named:on:in:)` /
@@ -1535,39 +1344,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   **file**, so today it is asserting over the copy that may not be the one that ships.
 
 
-- [T-672] **CLOSED 2026-09-04 (`7e58fc6c`) — one `CadenceSearchFieldClearButton`, and there were
-  eleven copies, not ten.** `Cadence/Shared/Components/CadenceSearchFieldClearButton.swift` is the
-  control now; the ten ledgered pickers call it, and so does an **eleventh** copy no accessibility
-  ledger could see — `FocusPickerSupportViews`' clear button already carried
-  `.cadenceControlLabel("Clear search")`, so it was clean under every naming rule and still a
-  near-copy. A ticket filed as a naming finding was a duplication finding, and the duplication is
-  what was counted.
-  **The three differences, re-measured before deciding.** Tint: five drew `Theme.dim`, five
-  `Theme.dim.opacity(0.5)`, one `0.55` — `Theme.dim` wins, being the plurality, the tint the
-  `magnifyingglass` at the other end of all eleven rows already draws, and a named ramp rather than
-  the one-off opacity `Cadence/Shared/AGENTS.md` rules out. Weight: ten default, one `.semibold`;
-  default wins. Size: **kept as a required parameter**, because it is the one difference that was
-  chosen — in nine of the eleven rows the clear glyph is drawn at exactly the size of that row's
-  own leading glyph (11 in the compact pickers, 12 in the popovers), and the two that differ are
-  the two whose leading glyph is emphasised (Cmd+K's 18pt `command` clears at 16, the focus
-  picker's 13pt semibold magnifier clears at 12). No default, the [[T-674]] shape: the twelfth call
-  site states its scale or fails to build.
-  **Focus was the real question and it was not a design difference.** Four restored focus and
-  seven did not — the split the ticket describes as four-of-ten is four-of-eleven, and one of the
-  four is Cmd+K, which restores focus inside `GlobalSearchInteractionSupport.clearQuery` rather
-  than at the button. Clicking a SwiftUI `Button` takes key focus off the `TextField` beside it, so
-  the seven left the user typing into nothing after a clear; `NSSearchField`'s own clear button
-  keeps focus. So the component **always** restores it and `focus` is required, which is a visible
-  change at seven sites and the reason two of them — `GoalTimelineFilterPopover` and
-  `TaskBundleTaskPickerPanel` — grew the `@FocusState` they never had.
-  Ten entries left `knownUnnamedIconButtonSites` (31→21 sites, 24→16 files, measured over T-672
-  alone). `CadenceSearchFieldClearButtonTests` pins the **call sites**: the app-wide sweep asserts
-  the only file that spells the control out is the component's own, which is what a rule on the
-  component alone would miss. Failing-first on an isolated HEAD tree named all eleven offenders,
-  and six mutations — a call site respelled by hand, the name dropped, the focus restore dropped,
-  a `.focused` binding dropped, one glyph size drifted, the opacity tint restored — were all
-  killed. Follow-ups: [[T-789]], [[T-790]], [[T-791]].
-
 - [T-675] **The app has three row-separator weights and only one of them is named.** Found while
   closing [[T-618]], which named the 0.35 one as `Theme.rowSeparator` over four agreeing sites. The
   other two are in `Cadence/macOS/Views/GoalTimelineSupportViews.swift`: a goal row's bottom rule
@@ -1633,54 +1409,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   another about one fact. [[T-547]] split the concepts and hoisted each; it deliberately did **not**
   decide this, because "Other" is a grouping bucket as well as a fallback and collapsing the two is a
   copy decision. Under the sweep's 12-character floor, so nothing will find it again by machine.
-
-- [T-693] **macOS prints a blank calendar name where iOS prints a fallback.**
-  `Cadence/macOS/Views/CalendarEventPresentationSupport.swift:73` and `:198` both set
-  `calendarTitle = event.calendar?.title ?? ""`, and that string is *displayed*. iOS reads the same
-  property at `iOSBoardCards.swift:77` and `iOSSearchView.swift:640` and falls back to
-  `CadenceAppleCalendarNaming.unnamedCalendarTitle`. Same nil, same slot, two answers — and the Mac's is
-  an empty line. Distinguish from the three `?? ""` sites that are **search haystacks** and correct
-  (`CadenceCalendarEventSearchSupport.swift:29`, `iOSSearchView.swift:616`,
-  `iOSCalendarEventEditSheet.swift:101`): those feed a matcher, not a label. Found while hoisting
-  [[T-547]]; not fixed there because it is a behaviour change on a surface that ticket did not touch.
-  **CLOSED 2026-09-03 (`4cbd2fd`).** Both display sites now read
-  `CadenceAppleCalendarNaming.unnamedCalendarTitle` instead of `""`, matching iOS. Failing-first
-  reproduced with an unsaved `EKEvent(eventStore:)` never assigned a calendar — `event.calendar ==
-  nil` with no TCC prompt, since nothing is saved or fetched. Pinned by
-  `CadenceTests.aTimedEventWithNoCalendarDrawsTheSharedFallbackNotABlankTitle` and
-  `anAllDayEventWithNoCalendarDrawsTheSharedFallbackNotABlankTitle`; 2 mutations, 2 killed.
-
-- [T-694] **The calendar access card's *title* still reads as a fault in the state that is not one.**
-  [[T-543]] fixed the glyph and the sentence: before anybody is asked, both surfaces now draw a neutral
-  `calendar.badge.plus` in `Theme.blue` over "Allow Cadence to show events and connect Apple calendars to
-  areas or projects." The title above it still says **"Calendar access required"**, which is the last part
-  of the card phrased as a demand rather than an offer — and the same string also heads the *denied* card,
-  where it is right. Not folded into T-543: `CadenceCalendarSettingsCopy.accessRequiredTitle` is shared by
-  both surfaces and pinned by value in two tests, and the notification pane's
-  `CadenceNotificationSettingsCopy.accessRequiredTitle` is the same shape one screen over — so rewording it
-  is a house-wide copy decision, not the tail of a glyph fix.
-  **PARTIALLY CLOSED 2026-09-03 (`4cbd2fd`) — Notifications pane only.** User decision: two titles,
-  one per state, demand phrasing reserved for denied. `NotificationManager` gained `isDenied`
-  (mirroring `CalendarManager.isDenied`); both Notifications panes now draw the new
-  `CadenceNotificationSettingsCopy.connectOfferTitle` ("Connect Notifications") before anyone has
-  been asked and keep `accessRequiredTitle` ("Notification access required") for the denied state.
-  **The Calendar pane's half is not done**: its card is in `SettingsListManagementSections.swift`,
-  owned by another agent this batch, and the cross-platform copy-scan test
-  (`bothCalendarSettingsSurfacesReadEveryConvergedCalendarString`) requires macOS and iOS to read
-  the same constants, so an iOS-only edit would have broken that test rather than fixed the ticket.
-  Residue filed as [[T-777]].
-  **FULLY CLOSED 2026-09-03 (`663bc13`) — Calendar half via [[T-777]].** Both panes now move
-  together; see T-777 below for the shape.
-
-- [T-777] **T-694's Calendar pane still owes its offer title.** The Notifications pane split is
-  done (see T-694, closed above): `CadenceNotificationSettingsCopy.connectOfferTitle` before
-  asking, `accessRequiredTitle` kept for denied. The Calendar pane needs the same shape —
-  `CadenceCalendarSettingsCopy` gains a `connectOfferTitle` ("Connect Apple Calendar"), and
-  `SettingsListManagementSections.calendarAccessCard` (macOS) and `iOSCalendarSettingsSection`
-  (iOS) both move their not-denied branch onto it, leaving `accessDeniedTitle` ("Calendar access
-  denied") for the denied branch exactly as today. Both files must move together in one change:
-  `CadenceSettingsSectionCopyTests.bothCalendarSettingsSurfacesReadEveryConvergedCalendarString`
-  scans both surfaces for the same constants and fails if only one is edited.
 
 - [T-703] **The six lifecycle section titles should become a composer now that [[T-555]] has landed —
   and the reason they are six literals is a constraint that no longer exists.** [[T-546]] hoisted
@@ -1904,20 +1632,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   item stayed on the hardware list for weeks because of an untested claim about the tooling rather than
   about the app. Re-triage before anyone carries it to a device.
 
-- [T-742] **CLOSED 2026-09-03 by the coordinator.** [[T-621]] wrote and tested
-  `CadenceFocusLedger.reconcile(in:)` and could not wire it, because
-  `Cadence/Services/PersistenceController.swift` belonged to a sibling agent in the same batch —
-  the file-ownership rule working, at the cost of one line. Both owners finished, so it is wired
-  now, in `performStartupMaintenance` beside the integrity repair and folded into `changedStore`.
-  **One correction to the line this ticket prescribed:** `reconcile(in:)` answers `Bool`, not a
-  count, so the `changedStore` term is the answer itself and not `> 0`. Caught by the compiler
-  on the first build, which is the cheap end of the T-565 class — a ticket describing an API it
-  did not re-read.
-  Safe at launch by the same argument the repair above it uses, and the comment says so: the pass
-  only ever raises and is a pure function of the counter and the ledger rows, so a launch racing
-  the first CloudKit import computes a total that is too low and leaves the counter alone.
-  macOS build green, 0 errors, 0 warnings.
-
 - [T-743] **Merging two duplicate lists strands the surviving list's focus ledger.**
   `DataIntegrityRepairService.mergeArea` / `mergeProject` reconcile `loggedMinutes` with
   `max(target, source)` and re-point the duplicate's tasks, notes, documents, links and goal links —
@@ -1957,20 +1671,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Second gap, same family, cheaper to state than to fix: **an app started by tapping its icon on the
   simulator carries no launch arguments**, so it is back on the device-wide domain. Both are written
   down in `CadenceDefaults`'s doc comment; this ticket is the decision about whether to close them.
-
-- [T-746] **CLOSED 2026-09-03 as not-a-defect — the contradiction was already gone when it was
-  filed.** The claim was that `AGENTS.md` and `CLAUDE.md`, both always-read, give opposite
-  instructions about `CadenceUITests`: one saying it was never flaky, the other saying it flakes
-  about 1 run in 4 and a red run is not evidence.
-  Checked rather than taken: **`4b447ff` ([[T-563]]) rewrote both files in the same commit**, and
-  it landed *before* the agent that filed this started. `AGENTS.md:156` and `CLAUDE.md:84` now say
-  the same thing. The only surviving "about 1 run in 4" is inside `CLAUDE.md`'s explanation of
-  **how that misreading arose** — the activation failure is attributed to whichever line called
-  `app.launch()`, so it read as an intermittent timeout — and both files end on *a red UI-test run
-  **is** evidence of a regression again*.
-  Worth keeping the entry rather than deleting it: a sentence that recounts a superseded belief
-  reads like the belief when skimmed, which is the [[T-565]] class one level up. If it is misread
-  a second time, that is the argument for moving the history out of the always-read file.
 
 - [T-747] **`scripts/xcb.sh` writes every run under one id to the same log path, so a batch deletes
   its own evidence.** The log is `${TMPDIR}cadence-xcb-<id>.log`, overwritten per invocation. A
@@ -2070,18 +1770,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   and `Theme.radiusPanel` (22) were checked the same way and have **zero** bare-literal sites —
   10 is the only tier still leaking.
 
-- [T-755] **A `*Radius: <n>` sweep pattern will false-positive on `CadenceWidgets/WidgetChrome.swift`'s
-  `elevationRadius`.** Found and caught by `CadenceRadiusControlCompactSweepTests` mid-development
-  ([[T-616]]): a first-draft detector matched any identifier ending in `Radius`, and `elevationRadius`
-  matched the "7" case at one of its four widget-size tiers. It is a `shadow(radius:)` **blur**
-  radius, not a corner radius, and scales 5/6/7/8 across the four sizes — real scatter, a deliberate
-  per-tier value, not "one origin copied N times." The shipped detector requires `cornerRadius`
-  (bare or as a `*CornerRadius` name) or `radius`/`xRadius`/`yRadius` exactly, which does not match
-  `elevationRadius` — but the next person writing a radius sweep by hand, rather than reusing
-  `CadenceRadiusControlCompactSweepTests`' pattern, can make the same near-miss. Filed so the
-  distinction (corner radius vs. shadow blur radius, both spelled `*Radius`) is written down
-  somewhere other than a test's inline comment.
-
 - [T-748] **An orphaned `acquire` still takes the lock with nobody left to run under it.**
   [[T-650]] made it wait its turn instead of jumping the queue, which is strictly better and not the
   fix: `pkill -f 'run-batch-<tag>.sh'` does not match the runner's `test-host-lock.sh acquire ...`
@@ -2131,17 +1819,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   trimmed-test/untrimmed-return spelling on `config.name`. `iOSSettingsContextSection.swift:78` is
   the correct hand-spelling and is the control. Re-measure before sweeping: the `name` family has
   its own real-value fallbacks the way the title family did.
-
-- [T-784] **CLOSED 2026-09-03.** A stale needle, not a regression, and the code was correct the
-  whole time. `noCalendarSurfaceStillSpellsTheNewEventFallback` required
-  `onCreateEvent?(CadenceEventTitleSupport.storedTitle(title)` to be **adjacent**, and
-  [[T-658]] reflowed that call across several lines to capture the returned
-  `CalendarWriteFailure?`. The needle now tolerates the break.
-  **Adjacency was never the claim** — which function wraps the title is. A regex that pins
-  formatting alongside the thing it means to pin goes red on a change that preserves
-  everything it asserts, which is the [[T-565]] class in a test rather than a comment.
-  Found twice independently: by the merged-HEAD pass and by an agent running a full suite,
-  which is the argument for fixing it rather than teaching people to ignore it.
 
 - [T-785] **Two scans left reading wider than they now need to, both unblocked by [[T-668]].**
   (1) `MarkdownNoteSupport.resolved(_:with:)` holds the last two constant-fallback ternaries in the
@@ -2274,6 +1951,332 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Done
 
+- [T-782] **An App-Sandboxed test host cannot run the `/usr/bin` developer shims, and nothing says
+  so.** Measured 2026-09-03 while wiring [[T-719]]: `Cadence.app` is sandboxed, so a `Process` spawned
+  from `CadenceTests` inherits the sandbox, and there `/usr/bin/git` and `/usr/bin/python3` — both
+  xcrun shims — fail with *"xcrun: error: cannot be used within an App Sandbox"*, exit 1, nothing on
+  stdout. Separately, zsh writes here-document temp files to `$TMPPREFIX`, which **zsh itself sets to
+  `/tmp/zsh` at startup** (so it is never empty and a `[[ -z $TMPPREFIX ]]` guard never fires); the
+  sandbox denies that write and the script dies with `can't create temp file for here document`
+  before its first line runs. Both are fixed inside `scripts/mutate.sh` and `scripts/agent-commit.sh`
+  and both are in `docs/SUBAGENT_RUNBOOK.md`, but nothing stops the next script a test shells out to
+  from repeating either. `/bin/echo` runs fine, so a naive "can I spawn at all?" probe says yes and
+  proves nothing.
+  **CLOSED 2026-09-04 -- ledger-only, zero population confirmed against HEAD, no code change.**
+  Re-verified independently: the only two shell-outs left under `CadenceTests` are
+  `CadenceGuardScriptSelftestTests.CadenceSelftestRun.of` (`/bin/zsh -f <script> selftest`) and
+  its own control probe, `.probe()` (`/bin/echo`) -- both working tools inside the sandbox, not
+  the `/usr/bin/git` / `/usr/bin/python3` xcrun shims this ticket warns about. Nothing left to
+  guard.
+- [T-689] **The Goals screen says "No goals yet" when every goal is completed.** Both surfaces draw
+  `CadenceEmptyStateCopy.goalsTitle(isNarrowed: false)` whenever the active count is zero, so a user
+  with five finished goals and none in flight reads "No goals yet". [[T-541]] made the detail pane
+  agree with the list rather than contradict it, so the two panes now say this together — the
+  inaccuracy is one sentence, not a disagreement. `isNarrowed: true` ("No matching goals") is not
+  the fix either: the Goals page carries no search field and no status picker, so there is no filter
+  to try differently. It needs a third case for "every goal is done", which is a copy decision of
+  the same shape as `activeListsSubtitle(hasArchived:)`.
+  **CLOSED 2026-09-03 (`663bc13`) — re-measured first, and the premise had narrowed: macOS already
+  said "No matching goals"** (`GoalStatusFilter` defaults to `.active`, and `narrowsResults` is true
+  for everything but `.all`), so only `iOSFeatureViews.iOSGoalsView` still had the defect.
+  `CadenceEmptyStateCopy.goalsTitle` gained `allComplete: Bool = false` (default keeps the Mac's two
+  call sites untouched); the Goals empty state moved from a `static let` to a computed `var` reading
+  this instance's own `goals`/`activeGoals`, and now reads the user-decided title **"All goals
+  complete"** with subtitle "Nothing in flight. Add another when you're ready." exactly when `goals`
+  is non-empty and `activeGoals` is not. Checked the one open question — whether macOS's `.all`
+  filter shares the defect — and it does not: `.all` matches every `GoalStatus`, so a done goal
+  still renders as a row under it instead of being hidden, and the empty branch is unreachable with
+  goals present. 4 tests updated/added in `CadenceEmptyStateAuditTests`; 2 mutations, both killed.
+- [T-690] **A paused or cancelled project reaches no Settings lifecycle section, so it cannot be
+  reopened or deleted there.** `SettingsView.swift` and `iOSSettingsView.swift` both hand
+  `SettingsListsSection`/`iOSListsLifecycleSettingsSection` exactly four groups —
+  `filter(\.isDone)` and `filter(\.isArchived)` for areas and projects — while `ProjectStatus` has
+  five cases. `.paused` and `.cancelled` projects are excluded from every active surface by
+  `filter(\.isActive)` and from Settings → Lists by these four filters, leaving search as the only
+  way to reach one. Found while adding [[T-557]]'s dormant-link card, which *does* list all four
+  inactive states because it reads `CadenceListSearchLifecycle`. Same file, same family:
+  `SettingsListManagementSections.lifecycleCard` spells `statusLabel: area.isDone ? "Completed" :
+  "Archived"` inline — the exact collapse `CadenceListSearchLifecycle` was written to end, and it
+  would label a cancelled project "Archived" the moment one reached the card.
+  **CLOSED 2026-09-03 (`663bc13`).** `CadenceListLifecycleSectionCopy` gained `pausedProjects`
+  ("Paused Projects") and `cancelledProjects` ("Cancelled Projects"), in the same
+  `"<status> <plural noun>"` voice the existing six use, read off `CadenceListSearchLifecycle`. Both
+  `SettingsListsSection` (macOS) and `iOSListsLifecycleSettingsSection` (iOS) gained the matching
+  groups and now filter projects by `.status == .paused` / `.status == .cancelled`. The project row's
+  inline `project.isDone ? "Completed" : "Archived"` collapse is gone, replaced by
+  `CadenceListSearchSupport.lifecycle(of: project).statusLabel` — the mapping this ticket named as
+  already existing — and `primaryLabel` moved from `isDone ? "Reopen" : "Unarchive"` to
+  `isArchived ? "Unarchive" : "Reopen"` for the same reason: a done/paused/cancelled project is not
+  being "unarchived". **Did not build [[T-703]]'s composer**: kept eight plain literals rather than
+  a `sectionTitle(_:of:)` function, because an interpolated title (`"\(status) \(noun)"`) is
+  invisible to `cadenceSharedStringConstants` by construction — exactly the protection [[T-546]]
+  exists for — and a composer built from finished-string `switch` cases would only trade eight named,
+  self-documenting constants for one function with the same eight branches while inviting invalid
+  pairs the current per-type design can't express (there is no `.paused` `Context`, no `.cancelled`
+  `Area`). Left as recorded prose in `CadenceSettingsSectionCopy.swift` and the test suite rather than
+  half-building it. 2 tests updated (renamed to reflect sixteen call sites, not twelve), 1 new
+  assertion added; 3 mutations, all killed.
+- [T-777] **T-694's Calendar pane still owes its offer title.** The Notifications pane split is
+  done (see T-694, closed above): `CadenceNotificationSettingsCopy.connectOfferTitle` before
+  asking, `accessRequiredTitle` kept for denied. The Calendar pane needs the same shape —
+  `CadenceCalendarSettingsCopy` gains a `connectOfferTitle` ("Connect Apple Calendar"), and
+  `SettingsListManagementSections.calendarAccessCard` (macOS) and `iOSCalendarSettingsSection`
+  (iOS) both move their not-denied branch onto it, leaving `accessDeniedTitle` ("Calendar access
+  denied") for the denied branch exactly as today. Both files must move together in one change:
+  `CadenceSettingsSectionCopyTests.bothCalendarSettingsSurfacesReadEveryConvergedCalendarString`
+  scans both surfaces for the same constants and fails if only one is edited.
+  **CLOSED 2026-09-03
+  (`663bc13`), same commit as T-690** — handed off mid-run once T-694's Notifications half landed
+  and needed `SettingsListManagementSections.swift`. `CadenceCalendarSettingsCopy.accessRequiredTitle`
+  ("Calendar access required") is retired; `connectOfferTitle` ("Connect Apple Calendar") takes its
+  place in the not-denied branch on both `SettingsListManagementSections.calendarAccessCard` (macOS)
+  and `iOSCalendarSettingsSection` (iOS), moved together in one change as
+  `bothCalendarSettingsSurfacesReadEveryConvergedCalendarString` requires. `accessDeniedTitle`
+  ("Calendar access denied") is untouched. New test
+  `theCalendarAccessCardDrawsOneTitlePerStateOnBothSurfaces` mirrors T-694's Notifications one, with
+  a regex rather than a literal `.contains` because the Mac wraps the ternary onto three lines where
+  the phone keeps it on one. 2 mutations, both killed.
+
+- [T-691] **The broken-calendar-link row draws no title for an unnamed list.**
+  `CadenceCalendarLinkHealth.missingLinks` passes `area.name` / `project.name` straight into
+  `CadenceMissingCalendarLink.name`, so an untitled area's row is a blank line above its summary —
+  the [[T-577]] class. [[T-557]]'s `dormantLinks` passes
+  `CadenceTitleNormalization.display(_:fallback:)` instead, so the two rows in the same settings
+  section now differ in a way that is deliberate on one side and an oversight on the other.
+  **Not a duplicate of the [[T-609]] sweep**: that one hunts the inline
+  `x.isEmpty ? "Untitled" : x` ternary, and this site has no fallback at all — there is no ternary
+  for a sweep of that shape to see.
+  **CLOSED 2026-09-03 (`4cbd2fd`).** `missingLink` now reads
+  `CadenceTitleNormalization.display(_:fallback:)` for both the area and the project name, the
+  same call `dormantLinks` already made — an unnamed active list's broken-link row draws
+  "Untitled Area"/"Untitled Project" instead of a blank line. Reproduced through T-624's evidence
+  gate (`observedCalendarIDs` containing the dead identifier), so the failing-first test exercises
+  the actual guarded path rather than a shortcut around it. Pinned by
+  `CadenceCalendarLinkHealthTests.anUnnamedActiveListsBrokenLinkRowStillHasSomethingToPutOnIt`;
+  2 mutations (area site, project site), 2 killed.
+- [T-562] *(RESOLVED 2026-08-31 — **this ticket's premise was wrong, and the wrong half was mine.**
+  Not a regression, not a never-worked, and not a sidebar defect at all. `testLaunchesToTodayWithSeededSidebarLists`
+  **passes about 4 runs in 5**: 5 runs measured (working tree @5ae916a pass 7.4s; isolated `git archive HEAD`
+  pass 7.1s, FAIL 15.9s, pass 5.8s). The one failure was at `CadenceUITests.swift:74` —
+  `wait(for: .runningForeground, timeout: 10)` inside `launchApp` — so the app never reached the
+  foreground and no sidebar query was ever made. The originating run's xcresult shows the same thing:
+  `CadenceUITestsLaunchTests` **also** failed, at its identical foreground wait, and both tests ran
+  3-5x slower than normal. That exonerates the seeder, the sidebar data path and the identifier.
+  **All three hypotheses killed, H2 by direct measurement:** a 0.3s process poller caught the launch —
+  pid 98099 was `…/Build/Products/Debug/Cadence.app/Contents/MacOS/Cadence` (confirmed via `lsof` txt)
+  carrying the test env vars. XCUITest launches the freshly built debug app, **not**
+  `/Applications/Cadence.app`. The identical-bundle-id hazard does not apply to this target.
+  H1 died to archaeology: the row's accessibility chain is byte-identical from `2d3a82f` (where the
+  test and the identifier were both introduced) to HEAD.
+  **Root cause was process, not code, and it was the orchestrator's:** the originating run was a bare
+  `xcodebuild`, which takes **no test-host lock**, while another agent's hosts were live. `scripts/xcb.sh`
+  acquires the lock (`xcb.sh:183`); bare `xcodebuild` does not. Standing rule now: **run UI tests as
+  `scripts/xcb.sh <id> test -only-testing:CadenceUITests`.** Superseded by [[T-563]] for the residual flake.)*
+  ~~**The first-ever UI test run fails: no seeded sidebar list is visible.**~~ Measured 2026-08-31,
+  immediately after the user granted the macOS automation authorisation that [[T-531]] was blocked on.
+  `Testing started` now reaches real tests, so the gate is open and T-531's blocker is cleared.
+  `testLaunchesToTodayWithSeededSidebarLists` finds `sidebar.destination.today` but then fails at
+  `CadenceUITests.swift:23` after five retries over 5s waiting for `sidebar.list.area.alpha-area`.
+  The other two UI tests skipped (they need `CADENCE_RUN_INTERACTIVE_UI_TESTS=1`).
+  **Do not assume this is a regression.** `CadenceUITests.swift` was last touched in `0dc7d3a`, long
+  before batches 1-10, and the target has been dark that entire time -- so this test may never have
+  passed. Establish that first; "it never worked" and "we broke it" need different fixes.
+  What is already ruled out: the identifier is derived, not typed
+  (`SidebarSupportViews.swift:353` builds `sidebar.list.\(kind.accessibilityFragment).\(slug(label))`,
+  and "Alpha Area" slugs to `alpha-area`); there is no `DisclosureGroup`/collapsed section around the
+  row; the seeder inserts all three lists under a context and does `try? modelContext.save()`
+  (`CadenceUITestSupport.swift:29-44`); `prepareAppState` is wired at `macOSRootView.swift:102`.
+  **Leading hypothesis, and it is cheap to test: the identical bundle id.** `/Applications/Cadence.app`
+  is `com.haoranwei.Cadence` **build 16** -- the same id XCUITest launches ("Open com.haoranwei.Cadence").
+  The runner may be attaching to the user's installed release app instead of the freshly built debug
+  one. Confirm which binary actually launched before theorising further.
+  Second hypothesis: the lists are seeded but never reach the sidebar's data source -- adjacent to
+  [[T-558]] and [[T-559]], though note these seeded lists *do* have a context, so it is not the
+  context-less path those tickets describe.
+  Safety, already checked: the user's real store was NOT written -- `~/Library/Containers/com.haoranwei.Cadence/`
+  Application Support is still dated 2026-08-19, untouched by the run. The per-run
+  `CADENCE_UI_TEST_STORE_ID` isolation held. Keep it that way.
+- [T-651] **CLOSED 2026-09-03 (`34c0f4e`).** Three of the four sites now commit.
+  `KanbanCardMetaSupportViews.swift`'s `KanbanTagPickerPopover.body` and
+  `MarkdownEditorView.createInlineTag` both called `TagSupport.resolveTags` from an ambient
+  `ModelContext` and committed nothing; both now go through
+  `TagSupport.committedTag(named:in:commit:)`. `createInlineTag`'s *report* half — the swallowed
+  save followed by `return .tag(tag)`, the suggestion the editor writes into the note — needed a
+  second change: its remaining in-place edit (un-archiving the tag, bumping `updatedAt`) now goes
+  through `CadencePendingChangePersistence.commitEdit(in:undo:)` instead of a bare `try?`, so
+  nothing in the function swallows a commit at all. `CadenceNotePlanningSupport.update` is the
+  third — it now calls a new `TagSupport.syncNoteTagsFromMarkdownCommittingInsertions`
+  (`Cadence/Shared/CadenceInlineTagCreation.swift`) instead of the raw `syncNoteTagsFromMarkdown`;
+  `update`'s signature is unchanged, so none of its nine callers moved.
+  **The fourth, `NoteEditorPane.noteTagsBinding`/`.persistEditorContentIfNeeded`, is untouched, as
+  directed** — it inserts rows on the debounced-autosave path, and the T-497 caret decision
+  ("the edit is in-place on an object the store already holds, so there is nothing to un-insert")
+  does not cover an insert. `NoteEditorPane.body`'s own, differently-attributed exemption (it
+  reaches the same `syncNoteTagsFromMarkdown`, pinned by
+  `CadenceInlineTagCommitSurfaceTests.theNoteEditorPanesBodyExemptionIsTheTagSyncNotASubtask`) was
+  never one of the four named sites and is also untouched.
+  Mutations M1–M3 (`scripts/mutate.sh`) reverted each of the three fixes in turn; all three were
+  KILLED by `CadenceSaveCommitDisciplineTests` (`noSwallowedSaveCommitsAnInsertOrADelete` /
+  `noSwallowedSaveIsFollowedByADismissOrACompletionHandler`).
+  **Residue**: [[T-762]] — the `NoteEditorPane` debounced-autosave undo question this ticket left
+  open on purpose.
+- [T-653] **CLOSED 2026-09-03 (`34c0f4e`).** Re-measured before acting, nine batches on: all three
+  claims still held. `seedDefaultTags` still has no launch caller —
+  `PersistenceController.performStartupMaintenance` still says so in its own comment, and
+  `CadenceFirstLaunchEmptyStoreTests` still holds it there. Its four callers are still exactly
+  `SettingsTagsSection`, `iOSSettingsTagsSection` (`iOSTagsSettingsSection`), `TagPickerSupportViews`
+  (`TagPickerPlaceholderRow`) and `iOSTaskDetailComponents` (`iOSTaskTagPickerPopover`).
+  `deduplicateTags`'s only app caller is still `seedDefaultTags`, passing `save: false`.
+  All four buttons now call a new `TagSupport.seedDefaultTagsCommitting(in:commit:)`
+  (`Cadence/Shared/CadenceInlineTagCreation.swift`), which runs `seedDefaultTags(saveChanges: false)`
+  and commits the whole cascade — the insert **and** the dedup merge's delete, together — through
+  `CadencePendingChangePersistence.commitDelete(in:commit:)`, so a refusal rolls both back rather
+  than leaving a half-seeded, half-merged table. Each button shows the refusal inline
+  (`CadenceInlineFailureNotice`), the way `SettingsTagsSection.createTag` already does for the
+  sibling action beside it.
+  The `existenceExemptions["Cadence/Services/TagSupport.swift"]` comment no longer calls
+  `seedDefaultTags`/`deduplicateTags` "launch-time maintenance with no user watching and nothing to
+  report to" — that stopped being true when [[T-528]] removed the launch caller. It now says the two
+  raw declarations stay exempt because they are still handed a `ModelContext` whose caller commits,
+  and names `seedDefaultTagsCommitting` as that caller.
+  `syncAllNoteTagsFromMarkdown`'s entry and rationale are untouched — `PersistenceController` still
+  passes `saveChanges: false` and only `CadenceMCPStorePreparation.prepare` (the MCP boundary) lets
+  it save.
+  Two new behavioural tests in `TagSupportTests` pin the wrapper directly. The rollback one caught
+  itself first: a mutation removing `commitDelete`'s rollback **survived** the initial version of
+  `arefusedSeedCommitRollsBackBothTheInsertAndTheMerge`, because reading a second context cannot
+  tell "rolled back" from "never reached the store" apart — both look identical from outside the
+  context that held the refused change. Fixed to save the same context again after the refusal,
+  which is what an unrelated autosave would do; that version was KILLED (M5) as intended.
+  `CadenceFirstLaunchEmptyStoreTests.seedCallOffsets` now keys on
+  `TagSupport.seedDefaultTagsCommitting(` rather than the raw name; its four-file caller list is
+  unchanged. Mutations M4–M6 (`scripts/mutate.sh`): M4 reverted one button to the raw seed call and
+  was KILLED by `noUnpromptedCodePathSeedsTheDefaultTags`'s caller-list assertion; M5 and M6 broke
+  the wrapper's rollback and its commit respectively and were both KILLED by the two new
+  `TagSupportTests`.
+- [T-672] **CLOSED 2026-09-04 (`7e58fc6c`) — one `CadenceSearchFieldClearButton`, and there were
+  eleven copies, not ten.** `Cadence/Shared/Components/CadenceSearchFieldClearButton.swift` is the
+  control now; the ten ledgered pickers call it, and so does an **eleventh** copy no accessibility
+  ledger could see — `FocusPickerSupportViews`' clear button already carried
+  `.cadenceControlLabel("Clear search")`, so it was clean under every naming rule and still a
+  near-copy. A ticket filed as a naming finding was a duplication finding, and the duplication is
+  what was counted.
+  **The three differences, re-measured before deciding.** Tint: five drew `Theme.dim`, five
+  `Theme.dim.opacity(0.5)`, one `0.55` — `Theme.dim` wins, being the plurality, the tint the
+  `magnifyingglass` at the other end of all eleven rows already draws, and a named ramp rather than
+  the one-off opacity `Cadence/Shared/AGENTS.md` rules out. Weight: ten default, one `.semibold`;
+  default wins. Size: **kept as a required parameter**, because it is the one difference that was
+  chosen — in nine of the eleven rows the clear glyph is drawn at exactly the size of that row's
+  own leading glyph (11 in the compact pickers, 12 in the popovers), and the two that differ are
+  the two whose leading glyph is emphasised (Cmd+K's 18pt `command` clears at 16, the focus
+  picker's 13pt semibold magnifier clears at 12). No default, the [[T-674]] shape: the twelfth call
+  site states its scale or fails to build.
+  **Focus was the real question and it was not a design difference.** Four restored focus and
+  seven did not — the split the ticket describes as four-of-ten is four-of-eleven, and one of the
+  four is Cmd+K, which restores focus inside `GlobalSearchInteractionSupport.clearQuery` rather
+  than at the button. Clicking a SwiftUI `Button` takes key focus off the `TextField` beside it, so
+  the seven left the user typing into nothing after a clear; `NSSearchField`'s own clear button
+  keeps focus. So the component **always** restores it and `focus` is required, which is a visible
+  change at seven sites and the reason two of them — `GoalTimelineFilterPopover` and
+  `TaskBundleTaskPickerPanel` — grew the `@FocusState` they never had.
+  Ten entries left `knownUnnamedIconButtonSites` (31→21 sites, 24→16 files, measured over T-672
+  alone). `CadenceSearchFieldClearButtonTests` pins the **call sites**: the app-wide sweep asserts
+  the only file that spells the control out is the component's own, which is what a rule on the
+  component alone would miss. Failing-first on an isolated HEAD tree named all eleven offenders,
+  and six mutations — a call site respelled by hand, the name dropped, the focus restore dropped,
+  a `.focused` binding dropped, one glyph size drifted, the opacity tint restored — were all
+  killed. Follow-ups: [[T-789]], [[T-790]], [[T-791]].
+- [T-693] **macOS prints a blank calendar name where iOS prints a fallback.**
+  `Cadence/macOS/Views/CalendarEventPresentationSupport.swift:73` and `:198` both set
+  `calendarTitle = event.calendar?.title ?? ""`, and that string is *displayed*. iOS reads the same
+  property at `iOSBoardCards.swift:77` and `iOSSearchView.swift:640` and falls back to
+  `CadenceAppleCalendarNaming.unnamedCalendarTitle`. Same nil, same slot, two answers — and the Mac's is
+  an empty line. Distinguish from the three `?? ""` sites that are **search haystacks** and correct
+  (`CadenceCalendarEventSearchSupport.swift:29`, `iOSSearchView.swift:616`,
+  `iOSCalendarEventEditSheet.swift:101`): those feed a matcher, not a label. Found while hoisting
+  [[T-547]]; not fixed there because it is a behaviour change on a surface that ticket did not touch.
+  **CLOSED 2026-09-03 (`4cbd2fd`).** Both display sites now read
+  `CadenceAppleCalendarNaming.unnamedCalendarTitle` instead of `""`, matching iOS. Failing-first
+  reproduced with an unsaved `EKEvent(eventStore:)` never assigned a calendar — `event.calendar ==
+  nil` with no TCC prompt, since nothing is saved or fetched. Pinned by
+  `CadenceTests.aTimedEventWithNoCalendarDrawsTheSharedFallbackNotABlankTitle` and
+  `anAllDayEventWithNoCalendarDrawsTheSharedFallbackNotABlankTitle`; 2 mutations, 2 killed.
+- [T-694] **The calendar access card's *title* still reads as a fault in the state that is not one.**
+  [[T-543]] fixed the glyph and the sentence: before anybody is asked, both surfaces now draw a neutral
+  `calendar.badge.plus` in `Theme.blue` over "Allow Cadence to show events and connect Apple calendars to
+  areas or projects." The title above it still says **"Calendar access required"**, which is the last part
+  of the card phrased as a demand rather than an offer — and the same string also heads the *denied* card,
+  where it is right. Not folded into T-543: `CadenceCalendarSettingsCopy.accessRequiredTitle` is shared by
+  both surfaces and pinned by value in two tests, and the notification pane's
+  `CadenceNotificationSettingsCopy.accessRequiredTitle` is the same shape one screen over — so rewording it
+  is a house-wide copy decision, not the tail of a glyph fix.
+  **PARTIALLY CLOSED 2026-09-03 (`4cbd2fd`) — Notifications pane only.** User decision: two titles,
+  one per state, demand phrasing reserved for denied. `NotificationManager` gained `isDenied`
+  (mirroring `CalendarManager.isDenied`); both Notifications panes now draw the new
+  `CadenceNotificationSettingsCopy.connectOfferTitle` ("Connect Notifications") before anyone has
+  been asked and keep `accessRequiredTitle` ("Notification access required") for the denied state.
+  **The Calendar pane's half is not done**: its card is in `SettingsListManagementSections.swift`,
+  owned by another agent this batch, and the cross-platform copy-scan test
+  (`bothCalendarSettingsSurfacesReadEveryConvergedCalendarString`) requires macOS and iOS to read
+  the same constants, so an iOS-only edit would have broken that test rather than fixed the ticket.
+  Residue filed as [[T-777]].
+  **FULLY CLOSED 2026-09-03 (`663bc13`) — Calendar half via [[T-777]].** Both panes now move
+  together; see T-777 below for the shape.
+- [T-742] **CLOSED 2026-09-03 by the coordinator.** [[T-621]] wrote and tested
+  `CadenceFocusLedger.reconcile(in:)` and could not wire it, because
+  `Cadence/Services/PersistenceController.swift` belonged to a sibling agent in the same batch —
+  the file-ownership rule working, at the cost of one line. Both owners finished, so it is wired
+  now, in `performStartupMaintenance` beside the integrity repair and folded into `changedStore`.
+  **One correction to the line this ticket prescribed:** `reconcile(in:)` answers `Bool`, not a
+  count, so the `changedStore` term is the answer itself and not `> 0`. Caught by the compiler
+  on the first build, which is the cheap end of the T-565 class — a ticket describing an API it
+  did not re-read.
+  Safe at launch by the same argument the repair above it uses, and the comment says so: the pass
+  only ever raises and is a pure function of the counter and the ledger rows, so a launch racing
+  the first CloudKit import computes a total that is too low and leaves the counter alone.
+  macOS build green, 0 errors, 0 warnings.
+- [T-746] **CLOSED 2026-09-03 as not-a-defect — the contradiction was already gone when it was
+  filed.** The claim was that `AGENTS.md` and `CLAUDE.md`, both always-read, give opposite
+  instructions about `CadenceUITests`: one saying it was never flaky, the other saying it flakes
+  about 1 run in 4 and a red run is not evidence.
+  Checked rather than taken: **`4b447ff` ([[T-563]]) rewrote both files in the same commit**, and
+  it landed *before* the agent that filed this started. `AGENTS.md:156` and `CLAUDE.md:84` now say
+  the same thing. The only surviving "about 1 run in 4" is inside `CLAUDE.md`'s explanation of
+  **how that misreading arose** — the activation failure is attributed to whichever line called
+  `app.launch()`, so it read as an intermittent timeout — and both files end on *a red UI-test run
+  **is** evidence of a regression again*.
+  Worth keeping the entry rather than deleting it: a sentence that recounts a superseded belief
+  reads like the belief when skimmed, which is the [[T-565]] class one level up. If it is misread
+  a second time, that is the argument for moving the history out of the always-read file.
+- [T-755] **A `*Radius: <n>` sweep pattern will false-positive on `CadenceWidgets/WidgetChrome.swift`'s
+  `elevationRadius`.** Found and caught by `CadenceRadiusControlCompactSweepTests` mid-development
+  ([[T-616]]): a first-draft detector matched any identifier ending in `Radius`, and `elevationRadius`
+  matched the "7" case at one of its four widget-size tiers. It is a `shadow(radius:)` **blur**
+  radius, not a corner radius, and scales 5/6/7/8 across the four sizes — real scatter, a deliberate
+  per-tier value, not "one origin copied N times." The shipped detector requires `cornerRadius`
+  (bare or as a `*CornerRadius` name) or `radius`/`xRadius`/`yRadius` exactly, which does not match
+  `elevationRadius` — but the next person writing a radius sweep by hand, rather than reusing
+  `CadenceRadiusControlCompactSweepTests`' pattern, can make the same near-miss. Filed so the
+  distinction (corner radius vs. shadow blur radius, both spelled `*Radius`) is written down
+  somewhere other than a test's inline comment.
+  **CLOSED 2026-09-04 -- ledger-only, zero population confirmed against HEAD, no code change.**
+  Re-verified independently: `CadenceRadiusControlCompactSweepTests.swift`'s shipped pattern is
+  `\b(?:\w*[Cc]ornerRadius|[xy][Rr]adius|[Rr]adius)\s*[:=]\s*7\b`. The bare `[Rr]adius`
+  alternative still needs a `\b` word boundary immediately before it, and `elevationRadius` has
+  none -- `elevation` and `Radius` are one identifier with no boundary between them -- so all four
+  of `WidgetChrome.swift`'s `elevationRadius: 5/6/7/8` tiers, including the `7`, are excluded by
+  construction, not by luck. Nothing to fix; filed only to write the distinction down, which it
+  already does.
+- [T-784] **CLOSED 2026-09-03.** A stale needle, not a regression, and the code was correct the
+  whole time. `noCalendarSurfaceStillSpellsTheNewEventFallback` required
+  `onCreateEvent?(CadenceEventTitleSupport.storedTitle(title)` to be **adjacent**, and
+  [[T-658]] reflowed that call across several lines to capture the returned
+  `CalendarWriteFailure?`. The needle now tolerates the break.
+  **Adjacency was never the claim** — which function wraps the title is. A regex that pins
+  formatting alongside the thing it means to pin goes red on a change that preserves
+  everything it asserts, which is the [[T-565]] class in a test rather than a comment.
+  Found twice independently: by the merged-HEAD pass and by an agent running a full suite,
+  which is the argument for fixing it rather than teaching people to ignore it.
 - [T-847] **CLOSED 2026-09-04 - `Theme.dim` was under the body-text floor on every surface, and it
   was raised rather than reclassified.** `#71717a` -> `#878791`. Recomputed from the tokens by
   `CadenceContrastFloorTests`, before -> after: `bg` 4.12 -> 5.59, `surfaceRecessed` 4.02 -> 5.46,
