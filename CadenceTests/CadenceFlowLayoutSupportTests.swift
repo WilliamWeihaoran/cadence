@@ -6,6 +6,11 @@ import Testing
 /// The task row's metadata strip used to be a horizontal `ScrollView` that could not scroll,
 /// because the row's tap gesture beat it — so chips past the right edge were unreachable. It wraps
 /// now. The property that matters most here is the last test: wrapping must never drop an item.
+///
+/// This suite is also the whole test seam for `CadenceWrappingHStack` (T-883): that `Layout`
+/// conformance has no public way to construct `Subviews`, so its `sizeThatFits`/`placeSubviews`
+/// cannot be driven directly, and every line-breaking decision it makes is delegated to the
+/// functions tested here.
 struct CadenceFlowLayoutSupportTests {
     private let spacing: CGFloat = 6
     private let lineSpacing: CGFloat = 4

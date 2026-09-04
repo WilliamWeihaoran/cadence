@@ -8,6 +8,20 @@ import SwiftUI
 /// silently stops scrolling, which is exactly how `iOSTaskRow`'s metadata became unreachable.
 ///
 /// The line-breaking is `CadenceFlowLayoutSupport`, which is unfenced and unit-tested.
+///
+/// **This type itself is untestable by construction, not merely untested (T-883).** `Layout`'s
+/// `Subviews` has no public initialiser, so nothing outside SwiftUI's own layout pass can construct
+/// one to drive `sizeThatFits`/`placeSubviews` from a unit test — there is no seam, the way
+/// `CadenceEmptyStateAuditTests` and `CadencePrivacyDataResetSurfaceTests` document for their own
+/// no-seam cases. Both entry points delegate every line-breaking decision to
+/// `CadenceFlowLayoutSupport`, which owns the actual test suite
+/// (`CadenceFlowLayoutSupportTests.swift`). The one calculation that stays local — `itemSizes`'
+/// per-item width clamp, below — is equally unreachable, for the same reason. None of that makes
+/// this file dead: six `Cadence/iOS/` files call it across nine sites (`iOSTaskViews.swift`,
+/// `iOSTrackingEditorComponents.swift`, `iOSAINoteActionsViews.swift`, `iOSFeatureDetailViews.swift`,
+/// `iOSInboxRemindersSection.swift`, `iOSTaskDetailComponents.swift`). A future "which files have no
+/// test" sweep should read this comment before re-filing the gap — it is an adapter with no seam,
+/// already fully covered at the layer that can be covered.
 struct CadenceWrappingHStack: Layout {
     var spacing: CGFloat = 6
     var lineSpacing: CGFloat = 4
