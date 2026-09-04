@@ -20,8 +20,9 @@ import Testing
 /// reserved for a sighted-only `.help()` tooltip. `SettingsTagsSection.swift` states why in as many
 /// words: "a screen reader cannot verify a colour and the repo does not invent colour names for
 /// one" — the same reasoning `CadenceAccentPalettePresentation` gives for the accent picker.
-/// `ColorGrid` now draws the converged idiom instead of inventing an eighth one (or reaching for
-/// `iOSTrackingColorGrid`'s `"Color \(hex)"`, the one file that predates the convergence).
+/// `ColorGrid` now draws the converged idiom instead of inventing an eighth one. `iOSTrackingColorGrid`
+/// was the one file that predated the convergence, still naming its swatches `"Color \(hex)"` after
+/// this comment was written; T-934 brought it in line, so all seven swatch grids now agree.
 struct CadenceIconOnlyColorSwatchAccessibilityTests {
 
     private func detector() throws -> CadenceScanInstrument {
@@ -151,5 +152,18 @@ struct CadenceIconOnlyColorSwatchAccessibilityTests {
         #expect(Self.iconOnlyColorSwatchCount(in: source) == 0)
         #expect(source.contains(#".accessibilityLabel(isSelected ? "Selected colour" : "Use this colour")"#))
         #expect(source.contains(".help(hex)"))
+    }
+
+    /// **T-934: `iOSTrackingColorGrid` was the one holdout this file's own doc comment named.**
+    /// Unlike `ColorGrid`, it already wraps its swatch in a `Button` — this suite's bare-
+    /// `.onTapGesture` detector correctly does not fire on it — but it still names the control by
+    /// its hex value, `"Color \(color)"`, rather than by what tapping it does. A screen reader
+    /// cannot verify a colour, so a hex-named control reads a string sighted users never see and
+    /// non-sighted users cannot check. This pins the fix directly rather than leaving the sweep to
+    /// notice it only if the bare-gesture shape reappears.
+    @Test func iOSTrackingColorGridNamesItsSwatchesByActionNotByHex() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTrackingEditorComponents.swift")
+        #expect(!source.contains(#"accessibilityLabel("Color \(color)")"#))
+        #expect(source.contains(#".accessibilityLabel(isOn ? "Selected colour" : "Use this colour")"#))
     }
 }
