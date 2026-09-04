@@ -256,3 +256,46 @@ nonisolated enum MarkdownSlashCommandTokenSupport {
         character == 32 || character == 9
     }
 }
+
+/// Sentence-case display names for the format toolbar, keyed by the `MarkdownFormatCommand` both
+/// platforms already execute — one table, so a toolbar reads it instead of typing its own.
+///
+/// **T-845.** iOS's toolbar spelled these Title Case ("Bulleted List", "Code Block", "Note
+/// Link"); macOS's spelled the same actions sentence case for VoiceOver ("Bulleted list", "Code
+/// block", "Note link"). Two hand-typed case tables for one vocabulary, and whichever platform's
+/// author reached for a string first decided the casing for that row — not a rule, a coin flip.
+/// This is sentence case throughout, matching what macOS already had and what VoiceOver/HIG both
+/// ask for, and both `iOSMarkdownFormatToolbar` and `MarkdownEditorToolbar` read it now rather
+/// than keep their own copy.
+///
+/// Deliberately not `MarkdownSlashCommand.title`: that table's own casing is Title Case by a
+/// different rule (a picker row's bold label), and "bullet" there is titled "Bullet List" — a
+/// different word entirely from "Bulleted list" — so reading it verbatim would trade one drift for
+/// another rather than closing this one.
+nonisolated enum MarkdownFormatCommandTitle {
+    static func sentenceCase(for command: MarkdownFormatCommand) -> String {
+        switch command {
+        case .bold: return "Bold"
+        case .italic: return "Italic"
+        case .inlineCode: return "Inline code"
+        case .strikethrough: return "Strikethrough"
+        case .highlight: return "Highlight"
+        case .link: return "Link"
+        case .paragraph: return "Paragraph"
+        case .heading(let level): return "Heading \(level)"
+        case .orderedList: return "Numbered list"
+        case .unorderedList: return "Bulleted list"
+        case .todoList: return "Checklist"
+        case .quote: return "Quote"
+        case .codeBlock: return "Code block"
+        case .divider: return "Divider"
+        case .noteLink: return "Note link"
+        case .taskReference: return "Task reference"
+        case .insertMarkdown, .replaceMarkdown, .replaceMarkdownWithCaret:
+            // Never a toolbar button's own command — these insert a specific, already-composed
+            // snippet (a chosen note or task reference) rather than offering a fixed action a
+            // button could be labelled for.
+            return "Insert"
+        }
+    }
+}

@@ -528,32 +528,32 @@ struct iOSMarkdownFormatToolbar: View {
     private static let compactWidthThreshold: CGFloat = 620
 
     private let primaryItems: [iOSMarkdownFormatToolbarItem] = [
-        .text("P", "Paragraph", .paragraph),
-        .text("H1", "Heading 1", .heading(1)),
-        .text("H2", "Heading 2", .heading(2)),
-        .icon("bold", "Bold", .bold),
-        .icon("italic", "Italic", .italic),
-        .icon("strikethrough", "Strikethrough", .strikethrough),
-        .icon("chevron.left.forwardslash.chevron.right", "Inline Code", .inlineCode),
-        .icon("link", "Link", .link),
-        .icon("list.bullet", "Bulleted List", .unorderedList),
-        .icon("list.number", "Numbered List", .orderedList),
-        .icon("checklist", "Checklist", .todoList),
-        .icon("text.quote", "Quote", .quote),
-        .icon("curlybraces.square", "Code Block", .codeBlock),
-        .icon("minus", "Divider", .divider),
-        .icon("text.badge.plus", "Note Link", .noteLink),
-        .icon("checkmark.circle", "Task Reference", .taskReference)
+        .text("P", .paragraph),
+        .text("H1", .heading(1)),
+        .text("H2", .heading(2)),
+        .icon("bold", .bold),
+        .icon("italic", .italic),
+        .icon("strikethrough", .strikethrough),
+        .icon("chevron.left.forwardslash.chevron.right", .inlineCode),
+        .icon("link", .link),
+        .icon("list.bullet", .unorderedList),
+        .icon("list.number", .orderedList),
+        .icon("checklist", .todoList),
+        .icon("text.quote", .quote),
+        .icon("curlybraces.square", .codeBlock),
+        .icon("minus", .divider),
+        .icon("text.badge.plus", .noteLink),
+        .icon("checkmark.circle", .taskReference)
     ]
 
     private var compactItems: [iOSMarkdownFormatToolbarItem] {
         [
-            .icon("bold", "Bold", .bold),
-            .icon("italic", "Italic", .italic),
-            .icon("link", "Link", .link),
-            .icon("list.bullet", "Bulleted List", .unorderedList),
-            .icon("checklist", "Checklist", .todoList),
-            .icon("text.badge.plus", "Note Link", .noteLink)
+            .icon("bold", .bold),
+            .icon("italic", .italic),
+            .icon("link", .link),
+            .icon("list.bullet", .unorderedList),
+            .icon("checklist", .todoList),
+            .icon("text.badge.plus", .noteLink)
         ]
     }
 
@@ -670,12 +670,18 @@ private struct iOSMarkdownFormatToolbarItem: Identifiable {
     let systemImage: String?
     let command: MarkdownFormatCommand
 
-    static func icon(_ systemImage: String, _ title: String, _ command: MarkdownFormatCommand) -> iOSMarkdownFormatToolbarItem {
-        iOSMarkdownFormatToolbarItem(id: title, title: title, systemImage: systemImage, command: command)
+    /// **T-845.** `title` used to be typed at every call site below; it is now
+    /// `MarkdownFormatCommandTitle.sentenceCase(for:)`, so a fourteenth button cannot retype it a
+    /// third way (macOS's toolbar is the second) and cannot pick Title Case by habit the way this
+    /// file's own two copies — `primaryItems` and `compactItems` — used to.
+    static func icon(_ systemImage: String, _ command: MarkdownFormatCommand) -> iOSMarkdownFormatToolbarItem {
+        let title = MarkdownFormatCommandTitle.sentenceCase(for: command)
+        return iOSMarkdownFormatToolbarItem(id: title, title: title, systemImage: systemImage, command: command)
     }
 
-    static func text(_ title: String, _ accessibilityTitle: String, _ command: MarkdownFormatCommand) -> iOSMarkdownFormatToolbarItem {
-        iOSMarkdownFormatToolbarItem(id: accessibilityTitle, title: title, systemImage: nil, command: command)
+    static func text(_ glyph: String, _ command: MarkdownFormatCommand) -> iOSMarkdownFormatToolbarItem {
+        let accessibilityTitle = MarkdownFormatCommandTitle.sentenceCase(for: command)
+        return iOSMarkdownFormatToolbarItem(id: accessibilityTitle, title: glyph, systemImage: nil, command: command)
     }
 
     var menuSystemImage: String {

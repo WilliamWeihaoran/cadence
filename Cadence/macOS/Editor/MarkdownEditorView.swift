@@ -303,35 +303,35 @@ private struct MarkdownEditorToolbar: View {
         HStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
-                    MarkdownToolbarTextButton(title: "H1", accessibilityLabel: "Heading 1") {
+                    MarkdownToolbarTextButton(title: "H1", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .heading(1))) {
                         textView?.performMarkdownFormatCommand(.heading(1))
                     }
-                    MarkdownToolbarTextButton(title: "H2", accessibilityLabel: "Heading 2") {
+                    MarkdownToolbarTextButton(title: "H2", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .heading(2))) {
                         textView?.performMarkdownFormatCommand(.heading(2))
                     }
                     toolbarDivider
-                    MarkdownToolbarButton(systemName: "bold", accessibilityLabel: "Bold") {
+                    MarkdownToolbarButton(systemName: "bold", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .bold)) {
                         textView?.performMarkdownFormatCommand(.bold)
                     }
-                    MarkdownToolbarButton(systemName: "italic", accessibilityLabel: "Italic") {
+                    MarkdownToolbarButton(systemName: "italic", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .italic)) {
                         textView?.performMarkdownFormatCommand(.italic)
                     }
-                    MarkdownToolbarButton(systemName: "strikethrough", accessibilityLabel: "Strikethrough") {
+                    MarkdownToolbarButton(systemName: "strikethrough", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .strikethrough)) {
                         textView?.performMarkdownFormatCommand(.strikethrough)
                     }
-                    MarkdownToolbarButton(systemName: "highlighter", accessibilityLabel: "Highlight") {
+                    MarkdownToolbarButton(systemName: "highlighter", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .highlight)) {
                         textView?.performMarkdownFormatCommand(.highlight)
                     }
-                    MarkdownToolbarButton(systemName: "chevron.left.forwardslash.chevron.right", accessibilityLabel: "Inline code") {
+                    MarkdownToolbarButton(systemName: "chevron.left.forwardslash.chevron.right", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .inlineCode)) {
                         textView?.performMarkdownFormatCommand(.inlineCode)
                     }
                     toolbarDivider
-                    MarkdownToolbarButton(systemName: "link", accessibilityLabel: "Link") {
+                    MarkdownToolbarButton(systemName: "link", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .link)) {
                         textView?.performMarkdownFormatCommand(.link)
                     }
                     MarkdownReferenceMenuButton(
                         systemName: "text.badge.plus",
-                        accessibilityLabel: "Note link",
+                        accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .noteLink),
                         emptyTitle: "Blank Note Link",
                         suggestions: noteSuggestions,
                         blankAction: { textView?.performMarkdownFormatCommand(.noteLink) },
@@ -339,30 +339,30 @@ private struct MarkdownEditorToolbar: View {
                     )
                     MarkdownReferenceMenuButton(
                         systemName: "checkmark.circle",
-                        accessibilityLabel: "Task reference",
+                        accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .taskReference),
                         emptyTitle: "Blank Task Reference",
                         suggestions: taskSuggestions,
                         blankAction: { textView?.performMarkdownFormatCommand(.taskReference) },
                         selectAction: { textView?.insertMarkdownReference($0.markdown) }
                     )
                     toolbarDivider
-                    MarkdownToolbarButton(systemName: "list.bullet", accessibilityLabel: "Bulleted list") {
+                    MarkdownToolbarButton(systemName: "list.bullet", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .unorderedList)) {
                         textView?.performMarkdownFormatCommand(.unorderedList)
                     }
-                    MarkdownToolbarButton(systemName: "list.number", accessibilityLabel: "Numbered list") {
+                    MarkdownToolbarButton(systemName: "list.number", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .orderedList)) {
                         textView?.performMarkdownFormatCommand(.orderedList)
                     }
-                    MarkdownToolbarButton(systemName: "checklist", accessibilityLabel: "Checklist") {
+                    MarkdownToolbarButton(systemName: "checklist", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .todoList)) {
                         textView?.performMarkdownFormatCommand(.todoList)
                     }
-                    MarkdownToolbarButton(systemName: "text.quote", accessibilityLabel: "Quote") {
+                    MarkdownToolbarButton(systemName: "text.quote", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .quote)) {
                         textView?.performMarkdownFormatCommand(.quote)
                     }
                     toolbarDivider
-                    MarkdownToolbarButton(systemName: "curlybraces.square", accessibilityLabel: "Code block") {
+                    MarkdownToolbarButton(systemName: "curlybraces.square", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .codeBlock)) {
                         textView?.performMarkdownFormatCommand(.codeBlock)
                     }
-                    MarkdownToolbarButton(systemName: "minus", accessibilityLabel: "Divider") {
+                    MarkdownToolbarButton(systemName: "minus", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .divider)) {
                         textView?.performMarkdownFormatCommand(.divider)
                     }
                     if let onChooseImages {

@@ -84,10 +84,26 @@ struct CadenceControlAccessibilityLabelTests {
     /// visible text, so it is not icon-only, but `H1` is not a name. `.accessibilityLabel`
     /// *replaces* a label's own text rather than appending to it, so naming it "Heading 1" is a
     /// substitution and not a double announcement.
+    ///
+    /// **T-845.** The literal `"Heading 1"`/`"Heading 2"` this pinned is now
+    /// `MarkdownFormatCommandTitle.sentenceCase(for: .heading(n))` — the shared title table both
+    /// the format toolbar and iOS's now read, so a fixture rebuilt from the accessible *name*
+    /// (asserted separately below) rather than from the retired literal is what proves the
+    /// substitution still holds.
     @Test func theTwoHeadingButtonsAreNamedForTheHeadingRatherThanForTheGlyph() throws {
         let text = try CadenceSourceScan.sourceFile(Self.toolbarPath)
-        #expect(text.contains(#"MarkdownToolbarTextButton(title: "H1", accessibilityLabel: "Heading 1")"#))
-        #expect(text.contains(#"MarkdownToolbarTextButton(title: "H2", accessibilityLabel: "Heading 2")"#))
+        #expect(
+            text.contains(
+                #"MarkdownToolbarTextButton(title: "H1", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .heading(1)))"#
+            )
+        )
+        #expect(
+            text.contains(
+                #"MarkdownToolbarTextButton(title: "H2", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .heading(2)))"#
+            )
+        )
+        #expect(MarkdownFormatCommandTitle.sentenceCase(for: .heading(1)) == "Heading 1")
+        #expect(MarkdownFormatCommandTitle.sentenceCase(for: .heading(2)) == "Heading 2")
     }
 
     /// True when a view applies a tooltip and never states an accessible name.
