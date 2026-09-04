@@ -99,6 +99,10 @@ struct CadenceCoreNoteState {
     var today: Note?
     var week: Note?
     var notepad: Note?
+    /// Tabs whose fetch-or-create threw, so `nil` above means "failed" rather than "not asked
+    /// for yet" (T-849). Empty on every call site that predates this — `loadOrCreateCoreNotes`
+    /// is the only writer.
+    var failedTabs: Set<CadenceCoreNoteTab> = []
 
     func note(for tab: CadenceCoreNoteTab) -> Note? {
         switch tab {
@@ -120,15 +124,45 @@ enum CadenceCoreNoteSupport {
     ///
     /// The week is derived from the day rather than passed separately, so the two can never
     /// disagree about which week is on screen.
+    ///
+    /// **`nil` used to mean two different things (T-849).** `try?` on each of the three collapses
+    /// "the fetch-or-create threw" into the same `nil` a caller would see if the note simply had
+    /// not loaded yet — except the latter cannot happen here: `dailyNote`, `weeklyNote` and
+    /// `permanentNote` all create the note on a miss, so a `nil` reaching this function is always
+    /// a failure. Every caller used to read it as the harmless case anyway and showed a spinner
+    /// that was never going to resolve. The three `try?`s stay — they are the simplest way to ask
+    /// "did this throw" — but the hoisted overload below turns each `nil` into a named entry in
+    /// `failedTabs` instead of silently discarding it, and does so per note, so one throwing fetch
+    /// does not stop the other two from loading.
     static func loadOrCreateCoreNotes(
         in modelContext: ModelContext,
         dayKey: String = DateFormatters.todayKey()
     ) -> CadenceCoreNoteState {
-        CadenceCoreNoteState(
+        loadOrCreateCoreNotes(
             today: try? NoteMigrationService.dailyNote(for: dayKey, in: modelContext),
-            week: try? NoteMigrationService.weeklyNote(for: CadenceNoteDateNavigation.weekKey(forDayKey: dayKey), in: modelContext),
+            week: try? NoteMigrationService.weeklyNote(
+                for: CadenceNoteDateNavigation.weekKey(forDayKey: dayKey),
+                in: modelContext
+            ),
             notepad: try? NoteMigrationService.permanentNote(in: modelContext)
         )
+    }
+
+    /// The same assembly with the three fetches hoisted out, so the failure path is exercisable
+    /// without a genuinely throwing `ModelContext` — an in-memory container will not reliably
+    /// fail a fetch or a save on demand. Same shape as
+    /// `HabitNotificationReconcileSupport.reconcileInput`, for the same reason: `nil` here can
+    /// only mean the caller's fetch threw, because `note(for:)` below never returns `nil` on its
+    /// own account.
+    static func loadOrCreateCoreNotes(today: Note?, week: Note?, notepad: Note?) -> CadenceCoreNoteState {
+        var state = CadenceCoreNoteState()
+        state.today = today
+        state.week = week
+        state.notepad = notepad
+        if today == nil { state.failedTabs.insert(.today) }
+        if week == nil { state.failedTabs.insert(.week) }
+        if notepad == nil { state.failedTabs.insert(.notepad) }
+        return state
     }
 
     static func note(

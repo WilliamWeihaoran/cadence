@@ -29,6 +29,11 @@ struct NotePanel: View {
     @State private var embeddedTaskFailureNotice: String?
     @State private var loadedNoteID: UUID?
     @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
+    /// Tabs whose note failed to load or create on the last `loadOrCreate()` (T-849). A tab in
+    /// here has a `nil` note that is never going to become non-nil on its own — unlike the `nil`
+    /// every tab starts in before the first load lands, which `ProgressView()` still correctly
+    /// describes.
+    @State private var failedNoteTabs: Set<CadenceCoreNoteTab> = []
 
     /// The context this panel's notes are loaded into and written back through.
     ///
@@ -80,23 +85,11 @@ struct NotePanel: View {
             Group {
                 switch activeTab {
                 case .today:
-                    if let note = todayNote {
-                        noteEditor(for: note)
-                    } else {
-                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+                    noteOrPlaceholder(todayNote, tab: .today)
                 case .week:
-                    if let note = weekNote {
-                        noteEditor(for: note)
-                    } else {
-                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+                    noteOrPlaceholder(weekNote, tab: .week)
                 case .notepad:
-                    if let note = permNote {
-                        noteEditor(for: note)
-                    } else {
-                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+                    noteOrPlaceholder(permNote, tab: .notepad)
                 }
             }
             .zIndex(0)
@@ -132,6 +125,41 @@ struct NotePanel: View {
 
     private var notesSnapshot: CadenceCoreNoteState {
         CadenceCoreNoteState(today: todayNote, week: weekNote, notepad: permNote)
+    }
+
+    /// The one tab's content: the loaded note, an explicit failure if this tab's load failed
+    /// (T-849), or the spinner for the ordinary case of "still loading".
+    ///
+    /// **A failed tab must not blank the panel.** The three notes load independently — one
+    /// `try?` each in `CadenceCoreNoteSupport.loadOrCreateCoreNotes` — so a failure here says
+    /// nothing about the other two tabs, which is why this switches on `tab` alone rather than
+    /// gating the whole `Group` on one shared success flag.
+    @ViewBuilder
+    private func noteOrPlaceholder(_ note: Note?, tab: CadenceCoreNoteTab) -> some View {
+        if let note {
+            noteEditor(for: note)
+        } else if failedNoteTabs.contains(tab) {
+            noteLoadFailureView(for: tab)
+        } else {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// **Distinguishable from "still loading" (T-849).** A `nil` note used to draw the same
+    /// `ProgressView()` whether the fetch had not finished yet or had already failed and was
+    /// never going to finish — the second case looked identical to the first forever, with
+    /// nothing on screen saying so. `dailyNote`/`weeklyNote`/`permanentNote` all `throws` rather
+    /// than returning `nil` for "not found" (they create it instead), so a `nil` reaching here
+    /// is always a genuine failure, never an empty state.
+    private func noteLoadFailureView(for tab: CadenceCoreNoteTab) -> some View {
+        VStack(spacing: 10) {
+            CadenceInlineFailureNotice(text: "Couldn't load this note.")
+            Button("Try Again") { loadOrCreate() }
+                .buttonStyle(.cadencePlain)
+                .font(.system(size: 12, weight: .semibold))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 24)
     }
 
     @ViewBuilder
@@ -187,6 +215,7 @@ struct NotePanel: View {
         todayNote = snapshot.today
         weekNote = snapshot.week
         permNote = snapshot.notepad
+        failedNoteTabs = snapshot.failedTabs
     }
 
     private func refreshFromStore() {
