@@ -1923,6 +1923,57 @@ lane.
 scheme inspection beyond committed project membership. The 117/23/7 split is a static declaration-
 reference proxy and must not be represented as executed-line coverage.
 
+**CORRECTION (r2, 2026-09-04; T-882):** the "seven strongest cheap-test candidates" table above is
+wrong, and the mistake is worth naming so nobody re-derives this exact table. **Six of the seven
+already have a dedicated behavioural suite** — the proxy measured static type-name matching, which
+is not the same claim as test coverage, and got that claim wrong:
+
+```text
+Cadence/Shared/CadenceCapturePaletteSupport.swift    -> CadenceTests/CadenceCapturePaletteTests.swift
+                                                         (967 lines; all 11 declared types --
+                                                         including the nested Candidate struct --
+                                                         are referenced, ~119 mentions total)
+Cadence/Shared/CadenceDetailPanelPresentation.swift  -> exercised from three call-site suites
+                                                         (CadenceTaskInspectorHostTests,
+                                                         CadenceDeletedSelectionGuardTests,
+                                                         CadenceBundleInspectorHostTests)
+Cadence/Shared/CadenceNoteDateNavigation.swift       -> CadenceTests/CadenceNoteDateNavigationTests.swift
+Cadence/Shared/CadenceProjectPickerSupport.swift     -> CadenceTests/CadenceContainerPickerConsolidationTests.swift;
+                                                         the file itself is a two-fact typealias onto
+                                                         the generic CadencePickerSupport<Project>, which
+                                                         is what that suite actually drives
+Cadence/Shared/CadenceSwipeActionSupport.swift       -> CadenceTests/CadenceSwipeActionSupportTests.swift
+Cadence/Shared/CadenceTaskStatusEditing.swift        -> CadenceTests/CadenceTaskStatusEditingSurfaceTests.swift
+                                                         (and five more call-site suites)
+```
+
+The seventh, `Components/CadenceWrappingHStack.swift`, really is untested on its own terms, but not
+because nobody got to it: it is untestable by construction (see T-883, filed separately) — `Layout.
+Subviews` has no public initialiser, so the type cannot be driven from a unit test at all. Its own
+arithmetic (a private `itemSizes` clamp) is unreachable; every load-bearing calculation is delegated
+to `CadenceFlowLayoutSupport`, which has its own dedicated `CadenceFlowLayoutSupportTests.swift`
+(12 tests). So the real count is seven-for-seven covered at the layer that can be covered, not
+one-for-seven as the table implied.
+
+**The audit still paid for itself, and this is the part to keep.** Its real value was never the
+static proxy's yes/no — it was pointing at six files whose *covered* status was hiding a live hole
+the proxy could not see, because "a test names this type" and "a test exercises this line" are
+different claims. Landed as `3b56985` (T-879/T-880): `CadenceSwipeActionSupport.release` multiplies
+velocity by the swipe edge's direction so the release rule can stay unsigned, and every velocity
+case in the existing suite dragged right, where that factor is 1 — deleting the factor passed all
+24 existing tests and, on a real row, would have made a *flick-back* on the trailing edge commit
+the swipe instead of cancelling it: a task marked done at the moment the user snatched the row away.
+`CadenceTaskStatusEditing.completeFocusSession` is the wrapper's only entry point that answers, and
+`iOSFocusView` resets the focus stopwatch on that answer; the existing suite called it only through
+a `Void`-returning table, so flipping the return to always-`false` passed the existing suite too.
+Both are mutation-proved, both are fixed.
+
+**So the corrected framing for whoever reads R24 next:** static type-name matching is a proxy for
+"a test exists that could plausibly cover this," not for "this behaviour is pinned." A file the
+proxy marks covered can still hide an unpinned return value or an unpinned sign; a file the proxy
+marks uncovered can still be fully exercised through a generic it is a typealias for, or genuinely
+unreachable by construction. Read the actual suite before trusting the table, in either direction.
+
 ---
 
 ## Note on R19–R24 (coordinator, 2026-09-04)
