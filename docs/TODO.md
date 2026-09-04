@@ -236,24 +236,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   what `iOSTrackingEditorComponents.swift`'s picker announces on the phone, a real screen's
   behaviour and not a call to make in passing while fixing an unrelated file.
 
-- [T-935] **Seven private helpers wrap `Button` around a bare `Image(systemName:)` with a
-  required name parameter, and none of them know about the other six.** Found while closing
-  [[T-791]], which pinned the population (`CadenceIconOnlyHelperIdiomDuplicationTests`) rather than
-  hoisting it: `HabitsFormSupportViews.stepButton`, `GoalTimelineView.timelineNavButton`,
-  `SettingsSupportViews.actionButton`, `FocusBundleTaskSupportViews.focusRowIconButton`,
-  `TimelineBundleBlockSupportViews.rowIconButton`, `TaskInspectorContentSupportViews.iconButton`
-  and `SettingsTagsSection.rowButton` — plus `ListEditorSupportViews.ListEditorIconCell`, the same
-  idiom as a `struct`. Every one already requires a name and draws the same three lines
-  (`Button(action:) { Image(systemName:)…} .buttonStyle(…) .cadenceControlLabel(…)`), which is
-  exactly the shape [[T-672]] hoisted into `CadenceSearchFieldClearButton`. Not attempted here: a
-  shared component would need to reconcile at least four drifted details across the eight call
-  sites (frame size — 22 to 32pt; background — plain, `Theme.surface`, `Theme.surfaceElevated`, or
-  none; corner radius — 6 to 8pt with two different `RoundedRectangle` styles; an optional
-  `isDisabled` three take and five do not, and a customisable tint five take — two of them
-  required, the other three defaulted to `Theme.dim` — while three hardcode their own colour
-  instead), which is the same "parameter list to design" judgement call [[T-790]] declined for
-  the search row, not a mechanical duplication removal.
-
 - [T-792] **A goal's linked-list and task-contributor rows now announce a normalised title;
   the visible `Text` beside them still reads it raw.** Found while landing [[T-673]] and
   deliberately left — fixing it would have been a copy change to a display the ticket was not
@@ -445,35 +427,27 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   worst case is that this path is wider than described.
 
 
-- [T-698] **The Mac's goal pickers spell `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)`'s body
-  inline, three times in one file.** `macOS/Views/GoalPickerViews.swift` declares
-  `var emptyText: String = "No matching goals"` on both pickers (lines 13 and 89) and then draws
-  `Text(searchQuery…isEmpty ? "No goals yet" : emptyText)` (line 137) — which is
-  `isNarrowed ? "No matching goals" : "No goals yet"`, the shared function's body, re-typed. Found
-  by [[T-555]]'s widened harvest, which is the first thing in the repo able to see it: the constant
-  is spelled as a `static func`, so the sweep walked past it until now. [[T-550]] deleted this
-  argument at the call sites that passed it explicitly (`CreateGoalSheet` and
-  `HabitsFormSupportViews` are clean), and left the two *defaults* behind, because nothing was
-  looking at defaults. The fix is to take `isNarrowed` and call the function, which also makes
-  [[T-689]]'s third case land in one place rather than three. **It will turn T-550's own guard
-  red, correctly**: `CadenceEmptyTitleFallbackSweepTests` asserts the picker still declares
-  `var emptyText: String = "No matching goals"`, which is the line this ticket deletes — retire
-  that half of the assertion in the same change rather than working around it. Ledgered in
-  `cadenceStaticFuncConstantLedger`, so the sweep fails the moment the entry stops describing the
-  file.
+- [T-698] **CLOSED 2026-09-04 (`85b63c3d`).** `GoalLinkPickerButton` and `GoalLinkPickerList`
+  in `macOS/Views/GoalPickerViews.swift` lost the `emptyText` property both were retyping; the
+  list's empty-state `Text` now calls `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)` directly,
+  so the picker's body no longer spells either of the function's own answers. Retired
+  `CadenceEmptyTitleFallbackSweepTests.noGoalPickerCallSiteRepeatsTheEmptyTextDefault` in the same
+  change, per this ticket's own note: the property its non-vacuity check asserted on is gone
+  rather than merely moved, so there is nothing left for a caller to repeat. Added
+  `theGoalPickerListReadsGoalsTitleRatherThanTypingEitherAnswer` (source-shape) as the direct
+  guard; the two `cadenceStaticFuncConstantLedger` entries this ticket owned are deleted.
 
-- [T-699] **"No lists yet" has three spellings and no home.** `CadenceListsSummary.eyebrow(…)`
-  returns it as the fallback branch of a summary line, `iOSRootSidebar.emptyListsRow` types it as a
-  bare `Text`, and `iOSGoalAttachListsSheet` types it as
-  `isNarrowedToEmpty ? "No matching lists" : "No lists yet"`. The third one names the shape of the
-  fix: that is `goalsTitle(isNarrowed:)` and `habitsTitle(isNarrowed:)` with the noun changed, so
-  the answer is a `CadenceEmptyStateCopy.listsTitle(isNarrowed:)` beside them, read by the sheet and
-  by the sidebar, with `eyebrow`'s fallback reading it too. Note the sidebar is **not** a call site
-  for `eyebrow` — a row is not a summary line — which is the point: the words never had a constant
-  of their own, only a function's fallback branch, and that is precisely why nothing flagged the
-  second and third copies. `"No matching lists"` is declared nowhere at all and so is invisible to
-  the sweep in either direction; the ticket owns both halves. Found by [[T-555]]; both live sites
-  are ledgered in `cadenceStaticFuncConstantLedger`.
+- [T-699] **CLOSED 2026-09-04 (`85b63c3d`).** `CadenceEmptyStateCopy.listsTitle(isNarrowed:)`
+  now sits beside `goalsTitle`/`habitsTitle`, taking the argument the ticket predicted rather than
+  being a bare constant. `CadenceListsSummary.eyebrow`'s fallback, `iOSRootSidebar.emptyListsRow`,
+  and `iOSGoalAttachListsSheet` all read it, which gives `"No matching lists"` its first
+  declaration anywhere. `CadenceEmptyStateAuditTests.theAttachListsSheetAsksTheSharedNarrowingRule`
+  was asserting the sheet's old literal text and is updated to assert the call instead; added
+  `listsTitleAnswersBothWaysAndEveryCallSiteReadsIt` pinning both answers and all three call sites
+  directly. Both `cadenceStaticFuncConstantLedger` entries this ticket owned are deleted (empty
+  ledger, together with [[T-698]]'s two), and the static-func harvest fixture in
+  `CadenceSharedConstantReuseSweepTests` points at `listsTitle` rather than `eyebrow` now that the
+  literal moved.
 
 
 - [T-447] *(narrowed 2026-08-30: both landings reviewed. T-281 is a faithful but visually inert extraction — the two headers were already byte-identical before it. T-283's renames are correct and complete. Defects found and filed separately as [[T-492]] and [[T-493]]. Predicate two is effectively answered off-device already: the commit outcome is covered in `CadenceEventKitPlatformParityTests` and its position by `theEventSheetKeepsItsCommitNoticeInsideTheHeader` — only the pixel is left. Predicate one is narrowed by `nothingInTheAppRewritesTheHorizontalSizeClassBetweenTheSheetAndItsHeader`: **nothing in `Cadence/` writes that environment key**, so only SwiftUI's own re-derivation inside NavigationStack -> HStack -> .frame remains device-only. That residue belongs with T-55 / T-280.)*
@@ -1497,33 +1471,16 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   decide this, because "Other" is a grouping bucket as well as a fallback and collapsing the two is a
   copy decision. Under the sweep's 12-character floor, so nothing will find it again by machine.
 
-- [T-703] **The six lifecycle section titles should become a composer now that [[T-555]] has landed —
-  and the reason they are six literals is a constraint that no longer exists.** [[T-546]] hoisted
-  `"Active Contexts"`, `"Archived Contexts"`, `"Completed Areas"`, `"Archived Areas"`,
-  `"Completed Projects"` and `"Archived Projects"` to `CadenceListLifecycleSectionCopy` and
-  deliberately **did not** build a `sectionTitle(_:of:)` composer. Its reason, recorded in `f6c3073`:
-  `cadenceSharedStringConstants` harvested `static let` only, so an interpolated title would be
-  invisible to the reuse sweep and a seventh site could re-type the literal with nothing to catch it.
-  **`aca2a49` closed exactly that gap** — the harvest now reads a `static func` that picks between
-  finished strings, flags zero formatters, and is pinned by a positive and a negative fixture. So the
-  objection is spent, and the composer is now the better shape twice over: the titles already follow
-  one rule (`"<status> <plural noun>"`, with the status word taken from `CadenceListSearchLifecycle`,
-  pinned by `everyLifecycleSectionTitleFollowsTheStatusThenNounRule`), and **it is how [[T-690]]'s
-  `.paused` and `.cancelled` projects get section titles at all** — today they reach no lifecycle
-  section on either platform and can only be found through search.
-  Note the interaction before starting: a template whose product is *assembled* is deliberately outside
-  the harvest, because no call site can re-type an interpolated value verbatim. A composer that picks
-  between finished strings stays inside it; one that interpolates a noun does not. Which of those you
-  build decides whether the sweep still guards these six.
-  **Considered and declined while closing [[T-690]], 2026-09-03.** `pausedProjects`/
-  `cancelledProjects` were added as two more plain literals, not as the tail end of a composer. The
-  "it is how T-690's titles get made at all" framing above turned out not to force the composer: two
-  more `static let`s did the same job with no interpolation risk. A composer built the safe way (a
-  `switch` returning finished strings, per this ticket's own closing note) would not have shrunk
-  anything — the same eight branches, moved from eight declarations into one function — and would
-  have made an invalid pairing constructible (`.paused` + `Context`, `.completed` + `Context`) that
-  the current one-constant-per-real-case shape cannot express. Left open in case a future caller
-  actually needs runtime composition rather than a fixed set; not needed by T-690.
+- [T-703] **CLOSED 2026-09-04, declined — no code change.** Re-opened the composer question this
+  ticket asked (compose only if it reads as well as the six/eight literals) and found it already
+  answered, in code, by `663bc139` (T-690, 2026-09-03): that commit tried building the composer
+  while adding `pausedProjects`/`cancelledProjects` and rejected it for the reason now recorded on
+  `CadenceListLifecycleSectionCopy` itself — a `switch`-shaped composer would not shrink the eight
+  branches (moved, not removed) and would make an invalid pairing constructible (`.paused` +
+  `Context`, `.completed` + `Context`) that eight one-constant-per-real-case literals cannot
+  express. The escape hatch this ticket named — "only if the composition reads as well as the
+  literals do" — is not met, so eight honest strings stay. Nothing to build; this entry formalizes
+  the decision the codebase already made.
 
 - [T-704] **[[T-560]]'s leak was cleaned and its mechanism closed, but never reproduced — so it is not
   known to be fixed.** Two instrumented runs on 2026-09-02 (21 tests, 19 of them building and saving
@@ -1842,18 +1799,25 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   itself (the aggregate zero-test count) is already fixed the same way as `xcb.sh`'s.
 
 
-- [T-783] **[[T-687]] part (2), refiled: the same untrimmed ternary on a `name`, 7 live sites.**
-  T-687 part (1) is closed — the 27 constant-fallback title sites are routed and swept. Part (2) is
-  not, and is scoped out of that sweep by construction: `CadenceEmptyTitleFallbackSweepTests`'
-  needles capture `[A-Za-z0-9_.]*[Tt]itle`, so an identifier ending `name`/`Name` is invisible to
-  both of them. The seven measured by T-609: `GoalsSupportViews.swift:434` and
-  `TaskBundlePickerSupportViews.swift:320` (`task.containerName` → "Inbox"),
-  `CadenceSearchCandidateSupport.swift:60` (→ "Inbox"), `GoalListLinkHelpers.swift:103` (→ "No
-  Context"), `iOSCalendarEventEditSheet.swift:395` (→ "Unknown calendar"), `iOSRootSidebar.swift:776`
-  (`item.name` → "Untitled"), and `iOSColumnWindDownSupport.swift:50`, which is the
-  trimmed-test/untrimmed-return spelling on `config.name`. `iOSSettingsContextSection.swift:78` is
-  the correct hand-spelling and is the control. Re-measure before sweeping: the `name` family has
-  its own real-value fallbacks the way the title family did.
+- [T-783] **CLOSED 2026-09-04 (`85b63c3d`).** Re-measured before touching anything: of the seven
+  sites named 2026-09-04, `GoalListLinkHelpers.swift` had already been fixed independently by
+  [[T-771]] in the interim (it now reads `CadenceSidebarLists.ungroupedTitle` off a trimmed name).
+  The other six now read `CadenceTitleNormalization.display(_:fallback:)`: `GoalsSupportViews.swift`
+  and `TaskBundlePickerSupportViews.swift` were re-typing `CadenceTaskSearchSupport.containerLabel
+  (for:)`'s own untrimmed body rather than calling it, so all three (`containerLabel` included) now
+  share one call and one trim, converging three "Inbox" spellings on the way;
+  `iOSCalendarEventEditSheet.swift` and `iOSRootSidebar.swift` were the plain ternary on
+  `eventCalendarName` and `item.name`; `iOSColumnWindDownSupport.swift` was the
+  trimmed-test/untrimmed-return near-miss on `config.name`. `iOSSettingsContextSection.swift:78`
+  stays exactly as the ticket named it — the correct hand-spelling, not a defect — because
+  `trimmedName` is a computed property that already trims, so its ternary is `display`'s idea by a
+  different route rather than a second copy of the bug; textually indistinguishable from the
+  defect, so it is a named exemption
+  (`theSettingsContextNameExemptionIsStillTheCorrectSpelling`) rather than a silent pass. Added the
+  `name`-family pair of `CadenceEmptyTitleFallbackSweepTests` needles beside the `title` ones —
+  `noSurfaceHandSpellsAnEmptyNameFallback` and
+  `noSurfaceTestsATrimmedNameAndThenReturnsTheUntrimmedOne` — as the sweep that stops an eighth
+  site re-typing this shape.
 
 - [T-785] **Two scans left reading wider than they now need to, both unblocked by [[T-668]].**
   (1) `MarkdownNoteSupport.resolved(_:with:)` holds the last two constant-fallback ternaries in the
