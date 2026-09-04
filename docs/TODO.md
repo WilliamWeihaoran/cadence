@@ -43,6 +43,16 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-1011] **The two surviving `priorityRank` forwarders exist only because a test can reach them.**
+  After [[T-670]] the declaring set is exactly two, both `{ priority.rank }`:
+  `CadenceTaskQuerySupport.priorityRank` now has **one** caller (`CadenceFocusPlanningSupport.swift:346`,
+  since [[T-669]] took its other) and `CalendarBoardPlannerSupport.priorityRank` has **three**
+  (`CadenceCalendarPlanningSupport.swift:371,372,398`). Inline `priority.rank` at those four sites and
+  the free-function count goes to zero, at which point
+  `everyPriorityRankSpellingInProductionSourceIsOneTheRankLoopReaches` asserts an empty set and the
+  rank loop it guards can be dropped — there is nothing left to drift. Both files are under
+  `Cadence/Shared/`, so `CadenceWidgets` and `CadenceMCPServer` must be built explicitly.
+
 - [T-999] **Four SDK names in the unqualified ledger are the residual framework allowlist, and it
   will grow.** `reloadInputViews()`, `validateMenuItem(_:)`, `unregisterForRemoteNotifications()`
   and `ranges(of:options:)` are AppKit/UIKit/Foundation members this repository *mentions* but never
@@ -1133,7 +1143,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   removes browse-all-notes from the rail and leaves other narrow hosts index-only.
   **Nobody has looked at this on a device.** The whole analysis is arithmetic and source reading. Before
   committing, capture the rail at 1366 and at 836 on a simulator.
-- [T-669] **`CadenceTaskQuerySupport.sortTasks` re-implements two of `TaskOrdering.precedes`'
+- [T-669] **CLOSED 2026-09-05 (`464618d`).** `.doDate` and `.priority` now delegate to `TaskOrdering.precedes`. **Behaviour-preservation was measured before the change, not argued from shape:** `doDateAndPriorityAgreeWithTaskOrderingOnEveryOrderedPair` compares both over all 64 ordered pairs of a probe set that reaches every branch, and **passed against unmodified HEAD** as well as after. The one textual difference was real and checked rather than flattened -- `.priority` guarded on `lhs.priority != rhs.priority` where `TaskOrdering` compares ranks, equivalent only because `TaskPriority.rank` is injective, which a sibling test already asserts. That dependency is now written into both files. **Filed as:** **`CadenceTaskQuerySupport.sortTasks` re-implements two of `TaskOrdering.precedes`'
   branches, and the equality is now proved.** Found by [[T-640]]. `.doDate` is fourteen lines that
   step through exactly what `.date` + `.ascending` does, and `.priority` is the same shape against
   `.priority` + `.descending`; `.listOrder` already delegates its tie-break. This was left alone
@@ -1146,7 +1156,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   This is the shared comparator every iOS surface sorts through, so it is not a passing edit; do it
   as its own change and re-run the iOS Today suites.
 
-- [T-670] **Two `priorityRank` spellings are out of reach of the test that claims to name every
+- [T-670] **CLOSED 2026-09-05 (`d5a57a3`).** Both out-of-reach spellings deleted; the call sites read `priority.rank`. `ModelEnums.swift` was already in every explicit source list, so no shared helper was needed -- confirmed from `project.pbxproj` rather than assumed, and `CadenceWidgets` and `CadenceMCPServer` were built on their own schemes, 0 errors and 0 warnings each. **Filed as:** **Two `priorityRank` spellings are out of reach of the test that claims to name every
   one.** Found by [[T-639]]. `TrackingDeleteHelpersTests.priorityRankIsOneOrderingSharedByEveryCaller`
   says its point is that it "names **every** spelling a test can reach" — true, and the reachable set
   is two. `CadenceTodayWidgetSupport.priorityRank` (`Services/CadenceTodayWidgetSupport.swift:200`)
