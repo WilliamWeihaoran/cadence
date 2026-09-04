@@ -119,7 +119,7 @@ struct CadenceRadiusControlSweepTests {
     /// file), the one named constant that moved rather than a call site, and the one
     /// `NSBezierPath` site with two literal replacements on the same line.
     @Test
-    func namedConversionsReadTheToken() throws {
+    func namedControlRadiusConversionsReadTheToken() throws {
         let sites: [(file: String, pattern: String)] = [
             (
                 "Cadence/Shared/CadenceHoverStyles.swift",

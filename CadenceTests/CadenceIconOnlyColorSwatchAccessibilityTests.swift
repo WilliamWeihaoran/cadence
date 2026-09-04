@@ -4,7 +4,8 @@ import Testing
 
 /// **A colour swatch is `IconGrid`'s exact pre-T-674 defect, one struct up (T-797).**
 ///
-/// `CreateContextSheet.ColorGrid` drew a bare `Circle()` mutating `selected` from
+/// `ColorGrid` -- a top-level type in `CreateContextSheet.swift`, not a member of any
+/// `CreateContextSheet` -- drew a bare `Circle()` mutating `selected` from
 /// `.onTapGesture` — no `Button`, no accessible name, no accessibility trait — reachable in
 /// Release from ordinary context creation or editing. `CadenceIconOnlyTapGestureAccessibilityTests`
 /// (T-674) correctly does **not** fire on it: that detector keys on `Image(systemName:)`, and a
@@ -74,7 +75,7 @@ struct CadenceIconOnlyColorSwatchAccessibilityTests {
     /// `.onTapGesture` was **548** characters, so 650 clears it with margin. `Button`/`Menu` catch
     /// a control introduced between the fill and the gesture; `Text(` catches the row-is-the-
     /// control shape when it sits between the two — see
-    /// `theWindowSeparatesTheRealSiteFromItsNearestLookAlikes`, which pins both exclusions on the
+    /// `theWindowSeparatesTheRealSwatchFromItsNearestLookAlikes`, which pins both exclusions on the
     /// real files rather than leaving them a comment.
     static func iconOnlyColorSwatchCount(in source: String) -> Int {
         guard source.contains(".onTapGesture") else { return 0 }
@@ -130,7 +131,7 @@ struct CadenceIconOnlyColorSwatchAccessibilityTests {
     /// false positive — the third one actually was one, on this suite's first sweep, until the
     /// `Circle()` requirement excluded it by construction. None of the three is a false positive
     /// now, and this is what proves it rather than assumes it.
-    @Test func theWindowSeparatesTheRealSiteFromItsNearestLookAlikes() throws {
+    @Test func theWindowSeparatesTheRealSwatchFromItsNearestLookAlikes() throws {
         // A colour dot beside a `Text`, tapped as a whole row — the dot is not the control.
         let goalRailRow = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalTimelineSupportViews.swift")
         let goalTimelineBar = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalTimelineBarView.swift")

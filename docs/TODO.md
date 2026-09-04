@@ -43,6 +43,25 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-974] **`agent-commit.sh`'s ledger guard validates against one HEAD and commits onto another.**
+  Measured 2026-09-04. u3's `3a381116` dropped u1's `T-935`, which u1 had filed in `72e3122`, even
+  though u3 passed only `--removes 67` and never declared a dropped id. The guard is **not** broken:
+  probed directly at `d6a808e6` with a fixture missing exactly one entry, it refused with
+  `LEDGER-IDS-LOST: T-935`, and `--removes 999` did not bypass it. So the check works and the flag
+  does not weaken it.
+  What fits the evidence is a **race inside the helper**: it reads `git cat-file -p HEAD:<path>` to
+  build the comparison, then later `update-ref`s onto whatever HEAD is by then. A sibling landing in
+  that window makes the new commit a child of a HEAD the validation never saw — so ids that arrived
+  in that window are invisible to the check and vanish silently. Four agents committing concurrently
+  makes the window reachable; this is the first time it has been caught, and only because u3 diffed
+  ticket-id sets afterwards rather than trusting its own commit.
+  **Fix:** capture the HEAD sha once, validate against that sha, and refuse at `update-ref` if HEAD
+  has moved since — the compare-and-swap the helper is currently missing. `git update-ref` takes an
+  expected old value for exactly this. Then pin it with a selftest that lands a sibling commit inside
+  the window and requires the refusal.
+  Until then the working practice stands and it is what caught this: **diff ticket-id sets against
+  the previous known-good commit after any ledger commit**, rather than trusting the guard alone.
+
 - [T-949] **`CadenceDefaults` only routes `@AppStorage` and the calendar memory; a service reading
   `UserDefaults.standard` directly reaches the wrong store in no shipping configuration — measured,
   not reasoned.** Re-counted [[T-745]]'s audit directly: 19 non-comment `UserDefaults.standard`
