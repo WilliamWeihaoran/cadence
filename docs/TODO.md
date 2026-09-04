@@ -234,7 +234,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   zero mentions, `CadenceWrappingHStack`, is untestable by construction ([[T-883]]). **The audit's
   real value was elsewhere:** it pointed at files whose *covered* status hid live holes — see
   [[T-879]] and [[T-880]].
-- [T-883] **`CadenceWrappingHStack` is untestable by construction, and a census will keep flagging it.**
+- [T-883] **CLOSED 2026-09-05 (`39064901`).** Recorded as an adapter with no seam, in the file itself where a census will open it, plus a cross-reference from the tested helper's suite. **Corrected while there:** six iOS call sites, not the five the brief claimed -- nine call sites in total. **Filed as:** **`CadenceWrappingHStack` is untestable by construction, and a census will keep flagging it.**
   `Layout.Subviews` has no public initialiser; all its arithmetic is delegated to
   `CadenceFlowLayoutSupport`, which has its own 12-test suite covering the empty and single-item
   cases; its only own logic is a private `itemSizes` clamp unreachable from a unit test. Five iOS
@@ -324,7 +324,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   what `iOSTrackingEditorComponents.swift`'s picker announces on the phone, a real screen's
   behaviour and not a call to make in passing while fixing an unrelated file.
 
-- [T-935] **Seven private helpers wrap `Button` around a bare `Image(systemName:)` with a
+- [T-935] **CLOSED 2026-09-05 (`39064901`).** **As a decision not to consolidate, independently re-measured.** Across all 8 sites: frame 22-32pt; background none / `Theme.surface` / `surfaceElevated(.opacity)` / a custom selection fill; corner radius 6-8pt through three different mechanisms (`clipShape`, a `strokeBorder` overlay, `contentShape`); `isDisabled` taken by 3 and not by 5; tint hardcoded by 3, defaulted by 3, required by 2. A ninth look-alike family (`kindButton`, `modeButton`, `frequencyButton`) draws icon **plus visible text** and is correctly excluded. **They are not one thing**, and [[T-791]]'s decision to pin the population rather than hoist it stands. **Filed as:** **Seven private helpers wrap `Button` around a bare `Image(systemName:)` with a
   required name parameter, and none of them know about the other six.** Found while closing
   [[T-791]], which pinned the population (`CadenceIconOnlyHelperIdiomDuplicationTests`) rather than
   hoisting it: `HabitsFormSupportViews.stepButton`, `GoalTimelineView.timelineNavButton`,
