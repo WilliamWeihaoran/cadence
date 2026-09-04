@@ -151,10 +151,18 @@ struct TimelineEventBlock: View {
                         // bypassed `requestEventMutation`, so its message never mentioned future
                         // occurrences even when the user had chosen them.
                         //
-                        // Delete stays on `.calendarWriteFailureAlert()` while Save moved inline,
-                        // and the asymmetry is the confirmation overlay: it is a full-window layer,
-                        // so its Delete button is a click outside this transient popover and closes
-                        // it before the store answers. Save has no such step, and a draft to keep.
+                        // Delete stays on `.calendarWriteFailureAlert()` while Save moved inline.
+                        //
+                        // **Measured, not reasoned (T-768).** The line below — not an outside
+                        // click on the confirmation overlay — is why an inline notice would have
+                        // nowhere to draw: `selectedEventID = nil` closes this popover
+                        // synchronously, right here, before `applyEventMutation` even calls
+                        // `deleteConfirmationManager.present` to show the overlay. By the time its
+                        // Delete button exists on screen, this popover's content view is already
+                        // gone. (`CalendarBoardEventCard`'s delete is the one that actually depends
+                        // on the overlay's Delete button being a click outside a still-open
+                        // popover — see the comment there.) Save has no such step, and a draft to
+                        // keep.
                         selectedEventID = nil
                         applyEventMutation(.delete, scope: scope)
                     },

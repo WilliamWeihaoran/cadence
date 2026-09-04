@@ -57,11 +57,18 @@ enum CadenceCalendarEventEditingSupport {
     /// platforms cannot drift apart again.
     ///
     /// **There is no `deleteOutcome`, on purpose.** Both macOS event deletes go through
-    /// `DeleteConfirmationManager`, whose overlay covers the whole window — pressing its Delete
-    /// button is a click outside the transient popover and closes it before EventKit answers, so
-    /// an inline notice would have nothing to draw on. They keep `.calendarWriteFailureAlert()`,
-    /// which already names the cause, and they have no draft to lose. iOS keeps
-    /// `deleteFailureNotice(for:)` because its sheet has no such step in the middle.
+    /// `DeleteConfirmationManager`, whose overlay covers the whole window, and both end up with
+    /// no popover left to draw an inline notice on by the time its Delete button is pressed —
+    /// **measured per site, not assumed identical (T-768).** `TimelineEventBlock` closes its
+    /// popover itself (`selectedEventID = nil`) before it even calls `present`, so there is
+    /// nothing left on screen well before the overlay's Delete button exists.
+    /// `CalendarBoardEventCard` does not — its `showPopover` only clears after the confirmed
+    /// delete runs — so it is the one site that actually relies on the overlay's Delete button
+    /// being a click outside a still-open `.popover(isPresented:)`, which the platform dismisses
+    /// by default (neither site disables that). Either way, they keep
+    /// `.calendarWriteFailureAlert()`, which already names the cause, and they have no draft to
+    /// lose. iOS keeps `deleteFailureNotice(for:)` because its sheet has no such step in the
+    /// middle.
     static func saveOutcome(for failure: CalendarWriteFailure?) -> CadenceCalendarWriteOutcome {
         guard failure != nil else { return .committed }
         return .refused(notice: saveFailureNotice(for: failure))

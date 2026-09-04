@@ -224,11 +224,14 @@ struct CalendarBoardEventCard: View {
                             ? "This will permanently delete \"\(item.title)\" and future events from your calendar."
                             : "This will permanently delete \"\(item.title)\" from your calendar."
                     ) {
-                        // Delete deliberately stays on `.calendarWriteFailureAlert()`. The
-                        // confirmation overlay is a full-window layer, so pressing its Delete
-                        // button is a click outside this transient popover and closes it before
-                        // the store has answered — an inline notice would have nowhere to draw.
-                        // There is also no draft to keep here: nothing was typed.
+                        // Delete deliberately stays on `.calendarWriteFailureAlert()`. Unlike
+                        // `TimelineEventBlock`'s delete (T-768), `showPopover` is not cleared
+                        // until *after* this closure runs — so this is the one call site that
+                        // genuinely depends on the confirmation overlay's Delete button being a
+                        // click outside a still-open `.popover(isPresented: $showPopover)`
+                        // (confirmed: this modifier carries no `.interactiveDismissDisabled()`,
+                        // so the platform's default outside-click dismissal is live). There is
+                        // also no draft to keep here: nothing was typed.
                         calendarManager.deleteEvent(item.ekEvent, scope: scope)
                         showPopover = false
                     }
