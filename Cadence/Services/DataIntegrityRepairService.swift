@@ -25,6 +25,7 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     var movedDocuments: Int = 0
     var movedLinks: Int = 0
     var movedGoalLinks: Int = 0
+    var movedFocusSessions: Int = 0
 
     var changed: Bool {
         duplicateContextsMerged > 0 ||
@@ -43,7 +44,8 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
             movedNotes > 0 ||
             movedDocuments > 0 ||
             movedLinks > 0 ||
-            movedGoalLinks > 0
+            movedGoalLinks > 0 ||
+            movedFocusSessions > 0
     }
 }
 
@@ -106,6 +108,7 @@ nonisolated extension DataIntegrityRepairReport {
         movedDocuments = try container.decodeIfPresent(Int.self, forKey: .movedDocuments) ?? 0
         movedLinks = try container.decodeIfPresent(Int.self, forKey: .movedLinks) ?? 0
         movedGoalLinks = try container.decodeIfPresent(Int.self, forKey: .movedGoalLinks) ?? 0
+        movedFocusSessions = try container.decodeIfPresent(Int.self, forKey: .movedFocusSessions) ?? 0
     }
 }
 
@@ -142,7 +145,8 @@ typealias CadenceForkedOccurrenceRemoval = ([AppTask], ModelContext) -> [UUID]
 /// The main shape it repairs is the *same* row present twice, which is what a restore, a CloudKit
 /// round trip or a pre-merge migration leaves behind. It merges duplicate `Context`, `Area`,
 /// `Project` and `Note` rows, collapses duplicate habit-days and forked recurring occurrences, and
-/// re-points the tasks, notes, documents, links and goal links each merge would otherwise strand.
+/// re-points the tasks, notes, documents, links, goal links and focus session rows each merge
+/// would otherwise strand.
 ///
 /// One counter is not a merge: `habitRemindersCleared` (T-428) clears a `Habit.reminderMinuteOfDay`
 /// outside `0...1439`. It is here rather than beside the sweeps because its predicate reads a
@@ -191,6 +195,7 @@ nonisolated enum DataIntegrityRepairService {
         var links: [SavedLink]
         var goalLinks: [GoalListLink]
         var habitCompletions: [HabitCompletion]
+        var focusSessions: [FocusSessionLog]
     }
 
     private static let logger = Logger(subsystem: "com.haoranwei.Cadence", category: "DataIntegrity")
@@ -270,7 +275,8 @@ nonisolated enum DataIntegrityRepairService {
             documents: context.fetch(FetchDescriptor<Document>()),
             links: context.fetch(FetchDescriptor<SavedLink>()),
             goalLinks: context.fetch(FetchDescriptor<GoalListLink>()),
-            habitCompletions: context.fetch(FetchDescriptor<HabitCompletion>())
+            habitCompletions: context.fetch(FetchDescriptor<HabitCompletion>()),
+            focusSessions: context.fetch(FetchDescriptor<FocusSessionLog>())
         )
         var state = RepairState()
 
@@ -596,6 +602,14 @@ nonisolated enum DataIntegrityRepairService {
             goalLink.area = target
             report.movedGoalLinks += 1
         }
+        // T-743. `Area.focusSessions` is new with T-621 and was never added to the re-points
+        // above: without this, the duplicate's `FocusSessionLog` rows kept pointing at a row
+        // about to be deleted, and the survivor's `loggedMinutes` could no longer be explained
+        // by its own rows.
+        for session in store.focusSessions where session.area === source {
+            session.area = target
+            report.movedFocusSessions += 1
+        }
 
         modelContext.delete(source)
         state.deletedAreas.insert(ObjectIdentifier(source))
@@ -669,6 +683,13 @@ nonisolated enum DataIntegrityRepairService {
         for goalLink in store.goalLinks where goalLink.project === source {
             goalLink.project = target
             report.movedGoalLinks += 1
+        }
+        // T-743. Same gap as `mergeArea`'s: `Project.focusSessions` was never added to this
+        // merge's re-points, so a duplicate's ledger rows survived pointing at a project about
+        // to be deleted.
+        for session in store.focusSessions where session.project === source {
+            session.project = target
+            report.movedFocusSessions += 1
         }
 
         modelContext.delete(source)

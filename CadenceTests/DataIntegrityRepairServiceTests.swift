@@ -254,17 +254,142 @@ struct DataIntegrityRepairServiceTests {
         #expect(task.context === canonical)
     }
 
+    // MARK: - T-743, merging duplicate lists strands the surviving list's focus ledger
+
+    /// **Failing-first for [[T-743]].** `Area.focusSessions` is new with [[T-621]] and was never
+    /// added to `mergeArea`'s re-points, so before the fix the duplicate's `FocusSessionLog` row
+    /// is left pointing at the area `modelContext.delete(source)` is about to remove.
+    /// `.nullify` (deliberately, per [[T-621]]) then blanks that row's `area` to `nil` the moment
+    /// the delete lands — an orphan row [[T-744]] describes, produced by a merge rather than a
+    /// task deletion.
+    ///
+    /// Both duplicates bank a real session through `CadenceFocusLedger.bank` before the merge, so
+    /// the rows and the counters they explain are the real shapes those APIs produce, not
+    /// hand-built fixtures. Verified against a **second** `ModelContext` over the same container,
+    /// so a row that looks re-pointed only in the in-memory graph the merge just edited — but was
+    /// never actually re-pointed in a way that persists — would still be caught.
+    @Test func mergingDuplicateAreasRePointsTheirFocusSessionLedgerRows() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let oldWork = Context(name: "Work")
+        oldWork.order = 0
+        let restoredWork = Context(name: "Work")
+        restoredWork.order = 0
+
+        let sharedAreaID = UUID()
+        let oldArea = Area(name: "Ops", context: oldWork)
+        oldArea.id = sharedAreaID
+        oldArea.loggedMinutes = 50
+        let restoredArea = Area(name: "Ops", context: restoredWork)
+        restoredArea.id = sharedAreaID
+        restoredArea.loggedMinutes = 50
+        // Weight, so `restoredWork` wins `contextScore` (25 vs 26) and `restoredArea` survives.
+        let ballast = AppTask(title: "Ballast")
+        ballast.context = restoredWork
+
+        modelContext.insert(oldWork)
+        modelContext.insert(restoredWork)
+        modelContext.insert(oldArea)
+        modelContext.insert(restoredArea)
+        modelContext.insert(ballast)
+        try modelContext.save()
+
+        CadenceFocusLedger.bank(30, to: oldArea, in: modelContext)
+        CadenceFocusLedger.bank(20, to: restoredArea, in: modelContext)
+        try modelContext.save()
+
+        #expect(oldArea.loggedMinutes == 80)
+        #expect(restoredArea.loggedMinutes == 70)
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.duplicateAreasMerged == 1)
+        #expect(report.movedFocusSessions == 1, "only the duplicate's row needed to move")
+
+        // A fresh `ModelContext` over the same container, so a fetched object here is never
+        // `===` the `restoredArea` reference from the writing context above even when it is the
+        // same persisted row — compared by `id` instead, the way a relaunch would have to.
+        let secondContext = ModelContext(container)
+        let survivor = try #require(try secondContext.fetch(FetchDescriptor<Area>()).first)
+        #expect(survivor.id == sharedAreaID)
+        #expect(survivor.loggedMinutes == 80, "the only-ever-raise rule: max(70, 80)")
+
+        let rows = try secondContext.fetch(FetchDescriptor<FocusSessionLog>())
+        #expect(rows.count == 2, "the merge must not delete either session's row")
+        #expect(
+            rows.allSatisfy { $0.area === survivor },
+            "every row must survive pointing at the surviving area, not orphaned by the delete's .nullify"
+        )
+    }
+
+    /// The same defect on `Project.focusSessions`, [[T-743]]'s other half. Weighted with an extra
+    /// `Area` rather than an extra `AppTask` so the fixture is not the same shape as the area test
+    /// above.
+    @Test func mergingDuplicateProjectsRePointsTheirFocusSessionLedgerRows() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let oldWork = Context(name: "Work")
+        oldWork.order = 0
+        let restoredWork = Context(name: "Work")
+        restoredWork.order = 0
+
+        let sharedProjectID = UUID()
+        let oldProject = Project(name: "Launch", context: oldWork)
+        oldProject.id = sharedProjectID
+        oldProject.loggedMinutes = 50
+        let restoredProject = Project(name: "Launch", context: restoredWork)
+        restoredProject.id = sharedProjectID
+        restoredProject.loggedMinutes = 50
+        // Weight, so `restoredWork` wins `contextScore` (20 vs 45) and `restoredProject` survives.
+        let restoredArea = Area(name: "General", context: restoredWork)
+
+        modelContext.insert(oldWork)
+        modelContext.insert(restoredWork)
+        modelContext.insert(oldProject)
+        modelContext.insert(restoredProject)
+        modelContext.insert(restoredArea)
+        try modelContext.save()
+
+        CadenceFocusLedger.bank(30, to: oldProject, in: modelContext)
+        CadenceFocusLedger.bank(20, to: restoredProject, in: modelContext)
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.duplicateProjectsMerged == 1)
+        #expect(report.movedFocusSessions == 1, "only the duplicate's row needed to move")
+
+        // Compared by `id`, not `===` — see the area test's version of this note.
+        let secondContext = ModelContext(container)
+        let survivor = try #require(try secondContext.fetch(FetchDescriptor<Project>()).first)
+        #expect(survivor.id == sharedProjectID)
+        #expect(survivor.loggedMinutes == 80, "the only-ever-raise rule: max(70, 80)")
+
+        let rows = try secondContext.fetch(FetchDescriptor<FocusSessionLog>())
+        #expect(rows.count == 2, "the merge must not delete either session's row")
+        #expect(
+            rows.allSatisfy { $0.project === survivor },
+            "every row must survive pointing at the surviving project, not orphaned by the delete's .nullify"
+        )
+    }
+
     // MARK: - T-328, the boundary this service does not cross
 
     /// **Repair merges duplicates; it does not collect orphans, and that is a decision.**
     ///
-    /// The four rows below are every orphan shape [[T-328]] names: a `Subtask` with no
-    /// `parentTask`, a `TaskBundle` with no members, a `HabitCompletion` with no `habit`, and a
-    /// `MarkdownImageAsset` no markdown references. Repair must leave all four alone and report
-    /// `changed == false`, because `PersistenceController.performStartupMaintenance` runs it the
-    /// instant the container opens with no gate on CloudKit sync state — so on a launch that races
-    /// the first sync, an unowned row is indistinguishable from one whose owner has not arrived,
-    /// and the emptier the store the more a sweep would delete.
+    /// The five rows below are every orphan shape [[T-328]] names, plus the one [[T-744]] adds: a
+    /// `Subtask` with no `parentTask`, a `TaskBundle` with no members, a `HabitCompletion` with no
+    /// `habit`, a `MarkdownImageAsset` no markdown references, and a `FocusSessionLog` with no
+    /// `task`, `area` or `project` — the shape a task or list deletion leaves behind under the
+    /// `.nullify` delete rule [[T-621]] gave those three relationships on purpose. Repair must
+    /// leave all five alone and report `changed == false`, because
+    /// `PersistenceController.performStartupMaintenance` runs it the instant the container opens
+    /// with no gate on CloudKit sync state — so on a launch that races the first sync, an unowned
+    /// row is indistinguishable from one whose owner has not arrived, and the emptier the store the
+    /// more a sweep would delete. A `FocusSessionLog` is no different: its own subject could just
+    /// as easily be a task that has not synced in yet as one that was deleted.
     ///
     /// This test is the contract, not a description of missing work. A future sweep has to earn the
     /// right to delete by knowing the store is complete; changing these expectations without that
@@ -283,10 +408,19 @@ struct DataIntegrityRepairServiceTests {
             pixelHeight: 2,
             displayWidth: 100
         )
+        // No `task` / `area` / `project` assigned: exactly what deleting the subject under
+        // `.nullify` leaves behind.
+        let orphanedFocusSession = FocusSessionLog(
+            minutes: 15,
+            previousMinutes: 0,
+            loggedAt: Date(timeIntervalSince1970: 1_000),
+            dayKey: "2026-08-21"
+        )
         modelContext.insert(subtask)
         modelContext.insert(bundle)
         modelContext.insert(completion)
         modelContext.insert(asset)
+        modelContext.insert(orphanedFocusSession)
         try modelContext.save()
 
         let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
@@ -296,6 +430,13 @@ struct DataIntegrityRepairServiceTests {
         #expect(try modelContext.fetch(FetchDescriptor<TaskBundle>()).count == 1)
         #expect(try modelContext.fetch(FetchDescriptor<HabitCompletion>()).count == 1)
         #expect(try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).count == 1)
+
+        let secondContext = ModelContext(container)
+        let survivingSessions = try secondContext.fetch(FetchDescriptor<FocusSessionLog>())
+        #expect(survivingSessions.count == 1, "T-744: nothing collects an orphaned ledger row")
+        #expect(survivingSessions.first?.task == nil)
+        #expect(survivingSessions.first?.area == nil)
+        #expect(survivingSessions.first?.project == nil)
     }
 
     // MARK: - T-428, a reminder minute that is not a time of day
