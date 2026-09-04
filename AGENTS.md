@@ -5,9 +5,8 @@ startup router, and `docs/AGENTS_REFERENCE.md` preserves the former long root gu
 
 ## Project Snapshot
 
-Cadence is a native SwiftUI productivity app with a fully built macOS surface, shared SwiftData
-models, CloudKit sync, EventKit calendar/reminder integration, widgets, MCP support, and a large
-real iOS/iPadOS surface.
+Cadence is a native SwiftUI productivity app: a fully built macOS surface and a large real
+iOS/iPadOS one, shared SwiftData models, CloudKit sync, EventKit, widgets and MCP support.
 
 Primary target:
 
@@ -72,10 +71,8 @@ Long references, searchable only when needed:
 
 - `docs/CONTEXT_INDEX.md` - small routing map by change type.
 - `docs/AUDIT_BRIEF.md` - what an external audit report needs to be cheap to act on.
-- `docs/AGENTS_REFERENCE.md` - detailed root runbook and red-run history.
-- `docs/SHARED_AGENTS_REFERENCE.md` - detailed Shared guide.
-- `docs/IOS_AGENTS_REFERENCE.md` - detailed iOS guide.
-- `docs/CLAUDE_REFERENCE.md` - detailed product/feature history.
+- `docs/{AGENTS,SHARED_AGENTS,IOS_AGENTS}_REFERENCE.md` - the detailed root, Shared and iOS guides,
+  plus red-run history; `docs/CLAUDE_REFERENCE.md` - detailed product/feature history.
 
 ## Non-Negotiable Patterns
 

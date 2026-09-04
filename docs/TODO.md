@@ -43,6 +43,22 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-975] **The shared working tree silently drifts behind HEAD while agents run, and an integration
+  run started against it tests the wrong code.** Measured four times between 2026-09-04 and
+  2026-09-05. The worst instance: after Batch V the worktree's `docs/TODO.md` was missing **five**
+  ticket ids HEAD had (T-954, T-955, T-956, T-959, T-965) and its
+  `CadenceBuildInvocationHygieneTests.swift` was **107 lines behind** the fix already committed for
+  [[T-709]]. An `integ` run had already been launched against that tree and was stopped rather than
+  trusted. Nothing announces this: `git status` shows the files as modified, which is the same thing
+  it shows for real in-flight work.
+  **Why it happens:** `agent-commit.sh` commits from a private index via `commit-tree`, deliberately
+  and correctly — so a landed commit never touches the shared checkout. Every agent that then
+  reconstructs from the worktree instead of `git show HEAD:<path>` propagates the stale copy.
+  **Fix:** a check that compares the worktree against HEAD by ticket id and by file, and refuses to
+  start an integration run while any tracked file is behind HEAD without being deliberately dirty.
+  The working practice that has caught all four instances is `comm -23` on the id sets; make it a
+  script and call it from `xcb.sh`'s preflight for the `test` action.
+
 - [T-954] **`agent-commit.sh check` is a gate nothing calls.** [[T-781]] gave the declined-hunk
   ledger a check that *fails* rather than reports, which is what a batch-completion gate needs — and
   nothing in this repository invokes it. The two candidates both belong to somebody else: the
