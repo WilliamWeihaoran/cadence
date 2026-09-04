@@ -68,15 +68,27 @@ struct NoteEditorPane: View {
         Binding(
             get: { note.tags ?? [] },
             set: { newTags in
-                // Single write path: `setTags` resolves the `Tag` rows, folds in inline `#tags`
-                // already in the body, and mirrors the result into the note's frontmatter so the
-                // YAML stays in sync with the chips even though the block is never rendered.
-                TagSupport.setTags(
+                // Single write path: `setTagsCommittingInsertions` resolves the `Tag` rows, folds
+                // in inline `#tags` already in the body, and mirrors the result into the note's
+                // frontmatter so the YAML stays in sync with the chips even though the block is
+                // never rendered.
+                //
+                // **Commits the mint now (T-762).** A name typed here that matches no existing
+                // `Tag` mints one, and until this ticket that insert rode along on whatever
+                // unrelated screen saved next. Nothing below is written unless that commit lands —
+                // on a refusal the picker's own binding still reads the tags the store holds, so
+                // the tapped chip does not light up, and the notice already shown for a refused
+                // inline create (`tagFailureNotice`) says why.
+                guard TagSupport.setTagsCommittingInsertions(
                     named: newTags.map(\.name),
                     on: note,
                     in: modelContext,
                     writeFrontmatter: true
-                )
+                ) else {
+                    tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
+                    return
+                }
+                tagFailureNotice = nil
                 editorContent = note.content
                 loadedNoteID = note.id
                 refreshDerivedState(for: note.content)
@@ -307,7 +319,10 @@ struct NoteEditorPane: View {
         .background(Theme.surface)
         .onAppear {
             loadEditorStateIfNeeded(force: true)
-            TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)
+            // T-762: commits the mint, silently, the same as every other
+            // `syncNoteTagsFromMarkdownCommittingInsertions` caller — there is no button here and
+            // no moment the user is watching for a "tag added" confirmation.
+            TagSupport.syncNoteTagsFromMarkdownCommittingInsertions(note, in: modelContext)
         }
         .onChange(of: note.id) { _, _ in
             loadEditorStateIfNeeded(force: true)
@@ -398,7 +413,14 @@ struct NoteEditorPane: View {
         // read "Untitled" (T-223). It is `MarkdownNoteTitleSync` in `Services/` now, called from
         // here and from `CadenceCoreNoteSupport.update`, and from nowhere else.
         MarkdownNoteTitleSync.apply(to: note, content: content)
-        TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)
+        // **Commits the mint now (T-762).** This runs a few seconds after the user stops typing,
+        // or on a focus change — never on an explicit Save — so a name typed into the frontmatter
+        // that mints a `Tag` used to leave that insert pending for whatever unrelated screen saved
+        // next. `syncNoteTagsFromMarkdownCommittingInsertions` only assigns `note.tags` once the
+        // mint is safely committed; a refusal here reads as "did not sync yet", silently, the same
+        // as this call's other nine callers — there is no button to report through and no moment
+        // the user is waiting for one.
+        TagSupport.syncNoteTagsFromMarkdownCommittingInsertions(note, in: modelContext)
         onPersistContent(note, content)
         loadedNoteID = note.id
     }
@@ -434,11 +456,17 @@ struct NoteEditorPane: View {
     /// one frame down in `TagSupport.resolveTags`, and committed nothing — so a tag typed here sat
     /// pending until some other screen's save took it, and the chip was drawn regardless.
     ///
-    /// `noteTagsBinding` and `persistEditorContentIfNeeded` are the *other* two tag writes on this
-    /// pane and they are not this ticket: both go through `TagSupport.setTags` /
-    /// `syncNoteTagsFromMarkdown` on the debounced autosave path, where "what does an undo mean
-    /// under the user's caret" is the unsettled question `commitEdit`'s doc describes. They keep
-    /// their entries in `CadenceSaveCommitRule.commitReachExemptions`.
+    /// `noteTagsBinding` and `persistEditorContentIfNeeded`'s onward call to
+    /// `.onAppear`'s tag sync were the other two tag writes on this pane, deliberately left open at
+    /// the time this comment was written — **closed by T-762.** All three now commit only the rows
+    /// they had to mint, through `TagSupport.setTagsCommittingInsertions`/
+    /// `syncNoteTagsFromMarkdownCommittingInsertions`, and none of them needed `rollback()` or a
+    /// captured-field undo: every one of them writes `note.tags`/`note.content` only *after* the
+    /// mint's commit succeeds, so a refusal simply never reaches the write a caret-under-edit undo
+    /// would otherwise have to fight. `persistEditorContentIfNeeded` and `body`'s `.onAppear` stay
+    /// silent on a refusal, matching `syncNoteTagsFromMarkdownCommittingInsertions`'s other nine
+    /// callers; `noteTagsBinding` is a direct tap on a chip, so it reports through this same
+    /// `tagFailureNotice`.
     private func createTag(_ name: String) -> Tag? {
         guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
             tagFailureNotice = CadencePendingChangePersistence.editFailureNotice

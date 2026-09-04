@@ -123,6 +123,54 @@ extension TagSupport {
         return true
     }
 
+    /// `TagSupport.setTags(named:on:in:writeFrontmatter:)` for a `Note`, plus the commit for the
+    /// rows it had to mint — `NoteEditorPane.noteTagsBinding`'s own door onto the same T-631 shape
+    /// (T-762), and the reason it needed a separate function rather than reusing
+    /// `syncNoteTagsFromMarkdownCommittingInsertions` above: that one only ever *reads* the tag
+    /// names out of the frontmatter it already has; this one is the picker's write path, so it also
+    /// has to fold the picked names back into the frontmatter block, the same as `setTags` does.
+    ///
+    /// **Nothing is written until the mint is safely committed.** `note.tags`, the frontmatter
+    /// rewrite and `note.updatedAt` all happen *after* `commitInsert` returns — never before — so a
+    /// refusal has nothing to undo: the picker's binding still reads the tags the store actually
+    /// holds, and the chip the user tapped simply does not light up. That is the answer T-497 gave
+    /// for an in-place field edit, reached here by construction instead of by a rollback that would
+    /// have had to fight whatever the user has since typed in `note.content`. It is a materially
+    /// different answer to the one `CadencePendingChangePersistence.commitEdit`'s doc argues
+    /// `rollback()` is wrong for, because there is no "restore the old value" step at all — only a
+    /// "do not take the new one yet" one, and there is nothing under a live caret to lose either
+    /// way, since the frontmatter block is never rendered.
+    ///
+    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
+    @discardableResult
+    static func setTagsCommittingInsertions(
+        named names: [String],
+        on note: Note,
+        in context: ModelContext,
+        writeFrontmatter: Bool,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let resolvedNames = writeFrontmatter ? names + MarkdownMetadataParser.inlineTagNames(in: note.content) : names
+        guard let resolution = resolution(named: resolvedNames, in: context) else { return false }
+        if !resolution.inserted.isEmpty {
+            do {
+                try CadencePendingChangePersistence.commitInsert(
+                    of: resolution.inserted,
+                    in: context,
+                    commit: commit
+                )
+            } catch {
+                return false
+            }
+        }
+        note.tags = resolution.tags
+        if writeFrontmatter {
+            note.content = MarkdownMetadataParser.content(note.content, replacingFrontmatterTags: names)
+        }
+        note.updatedAt = Date()
+        return true
+    }
+
     /// `seedDefaultTags`, **committed** (T-653).
     ///
     /// `seedDefaultTags(in:saveChanges:)` is handed its `ModelContext`, and its default

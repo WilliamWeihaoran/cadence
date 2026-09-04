@@ -360,106 +360,146 @@ struct CadenceInlineTagCommitSurfaceTests {
         )
     }
 
-    // MARK: - T-647: what `NoteEditorPane.body`'s exemption is actually for
+    // MARK: - T-762: `NoteEditorPane`'s last three tag writes, closed
 
-    /// **The comment named the wrong cause, and the cause is this ticket's own family.**
+    /// **`NoteEditorPane` no longer needs a `commitReachExemptions` entry at all (T-762).**
     ///
-    /// `CadenceSaveCommitRule.commitReachExemptions` carried `NoteEditorPane.body` as
-    /// "[[T-634]]'s subtask one". T-634 is the task-detail subtask field, on
-    /// `SchedulePanelComponents` and `iOSTaskDetailSheet`, and it never touched this file — so the
-    /// entry was a real finding wearing a false explanation, which is the [[T-565]] class and
-    /// strictly worse than no explanation: it stops the next reader checking.
+    /// `body`'s `.onAppear`, `persistEditorContentIfNeeded` and `noteTagsBinding`'s setter were the
+    /// pane's last three tag writes reaching for the pane's ambient `ModelContext` and minting a
+    /// `Tag` with nothing committing it — held open past T-631/T-651 because "what does an undo
+    /// mean under the user's caret" looked like an unsettled design question. It was not: none of
+    /// the three needs an undo, because none of them writes `note.tags` / `note.content` until
+    /// the mint's own commit has already landed — there is no field to restore on a refusal,
+    /// because the write that would need restoring never happens. `body` and
+    /// `persistEditorContentIfNeeded` now go through
+    /// `TagSupport.syncNoteTagsFromMarkdownCommittingInsertions(_:in:commit:)`;
+    /// `noteTagsBinding` goes through the analogous `TagSupport.setTagsCommittingInsertions`, which
+    /// this ticket added because `noteTagsBinding` also has to fold the picked names back into the
+    /// note's frontmatter the way `TagSupport.setTags` does — `syncNoteTagsFromMarkdownCommittingInsertions`
+    /// only ever *reads* the frontmatter, never writes it.
     ///
-    /// This pins the correction rather than the comment alone, in three parts.
-    ///
-    /// **One: the machinery the old comment named is not there.** No `insertSubtask`, no
-    /// `deleteSubtask`, anywhere in the file. The one subtask symbol it does have is
-    /// `toggleEmbeddedSubtask`, and a field edit is not an existence change.
-    ///
-    /// **Two: there is exactly one call in `body` that half 3 can be following, and it is the tag
-    /// sync.** The rule reads a qualified call through `ExistenceIndex`, and an unqualified one only
-    /// against same-file declarations that were *handed* a `ModelContext`. `body` makes one
-    /// qualified call in total, and the file declares nothing taking a `: ModelContext` parameter —
-    /// so the unqualified half has an empty candidate set and the qualified half has one member.
-    /// That is what makes this an identification rather than a guess.
-    ///
-    /// **Three: the chain under that call really does insert and really does not commit** — which
-    /// is asserted against `TagSupport` itself rather than against prose, because
-    /// `syncNoteTagsFromMarkdown` is a static function this target compiles and can simply be run.
-    /// A tag that is not in the store yet is minted, and it is minted *pending*: nothing between
-    /// `body` and the row commits, which is the whole of the finding.
-    @Test func theNoteEditorPanesBodyExemptionIsTheTagSyncNotASubtask() throws {
+    /// This asserts the source no longer names the swallowing spelling anywhere in the file, and
+    /// that `CadenceSaveCommitRule.commitReachExemptions` carries no entry for it — the same
+    /// non-vacuous pairing every other closed entry in this file uses.
+    @Test func noteEditorPaneNoLongerNeedsACommitReachExemption() throws {
         let pane = try CadenceSourceScan.strippingComments(
             CadenceSourceScan.sourceFile("Cadence/macOS/Views/NoteEditorPane.swift")
         )
         #expect(pane.contains("struct NoteEditorPane: View"), "non-vacuity: wrong file read")
 
-        // One: the machinery T-634 is about, absent.
-        for absent in ["insertSubtask", "deleteSubtask"] {
-            #expect(
-                CadenceSourceScan.matchCount(absent, in: pane) == 0,
-                "NoteEditorPane has a \(absent) after all — the old attribution may have been right"
-            )
-        }
-        // And the subtask symbol it *does* have, so "no subtask code" is not what is being claimed.
-        #expect(CadenceSourceScan.matchCount("toggleEmbeddedSubtask", in: pane) > 0)
-
-        // Two: the candidate sets. No frame in this file disclaims ownership, so nothing
-        // unqualified can be the cause...
         #expect(
-            CadenceSourceScan.matchCount(#":\s*ModelContext\b"#, in: pane) == 0,
-            "a declaration in NoteEditorPane now takes a ModelContext, so body has a second candidate"
+            CadenceSourceScan.matchCount(#"TagSupport\.syncNoteTagsFromMarkdown\(note, in: modelContext\)"#, in: pane) == 0,
+            "the pane still calls the non-committing tag sync somewhere"
         )
-        // ...and `body` makes exactly one qualified call, which is the tag sync. Read off the
-        // declaration slice rather than the file, so a second `TagSupport.` call elsewhere in the
-        // pane — `createTag` has one — cannot stand in for it.
-        let body = try CadenceCommitSurfaceScan.declarationBody(
-            named: "body",
-            in: CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/NoteEditorPane.swift")
-        )
-        #expect(body.contains("MarkdownEditor("), "non-vacuity: empty body slice")
         #expect(
-            CadenceSourceScan.matchCount(#"[A-Z][A-Za-z0-9_]*\.[a-z][A-Za-z0-9_]*\("#, in: body) == 1,
-            "body's qualified calls are no longer just the tag sync — re-derive what the exemption is for"
+            CadenceSourceScan.matchCount(#"TagSupport\.setTags\("#, in: pane) == 0,
+            "the pane still calls the non-committing setTags somewhere"
         )
-        #expect(body.contains("TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)"))
-        // No commit anywhere in it, which is the exemption's actual claim.
-        #expect(CadenceSourceScan.matchCount(#"\.save\(\)"#, in: body) == 0)
-        #expect(CadenceSourceScan.matchCount(#"CadencePendingChangePersistence\.commit"#, in: body) == 0)
+        #expect(
+            CadenceSourceScan.matchCount(#"TagSupport\.syncNoteTagsFromMarkdownCommittingInsertions\("#, in: pane) == 2,
+            "body's onAppear and persistEditorContentIfNeeded should both call the committing sync"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"TagSupport\.setTagsCommittingInsertions\("#, in: pane) == 1,
+            "noteTagsBinding should call the committing setTags"
+        )
 
-        // Three: the chain that call reaches, run rather than read.
-        let modelContext = ModelContext(try container())
-        let note = Note(kind: .permanent, title: "Kickoff", content: "---\ntags: [roadmap]\n---\n\nBody")
-        modelContext.insert(note)
-        // `Cadence.Tag`, because bare `Tag` is ambiguous against SwiftUI's.
-        #expect(try modelContext.fetch(FetchDescriptor<Cadence.Tag>()).isEmpty, "fixture starts with no tags")
-
-        #expect(TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext))
-        #expect(note.tags?.map(\.name) == ["roadmap"])
-        // Minted, and minted **pending**: the row is in the context and the store has not been
-        // asked to take it. That is what `body` leaves behind on every appearance of a note whose
-        // frontmatter names a tag nobody has created yet.
-        #expect(modelContext.insertedModelsArray.contains { $0 is Cadence.Tag })
-        #expect(try ModelContext(modelContext.container).fetch(FetchDescriptor<Cadence.Tag>()).isEmpty)
+        let raw = try CadenceSourceScan.sourceFile("CadenceTests/CadenceSaveCommitDisciplineTests.swift")
+        // Scoped to the `commitReachExemptions` dictionary body specifically: `existenceExemptions`
+        // carries an unrelated `NoteEditorPane.swift` entry of its own (`toggleEmbeddedTask`, not
+        // this ticket's), so searching the whole file would find that one instead.
+        let table = try #require(
+            raw.range(
+                of: #"static let commitReachExemptions: \[String: \[String\]\] = \[(.|\n)*?\n    \]"#,
+                options: .regularExpression
+            ),
+            "the commitReachExemptions dictionary no longer reads as expected"
+        )
+        let commitReachTable = String(raw[table])
+        #expect(
+            !commitReachTable.contains("\"Cadence/macOS/Views/NoteEditorPane.swift\""),
+            "NoteEditorPane still has a commitReachExemptions entry"
+        )
     }
 
-    /// And the exemption table says so. Read against the **raw** source, because the sentence being
-    /// checked lives in a comment and `strippingComments` blanks it.
-    @Test func theCommitReachExemptionTableNamesTheTagSyncRatherThanASubtask() throws {
-        let raw = try CadenceSourceScan.sourceFile("CadenceTests/CadenceSaveCommitDisciplineTests.swift")
-        #expect(raw.contains("static let commitReachExemptions"), "non-vacuity: wrong file read")
+    /// **Behavioural: a refused mint through `noteTagsBinding`'s door leaves the note's tags and
+    /// frontmatter untouched, and the row out of the store.** `setTagsCommittingInsertions` writes
+    /// `note.tags`/`note.content` only after the commit lands, so there is nothing to undo on a
+    /// refusal — the picker's own binding still reads whatever the store already held.
+    @Test func arefusedNoteTagsBindingMintLeavesTheNoteAndTheStoreUntouched() throws {
+        let container = try container()
+        let context = ModelContext(container)
+        let existing = Tag(name: "roadmap", slug: "roadmap")
+        let note = Note(kind: .permanent, title: "Kickoff", content: "Body")
+        note.tags = [existing]
+        context.insert(existing)
+        context.insert(note)
+        try context.save()
 
-        let entry = try #require(
-            raw.range(of: #"NoteEditorPane`? keeps three of its four(.|\n)*?NoteEditorPane\.swift"#, options: .regularExpression),
-            "the NoteEditorPane note in commitReachExemptions no longer reads as expected"
+        let committed = TagSupport.setTagsCommittingInsertions(
+            named: ["roadmap", "brand-new-tag"],
+            on: note,
+            in: context,
+            writeFrontmatter: true,
+            commit: { _ in throw CommitRefused() }
         )
-        let note = String(raw[entry])
-        #expect(note.contains("TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)"))
-        #expect(note.contains("T-647"))
+
+        #expect(committed == false)
+        #expect(note.tags?.map(\.name) == ["roadmap"], "the picker's own binding still reads the tags the store holds")
+        #expect(!note.content.contains("brand-new-tag"), "the frontmatter was never rewritten")
         #expect(
-            !note.contains("`body` is [[T-634]]'s subtask one"),
-            "the exemption still attributes body to T-634's subtask defect"
+            try context.fetch(FetchDescriptor<Cadence.Tag>()).map(\.name) == ["roadmap"],
+            "the minted row was un-inserted"
         )
+
+        try context.save()
+        let reader = ModelContext(container)
+        #expect(try reader.fetch(FetchDescriptor<Cadence.Tag>()).map(\.name) == ["roadmap"])
+    }
+
+    /// **Behavioural: the accepted path commits the mint and folds it into the frontmatter.**
+    @Test func anAcceptedNoteTagsBindingMintCommitsTheRowAndTheFrontmatter() throws {
+        let container = try container()
+        let context = ModelContext(container)
+        let note = Note(kind: .permanent, title: "Kickoff", content: "Body")
+        context.insert(note)
+        try context.save()
+
+        let committed = TagSupport.setTagsCommittingInsertions(
+            named: ["roadmap"],
+            on: note,
+            in: context,
+            writeFrontmatter: true
+        )
+
+        #expect(committed)
+        #expect(note.tags?.map(\.name) == ["roadmap"])
+        #expect(note.content.contains("roadmap"))
+        let reader = ModelContext(container)
+        #expect(try reader.fetch(FetchDescriptor<Cadence.Tag>()).map(\.name) == ["roadmap"])
+    }
+
+    /// **Behavioural: `body`/`persistEditorContentIfNeeded`'s door commits the mint too, and a
+    /// refusal leaves no row behind** — the sibling of `arefusedNoteTagsBindingMintLeavesTheNoteAndTheStoreUntouched`
+    /// for the read-only frontmatter-sync path.
+    @Test func arefusedMarkdownTagSyncLeavesNoRowBehind() throws {
+        let container = try container()
+        let context = ModelContext(container)
+        let note = Note(kind: .permanent, title: "Kickoff", content: "---\ntags: [roadmap]\n---\n\nBody")
+        context.insert(note)
+        try context.save()
+
+        let committed = TagSupport.syncNoteTagsFromMarkdownCommittingInsertions(
+            note,
+            in: context,
+            commit: { _ in throw CommitRefused() }
+        )
+
+        #expect(committed == false)
+        #expect(note.tags?.isEmpty ?? true, "the note was never assigned a tag it cannot prove the store took")
+        try context.save()
+        let reader = ModelContext(container)
+        #expect(try reader.fetch(FetchDescriptor<Cadence.Tag>()).isEmpty)
     }
 
     // MARK: - Helpers

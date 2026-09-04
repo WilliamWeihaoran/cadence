@@ -1329,30 +1329,17 @@ enum CadenceSaveCommitRule {
         // and answers `nil` rather than an unsaved `Tag` for the picker to draw a chip from.
         // Pinned by `CadenceInlineTagCommitSurfaceTests`.
         //
-        // `NoteEditorPane` keeps three of its four, and all three are the same tag family.
-        // `noteTagsBinding` and `persistEditorContentIfNeeded` write through `TagSupport.setTags` /
-        // `syncNoteTagsFromMarkdown` on the debounced autosave path, where what an undo means under
-        // the user's caret is the question `commitEdit`'s doc leaves open.
-        //
-        // **`body` is the third, and it used to be attributed to the wrong ticket ([[T-647]]).** It
-        // read "[[T-634]]'s subtask one", and T-634 never touched this file: `NoteEditorPane`
-        // declares no `insertSubtask` and no `deleteSubtask` at all, and its only subtask code —
-        // `toggleEmbeddedSubtask` — is a field edit. The entry is a real finding either way, but the
-        // attribution sent the next reader hunting machinery the file does not have, which is the
-        // [[T-565]] class and worse than saying nothing.
-        //
-        // What `body` actually reaches is **one** qualified call, in `.onAppear`:
-        // `TagSupport.syncNoteTagsFromMarkdown(note, in: modelContext)`. That resolves the note's
-        // markdown tags and mints any `Tag` row that does not exist yet, down through
-        // `TagSupport.resolveTags` into `resolution` — every frame of which was handed its context,
-        // so the pending insert travels all the way up to `body`, which reached for the ambient one
-        // and commits nothing. And nothing else in the file can be the cause: no declaration in
-        // `NoteEditorPane.swift` takes a `: ModelContext` parameter, so there is no same-file frame
-        // for `changesExistenceOneFrameDown` to resolve unqualified. Pinned by
-        // `CadenceInlineTagCommitSurfaceTests.theNoteEditorPanesBodyExemptionIsTheTagSyncNotASubtask`.
-        "Cadence/macOS/Views/NoteEditorPane.swift": [
-            "body", "noteTagsBinding", "persistEditorContentIfNeeded",
-        ],
+        // [[T-762]] emptied `NoteEditorPane`'s three-entry group that used to sit here — `body`,
+        // `noteTagsBinding` and `persistEditorContentIfNeeded` each reached the pane's ambient
+        // `ModelContext` and minted a `Tag` with nothing committing it, held open past T-631/T-651
+        // because "what does an undo mean under the user's caret" read as unsettled. It was not:
+        // none of the three writes `note.tags`/`note.content` until the mint's own commit has
+        // already landed, so a refusal never reaches a write an undo would have to fight. `body`'s
+        // `.onAppear` and `persistEditorContentIfNeeded` now call
+        // `TagSupport.syncNoteTagsFromMarkdownCommittingInsertions`; `noteTagsBinding` calls the new
+        // `TagSupport.setTagsCommittingInsertions`, added because it also folds the picked names
+        // back into the note's frontmatter. Pinned by
+        // `CadenceInlineTagCommitSurfaceTests.noteEditorPaneNoLongerNeedsACommitReachExemption`.
         // [[T-636]](e) and [[T-655]] emptied the three canvas entries that used to sit here.
         // `SchedulingActions.createBundle` inserts into a context it was handed and commits
         // nothing — correctly. Its `createTask` sibling was deleted outright by [[T-759]], having
