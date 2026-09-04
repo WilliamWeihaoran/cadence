@@ -284,6 +284,20 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `arefusedDropOfATaskOnATaskLeavesNoBlockAndBothTasksWhereTheyWere` able to read the *store* rather
   than the context, and turns `theSharedTwoTaskBlockMutationCommitsThroughAswallowedSaveOfItsOwn`
   red — which is the signal to come back and strengthen it.
+  **CLOSED 2026-09-04 (`a1e5791`).** `addTask` writes through a pending, non-committing
+  `assignTask(_:to:)` now and keeps its own default commit only for
+  `iOSCalendarBoardView.add(_:to:)`'s legitimate swallow (no insert in that call). `insertBundle`
+  throws, uses `assignTask` for both memberships, and commits the whole unit — the bundle insert and
+  both memberships — through `commitInsert`, restoring both tasks via a shared-mutation
+  `BundleMembership` snapshot on refusal. Both iOS `formBundle` sites catch the throw and raise the
+  same `bundleCreateFailureAlertTitle`/`bundleSaveFailureNotice` alert macOS's `TimelineDayCanvas`
+  already shows. `SchedulingActions.createBundle(from:adding:in:)` keeps its non-throwing,
+  non-committing shape by handing the shared mutation a commit that never runs. Strengthened
+  `arefusedDropOfATaskOnATaskLeavesNoBlockAndBothTasksWhereTheyWere` to read a second `ModelContext`;
+  replaced `theSharedTwoTaskBlockMutationCommitsThroughAswallowedSaveOfItsOwn` with
+  `theSharedTwoTaskBlockMutationNoLongerCommitsThroughASwallowedSaveOfItsOwn` and a direct-mutation
+  refusal test. Green across 4 targets; 2 mutations (dropped member restore, reintroduced swallow)
+  killed.
 
 - [T-761] **The [[T-656]] class's remaining members, in components and files that batch could not
   reach.** Counted while landing T-656/[[T-727]] and named rather than left implicit.
@@ -1338,6 +1352,23 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   consequence**: a refused save leaves the row pending rather than destroying the minutes, and
   `CadenceFocusLedger.reconcile(in:)` puts the counter back once it lands. Still a defect — the
   reset still throws away the seconds the user is watching — but no longer an unrecoverable one.
+  **CLOSED 2026-09-04 (`a1e5791`).** `CadenceFocusBundleSupport.distributeMinutes` takes a
+  `commit:` and routes through `CadencePendingChangePersistence.commitEdit`, snapshotting every
+  credited task's `BankedMinutes` before writing and restoring them in **reverse** order on refusal
+  — forward order let a later task's already-mutated snapshot of a shared project counter win,
+  caught by mutation testing. `endSession`, the bundle-shaped `logElapsedSeconds` and both
+  `commitElapsed` overloads share this one commit; the timer only resets once it lands.
+  `iOSFocusView`'s `select`/`toggleSession`/`logBundleSession`/`.onDisappear` catch a refusal and
+  record it rather than clearing the clock. macOS's `FocusManager` gained the identical `commit:`
+  plumbing — it previously wrote the pending bank with no `save()` of any kind, the worse of the two
+  shapes this ticket named — and `FocusView`'s controls/log-session popovers report a refusal
+  through `TaskCompletionAnimationManager.recordSettleFailure()`. The task-shaped pure-write helper
+  `complete()` needs was renamed `logElapsedSeconds` → `bankElapsedSeconds`: the commit index needs
+  every overload of a name to agree before it vouches for it, and one committing / one deliberately
+  not was exactly the disagreement that made `logBundleSession`'s real commit invisible to the scan.
+  Deleted the four `endSession`/`logBundleSession`/`bundleTimerControls`/`timerControls` exemption
+  entries. Green across 4 targets; 3 mutations (reversed-restore removed, member-restore dropped,
+  `addTask`'s old swallow reintroduced) killed.
 
 - [T-762] **`NoteEditorPane`'s debounced-autosave tag writes are still the one open piece of
   [[T-651]]'s family, left there on purpose.** `noteTagsBinding`'s `Binding<[Tag]>` setter and
@@ -1356,6 +1387,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   doc on why `rollback()` is unavailable, and decide whether the answer is "no undo, name the
   refusal and leave the tag pending" (matching T-497's in-place answer) or something that actually
   reasons about the insert.
+  **CLOSED 2026-09-04 (`9591932`), fixed rather than left open.** The caret question had an answer
+  needing no new design: none of the three writes `note.tags`/`note.content` until the mint's own
+  commit has already landed, so a refusal never reaches a write an undo would have to fight — there
+  is no caret-visible field to restore, because the write that would need restoring never happens.
+  `body`'s `.onAppear` and `persistEditorContentIfNeeded` now call the already-existing
+  `TagSupport.syncNoteTagsFromMarkdownCommittingInsertions` (T-651 built it for
+  `CadenceCoreNoteSupport.update` and left these two callers behind); `noteTagsBinding` calls a new
+  `TagSupport.setTagsCommittingInsertions`, needed because it also folds picked names into the
+  note's frontmatter. `persistEditorContentIfNeeded`/`body` stay silent on a refusal, matching the
+  sync's other nine callers; `noteTagsBinding` reports through the pane's existing
+  `tagFailureNotice`, since it is a direct tap rather than an ambient autosave. Removed the file's
+  `commitReachExemptions` entry. Pinned by
+  `CadenceInlineTagCommitSurfaceTests.noteEditorPaneNoLongerNeedsACommitReachExemption` plus two new
+  behavioural refusal tests, both read from a second `ModelContext`. Green across 4 targets; the
+  write-ordering guarantee mutation-tested (write-before-commit reintroduced and killed).
 
 - [T-664] **The `try? save()` rule's report vocabulary has no spelling for "the surface filled
   itself in".** Found — and then *measured* — while fixing [[T-652]].
