@@ -43,6 +43,28 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
 
 ## Open — decided, not started
 
+- [T-949] **`CadenceDefaults` only routes `@AppStorage` and the calendar memory; a service reading
+  `UserDefaults.standard` directly reaches the wrong store in no shipping configuration — measured,
+  not reasoned.** Re-counted [[T-745]]'s audit directly: 19 non-comment `UserDefaults.standard`
+  references outside `Cadence/Shared/CadenceDefaults.swift` (`ListDetailView.swift` x8,
+  `CadenceCalendarVisibilityPreferences.swift` x3, `NoteMigrationService.swift` x2,
+  `DataIntegrityRepairService.swift` x2, and one each in `TasksPanel.swift`,
+  `NotificationManager.swift`, `CadenceUITestSupport.swift`, `MarkdownNoteSupport.swift`). None of
+  the 19 diverge from `.standard` on a real device: `CadenceDefaults.store` **is**
+  `UserDefaults.standard` unless a `-CadenceSuiteName` launch argument is present, and nothing sets
+  that argument outside `scripts/simulator-claim.sh`'s per-agent simulator launches (see
+  `CadenceDefaults.swift`'s own doc comment, which already names this gap). So there is no product
+  bug here — the fix, if any, belongs in test tooling, not app code.
+
+  The narrower residue: `scripts/simulator-claim.sh` isolates SwiftData (`CADENCE_UI_TEST_STORE_ID`)
+  and `@AppStorage`/`CadenceCalendarDateMemory` (`-CadenceSuiteName`, [[T-735]]) per agent, but not
+  these 19 sites. Two `CadenceUITests` agents sharing one simulator and both exercising, say, sort
+  order (`ListDetailView`/`TasksPanel`), hidden calendars, the notifications toggle, or a migration
+  report would leak across agents exactly the way [[T-735]]'s calendar-memory incident did — just
+  through a path the T-735 mechanism does not reach. Unconfirmed whether any current UI test
+  actually exercises one of the 19 in a way that reaches two concurrent agents; filed because the
+  gap is real and undocumented as a live risk, not because it has been observed to fire.
+
 - [T-914] **A kanban column rename the editor refuses says nothing.**
   `ListSectionKanbanColumn.applySectionEdits` declines two names outright — empty or whitespace,
   and one another column in the list already has — by returning without writing and *without*
