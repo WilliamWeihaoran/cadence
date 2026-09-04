@@ -224,27 +224,17 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   raw `Text` beside two glyphs); this is the ledger/witness staleness itself, filed separately so it
   does not get lost inside T-792's narrower scope.
 
-- [T-796] **A `Menu` whose whole label is a bare `Image(systemName:)` is invisible to both the
-  icon-only-`Button` sweep and [[T-674]]'s new icon-only-`.onTapGesture` sweep — neither keys on
-  `Menu`.** Measured 2026-09-04: four sites, four files, have no accessible name at all —
-  `Views/ListNotesViewSupportViews.swift:20`, `Editor/MarkdownEditorView.swift:432`,
-  `iOS/iOSCalendarSettingsSection.swift:348`, `iOS/iOSCalendarBundleDetailSheet.swift:352`. A fifth,
-  `iOS/iOSMarkdownAccessoryViews.swift:632`, already carries `.accessibilityLabel("More
-  formatting")` and is clean — proof the shape is fixable the same way, not a reason the other four
-  were missed. Not folded into T-674: that ticket's population was fixed at 10 sites in 9 files
-  before this was found, and a `Menu` label is a third control shape after `Button` and
-  `.onTapGesture`, wide enough to want its own sweep rather than a fourth ad hoc fix.
-
-- [T-797] **`CreateContextSheet.ColorGrid`'s swatches share `IconGrid`'s exact defect one struct up
-  — a bare `.onTapGesture` with no `Button`, no accessible name — and [[T-674]]'s new
-  `CadenceIconOnlyTapGestureAccessibilityTests` correctly does not fire on them.** The detector
-  keys on `Image(systemName:)`; a swatch draws a `Circle().fill(Color(hex:))`, no `Image` at all, so
-  the two are different shapes by the letter of what the rule checks even though a sighted user
-  meets them as siblings in the same sheet. Deliberately left rather than folded in: `IconGrid`'s
-  fix names the icon by its SF Symbol identifier (`"Select \(icon) icon"`, matching the sibling iOS
-  grids' own `.accessibilityLabel(icon)` convention); a swatch has no symbol name to borrow; it
-  needs a decision on what a colour's own name is (`Theme`'s own token name, when the hex matches
-  one? the raw hex string otherwise?) before it can take the same fix shape.
+- [T-934] **`iOSTrackingColorGrid` still names its colour swatches by their hex value
+  (`.accessibilityLabel("Color \(color)")`), the one holdout against the convention every other
+  swatch grid in the tree already uses.** Found while closing [[T-797]]. `TagColorSwatches`
+  (`SettingsTagsSection.swift`), `ListEditorColorStrip`, `iOSListColorSwatch`,
+  `TagPickerPopoverViews` and `KanbanColumnSupportViews` all name the control by what tapping it
+  does ("Use this colour" / "Selected colour"), with the hex reserved for a sighted-only `.help()`
+  tooltip — a screen reader cannot verify a colour, which `SettingsTagsSection.swift`'s own comment
+  and `CadenceAccentPalettePresentation` both say in as many words. `iOSTrackingColorGrid` predates
+  that convergence and T-797's scope was `CreateContextSheet.ColorGrid` alone: renaming it changes
+  what `iOSTrackingEditorComponents.swift`'s picker announces on the phone, a real screen's
+  behaviour and not a call to make in passing while fixing an unrelated file.
 
 - [T-792] **A goal's linked-list and task-contributor rows now announce a normalised title;
   the visible `Text` beside them still reads it raw.** Found while landing [[T-673]] and
@@ -1860,18 +1850,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   the gate, which is a claim about adjacency, so narrowing it needs the ordering claim restated
   rather than the span shrunk.
 
-- [T-789] **The icon-only detector's positive witness is a file the ledger is emptying.**
-  `CadenceIOSControlAccessibilityTests.theIconOnlyButtonDetectorSeesABareGlyphAndLeavesALabelledOneAlone`
-  asserts the detector `fires(on:)` `Cadence/macOS/Views/TasksPanelSupportViews.swift` — T-637's
-  half of the test, the one that proves the widening reached the desktop tree. That file is only a
-  witness while it still holds an unnamed icon-only button, and [[T-673]] is removing its last two.
-  Measured 2026-09-04 in the shared checkout mid-batch: with T-673's and [[T-674]]'s edits in the
-  tree the assertion is already red, and it is red for the *right* reason — the file got fixed.
-  The `including:` witness in the sweep above is fine (it is a claim about the **walk**), so only
-  the `fires(on:)` line needs re-pointing, at a literal fixture rather than at a file the next
-  ticket will clean. This is the [[T-161]] shape one layer out: a detector self-check that a
-  *successful* fix turns red.
-
 - [T-790] **The search field itself is the next near-copy, four rows deep.** Found closing
   [[T-672]], which unified the clear button and left the row around it duplicated.
   `ContainerPickerSupportViews`, `TasksPanelSupportViews`, `TaskTitleInlineTagPicker` and
@@ -1884,15 +1862,24 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   search **row** carries a placeholder, a submit action, arrow-key handling and an escape hatch
   that differ per picker — which is a parameter list to design, not a hoist to perform.
 
-- [T-791] **A named copy is invisible to a naming ledger, so `knownUnnamedIconButtonSites`
-  understates duplication by construction.** [[T-672]] was filed over ten sites and found eleven:
-  the eleventh already had `.cadenceControlLabel("Clear search")`, so no rule keyed on a missing
-  name could see it, and a fix that trusted the ledger would have left one hand-spelled copy of the
-  control it was consolidating. The two remaining follow-ups are the same shape — [[T-673]]'s
-  "remove this row" glyphs and [[T-674]]'s icon-button helpers are both idioms that plausibly
-  appear elsewhere *with* a label. Before either closes, sweep for the **shape** rather than for
-  the gap: the population a duplication ticket has to fix is not the population an accessibility
-  sweep reported.
+  **Investigated 2026-09-04, not attempted.** Read all seven call sites rather than trusting the
+  summary above. The four `.onKeyPress`-driven rows split further in two: `ContainerPickerSupportViews`
+  and `TasksPanelSupportViews` only handle up/down and commit a highlighted `Task`/`TaskSection` on
+  submit; `TaskTitleInlineTagPicker` and `TildeContainerPicker` also handle tab, escape and
+  delete-when-empty, because both support typing a literal value the escape hatch restores — a
+  behaviour the first two do not have. The three `.onMoveCommand`-driven rows
+  (`CadenceCalendarPicker`, `CadenceContextPicker`, `GoalPickerViews`) share a container
+  (`Theme.surfaceElevated` background, radius-8 clip) and an `onSubmit` shape
+  (`guard highlightIndex in range else return; pick(...)`) that the first four do not have, and
+  each commits a different result type (`Calendar`, `Context`, `Goal`/list). `CadenceContextPicker`'s
+  own header comment already reached this conclusion once, for the closely related macOS/iOS split
+  ("It is not convergeable as written... what would be left is a list with a keyboard permanently
+  up") and converged the *support logic* (`CadenceContextPickerSupport`) rather than the
+  presentation — the same shape this ticket would need. A shared row here would need a submit
+  closure, an optional tab closure, an optional escape closure, an optional delete-guard closure, an
+  arrow-key delegate and a container-chrome switch: a parameter list standing in for two genuinely
+  different controls, which is worse than seven honest copies. Left open rather than closed, in
+  case a future picker converges the two families on its own terms; not attempting the hoist now.
 
 
 - [T-798] **The five App Store screenshot candidates still do not exist, and the only thing missing
@@ -2000,6 +1987,50 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   already a second synced caller — so the sweep is worth having before one is added, not after.
 
 ## Done
+- [T-796] **CLOSED 2026-09-04 (`7f37155b`).** Measured fresh rather than trusted against the
+  ticket's own four-day-old count: of the four sites it named, two
+  (`MarkdownEditorView.swift`'s `MarkdownReferenceMenuButton`, `iOSCalendarSettingsSection.swift`'s
+  `repickMenu`) already carried `.accessibilityLabel(…)` by the time this was picked up, fixed by
+  other work in between. The two still open — `ListNotesHeaderView`'s "new note" menu and the row
+  overflow menu in `iOSCalendarBundleDetailSheet.swift` — now carry
+  `.cadenceControlLabel("New note")` / `.accessibilityLabel("Task actions")`.
+  `CadenceIconOnlyMenuAccessibilityTests` sweeps the whole tree for the shape (a `Menu` whose
+  `label:` is a bare `Image`) rather than trusting the ticket's file list, and found no others.
+
+- [T-797] **CLOSED 2026-09-04 (`7f37155b`).** The naming decision the ticket left open turned
+  out to already be made: six other swatch grids in the tree (`TagColorSwatches`,
+  `ListEditorColorStrip`, `iOSListColorSwatch`, `TagPickerPopoverViews`, `KanbanColumnSupportViews`,
+  `iOSSettingsComponents`) name a colour swatch by what tapping it does ("Use this colour" /
+  "Selected colour"), not by the colour, because a screen reader cannot verify one — see
+  `SettingsTagsSection.swift`'s own comment and `CadenceAccentPalettePresentation`. `ColorGrid` now
+  matches that convention instead of inventing an eighth one (or copying `iOSTrackingColorGrid`'s
+  `"Color \(hex)"`, the one file that predates the convergence — filed separately as [[T-934]]).
+  `CadenceIconOnlyColorSwatchAccessibilityTests` bans the bare-`.onTapGesture` shape app-wide; its
+  first sweep caught a real false positive of its own (`CalendarPageMonthSupportViews.swift`'s
+  `RoundedRectangle` task chip, 356 characters from an unrelated `.onTapGesture`), fixed by keying
+  the detector on `Circle()` rather than on the fill call alone.
+
+- [T-791] **CLOSED 2026-09-04 (`7f37155b`).** Swept both follow-ups for the shape rather than
+  the gap, as asked. T-673's row-removal glyph: every `xmark` button in the tree read by hand
+  rather than swept for a missing label; two more instances of the idiom were already correctly
+  named (`CadenceTagChip.removeButton`, `iOSAINoteActionsViews.chipRow`) and every other `xmark`
+  site is a singleton control with no "which one" question to answer, so nothing needed fixing.
+  T-674's private icon-button helper: a name/parameter-pattern sweep, cross-checked by reading
+  every candidate, found three more (`TimelineBundleBlockSupportViews.rowIconButton`,
+  `TaskInspectorContentSupportViews.iconButton`, `SettingsTagsSection.rowButton`) that already
+  required a name and so were never in `knownUnnamedIconButtonSites` — seven near-copies of one
+  helper, not four. `CadenceIconOnlyHelperIdiomDuplicationTests` pins the population, not just the
+  gap, so a future one that drops the naming requirement fails structurally rather than waiting for
+  an accessibility sweep to notice it. Consolidating the seven into one shared component is a
+  separate design decision, deliberately not attempted here.
+
+- [T-789] **CLOSED, already fixed by [[T-795]] before this batch started.** T-795's `258f15f`
+  re-pointed `theIconOnlyButtonDetectorSeesABareGlyphAndLeavesALabelledOneAlone`'s desktop-witness
+  assertion at a literal fixture instead of `TasksPanelSupportViews.swift`, which is exactly what
+  this ticket asked for. Verified 2026-09-04: the `fires(on:)` call no longer names that file
+  anywhere in the suite, and the file appears only as an `including:` walk witness — a claim about
+  the walk, which the ticket itself says is fine.
+
 - [T-856] **CLOSED 2026-09-04 (`036f95cf`).** `Theme.markerHighlightFill` is no longer the raw
   pen hue -- it is `markerHighlightAccent` pre-composited over `bg` at the alpha that used to live
   only in `MarkdownEditorLayoutManager.swift`'s own `.withAlphaComponent(0.38)`, flattened to an
