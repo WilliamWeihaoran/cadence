@@ -432,7 +432,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   refusal test. Green across 4 targets; 2 mutations (dropped member restore, reintroduced swallow)
   killed.
 
-- [T-761] **PARTLY CLOSED 2026-09-05 (`4d1bf57a`).** **Part (a) only.** `iOSTaskDetailSheet`'s time picker reached `setScheduledTime`'s swallowed commit while the popover closed on the tap -- the full [[T-614]] shape. Both entry points now take and forward `commit:`. y3's [[T-765]] finding was checked against these sites and does not apply: they go through `CadenceInPlaceEditFlush` with no hand-rolled undo. Remaining parts of the ticket, including the `EstimatePickerControl` half, are still open. **Filed as:** **The [[T-656]] class's remaining members, in components and files that batch could not
+- [T-761] **CLOSED 2026-09-05 (`4d1bf57a`, `4eb22949`, `70de2f3d`).** `iOSTaskDetailSheet`'s time picker reached `setScheduledTime`'s swallowed commit while the popover closed on the tap -- the full [[T-614]] shape. Both entry points now take and forward `commit:`. y3's [[T-765]] finding was checked against these sites and does not apply: they go through `CadenceInPlaceEditFlush` with no hand-rolled undo. (b) `EstimatePickerPopoverContent` gained a committing form, and **two sites beyond the one the ticket named** were found with the identical defect -- `MacTaskRowEstimateChip` and `TaskEmbedFieldEditorPopover`'s estimate case. `CadenceTaskMutationSupport.setEstimatedMinutes` had no callers left afterwards and is deleted. (c) the row context menu's repeat submenu now reports a refused rule through `iOSTaskRowRecurrenceFailureAlert`, mirroring the move-menu alert. **Filed as:** **The [[T-656]] class's remaining members, in components and files that batch could not
   reach.** Counted while landing T-656/[[T-727]] and named rather than left implicit.
   (a) **`iOSTaskDetailSheet`'s time picker.** `scheduledStartSelection`'s setter reaches
   `CadenceTaskDateEditing.setScheduledTime` → `CadenceTaskMutationSupport.setScheduledTime`, which
@@ -1158,7 +1158,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   that is structurally unable to. Either drop them for `priority.rank` at the four call sites, or
   make them internal so the loop can name them — the second is cheaper and keeps the local spelling.
 
-- [T-680] **Three `allTasks` parameters are threaded into section views that never read them.**
+- [T-680] **CLOSED 2026-09-05 (`79cc1150`).** Three stored properties no body read, invisible to every green run because **Swift does not warn on an unread stored property**. Removing them also removed the `@Query` in `ListTasksView` that existed only to feed two of them -- which is where the real cost was. **Filed as:** **Three `allTasks` parameters are threaded into section views that never read them.**
   Found during [[T-608]]. `TasksPanelCompletedSectionView.allTasks`
   (`Cadence/macOS/Views/TasksPanelSectionViews.swift`), `ListTasksGroupSectionView.allTasks` and
   `ListTasksCompletedSectionView.allTasks` (`Cadence/macOS/Views/ListDetailSupportViews.swift`) are
@@ -1168,7 +1168,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Not done inside T-608, which was scoped to the row block, and [[T-564]] is queued over two of the
   same call sites.
 
-- [T-681] **Today's section header carries `List` row modifiers inside a `LazyVStack`.** Found during
+- [T-681] **CLOSED 2026-09-05 (`79cc1150`).** `TasksPanelIntentSectionView`'s header no longer carries `.listRowBackground`/`.listRowSeparator` under `TasksPanel`'s `LazyVStack`, where both are no-ops. The same two modifiers are **left in place** inside `TaskListDisplayRow`, whose other caller is a real `List` and where they are load-bearing -- this was not a sweep. **Filed as:** **Today's section header carries `List` row modifiers inside a `LazyVStack`.** Found during
   [[T-608]]. `TasksPanelIntentSectionView`'s header chains `.listRowBackground(Color.clear)` and
   `.listRowSeparator(.hidden)`, but `TasksPanel` draws its sections in a
   `ScrollView { LazyVStack(pinnedViews: .sectionHeaders) }`, where both are no-ops. (The same two
