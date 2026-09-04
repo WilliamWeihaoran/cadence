@@ -246,9 +246,20 @@ enum CadenceTaskMutationSupport {
         try? modelContext.save()
     }
 
-    static func setScheduledTime(_ startMin: Int, for task: AppTask, modelContext: ModelContext) {
+    /// **T-761.** Answers whether the minute landed, same as the sibling `setPlanningDates` beside
+    /// it: an in-place field write on a task the store already holds, flushed through
+    /// `CadenceInPlaceEditFlush` rather than left to a bare `try?`. The iOS detail sheet's time
+    /// picker used to write through this via a plain `Binding<Int>` setter and close over whatever
+    /// the swallowed save did.
+    @discardableResult
+    static func setScheduledTime(
+        _ startMin: Int,
+        for task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         task.scheduledStartMin = min(max(0, startMin), 1425)
-        try? modelContext.save()
+        return CadenceInPlaceEditFlush.flush(in: modelContext, commit: commit)
     }
 
     static func clearScheduledDate(_ task: AppTask, modelContext: ModelContext) {
@@ -257,9 +268,15 @@ enum CadenceTaskMutationSupport {
         try? modelContext.save()
     }
 
-    static func clearScheduledTime(_ task: AppTask, modelContext: ModelContext) {
+    /// **T-761.** Same answer as `setScheduledTime` above, for the picker's "No time" row.
+    @discardableResult
+    static func clearScheduledTime(
+        _ task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         task.scheduledStartMin = -1
-        try? modelContext.save()
+        return CadenceInPlaceEditFlush.flush(in: modelContext, commit: commit)
     }
 
     static func setDueDate(_ dateKey: String, for task: AppTask, modelContext: ModelContext) {

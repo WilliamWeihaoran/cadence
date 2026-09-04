@@ -101,23 +101,33 @@ enum CadenceTaskDateEditing {
 
     // MARK: - Do time
 
+    /// **T-761.** Answers whether the minute landed — see `CadenceTaskMutationSupport.setScheduledTime`.
+    /// The reconcile still runs unconditionally: the field already changed in the context either way,
+    /// same as `setPlanningDates` below.
+    @discardableResult
     static func setScheduledTime(
         _ startMin: Int,
         for task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.setScheduledTime(startMin, for: task, modelContext: context)
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.setScheduledTime(startMin, for: task, modelContext: context, commit: commit)
         reconcile(context, reconciler)
+        return landed
     }
 
+    /// **T-761.** Same answer as `setScheduledTime` above, for the picker's "No time" row.
+    @discardableResult
     static func clearScheduledTime(
         _ task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.clearScheduledTime(task, modelContext: context)
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.clearScheduledTime(task, modelContext: context, commit: commit)
         reconcile(context, reconciler)
+        return landed
     }
 
     /// Day and start minute together, for the surfaces that place a task on a slot in one gesture:
