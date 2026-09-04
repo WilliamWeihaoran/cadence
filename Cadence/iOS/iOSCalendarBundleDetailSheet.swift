@@ -355,6 +355,7 @@ private struct iOSCalendarBundleTaskRow: View {
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
+            .accessibilityLabel("Task actions")
         }
         .padding(.horizontal, 2)
         .padding(.vertical, 11)

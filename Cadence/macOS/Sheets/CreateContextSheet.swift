@@ -89,20 +89,36 @@ struct ColorGrid: View {
             spacing: spacing
         ) {
             ForEach(CadenceColorPalette.offered(selected, from: palette), id: \.self) { hex in
+                // **T-797.** Used to be a bare `Circle()` mutating `selected` from
+                // `.onTapGesture` — no `Button`, no accessible name, invisible to
+                // `CadenceIconOnlyTapGestureAccessibilityTests` because that detector keys on
+                // `Image(systemName:)` and a swatch draws no `Image` at all. The name is "what
+                // selecting it does", not the colour, matching the app's converged swatch
+                // convention (`TagColorSwatches`, `ListEditorColorStrip`,
+                // `iOSListColorSwatch`, …): a screen reader cannot verify a colour, so the name is
+                // the job and the hex stays a sighted-only tooltip — see
+                // `CadenceAccentPalettePresentation`.
                 let isSelected = CadenceColorPalette.matches(hex, selected)
-                Circle()
-                    .fill(Color(hex: hex))
-                    .frame(width: swatchSize, height: swatchSize)
-                    .overlay(
-                        Circle()
-                            .strokeBorder(Theme.onColor.opacity(isSelected ? 1 : 0), lineWidth: 2)
-                    )
-                    .overlay(
-                        Circle()
-                            .strokeBorder(Color(hex: hex).opacity(0.4), lineWidth: 3)
-                            .scaleEffect(isSelected ? 1.3 : 1)
-                    )
-                    .onTapGesture { selected = hex }
+                Button {
+                    selected = hex
+                } label: {
+                    Circle()
+                        .fill(Color(hex: hex))
+                        .frame(width: swatchSize, height: swatchSize)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(Theme.onColor.opacity(isSelected ? 1 : 0), lineWidth: 2)
+                        )
+                        .overlay(
+                            Circle()
+                                .strokeBorder(Color(hex: hex).opacity(0.4), lineWidth: 3)
+                                .scaleEffect(isSelected ? 1.3 : 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isSelected ? "Selected colour" : "Use this colour")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .help(hex)
             }
         }
     }

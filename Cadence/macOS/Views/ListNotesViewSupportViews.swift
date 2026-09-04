@@ -23,6 +23,7 @@ struct ListNotesHeaderView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .cadenceControlLabel("New note")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
