@@ -7,6 +7,15 @@ nonisolated enum NoteKind: String, CaseIterable {
     case permanent
     case list
     case meeting
+
+    /// Whether this kind's title follows its first `# H1`.
+    ///
+    /// Declared here rather than on `MarkdownNoteTitleSync` because it is a fact about the kind,
+    /// and `DataIntegrityRepairService` -- which the MCP server target compiles -- needs it while
+    /// `MarkdownNoteSupport.swift` is not in that target's explicit source list. T-741 called
+    /// across that boundary and broke the MCP build in a way no app-scheme run could see;
+    /// `mcpServerSourcesOnlyReferenceTypesThatTargetCompiles` is what caught it.
+    var syncsTitleFromH1: Bool { self == .list || self == .permanent }
 }
 
 @Model final class Note {

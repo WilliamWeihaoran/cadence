@@ -378,11 +378,11 @@ nonisolated enum DataIntegrityRepairService {
     /// the stored title alone" rather than a name to sync.
     ///
     /// Scoped to the exact literal on the exact first line, and only for the two kinds that ever
-    /// read it (`MarkdownNoteTitleSync.syncsTitleFromH1`): `.meeting` has its own title field and
+    /// read it (`NoteKind.syncsTitleFromH1`): `.meeting` has its own title field and
     /// `.daily`/`.weekly` are named by their date keys, so neither looks at the body, and a
     /// coincidental `# Untitled` further down is a section heading a user wrote, not this bug.
     private static func clearRetiredHeadingIfPresent(on note: Note) {
-        guard MarkdownNoteTitleSync.syncsTitleFromH1(note.kind) else { return }
+        guard note.kind.syncsTitleFromH1 else { return }
         guard String(note.content.prefix(while: { $0 != "\n" })) == retiredStoredNoteHeading else { return }
         note.content = "# " + String(note.content.dropFirst(retiredStoredNoteHeading.count))
     }

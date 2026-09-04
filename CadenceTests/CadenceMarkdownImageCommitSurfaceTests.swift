@@ -367,7 +367,7 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // the other six drag-to-rearrange surfaces (Today, All Tasks/Inbox, the sidebar, a list's
         // Tasks tab, the All Tasks board's list column, and the section board's column rail), all
         // bare for the same reason: the retry is the drag itself.
-        #expect(total == 58, "the inline notice has \(total) call sites, not the 58 this test was written over")
+        #expect(total == 59, "the inline notice has \(total) call sites, not the 59 this test was written over")
         #expect(withDismissal == 6, "\(withDismissal) call sites offer a dismissal, not 6")
 
         // And each of the six is named, so one swapping places with another is still a failure.

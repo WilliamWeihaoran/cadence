@@ -562,9 +562,7 @@ nonisolated enum NoteUnlinkedMentionResolver {
 /// carries a real editable title field.
 nonisolated enum MarkdownNoteTitleSync {
     /// The kinds whose title follows their first `# H1`.
-    static func syncsTitleFromH1(_ kind: NoteKind) -> Bool {
-        kind == .list || kind == .permanent
-    }
+    static func syncsTitleFromH1(_ kind: NoteKind) -> Bool { kind.syncsTitleFromH1 }
 
     /// The title `content` asks for, or `nil` for "leave the stored title alone".
     ///
