@@ -1516,7 +1516,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   count *before* widening; if the plain spelling costs more than it finds, scope it (a `@State` /
   `@Binding` target, or `= ""` only in a block that also appends).
 
-- [T-665] **Four Info.plist keys are declared twice, in the file and in build settings.** Found
+- [T-665] **CLOSED 2026-09-05 (`dc4519f`).** Settled by inspecting built `.app` bundles on macOS and iOS, Debug and Release, rather than reasoning about precedence. **The finding is that one of the four is platform-asymmetric:** for `ITSAppUsesNonExemptEncryption` and the two usage descriptions the `INFOPLIST_KEY_*` build settings win on both platforms, so the file's copies went. For `CFBundleIconName` the macOS asset-catalog compiler injects the key regardless, but on iOS deleting the file's copy left it **missing entirely** from the built plist -- so there the file's copy was kept and the build setting removed. All four values agreed beforehand, so no shipping defect existed; a round-trip build confirmed identical output after. **Filed as:** **Four Info.plist keys are declared twice, in the file and in build settings.** Found
   while closing the review-hygiene half of [[T-626]]. The app target sets
   `GENERATE_INFOPLIST_FILE = YES` **and** `INFOPLIST_FILE = Cadence/Info.plist`, and then spells
   `CFBundleIconName`, `ITSAppUsesNonExemptEncryption`, `NSCalendarsFullAccessUsageDescription` and
@@ -1894,7 +1894,7 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Measured 2026-09-04: `CadenceDeleteConfirmationCommitTests` green (0.236s, `scripts/xcb.sh
   v3batchV`, 0 compile errors, 0 warnings on a run that recompiled the file).
 
-- [T-790] **The search field itself is the next near-copy, four rows deep.** Found closing
+- [T-790] **CLOSED 2026-09-05 (`76b5a9c`).** **[[T-672]]'s judgement stands and was not overturned.** u1 read all seven sites and concluded the *behaviour* differs -- placeholder, `onSubmit`, and `onKeyPress` families of 2 to 5 handlers. What was genuinely common turned out to be the chrome around the field: `HStack(spacing: 6)`, an 11pt `magnifyingglass` in `Theme.dim`, `.padding(.horizontal, 12)/.vertical, 8)` and the T-672 clear button, byte-for-byte across four sites. Extracted as `CadenceSearchFieldRow` taking a query binding, a focus binding and the `TextField` as a trailing closure -- **two real parameters, not eight**. Cross-checked against ~10 other `magnifyingglass` rows, which differ in spacing (7-10) and glyph size (10-18) and correctly do not join. **Filed as:** **The search field itself is the next near-copy, four rows deep.** Found closing
   [[T-672]], which unified the clear button and left the row around it duplicated.
   `ContainerPickerSupportViews`, `TasksPanelSupportViews`, `TaskTitleInlineTagPicker` and
   `TildeContainerPicker` each spell the same row by hand: an 11pt `magnifyingglass` in `Theme.dim`,
