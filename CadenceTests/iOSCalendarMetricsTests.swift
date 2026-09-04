@@ -201,6 +201,41 @@ struct iOSCalendarMetricsTests {
         #expect(!grid.contains("isCurrentMonth ? 0.18 : 0.08"))
     }
 
+    /// **T-612: the fourth spelling of the same pair, in the cell with no plate to move.**
+    ///
+    /// `iOSCalendarMonthCompactDayCell` dimmed a carried day twice — a bare `Theme.dim` on the
+    /// numeral and `.opacity(0.5)` on the whole cell — which nets the same 0.50 the token above
+    /// holds, so it never broke the contrast floor. It is still the shape T-568 removed: the
+    /// cell-wide half takes the today ring and the item dot down with the numeral, and two layers
+    /// multiplying to the right answer is a coincidence the next edit spends.
+    ///
+    /// **The user's decision is label-only dimming** — dim the label, not the whole control. Not a
+    /// copy of T-568's fix: this cell sits on the grid's own `Theme.surface` and has no plate to
+    /// move, and no plate was invented for it. So the numeral reads the one shared token and the
+    /// cell-wide fade is gone, which leaves the *label* at exactly the 0.50 it already had and
+    /// restores the ring and the dot to full strength.
+    @Test func theCompactMonthCellDimsItsLabelAndNotTheWholeCell() throws {
+        let agenda = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMonthAgendaViews.swift")
+        )
+        let cell = try #require(
+            CadenceSourceScan.declarationBody("struct iOSCalendarMonthCompactDayCell: View", in: agenda),
+            "the compact month cell is gone"
+        )
+
+        // Non-vacuity: scoped to the one cell, past the comment stripper, still asking the question.
+        #expect(cell.contains("isCurrentMonth"))
+        #expect(cell.contains("hasItems ? Theme.blue"), "non-vacuity: the item dot this un-fades")
+
+        #expect(cell.contains("Theme.dim.opacity(CadenceCalendarDayBadge.outOfMonthLabelOpacity)"))
+        // The second layer, in either direction: no cell-wide fade, and no bare `Theme.dim` under it.
+        #expect(CadenceSourceScan.matchCount("\\.opacity\\(isCurrentMonth", in: cell) == 0)
+        #expect(
+            CadenceSourceScan.matchCount("Theme\\.dim(?!\\.opacity)", in: cell) == 0,
+            "a bare Theme.dim is back beside the token"
+        )
+    }
+
     /// **T-596: the fourth figure of the same pair, and the one that had drifted furthest.**
     ///
     /// `theTodayTimelineReadsItsHourFiguresFromHere` above pins the three T-588 settled — the hour,

@@ -1128,28 +1128,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   Harmless, but it is chrome asserting the container is something it is not, and it is the kind of
   line the next section view copies. Check `TasksPanel`'s overdue card stacks for the same shape.
 
-
-- [T-612] **A fourth spelling of the carried-day dim, and this one has no plate to move.**
-  `iOSCalendarMonthAgendaViews.swift:477` (`Theme.dim` at full) x `:527` (`.opacity(0.5)` on the whole
-  cell). Found by the [[T-568]] agent. It nets 0.50 so it does not break the contrast floor today, but
-  it is a *multiplied pair* — the same shape T-568 removed — and it fades the today ring and the item
-  dot along with the label.
-  **Not a copy of T-568's fix:** unlike the full-size cell this one has no plate to move, so it needs a
-  design call — add a plate, or accept label-only dimming. Ask before landing.
-
-- [T-614] **The contexts reorder commits two different ways on the two platforms — decide the rule.**
-  Split from [[T-583]], which decided macOS's `moveContext` should keep its `try? save()` and documented
-  that as deliberate: `order` is a field on rows the store already holds, nothing after it reports
-  success, so it is the case `AGENTS.md`'s rule leaves alone.
-  But [[T-581]] gave **iOS** the opposite treatment — its reorder commits through
-  `CadencePendingChangePersistence` and shows an inline notice on refusal, and its doc comment names
-  macOS's `try?` as the weaker half. Both agents reasoned well and reached different answers, which
-  means **the rule is underdetermined, not that either is wrong.**
-  The question is general, not about this pane: *does a visible rearrangement count as "reporting
-  success"?* A refused save leaves the rows where the user dragged them until the next launch silently
-  undoes it — which is the shape the `try? save()` rule exists to catch, but the write itself is a field
-  edit. Answer it once in `AGENTS.md`, then make both platforms match.
-
 - [T-619] **The two platforms' timed grids draw different hour ladders.** macOS `CalendarVisualStyle`
   0.36/0.30 at 0.95/0.85pt against iOS's 0.46/0.20 at 0.5pt. Out of scope for [[T-595]]/[[T-596]], which
   were iOS-internal and have now made iOS self-consistent. This is the cross-platform half, and it is a
@@ -2186,7 +2164,87 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   rather than a request: adding container writes is a real decision (they cascade into task
   ownership and section normalisation), and the screenshot work only needs it once.
 
+- [T-868] **Two more reorders swallow the save that [[T-614]] just decided.**
+  `TasksPanelSupport.reorderTask` (`Cadence/macOS/Views/TasksPanelSupport.swift`) and
+  `SidebarComponents.reorderList` (`Cadence/macOS/Views/SidebarComponents.swift`) each renumber
+  `order` across a dragged list inside `withAnimation` and end in `try? modelContext.save()` —
+  character for character the shape `SettingsView.moveContext` had. **Deliberately not swept in with
+  T-614**, which was the decision plus one site; each of these wants its own failing-first test.
+  The fix shape is settled: `CadencePendingChangePersistence.commitEdit(in:undo:)` over a captured
+  `[Int]` of the previous orders, and the sentence where the user is already looking. Note the real
+  work is the second half — Settings had a notice surface to reuse and the sidebar has none.
+
+- [T-869] **Two reorders reach no commit at all, which is the worse half of the same audit.**
+  `ListDetailComponents.reorderTask` writes `t.order = i` across the list and stops;
+  `Cadence/macOS/Views/ListDetailComponents.swift` contains no `save()` and no persistence call
+  anywhere in it. The Kanban card drop is the same shape: `KanbanBoardSupport.reorder` renumbers and
+  returns, and neither caller — `KanbanListColumnView.moveTask`, `KanbanSectionColumnView.moveTask` —
+  commits. **`KanbanListColumnView.handleTaskDrop` then answers `true` over it**, which is already in
+  half 2's vocabulary; it is invisible only because there is no swallowed commit in the frame for the
+  detector to hang it on. Half 3 does not see them either — it fires on insert and delete, not on a
+  field write. So both rely on autosave, which is the thing [[T-327]] measured the cost of.
+
+- [T-870] **The Kanban *column* reorder commits nothing either, one layer further in.**
+  `KanbanListSectionSupportViews.reorderSection` → `CadenceSectionConfigMerge.reorderSectionConfigs`
+  → `mutateSectionConfigs`, which merges, assigns `sectionConfigs` and returns. Dragging a column is
+  as visible a rearrangement as dragging a row, and this ordering is a **blob on the container**
+  rather than an `order` field — so the `\.order` sweep that found [[T-868]] and [[T-869]] cannot
+  find it, and neither will the next one. Check for other blob-stored orderings before assuming this
+  is the last. [[T-358]] is not a defence: last-writer-wins is about the *merge*, not about whether
+  the write is ever committed.
+
+- [T-871] **"A rearrangement the user can see" is a rule clause no detector can enforce.**
+  [[T-614]] added it to `AGENTS.md`'s half 2 and left `CadenceSaveCommitDisciplineTests` alone on
+  purpose: half 2 matches a vocabulary of *spellings*, and a row staying where it was dropped has
+  none. Checked before changing anything — the narrowing reclassifies no existing exemption and the
+  suite is green unchanged — so this is a gap, not a regression. The open question is whether a
+  narrow instrument earns its keep: *a declaration that writes `\w+\.order = ` inside a loop and
+  reaches a swallowed commit or none* would have found every site in [[T-868]] and [[T-869]] on its
+  own, and is a far smaller vocabulary than half 2's. It would not have found [[T-870]], which is the
+  argument against believing it. Sibling of [[T-657]] — the same honest limit of a text scan.
+
 ## Done
+
+- [T-614] **CLOSED 2026-09-04 — a visible rearrangement *is* a success report, and both platforms
+  now say so.** The user's decision. It is written into `AGENTS.md` rather than into a pane, because
+  it narrows the standing rule: `try? save()` is permitted only when **both** halves hold — the save
+  commits nothing but in-place field edits, **and** nothing after it tells the user it worked. "It is
+  only an `order` field" answers the first condition and ignores the second. **A row that stays where
+  you dropped it is the strongest success claim this app can make**, stronger than the dismissed sheet
+  the rule already counts, and the failure mode is exactly what the rule exists to catch: a silent
+  revert at next launch with nothing to retry.
+  macOS's `SettingsView.moveContext(_:before:)` now matches [[T-581]]'s iOS treatment —
+  `commitEdit(in:undo:)` puts every `order` back on refusal, `@Query(sort: \Context.order)` re-sorts
+  the pane to the store, and a `CadenceInlineFailureNotice` names it under the detail header. Pinned by
+  `CadenceOrderReassignmentTests.theMacOSContextDropReportsARefusedReorder`; 4 mutations, 4 killed.
+  **"Only when the rearrangement survives a redraw" was rejected deliberately.** That is a judgement
+  an agent must make per site, which is how this became underdetermined in the first place. Do not
+  reintroduce it.
+  **The narrowing changes nothing the four detectors accept, and that was checked before touching
+  them.** Half 2 is a vocabulary of *spellings* — `dismiss…(`, `is/show<X> = false`, `return true`
+  from a `-> Bool` — and "a row stayed where you dropped it" has none, so no exemption is
+  reclassified, no entry was added or removed, and `CadenceSaveCommitDisciplineTests` ran green
+  unchanged. The unenforceability is filed as [[T-871]], not smuggled into the suite.
+  [[T-583]]'s recorded reasoning is corrected in place; `archiveContext`/`restoreContext` keep their
+  `try?` and that half of T-583 stands. The new sentence paid for itself: the guide is still 199 by
+  `wc -l`, and what it spent was "Full incident details are in `docs/AGENTS_REFERENCE.md`" — the
+  fourth pointer to that file inside one section. **Neither raw `xcodebuild` block was touched**;
+  they are `CadenceBuildInvocationHygieneTests`'s positive control, which ran green.
+  Residue: [[T-868]], [[T-869]], [[T-870]] — the other reorder sites, audited and **deliberately not
+  swept in with the decision**.
+
+- [T-612] **CLOSED 2026-09-04 — label-only dimming, which is the user's call between the two branches
+  this ticket named.** `iOSCalendarMonthCompactDayCell`'s numeral reads
+  `Theme.dim.opacity(CadenceCalendarDayBadge.outOfMonthLabelOpacity)` now and the whole-cell
+  `.opacity(isCurrentMonth ? 1 : 0.5)` is gone.
+  **The label's value does not move.** The old pair multiplied to exactly the 0.50 the token holds, so
+  the contrast floor is untouched and no third value was invented; what changes is that the today ring
+  and the item dot stop being faded with it, and that two layers no longer have to keep multiplying to
+  the right answer. **No plate was added** — the other branch — because this cell sits on the grid's
+  single `Theme.surface` and has none to move, unlike the full-size cell [[T-568]] fixed that way.
+  Pinned by `iOSCalendarMetricsTests.theCompactMonthCellDimsItsLabelAndNotTheWholeCell`, scoped to the
+  one struct so the agenda row's own `Theme.dim` twelve lines up cannot vouch for it; 2 mutations, 2
+  killed. Built for `generic/platform=iOS Simulator`, 0 warnings, log names the file.
 
 - [T-813] **CLOSED 2026-09-04 — the last-resort bootstrap `fatalError` is a terminal recovery
   screen, sha `0371b19`.** `PersistenceController.container` is now optional; the final catch in
@@ -4574,10 +4632,14 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   pane was deviating from its own platform, not merely from iOS.
   The two inline closures are now `archiveContext(_:)`/`restoreContext(_:)` beside `moveContext`, each
   doing the write plus the save, with the convention written down: **existence changes report, field
-  edits commit quietly.** `moveContext`'s swallowed save — left open by [[T-581]] — is decided the same
-  way and documented as deliberate; making it the one reporting mutation among five would have
-  re-created the inconsistency this ticket is about. Residual platform disagreement about the *reorder*
-  commit split out as [[T-614]].
+  edits commit quietly.** **CORRECTED 2026-09-04 by [[T-614]] — the `moveContext` half of this entry was
+  wrong.** It recorded the reorder's swallowed save as deliberate on the grounds that `order` is a
+  field edit and nothing after it reports success. The first is true; the second is not, and it is the
+  half the rule turns on: a row that stays where you dropped it *is* the success report. The user
+  settled it that way, `AGENTS.md` now says so, and `moveContext` commits through
+  `CadencePendingChangePersistence` on both platforms. **The rest of this entry stands** — the
+  "five spellings" argument was about `archiveContext`/`restoreContext`/`reopenArea`/`reopenProject`,
+  which are genuinely the case the rule leaves alone and keep their `try?`.
 
 - [T-602] **CLOSED 2026-08-31 (`1dd6c4a`).** `NOTES / <active tab>` and `SCHEDULE / Timeline` are now
   simply **Notes** and **Timeline**. `PanelHeader.eyebrow` is optional and unused; `NotePanel.headerTitle`

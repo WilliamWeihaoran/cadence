@@ -27,6 +27,9 @@ struct SettingsView: View {
     /// dialog, because the `confirmationDialog` has already closed by the time the delete runs and
     /// the section it was about is what the user is still looking at.
     @State private var deleteFailureNotice: String?
+    /// Set when a context reorder was refused by the store. See `moveContext(_:before:)` — the
+    /// rows have already been put back by then, so the pane and this sentence agree.
+    @State private var contextOrderFailureNotice: String?
     @State private var showCreateContext = false
     @State private var editingSidebarTab: SidebarStaticDestination?
     @State private var aiAPIKeyDraft = ""
@@ -49,6 +52,9 @@ struct SettingsView: View {
                     detailHeader
                     if let deleteFailureNotice {
                         CadenceInlineFailureNotice(text: deleteFailureNotice)
+                    }
+                    if let contextOrderFailureNotice {
+                        CadenceInlineFailureNotice(text: contextOrderFailureNotice)
                     }
                     selectedSectionContent
                 }
@@ -267,21 +273,45 @@ struct SettingsView: View {
     /// second hand-written copy of that on the other platform is how two lists come to disagree
     /// about where a dropped row lands.
     ///
-    /// **The swallowed commit here is the deliberate one** (T-581 left the question open, T-583
-    /// answered it): `order` is a field on rows the store already holds, nothing after the save
-    /// tells the user it worked, so this is the case the `try? save()` rule leaves alone — the same
-    /// answer `archiveContext` below gets, for the same reason. iOS's `moveContext(_:by:)` does
-    /// commit its reorder through `CadencePendingChangePersistence` and shows a notice; that
-    /// divergence is known and is a question about the *rule*, not about this pane, so it is not
-    /// settled by making this one file disagree with its own four neighbours.
+    /// **The commit is reported, and the swallow that used to be here was the wrong half of a
+    /// split decision (T-614).** T-583 recorded this `try?` as deliberate — `order` is a field on
+    /// rows the store already holds, nothing after the save says it worked — while T-581 gave iOS
+    /// the opposite treatment. Both read the rule correctly; the rule was underdetermined, and the
+    /// user settled it: **a row that stays where you dropped it is the strongest success claim this
+    /// app can make**, stronger than the dismissed sheet the rule already counts. "It is only an
+    /// `order` field" answers the rule's first condition and ignores its second.
+    ///
+    /// So this side matches iOS's `moveContext(_:by:)`: `commitEdit(in:undo:)` puts every `order`
+    /// back on a refusal, `@Query(sort: \Context.order)` re-sorts the pane to the store, and the
+    /// notice under the header says so. Otherwise a refused reorder is a rearrangement the next
+    /// launch silently undoes, with nothing to retry — the exact failure the rule exists to catch.
+    ///
+    /// `archiveContext` below is **not** the same shape and keeps its `try?`: an archived row
+    /// leaves the list either way, so the pane makes no claim the store has not taken.
+    ///
+    /// The renumber runs over **every** context, archived rows included, for the reason iOS's
+    /// copy records: `order` is one sequence, and numbering only the visible slice hands them
+    /// indices the archived rows already hold.
     private func moveContext(_ draggedID: UUID, before targetID: UUID) {
-        guard let ordered = CadenceOrderReassignment.moved(contexts, draggedID, before: targetID) else { return }
+        let snapshot = contexts
+        guard let ordered = CadenceOrderReassignment.moved(snapshot, draggedID, before: targetID) else { return }
 
+        let previousOrders = snapshot.map(\.order)
         for (index, context) in ordered.enumerated() {
             context.order = index
         }
 
-        try? modelContext.save()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext) {
+                for (context, order) in zip(snapshot, previousOrders) {
+                    context.order = order
+                }
+            }
+        } catch {
+            contextOrderFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        contextOrderFailureNotice = nil
     }
 
     /// Archive a context, and commit it.
@@ -296,10 +326,11 @@ struct SettingsView: View {
     ///   where a delete flushed by nobody came back on next launch.
     /// - *Quietly.* `try?` rather than `CadencePendingChangePersistence` because neither site
     ///   inserts, deletes, or claims success afterwards — the case `AGENTS.md`'s `try? save()` rule
-    ///   explicitly leaves alone. `reopenArea`, `reopenProject` and `moveContext` are the same
-    ///   shape, and so are iOS's `archive(_:)`/`restore(_:)` and macOS's own
+    ///   explicitly leaves alone. `reopenArea` and `reopenProject` are the same shape, and so are
+    ///   iOS's `archive(_:)`/`restore(_:)` and macOS's own
     ///   `SettingsTagsSection.archive(_:)`/`restore(_:)`; a fifth spelling here would be the
-    ///   deviation, not the fix.
+    ///   deviation, not the fix. **`moveContext` left this list in T-614** — a reorder the user can
+    ///   see is a success report, which is the rule's second condition and not this one.
     /// - *Existence changes report.* Deleting a context is not a field edit, so it goes through
     ///   `report(.context)` and says so under the header. That contrast is the point: the panes are
     ///   consistent, not uniformly silent.

@@ -223,6 +223,40 @@ struct CadenceOrderReassignmentTests {
         #expect(body.contains("context.order = index"), "non-vacuity: still the renumbering body")
     }
 
+    /// **A visible rearrangement is a success report, so the Mac's reorder names a refusal (T-614).**
+    ///
+    /// This is the assertion that used to say the opposite. [[T-583]] recorded macOS's `try?` as
+    /// deliberate — `order` is a field on rows the store already holds and nothing after the save
+    /// says it worked — and [[T-581]] had already given iOS the other answer. The user settled it:
+    /// **a row that stays where you dropped it is the strongest success claim this app can make**,
+    /// stronger than the dismissed sheet half 2 already counts, and a refused reorder is exactly the
+    /// failure the rule exists to catch — a silent revert at next launch with nothing to retry.
+    ///
+    /// Four separate facts, for the reason the iOS test beside this one lists four: the commit can
+    /// exist without the undo, the undo can run after the report, and the notice can be set by a
+    /// function whose sentence nothing draws.
+    @Test func theMacOSContextDropReportsARefusedReorder() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/SettingsView.swift")
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "moveContext", in: source),
+            "SettingsView.moveContext(_:before:) is gone"
+        )
+
+        #expect(body.contains("context.order = index"), "non-vacuity: still the renumbering body")
+        #expect(!body.contains("try? modelContext.save()"), "the Mac reorder swallows its save again")
+        #expect(body.contains("CadencePendingChangePersistence.commitEdit(in: modelContext)"))
+        #expect(
+            CadenceCommitSurfaceScan.reportFollowsTheCatch("contextOrderFailureNotice =", in: body),
+            "the reorder reports success or failure above its own catch"
+        )
+        #expect(source.contains("CadenceInlineFailureNotice(text: contextOrderFailureNotice)"))
+
+        // The undo is the one `commitEdit` documents — put every `order` back — and not
+        // `rollback()`, which would take unrelated pending work with it.
+        #expect(!body.contains("rollback()"), "the reorder undo discards unrelated pending work")
+        #expect(body.contains("previousOrders"), "non-vacuity: nothing captured to put back")
+    }
+
     /// And the iPhone has a move path at all — the thing T-581 is about.
     ///
     /// A source scan because `Cadence/iOS/` is entirely inside `#if os(iOS)` and this target

@@ -472,9 +472,23 @@ private struct iOSCalendarMonthCompactDayCell: View {
         CadenceCalendarDayBadge.style(isToday: isToday, isSelected: isSelected)
     }
 
+    /// **One dimming layer for a carried day, on the label only (T-612).**
+    ///
+    /// This cell dimmed a neighbouring month's day twice — a bare `Theme.dim` here and
+    /// `.opacity(0.5)` on the whole cell — and SwiftUI multiplies, so the numeral landed at exactly
+    /// the 0.50 `CadenceCalendarDayBadge.outOfMonthLabelOpacity` holds. Right by coincidence, and
+    /// the cell-wide half also faded the today ring and the item dot.
+    ///
+    /// **Not T-568's fix, deliberately.** The full-size cell separates the months by moving its
+    /// *plate* (`Theme.surface` / `Theme.bg`); this one sits on the grid's single `Theme.surface`
+    /// and has no plate to move, so the user's call was label-only dimming rather than inventing
+    /// one. The label keeps the value it already had; the ring and the dot come back to full.
     private var dateLabelColor: Color {
         switch badge.label {
-        case .normal: return isCurrentMonth ? Theme.text : Theme.dim
+        case .normal:
+            return isCurrentMonth
+                ? Theme.text
+                : Theme.dim.opacity(CadenceCalendarDayBadge.outOfMonthLabelOpacity)
         case .accent: return Theme.blue
         case .onFill: return Theme.onColor
         }
@@ -524,7 +538,6 @@ private struct iOSCalendarMonthCompactDayCell: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: rowHeight)
-            .opacity(isCurrentMonth ? 1 : 0.5)
             .contentShape(Rectangle())
         }
         .buttonStyle(.iosPressable)
