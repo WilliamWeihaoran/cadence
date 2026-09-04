@@ -697,3 +697,139 @@ private func strippingExportComments(_ source: String) throws -> String {
     }
     return result
 }
+
+/// **T-661.** The archive carries one field whose meaning does not travel with the file, and the
+/// decision is that it stays and is *documented* rather than dropped.
+///
+/// `CadenceArchiveArea.linkedCalendarID` / `CadenceArchiveProject.linkedCalendarID` hold an
+/// `EKCalendar.calendarIdentifier`, which Apple documents as local to one device. Restored onto a
+/// different machine the field names a calendar that machine never issued, so calendar links do not
+/// survive a cross-device restore. Dropping the field was the other option and was rejected: on the
+/// origin machine the identifier is exact and this document is its only copy outside a store the
+/// user can delete, so removing it would make the archive incomplete in the one direction a restore
+/// works, to delete a value that is merely inert in the other — inert because [[T-624]]'s evidence
+/// gate makes a foreign identifier read as unverified on the reading device rather than as a broken
+/// link with a repair beside it.
+///
+/// These pin both halves. The value assertions make dropping the field a **red test** rather than a
+/// silent narrowing of the backup, and the source scan makes deleting the sentence one too — the
+/// sentence is the whole of what this ticket bought, so an undocumented field would be the ticket
+/// quietly un-done.
+@MainActor
+struct CadenceArchiveCalendarLinkScopeTests {
+
+    // MARK: - The field is still exported
+
+    @Test func anAreasCalendarLinkReachesTheArchiveVerbatim() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        let area = Area(name: "Home")
+        area.linkedCalendarID = "cal-issued-by-this-mac"
+        context.insert(area)
+        try context.save()
+
+        let exported = try #require(CadenceDataExportService.makeArchive(in: context).areas.first)
+        #expect(exported.linkedCalendarID == "cal-issued-by-this-mac",
+                "the archive dropped an area's calendar link; T-661 decided to keep and document it")
+    }
+
+    @Test func aProjectsCalendarLinkReachesTheArchiveVerbatim() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        let project = Project(name: "Kitchen")
+        project.linkedCalendarID = "cal-issued-by-this-mac"
+        context.insert(project)
+        try context.save()
+
+        let exported = try #require(CadenceDataExportService.makeArchive(in: context).projects.first)
+        #expect(exported.linkedCalendarID == "cal-issued-by-this-mac",
+                "the archive dropped a project's calendar link; T-661 decided to keep and document it")
+    }
+
+    /// And it survives the encoder, which is the form the user actually keeps. A field copied into
+    /// the record and lost on the way to JSON is the same missing backup with a passing unit test.
+    @Test func theCalendarLinkSurvivesTheJSONTheUserKeeps() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        let area = Area(name: "Home")
+        area.linkedCalendarID = "cal-issued-by-this-mac"
+        let project = Project(name: "Kitchen")
+        project.linkedCalendarID = "cal-also-from-here"
+        context.insert(area)
+        context.insert(project)
+        try context.save()
+
+        let data = try CadenceDataExportService.encode(
+            CadenceDataExportService.makeArchive(in: context)
+        )
+        let decoded = try CadenceDataExportService.decode(data)
+
+        let decodedArea = try #require(decoded.areas.first)
+        let decodedProject = try #require(decoded.projects.first)
+        #expect(decodedArea.linkedCalendarID == "cal-issued-by-this-mac")
+        #expect(decodedProject.linkedCalendarID == "cal-also-from-here")
+    }
+
+    /// An unlinked list exports the empty string rather than anything else, so a reader cannot tell
+    /// "never linked" apart from "linked" by accident — the same distinction
+    /// `CadenceCalendarLinkRowState.unlinked` draws in the app.
+    @Test func anUnlinkedListExportsTheEmptyIdentifier() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        context.insert(Area(name: "Home"))
+        try context.save()
+
+        let exported = try #require(CadenceDataExportService.makeArchive(in: context).areas.first)
+        #expect(exported.linkedCalendarID.isEmpty)
+    }
+
+    // MARK: - The sentence that is the fix
+
+    /// A **source scan over the raw file**, comments included, because the deliverable here *is* a
+    /// comment: T-661's own words are that the cheap half is a sentence rather than code. Nothing
+    /// else in this suite would notice its removal.
+    ///
+    /// It reads the doc comment as *prose* rather than as bytes — `///` markers dropped, runs of
+    /// whitespace collapsed, emphasis asterisks removed — so a reflow of the same sentence across
+    /// different line breaks keeps passing and only deleting or rewording it fails. A scan that
+    /// pinned the line breaks would be a scan the next `swift-format` run turns red for nothing.
+    @Test func theExporterSaysCalendarLinksDoNotSurviveACrossDeviceRestore() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/Services/CadenceDataExportService.swift")
+        #expect(raw.count > 400, "the export service read as \(raw.count) characters")
+        let prose = Self.docProse(raw)
+
+        #expect(prose.contains("calendar links do not survive a cross-device restore"),
+                "the archive no longer states that a calendar link is scoped to the machine that wrote it")
+        #expect(prose.contains("T-661"), "the decision is unattributed, so the next reader re-argues it")
+        #expect(prose.contains("EKCalendar.calendarIdentifier"),
+                "the note does not say what the field actually holds")
+        #expect(prose.contains("Dropping the field instead was the other option, and it was rejected"),
+                "the archive records the decision without recording that the other branch was considered")
+    }
+
+    /// Without these the scan above is true of any file with enough text in it, and the reflow
+    /// tolerance it claims is untested.
+    @Test func theCrossDeviceRestoreNeedleIsNotVacuous() {
+        let wrapped = """
+            /// `EKCalendar.calendarIdentifier`, which Apple documents as local to one device. So **calendar
+            /// links do not survive a cross-device restore**: read back on a different machine
+            """
+        let reflowed = """
+            /// `EKCalendar.calendarIdentifier`, which Apple documents as local to one device.
+            /// So **calendar links do not survive a cross-device restore**: read back on a
+            /// different machine
+            """
+        let silent = "/// The field is copied straight into the archive: read back on a different machine"
+
+        #expect(Self.docProse(wrapped).contains("calendar links do not survive a cross-device restore"))
+        #expect(Self.docProse(reflowed).contains("calendar links do not survive a cross-device restore"),
+                "the scan pins line breaks, so a reflow of the same sentence would fail it")
+        #expect(!Self.docProse(silent).contains("calendar links do not survive a cross-device restore"))
+    }
+
+    /// A doc comment as the sentences it says: `///` dropped, emphasis dropped, whitespace runs
+    /// collapsed to one space.
+    private static func docProse(_ source: String) -> String {
+        source
+            .replacingOccurrences(of: "///", with: " ")
+            .replacingOccurrences(of: "*", with: "")
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+    }
+}

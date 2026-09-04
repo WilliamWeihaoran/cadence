@@ -1209,6 +1209,35 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   starts empty and only ever learns *live* identifiers, so a link that is **already** dead the first
   time this build runs is never reported again. Seeding the set from every currently-linked id would
   bring that row back and defeat the gate for exactly the cross-device case, so it is not done.
+  **NARROWED AGAIN 2026-09-04, and still open for the reason already recorded here.** `892b866`
+  taught the Settings sweep the difference and left the *other* reader of a stored link alone, so
+  the false alarm had not gone — it had moved. `CadenceCalendarLinkRowState.forLink` still reached
+  `.missing` from "no calendar **this device** has carries this identifier", and
+  `ListEditorCalendarRow` — the list edit sheet's Apple Calendar row, which is where a user actually
+  links one — printed `CadenceCalendarLinkHealth.missingLinkTitle` over a picker whose every option
+  overwrites the link the device that made it is still mirroring against.
+  The fix is the same shape as the first half and needs **no stored property**: the row state now
+  takes a `CadenceCalendarLinkEvidence` — `.deviceLocal` for the timeline's event editor, whose
+  identifier comes off an `EKEvent` this device fetched, and `.synced(observedCalendarIDs:)` for the
+  list editor, which reads `Area`/`Project.linkedCalendarID` and passes the same
+  `CadenceCalendarLinkObservations` record the Settings sweep reads. An identifier no calendar here
+  carries **and** that this device has never seen alive is now a fourth situation rather than the
+  third: `.unverified`, worded *"Linked calendar is not on this device"* — stored, `isSet`, not
+  called broken, and offered no repair. The picker is untouched, so a deliberate re-link is still one
+  tap away; what is gone is the app announcing a break first. Provenance is an **enum**, not a set of
+  ids, so a caller cannot satisfy the gate by handing over the live calendars — the no-op
+  `missingLinks` warns about in prose is here something the type system refuses.
+  `CadenceEventKitPlatformParityTests` and T-390's `SchemaMigrationPlan` block are untouched.
+  Measured: five suites green (77 tests) over a `git archive HEAD` tree carrying only these files,
+  with all three recompiled; four mutations run through `scripts/mutate.sh`, **all four killed by
+  name** — the pre-fix row, the gate present but vouching for everything, the gate overshooting so
+  nothing is ever `.missing`, and `.unverified` wearing `.missing`'s sentence.
+  **Why it is still open, unchanged:** nobody has measured whether the identifiers really differ
+  across this user's devices — it needs an EventKit call on the user's own Mac, which raises a TCC
+  prompt — and making a link genuinely *portable* is T-390's companion-metadata branch, still blocked
+  on a `SchemaMigrationPlan`. Neither half of the fix depends on that measurement: under one shared
+  identifier space `.unverified` is unreachable and every surface says exactly what it said before.
+  Residue: [[T-899]].
 
 - [T-626] **iOS omits the background mode CloudKit silent-sync needs — latent, and BLOCKED ON iOS
   DISTRIBUTION. Do not implement this until that changes.** VERIFIED 2026-09-01 from CXT-016;
@@ -1327,21 +1356,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   doc on why `rollback()` is unavailable, and decide whether the answer is "no undo, name the
   refusal and leave the tag pending" (matching T-497's in-place answer) or something that actually
   reasons about the insert.
-
-- [T-661] **The portable export carries a device-local calendar identifier.** Found while landing
-  [[T-624]]'s evidence gate; not fixed, and it is a decision rather than a bug.
-  `CadenceArchiveArea` and `CadenceArchiveProject`
-  (`Cadence/Services/CadenceDataExportService.swift:289` and `:327`) copy `linkedCalendarID` straight
-  into the archive. That field is an `EKCalendar.calendarIdentifier`, which Apple documents as local
-  to one device, so an archive restored on a different machine carries a link naming a calendar that
-  machine never issued — the same shape as T-624, one layer out, and with the same blocker: a
-  *portable* link needs the title/source T-390 declined to store, which needs a `SchemaMigrationPlan`.
-  T-624's gate does not reach this: it makes the imported link silent rather than falsely repairable,
-  which is the right failure but is not portability.
-  **The cheap half is a sentence, not code** — either say in the export docs that calendar links do
-  not survive a cross-device restore, or drop the field from the archive rather than shipping a value
-  that cannot mean anything on the other side. Neither has been decided. Note the import side is
-  unsettled anyway ([[T-274]]), so this is not urgent.
 
 - [T-664] **The `try? save()` rule's report vocabulary has no spelling for "the surface filled
   itself in".** Found — and then *measured* — while fixing [[T-652]].
@@ -1983,7 +1997,67 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   own, and is a far smaller vocabulary than half 2's. It would not have found [[T-870]], which is the
   argument against believing it. Sibling of [[T-657]] — the same honest limit of a text scan.
 
+- [T-899] **A third reader of a synced `linkedCalendarID` would silently get the pre-[[T-624]] rule
+  back.** Residue of T-624's row-state half, filed 2026-09-04. Not a bug today; a guard that does not
+  exist.
+  `CadenceCalendarLink` and `CadenceCalendarLinkRowState.forLink` take a
+  `CadenceCalendarLinkEvidence` that **defaults to `.deviceLocal`**. That default is the truthful
+  answer for the one existing caller whose identifier comes off a live `EKEvent`
+  (`CalendarEventEditPopover`), and taking it is what kept the change to two files — but it means a
+  future surface that reads `Area.linkedCalendarID` or `Project.linkedCalendarID` and forgets
+  `evidence: .synced(...)` gets "absent from this device's live set means deleted" back, with a
+  re-pick beside it that overwrites the device that made the link. Exactly the shape T-624 removed,
+  re-entering through a defaulted parameter.
+  **Population today is two**, and both are pinned by name:
+  `theListEditorRowDeclaresItsIdentifierSynced` requires `evidence: .synced(` in
+  `Cadence/macOS/Sheets/ListEditorSupportViews.swift` and forbids `.deviceLocal` there, and
+  `theTimelineEventEditorDoesNotClaimASyncedIdentifier` forbids `.synced` in
+  `Cadence/macOS/Views/TimelineEventBlockSupportViews.swift`. A **third** site is what nothing sees.
+  **What it wants:** a sweep, in the shape `CadenceSharedConstantReuseSweepTests` already uses — find
+  every `CadenceCalendarLink(` and `CadenceCalendarLinkRowState.forLink(` under `Cadence/`, and
+  require each to be one of the two named sites or to pass `evidence:` explicitly. It has to read
+  `Cadence/iOS/` as **text**: that tree is inside `#if os(iOS)` and the macOS test target has no
+  symbol for it. iOS has no list-editor calendar row today, which is the only reason it is not
+  already a second synced caller — so the sweep is worth having before one is added, not after.
+
 ## Done
+
+- [T-661] **The portable export carries a device-local calendar identifier.** Found while landing
+  [[T-624]]'s evidence gate; not fixed, and it is a decision rather than a bug.
+  `CadenceArchiveArea` and `CadenceArchiveProject`
+  (`Cadence/Services/CadenceDataExportService.swift:289` and `:327`) copy `linkedCalendarID` straight
+  into the archive. That field is an `EKCalendar.calendarIdentifier`, which Apple documents as local
+  to one device, so an archive restored on a different machine carries a link naming a calendar that
+  machine never issued — the same shape as T-624, one layer out, and with the same blocker: a
+  *portable* link needs the title/source T-390 declined to store, which needs a `SchemaMigrationPlan`.
+  T-624's gate does not reach this: it makes the imported link silent rather than falsely repairable,
+  which is the right failure but is not portability.
+  **The cheap half is a sentence, not code** — either say in the export docs that calendar links do
+  not survive a cross-device restore, or drop the field from the archive rather than shipping a value
+  that cannot mean anything on the other side. Neither has been decided. Note the import side is
+  unsettled anyway ([[T-274]]), so this is not urgent.
+  **CLOSED 2026-09-04 — decided in favour of the sentence, and the field stays.**
+  Both halves of the choice were live, and the archive is *complete* by contract, so the tie-breaker
+  is which reading loses data. On the machine that wrote the archive the identifier is exact, and
+  this document is its only copy outside a store the user can delete — `StoreBackupManager`'s copies
+  live inside the container and go with it. Dropping the field would therefore make the backup
+  incomplete in the one direction a restore actually works, in order to remove a value that is merely
+  **inert** in the other. Inert rather than harmful is now measurable rather than hoped for: both
+  readers of a stored link gate on `CadenceCalendarLinkObservations`, so a foreign identifier reads
+  as *unverified* — silent, never offered as a break to repair — in Settings ([[T-624]], `892b866`)
+  and, since 2026-09-04, in the list editor's calendar row too. So the archive keeps the field and
+  **says what it means**: `CadenceDataExportService`'s contract now states that calendar links do not
+  survive a cross-device restore, that an importer may trust the field only when the archive is
+  returning to the device that wrote it, and that dropping it was considered and why it was not done.
+  Each archive record's field carries the short form.
+  Nothing user-facing changed, deliberately. `CadenceDataExportPresentation.description` already ends
+  *"Cadence cannot read an archive back in yet, so this is a copy to keep, not a restore point"*, so
+  there is no restore for the caveat to qualify; the sentence belongs where the future importer will
+  read it, and a line of settings copy about calendar links would be noise about a thing that cannot
+  happen. `CadenceArchiveCalendarLinkScopeTests` pins both halves — the field reaching the archive
+  and surviving the encoder, so dropping it is a red test rather than a silent narrowing, and the
+  sentence itself, read as prose so a reflow passes and only a deletion fails. Two mutations, both
+  killed: the field blanked, and the sentence removed.
 
 - [T-782] **An App-Sandboxed test host cannot run the `/usr/bin` developer shims, and nothing says
   so.** Measured 2026-09-03 while wiring [[T-719]]: `Cadence.app` is sandboxed, so a `Process` spawned

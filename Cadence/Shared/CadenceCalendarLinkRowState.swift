@@ -1,7 +1,7 @@
 import EventKit
 import Foundation
 
-/// One list's calendar link, as three different answers rather than one word.
+/// One list's calendar link, as four different answers rather than one word.
 ///
 /// **T-441.** `ListEditorCalendarRow` rendered `selectedTitle ?? "None"`, and it looked that title
 /// up in `CalendarManager.availableCalendars` — the *visible* subset, with everything the user has
@@ -28,10 +28,30 @@ import Foundation
 /// two surfaces report the same break, and that type keeps the one spelling for exactly this
 /// reason.
 ///
-/// **No auto-matching here either.** This reports which of the three cases holds and stops. It
-/// never proposes a replacement calendar and never rewrites the stored identifier — a broken link
-/// is left broken, and visible, until the user re-picks. Clearing it here would be the silent
-/// overwrite the ticket is about, wearing a repair's clothes.
+/// **No auto-matching here either.** This reports which of the cases holds and stops. It never
+/// proposes a replacement calendar and never rewrites the stored identifier — a broken link is left
+/// broken, and visible, until the user re-picks. Clearing it here would be the silent overwrite the
+/// ticket is about, wearing a repair's clothes.
+///
+/// **T-624 — there is a fourth case, and it used to be read as the third.** `.missing` was reached
+/// from "no calendar *this device* has carries this identifier", which is the rule
+/// `CadenceCalendarLinkHealth` stopped using: `Area.linkedCalendarID` / `Project.linkedCalendarID`
+/// hold an `EKCalendar.calendarIdentifier`, which Apple documents as local to one device, on a
+/// **CloudKit-synced** `@Model`. A link made on the iPhone therefore arrives on the Mac as an
+/// identifier the Mac never issued, and the Mac cannot tell that apart from a deletion.
+///
+/// The Settings sweep was taught the difference and this row was not, so the false alarm simply
+/// moved: the broken-links card stayed silent while the list editor's calendar row printed
+/// *"Linked calendar is missing"* over a picker whose every option overwrites the other device's
+/// working link. `.unverified` is that case named — stored, unseen here, and **not** claimed
+/// broken.
+///
+/// Same reasoning as `CadenceCalendarLinkObservations`, and it does not depend on the unmeasured
+/// fact either: under one shared identifier space every device has seen every linked calendar, so
+/// `.unverified` is unreachable and this row says exactly what it said before; under device-local
+/// ones the device with no evidence declines to call the link dead. The residual failure is
+/// under-reporting a break this device cannot vouch for, which is the safe direction for a verdict
+/// whose repair is destructive.
 nonisolated enum CadenceCalendarLinkRowState: Equatable, Sendable {
     /// `linkedCalendarID` is empty: no link has ever been made.
     case unlinked
@@ -40,9 +60,14 @@ nonisolated enum CadenceCalendarLinkRowState: Equatable, Sendable {
     /// Linked to a calendar that exists and that the user has hidden from Cadence. The mirroring is
     /// intact; only this app's view of the calendar is switched off.
     case hidden(title: String)
-    /// Linked to an identifier no calendar carries. `CadenceCalendarLinkHealth.missingLinks` is the
-    /// same verdict reached over every list at once.
+    /// Linked to an identifier no calendar carries **and that this device has seen alive before**.
+    /// `CadenceCalendarLinkHealth.missingLinks` is the same verdict reached over every list at once,
+    /// off the same evidence.
     case missing
+    /// Linked to an identifier no calendar carries and that this device has **never** seen — most
+    /// likely one another device issued. Not a break: this device has no evidence either way, so it
+    /// reports what it knows and offers no repair. See T-624 on the type above.
+    case unverified
 
     /// What the field row shows as its value.
     var valueText: String {
@@ -51,6 +76,7 @@ nonisolated enum CadenceCalendarLinkRowState: Equatable, Sendable {
         case .linked(let title): title
         case .hidden(let title): Self.hiddenTitle(title)
         case .missing: CadenceCalendarLinkHealth.missingLinkTitle
+        case .unverified: Self.unverifiedText
         }
     }
 
@@ -71,24 +97,44 @@ nonisolated enum CadenceCalendarLinkRowState: Equatable, Sendable {
     ///
     /// `.missing` is **set**. Something is stored, and the row's job is to say that it is stored and
     /// broken; dimming it back to the unset treatment is the collapse this type exists to undo.
+    /// `.unverified` is set for the same reason and a stronger one: an identifier this device
+    /// cannot resolve is still an identifier the other device is mirroring against.
     var isSet: Bool { self != .unlinked }
 
     /// The word for "no calendar", pinned here so the row and its tests cannot disagree about it.
     static let unlinkedText = "None"
+
+    /// **T-624.** The word for a stored link this device cannot see and will not call broken.
+    ///
+    /// Deliberately not "Linked on another device", which claims more than is known: the same state
+    /// is reached by a link this device made *before* it kept an observation record, which is the
+    /// accepted under-report T-624 recorded rather than a peer's link. What is true in both is that
+    /// the calendar is not on this device, so that is all it says.
+    ///
+    /// Deliberately not `CadenceCalendarLinkHealth.missingLinkTitle` either. That sentence is a
+    /// verdict with a repair beside it; this one is an absence of evidence, and wording them the
+    /// same collapses the distinction the case exists to draw — the T-441 mistake, one state along.
+    static let unverifiedText = "Linked calendar is not on this device"
 
     /// - Parameter allCalendars: every calendar EventKit has, **including** the ones hidden from
     ///   Cadence. Passing the visible subset is the bug: `.hidden` becomes unreachable and every
     ///   hidden link reports `.missing`.
     /// - Parameter visibleCalendarIDs: identifiers of the calendars Cadence is currently showing —
     ///   the same subset the picker offers.
+    /// - Parameter evidence: where the identifier came from, which is what decides whether "no
+    ///   calendar here carries it" means `.missing` or `.unverified`. See
+    ///   `CadenceCalendarLinkEvidence`; `.deviceLocal` is the default because it is the truthful
+    ///   answer for every identifier read off a live EventKit object, and a link read out of a
+    ///   **synced** `linkedCalendarID` has to say `.synced` instead.
     static func forLink(
         linkedCalendarID: String,
         allCalendars: [CadenceCalendarChoice],
-        visibleCalendarIDs: Set<String>
+        visibleCalendarIDs: Set<String>,
+        evidence: CadenceCalendarLinkEvidence = .deviceLocal
     ) -> CadenceCalendarLinkRowState {
         guard !linkedCalendarID.isEmpty else { return .unlinked }
         guard let match = allCalendars.first(where: { $0.id == linkedCalendarID }) else {
-            return .missing
+            return evidence.vouchesFor(linkedCalendarID) ? .missing : .unverified
         }
         return visibleCalendarIDs.contains(match.id) ? .linked(title: match.title) : .hidden(title: match.title)
     }
@@ -99,15 +145,53 @@ nonisolated enum CadenceCalendarLinkRowState: Equatable, Sendable {
     static func forLink(
         linkedCalendarID: String,
         allCalendars: [EKCalendar],
-        visibleCalendars: [EKCalendar]
+        visibleCalendars: [EKCalendar],
+        evidence: CadenceCalendarLinkEvidence = .deviceLocal
     ) -> CadenceCalendarLinkRowState {
         forLink(
             linkedCalendarID: linkedCalendarID,
             allCalendars: allCalendars.map {
                 CadenceCalendarChoice(id: $0.calendarIdentifier, title: $0.title)
             },
-            visibleCalendarIDs: Set(visibleCalendars.map(\.calendarIdentifier))
+            visibleCalendarIDs: Set(visibleCalendars.map(\.calendarIdentifier)),
+            evidence: evidence
         )
+    }
+}
+
+/// **T-624.** Whether this device can vouch for a linked calendar identifier it cannot currently
+/// resolve — which is the difference between "the calendar was deleted" and "I have never seen it".
+///
+/// The two callers of `CadenceCalendarLink` hold identifiers of genuinely different provenance, and
+/// before this they were treated alike:
+///
+/// - The timeline's event editor reads its identifier off an `EKEvent` **this device just fetched**.
+///   An identifier that arrived through EventKit is one EventKit has, so "no match" there really is
+///   a deletion and nothing is gated.
+/// - The list editor reads `Area.linkedCalendarID` / `Project.linkedCalendarID`, which CloudKit
+///   syncs between devices while `EKCalendar.calendarIdentifier` is documented as local to one. A
+///   Mac holding an identifier its iPhone minted cannot resolve it and has learned nothing by
+///   failing to.
+///
+/// So the parameter is provenance, not a set of ids — a caller cannot satisfy it by handing over
+/// the live calendars, which would make the gate a no-op while looking like it was being honoured.
+/// That is the mistake `CadenceCalendarLinkHealth.missingLinks` warns about in prose for its own
+/// `observedCalendarIDs`, spelled here as something the type system refuses.
+nonisolated enum CadenceCalendarLinkEvidence: Equatable, Sendable {
+    /// The identifier came off a live EventKit object on this device, so this device has seen it by
+    /// construction and an unresolvable one is genuinely gone.
+    case deviceLocal
+    /// The identifier came out of a CloudKit-synced `linkedCalendarID`. Carries the identifiers this
+    /// device has itself seen EventKit carry — `CadenceCalendarLinkObservations`, the same record
+    /// `CadenceCalendarLinkHealth.missingLinks` reads.
+    case synced(observedCalendarIDs: Set<String>)
+
+    /// Whether this device has any standing to call the identifier's calendar deleted.
+    func vouchesFor(_ calendarID: String) -> Bool {
+        switch self {
+        case .deviceLocal: true
+        case .synced(let observedCalendarIDs): observedCalendarIDs.contains(calendarID)
+        }
     }
 }
 
@@ -202,17 +286,24 @@ nonisolated struct CadenceCalendarLink: Equatable, Sendable {
     /// visibility; `.readOnly` for the event editor, whose offer is writability. The default is
     /// `.hidden` because that is the offer every caller before T-467 had.
     let exclusion: CadenceCalendarLinkExclusion
+    /// **T-624.** Where `linkedCalendarID` came from, which decides whether an identifier this
+    /// device cannot resolve is `.missing` or `.unverified`. `.deviceLocal` by default: it is the
+    /// truthful answer for an identifier read off a live `EKEvent`, and the one caller reading a
+    /// **CloudKit-synced** `linkedCalendarID` — `ListEditorCalendarRow` — passes `.synced`.
+    let evidence: CadenceCalendarLinkEvidence
 
     init(
         linkedCalendarID: String,
         allCalendars: [CadenceCalendarChoice],
         visibleCalendarIDs: Set<String>,
-        exclusion: CadenceCalendarLinkExclusion = .hidden
+        exclusion: CadenceCalendarLinkExclusion = .hidden,
+        evidence: CadenceCalendarLinkEvidence = .deviceLocal
     ) {
         self.linkedCalendarID = linkedCalendarID
         self.allCalendars = allCalendars
         self.visibleCalendarIDs = visibleCalendarIDs
         self.exclusion = exclusion
+        self.evidence = evidence
     }
 
     /// The EventKit-shaped call, for the row. Same reason the row state has one: an `EKCalendar`'s
@@ -221,7 +312,8 @@ nonisolated struct CadenceCalendarLink: Equatable, Sendable {
         linkedCalendarID: String,
         allCalendars: [EKCalendar],
         visibleCalendars: [EKCalendar],
-        exclusion: CadenceCalendarLinkExclusion = .hidden
+        exclusion: CadenceCalendarLinkExclusion = .hidden,
+        evidence: CadenceCalendarLinkEvidence = .deviceLocal
     ) {
         self.init(
             linkedCalendarID: linkedCalendarID,
@@ -229,7 +321,8 @@ nonisolated struct CadenceCalendarLink: Equatable, Sendable {
                 CadenceCalendarChoice(id: $0.calendarIdentifier, title: $0.title)
             },
             visibleCalendarIDs: Set(visibleCalendars.map(\.calendarIdentifier)),
-            exclusion: exclusion
+            exclusion: exclusion,
+            evidence: evidence
         )
     }
 
@@ -238,7 +331,8 @@ nonisolated struct CadenceCalendarLink: Equatable, Sendable {
         CadenceCalendarLinkRowState.forLink(
             linkedCalendarID: linkedCalendarID,
             allCalendars: allCalendars,
-            visibleCalendarIDs: visibleCalendarIDs
+            visibleCalendarIDs: visibleCalendarIDs,
+            evidence: evidence
         )
     }
 
@@ -255,7 +349,10 @@ nonisolated struct CadenceCalendarLink: Equatable, Sendable {
     /// linked one when it is hidden.
     ///
     /// Nothing is appended for a `.missing` link — there is no calendar to offer — so a dead link
-    /// is still repaired by picking a live calendar, which is what T-400 wanted.
+    /// is still repaired by picking a live calendar, which is what T-400 wanted. Nor for an
+    /// `.unverified` one, for the same reason and with a different consequence: the offer is the
+    /// ordinary connect menu, unchanged, so the user can still deliberately link this device's list
+    /// to a calendar. What T-624 removed is the app *telling* them the link is broken first.
     var pickableCalendars: [CadenceCalendarChoice] {
         allCalendars.filter { choice in
             visibleCalendarIDs.contains(choice.id)

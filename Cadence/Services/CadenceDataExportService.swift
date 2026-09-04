@@ -27,6 +27,26 @@ import SwiftData
 /// **Relationships are stored as ids, not by nesting.** A task carries `areaID`; an area does not
 /// carry its tasks. That keeps the document a flat set of tables — every row appears exactly once,
 /// so a human can diff two exports, and an importer can rebuild the graph in one pass.
+///
+/// **T-661 — one field in here is scoped to the machine that wrote it, and it stays.**
+/// `CadenceArchiveArea.linkedCalendarID` and `CadenceArchiveProject.linkedCalendarID` carry an
+/// `EKCalendar.calendarIdentifier`, which Apple documents as local to one device. So **calendar
+/// links do not survive a cross-device restore**: read back on a different machine the field names
+/// a calendar that machine never issued, and an importer must treat it as meaningful only when the
+/// archive is returning to the device that wrote it. Everything else in this document is
+/// machine-independent; this is the one exception, and it is stated here rather than left for the
+/// importer to discover.
+///
+/// **Dropping the field instead was the other option, and it was rejected.** On the origin machine
+/// the identifier is exact, and this archive is its only copy outside a store the user can delete —
+/// so dropping it would make the document incomplete in the one direction a restore actually works,
+/// to remove a value that is merely inert in the other. Inert rather than harmful because both
+/// readers of a stored link now gate on `CadenceCalendarLinkObservations` (T-624):
+/// `CadenceCalendarLinkHealth.missingLinks` and `CadenceCalendarLinkRowState` report an identifier
+/// the reading device has never seen alive as unverified, not as broken, so a foreign identifier
+/// produces silence rather than a repair prompt that would overwrite the link the other device is
+/// still using. Making the link genuinely *portable* is a different job: it needs the title and
+/// source T-390 declined to store, which needs the `SchemaMigrationPlan` this project does not have.
 nonisolated enum CadenceDataExportService {
 
     /// Bumped when the archive's *shape* changes in a way a reader must know about — a renamed
@@ -296,6 +316,13 @@ nonisolated struct CadenceArchiveArea: Codable, Equatable, Identifiable, Sendabl
     var colorHex: String
     var icon: String
     var order: Int
+    /// **T-661.** The `EKCalendar.calendarIdentifier` this area mirrors, copied verbatim.
+    ///
+    /// Kept, and **scoped to the machine that exported it**: the identifier is documented as local
+    /// to one device, so a restore onto a different Mac or iPhone finds no such calendar and the
+    /// link does not come back. See `CadenceDataExportService`'s note for why the field is shipped
+    /// anyway rather than dropped, and why a foreign identifier is silent rather than falsely
+    /// repairable on the reading device.
     var linkedCalendarID: String
     var loggedMinutes: Int
     var hideDueDateIfEmpty: Bool
@@ -334,6 +361,8 @@ nonisolated struct CadenceArchiveProject: Codable, Equatable, Identifiable, Send
     var icon: String
     var dueDate: String
     var order: Int
+    /// **T-661.** As `CadenceArchiveArea.linkedCalendarID`: kept, and meaningful only on the
+    /// machine that wrote the archive.
     var linkedCalendarID: String
     var loggedMinutes: Int
     var hideDueDateIfEmpty: Bool

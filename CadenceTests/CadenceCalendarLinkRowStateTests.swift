@@ -557,3 +557,160 @@ struct CadenceCalendarPickerReadOnlyOfferTests {
                                              in: "CadenceCalendarLinkRowState.hiddenTitle(calendar.title)") == 0)
     }
 }
+
+/// **T-624.** The list editor's calendar row used to call a link dead on evidence it did not have.
+///
+/// `Area.linkedCalendarID` / `Project.linkedCalendarID` hold an `EKCalendar.calendarIdentifier`,
+/// which Apple documents as local to one device, on a **CloudKit-synced** `@Model`.
+/// `CadenceCalendarLinkHealth.missingLinks` was taught that in `892b866` and grew an
+/// `observedCalendarIDs` gate; `CadenceCalendarLinkRowState` was not, so Settings' broken-links card
+/// fell silent for a peer's link while the list editor kept printing
+/// `CadenceCalendarLinkHealth.missingLinkTitle` over a picker whose every option overwrites it. The
+/// false alarm had moved rather than gone.
+///
+/// These pin the fourth verdict and the two provenances that reach it. **None of them depends on
+/// whether the identifiers really do differ across devices** — that is unmeasured, and taking the
+/// measurement means an EventKit call on the user's own Mac. Under one shared identifier space
+/// `.unverified` is simply unreachable and every assertion below about `.missing` still holds.
+struct CadenceCalendarLinkUnverifiedStateTests {
+
+    private let team = CadenceCalendarChoice(id: "cal-team", title: "Team")
+
+    private func state(
+        linkedTo id: String,
+        evidence: CadenceCalendarLinkEvidence
+    ) -> CadenceCalendarLinkRowState {
+        CadenceCalendarLinkRowState.forLink(
+            linkedCalendarID: id,
+            allCalendars: [team],
+            visibleCalendarIDs: ["cal-team"],
+            evidence: evidence
+        )
+    }
+
+    // MARK: - Two provenances, two verdicts
+
+    /// The whole ticket in one assertion: one identifier, absent from this device either way, and
+    /// two different answers depending on whether this device has ever seen it alive.
+    @Test func anUnseenIdentifierIsNotCalledBrokenAndASeenOneStillIs() {
+        let seen = state(
+            linkedTo: "cal-deleted",
+            evidence: .synced(observedCalendarIDs: ["cal-deleted", "cal-team"])
+        )
+        let unseen = state(
+            linkedTo: "cal-from-the-iphone",
+            evidence: .synced(observedCalendarIDs: ["cal-deleted", "cal-team"])
+        )
+
+        #expect(seen == .missing)
+        #expect(unseen == .unverified)
+        #expect(seen != unseen, "the row reaches one verdict for both, which is the T-624 collapse")
+    }
+
+    /// An empty observation record — a device that has never been to the calendar settings screen
+    /// and never picked a calendar — vouches for nothing, so it accuses nothing.
+    @Test func aDeviceWithNoObservationsAccusesNothing() {
+        #expect(state(linkedTo: "cal-anything", evidence: .synced(observedCalendarIDs: [])) == .unverified)
+        #expect(CadenceCalendarLinkEvidence.synced(observedCalendarIDs: []).vouchesFor("cal-anything") == false)
+    }
+
+    /// The timeline's event editor is untouched. Its identifier comes off an `EKEvent` this device
+    /// fetched, so EventKit has it by construction and an unresolvable one really is gone.
+    @Test func aDeviceLocalIdentifierIsStillCalledMissingWhenItResolvesToNothing() {
+        #expect(state(linkedTo: "cal-deleted", evidence: .deviceLocal) == .missing)
+        #expect(CadenceCalendarLinkEvidence.deviceLocal.vouchesFor("anything-at-all"))
+        #expect(CadenceCalendarLink(
+            linkedCalendarID: "cal-deleted",
+            allCalendars: [team],
+            visibleCalendarIDs: ["cal-team"]
+        ).evidence == .deviceLocal, "the default provenance changed, so every caller's verdict did")
+    }
+
+    /// The gate reaches only the unresolvable case. A live calendar is `.linked` or `.hidden` on
+    /// any evidence, because resolving it *is* seeing it — a gate that swallowed those would hide
+    /// working links behind a record that had not caught up.
+    @Test func evidenceCannotChangeTheVerdictForACalendarThisDeviceCanSee() {
+        for evidence: CadenceCalendarLinkEvidence in [.deviceLocal, .synced(observedCalendarIDs: [])] {
+            #expect(state(linkedTo: "cal-team", evidence: evidence) == .linked(title: "Team"))
+            #expect(state(linkedTo: "", evidence: evidence) == .unlinked)
+            #expect(CadenceCalendarLinkRowState.forLink(
+                linkedCalendarID: "cal-team",
+                allCalendars: [team],
+                visibleCalendarIDs: [],
+                evidence: evidence
+            ) == .hidden(title: "Team"))
+        }
+    }
+
+    // MARK: - The word
+
+    /// `.unverified` is a stored link with no verdict attached, so it says neither of the two
+    /// sentences that already mean something else.
+    @Test func theUnverifiedWordIsNeitherTheBreakageNorTheAbsence() {
+        #expect(CadenceCalendarLinkRowState.unverified.valueText == CadenceCalendarLinkRowState.unverifiedText)
+        #expect(CadenceCalendarLinkRowState.unverifiedText == "Linked calendar is not on this device")
+        #expect(CadenceCalendarLinkRowState.unverifiedText != CadenceCalendarLinkHealth.missingLinkTitle,
+                "an unseen link is worded as a break, which is the repair invitation T-624 removed")
+        #expect(CadenceCalendarLinkRowState.unverifiedText != CadenceCalendarLinkRowState.unlinkedText,
+                "an unseen link is worded as no link at all, which is the T-441 collapse")
+        #expect(CadenceCalendarLinkRowState.unverified.isSet,
+                "the row dims a stored link back to the unset treatment")
+    }
+
+    /// Five verdicts, five different things to say. Stated as one set so a case added later cannot
+    /// quietly borrow another's word.
+    @Test func everyVerdictHasItsOwnValueText() {
+        let states: [CadenceCalendarLinkRowState] = [
+            .unlinked,
+            .linked(title: "Team"),
+            .hidden(title: "Team"),
+            .missing,
+            .unverified
+        ]
+        #expect(Set(states.map(\.valueText)).count == states.count)
+    }
+
+    // MARK: - The row asks with the right provenance
+
+    /// A **source scan**: `ListEditorCalendarRow.link` is private, so what a test can check is that
+    /// the row declares its identifier synced and reads the device-local observation record rather
+    /// than defaulting to the provenance the event editor has.
+    @Test func theListEditorRowDeclaresItsIdentifierSynced() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Sheets/ListEditorSupportViews.swift")
+        let source = CadenceSourceScan.strippingComments(raw)
+        #expect(source != raw, "the comment stripper removed nothing")
+        #expect(source.contains("struct ListEditorCalendarRow: View"), "the row moved")
+
+        #expect(source.contains("evidence: .synced("),
+                "the row reads a CloudKit-synced identifier as one this device can vouch for")
+        #expect(source.contains("CadenceCalendarLinkObservations.observedCalendarIDs("),
+                "the row does not read the device-local observation record")
+        #expect(source.contains("@AppStorage(CadenceCalendarLinkObservations.observedCalendarIDsKey)"),
+                "the row's observation record no longer comes from the shared defaults key")
+        #expect(CadenceSourceScan.matchCount(#"evidence: \.deviceLocal"#, in: source) == 0,
+                "the row claims this device issued an identifier CloudKit handed it")
+    }
+
+    /// And the event editor deliberately does **not** pass one: its identifier is device-local, so
+    /// the default is the true answer there and gating it would hide real deletions.
+    @Test func theTimelineEventEditorDoesNotClaimASyncedIdentifier() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineEventBlockSupportViews.swift")
+        let source = CadenceSourceScan.strippingComments(raw)
+        #expect(source != raw, "the comment stripper removed nothing")
+        #expect(source.contains("struct CalendarEventEditPopover: View"), "the editor moved")
+        #expect(CadenceSourceScan.matchCount(#"evidence: \.synced"#, in: source) == 0,
+                "the event editor gates a device-local identifier, so a deleted calendar goes unreported")
+    }
+
+    /// Without these the two `== 0` scans above are true of any text at all.
+    @Test func theProvenanceScanNeedlesAreNotVacuous() {
+        #expect(CadenceSourceScan.matchCount(#"evidence: \.deviceLocal"#,
+                                             in: "visibleCalendars: calendars, evidence: .deviceLocal)") == 1)
+        #expect(CadenceSourceScan.matchCount(#"evidence: \.deviceLocal"#,
+                                             in: "visibleCalendars: calendars, evidence: .synced(observedCalendarIDs: ids))") == 0)
+        #expect(CadenceSourceScan.matchCount(#"evidence: \.synced"#,
+                                             in: "evidence: .synced(observedCalendarIDs: ids)") == 1)
+        #expect(CadenceSourceScan.matchCount(#"evidence: \.synced"#,
+                                             in: "exclusion: .readOnly") == 0)
+    }
+}

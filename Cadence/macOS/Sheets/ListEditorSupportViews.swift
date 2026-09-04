@@ -399,12 +399,27 @@ struct ListEditorCalendarRow: View {
     @Binding var selectedID: String
 
     @State private var showPicker = false
+    /// **T-624.** Device-local, never synced: the identifiers this Mac has seen EventKit carry.
+    /// Read here rather than passed in because both edit sheets host this row and neither has any
+    /// other use for the record.
+    @AppStorage(CadenceCalendarLinkObservations.observedCalendarIDsKey) private var observedCalendarIDsRaw = ""
 
+    /// **T-624.** `.synced`, because `selectedID` starts life as `Area.linkedCalendarID` or
+    /// `Project.linkedCalendarID` — a CloudKit-synced property holding an identifier Apple
+    /// documents as local to one device. Without this the row read "no calendar here carries it" as
+    /// a deletion and printed `CadenceCalendarLinkHealth.missingLinkTitle` over a picker whose every
+    /// option overwrites the link the device that made it is still using. Settings' broken-links
+    /// card was taught this and this row was not, so the false alarm had simply moved here.
     private var link: CadenceCalendarLink {
         CadenceCalendarLink(
             linkedCalendarID: selectedID,
             allCalendars: allCalendars,
-            visibleCalendars: calendars
+            visibleCalendars: calendars,
+            evidence: .synced(
+                observedCalendarIDs: CadenceCalendarLinkObservations.observedCalendarIDs(
+                    from: observedCalendarIDsRaw
+                )
+            )
         )
     }
 
