@@ -20,7 +20,7 @@ nonisolated enum CadenceListsSummary {
         if areaCount > 0 { parts.append("\(areaCount) \(areaCount == 1 ? "area" : "areas")") }
         if projectCount > 0 { parts.append("\(projectCount) \(projectCount == 1 ? "project" : "projects")") }
 
-        guard !parts.isEmpty else { return "No lists yet" }
+        guard !parts.isEmpty else { return CadenceEmptyStateCopy.listsTitle(isNarrowed: false) }
         return parts.joined(separator: " · ")
     }
 }

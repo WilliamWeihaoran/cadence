@@ -392,7 +392,7 @@ struct iOSCalendarEventEditSheet: View {
                 // The event's real calendar, stated plainly. A picker here could only offer
                 // calendars this event cannot move to.
                 iOSEditorFieldRow(label: "Calendar", systemImage: "calendar", color: Theme.dim) {
-                    Text(eventCalendarName.isEmpty ? "Unknown calendar" : eventCalendarName)
+                    Text(CadenceTitleNormalization.display(eventCalendarName, fallback: "Unknown calendar"))
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.muted)
                         .lineLimit(1)

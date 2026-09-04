@@ -10,7 +10,6 @@ struct GoalLinkPickerButton: View {
     var noneTitle: String = "No parent goal"
     var noneSubtitle: String = "Keep as a top-level goal"
     var searchPlaceholder: String = "Search goals"
-    var emptyText: String = "No matching goals"
     var style: GoalLinkPickerStyle = .standard
 
     @State private var showPicker = false
@@ -51,7 +50,6 @@ struct GoalLinkPickerButton: View {
                 noneTitle: noneTitle,
                 noneSubtitle: noneSubtitle,
                 searchPlaceholder: searchPlaceholder,
-                emptyText: emptyText,
                 onPick: { showPicker = false }
             )
             .frame(width: 280)
@@ -86,7 +84,6 @@ struct GoalLinkPickerList: View {
     var noneTitle: String = "No parent goal"
     var noneSubtitle: String = "Keep as a top-level goal"
     var searchPlaceholder: String = "Search goals"
-    var emptyText: String = "No matching goals"
     var onPick: (() -> Void)? = nil
 
     @State private var searchQuery = ""
@@ -134,7 +131,9 @@ struct GoalLinkPickerList: View {
             Divider().background(Theme.borderSubtle).padding(.vertical, 2)
 
             if filteredGoals.isEmpty {
-                Text(searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No goals yet" : emptyText)
+                Text(CadenceEmptyStateCopy.goalsTitle(
+                    isNarrowed: !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ))
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.dim)
                     .padding(.horizontal, 14)

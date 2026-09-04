@@ -368,38 +368,15 @@ struct CadenceEmptyTitleFallbackSweepTests {
         #expect(placeholderValues.isEmpty, "these title prompts are phrased as a value: \(placeholderValues.sorted())")
     }
 
-    // MARK: - T-550: an argument that repeats its own default
+    // MARK: - T-550: an argument that repeats its own default (retired by T-698)
 
-    /// **T-550**, [[T-374]] family. `GoalLinkPickerButton.emptyText` already defaults to
-    /// `"No matching goals"`; two call sites passed exactly that. Behaviour-neutral to delete, and
-    /// worth pinning because a redundant argument is indistinguishable from a deliberate override
-    /// the next time somebody changes the default.
-    @Test func noGoalPickerCallSiteRepeatsTheEmptyTextDefault() throws {
-        let picker = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalPickerViews.swift")
-        )
-        #expect(picker.contains("struct GoalLinkPickerButton"), "non-vacuity: wrong file read")
-        #expect(picker.contains("var emptyText: String = \"No matching goals\""),
-                "the default moved, so the call sites below may no longer be redundant")
-
-        let read = CadenceSourceScan.strippedSourceReader()
-        var callers: [String] = []
-        var filesRead = 0
-        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") where path != "Cadence/macOS/Views/GoalPickerViews.swift" {
-            filesRead += 1
-            if try read(path).contains("emptyText: \"No matching goals\"") { callers.append(path) }
-        }
-
-        #expect(filesRead >= 300, "the caller harvest read \(filesRead) files")
-        #expect(callers.isEmpty, "these call sites repeat GoalLinkPickerButton's own default: \(callers)")
-
-        // Non-vacuity for the harvest itself: the two files T-550 named are still read and still
-        // pass the picker something, so an empty result means "no redundant argument" rather than
-        // "no file matched".
-        for path in ["Cadence/macOS/Sheets/CreateGoalSheet.swift", "Cadence/macOS/Views/HabitsFormSupportViews.swift"] {
-            #expect(try read(path).contains("GoalLinkPickerButton("), "non-vacuity: \(path) no longer uses the picker")
-        }
-    }
+    // `noGoalPickerCallSiteRepeatsTheEmptyTextDefault` asserted `GoalLinkPickerButton` /
+    // `GoalLinkPickerList` still declared `var emptyText: String = "No matching goals"`, as
+    // non-vacuity for checking no caller repeated that default. T-698 deleted the property itself —
+    // both pickers now call `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)` directly rather than
+    // storing a second copy of its narrowed-case string — so there is no longer a default for a
+    // caller to repeat, and the assertion's premise is gone rather than merely stale. Retired here
+    // instead of left red, per T-698's own note that this is the correct and expected outcome.
 
     // MARK: - Instruments
 
@@ -462,6 +439,129 @@ struct CadenceEmptyTitleFallbackSweepTests {
             by: { source in
                 pattern.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)) != nil
             }
+        )
+    }
+
+    // MARK: - T-783: the identical shape on a `name`
+
+    /// **T-783 — [[T-687]] part (2).** The same two needles as above, `[Nn]ame` in place of
+    /// `[Tt]itle`: `[A-Za-z0-9_.]*[Tt]itle` was scoped to the shape [[T-609]] measured, and an
+    /// identifier ending `name`/`Name` was invisible to it by construction, not by oversight.
+    ///
+    /// Re-measured before this ticket touched anything, against the seven sites named on
+    /// 2026-09-04 — six were still live: `GoalListLinkHelpers.swift` had already been fixed by
+    /// [[T-771]] in the interim (it now reads `CadenceSidebarLists.ungroupedTitle` off a trimmed
+    /// name), which is exactly the kind of drift re-measuring exists to catch. The six:
+    /// `GoalsSupportViews.swift` and `TaskBundlePickerSupportViews.swift` re-typed
+    /// `CadenceTaskSearchSupport.containerLabel(for:)`'s own body — `task.containerName.isEmpty ?
+    /// "Inbox" : task.containerName` — rather than calling it; `containerLabel` itself was that
+    /// same untrimmed ternary; `iOSCalendarEventEditSheet.swift` and `iOSRootSidebar.swift` are the
+    /// plain ternary on `eventCalendarName` and `item.name`; `iOSColumnWindDownSupport.swift` is the
+    /// trimmed-test/untrimmed-return near-miss on `config.name`. All six now read
+    /// `CadenceTitleNormalization.display(_:fallback:)` — the first three by way of
+    /// `containerLabel(for:)`, which also converges three spellings of "Inbox" into one call.
+    ///
+    /// `iOSSettingsContextSection.swift:78` is the control named by the ticket, and stays exempted
+    /// rather than fixed: `trimmedName` is a computed property that already trims, so
+    /// `trimmedName.isEmpty ? "Context" : trimmedName` is the **correct** hand-spelling of the same
+    /// idea `display` reaches by a different route — textually indistinguishable from the defect,
+    /// since a regex reads the name on screen and not where it was declared, so it is named here
+    /// rather than silently passed.
+    static func inlineNameFallbackInstrument() throws -> CadenceScanInstrument {
+        let pattern = try NSRegularExpression(
+            pattern: "([A-Za-z0-9_.]*[Nn]ame)\\.isEmpty \\? \"[^\"]*\" : \\1(?![A-Za-z0-9_])"
+        )
+        return try CadenceScanInstrument(
+            "inline empty-name fallback",
+            fires: "Text(item.name.isEmpty ? \"Untitled\" : item.name)",
+            andNotOn: "Text(CadenceTitleNormalization.display(item.name, fallback: CadenceTitleNormalization.defaultCompactTitle))",
+            by: { source in
+                pattern.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)) != nil
+            }
+        )
+    }
+
+    /// The one file this shape is allowed to keep, and why is in
+    /// `theSettingsContextNameExemptionIsStillTheCorrectSpelling`.
+    static let nameFallbackExemptions = ["Cadence/iOS/iOSSettingsContextSection.swift"]
+
+    static func trimmedTestUntrimmedReturnNameInstrument() throws -> CadenceScanInstrument {
+        let pattern = try NSRegularExpression(
+            pattern: "([A-Za-z0-9_.]*[Nn]ame)\\.trimmingCharacters\\(in: \\.whitespacesAndNewlines\\)\\.isEmpty \\? \"[^\"]*\" : \\1(?![A-Za-z0-9_])"
+        )
+        return try CadenceScanInstrument(
+            "trimmed test, untrimmed return (name)",
+            fires: "name: config.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? \"Untitled Column\" : config.name,",
+            andNotOn: """
+            let trimmed = config.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolved = trimmed.isEmpty ? "Untitled Column" : trimmed
+            """,
+            by: { source in
+                pattern.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)) != nil
+            }
+        )
+    }
+
+    @Test func noSurfaceHandSpellsAnEmptyNameFallback() throws {
+        let instrument = try Self.inlineNameFallbackInstrument()
+        var paths: [String] = []
+        for root in ["Cadence", "CadenceWidgets", "CadenceMCPServer"] {
+            paths += try CadenceSourceScan.swiftFiles(under: root)
+        }
+        #expect(paths.contains("Cadence/iOS/iOSSettingsContextSection.swift"))
+
+        let read = CadenceSourceScan.strippedSourceReader()
+        #expect(try read("Cadence/Models/ModelEnums.swift").contains("\"Untitled Task\""),
+                "the sweep's reader blanks string literals, so its needle can never match")
+
+        let hits = try instrument.sweep(
+            paths,
+            atLeast: 300,
+            including: "Cadence/iOS/iOSSettingsContextSection.swift",
+            read: read
+        )
+
+        #expect(
+            hits == Self.nameFallbackExemptions,
+            "these surfaces hand-spell an empty-name fallback: \(hits)"
+        )
+    }
+
+    @Test func noSurfaceTestsATrimmedNameAndThenReturnsTheUntrimmedOne() throws {
+        let instrument = try Self.trimmedTestUntrimmedReturnNameInstrument()
+        var paths: [String] = []
+        for root in ["Cadence", "CadenceWidgets", "CadenceMCPServer"] {
+            paths += try CadenceSourceScan.swiftFiles(under: root)
+        }
+        #expect(paths.contains("Cadence/iOS/iOSColumnWindDownSupport.swift"))
+
+        let read = CadenceSourceScan.strippedSourceReader()
+        #expect(try read("Cadence/Models/ModelEnums.swift").contains("\"Untitled Task\""),
+                "the sweep's reader blanks string literals, so its needle can never match")
+
+        let hits = try instrument.sweep(
+            paths,
+            atLeast: 300,
+            including: "Cadence/iOS/iOSColumnWindDownSupport.swift",
+            read: read
+        )
+
+        #expect(hits.isEmpty, "these files test a trimmed name and return the untrimmed one: \(hits)")
+    }
+
+    /// The exemption, pinned rather than counted: `trimmedName` at this one line is the correct
+    /// spelling, not a defect the regex above happens to miss.
+    @Test func theSettingsContextNameExemptionIsStillTheCorrectSpelling() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsContextSection.swift")
+        )
+        #expect(source.contains("private var trimmedName: String"),
+                "non-vacuity: trimmedName is no longer declared, so the exemption may be stale")
+        #expect(
+            CadenceSourceScan.matchCount(
+                "trimmedName\\.isEmpty \\? \"Context\" : trimmedName",
+                in: source
+            ) == 1
         )
     }
 }

@@ -311,7 +311,7 @@ struct TaskBundleTaskPickerPanel: View {
 
         let due = CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)
         if lead == nil && due == nil {
-            lead = task.containerName.isEmpty ? "Inbox" : task.containerName
+            lead = CadenceTaskSearchSupport.containerLabel(for: task)
         }
 
         return CadenceTaskDetailLine(

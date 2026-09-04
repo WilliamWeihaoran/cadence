@@ -257,4 +257,15 @@ nonisolated enum CadenceEmptyStateCopy {
     static func habitsTitle(isNarrowed: Bool) -> String {
         isNarrowed ? "No matching habits" : "No habits yet"
     }
+
+    /// **"No lists yet", converged from three spellings** (T-699). `CadenceListsSummary.eyebrow(…)`
+    /// returned it as the fallback branch of the Lists page's summary line, `iOSRootSidebar`'s
+    /// collapsed-sections row typed it as a bare `Text`, and `iOSGoalAttachListsSheet` typed
+    /// `isNarrowedToEmpty ? "No matching lists" : "No lists yet"` — the third site named the shape
+    /// the other two lacked, so this takes `isNarrowed:` the same way `goalsTitle(isNarrowed:)` and
+    /// `habitsTitle(isNarrowed:)` do, rather than being a bare constant. `"No matching lists"` had
+    /// no declaration anywhere before this.
+    static func listsTitle(isNarrowed: Bool) -> String {
+        isNarrowed ? "No matching lists" : "No lists yet"
+    }
 }

@@ -351,7 +351,7 @@ struct iOSSidebar: View {
     @ViewBuilder
     private var emptyListsRow: some View {
         if style == .expanded {
-            Text("No lists yet")
+            Text(CadenceEmptyStateCopy.listsTitle(isNarrowed: false))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Theme.dim)
                 .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
@@ -773,7 +773,7 @@ struct iOSSidebarListRow: View {
     }
 
     private var displayName: String {
-        item.name.isEmpty ? "Untitled" : item.name
+        CadenceTitleNormalization.display(item.name, fallback: CadenceTitleNormalization.defaultCompactTitle)
     }
 
     var body: some View {

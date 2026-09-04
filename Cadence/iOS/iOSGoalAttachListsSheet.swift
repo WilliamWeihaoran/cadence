@@ -55,7 +55,7 @@ struct iOSGoalAttachListsSheet: View {
                     // not.
                     iOSEmptyPanel(
                         systemImage: "folder.badge.questionmark",
-                        title: isNarrowedToEmpty ? "No matching lists" : "No lists yet",
+                        title: CadenceEmptyStateCopy.listsTitle(isNarrowed: isNarrowedToEmpty),
                         subtitle: isNarrowedToEmpty
                             ? "Nothing matches that search."
                             : "Create an area or project first, then attach it here."

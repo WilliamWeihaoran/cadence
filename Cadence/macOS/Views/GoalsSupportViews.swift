@@ -446,7 +446,7 @@ struct GoalTaskContributorRow: View {
                     .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
                     .lineLimit(1)
                 HStack(spacing: 6) {
-                    Text(task.containerName.isEmpty ? "Inbox" : task.containerName)
+                    Text(CadenceTaskSearchSupport.containerLabel(for: task))
                         .font(.system(size: 10))
                         .foregroundStyle(Theme.dim)
                         .lineLimit(1)

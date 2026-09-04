@@ -1430,9 +1430,63 @@ struct CadenceEmptyStateAuditTests {
             empty.contains("query.isEmpty") == false,
             "the sheet's empty state is back to reading the search field alone"
         )
-        // Both branches survive: this was a fix to *which* branch is reached, not a deletion.
-        #expect(empty.contains("\"No matching lists\""))
-        #expect(empty.contains("\"No lists yet\""))
+        // T-699 converged the title onto `CadenceEmptyStateCopy.listsTitle(isNarrowed:)` — the
+        // shared helper `iOSRootSidebar` and `CadenceListsSummary.eyebrow` now read too — rather
+        // than spelling either branch here. The subtitle's two branches are a separate decision
+        // (T-699 left them, the way `goalsTitle`'s subtitles stay apart) and still read as literals.
+        #expect(empty.contains("CadenceEmptyStateCopy.listsTitle(isNarrowed: isNarrowedToEmpty)"),
+                "the title no longer reads the shared helper")
+        #expect(empty.contains("\"No matching lists\"") == false,
+                "the title fell back to a hand-spelled literal instead of the shared helper")
+        #expect(empty.contains("\"No lists yet\"") == false,
+                "the title fell back to a hand-spelled literal instead of the shared helper")
+        #expect(empty.contains("\"Nothing matches that search.\""), "non-vacuity: the subtitle moved too")
+    }
+
+    /// **T-699.** `listsTitle(isNarrowed:)`'s own two answers, and that the other two call sites —
+    /// `CadenceListsSummary.eyebrow`'s fallback and `iOSRootSidebar.emptyListsRow` — read it rather
+    /// than typing either branch, the way `theAttachListsSheetAsksTheSharedNarrowingRule` already
+    /// pins for the sheet. All three used to spell "No lists yet" themselves; only the sheet also
+    /// knew about "No matching lists".
+    /// **T-698.** `GoalLinkPickerList`'s empty state used to spell both of `goalsTitle(isNarrowed:)`'s
+    /// answers itself (`emptyText` defaulting to `"No matching goals"`, `"No goals yet"` typed
+    /// beside it); it now asks the function directly, and neither literal is typed in the file at
+    /// all any more.
+    @Test func theGoalPickerListReadsGoalsTitleRatherThanTypingEitherAnswer() throws {
+        let picker = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalPickerViews.swift")
+        )
+        #expect(picker.contains("struct GoalLinkPickerList: View"), "non-vacuity: wrong file read")
+        #expect(picker.contains("CadenceEmptyStateCopy.goalsTitle("),
+                "the picker's empty state no longer reads the shared helper")
+        #expect(picker.contains("\"No matching goals\"") == false,
+                "the picker fell back to a hand-spelled literal instead of the shared helper")
+        #expect(picker.contains("\"No goals yet\"") == false,
+                "the picker fell back to a hand-spelled literal instead of the shared helper")
+        #expect(picker.contains("var emptyText") == false,
+                "T-698 deleted this property; a reappearance is the T-550 redundancy again")
+    }
+
+    @Test func listsTitleAnswersBothWaysAndEveryCallSiteReadsIt() throws {
+        #expect(CadenceEmptyStateCopy.listsTitle(isNarrowed: false) == "No lists yet")
+        #expect(CadenceEmptyStateCopy.listsTitle(isNarrowed: true) == "No matching lists")
+
+        let summary = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceListsSummary.swift")
+        )
+        #expect(summary.contains("struct CadenceListsSummary") || summary.contains("enum CadenceListsSummary"),
+                "non-vacuity: wrong file read")
+        #expect(summary.contains("CadenceEmptyStateCopy.listsTitle(isNarrowed: false)"),
+                "eyebrow's fallback no longer reads the shared helper")
+        #expect(summary.contains("\"No lists yet\"") == false,
+                "eyebrow fell back to a hand-spelled literal instead of the shared helper")
+
+        let sidebar = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootSidebar.swift")
+        )
+        #expect(sidebar.contains("struct iOSSidebar: View"), "non-vacuity: wrong file read")
+        #expect(sidebar.contains("CadenceEmptyStateCopy.listsTitle(isNarrowed: false)"),
+                "emptyListsRow no longer reads the shared helper")
     }
 
     // MARK: T-525 — the roadmap's first run, against what a roadmap row needs

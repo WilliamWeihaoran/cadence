@@ -47,7 +47,7 @@ struct iOSColumnWindDownTarget: Identifiable {
     }
 
     var name: String {
-        config.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Column" : config.name
+        CadenceTitleNormalization.display(config.name, fallback: "Untitled Column")
     }
 
     var windDownSubject: iOSWindDownSubject {

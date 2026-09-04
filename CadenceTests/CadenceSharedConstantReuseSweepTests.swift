@@ -117,59 +117,18 @@ struct CadenceStaticFuncConstantOffender {
     }
 }
 
-/// Four call sites, three files, two tickets — the whole of what widening the harvest to
-/// `static func` newly reaches on this tree. Measured against `HEAD` rather than a dirty checkout:
-/// a sibling's untracked file was adding hits of its own while this was written, and counting them
-/// would have credited them to this widening.
-let cadenceStaticFuncConstantLedger: [CadenceStaticFuncConstantOffender] = [
-    CadenceStaticFuncConstantOffender(
-        "No goals yet",
-        path: "Cadence/macOS/Views/GoalPickerViews.swift",
-        ticket: "T-698",
-        why: """
-        Line 137 spells `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)`'s body inline — \
-        `searchQuery…isEmpty ? "No goals yet" : emptyText` is the same ternary over the same two \
-        strings. This is the exact shape [[T-548]] converged and [[T-555]] says the sweep could \
-        not see: the constant is spelled as a function, so the harvest walked past it.
-        """
-    ),
-    CadenceStaticFuncConstantOffender(
-        "No matching goals",
-        path: "Cadence/macOS/Views/GoalPickerViews.swift",
-        ticket: "T-698",
-        why: """
-        The narrowed half of the same ternary, twice, as the `emptyText` default on both pickers in \
-        the file (lines 13 and 89). [[T-550]] deleted this argument where callers passed it \
-        explicitly — `CreateGoalSheet` and `HabitsFormSupportViews` are clean on this tree — and \
-        left the two *defaults* behind, because nothing was looking at defaults.
-        """
-    ),
-    CadenceStaticFuncConstantOffender(
-        "No lists yet",
-        path: "Cadence/iOS/iOSRootSidebar.swift",
-        ticket: "T-699",
-        why: """
-        `emptyListsRow` types the words that `CadenceListsSummary.eyebrow(areaCount:projectCount:)` \
-        returns when both counts are zero. Not a call site that should read `eyebrow` — a sidebar \
-        row is not a summary line — which is the point: the words have no `static let` home at all, \
-        only a function's fallback branch, and that is why nothing flagged the second and third \
-        spellings of them.
-        """
-    ),
-    CadenceStaticFuncConstantOffender(
-        "No lists yet",
-        path: "Cadence/iOS/iOSGoalAttachListsSheet.swift",
-        ticket: "T-699",
-        why: """
-        The third spelling, and the one that shows the shape of the fix: it is written \
-        `isNarrowedToEmpty ? "No matching lists" : "No lists yet"`, which is \
-        `goalsTitle(isNarrowed:)` and `habitsTitle(isNarrowed:)` again with the noun changed. Its \
-        narrowed twin `"No matching lists"` clears the twelve-character floor and is still \
-        invisible, because it is declared nowhere at all — the sweep can only see the half that \
-        has a home. The ticket owns both halves.
-        """
-    ),
-]
+/// Empty by construction, kept rather than deleted so the shape (and the two tests that check it
+/// in both directions) survives the next offender rather than being reinvented for it.
+///
+/// Held four entries, three files, two tickets from the widening that first populated it: the Mac's
+/// `GoalPickerViews` spelling `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)`'s body inline twice,
+/// and `"No lists yet"` typed again at `iOSRootSidebar.emptyListsRow` and
+/// `iOSGoalAttachListsSheet`. [[T-698]] routed the picker through `goalsTitle(isNarrowed:)` and
+/// deleted the `emptyText` default it was retyping; [[T-699]] added
+/// `CadenceEmptyStateCopy.listsTitle(isNarrowed:)` beside `goalsTitle`/`habitsTitle` and routed all
+/// three lists call sites through it. Both fixes are static-func constants themselves, so the
+/// harvest below keeps guarding this shape without a ledger entry naming it.
+let cadenceStaticFuncConstantLedger: [CadenceStaticFuncConstantOffender] = []
 
 /// A placeholder label typed inline with **no** declaration anywhere, and the measured reason it
 /// stays that way.
@@ -890,7 +849,7 @@ struct CadenceSharedConstantReuseSweepTests {
             try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceEmptyStateCopy.swift")
         )
         let declared = Set(cadenceStaticFunctionBodies(in: copy).map(\.name))
-        for name in ["goalsTitle", "habitsTitle", "activeListsSubtitle"] {
+        for name in ["goalsTitle", "habitsTitle", "listsTitle", "activeListsSubtitle"] {
             #expect(declared.contains(name), "the static-func walk missed \(name)")
         }
 
@@ -908,7 +867,8 @@ struct CadenceSharedConstantReuseSweepTests {
             ("goalsTitle", "All goals complete"),
             ("habitsTitle", "No matching habits"),
             ("habitsTitle", "No habits yet"),
-            ("eyebrow", "No lists yet"),
+            ("listsTitle", "No matching lists"),
+            ("listsTitle", "No lists yet"),
             ("dormantLinkSummary", "This area is not active, so Cadence has stopped mirroring it. "
                 + "The Apple calendar link is kept and resumes if the area becomes active again."),
         ] {
@@ -1056,8 +1016,8 @@ struct CadenceSharedConstantReuseSweepTests {
         )
 
         // A duplicated entry would satisfy set equality and still double-forgive.
-        #expect(cadenceStaticFuncConstantLedger.count == 4,
-                "the ledger holds \(cadenceStaticFuncConstantLedger.count) entries, not the four that were measured")
+        #expect(cadenceStaticFuncConstantLedger.count == 0,
+                "the ledger holds \(cadenceStaticFuncConstantLedger.count) entries, not the zero left once T-698 and T-699 land")
         #expect(cadenceStaticFuncConstantLedger.allSatisfy { $0.ticket.hasPrefix("T-") },
                 "a ledger entry names no ticket, so nothing owns the fix")
         #expect(cadenceStaticFuncConstantLedger.allSatisfy { $0.why.count > 40 },

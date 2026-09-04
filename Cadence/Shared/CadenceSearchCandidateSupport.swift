@@ -56,8 +56,7 @@ nonisolated enum CadenceTaskSearchSupport {
     /// The container a row names, with the Inbox spelled out rather than left blank: a task with
     /// no list is findable by typing `inbox` on both surfaces.
     static func containerLabel(for task: AppTask) -> String {
-        let name = task.containerName
-        return name.isEmpty ? "Inbox" : name
+        CadenceTitleNormalization.display(task.containerName, fallback: "Inbox")
     }
 
     /// The searchable fields, in matcher order. `fields[0]` is the title and is weighted highest;
