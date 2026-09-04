@@ -74,6 +74,7 @@ struct CadenceBuildInvocationHygieneTests {
         #expect(paths.contains("docs/direct-distribution-runbook.md"))
         #expect(paths.contains("plugins/cadence-mcp/scripts/run-cadence-mcp.sh"))
         #expect(paths.contains("scripts/test-host-lock.sh"))
+        #expect(paths.contains(".github/workflows/ci.yml"), "CI's own xcodebuild invocations are outside the walk (T-709)")
         // Dependency checkouts carry their own `xcodebuild` harnesses; they are not this
         // repository's instructions and must not be swept. Bound before the macro rather than
         // inside it: `allSatisfy` and `contains(where:)` are `rethrows`, and `#expect` expands a
@@ -114,6 +115,52 @@ struct CadenceBuildInvocationHygieneTests {
         // flips the export command in the distribution runbook starts failing for no reason.
         let export = "/usr/bin/xcodebuild -exportArchive -archivePath build/Cadence.xcarchive"
         #expect(CadenceBuildInvocation.parse(export).first?.isBuildAction == false)
+    }
+
+    // MARK: - T-709: the sweep must reach CI's own YAML, not just markdown and shell
+
+    /// Before this ticket, `scannedPaths()` only appended `.md` and `.sh`, so `.github/workflows/*.yml`
+    /// sat outside the walk entirely while carrying real `xcodebuild` invocations behind
+    /// `scripts/xcb.sh`. Two things have to be true at once: the walk reaches the workflow files, and
+    /// the extractor reads their `run:` steps as shell rather than as YAML prose (a raw read of the
+    /// file would see `steps:`, `uses:`, indentation and all, none of which is a command).
+    @Test func theWalkAndTheParserReachGitHubWorkflowRunSteps() throws {
+        let paths = Self.scannedPaths()
+        #expect(paths.contains(".github/workflows/ci.yml"))
+        #expect(paths.contains(".github/workflows/docs.yml"))
+
+        // Fixture mirrors this repository's own shape: an inline `run:`, a literal block scalar
+        // (`run: |`) with a leading comment line and a continued command, and a sibling `if:` key
+        // that must not be swept as if it were shell.
+        let fixture = #"""
+        jobs:
+          build:
+            steps:
+              - name: Not a command
+                if: >-
+                  github.event_name == 'workflow_dispatch'
+              - name: Build
+                run: |
+                  # a comment inside the block
+                  /usr/bin/xcodebuild -scheme Cadence                     -derivedDataPath /tmp/d                     build
+              - name: Inline and unflagged
+                run: xcodebuild -scheme Cadence build
+        """#
+
+        let shell = Self.yamlRunBlocks(fixture)
+        #expect(!shell.contains("workflow_dispatch"), "the if: block scalar leaked into the shell text")
+        #expect(!shell.contains("steps:"), "bare YAML structure leaked into the shell text")
+
+        let invocations = CadenceBuildInvocation.parse(shell)
+        #expect(invocations.count == 2)
+        #expect(invocations.first?.namesDerivedDataPath == true)
+        #expect(invocations.last?.namesDerivedDataPath == false)
+
+        // Non-vacuity for the real files: they must actually contain `run:` steps worth extracting,
+        // not just parse to nothing because the fixture is what does all the work above.
+        let realCIShell = try Self.shellText(at: ".github/workflows/ci.yml")
+        #expect(realCIShell.contains("xcb.sh"))
+        #expect(!realCIShell.contains("runs-on:"), "job-level YAML keys leaked into the shell text")
     }
 
     // MARK: - T-552: the runner refuses a green run over zero tests
@@ -287,7 +334,9 @@ struct CadenceBuildInvocationHygieneTests {
         for case let entry as String in walker {
             if Self.excludedPrefixes.contains(where: { entry == $0 || entry.hasPrefix($0 + "/") }) { continue }
             if entry.contains("/SourcePackages/") || entry.contains("/DerivedData/") { continue }
-            if entry.hasSuffix(".md") || entry.hasSuffix(".sh") { found.append(entry) }
+            if entry.hasSuffix(".md") || entry.hasSuffix(".sh") || entry.hasSuffix(".yml") || entry.hasSuffix(".yaml") {
+                found.append(entry)
+            }
         }
         return found.sorted()
     }
@@ -295,10 +344,62 @@ struct CadenceBuildInvocationHygieneTests {
     private static let excludedPrefixes = [".git", ".build", ".codex-build", "build"]
 
     /// The shell text of a file: a script is shell throughout, a markdown file only inside its
-    /// fenced code blocks.
+    /// fenced code blocks, and a GitHub Actions workflow only inside its `run:` steps.
     static func shellText(at relativePath: String) throws -> String {
         let text = try CadenceSourceScan.sourceFile(relativePath)
-        return relativePath.hasSuffix(".md") ? fencedShell(text) : text
+        if relativePath.hasSuffix(".md") { return fencedShell(text) }
+        if relativePath.hasSuffix(".yml") || relativePath.hasSuffix(".yaml") { return yamlRunBlocks(text) }
+        return text
+    }
+
+    /// The shell text of every `run:` step in a GitHub Actions workflow, concatenated.
+    ///
+    /// Handles both shapes this repository's own workflows use: the inline form
+    /// (`run: ./scripts/xcb.sh ... build`) and the block-scalar form (`run: |`, followed by an
+    /// indented block) that every multi-line step here is written in. Folding style (`run: >`) is
+    /// read the same as literal (`run: |`) -- this walk only needs each `xcodebuild` invocation on
+    /// its own line, not YAML's own folding semantics, and preserving line breaks does that.
+    ///
+    /// A block scalar's extent is "more indented than the `run:` key", the same rule YAML itself
+    /// uses, so a line that dedents back to the key's own indent (the next step, or a sibling key
+    /// such as `if:`) ends it. `if:`, `uses:`, and every other step key are left alone; only `run:`
+    /// contributes shell text, so YAML syntax elsewhere in the file is never misread as a command.
+    static func yamlRunBlocks(_ yaml: String) -> String {
+        var shell: [String] = []
+        let lines = yaml.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var index = 0
+        while index < lines.count {
+            let line = lines[index]
+            let indent = line.prefix { $0 == " " }.count
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("run:") else { index += 1; continue }
+
+            let after = trimmed.dropFirst("run:".count).trimmingCharacters(in: .whitespaces)
+            let blockIndicators: Set<String> = ["|", "|-", "|+", ">", ">-", ">+"]
+            index += 1
+            if after.isEmpty || blockIndicators.contains(after) {
+                while index < lines.count {
+                    let body = lines[index]
+                    if body.trimmingCharacters(in: .whitespaces).isEmpty {
+                        shell.append("")
+                        index += 1
+                        continue
+                    }
+                    guard body.prefix(while: { $0 == " " }).count > indent else { break }
+                    shell.append(body)
+                    index += 1
+                }
+            } else {
+                // Inline form: a bare command or a quoted one (YAML allows either).
+                var command = after
+                if let quote = command.first, quote == "\"" || quote == "'", command.count > 1,
+                   command.last == quote {
+                    command = String(command.dropFirst().dropLast())
+                }
+                shell.append(command)
+            }
+        }
+        return shell.joined(separator: "\n")
     }
 
     /// The contents of every fenced code block in a markdown document, concatenated.
