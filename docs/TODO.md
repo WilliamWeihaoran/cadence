@@ -176,8 +176,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   access required" (`CadenceRemindersPresentationSupport.swift:91-97`), where Calendar and
   Notifications correctly use a neutral `Connect …` offer and reserve `… access required` for after
   a denial. Reachable on the first visit to Reminders settings. Give it the same two-title model.
-- [T-849] **The note panel draws an unlabelled failure.** `NotePanel.swift:80-99,113`;
-  `loadOrCreateCoreNotes` swallows. Make it throwing or return a typed result, and keep loading.
 - [T-851] **Milestone Momentum is the only widget whose reload calculation is unshared.** Its three
   sibling support types already share one. Widgets ship inside the submitted binary, so a timeline
   that never reloads is a shipped defect. Reuse a shared policy that accepts ready/empty intervals.
@@ -250,23 +248,21 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   untitled-row tickets ([[T-505]], [[T-513]], [[T-687]]); the fix is routing both `Text`s through
   the same call the accessibility value already makes.
 
-- [T-768] **The two macOS event deletes still report through the global alert, and the reason is
-  reasoned rather than measured.** Residue of [[T-658]], which moved Save and quick-create to an
-  inline notice on the popover holding the draft and deliberately left Delete where it was.
-  The argument for leaving it: both deletes leave through `DeleteConfirmationManager`, whose
-  `DeleteConfirmationOverlay` (`macOSRootSupportViews.swift:614`) covers the whole window, so
-  pressing its Delete button is a click outside a transient `NSPopover` and closes the editor before
-  EventKit answers — an inline notice would have nothing to draw on, and suppressing the alert for
-  it would turn a reported failure into a silent one. There is also no draft to lose: nothing was
-  typed.
-  **Two things are worth doing.** (1) `presentRefusable(…)` already exists for exactly this shape
-  (T-376: the overlay stays open and says the delete was refused), and it is the surface that asked
-  the question, so it beats a global alert — but it takes a fixed `failureNotice: String` and an
-  `attempt: () -> Bool`, so it cannot carry `CalendarWriteFailure.message`. Widening it to a typed
-  refusal is the work. (2) **Measure the premise.** "The overlay closes the popover" is AppKit
-  reasoning about `NSPopover.behavior == .transient`, not an observation: `run-macos-app.sh` refuses
-  while the user's own Cadence is running, which it was for the whole of that batch. If the popover
-  in fact survives, `deleteOutcome(for:)` is a three-line addition and Delete joins Save.
+- [T-919] **macOS calendar-event deletes report through a generic global alert instead of a typed
+  refusal.** Residue of [[T-768]], which measured (rather than assumed) whether the two macOS
+  event-delete popovers survive their own confirmation overlay's Delete button. Neither does, by
+  two different mechanisms: `TimelineEventBlock` closes its own popover (`selectedEventID = nil`)
+  before it ever presents the overlay, and `CalendarBoardEventCard` relies on the platform's
+  default popover-dismiss-on-outside-click, confirmed active (neither call site sets
+  `.interactiveDismissDisabled()`). So an inline notice has nowhere to draw and the global alert is
+  the right call — that part of [[T-768]] is closed.
+  What is left: `DeleteConfirmationManager.presentRefusable(…)` already exists for exactly this
+  "stay open and say why" shape (T-376), but its `failureNotice: String` is fixed at the call site
+  and its `attempt: () -> Bool` cannot carry `CalendarWriteFailure.message` — so routing Delete
+  through it today would still show a generic sentence, not the specific EventKit failure reason
+  `.calendarWriteFailureAlert()` already has. Widen `presentRefusable` (or add a typed sibling) so
+  a refused calendar-event delete can report the real cause through the confirmation manager, the
+  way Save's inline notice already does.
 
 - [T-759] **Two `SchedulingActions.createTask` overloads no longer have an app caller.** Found while
   landing [[T-655]] and deliberately left. `createTask(title:dateKey:startMin:endMin:in:)` had none
@@ -1789,23 +1785,6 @@ This file is authoritative. Two other documents hold *findings*, not tracked wor
   `GoalListLink`, `HabitCompletion` and `SavedLink` in a store, and every surface that could show
   one showing nothing. Same shape as `CadenceInMemoryStoreHygieneTests` — the property is already
   true, and the test is what stops it quietly stopping.
-
-- [T-752] **The app's one "these counts may be wrong" sentence hard-codes which way it is wrong.**
-  `CadenceNoteDeletionSummary.unknownImpactNotice` is *"Couldn't check everything this delete
-  touches. It may remove **more** than the counts below show."* Both delete confirmations read it,
-  and `bothDeleteConfirmationsShareOneUnknownImpactSentenceAndOneRow` pins that there is exactly one
-  of it and one row for it — deliberately, so a second wording cannot appear.
-  That is right for the case it was written for (a failed fetch, which only ever moves the loss
-  upward), and it leaves the app with nothing to say in the opposite case. [[T-623]] is exactly the
-  opposite case: the delete removes *less* than the user was led to expect, and `isEmpty`'s "nothing
-  else is filed here" is the strongest claim on that screen and the one most able to be wrong.
-  Nobody should discover this by writing a second sentence and finding a test in the way. Either the
-  notice becomes directionless ("Couldn't check everything this delete touches"), which costs the
-  one thing its own doc comment argues for — *"There is no wording of 'something went wrong' that
-  stops a user reading '0 embedded images' as 'no images'"* — or the type grows a direction and the
-  one-sentence rule becomes a one-sentence-per-direction rule.
-  **Not actionable on its own**, and filed as a constraint rather than a defect: whoever picks up
-  [[T-623]] or any successor hits this before they write a line of UI.
 
 - [T-754] **41 more sites spell `Theme.radiusControl` (10) as the bare literal `cornerRadius: 10`,
   plus one more named constant that does the same** (`kanbanColumnCornerRadius` in
